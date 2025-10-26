@@ -1,0 +1,26 @@
+# KiCAD MCP Server - Python Dependencies
+# Production dependencies only
+
+# KiCAD Python API (IPC - for future migration)
+# kicad-python>=0.5.0  # Uncomment when migrating to IPC API
+
+# Schematic manipulation
+kicad-skip>=0.1.0
+
+# Image processing for board rendering
+Pillow>=9.0.0
+
+# SVG rendering
+cairosvg>=2.7.0
+
+# Colored logging
+colorlog>=6.7.0
+
+# Data validation (for future features)
+pydantic>=2.5.0
+
+# HTTP requests (for JLCPCB/Digikey APIs - future)
+requests>=2.31.0
+
+# Environment variable management
+python-dotenv>=1.0.0

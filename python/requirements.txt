@@ -1,0 +1,13 @@
+# KiCAD MCP Python Interface Requirements
+
+# Image processing
+Pillow>=9.0.0
+cairosvg>=2.7.0
+
+# Type hints
+typing-extensions>=4.0.0
+
+# Logging
+colorlog>=6.7.0
+
+kicad-skip

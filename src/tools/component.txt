@@ -1,0 +1,26 @@
+/**
+ * Component management tools for KiCAD MCP server
+ */
+
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+import { logger } from '../logger.js';
+
+// Command function type for KiCAD script calls
+type CommandFunction = (command: string, params: any) => Promise<any>;
+
+/**
+ * Register component management tools with the MCP server
+ * 
+ * @param server MCP server instance
+ * @param callKicadScript Function to call KiCAD script commands
+ */
+export function registerComponentTools(server: McpServer, callKicadScript: CommandFunction): void {
+  logger.info('Registering component management tools');
+  
+  // ------------------------------------------------------
+  // Place Component Tool
+  // ------------------------------------------------------
+  server.registerTool({
+    name: "place_component",
+    description: "Places a component on the PCB at the specified location",

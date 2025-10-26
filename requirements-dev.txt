@@ -1,0 +1,29 @@
+# KiCAD MCP Server - Development Dependencies
+# Testing, linting, and development tools
+
+# Include production dependencies
+-r requirements.txt
+
+# Testing framework
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.11.0
+
+# Code quality
+black>=23.7.0
+mypy>=1.5.0
+pylint>=2.17.0
+flake8>=6.1.0
+isort>=5.12.0
+
+# Type stubs
+types-requests>=2.31.0
+types-Pillow>=10.0.0
+
+# Pre-commit hooks
+pre-commit>=3.3.0
+
+# Development utilities
+ipython>=8.14.0
+ipdb>=0.13.13

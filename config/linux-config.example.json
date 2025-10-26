@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "kicad": {
+      "command": "node",
+      "args": ["/path/to/kicad-mcp/dist/index.js"],
+      "cwd": "/home/user/kicad-mcp",
+      "env": {
+        "NODE_ENV": "production",
+        "PYTHONPATH": "/usr/lib/kicad/lib/python3/dist-packages",
+        "LOG_LEVEL": "info"
+      },
+      "description": "KiCAD PCB Design Assistant",
+      "transportType": "stdio"
+    }
+  }
+}
