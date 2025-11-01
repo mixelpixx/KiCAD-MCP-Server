@@ -32,17 +32,30 @@ logger = logging.getLogger('kicad_interface')
 # Log Python environment details
 logger.info(f"Python version: {sys.version}")
 logger.info(f"Python executable: {sys.executable}")
-logger.info(f"Python path: {sys.path}")
 
-# Add KiCAD Python paths
-kicad_paths = [
-    os.path.join(os.path.dirname(sys.executable), 'Lib', 'site-packages'),
-    os.path.dirname(sys.executable)
-]
-for path in kicad_paths:
-    if path not in sys.path:
-        logger.info(f"Adding KiCAD path: {path}")
-        sys.path.append(path)
+# Add utils directory to path for imports
+utils_dir = os.path.join(os.path.dirname(__file__))
+if utils_dir not in sys.path:
+    sys.path.insert(0, utils_dir)
+
+# Import platform helper and add KiCAD paths
+from utils.platform_helper import PlatformHelper
+from utils.kicad_process import check_and_launch_kicad, KiCADProcessManager
+
+logger.info(f"Detecting KiCAD Python paths for {PlatformHelper.get_platform_name()}...")
+paths_added = PlatformHelper.add_kicad_to_python_path()
+
+if paths_added:
+    logger.info("Successfully added KiCAD Python paths to sys.path")
+else:
+    logger.warning("No KiCAD Python paths found - attempting to import pcbnew from system path")
+
+logger.info(f"Current Python path: {sys.path}")
+
+# Check if auto-launch is enabled
+AUTO_LAUNCH_KICAD = os.environ.get("KICAD_AUTO_LAUNCH", "false").lower() == "true"
+if AUTO_LAUNCH_KICAD:
+    logger.info("KiCAD auto-launch enabled")
 
 # Import KiCAD's Python API
 try:
@@ -134,6 +147,7 @@ class KiCADInterface:
             "add_board_outline": self.board_commands.add_board_outline,
             "add_mounting_hole": self.board_commands.add_mounting_hole,
             "add_text": self.board_commands.add_text,
+            "add_board_text": self.board_commands.add_text,  # Alias for TypeScript tool
             
             # Component commands
             "place_component": self.component_commands.place_component,
@@ -176,7 +190,11 @@ class KiCADInterface:
             "add_schematic_component": self._handle_add_schematic_component,
             "add_schematic_wire": self._handle_add_schematic_wire,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
-            "export_schematic_pdf": self._handle_export_schematic_pdf
+            "export_schematic_pdf": self._handle_export_schematic_pdf,
+
+            # UI/Process management commands
+            "check_kicad_ui": self._handle_check_kicad_ui,
+            "launch_kicad_ui": self._handle_launch_kicad_ui
         }
         
         logger.info("KiCAD interface initialized")
@@ -199,7 +217,8 @@ class KiCADInterface:
                 if result.get("success", False):
                     if command == "create_project" or command == "open_project":
                         logger.info("Updating board reference...")
-                        self.board = pcbnew.GetBoard()
+                        # Get board from the project commands handler
+                        self.board = self.project_commands.board
                         self._update_command_handlers()
                 
                 return result
@@ -367,6 +386,45 @@ class KiCADInterface:
             return {"success": success, "message": message}
         except Exception as e:
             logger.error(f"Error exporting schematic to PDF: {str(e)}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_check_kicad_ui(self, params):
+        """Check if KiCAD UI is running"""
+        logger.info("Checking if KiCAD UI is running")
+        try:
+            manager = KiCADProcessManager()
+            is_running = manager.is_running()
+            processes = manager.get_process_info() if is_running else []
+
+            return {
+                "success": True,
+                "running": is_running,
+                "processes": processes,
+                "message": "KiCAD is running" if is_running else "KiCAD is not running"
+            }
+        except Exception as e:
+            logger.error(f"Error checking KiCAD UI status: {str(e)}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_launch_kicad_ui(self, params):
+        """Launch KiCAD UI"""
+        logger.info("Launching KiCAD UI")
+        try:
+            project_path = params.get("projectPath")
+            auto_launch = params.get("autoLaunch", AUTO_LAUNCH_KICAD)
+
+            # Convert project path to Path object if provided
+            from pathlib import Path
+            path_obj = Path(project_path) if project_path else None
+
+            result = check_and_launch_kicad(path_obj, auto_launch)
+
+            return {
+                "success": True,
+                **result
+            }
+        except Exception as e:
+            logger.error(f"Error launching KiCAD UI: {str(e)}")
             return {"success": False, "message": str(e)}
 
 def main():

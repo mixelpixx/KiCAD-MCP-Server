@@ -7,6 +7,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import express from 'express';
 import { spawn, ChildProcess } from 'child_process';
 import { existsSync } from 'fs';
+import { join, dirname } from 'path';
 import { logger } from './logger.js';
 
 // Import tool registration functions
@@ -16,6 +17,7 @@ import { registerComponentTools } from './tools/component.js';
 import { registerRoutingTools } from './tools/routing.js';
 import { registerDesignRuleTools } from './tools/design-rules.js';
 import { registerExportTools } from './tools/export.js';
+import { registerUITools } from './tools/ui.js';
 
 // Import resource registration functions
 import { registerProjectResources } from './resources/project.js';
@@ -27,6 +29,46 @@ import { registerLibraryResources } from './resources/library.js';
 import { registerComponentPrompts } from './prompts/component.js';
 import { registerRoutingPrompts } from './prompts/routing.js';
 import { registerDesignPrompts } from './prompts/design.js';
+
+/**
+ * Find the Python executable to use
+ * Prioritizes virtual environment if available, falls back to system Python
+ */
+function findPythonExecutable(scriptPath: string): string {
+  const isWindows = process.platform === 'win32';
+
+  // Get the project root (parent of the python/ directory)
+  const projectRoot = dirname(dirname(scriptPath));
+
+  // Check for virtual environment
+  const venvPaths = [
+    join(projectRoot, 'venv', isWindows ? 'Scripts' : 'bin', isWindows ? 'python.exe' : 'python'),
+    join(projectRoot, '.venv', isWindows ? 'Scripts' : 'bin', isWindows ? 'python.exe' : 'python'),
+  ];
+
+  for (const venvPath of venvPaths) {
+    if (existsSync(venvPath)) {
+      logger.info(`Found virtual environment Python at: ${venvPath}`);
+      return venvPath;
+    }
+  }
+
+  // Fall back to system Python or environment-specified Python
+  if (isWindows && process.env.KICAD_PYTHON) {
+    // Allow override via KICAD_PYTHON environment variable
+    return process.env.KICAD_PYTHON;
+  } else if (isWindows && process.env.PYTHONPATH?.includes('KiCad')) {
+    // Windows: Try KiCAD's bundled Python
+    const kicadPython = 'C:\\Program Files\\KiCad\\9.0\\bin\\python.exe';
+    if (existsSync(kicadPython)) {
+      return kicadPython;
+    }
+  }
+
+  // Default to system Python
+  logger.info('Using system Python (no venv found)');
+  return isWindows ? 'python.exe' : 'python3';
+}
 
 /**
  * KiCAD MCP Server class
@@ -85,6 +127,7 @@ export class KiCADMcpServer {
     registerRoutingTools(this.server, this.callKicadScript.bind(this));
     registerDesignRuleTools(this.server, this.callKicadScript.bind(this));
     registerExportTools(this.server, this.callKicadScript.bind(this));
+    registerUITools(this.server, this.callKicadScript.bind(this));
     
     // Register all resources
     registerProjectResources(this.server, this.callKicadScript.bind(this));
@@ -109,9 +152,8 @@ export class KiCADMcpServer {
       
       // Start the Python process for KiCAD scripting
       logger.info(`Starting Python process with script: ${this.kicadScriptPath}`);
-      const pythonExe = process.env.PYTHONPATH ? 
-        'C:\\Program Files\\KiCad\\9.0\\bin\\python.exe' : 'python';
-      
+      const pythonExe = findPythonExecutable(this.kicadScriptPath);
+
       logger.info(`Using Python executable: ${pythonExe}`);
       this.pythonProcess = spawn(pythonExe, [this.kicadScriptPath], {
         stdio: ['pipe', 'pipe', 'pipe'],

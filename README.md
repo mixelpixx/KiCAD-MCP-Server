@@ -2,9 +2,10 @@
 
 KiCAD MCP is a Model Context Protocol (MCP) implementation that enables Large Language Models (LLMs) like Claude to directly interact with KiCAD for printed circuit board design. It creates a standardized communication bridge between AI assistants and the KiCAD PCB design software, allowing for natural language control of advanced PCB design operations.
 
-## 🎉 NEW FEATURE! Schematic Generation
+## NEW FEATURES
 
-**We're excited to announce the addition of schematic generation capabilities!** Now, in addition to PCB design, KiCAD MCP enables AI assistants to:
+### Schematic Generation
+Now, in addition to PCB design, KiCAD MCP enables AI assistants to:
 
 - Create and manage KiCAD schematics through natural language
 - Add components like resistors, capacitors, and ICs to schematics
@@ -12,37 +13,67 @@ KiCAD MCP is a Model Context Protocol (MCP) implementation that enables Large La
 - Save and load schematic files in KiCAD format
 - Export schematics to PDF
 
-This powerful addition completes the PCB design workflow, allowing AI assistants to help with both schematic capture and PCB layout in a single integrated environment.
+### UI Auto-Launch
+Seamless visual feedback for PCB design. The MCP server can now:
+
+- Auto-detect if KiCAD UI is running
+- Auto-launch KiCAD when needed
+- Open projects directly in the UI
+- Cross-platform support (Linux, macOS, Windows)
+
+Just say "Create a board" and watch it appear in KiCAD. See [UI_AUTO_LAUNCH.md](docs/UI_AUTO_LAUNCH.md) for details.
 
 ## Project Status
 
-🚧 **This project is currently undergoing a major v2.0 rebuild!** 🚧
+**This project is currently undergoing a major v2.0 rebuild**
 
 **Current Status (Week 1/12):**
-- ✅ Cross-platform support (Linux, Windows, macOS)
-- ✅ CI/CD pipeline with automated testing
-- ✅ Platform-agnostic path handling
-- 🔄 Migrating to KiCAD IPC API (from deprecated SWIG)
-- ⏳ Adding JLCPCB parts integration
-- ⏳ Adding Digikey parts integration
-- ⏳ Smart BOM management system
+- Cross-platform support (Linux, Windows, macOS)
+- CI/CD pipeline with automated testing
+- Platform-agnostic path handling
+- Migrating to KiCAD IPC API (from deprecated SWIG)
+- Adding JLCPCB parts integration
+- Adding Digikey parts integration
+- Smart BOM management system
 
-**What Works Now:**
-- Basic project management (create, open, save)
-- Component placement and manipulation
-- Board outline and layer management
-- Routing (traces, vias, copper pours)
+**What Works Now (Tested & Verified):**
+- Project management (create, open, save)
+- Board outline creation (rectangle, circle, polygon)
+- Board size setting (KiCAD 9.0 compatible)
+- Mounting holes with configurable diameters
+- Board text annotations (KiCAD 9.0 compatible)
+- Layer management (add, set active, list)
+- UI auto-launch and detection
+- Visual feedback workflow (manual reload)
+- Cross-platform Python venv support
 - Design rule checking
 - Export (Gerber, PDF, SVG, 3D models)
+- Schematic generation
 
-**Coming Soon (v2.0):**
-- AI-assisted component selection from JLCPCB/Digikey
-- Intelligent BOM management with cost optimization
-- Design pattern library for common circuits
-- Guided workflows for novice users
-- Visual feedback and documentation generation
+**Known Issues:**
+- Component placement needs library path integration
+- Routing operations not yet tested with KiCAD 9.0
+- `get_board_info` has KiCAD 9.0 API compatibility issue
+- UI auto-reload requires manual confirmation (IPC will fix this)
 
-See [REBUILD_STATUS.md](REBUILD_STATUS.md) for detailed progress tracking.
+**Next Priorities (Week 2):**
+1. Component Library Integration - Map JLCPCB/Digikey parts to KiCAD footprints
+2. Routing Operations - Test and fix trace routing, vias, copper pours
+3. IPC Backend - Enable real-time UI updates (no manual reload)
+4. Documentation - Add video tutorials and example projects
+
+**Future (v2.0):**
+- AI-assisted component selection with cost optimization
+- Smart BOM management and supplier integration
+- Design pattern library (Arduino shields, Raspberry Pi HATs, etc.)
+- Guided workflows for beginners
+- Auto-documentation generation
+
+**Documentation:**
+- [Status Summary](docs/STATUS_SUMMARY.md) - Current state at a glance
+- [Roadmap](docs/ROADMAP.md) - Where we're going (12-week plan)
+- [Known Issues](docs/KNOWN_ISSUES.md) - Problems and workarounds
+- [Changelog](CHANGELOG_2025-10-26.md) - Recent updates and fixes
 
 ## What It Does
 
@@ -72,16 +103,16 @@ This enables a natural language-driven PCB design workflow where complex operati
 - **Python 3.10 or higher** with pip
 - **Cline** (VSCode extension) or another MCP-compatible client
 - **Operating System**:
-  - ✅ **Linux** (Ubuntu 22.04+, Fedora, Arch) - Primary platform
-  - ✅ **Windows 10/11** - Fully supported
-  - ⚠️ **macOS** - Experimental (untested)
+  - **Linux** (Ubuntu 22.04+, Fedora, Arch) - Primary platform
+  - **Windows 10/11** - Fully supported
+  - **macOS** - Experimental (untested)
 
 ## Installation
 
 Choose your platform below for detailed installation instructions:
 
 <details>
-<summary><b>🐧 Linux (Ubuntu/Debian)</b> - Click to expand</summary>
+<summary><b>Linux (Ubuntu/Debian)</b> - Click to expand</summary>
 
 ### Step 1: Install KiCAD 9.0
 
@@ -168,7 +199,7 @@ pytest tests/
 </details>
 
 <details>
-<summary><b>🪟 Windows 10/11</b> - Click to expand</summary>
+<summary><b>Windows 10/11</b> - Click to expand</summary>
 
 ### Step 1: Install KiCAD 9.0
 
@@ -229,7 +260,7 @@ npm run build
 </details>
 
 <details>
-<summary><b>🍎 macOS</b> - Click to expand (Experimental)</summary>
+<summary><b>macOS</b> - Click to expand (Experimental)</summary>
 
 ### Step 1: Install KiCAD 9.0
 
@@ -299,7 +330,26 @@ Set the board size to 100mm x 80mm and add a rectangular outline.
 Show me the current board properties.
 ```
 
-If Claude successfully executes these commands, your installation is working! 🎉
+If Claude successfully executes these commands, your installation is working!
+
+### Configuration for Other Clients
+
+The examples above show configuration for Cline (VSCode), but KiCAD MCP works with any MCP-compatible client:
+
+- **Claude Desktop** - Desktop app from Anthropic
+- **Claude Code** - CLI tool from Anthropic
+- **Cline** - VSCode extension
+- **Any MCP client** - Using STDIO transport
+
+For detailed configuration instructions for all clients, see:
+**[Client Configuration Guide](docs/CLIENT_CONFIGURATION.md)**
+
+The guide includes:
+- Platform-specific configurations (Linux, macOS, Windows)
+- Client-specific setup (Claude Desktop, Cline, Claude Code)
+- Troubleshooting steps
+- How to find KiCAD Python paths
+- Advanced configuration options
 
 ## Usage Examples
 
@@ -313,6 +363,20 @@ Create a new KiCAD project named 'WiFiModule' in my Documents folder.
 
 ```
 Open the existing KiCAD project at C:/Projects/Amplifier/Amplifier.kicad_pro
+```
+
+### UI Management (NEW!)
+
+```
+Is KiCAD running?
+```
+
+```
+Launch KiCAD with my project at /tmp/demo/project.kicad_pcb
+```
+
+```
+Open KiCAD so I can see the board as we design it
 ```
 
 ### Schematic Design

@@ -167,11 +167,15 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
     },
     async ({ shape, params }) => {
       logger.debug(`Adding ${shape} board outline`);
+      // Flatten params and rename x/y to centerX/centerY for Python compatibility
+      const { x, y, ...otherParams } = params;
       const result = await callKicadScript("add_board_outline", {
         shape,
-        params
+        centerX: x,
+        centerY: y,
+        ...otherParams
       });
-      
+
       return {
         content: [{
           type: "text",

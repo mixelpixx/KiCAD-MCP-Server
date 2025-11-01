@@ -2,15 +2,14 @@
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/path/to/kicad-mcp/dist/index.js"],
-      "cwd": "/home/user/kicad-mcp",
+      "args": ["/home/YOUR_USERNAME/MCP/KiCAD-MCP-Server/dist/index.js"],
       "env": {
         "NODE_ENV": "production",
-        "PYTHONPATH": "/usr/lib/kicad/lib/python3/dist-packages",
-        "LOG_LEVEL": "info"
+        "PYTHONPATH": "/usr/share/kicad/scripting/plugins:/usr/lib/kicad/lib/python3/dist-packages",
+        "LOG_LEVEL": "info",
+        "KICAD_AUTO_LAUNCH": "false"
       },
-      "description": "KiCAD PCB Design Assistant",
-      "transportType": "stdio"
+      "description": "KiCAD PCB Design Assistant - Note: PYTHONPATH auto-detected if venv exists"
     }
   }
 }

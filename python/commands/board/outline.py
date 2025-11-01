@@ -278,7 +278,16 @@ class BoardOutlineCommands:
             pcb_text.SetLayer(layer_id)
             pcb_text.SetTextSize(pcbnew.VECTOR2I(size_nm, size_nm))
             pcb_text.SetTextThickness(thickness_nm)
-            pcb_text.SetTextAngle(rotation * 10)  # KiCAD uses decidegrees
+
+            # Set rotation angle - KiCAD 9.0 uses EDA_ANGLE
+            try:
+                # Try KiCAD 9.0+ API (EDA_ANGLE)
+                angle = pcbnew.EDA_ANGLE(rotation, pcbnew.DEGREES_T)
+                pcb_text.SetTextAngle(angle)
+            except (AttributeError, TypeError):
+                # Fall back to older API (decidegrees as integer)
+                pcb_text.SetTextAngle(int(rotation * 10))
+
             pcb_text.SetMirrored(mirror)
             
             # Add to board

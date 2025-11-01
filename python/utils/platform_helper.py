@@ -79,6 +79,15 @@ class PlatformHelper:
                 Path(f"/usr/local/lib/python{py_version}/dist-packages/kicad"),
             ])
 
+            # Check system Python dist-packages (modern KiCAD 9+ on Ubuntu/Debian)
+            # This is where pcbnew.py typically lives on modern systems
+            candidates.extend([
+                Path(f"/usr/lib/python3/dist-packages"),
+                Path(f"/usr/lib/python{py_version}/dist-packages"),
+                Path(f"/usr/local/lib/python3/dist-packages"),
+                Path(f"/usr/local/lib/python{py_version}/dist-packages"),
+            ])
+
             paths = [p for p in candidates if p.exists()]
 
         elif PlatformHelper.is_macos():
