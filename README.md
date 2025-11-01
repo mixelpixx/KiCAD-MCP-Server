@@ -2,6 +2,16 @@
 
 KiCAD MCP is a Model Context Protocol (MCP) implementation that enables Large Language Models (LLMs) like Claude to directly interact with KiCAD for printed circuit board design. It creates a standardized communication bridge between AI assistants and the KiCAD PCB design software, allowing for natural language control of advanced PCB design operations.
 
+## What is MCP?
+
+The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) is an open standard from Anthropic that allows AI assistants like Claude to securely connect to external tools and data sources. Think of it as a universal adapter that lets Claude interact with your local software - in this case, KiCAD.
+
+**With this MCP server, you can:**
+- Design PCBs by talking to Claude in natural language
+- Automate complex KiCAD operations through AI assistance
+- Get real-time feedback as Claude creates and modifies your boards
+- Leverage AI to handle tedious PCB design tasks
+
 ## NEW FEATURES
 
 ### Schematic Generation
@@ -96,16 +106,53 @@ This enables a natural language-driven PCB design workflow where complex operati
 - **Python KiCAD Interface**: Handles actual KiCAD operations via pcbnew Python API and kicad-skip library with comprehensive error handling
 - **Modular Design**: Organizes functionality by domains (project, schematic, board, component, routing) for maintainability and extensibility
 
-## System Requirements
+## Prerequisites - READ THIS FIRST!
 
-- **KiCAD 9.0 or higher** (must be fully installed with Python module)
-- **Node.js v18 or higher** and npm
-- **Python 3.10 or higher** with pip
-- **Cline** (VSCode extension) or another MCP-compatible client
-- **Operating System**:
-  - **Linux** (Ubuntu 22.04+, Fedora, Arch) - Primary platform
-  - **Windows 10/11** - Fully supported
-  - **macOS** - Experimental (untested)
+Before installing this MCP server, you **MUST** have:
+
+### 1. KiCAD 9.0 or Higher (REQUIRED!)
+
+**This is the most critical requirement.** Without KiCAD properly installed with its Python module, this MCP server will not work.
+
+- **Download:** [kicad.org/download](https://www.kicad.org/download/)
+- **Verify Python module:** After installing, run:
+  ```bash
+  python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"
+  ```
+  If this fails, your KiCAD installation is incomplete.
+
+### 2. Python 3.10 or Higher
+
+**Required Python packages:**
+```
+kicad-skip>=0.1.0        # Schematic manipulation
+Pillow>=9.0.0            # Image processing for board rendering
+cairosvg>=2.7.0          # SVG rendering
+colorlog>=6.7.0          # Colored logging
+pydantic>=2.5.0          # Data validation
+requests>=2.31.0         # HTTP requests (for future API features)
+python-dotenv>=1.0.0     # Environment management
+```
+
+These will be installed automatically via `pip install -r requirements.txt`
+
+### 3. Node.js v18 or Higher
+
+- **Download:** [nodejs.org](https://nodejs.org/)
+- **Verify:** Run `node --version` and `npm --version`
+
+### 4. An MCP-Compatible Client
+
+Choose one:
+- **[Claude Desktop](https://claude.ai/download)** - Official Anthropic desktop app
+- **[Claude Code](https://docs.claude.com/claude-code)** - Official Anthropic CLI tool
+- **[Cline](https://github.com/cline/cline)** - Popular VSCode extension
+
+### 5. Operating System
+
+- **Linux** (Ubuntu 22.04+, Fedora, Arch) - Primary platform, fully tested
+- **Windows 10/11** - Fully supported
+- **macOS** - Experimental (untested, please report issues!)
 
 ## Installation
 
@@ -141,8 +188,8 @@ npm --version
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/kicad-mcp-server.git
-cd kicad-mcp-server
+git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
+cd KiCAD-MCP-Server
 
 # Install Node.js dependencies
 npm install
@@ -168,7 +215,7 @@ npm run build
      "mcpServers": {
        "kicad": {
          "command": "node",
-         "args": ["/home/YOUR_USERNAME/kicad-mcp-server/dist/index.js"],
+         "args": ["/home/YOUR_USERNAME/KiCAD-MCP-Server/dist/index.js"],
          "env": {
            "NODE_ENV": "production",
            "PYTHONPATH": "/usr/lib/kicad/lib/python3/dist-packages",
@@ -221,8 +268,8 @@ pytest tests/
 
 ```powershell
 # Clone repository
-git clone https://github.com/yourusername/kicad-mcp-server.git
-cd kicad-mcp-server
+git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
+cd KiCAD-MCP-Server
 
 # Install dependencies
 npm install
@@ -246,7 +293,7 @@ npm run build
      "mcpServers": {
        "kicad": {
          "command": "C:\\Program Files\\nodejs\\node.exe",
-         "args": ["C:\\path\\to\\kicad-mcp-server\\dist\\index.js"],
+         "args": ["C:\\Users\\YOUR_USERNAME\\KiCAD-MCP-Server\\dist\\index.js"],
          "env": {
            "PYTHONPATH": "C:\\Program Files\\KiCad\\9.0\\lib\\python3\\dist-packages"
          }
@@ -281,8 +328,8 @@ npm --version
 ### Step 3: Clone and Build
 
 ```bash
-git clone https://github.com/yourusername/kicad-mcp-server.git
-cd kicad-mcp-server
+git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
+cd KiCAD-MCP-Server
 npm install
 pip3 install -r requirements.txt
 npm run build
@@ -297,7 +344,7 @@ Edit `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-d
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/Users/YOUR_USERNAME/kicad-mcp-server/dist/index.js"],
+      "args": ["/Users/YOUR_USERNAME/KiCAD-MCP-Server/dist/index.js"],
       "env": {
         "PYTHONPATH": "/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages"
       }
