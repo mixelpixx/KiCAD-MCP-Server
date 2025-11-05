@@ -151,7 +151,7 @@ Choose one:
 ### 5. Operating System
 
 - **Linux** (Ubuntu 22.04+, Fedora, Arch) - Primary platform, fully tested
-- **Windows 10/11** - Fully supported
+- **Windows 10/11** - Supported (community tested, automated setup available)
 - **macOS** - Experimental (untested, please report issues!)
 
 ## Installation
@@ -248,61 +248,137 @@ pytest tests/
 <details>
 <summary><b>Windows 10/11</b> - Click to expand</summary>
 
-### Step 1: Install KiCAD 9.0
+### Automated Setup (Recommended)
 
-1. Download KiCAD 9.0 from [kicad.org/download/windows](https://www.kicad.org/download/windows/)
-2. Run the installer with default options
-3. Verify Python module is installed (included by default)
-
-### Step 2: Install Node.js
-
-1. Download Node.js 20.x from [nodejs.org](https://nodejs.org/)
-2. Run installer with default options
-3. Verify in PowerShell:
-   ```powershell
-   node --version
-   npm --version
-   ```
-
-### Step 3: Clone and Build
+We provide a PowerShell script that automates the entire setup process:
 
 ```powershell
 # Clone repository
 git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd KiCAD-MCP-Server
 
-# Install dependencies
-npm install
-pip install -r requirements.txt
-
-# Build
-npm run build
+# Run automated setup
+.\setup-windows.ps1
 ```
 
-### Step 4: Configure Cline
+The script will:
+- Detect KiCAD installation
+- Verify Node.js and Python
+- Install all dependencies
+- Build the project
+- Generate configuration
+- Run diagnostic tests
 
-1. Install VSCode and Cline extension
-2. Edit Cline MCP settings at:
-   ```
-   %USERPROFILE%\AppData\Roaming\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json
+**If you encounter issues, the script provides detailed error messages and solutions.**
+
+---
+
+### Manual Setup (Advanced)
+
+If you prefer manual setup or the automated script fails:
+
+#### Step 1: Install KiCAD 9.0
+
+1. Download KiCAD 9.0 from [kicad.org/download/windows](https://www.kicad.org/download/windows/)
+2. Run the installer with **default options** (includes Python)
+3. Verify installation:
+   ```powershell
+   Test-Path "C:\Program Files\KiCad\9.0"
    ```
 
-3. Add configuration:
-   ```json
-   {
-     "mcpServers": {
-       "kicad": {
-         "command": "C:\\Program Files\\nodejs\\node.exe",
-         "args": ["C:\\Users\\YOUR_USERNAME\\KiCAD-MCP-Server\\dist\\index.js"],
-         "env": {
-           "PYTHONPATH": "C:\\Program Files\\KiCad\\9.0\\lib\\python3\\dist-packages"
-         }
-       }
-     }
-   }
+#### Step 2: Install Node.js
+
+1. Download Node.js 20.x from [nodejs.org](https://nodejs.org/)
+2. Run installer with default options
+3. Verify in PowerShell:
+   ```powershell
+   node --version  # Should be v18.0.0+
+   npm --version
    ```
 
-4. Restart VSCode
+#### Step 3: Clone and Build
+
+```powershell
+# Clone repository
+git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
+cd KiCAD-MCP-Server
+
+# Install Node.js dependencies
+npm install
+
+# Install Python dependencies (using KiCAD's Python)
+& "C:\Program Files\KiCad\9.0\bin\python.exe" -m pip install -r requirements.txt
+
+# Build TypeScript project
+npm run build
+
+# Verify build succeeded
+Test-Path .\dist\index.js  # Should output: True
+```
+
+#### Step 4: Test Installation
+
+```powershell
+# Test that Python can import pcbnew
+& "C:\Program Files\KiCad\9.0\bin\python.exe" -c "import pcbnew; print(pcbnew.GetBuildVersion())"
+```
+
+Expected output: `9.0.0` (or your KiCAD version)
+
+#### Step 5: Configure Your MCP Client
+
+**For Claude Desktop:**
+Edit: `%APPDATA%\Claude\claude_desktop_config.json`
+
+**For Cline (VSCode):**
+Edit: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json`
+
+**Configuration:**
+```json
+{
+  "mcpServers": {
+    "kicad": {
+      "command": "node",
+      "args": ["C:\\Users\\YOUR_USERNAME\\KiCAD-MCP-Server\\dist\\index.js"],
+      "env": {
+        "PYTHONPATH": "C:\\Program Files\\KiCad\\9.0\\lib\\python3\\dist-packages",
+        "LOG_LEVEL": "info"
+      }
+    }
+  }
+}
+```
+
+**Important:** Replace `YOUR_USERNAME` with your actual Windows username.
+
+#### Step 6: Restart Your MCP Client
+
+- **Claude Desktop:** Quit and relaunch
+- **Cline:** Restart VSCode
+
+---
+
+### Troubleshooting
+
+If you encounter issues:
+
+1. **Check the log file:**
+   ```
+   %USERPROFILE%\.kicad-mcp\logs\kicad_interface.log
+   ```
+
+2. **Run diagnostics:**
+   ```powershell
+   .\setup-windows.ps1  # Runs validation even if already set up
+   ```
+
+3. **See detailed troubleshooting guide:**
+   [docs/WINDOWS_TROUBLESHOOTING.md](docs/WINDOWS_TROUBLESHOOTING.md)
+
+4. **Common issues:**
+   - "Server exits immediately" → pcbnew module not found
+   - "Python not found" → Update PYTHONPATH in config
+   - "Build failed" → Run `npm install` again
 
 </details>
 

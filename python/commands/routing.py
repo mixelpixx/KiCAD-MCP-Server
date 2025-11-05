@@ -39,9 +39,12 @@ class RoutingCommands:
 
             # Create new net
             netinfo = self.board.GetNetInfo()
-            net = netinfo.FindNet(name)
-            if not net:
-                net = netinfo.AddNet(name)
+            nets_map = netinfo.NetsByName()
+            if nets_map.has_key(name):
+                net = nets_map[name]
+            else:
+                net = pcbnew.NETINFO_ITEM(self.board, name)
+                self.board.Add(net)
 
             # Set net class if provided
             if net_class:
@@ -119,8 +122,9 @@ class RoutingCommands:
             # Set net if provided
             if net:
                 netinfo = self.board.GetNetInfo()
-                net_obj = netinfo.FindNet(net)
-                if net_obj:
+                nets_map = netinfo.NetsByName()
+                if nets_map.has_key(net):
+                    net_obj = nets_map[net]
                     track.SetNet(net_obj)
 
             # Add track to board
@@ -218,8 +222,9 @@ class RoutingCommands:
             # Set net if provided
             if net:
                 netinfo = self.board.GetNetInfo()
-                net_obj = netinfo.FindNet(net)
-                if net_obj:
+                nets_map = netinfo.NetsByName()
+                if nets_map.has_key(net):
+                    net_obj = nets_map[net]
                     via.SetNet(net_obj)
 
             # Add via to board
@@ -421,9 +426,10 @@ class RoutingCommands:
 
             # Add nets to net class
             netinfo = self.board.GetNetInfo()
+            nets_map = netinfo.NetsByName()
             for net_name in nets:
-                net = netinfo.FindNet(net_name)
-                if net:
+                if nets_map.has_key(net_name):
+                    net = nets_map[net_name]
                     net.SetClass(netclass)
 
             return {
@@ -492,13 +498,14 @@ class RoutingCommands:
             # Set net if provided
             if net:
                 netinfo = self.board.GetNetInfo()
-                net_obj = netinfo.FindNet(net)
-                if net_obj:
+                nets_map = netinfo.NetsByName()
+                if nets_map.has_key(net):
+                    net_obj = nets_map[net]
                     zone.SetNet(net_obj)
             
             # Set zone properties
             scale = 1000000  # mm to nm
-            zone.SetPriority(priority)
+            zone.SetAssignedPriority(priority)
             
             if clearance is not None:
                 zone.SetLocalClearance(int(clearance * scale))
@@ -509,24 +516,27 @@ class RoutingCommands:
             if fill_type == "hatched":
                 zone.SetFillMode(pcbnew.ZONE_FILL_MODE_HATCH_PATTERN)
             else:
-                zone.SetFillMode(pcbnew.ZONE_FILL_MODE_POLYGON)
+                zone.SetFillMode(pcbnew.ZONE_FILL_MODE_POLYGONS)
             
             # Create outline
             outline = zone.Outline()
-            
+            outline.NewOutline()  # Create a new outline contour first
+
             # Add points to outline
             for point in points:
                 scale = 1000000 if point.get("unit", "mm") == "mm" else 25400000
                 x_nm = int(point["x"] * scale)
                 y_nm = int(point["y"] * scale)
-                outline.Append(pcbnew.VECTOR2I(x_nm, y_nm))
+                outline.Append(pcbnew.VECTOR2I(x_nm, y_nm))  # Add point to outline
             
             # Add zone to board
             self.board.Add(zone)
-            
+
             # Fill zone
-            filler = pcbnew.ZONE_FILLER(self.board)
-            filler.Fill(self.board.Zones())
+            # Note: Zone filling can cause issues with SWIG API
+            # Comment out for now - zones will be filled when board is saved/opened in KiCAD
+            # filler = pcbnew.ZONE_FILLER(self.board)
+            # filler.Fill(self.board.Zones())
 
             return {
                 "success": True,
@@ -586,9 +596,11 @@ class RoutingCommands:
 
             # Get nets
             netinfo = self.board.GetNetInfo()
-            net_pos_obj = netinfo.FindNet(net_pos)
-            net_neg_obj = netinfo.FindNet(net_neg)
-            
+            nets_map = netinfo.NetsByName()
+
+            net_pos_obj = nets_map[net_pos] if nets_map.has_key(net_pos) else None
+            net_neg_obj = nets_map[net_neg] if nets_map.has_key(net_neg) else None
+
             if not net_pos_obj or not net_neg_obj:
                 return {
                     "success": False,

@@ -37,6 +37,11 @@ htmlcov/
 .dmypy.json
 dmypy.json
 
+# Virtual Environments
+venv/
+env/
+ENV/
+
 # IDEs
 .vscode/
 .idea/

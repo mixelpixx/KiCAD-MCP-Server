@@ -144,17 +144,124 @@ export class KiCADMcpServer {
   }
   
   /**
+   * Validate prerequisites before starting the server
+   */
+  private async validatePrerequisites(pythonExe: string): Promise<boolean> {
+    const isWindows = process.platform === 'win32';
+    const errors: string[] = [];
+
+    // Check if Python executable exists
+    if (!existsSync(pythonExe)) {
+      errors.push(`Python executable not found: ${pythonExe}`);
+
+      if (isWindows) {
+        errors.push('Windows: Install KiCAD 9.0+ from https://www.kicad.org/download/windows/');
+        errors.push('Or run: .\\setup-windows.ps1 for automatic configuration');
+      }
+    }
+
+    // Check if kicad_interface.py exists
+    if (!existsSync(this.kicadScriptPath)) {
+      errors.push(`KiCAD interface script not found: ${this.kicadScriptPath}`);
+    }
+
+    // Check if dist/index.js exists (if running from compiled code)
+    const distPath = join(dirname(dirname(this.kicadScriptPath)), 'dist', 'index.js');
+    if (!existsSync(distPath)) {
+      errors.push('Project not built. Run: npm run build');
+    }
+
+    // Try to test pcbnew import (quick validation)
+    if (existsSync(pythonExe) && existsSync(this.kicadScriptPath)) {
+      logger.info('Validating pcbnew module access...');
+
+      const testCommand = `"${pythonExe}" -c "import pcbnew; print('OK')"`;
+      const { exec } = require('child_process');
+
+      try {
+        const { stdout, stderr } = await new Promise<{stdout: string, stderr: string}>((resolve, reject) => {
+          exec(testCommand, {
+            timeout: 5000,
+            env: { ...process.env }
+          }, (error: any, stdout: string, stderr: string) => {
+            if (error) {
+              reject(error);
+            } else {
+              resolve({ stdout, stderr });
+            }
+          });
+        });
+
+        if (!stdout.includes('OK')) {
+          errors.push('pcbnew module import test failed');
+          errors.push(`Output: ${stdout}`);
+          errors.push(`Errors: ${stderr}`);
+
+          if (isWindows) {
+            errors.push('');
+            errors.push('Windows troubleshooting:');
+            errors.push('1. Set PYTHONPATH=C:\\Program Files\\KiCad\\9.0\\lib\\python3\\dist-packages');
+            errors.push('2. Test: "C:\\Program Files\\KiCad\\9.0\\bin\\python.exe" -c "import pcbnew"');
+            errors.push('3. Run: .\\setup-windows.ps1 for automatic fix');
+            errors.push('4. See: docs/WINDOWS_TROUBLESHOOTING.md');
+          }
+        } else {
+          logger.info('✓ pcbnew module validated successfully');
+        }
+      } catch (error: any) {
+        errors.push(`pcbnew validation failed: ${error.message}`);
+
+        if (isWindows) {
+          errors.push('');
+          errors.push('This usually means:');
+          errors.push('- KiCAD is not installed');
+          errors.push('- PYTHONPATH is incorrect');
+          errors.push('- Python cannot find pcbnew module');
+          errors.push('');
+          errors.push('Quick fix: Run .\\setup-windows.ps1');
+        }
+      }
+    }
+
+    // Log all errors
+    if (errors.length > 0) {
+      logger.error('='.repeat(70));
+      logger.error('STARTUP VALIDATION FAILED');
+      logger.error('='.repeat(70));
+      errors.forEach(err => logger.error(err));
+      logger.error('='.repeat(70));
+
+      // Also write to stderr for Claude Desktop to capture
+      process.stderr.write('\n' + '='.repeat(70) + '\n');
+      process.stderr.write('KiCAD MCP Server - Startup Validation Failed\n');
+      process.stderr.write('='.repeat(70) + '\n');
+      errors.forEach(err => process.stderr.write(err + '\n'));
+      process.stderr.write('='.repeat(70) + '\n\n');
+
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
    * Start the MCP server and the Python KiCAD interface
    */
   async start(): Promise<void> {
     try {
       logger.info('Starting KiCAD MCP server...');
-      
+
       // Start the Python process for KiCAD scripting
       logger.info(`Starting Python process with script: ${this.kicadScriptPath}`);
       const pythonExe = findPythonExecutable(this.kicadScriptPath);
 
       logger.info(`Using Python executable: ${pythonExe}`);
+
+      // Validate prerequisites
+      const isValid = await this.validatePrerequisites(pythonExe);
+      if (!isValid) {
+        throw new Error('Prerequisites validation failed. See logs above for details.');
+      }
       this.pythonProcess = spawn(pythonExe, [this.kicadScriptPath], {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: {

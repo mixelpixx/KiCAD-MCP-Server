@@ -32,6 +32,44 @@ logger = logging.getLogger('kicad_interface')
 # Log Python environment details
 logger.info(f"Python version: {sys.version}")
 logger.info(f"Python executable: {sys.executable}")
+logger.info(f"Platform: {sys.platform}")
+logger.info(f"Working directory: {os.getcwd()}")
+
+# Windows-specific diagnostics
+if sys.platform == 'win32':
+    logger.info("=== Windows Environment Diagnostics ===")
+    logger.info(f"PYTHONPATH: {os.environ.get('PYTHONPATH', 'NOT SET')}")
+    logger.info(f"PATH: {os.environ.get('PATH', 'NOT SET')[:200]}...")  # Truncate PATH
+
+    # Check for common KiCAD installations
+    common_kicad_paths = [
+        r"C:\Program Files\KiCad",
+        r"C:\Program Files (x86)\KiCad"
+    ]
+
+    found_kicad = False
+    for base_path in common_kicad_paths:
+        if os.path.exists(base_path):
+            logger.info(f"Found KiCAD installation at: {base_path}")
+            # List versions
+            try:
+                versions = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
+                logger.info(f"  Versions found: {', '.join(versions)}")
+                for version in versions:
+                    python_path = os.path.join(base_path, version, 'lib', 'python3', 'dist-packages')
+                    if os.path.exists(python_path):
+                        logger.info(f"  ✓ Python path exists: {python_path}")
+                        found_kicad = True
+                    else:
+                        logger.warning(f"  ✗ Python path missing: {python_path}")
+            except Exception as e:
+                logger.warning(f"  Could not list versions: {e}")
+
+    if not found_kicad:
+        logger.warning("No KiCAD installations found in standard locations!")
+        logger.warning("Please ensure KiCAD 9.0+ is installed from https://www.kicad.org/download/windows/")
+
+    logger.info("========================================")
 
 # Add utils directory to path for imports
 utils_dir = os.path.join(os.path.dirname(__file__))
@@ -66,10 +104,40 @@ try:
 except ImportError as e:
     logger.error(f"Failed to import pcbnew module: {e}")
     logger.error(f"Current sys.path: {sys.path}")
+
+    # Platform-specific help message
+    help_message = ""
+    if sys.platform == 'win32':
+        help_message = """
+Windows Troubleshooting:
+1. Verify KiCAD is installed: C:\\Program Files\\KiCad\\9.0
+2. Check PYTHONPATH environment variable points to:
+   C:\\Program Files\\KiCad\\9.0\\lib\\python3\\dist-packages
+3. Test with: "C:\\Program Files\\KiCad\\9.0\\bin\\python.exe" -c "import pcbnew"
+4. Log file location: %USERPROFILE%\\.kicad-mcp\\logs\\kicad_interface.log
+5. Run setup-windows.ps1 for automatic configuration
+"""
+    elif sys.platform == 'darwin':
+        help_message = """
+macOS Troubleshooting:
+1. Verify KiCAD is installed: /Applications/KiCad/KiCad.app
+2. Check PYTHONPATH points to KiCAD's Python packages
+3. Run: python3 -c "import pcbnew" to test
+"""
+    else:  # Linux
+        help_message = """
+Linux Troubleshooting:
+1. Verify KiCAD is installed: apt list --installed | grep kicad
+2. Check: /usr/lib/kicad/lib/python3/dist-packages exists
+3. Test: python3 -c "import pcbnew"
+"""
+
+    logger.error(help_message)
+
     error_response = {
         "success": False,
-        "message": "Failed to import pcbnew module",
-        "errorDetails": f"Error: {str(e)}\nPython path: {sys.path}"
+        "message": "Failed to import pcbnew module - KiCAD Python API not found",
+        "errorDetails": f"Error: {str(e)}\n\n{help_message}\n\nPython sys.path:\n{chr(10).join(sys.path)}"
     }
     print(json.dumps(error_response))
     sys.exit(1)
@@ -96,7 +164,8 @@ try:
     from commands.schematic import SchematicManager
     from commands.component_schematic import ComponentManager
     from commands.connection_schematic import ConnectionManager
-    from commands.library_schematic import LibraryManager
+    from commands.library_schematic import LibraryManager as SchematicLibraryManager
+    from commands.library import LibraryManager as FootprintLibraryManager, LibraryCommands
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
     logger.error(f"Failed to import command handlers: {e}")
@@ -110,22 +179,26 @@ except ImportError as e:
 
 class KiCADInterface:
     """Main interface class to handle KiCAD operations"""
-    
+
     def __init__(self):
         """Initialize the interface and command handlers"""
         self.board = None
         self.project_filename = None
-        
+
         logger.info("Initializing command handlers...")
-        
+
+        # Initialize footprint library manager
+        self.footprint_library = FootprintLibraryManager()
+
         # Initialize command handlers
         self.project_commands = ProjectCommands(self.board)
         self.board_commands = BoardCommands(self.board)
-        self.component_commands = ComponentCommands(self.board)
+        self.component_commands = ComponentCommands(self.board, self.footprint_library)
         self.routing_commands = RoutingCommands(self.board)
         self.design_rule_commands = DesignRuleCommands(self.board)
         self.export_commands = ExportCommands(self.board)
-        
+        self.library_commands = LibraryCommands(self.footprint_library)
+
         # Schematic-related classes don't need board reference
         # as they operate directly on schematic files
         
@@ -183,7 +256,13 @@ class KiCADInterface:
             "export_svg": self.export_commands.export_svg,
             "export_3d": self.export_commands.export_3d,
             "export_bom": self.export_commands.export_bom,
-            
+
+            # Library commands (footprint management)
+            "list_libraries": self.library_commands.list_libraries,
+            "search_footprints": self.library_commands.search_footprints,
+            "list_library_footprints": self.library_commands.list_library_footprints,
+            "get_footprint_info": self.library_commands.get_footprint_info,
+
             # Schematic commands
             "create_schematic": self._handle_create_schematic,
             "load_schematic": self._handle_load_schematic,

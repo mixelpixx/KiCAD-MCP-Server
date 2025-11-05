@@ -8,15 +8,17 @@ import logging
 import math
 from typing import Dict, Any, Optional, List, Tuple
 import base64
+from commands.library import LibraryManager
 
 logger = logging.getLogger('kicad_interface')
 
 class ComponentCommands:
     """Handles component-related KiCAD operations"""
 
-    def __init__(self, board: Optional[pcbnew.BOARD] = None):
-        """Initialize with optional board instance"""
+    def __init__(self, board: Optional[pcbnew.BOARD] = None, library_manager: Optional[LibraryManager] = None):
+        """Initialize with optional board instance and library manager"""
         self.board = board
+        self.library_manager = library_manager or LibraryManager()
 
     def place_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Place a component on the PCB"""
@@ -44,13 +46,48 @@ class ComponentCommands:
                     "errorDetails": "componentId and position are required"
                 }
 
-            # Create new module (footprint)
-            module = pcbnew.FootprintLoad(self.board.GetLibraryPath(), component_id)
+            # Find footprint using library manager
+            # component_id can be "Library:Footprint" or just "Footprint"
+            footprint_result = self.library_manager.find_footprint(component_id)
+
+            if not footprint_result:
+                # Try to suggest similar footprints
+                suggestions = self.library_manager.search_footprints(f"*{component_id}*", limit=5)
+                suggestion_text = ""
+                if suggestions:
+                    suggestion_text = "\n\nDid you mean one of these?\n" + \
+                                    "\n".join([f"  - {s['full_name']}" for s in suggestions])
+
+                return {
+                    "success": False,
+                    "message": "Footprint not found",
+                    "errorDetails": f"Could not find footprint: {component_id}{suggestion_text}"
+                }
+
+            library_path, footprint_name = footprint_result
+
+            # Load footprint from library
+            # Extract library nickname from path
+            library_nickname = None
+            for nick, path in self.library_manager.libraries.items():
+                if path == library_path:
+                    library_nickname = nick
+                    break
+
+            if not library_nickname:
+                return {
+                    "success": False,
+                    "message": "Internal error",
+                    "errorDetails": "Could not determine library nickname"
+                }
+
+            # Load the footprint
+            module = pcbnew.FootprintLoad(library_path, footprint_name)
             if not module:
                 return {
                     "success": False,
-                    "message": "Component not found",
-                    "errorDetails": f"Could not find component: {component_id}"
+                    "message": "Failed to load footprint",
+                    "errorDetails": f"Could not load footprint from {library_path}/{footprint_name}"
                 }
 
             # Set position
@@ -71,8 +108,9 @@ class ComponentCommands:
             if footprint:
                 module.SetFootprintName(footprint)
 
-            # Set rotation
-            module.SetOrientation(rotation * 10)  # KiCAD uses decidegrees
+            # Set rotation (KiCAD 9.0 uses EDA_ANGLE)
+            angle = pcbnew.EDA_ANGLE(rotation, pcbnew.DEGREES_T)
+            module.SetOrientation(angle)
 
             # Set layer
             layer_id = self.board.GetLayerID(layer)
@@ -144,7 +182,8 @@ class ComponentCommands:
 
             # Set new rotation if provided
             if rotation is not None:
-                module.SetOrientation(rotation * 10)  # KiCAD uses decidegrees
+                angle = pcbnew.EDA_ANGLE(rotation, pcbnew.DEGREES_T)
+                module.SetOrientation(angle)
 
             return {
                 "success": True,
@@ -156,7 +195,7 @@ class ComponentCommands:
                         "y": position["y"],
                         "unit": position["unit"]
                     },
-                    "rotation": rotation if rotation is not None else module.GetOrientation() / 10
+                    "rotation": rotation if rotation is not None else module.GetOrientation().AsDegrees()
                 }
             }
 
@@ -198,7 +237,8 @@ class ComponentCommands:
                 }
 
             # Set rotation
-            module.SetOrientation(angle * 10)  # KiCAD uses decidegrees
+            rotation_angle = pcbnew.EDA_ANGLE(angle, pcbnew.DEGREES_T)
+            module.SetOrientation(rotation_angle)
 
             return {
                 "success": True,
@@ -305,7 +345,7 @@ class ComponentCommands:
                 "component": {
                     "reference": new_reference or reference,
                     "value": value or module.GetValue(),
-                    "footprint": footprint or module.GetFootprintName()
+                    "footprint": footprint or module.GetFPIDAsString()
                 }
             }
 
@@ -354,13 +394,13 @@ class ComponentCommands:
                 "component": {
                     "reference": module.GetReference(),
                     "value": module.GetValue(),
-                    "footprint": module.GetFootprintName(),
+                    "footprint": module.GetFPIDAsString(),
                     "position": {
                         "x": x_mm,
                         "y": y_mm,
                         "unit": "mm"
                     },
-                    "rotation": module.GetOrientation() / 10,
+                    "rotation": module.GetOrientation().AsDegrees(),
                     "layer": self.board.GetLayerName(module.GetLayer()),
                     "attributes": {
                         "smd": module.GetAttributes() & pcbnew.FP_SMD,
@@ -397,13 +437,13 @@ class ComponentCommands:
                 components.append({
                     "reference": module.GetReference(),
                     "value": module.GetValue(),
-                    "footprint": module.GetFootprintName(),
+                    "footprint": module.GetFPIDAsString(),
                     "position": {
                         "x": x_mm,
                         "y": y_mm,
                         "unit": "mm"
                     },
-                    "rotation": module.GetOrientation() / 10,
+                    "rotation": module.GetOrientation().AsDegrees(),
                     "layer": self.board.GetLayerName(module.GetLayer())
                 })
 
@@ -594,7 +634,7 @@ class ComponentCommands:
                         "y": pos.y / 1000000,
                         "unit": "mm"
                     },
-                    "rotation": module.GetOrientation() / 10
+                    "rotation": module.GetOrientation().AsDegrees()
                 })
 
             return {
@@ -654,7 +694,7 @@ class ComponentCommands:
                 
             # Create new footprint with the same properties
             new_module = pcbnew.FOOTPRINT(self.board)
-            new_module.SetFootprintName(source.GetFootprintName())
+            new_module.SetFootprintName(source.GetFPIDAsString())
             new_module.SetValue(source.GetValue())
             new_module.SetReference(new_reference)
             new_module.SetLayer(source.GetLayer())
@@ -678,7 +718,8 @@ class ComponentCommands:
                 
             # Set rotation if provided, otherwise use same as original
             if rotation is not None:
-                new_module.SetOrientation(rotation * 10)  # KiCAD uses decidegrees
+                rotation_angle = pcbnew.EDA_ANGLE(rotation, pcbnew.DEGREES_T)
+                new_module.SetOrientation(rotation_angle)
             else:
                 new_module.SetOrientation(source.GetOrientation())
                 
@@ -694,13 +735,13 @@ class ComponentCommands:
                 "component": {
                     "reference": new_reference,
                     "value": new_module.GetValue(),
-                    "footprint": new_module.GetFootprintName(),
+                    "footprint": new_module.GetFPIDAsString(),
                     "position": {
                         "x": pos.x / 1000000,
                         "y": pos.y / 1000000,
                         "unit": "mm"
                     },
-                    "rotation": new_module.GetOrientation() / 10,
+                    "rotation": new_module.GetOrientation().AsDegrees(),
                     "layer": self.board.GetLayerName(new_module.GetLayer())
                 }
             }
