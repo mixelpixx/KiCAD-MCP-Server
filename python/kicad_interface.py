@@ -510,7 +510,7 @@ def main():
     """Main entry point"""
     logger.info("Starting KiCAD interface...")
     interface = KiCADInterface()
-    
+
     try:
         logger.info("Processing commands from stdin...")
         # Process commands from stdin
@@ -519,25 +519,103 @@ def main():
                 # Parse command
                 logger.debug(f"Received input: {line.strip()}")
                 command_data = json.loads(line)
-                command = command_data.get("command")
-                params = command_data.get("params", {})
-                
-                if not command:
-                    logger.error("Missing command field")
-                    response = {
-                        "success": False,
-                        "message": "Missing command",
-                        "errorDetails": "The command field is required"
-                    }
+
+                # Check if this is JSON-RPC 2.0 format
+                if 'jsonrpc' in command_data and command_data['jsonrpc'] == '2.0':
+                    logger.info("Detected JSON-RPC 2.0 format message")
+                    method = command_data.get('method')
+                    params = command_data.get('params', {})
+                    request_id = command_data.get('id')
+
+                    # Handle MCP protocol methods
+                    if method == 'initialize':
+                        logger.info("Handling MCP initialize")
+                        response = {
+                            'jsonrpc': '2.0',
+                            'id': request_id,
+                            'result': {
+                                'protocolVersion': '2025-06-18',
+                                'capabilities': {
+                                    'tools': {}
+                                },
+                                'serverInfo': {
+                                    'name': 'kicad-mcp-server',
+                                    'version': '0.1.0'
+                                }
+                            }
+                        }
+                    elif method == 'tools/list':
+                        logger.info("Handling MCP tools/list")
+                        # Return list of available tools
+                        tools = []
+                        for cmd_name in interface.command_routes.keys():
+                            tools.append({
+                                'name': cmd_name,
+                                'description': f'KiCAD command: {cmd_name}',
+                                'inputSchema': {
+                                    'type': 'object',
+                                    'properties': {}
+                                }
+                            })
+                        response = {
+                            'jsonrpc': '2.0',
+                            'id': request_id,
+                            'result': {
+                                'tools': tools
+                            }
+                        }
+                    elif method == 'tools/call':
+                        logger.info("Handling MCP tools/call")
+                        tool_name = params.get('name')
+                        tool_params = params.get('arguments', {})
+
+                        # Execute the command
+                        result = interface.handle_command(tool_name, tool_params)
+
+                        response = {
+                            'jsonrpc': '2.0',
+                            'id': request_id,
+                            'result': {
+                                'content': [
+                                    {
+                                        'type': 'text',
+                                        'text': json.dumps(result)
+                                    }
+                                ]
+                            }
+                        }
+                    else:
+                        logger.error(f"Unknown JSON-RPC method: {method}")
+                        response = {
+                            'jsonrpc': '2.0',
+                            'id': request_id,
+                            'error': {
+                                'code': -32601,
+                                'message': f'Method not found: {method}'
+                            }
+                        }
                 else:
-                    # Handle command
-                    response = interface.handle_command(command, params)
-                
+                    # Handle legacy custom format
+                    logger.info("Detected custom format message")
+                    command = command_data.get("command")
+                    params = command_data.get("params", {})
+
+                    if not command:
+                        logger.error("Missing command field")
+                        response = {
+                            "success": False,
+                            "message": "Missing command",
+                            "errorDetails": "The command field is required"
+                        }
+                    else:
+                        # Handle command
+                        response = interface.handle_command(command, params)
+
                 # Send response
                 logger.debug(f"Sending response: {response}")
                 print(json.dumps(response))
                 sys.stdout.flush()
-                
+
             except json.JSONDecodeError as e:
                 logger.error(f"Invalid JSON input: {str(e)}")
                 response = {
@@ -547,11 +625,11 @@ def main():
                 }
                 print(json.dumps(response))
                 sys.stdout.flush()
-                
+
     except KeyboardInterrupt:
         logger.info("KiCAD interface stopped")
         sys.exit(0)
-        
+
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}\n{traceback.format_exc()}")
         sys.exit(1)
