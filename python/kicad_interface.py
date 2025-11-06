@@ -14,6 +14,10 @@ import logging
 import os
 from typing import Dict, Any, Optional
 
+# Import tool schemas and resource definitions
+from schemas.tool_schemas import TOOL_SCHEMAS
+from resources.resource_definitions import RESOURCE_DEFINITIONS, handle_resource_read
+
 # Configure logging
 log_dir = os.path.join(os.path.expanduser('~'), '.kicad-mcp', 'logs')
 os.makedirs(log_dir, exist_ok=True)
@@ -536,27 +540,44 @@ def main():
                             'result': {
                                 'protocolVersion': '2025-06-18',
                                 'capabilities': {
-                                    'tools': {}
+                                    'tools': {
+                                        'listChanged': True
+                                    },
+                                    'resources': {
+                                        'subscribe': False,
+                                        'listChanged': True
+                                    }
                                 },
                                 'serverInfo': {
                                     'name': 'kicad-mcp-server',
-                                    'version': '0.1.0'
-                                }
+                                    'title': 'KiCAD PCB Design Assistant',
+                                    'version': '2.1.0-alpha'
+                                },
+                                'instructions': 'AI-assisted PCB design with KiCAD. Use tools to create projects, design boards, place components, route traces, and export manufacturing files.'
                             }
                         }
                     elif method == 'tools/list':
                         logger.info("Handling MCP tools/list")
-                        # Return list of available tools
+                        # Return list of available tools with proper schemas
                         tools = []
                         for cmd_name in interface.command_routes.keys():
-                            tools.append({
-                                'name': cmd_name,
-                                'description': f'KiCAD command: {cmd_name}',
-                                'inputSchema': {
-                                    'type': 'object',
-                                    'properties': {}
-                                }
-                            })
+                            # Get schema from TOOL_SCHEMAS if available
+                            if cmd_name in TOOL_SCHEMAS:
+                                tool_def = TOOL_SCHEMAS[cmd_name].copy()
+                                tools.append(tool_def)
+                            else:
+                                # Fallback for tools without schemas
+                                logger.warning(f"No schema defined for tool: {cmd_name}")
+                                tools.append({
+                                    'name': cmd_name,
+                                    'description': f'KiCAD command: {cmd_name}',
+                                    'inputSchema': {
+                                        'type': 'object',
+                                        'properties': {}
+                                    }
+                                })
+
+                        logger.info(f"Returning {len(tools)} tools")
                         response = {
                             'jsonrpc': '2.0',
                             'id': request_id,
@@ -584,6 +605,38 @@ def main():
                                 ]
                             }
                         }
+                    elif method == 'resources/list':
+                        logger.info("Handling MCP resources/list")
+                        # Return list of available resources
+                        response = {
+                            'jsonrpc': '2.0',
+                            'id': request_id,
+                            'result': {
+                                'resources': RESOURCE_DEFINITIONS
+                            }
+                        }
+                    elif method == 'resources/read':
+                        logger.info("Handling MCP resources/read")
+                        resource_uri = params.get('uri')
+
+                        if not resource_uri:
+                            response = {
+                                'jsonrpc': '2.0',
+                                'id': request_id,
+                                'error': {
+                                    'code': -32602,
+                                    'message': 'Missing required parameter: uri'
+                                }
+                            }
+                        else:
+                            # Read the resource
+                            resource_data = handle_resource_read(resource_uri, interface)
+
+                            response = {
+                                'jsonrpc': '2.0',
+                                'id': request_id,
+                                'result': resource_data
+                            }
                     else:
                         logger.error(f"Unknown JSON-RPC method: {method}")
                         response = {

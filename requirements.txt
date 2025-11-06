@@ -20,7 +20,7 @@ colorlog>=6.7.0
 pydantic>=2.5.0
 
 # HTTP requests (for JLCPCB/Digikey APIs - future)
-requests>=2.31.0
+requests>=2.32.5
 
 # Environment variable management
 python-dotenv>=1.0.0
