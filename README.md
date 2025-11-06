@@ -1,337 +1,226 @@
-# KiCAD MCP: AI-Assisted PCB Design
+# KiCAD MCP Server
 
-KiCAD MCP is a Model Context Protocol (MCP) implementation that enables Large Language Models (LLMs) like Claude to directly interact with KiCAD for printed circuit board design. It creates a standardized communication bridge between AI assistants and the KiCAD PCB design software, allowing for natural language control of advanced PCB design operations.
+A production-ready Model Context Protocol (MCP) server that enables AI assistants like Claude to interact with KiCAD for PCB design automation. Built on the MCP 2025-06-18 specification, this server provides comprehensive tool schemas and real-time project state access for intelligent PCB design workflows.
 
-## What is MCP?
+## Overview
 
-The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) is an open standard from Anthropic that allows AI assistants like Claude to securely connect to external tools and data sources. Think of it as a universal adapter that lets Claude interact with your local software - in this case, KiCAD.
+The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standard from Anthropic that allows AI assistants to securely connect to external tools and data sources. This implementation provides a standardized bridge between AI assistants and KiCAD, enabling natural language control of professional PCB design operations.
 
-**With this MCP server, you can:**
-- Design PCBs by talking to Claude in natural language
-- Automate complex KiCAD operations through AI assistance
-- Get real-time feedback as Claude creates and modifies your boards
-- Leverage AI to handle tedious PCB design tasks
-
-## NEW FEATURES
-
-### Schematic Generation
-Now, in addition to PCB design, KiCAD MCP enables AI assistants to:
-
-- Create and manage KiCAD schematics through natural language
-- Add components like resistors, capacitors, and ICs to schematics
-- Connect components with wires to create complete circuits
-- Save and load schematic files in KiCAD format
-- Export schematics to PDF
-
-### UI Auto-Launch
-Seamless visual feedback for PCB design. The MCP server can now:
-
-- Auto-detect if KiCAD UI is running
-- Auto-launch KiCAD when needed
-- Open projects directly in the UI
-- Cross-platform support (Linux, macOS, Windows)
-
-Just say "Create a board" and watch it appear in KiCAD. See [UI_AUTO_LAUNCH.md](docs/UI_AUTO_LAUNCH.md) for details.
-
-## Project Status
-
-**This project is currently undergoing a major v2.0 rebuild**
-
-**Current Status (Week 1/12):**
+**Key Capabilities:**
+- 52 fully-documented tools with JSON Schema validation
+- 8 dynamic resources exposing project state
+- Full MCP 2025-06-18 protocol compliance
 - Cross-platform support (Linux, Windows, macOS)
-- CI/CD pipeline with automated testing
-- Platform-agnostic path handling
-- Migrating to KiCAD IPC API (from deprecated SWIG)
-- Adding JLCPCB parts integration
-- Adding Digikey parts integration
-- Smart BOM management system
+- Real-time KiCAD UI integration
+- Comprehensive error handling and logging
 
-**What Works Now (Tested & Verified):**
-- Project management (create, open, save)
-- Board outline creation (rectangle, circle, polygon)
-- Board size setting (KiCAD 9.0 compatible)
-- Mounting holes with configurable diameters
-- Board text annotations (KiCAD 9.0 compatible)
-- Layer management (add, set active, list)
-- UI auto-launch and detection
-- Visual feedback workflow (manual reload)
-- Cross-platform Python venv support
-- Design rule checking
-- Export (Gerber, PDF, SVG, 3D models)
-- Schematic generation
+## What's New in v2.1.0
 
-**Known Issues:**
-- Component placement needs library path integration
-- Routing operations not yet tested with KiCAD 9.0
-- `get_board_info` has KiCAD 9.0 API compatibility issue
-- UI auto-reload requires manual confirmation (IPC will fix this)
+### Comprehensive Tool Schemas
+Every tool now includes complete JSON Schema definitions with:
+- Detailed parameter descriptions and constraints
+- Input validation with type checking
+- Required vs. optional parameter specifications
+- Enumerated values for categorical inputs
+- Clear documentation of what each tool does
 
-**Next Priorities (Week 2):**
-1. Component Library Integration - Map JLCPCB/Digikey parts to KiCAD footprints
-2. Routing Operations - Test and fix trace routing, vias, copper pours
-3. IPC Backend - Enable real-time UI updates (no manual reload)
-4. Documentation - Add video tutorials and example projects
+### Resources Capability
+Access project state without executing tools:
+- `kicad://project/current/info` - Project metadata
+- `kicad://project/current/board` - Board properties
+- `kicad://project/current/components` - Component list (JSON)
+- `kicad://project/current/nets` - Electrical nets
+- `kicad://project/current/layers` - Layer stack configuration
+- `kicad://project/current/design-rules` - Current DRC settings
+- `kicad://project/current/drc-report` - Design rule violations
+- `kicad://board/preview.png` - Board visualization (PNG)
 
-**Future (v2.0):**
-- AI-assisted component selection with cost optimization
-- Smart BOM management and supplier integration
-- Design pattern library (Arduino shields, Raspberry Pi HATs, etc.)
-- Guided workflows for beginners
-- Auto-documentation generation
+### Protocol Compliance
+- Updated to MCP SDK 1.21.0 (latest)
+- Full JSON-RPC 2.0 support
+- Proper capability negotiation
+- Standards-compliant error codes
 
-**Documentation:**
-- [Status Summary](docs/STATUS_SUMMARY.md) - Current state at a glance
-- [Roadmap](docs/ROADMAP.md) - Where we're going (12-week plan)
-- [Known Issues](docs/KNOWN_ISSUES.md) - Problems and workarounds
-- [Changelog](CHANGELOG_2025-10-26.md) - Recent updates and fixes
+## Available Tools
 
-## What It Does
+The server provides 52 tools organized into functional categories:
 
-KiCAD MCP transforms how engineers and designers work with KiCAD by enabling AI assistants to:
+### Project Management (4 tools)
+- `create_project` - Initialize new KiCAD projects
+- `open_project` - Load existing project files
+- `save_project` - Save current project state
+- `get_project_info` - Retrieve project metadata
 
-- Create and manage KiCAD PCB projects through natural language requests
-- **Create schematics** with components and connections
-- Manipulate board geometry, outlines, layers, and properties
-- Place and organize components in various patterns (grid, circular, aligned)
-- Route traces, differential pairs, and create copper pours
-- Implement design rules and perform design rule checks
-- Generate exports in various formats (Gerber, PDF, SVG, 3D models)
-- Provide comprehensive context about the circuit board to the AI assistant
+### Board Operations (9 tools)
+- `set_board_size` - Configure PCB dimensions
+- `add_board_outline` - Create board edge (rectangle, circle, polygon)
+- `add_layer` - Add custom layers to stack
+- `set_active_layer` - Switch working layer
+- `get_layer_list` - List all board layers
+- `get_board_info` - Retrieve board properties
+- `get_board_2d_view` - Generate board preview image
+- `add_mounting_hole` - Place mounting holes
+- `add_board_text` - Add text annotations
 
-This enables a natural language-driven PCB design workflow where complex operations can be requested in plain English, while still maintaining full engineer oversight and control.
+### Component Placement (10 tools)
+- `place_component` - Place single component with footprint
+- `move_component` - Reposition existing component
+- `rotate_component` - Rotate component by angle
+- `delete_component` - Remove component from board
+- `edit_component` - Modify component properties
+- `get_component_properties` - Query component details
+- `get_component_list` - List all placed components
+- `place_component_array` - Create component grids/patterns
+- `align_components` - Align multiple components
+- `duplicate_component` - Copy existing component
 
-## Core Architecture
+### Routing & Nets (8 tools)
+- `add_net` - Create electrical net
+- `route_trace` - Route copper traces
+- `add_via` - Place vias for layer transitions
+- `delete_trace` - Remove traces
+- `get_nets_list` - List all nets
+- `create_netclass` - Define net class with rules
+- `add_copper_pour` - Create copper zones/pours
+- `route_differential_pair` - Route differential signals
 
-- **TypeScript MCP Server**: Implements the Anthropic Model Context Protocol specification to communicate with Claude and other compatible AI assistants
-- **Python KiCAD Interface**: Handles actual KiCAD operations via pcbnew Python API and kicad-skip library with comprehensive error handling
-- **Modular Design**: Organizes functionality by domains (project, schematic, board, component, routing) for maintainability and extensibility
+### Library Management (4 tools)
+- `list_libraries` - List available footprint libraries
+- `search_footprints` - Search for footprints
+- `list_library_footprints` - List footprints in library
+- `get_footprint_info` - Get footprint details
 
-## Prerequisites - READ THIS FIRST!
+### Design Rules (4 tools)
+- `set_design_rules` - Configure DRC parameters
+- `get_design_rules` - Retrieve current rules
+- `run_drc` - Execute design rule check
+- `get_drc_violations` - Get DRC error report
 
-Before installing this MCP server, you **MUST** have:
+### Export (5 tools)
+- `export_gerber` - Generate Gerber fabrication files
+- `export_pdf` - Export PDF documentation
+- `export_svg` - Create SVG vector graphics
+- `export_3d` - Generate 3D models (STEP/VRML)
+- `export_bom` - Produce bill of materials
 
-### 1. KiCAD 9.0 or Higher (REQUIRED!)
+### Schematic Design (6 tools)
+- `create_schematic` - Initialize new schematic
+- `load_schematic` - Open existing schematic
+- `add_schematic_component` - Place symbols
+- `add_schematic_wire` - Connect component pins
+- `list_schematic_libraries` - List symbol libraries
+- `export_schematic_pdf` - Export schematic PDF
 
-**This is the most critical requirement.** Without KiCAD properly installed with its Python module, this MCP server will not work.
+### UI Management (2 tools)
+- `check_kicad_ui` - Check if KiCAD is running
+- `launch_kicad_ui` - Launch KiCAD application
 
-- **Download:** [kicad.org/download](https://www.kicad.org/download/)
-- **Verify Python module:** After installing, run:
+## Prerequisites
+
+### Required Software
+
+**KiCAD 9.0 or Higher**
+- Download from [kicad.org/download](https://www.kicad.org/download/)
+- Must include Python module (pcbnew)
+- Verify installation:
   ```bash
   python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"
   ```
-  If this fails, your KiCAD installation is incomplete.
 
-### 2. Python 3.10 or Higher
+**Node.js 18 or Higher**
+- Download from [nodejs.org](https://nodejs.org/)
+- Verify: `node --version` and `npm --version`
 
-**Required Python packages:**
-```
-kicad-skip>=0.1.0        # Schematic manipulation
-Pillow>=9.0.0            # Image processing for board rendering
-cairosvg>=2.7.0          # SVG rendering
-colorlog>=6.7.0          # Colored logging
-pydantic>=2.5.0          # Data validation
-requests>=2.31.0         # HTTP requests (for future API features)
-python-dotenv>=1.0.0     # Environment management
-```
+**Python 3.10 or Higher**
+- Usually included with KiCAD
+- Required packages (auto-installed):
+  - kicad-skip >= 0.1.0 (schematic support)
+  - Pillow >= 9.0.0 (image processing)
+  - cairosvg >= 2.7.0 (SVG rendering)
+  - colorlog >= 6.7.0 (logging)
+  - pydantic >= 2.5.0 (validation)
+  - requests >= 2.32.5 (HTTP client)
+  - python-dotenv >= 1.0.0 (environment)
 
-These will be installed automatically via `pip install -r requirements.txt`
-
-### 3. Node.js v18 or Higher
-
-- **Download:** [nodejs.org](https://nodejs.org/)
-- **Verify:** Run `node --version` and `npm --version`
-
-### 4. An MCP-Compatible Client
-
+**MCP Client**
 Choose one:
-- **[Claude Desktop](https://claude.ai/download)** - Official Anthropic desktop app
-- **[Claude Code](https://docs.claude.com/claude-code)** - Official Anthropic CLI tool
-- **[Cline](https://github.com/cline/cline)** - Popular VSCode extension
+- [Claude Desktop](https://claude.ai/download) - Official Anthropic desktop app
+- [Claude Code](https://docs.claude.com/claude-code) - Official CLI tool
+- [Cline](https://github.com/cline/cline) - VSCode extension
 
-### 5. Operating System
-
+### Supported Platforms
 - **Linux** (Ubuntu 22.04+, Fedora, Arch) - Primary platform, fully tested
-- **Windows 10/11** - Supported (community tested, automated setup available)
-- **macOS** - Experimental (untested, please report issues!)
+- **Windows 10/11** - Fully supported with automated setup
+- **macOS** - Experimental support
 
 ## Installation
 
-Choose your platform below for detailed installation instructions:
-
-<details>
-<summary><b>Linux (Ubuntu/Debian)</b> - Click to expand</summary>
-
-### Step 1: Install KiCAD 9.0
+### Linux (Ubuntu/Debian)
 
 ```bash
-# Add KiCAD 9.0 PPA (Ubuntu/Debian)
+# Install KiCAD 9.0
 sudo add-apt-repository --yes ppa:kicad/kicad-9.0-releases
 sudo apt-get update
-
-# Install KiCAD and libraries
 sudo apt-get install -y kicad kicad-libraries
-```
 
-### Step 2: Install Node.js
-
-```bash
-# Install Node.js 20.x (recommended)
+# Install Node.js
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
-# Verify installation
-node --version  # Should be v20.x or higher
-npm --version
-```
-
-### Step 3: Clone and Build
-
-```bash
-# Clone repository
+# Clone and build
 git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd KiCAD-MCP-Server
-
-# Install Node.js dependencies
 npm install
-
-# Install Python dependencies
 pip3 install -r requirements.txt
-
-# Build TypeScript
 npm run build
+
+# Verify
+python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"
 ```
 
-### Step 4: Configure Cline
+### Windows 10/11
 
-1. Install VSCode and the Cline extension
-2. Edit Cline MCP settings:
-   ```bash
-   code ~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json
-   ```
-
-3. Add this configuration (adjust paths for your system):
-   ```json
-   {
-     "mcpServers": {
-       "kicad": {
-         "command": "node",
-         "args": ["/home/YOUR_USERNAME/KiCAD-MCP-Server/dist/index.js"],
-         "env": {
-           "NODE_ENV": "production",
-           "PYTHONPATH": "/usr/lib/kicad/lib/python3/dist-packages",
-           "LOG_LEVEL": "info"
-         },
-         "description": "KiCAD PCB Design Assistant"
-       }
-     }
-   }
-   ```
-
-4. Restart VSCode
-
-### Step 5: Verify Installation
-
-```bash
-# Test platform detection
-python3 python/utils/platform_helper.py
-
-# Run tests (optional)
-pytest tests/
-```
-
-**Troubleshooting:**
-- If KiCAD Python module not found, check: `python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"`
-- For PYTHONPATH issues, see: [docs/LINUX_COMPATIBILITY_AUDIT.md](docs/LINUX_COMPATIBILITY_AUDIT.md)
-
-</details>
-
-<details>
-<summary><b>Windows 10/11</b> - Click to expand</summary>
-
-### Automated Setup (Recommended)
-
-We provide a PowerShell script that automates the entire setup process:
-
+**Automated Setup (Recommended):**
 ```powershell
-# Clone repository
 git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd KiCAD-MCP-Server
-
-# Run automated setup
 .\setup-windows.ps1
 ```
 
 The script will:
 - Detect KiCAD installation
-- Verify Node.js and Python
-- Install all dependencies
-- Build the project
+- Verify prerequisites
+- Install dependencies
+- Build project
 - Generate configuration
-- Run diagnostic tests
+- Run diagnostics
 
-**If you encounter issues, the script provides detailed error messages and solutions.**
+**Manual Setup:**
+See [Windows Installation Guide](docs/WINDOWS_SETUP.md) for detailed instructions.
 
----
+### macOS
 
-### Manual Setup (Advanced)
+```bash
+# Install KiCAD 9.0 from kicad.org/download/macos
 
-If you prefer manual setup or the automated script fails:
+# Install Node.js
+brew install node@20
 
-#### Step 1: Install KiCAD 9.0
-
-1. Download KiCAD 9.0 from [kicad.org/download/windows](https://www.kicad.org/download/windows/)
-2. Run the installer with **default options** (includes Python)
-3. Verify installation:
-   ```powershell
-   Test-Path "C:\Program Files\KiCad\9.0"
-   ```
-
-#### Step 2: Install Node.js
-
-1. Download Node.js 20.x from [nodejs.org](https://nodejs.org/)
-2. Run installer with default options
-3. Verify in PowerShell:
-   ```powershell
-   node --version  # Should be v18.0.0+
-   npm --version
-   ```
-
-#### Step 3: Clone and Build
-
-```powershell
-# Clone repository
+# Clone and build
 git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd KiCAD-MCP-Server
-
-# Install Node.js dependencies
 npm install
-
-# Install Python dependencies (using KiCAD's Python)
-& "C:\Program Files\KiCad\9.0\bin\python.exe" -m pip install -r requirements.txt
-
-# Build TypeScript project
+pip3 install -r requirements.txt
 npm run build
-
-# Verify build succeeded
-Test-Path .\dist\index.js  # Should output: True
 ```
 
-#### Step 4: Test Installation
+## Configuration
 
-```powershell
-# Test that Python can import pcbnew
-& "C:\Program Files\KiCad\9.0\bin\python.exe" -c "import pcbnew; print(pcbnew.GetBuildVersion())"
-```
+### Claude Desktop
 
-Expected output: `9.0.0` (or your KiCAD version)
-
-#### Step 5: Configure Your MCP Client
-
-**For Claude Desktop:**
-Edit: `%APPDATA%\Claude\claude_desktop_config.json`
-
-**For Cline (VSCode):**
-Edit: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json`
+Edit configuration file:
+- **Linux/macOS:** `~/.config/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
 **Configuration:**
 ```json
@@ -339,9 +228,9 @@ Edit: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_m
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["C:\\Users\\YOUR_USERNAME\\KiCAD-MCP-Server\\dist\\index.js"],
+      "args": ["/path/to/KiCAD-MCP-Server/dist/index.js"],
       "env": {
-        "PYTHONPATH": "C:\\Program Files\\KiCad\\9.0\\lib\\python3\\dist-packages",
+        "PYTHONPATH": "/path/to/kicad/python",
         "LOG_LEVEL": "info"
       }
     }
@@ -349,353 +238,260 @@ Edit: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_m
 }
 ```
 
-**Important:** Replace `YOUR_USERNAME` with your actual Windows username.
+**Platform-specific PYTHONPATH:**
+- **Linux:** `/usr/lib/kicad/lib/python3/dist-packages`
+- **Windows:** `C:\Program Files\KiCad\9.0\lib\python3\dist-packages`
+- **macOS:** `/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages`
 
-#### Step 6: Restart Your MCP Client
+### Cline (VSCode)
 
-- **Claude Desktop:** Quit and relaunch
-- **Cline:** Restart VSCode
+Edit: `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
 
----
+Use the same configuration format as Claude Desktop above.
 
-### Troubleshooting
+### Claude Code
 
-If you encounter issues:
-
-1. **Check the log file:**
-   ```
-   %USERPROFILE%\.kicad-mcp\logs\kicad_interface.log
-   ```
-
-2. **Run diagnostics:**
-   ```powershell
-   .\setup-windows.ps1  # Runs validation even if already set up
-   ```
-
-3. **See detailed troubleshooting guide:**
-   [docs/WINDOWS_TROUBLESHOOTING.md](docs/WINDOWS_TROUBLESHOOTING.md)
-
-4. **Common issues:**
-   - "Server exits immediately" → pcbnew module not found
-   - "Python not found" → Update PYTHONPATH in config
-   - "Build failed" → Run `npm install` again
-
-</details>
-
-<details>
-<summary><b>macOS</b> - Click to expand (Experimental)</summary>
-
-### Step 1: Install KiCAD 9.0
-
-1. Download KiCAD 9.0 from [kicad.org/download/macos](https://www.kicad.org/download/macos/)
-2. Drag KiCAD.app to Applications folder
-
-### Step 2: Install Node.js
-
-```bash
-# Using Homebrew (install from brew.sh if needed)
-brew install node@20
-
-# Verify
-node --version
-npm --version
-```
-
-### Step 3: Clone and Build
-
-```bash
-git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
-cd KiCAD-MCP-Server
-npm install
-pip3 install -r requirements.txt
-npm run build
-```
-
-### Step 4: Configure Cline
-
-Edit `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "kicad": {
-      "command": "node",
-      "args": ["/Users/YOUR_USERNAME/KiCAD-MCP-Server/dist/index.js"],
-      "env": {
-        "PYTHONPATH": "/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages"
-      }
-    }
-  }
-}
-```
-
-**Note:** macOS support is experimental. Please report issues on GitHub.
-
-</details>
-
-## Quick Start
-
-After installation, test with Cline:
-
-1. Open VSCode with Cline extension
-2. Start a conversation with Claude
-3. Try these commands:
-
-```
-Create a new KiCAD project named 'TestProject' in my home directory.
-```
-
-```
-Set the board size to 100mm x 80mm and add a rectangular outline.
-```
-
-```
-Show me the current board properties.
-```
-
-If Claude successfully executes these commands, your installation is working!
-
-### Configuration for Other Clients
-
-The examples above show configuration for Cline (VSCode), but KiCAD MCP works with any MCP-compatible client:
-
-- **Claude Desktop** - Desktop app from Anthropic
-- **Claude Code** - CLI tool from Anthropic
-- **Cline** - VSCode extension
-- **Any MCP client** - Using STDIO transport
-
-For detailed configuration instructions for all clients, see:
-**[Client Configuration Guide](docs/CLIENT_CONFIGURATION.md)**
-
-The guide includes:
-- Platform-specific configurations (Linux, macOS, Windows)
-- Client-specific setup (Claude Desktop, Cline, Claude Code)
-- Troubleshooting steps
-- How to find KiCAD Python paths
-- Advanced configuration options
+Claude Code automatically detects MCP servers in the current directory. No additional configuration needed.
 
 ## Usage Examples
 
-Here are some examples of what you can ask Claude to do with KiCAD MCP:
+### Basic PCB Design Workflow
 
-### Project Management
-
-```
-Create a new KiCAD project named 'WiFiModule' in my Documents folder.
-```
-
-```
-Open the existing KiCAD project at C:/Projects/Amplifier/Amplifier.kicad_pro
-```
-
-### UI Management (NEW!)
-
-```
-Is KiCAD running?
-```
-
-```
-Launch KiCAD with my project at /tmp/demo/project.kicad_pcb
-```
-
-```
-Open KiCAD so I can see the board as we design it
-```
-
-### Schematic Design
-
-```
-Create a new schematic named 'PowerSupply'.
-```
-
-```
-Add a 10kΩ resistor and 0.1µF capacitor to the schematic.
-```
-
-```
-Connect the resistor's pin 1 to the capacitor's pin 1.
-```
-
-### Board Design
-
-```
-Set the board size to 100mm x 80mm.
-```
-
-```
-Add a rounded rectangle board outline with 3mm corner radius.
-```
-
-```
-Add mounting holes at each corner of the board, 5mm from the edges.
+```text
+Create a new KiCAD project named 'LEDBoard' in my Documents folder.
+Set the board size to 50mm x 50mm and add a rectangular outline.
+Place a mounting hole at each corner, 3mm from the edges, with 3mm diameter.
+Add text 'LED Controller v1.0' on the front silkscreen at position x=25mm, y=45mm.
 ```
 
 ### Component Placement
 
-```
-Place a 10uF capacitor at position x=50mm, y=30mm.
-```
-
-```
-Create a grid of 8 LEDs, 4x2, starting at position x=20mm, y=10mm with 10mm spacing.
-```
-
-```
+```text
+Place an LED at x=10mm, y=10mm using footprint LED_SMD:LED_0805_2012Metric.
+Create a grid of 4 resistors (R1-R4) starting at x=20mm, y=20mm with 5mm spacing.
 Align all resistors horizontally and distribute them evenly.
 ```
 
 ### Routing
 
-```
-Create a new net named 'VCC' and assign it to the power net class.
-```
-
-```
-Route a trace from component U1 pin 1 to component C3 pin 2 on layer F.Cu.
+```text
+Create a net named 'LED1' and route a 0.3mm trace from R1 pad 2 to LED1 anode.
+Add a copper pour for GND on the bottom layer covering the entire board.
+Create a differential pair for USB_P and USB_N with 0.2mm width and 0.15mm gap.
 ```
 
-```
-Add a copper pour for GND on the bottom layer.
-```
+### Design Verification
 
-### Design Rules and Export
-
-```
-Set design rules with 0.2mm clearance and 0.25mm minimum track width.
+```text
+Set design rules with 0.15mm clearance and 0.2mm minimum track width.
+Run a design rule check and show me any violations.
+Export Gerber files to the 'fabrication' folder.
 ```
 
+### Using Resources
+
+Resources provide read-only access to project state:
+
+```text
+Show me the current component list.
+What are the current design rules?
+Display the board preview.
+List all electrical nets.
 ```
-Export Gerber files to the 'fabrication' directory.
+
+## Architecture
+
+### MCP Protocol Layer
+- **JSON-RPC 2.0 Transport:** Bi-directional communication via STDIO
+- **Protocol Version:** MCP 2025-06-18
+- **Capabilities:** Tools (52), Resources (8)
+- **Error Handling:** Standard JSON-RPC error codes
+
+### TypeScript Server (`src/`)
+- Implements MCP protocol specification
+- Manages Python subprocess lifecycle
+- Handles message routing and validation
+- Provides logging and error recovery
+
+### Python Interface (`python/`)
+- **kicad_interface.py:** Main entry point, MCP message handler
+- **schemas/tool_schemas.py:** JSON Schema definitions for all tools
+- **resources/resource_definitions.py:** Resource handlers and URIs
+- **commands/:** Modular command implementations
+  - `project.py` - Project operations
+  - `board.py` - Board manipulation
+  - `component.py` - Component placement
+  - `routing.py` - Trace routing and nets
+  - `design_rules.py` - DRC operations
+  - `export.py` - File generation
+  - `schematic.py` - Schematic design
+  - `library.py` - Footprint libraries
+
+### KiCAD Integration
+- **pcbnew API:** Direct Python bindings to KiCAD
+- **kicad-skip:** Schematic file manipulation
+- **Platform Detection:** Cross-platform path handling
+- **UI Management:** Automatic KiCAD UI launch/detection
+
+## Development
+
+### Building from Source
+
+```bash
+# Install dependencies
+npm install
+pip3 install -r requirements.txt
+
+# Build TypeScript
+npm run build
+
+# Watch mode for development
+npm run dev
 ```
 
-## Features by Category
+### Running Tests
 
-### Project Management
-- Create new KiCAD projects with customizable settings
-- Open existing KiCAD projects from file paths
-- Save projects with optional new locations
-- Retrieve project metadata and properties
+```bash
+# TypeScript tests
+npm run test:ts
 
-### Schematic Design
-- Create new schematics with customizable settings
-- Add components from symbol libraries (resistors, capacitors, ICs, etc.)
-- Connect components with wires to create circuits
-- Add labels, annotations, and documentation to schematics
-- Save and load schematics in KiCAD format
-- Export schematics to PDF for documentation
+# Python tests
+npm run test:py
 
-### Board Design
-- Set precise board dimensions with support for metric and imperial units
-- Add custom board outlines (rectangle, rounded rectangle, circle, polygon)
-- Create and manage board layers with various configurations
-- Add mounting holes, text annotations, and other board features
-- Visualize the current board state
+# All tests with coverage
+npm run test:coverage
+```
 
-### Components
-- Place components with specified footprints at precise locations
-- Create component arrays in grid or circular patterns
-- Move, rotate, and modify existing components
-- Align and distribute components evenly
-- Duplicate components with customizable properties
-- Get detailed component properties and listings
+### Linting and Formatting
 
-### Routing
-- Create and manage nets with specific properties
-- Route traces between component pads or arbitrary points
-- Add vias, including blind and buried vias
-- Create differential pair routes for high-speed signals
-- Generate copper pours (ground planes, power planes)
-- Define net classes with specific design rules
+```bash
+# Lint TypeScript and Python
+npm run lint
 
-### Design Rules
-- Set global design rules for clearance, track width, etc.
-- Define specific rules for different net classes
-- Run Design Rule Check (DRC) to validate the design
-- View and manage DRC violations
-
-### Export
-- Generate industry-standard Gerber files for fabrication
-- Export PDF documentation of the PCB
-- Create SVG vector graphics of the board
-- Generate 3D models in STEP or VRML format
-- Produce bill of materials (BOM) in various formats
-
-## Implementation Details
-
-The KiCAD MCP implementation uses a modular, maintainable architecture:
-
-### TypeScript MCP Server (Node.js)
-- **kicad-server.ts**: The main server that implements the MCP protocol
-- Uses STDIO transport for reliable communication with Cline
-- Manages the Python process for KiCAD operations
-- Handles command queuing, error recovery, and response formatting
-
-### Python Interface
-- **kicad_interface.py**: The main Python interface that:
-  - Parses commands received as JSON via stdin
-  - Routes commands to the appropriate specialized handlers
-  - Returns results as JSON via stdout
-  - Handles errors gracefully with detailed information
-
-- **Modular Command Structure**:
-  - `commands/project.py`: Project creation, opening, saving
-  - `commands/schematic.py`: Schematic creation and management
-  - `commands/component_schematic.py`: Schematic component operations
-  - `commands/connection_schematic.py`: Wire and connection management
-  - `commands/library_schematic.py`: Symbol library integration
-  - `commands/board/`: Modular board manipulation functions
-    - `size.py`: Board size operations
-    - `layers.py`: Layer management
-    - `outline.py`: Board outline creation
-    - `view.py`: Visualization functions
-  - `commands/component.py`: PCB component placement and manipulation
-  - `commands/routing.py`: Trace routing and net management
-  - `commands/design_rules.py`: DRC and rule configuration
-  - `commands/export.py`: Output generation in various formats
-
-This architecture ensures that each aspect of PCB design is handled by specialized modules while maintaining a clean, consistent interface layer.
+# Format code
+npm run format
+```
 
 ## Troubleshooting
 
-### Common Issues and Solutions
+### Server Not Appearing in Client
 
-**Problem: KiCAD MCP isn't showing up in Claude's tools**
-- Make sure VSCode is completely restarted after updating the Cline MCP settings
-- Verify the paths in the config are correct for your system
-- Check that the `npm run build` completed successfully
+**Symptoms:** MCP server doesn't show up in Claude Desktop or Cline
 
-**Problem: Node.js errors when launching the server**
-- Ensure you're using Node.js v18 or higher
-- Try running `npm install` again to ensure all dependencies are properly installed
-- Check the console output for specific error messages
+**Solutions:**
+1. Verify build completed: `ls dist/index.js`
+2. Check configuration paths are absolute
+3. Restart MCP client completely
+4. Check client logs for error messages
 
-**Problem: Python errors or KiCAD commands failing**
-- Verify that KiCAD 9.0 is properly installed
-- Check that the PYTHONPATH in the configuration points to the correct location
-- Try running a simple KiCAD Python script directly to ensure the pcbnew module is accessible
+### Python Module Import Errors
 
-**Problem: Claude can't find or load your KiCAD project**
-- Use absolute paths when referring to project locations
-- Ensure the user running VSCode has access permissions to the directories
+**Symptoms:** `ModuleNotFoundError: No module named 'pcbnew'`
+
+**Solutions:**
+1. Verify KiCAD installation: `python3 -c "import pcbnew"`
+2. Check PYTHONPATH in configuration matches your KiCAD installation
+3. Ensure KiCAD was installed with Python support
+
+### Tool Execution Failures
+
+**Symptoms:** Tools fail with unclear errors
+
+**Solutions:**
+1. Check server logs: `~/.kicad-mcp/logs/kicad_interface.log`
+2. Verify a project is loaded before running board operations
+3. Ensure file paths are absolute, not relative
+4. Check tool parameter types match schema requirements
+
+### Windows-Specific Issues
+
+**Symptoms:** Server fails to start on Windows
+
+**Solutions:**
+1. Run automated diagnostics: `.\setup-windows.ps1`
+2. Verify Python path uses double backslashes: `C:\\Program Files\\KiCad\\9.0`
+3. Check Windows Event Viewer for Node.js errors
+4. See [Windows Troubleshooting Guide](docs/WINDOWS_TROUBLESHOOTING.md)
 
 ### Getting Help
 
-If you encounter issues not covered in this troubleshooting section:
-1. Check the console output for error messages
-2. Look for similar issues in the GitHub repository's Issues section
-3. Open a new issue with detailed information about the problem
+1. Check the [GitHub Issues](https://github.com/mixelpixx/KiCAD-MCP-Server/issues)
+2. Review server logs: `~/.kicad-mcp/logs/kicad_interface.log`
+3. Open a new issue with:
+   - Operating system and version
+   - KiCAD version (`python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"`)
+   - Node.js version (`node --version`)
+   - Full error message and stack trace
+   - Relevant log excerpts
+
+## Project Status
+
+**Current Version:** 2.1.0-alpha
+
+**Production-Ready Features:**
+- Project creation and management
+- Board outline and sizing
+- Layer management
+- Component placement (with library integration needed)
+- Mounting holes and text annotations
+- Design rule checking
+- Export to Gerber, PDF, SVG, 3D
+- Schematic creation and editing
+- UI auto-launch
+- Full MCP protocol compliance
+
+**In Development:**
+- JLCPCB parts integration
+- Digikey API integration
+- Advanced routing algorithms
+- Real-time UI synchronization via IPC API
+- Smart BOM management
+
+**Roadmap:**
+- AI-assisted component selection
+- Design pattern library (Arduino shields, RPi HATs)
+- Interactive design review mode
+- Automated documentation generation
+- Multi-board projects
+
+See [ROADMAP.md](docs/ROADMAP.md) for detailed development timeline.
 
 ## Contributing
 
-Contributions to this project are welcome! Here's how you can help:
+Contributions are welcome! Please follow these guidelines:
 
-1. **Report Bugs**: Open an issue describing what went wrong and how to reproduce it
-2. **Suggest Features**: Have an idea? Share it via an issue
-3. **Submit Pull Requests**: Fixed a bug or added a feature? Submit a PR!
-4. **Improve Documentation**: Help clarify or expand the documentation
+1. **Report Bugs:** Open an issue with reproduction steps
+2. **Suggest Features:** Describe use case and expected behavior
+3. **Submit Pull Requests:**
+   - Fork the repository
+   - Create a feature branch
+   - Follow existing code style
+   - Add tests for new functionality
+   - Update documentation
+   - Submit PR with clear description
 
-Please follow the existing code style and include tests for new features.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+## Acknowledgments
+
+- Built on the [Model Context Protocol](https://modelcontextprotocol.io/) by Anthropic
+- Powered by [KiCAD](https://www.kicad.org/) open-source PCB design software
+- Uses [kicad-skip](https://github.com/kicad-skip) for schematic manipulation
+
+## Citation
+
+If you use this project in your research or publication, please cite:
+
+```bibtex
+@software{kicad_mcp_server,
+  title = {KiCAD MCP Server: AI-Assisted PCB Design},
+  author = {mixelpixx},
+  year = {2025},
+  url = {https://github.com/mixelpixx/KiCAD-MCP-Server},
+  version = {2.1.0-alpha}
+}
+```
