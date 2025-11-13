@@ -39,10 +39,10 @@ param(
 )
 
 # Color output helpers
-function Write-Success { param([string]$Message) Write-Host "✓ $Message" -ForegroundColor Green }
-function Write-Error-Custom { param([string]$Message) Write-Host "✗ $Message" -ForegroundColor Red }
-function Write-Warning-Custom { param([string]$Message) Write-Host "⚠ $Message" -ForegroundColor Yellow }
-function Write-Info { param([string]$Message) Write-Host "→ $Message" -ForegroundColor Cyan }
+function Write-Success { param([string]$Message) Write-Host "[OK] $Message" -ForegroundColor Green }
+function Write-Error-Custom { param([string]$Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
+function Write-Warning-Custom { param([string]$Message) Write-Host "[WARN] $Message" -ForegroundColor Yellow }
+function Write-Info { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor Cyan }
 function Write-Step { param([string]$Message) Write-Host "`n=== $Message ===" -ForegroundColor Magenta }
 
 Write-Host @"
@@ -353,18 +353,18 @@ if ($kicad -and $script:Results.ProjectBuilt) {
 Write-Step "Setup Summary"
 
 Write-Host "`nComponent Status:" -ForegroundColor Cyan
-Write-Host "  KiCAD Installation:     $(if ($script:Results.KiCADFound) { '✓ Found' } else { '✗ Not Found' })" -ForegroundColor $(if ($script:Results.KiCADFound) { 'Green' } else { 'Red' })
+Write-Host "  KiCAD Installation:     $(if ($script:Results.KiCADFound) { '[OK] Found' } else { '[ERROR] Not Found' })" -ForegroundColor $(if ($script:Results.KiCADFound) { 'Green' } else { 'Red' })
 if ($script:Results.KiCADVersion) {
     Write-Host "    Version:              $($script:Results.KiCADVersion)" -ForegroundColor Gray
 }
-Write-Host "  pcbnew Module:          $(if ($script:Results.PcbnewImport) { '✓ Working' } else { '✗ Failed' })" -ForegroundColor $(if ($script:Results.PcbnewImport) { 'Green' } else { 'Red' })
-Write-Host "  Node.js:                $(if ($script:Results.NodeFound) { '✓ Found' } else { '✗ Not Found' })" -ForegroundColor $(if ($script:Results.NodeFound) { 'Green' } else { 'Red' })
+Write-Host "  pcbnew Module:          $(if ($script:Results.PcbnewImport) { '[OK] Working' } else { '[ERROR] Failed' })" -ForegroundColor $(if ($script:Results.PcbnewImport) { 'Green' } else { 'Red' })
+Write-Host "  Node.js:                $(if ($script:Results.NodeFound) { '[OK] Found' } else { '[ERROR] Not Found' })" -ForegroundColor $(if ($script:Results.NodeFound) { 'Green' } else { 'Red' })
 if ($script:Results.NodeVersion) {
     Write-Host "    Version:              $($script:Results.NodeVersion)" -ForegroundColor Gray
 }
-Write-Host "  Python Dependencies:    $(if ($script:Results.DependenciesInstalled) { '✓ Installed' } else { '✗ Failed' })" -ForegroundColor $(if ($script:Results.DependenciesInstalled) { 'Green' } else { 'Red' })
-Write-Host "  Project Build:          $(if ($script:Results.ProjectBuilt) { '✓ Success' } else { '✗ Failed' })" -ForegroundColor $(if ($script:Results.ProjectBuilt) { 'Green' } else { 'Red' })
-Write-Host "  Configuration:          $(if ($script:Results.ConfigGenerated) { '✓ Generated' } else { '✗ Not Generated' })" -ForegroundColor $(if ($script:Results.ConfigGenerated) { 'Green' } else { 'Red' })
+Write-Host "  Python Dependencies:    $(if ($script:Results.DependenciesInstalled) { '[OK] Installed' } else { '[ERROR] Failed' })" -ForegroundColor $(if ($script:Results.DependenciesInstalled) { 'Green' } else { 'Red' })
+Write-Host "  Project Build:          $(if ($script:Results.ProjectBuilt) { '[OK] Success' } else { '[ERROR] Failed' })" -ForegroundColor $(if ($script:Results.ProjectBuilt) { 'Green' } else { 'Red' })
+Write-Host "  Configuration:          $(if ($script:Results.ConfigGenerated) { '[OK] Generated' } else { '[ERROR] Not Generated' })" -ForegroundColor $(if ($script:Results.ConfigGenerated) { 'Green' } else { 'Red' })
 
 if ($script:Results.Errors.Count -gt 0) {
     Write-Host "`nErrors Encountered:" -ForegroundColor Red
@@ -387,22 +387,22 @@ $isSuccess = $script:Results.KiCADFound -and
              $script:Results.ProjectBuilt
 
 if ($isSuccess) {
-    Write-Host "`n╔════════════════════════════════════════════════════════════╗" -ForegroundColor Green
-    Write-Host "║  ✓ Setup completed successfully!                          ║" -ForegroundColor Green
-    Write-Host "║                                                            ║" -ForegroundColor Green
-    Write-Host "║  Next steps:                                               ║" -ForegroundColor Green
-    Write-Host "║  1. Copy the generated config to your MCP client           ║" -ForegroundColor Green
-    Write-Host "║  2. Restart your MCP client (Claude Desktop/Cline)         ║" -ForegroundColor Green
-    Write-Host "║  3. Try: 'Create a new KiCAD project'                      ║" -ForegroundColor Green
-    Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Green
+    Write-Host "`n============================================================" -ForegroundColor Green
+    Write-Host "  [OK] Setup completed successfully!" -ForegroundColor Green
+    Write-Host "" -ForegroundColor Green
+    Write-Host "  Next steps:" -ForegroundColor Green
+    Write-Host "  1. Copy the generated config to your MCP client" -ForegroundColor Green
+    Write-Host "  2. Restart your MCP client (Claude Desktop/Cline)" -ForegroundColor Green
+    Write-Host "  3. Try: 'Create a new KiCAD project'" -ForegroundColor Green
+    Write-Host "============================================================" -ForegroundColor Green
 } else {
-    Write-Host "`n╔════════════════════════════════════════════════════════════╗" -ForegroundColor Red
-    Write-Host "║  ✗ Setup incomplete - issues detected                      ║" -ForegroundColor Red
-    Write-Host "║                                                            ║" -ForegroundColor Red
-    Write-Host "║  Please resolve the errors above and run again             ║" -ForegroundColor Red
-    Write-Host "║                                                            ║" -ForegroundColor Red
-    Write-Host "║  For help:                                                 ║" -ForegroundColor Red
-    Write-Host "║  https://github.com/mixelpixx/KiCAD-MCP-Server/issues      ║" -ForegroundColor Red
-    Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Red
+    Write-Host "`n============================================================" -ForegroundColor Red
+    Write-Host "  [ERROR] Setup incomplete - issues detected" -ForegroundColor Red
+    Write-Host "" -ForegroundColor Red
+    Write-Host "  Please resolve the errors above and run again" -ForegroundColor Red
+    Write-Host "" -ForegroundColor Red
+    Write-Host "  For help:" -ForegroundColor Red
+    Write-Host "  https://github.com/mixelpixx/KiCAD-MCP-Server/issues" -ForegroundColor Red
+    Write-Host "============================================================" -ForegroundColor Red
     exit 1
 }
