@@ -405,7 +405,7 @@ class ComponentCommands:
                     "attributes": {
                         "smd": module.GetAttributes() & pcbnew.FP_SMD,
                         "through_hole": module.GetAttributes() & pcbnew.FP_THROUGH_HOLE,
-                        "virtual": module.GetAttributes() & pcbnew.FP_VIRTUAL
+                        "board_only": module.GetAttributes() & pcbnew.FP_BOARD_ONLY
                     }
                 }
             }

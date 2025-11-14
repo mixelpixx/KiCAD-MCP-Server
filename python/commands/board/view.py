@@ -58,8 +58,9 @@ class BoardViewCommands:
                         "unit": "mm"
                     },
                     "layers": layers,
-                    "title": self.board.GetTitleBlock().GetTitle(),
-                    "activeLayer": self.board.GetActiveLayer()
+                    "title": self.board.GetTitleBlock().GetTitle()
+                    # Note: activeLayer removed - GetActiveLayer() doesn't exist in KiCAD 9.0
+                    # Active layer is a UI concept not applicable to headless scripting
                 }
             }
 
@@ -95,26 +96,32 @@ class BoardViewCommands:
             plot_opts.SetOutputDirectory(os.path.dirname(self.board.GetFileName()))
             plot_opts.SetScale(1)
             plot_opts.SetMirror(False)
-            plot_opts.SetExcludeEdgeLayer(False)
+            # Note: SetExcludeEdgeLayer() removed in KiCAD 9.0 - default behavior includes all layers
             plot_opts.SetPlotFrameRef(False)
             plot_opts.SetPlotValue(True)
             plot_opts.SetPlotReference(True)
             
             # Plot to SVG first (for vector output)
-            temp_svg = os.path.join(os.path.dirname(self.board.GetFileName()), "temp_view.svg")
+            # Note: KiCAD 9.0 prepends the project name to the filename, so we use GetPlotFileName() to get the actual path
             plotter.OpenPlotfile("temp_view", pcbnew.PLOT_FORMAT_SVG, "Temporary View")
-            
+
             # Plot specified layers or all enabled layers
+            # Note: In KiCAD 9.0, SetLayer() must be called before PlotLayer()
             if layers:
                 for layer_name in layers:
                     layer_id = self.board.GetLayerID(layer_name)
                     if layer_id >= 0 and self.board.IsLayerEnabled(layer_id):
-                        plotter.PlotLayer(layer_id)
+                        plotter.SetLayer(layer_id)
+                        plotter.PlotLayer()
             else:
                 for layer_id in range(pcbnew.PCB_LAYER_ID_COUNT):
                     if self.board.IsLayerEnabled(layer_id):
-                        plotter.PlotLayer(layer_id)
-            
+                        plotter.SetLayer(layer_id)
+                        plotter.PlotLayer()
+
+            # Get the actual filename that was created (includes project name prefix)
+            temp_svg = plotter.GetPlotFileName()
+
             plotter.ClosePlot()
 
             # Convert SVG to requested format
@@ -165,7 +172,7 @@ class BoardViewCommands:
             pcbnew.LT_SIGNAL: "signal",
             pcbnew.LT_POWER: "power",
             pcbnew.LT_MIXED: "mixed",
-            pcbnew.LT_JUMPER: "jumper",
-            pcbnew.LT_USER: "user"
+            pcbnew.LT_JUMPER: "jumper"
         }
+        # Note: LT_USER was removed in KiCAD 9.0
         return type_map.get(type_id, "unknown")

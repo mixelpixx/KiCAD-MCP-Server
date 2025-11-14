@@ -63,13 +63,15 @@ class ExportCommands:
                 for layer_name in layers:
                     layer_id = self.board.GetLayerID(layer_name)
                     if layer_id >= 0:
-                        plotter.PlotLayer(layer_id)
+                        plotter.SetLayer(layer_id)
+                        plotter.PlotLayer()
                         plotted_layers.append(layer_name)
             else:
                 for layer_id in range(pcbnew.PCB_LAYER_ID_COUNT):
                     if self.board.IsLayerEnabled(layer_id):
                         layer_name = self.board.GetLayerName(layer_id)
-                        plotter.PlotLayer(layer_id)
+                        plotter.SetLayer(layer_id)
+                        plotter.PlotLayer()
                         plotted_layers.append(layer_name)
 
             # Generate drill files if requested
@@ -137,7 +139,7 @@ class ExportCommands:
 
             # Create plot controller
             plotter = pcbnew.PLOT_CONTROLLER(self.board)
-            
+
             # Set up plot options
             plot_opts = plotter.GetPlotOptions()
             plot_opts.SetOutputDirectory(os.path.dirname(output_path))
@@ -145,22 +147,28 @@ class ExportCommands:
             plot_opts.SetPlotFrameRef(frame_reference)
             plot_opts.SetPlotValue(True)
             plot_opts.SetPlotReference(True)
-            plot_opts.SetMonochrome(black_and_white)
+            plot_opts.SetBlackAndWhite(black_and_white)
 
-            # Set page size
-            page_sizes = {
-                "A4": (297, 210),
-                "A3": (420, 297),
-                "A2": (594, 420),
-                "A1": (841, 594),
-                "A0": (1189, 841),
-                "Letter": (279.4, 215.9),
-                "Legal": (355.6, 215.9),
-                "Tabloid": (431.8, 279.4)
-            }
-            if page_size in page_sizes:
-                height, width = page_sizes[page_size]
-                plot_opts.SetPageSettings((width, height))
+            # KiCAD 9.0 page size handling:
+            # - SetPageSettings() was removed in KiCAD 9.0
+            # - SetA4Output(bool) forces A4 page size when True
+            # - For other sizes, KiCAD auto-scales to fit the board
+            # - SetAutoScale(True) enables automatic scaling to fit page
+            if page_size == "A4":
+                plot_opts.SetA4Output(True)
+            else:
+                # For non-A4 sizes, disable A4 forcing and use auto-scale
+                plot_opts.SetA4Output(False)
+                plot_opts.SetAutoScale(True)
+                # Note: KiCAD 9.0 doesn't support explicit page size selection
+                # for formats other than A4. The PDF will auto-scale to fit.
+                logger.warning(f"Page size '{page_size}' requested, but KiCAD 9.0 only supports A4 explicitly. Using auto-scale instead.")
+
+            # Open plot for writing
+            # Note: For PDF, all layers are combined into a single file
+            # KiCAD prepends the board filename to the plot file name
+            base_name = os.path.basename(output_path).replace('.pdf', '')
+            plotter.OpenPlotfile(base_name, pcbnew.PLOT_FORMAT_PDF, '')
 
             # Plot specified layers or all enabled layers
             plotted_layers = []
@@ -168,22 +176,34 @@ class ExportCommands:
                 for layer_name in layers:
                     layer_id = self.board.GetLayerID(layer_name)
                     if layer_id >= 0:
-                        plotter.PlotLayer(layer_id)
+                        plotter.SetLayer(layer_id)
+                        plotter.PlotLayer()
                         plotted_layers.append(layer_name)
             else:
                 for layer_id in range(pcbnew.PCB_LAYER_ID_COUNT):
                     if self.board.IsLayerEnabled(layer_id):
                         layer_name = self.board.GetLayerName(layer_id)
-                        plotter.PlotLayer(layer_id)
+                        plotter.SetLayer(layer_id)
+                        plotter.PlotLayer()
                         plotted_layers.append(layer_name)
+
+            # Close the plot file to finalize the PDF
+            plotter.ClosePlot()
+
+            # KiCAD automatically prepends the board name to the output file
+            # Get the actual output filename that was created
+            board_name = os.path.splitext(os.path.basename(self.board.GetFileName()))[0]
+            actual_filename = f"{board_name}-{base_name}.pdf"
+            actual_output_path = os.path.join(os.path.dirname(output_path), actual_filename)
 
             return {
                 "success": True,
                 "message": "Exported PDF file",
                 "file": {
-                    "path": output_path,
+                    "path": actual_output_path,
+                    "requestedPath": output_path,
                     "layers": plotted_layers,
-                    "pageSize": page_size
+                    "pageSize": page_size if page_size == "A4" else "auto-scaled"
                 }
             }
 
@@ -230,7 +250,7 @@ class ExportCommands:
             plot_opts.SetFormat(pcbnew.PLOT_FORMAT_SVG)
             plot_opts.SetPlotValue(include_components)
             plot_opts.SetPlotReference(include_components)
-            plot_opts.SetMonochrome(black_and_white)
+            plot_opts.SetBlackAndWhite(black_and_white)
 
             # Plot specified layers or all enabled layers
             plotted_layers = []
@@ -238,13 +258,15 @@ class ExportCommands:
                 for layer_name in layers:
                     layer_id = self.board.GetLayerID(layer_name)
                     if layer_id >= 0:
-                        plotter.PlotLayer(layer_id)
+                        plotter.SetLayer(layer_id)
+                        plotter.PlotLayer()
                         plotted_layers.append(layer_name)
             else:
                 for layer_id in range(pcbnew.PCB_LAYER_ID_COUNT):
                     if self.board.IsLayerEnabled(layer_id):
                         layer_name = self.board.GetLayerName(layer_id)
-                        plotter.PlotLayer(layer_id)
+                        plotter.SetLayer(layer_id)
+                        plotter.PlotLayer()
                         plotted_layers.append(layer_name)
 
             return {

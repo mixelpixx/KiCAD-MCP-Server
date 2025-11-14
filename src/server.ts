@@ -5,7 +5,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import express from 'express';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, exec, ChildProcess } from 'child_process';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { logger } from './logger.js';
@@ -176,7 +176,6 @@ export class KiCADMcpServer {
       logger.info('Validating pcbnew module access...');
 
       const testCommand = `"${pythonExe}" -c "import pcbnew; print('OK')"`;
-      const { exec } = require('child_process');
 
       try {
         const { stdout, stderr } = await new Promise<{stdout: string, stderr: string}>((resolve, reject) => {
@@ -325,7 +324,7 @@ export class KiCADMcpServer {
   
   /**
    * Call the KiCAD scripting interface to execute commands
-   * 
+   *
    * @param command The command to execute
    * @param params The parameters for the command
    * @returns The result of the command execution
@@ -338,14 +337,23 @@ export class KiCADMcpServer {
         reject(new Error("Python process for KiCAD scripting is not running"));
         return;
       }
-      
-      // Add request to queue
+
+      // Determine timeout based on command type
+      // DRC and export operations need longer timeouts for large boards
+      let commandTimeout = 30000; // Default 30 seconds
+      const longRunningCommands = ['run_drc', 'export_gerber', 'export_pdf', 'export_3d'];
+      if (longRunningCommands.includes(command)) {
+        commandTimeout = 600000; // 10 minutes for long operations
+        logger.info(`Using extended timeout (${commandTimeout/1000}s) for command: ${command}`);
+      }
+
+      // Add request to queue with timeout info
       this.requestQueue.push({
-        request: { command, params },
+        request: { command, params, timeout: commandTimeout },
         resolve,
         reject
       });
-      
+
       // Process the queue if not already processing
       if (!this.processingRequest) {
         this.processNextRequest();
@@ -376,40 +384,46 @@ export class KiCADMcpServer {
       
       // Set up response handling
       let responseData = '';
-      
+      let timeoutHandle: NodeJS.Timeout | null = null;
+
       // Clear any previous listeners
       if (this.pythonProcess?.stdout) {
         this.pythonProcess.stdout.removeAllListeners('data');
         this.pythonProcess.stdout.removeAllListeners('end');
       }
-      
+
       // Set up new listeners
       if (this.pythonProcess?.stdout) {
         this.pythonProcess.stdout.on('data', (data: Buffer) => {
           const chunk = data.toString();
           logger.debug(`Received data chunk: ${chunk.length} bytes`);
           responseData += chunk;
-          
+
           // Check if we have a complete response
           try {
             // Try to parse the response as JSON
             const result = JSON.parse(responseData);
-            
+
             // If we get here, we have a valid JSON response
             logger.debug(`Completed KiCAD command: ${request.command} with result: ${result.success ? 'success' : 'failure'}`);
-            
+
+            // Clear the timeout since we got a response
+            if (timeoutHandle) {
+              clearTimeout(timeoutHandle);
+            }
+
             // Reset processing flag
             this.processingRequest = false;
-            
+
             // Process next request if any
             setTimeout(() => this.processNextRequest(), 0);
-            
+
             // Clear listeners
             if (this.pythonProcess?.stdout) {
               this.pythonProcess.stdout.removeAllListeners('data');
               this.pythonProcess.stdout.removeAllListeners('end');
             }
-            
+
             // Resolve the promise with the result
             resolve(result);
           } catch (e) {
@@ -417,26 +431,27 @@ export class KiCADMcpServer {
           }
         });
       }
-      
-      // Set a timeout
-      const timeout = setTimeout(() => {
-        logger.error(`Command timeout: ${request.command}`);
-        
+
+      // Set a timeout (use command-specific timeout or default)
+      const timeoutDuration = request.timeout || 30000;
+      timeoutHandle = setTimeout(() => {
+        logger.error(`Command timeout after ${timeoutDuration/1000}s: ${request.command}`);
+
         // Clear listeners
         if (this.pythonProcess?.stdout) {
           this.pythonProcess.stdout.removeAllListeners('data');
           this.pythonProcess.stdout.removeAllListeners('end');
         }
-        
+
         // Reset processing flag
         this.processingRequest = false;
-        
+
         // Process next request
         setTimeout(() => this.processNextRequest(), 0);
-        
+
         // Reject the promise
-        reject(new Error(`Command timeout: ${request.command}`));
-      }, 30000); // 30 seconds timeout
+        reject(new Error(`Command timeout after ${timeoutDuration/1000}s: ${request.command}`));
+      }, timeoutDuration);
       
       // Write the request to the Python process
       logger.debug(`Sending request: ${requestStr}`);

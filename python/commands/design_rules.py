@@ -33,65 +33,82 @@ class DesignRuleCommands:
 
             # Set clearance
             if "clearance" in params:
-                design_settings.SetMinClearance(int(params["clearance"] * scale))
+                design_settings.m_MinClearance = int(params["clearance"] * scale)
 
-            # Set track width
+            # KiCAD 9.0: Use SetCustom* methods instead of SetCurrent* (which were removed)
+            # Track if we set any custom track/via values
+            custom_values_set = False
+
             if "trackWidth" in params:
-                design_settings.SetCurrentTrackWidth(int(params["trackWidth"] * scale))
+                design_settings.SetCustomTrackWidth(int(params["trackWidth"] * scale))
+                custom_values_set = True
 
-            # Set via settings
+            # Via settings
             if "viaDiameter" in params:
-                design_settings.SetCurrentViaSize(int(params["viaDiameter"] * scale))
+                design_settings.SetCustomViaSize(int(params["viaDiameter"] * scale))
+                custom_values_set = True
             if "viaDrill" in params:
-                design_settings.SetCurrentViaDrill(int(params["viaDrill"] * scale))
+                design_settings.SetCustomViaDrill(int(params["viaDrill"] * scale))
+                custom_values_set = True
 
-            # Set micro via settings
+            # KiCAD 9.0: Activate custom track/via values so they become the current values
+            if custom_values_set:
+                design_settings.UseCustomTrackViaSize(True)
+
+            # Set micro via settings (use properties - methods removed in KiCAD 9.0)
             if "microViaDiameter" in params:
-                design_settings.SetCurrentMicroViaSize(int(params["microViaDiameter"] * scale))
+                design_settings.m_MicroViasMinSize = int(params["microViaDiameter"] * scale)
             if "microViaDrill" in params:
-                design_settings.SetCurrentMicroViaDrill(int(params["microViaDrill"] * scale))
+                design_settings.m_MicroViasMinDrill = int(params["microViaDrill"] * scale)
 
             # Set minimum values
             if "minTrackWidth" in params:
                 design_settings.m_TrackMinWidth = int(params["minTrackWidth"] * scale)
             if "minViaDiameter" in params:
                 design_settings.m_ViasMinSize = int(params["minViaDiameter"] * scale)
+
+            # KiCAD 9.0: m_ViasMinDrill removed - use m_MinThroughDrill instead
             if "minViaDrill" in params:
-                design_settings.m_ViasMinDrill = int(params["minViaDrill"] * scale)
+                design_settings.m_MinThroughDrill = int(params["minViaDrill"] * scale)
+
             if "minMicroViaDiameter" in params:
                 design_settings.m_MicroViasMinSize = int(params["minMicroViaDiameter"] * scale)
             if "minMicroViaDrill" in params:
                 design_settings.m_MicroViasMinDrill = int(params["minMicroViaDrill"] * scale)
 
-            # Set hole diameter
+            # KiCAD 9.0: m_MinHoleDiameter removed - use m_MinThroughDrill
             if "minHoleDiameter" in params:
-                design_settings.m_MinHoleDiameter = int(params["minHoleDiameter"] * scale)
+                design_settings.m_MinThroughDrill = int(params["minHoleDiameter"] * scale)
 
-            # Set courtyard settings
-            if "requireCourtyard" in params:
-                design_settings.m_RequireCourtyards = params["requireCourtyard"]
-            if "courtyardClearance" in params:
-                design_settings.m_CourtyardMinClearance = int(params["courtyardClearance"] * scale)
+            # KiCAD 9.0: Added hole clearance settings
+            if "holeClearance" in params:
+                design_settings.m_HoleClearance = int(params["holeClearance"] * scale)
+            if "holeToHoleMin" in params:
+                design_settings.m_HoleToHoleMin = int(params["holeToHoleMin"] * scale)
+
+            # Build response with KiCAD 9.0 compatible properties
+            # After UseCustomTrackViaSize(True), GetCurrent* returns the custom values
+            response_rules = {
+                "clearance": design_settings.m_MinClearance / scale,
+                "trackWidth": design_settings.GetCurrentTrackWidth() / scale,
+                "viaDiameter": design_settings.GetCurrentViaSize() / scale,
+                "viaDrill": design_settings.GetCurrentViaDrill() / scale,
+                "microViaDiameter": design_settings.m_MicroViasMinSize / scale,
+                "microViaDrill": design_settings.m_MicroViasMinDrill / scale,
+                "minTrackWidth": design_settings.m_TrackMinWidth / scale,
+                "minViaDiameter": design_settings.m_ViasMinSize / scale,
+                "minThroughDrill": design_settings.m_MinThroughDrill / scale,
+                "minMicroViaDiameter": design_settings.m_MicroViasMinSize / scale,
+                "minMicroViaDrill": design_settings.m_MicroViasMinDrill / scale,
+                "holeClearance": design_settings.m_HoleClearance / scale,
+                "holeToHoleMin": design_settings.m_HoleToHoleMin / scale,
+                "viasMinAnnularWidth": design_settings.m_ViasMinAnnularWidth / scale
+            }
 
             return {
                 "success": True,
                 "message": "Updated design rules",
-                "rules": {
-                    "clearance": design_settings.GetMinClearance() / scale,
-                    "trackWidth": design_settings.GetCurrentTrackWidth() / scale,
-                    "viaDiameter": design_settings.GetCurrentViaSize() / scale,
-                    "viaDrill": design_settings.GetCurrentViaDrill() / scale,
-                    "microViaDiameter": design_settings.GetCurrentMicroViaSize() / scale,
-                    "microViaDrill": design_settings.GetCurrentMicroViaDrill() / scale,
-                    "minTrackWidth": design_settings.m_TrackMinWidth / scale,
-                    "minViaDiameter": design_settings.m_ViasMinSize / scale,
-                    "minViaDrill": design_settings.m_ViasMinDrill / scale,
-                    "minMicroViaDiameter": design_settings.m_MicroViasMinSize / scale,
-                    "minMicroViaDrill": design_settings.m_MicroViasMinDrill / scale,
-                    "minHoleDiameter": design_settings.m_MinHoleDiameter / scale,
-                    "requireCourtyard": design_settings.m_RequireCourtyards,
-                    "courtyardClearance": design_settings.m_CourtyardMinClearance / scale
-                }
+                "rules": response_rules
             }
 
         except Exception as e:
@@ -103,7 +120,7 @@ class DesignRuleCommands:
             }
 
     def get_design_rules(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get current design rules"""
+        """Get current design rules - KiCAD 9.0 compatible"""
         try:
             if not self.board:
                 return {
@@ -115,24 +132,40 @@ class DesignRuleCommands:
             design_settings = self.board.GetDesignSettings()
             scale = 1000000  # nm to mm
 
+            # Build rules dict with KiCAD 9.0 compatible properties
+            rules = {
+                # Core clearance and track settings
+                "clearance": design_settings.m_MinClearance / scale,
+                "trackWidth": design_settings.GetCurrentTrackWidth() / scale,
+                "minTrackWidth": design_settings.m_TrackMinWidth / scale,
+
+                # Via settings (current values from methods)
+                "viaDiameter": design_settings.GetCurrentViaSize() / scale,
+                "viaDrill": design_settings.GetCurrentViaDrill() / scale,
+
+                # Via minimum values
+                "minViaDiameter": design_settings.m_ViasMinSize / scale,
+                "viasMinAnnularWidth": design_settings.m_ViasMinAnnularWidth / scale,
+
+                # Micro via settings
+                "microViaDiameter": design_settings.m_MicroViasMinSize / scale,
+                "microViaDrill": design_settings.m_MicroViasMinDrill / scale,
+                "minMicroViaDiameter": design_settings.m_MicroViasMinSize / scale,
+                "minMicroViaDrill": design_settings.m_MicroViasMinDrill / scale,
+
+                # KiCAD 9.0: Hole and drill settings (replaces removed m_ViasMinDrill and m_MinHoleDiameter)
+                "minThroughDrill": design_settings.m_MinThroughDrill / scale,
+                "holeClearance": design_settings.m_HoleClearance / scale,
+                "holeToHoleMin": design_settings.m_HoleToHoleMin / scale,
+
+                # Other constraints
+                "copperEdgeClearance": design_settings.m_CopperEdgeClearance / scale,
+                "silkClearance": design_settings.m_SilkClearance / scale,
+            }
+
             return {
                 "success": True,
-                "rules": {
-                    "clearance": design_settings.GetMinClearance() / scale,
-                    "trackWidth": design_settings.GetCurrentTrackWidth() / scale,
-                    "viaDiameter": design_settings.GetCurrentViaSize() / scale,
-                    "viaDrill": design_settings.GetCurrentViaDrill() / scale,
-                    "microViaDiameter": design_settings.GetCurrentMicroViaSize() / scale,
-                    "microViaDrill": design_settings.GetCurrentMicroViaDrill() / scale,
-                    "minTrackWidth": design_settings.m_TrackMinWidth / scale,
-                    "minViaDiameter": design_settings.m_ViasMinSize / scale,
-                    "minViaDrill": design_settings.m_ViasMinDrill / scale,
-                    "minMicroViaDiameter": design_settings.m_MicroViasMinSize / scale,
-                    "minMicroViaDrill": design_settings.m_MicroViasMinDrill / scale,
-                    "minHoleDiameter": design_settings.m_MinHoleDiameter / scale,
-                    "requireCourtyard": design_settings.m_RequireCourtyards,
-                    "courtyardClearance": design_settings.m_CourtyardMinClearance / scale
-                }
+                "rules": rules
             }
 
         except Exception as e:
@@ -144,7 +177,13 @@ class DesignRuleCommands:
             }
 
     def run_drc(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Run Design Rule Check"""
+        """Run Design Rule Check using kicad-cli"""
+        import subprocess
+        import json
+        import tempfile
+        import platform
+        import shutil
+
         try:
             if not self.board:
                 return {
@@ -155,38 +194,144 @@ class DesignRuleCommands:
 
             report_path = params.get("reportPath")
 
-            # Create DRC runner
-            drc = pcbnew.DRC(self.board)
-            
-            # Run DRC
-            drc.Run()
+            # Get the board file path
+            board_file = self.board.GetFileName()
+            if not board_file or not os.path.exists(board_file):
+                return {
+                    "success": False,
+                    "message": "Board file not found",
+                    "errorDetails": "Cannot run DRC without a saved board file"
+                }
 
-            # Get violations
-            violations = []
-            for marker in drc.GetMarkers():
-                violations.append({
-                    "type": marker.GetErrorCode(),
-                    "severity": "error",
-                    "message": marker.GetDescription(),
-                    "location": {
-                        "x": marker.GetPos().x / 1000000,
-                        "y": marker.GetPos().y / 1000000,
-                        "unit": "mm"
+            # Find kicad-cli executable
+            kicad_cli = self._find_kicad_cli()
+            if not kicad_cli:
+                return {
+                    "success": False,
+                    "message": "kicad-cli not found",
+                    "errorDetails": "KiCAD CLI tool not found in system. Install KiCAD 8.0+ or set PATH."
+                }
+
+            # Create temporary JSON output file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+                json_output = tmp.name
+
+            try:
+                # Build command
+                cmd = [
+                    kicad_cli,
+                    'pcb',
+                    'drc',
+                    '--format', 'json',
+                    '--output', json_output,
+                    '--units', 'mm',
+                    board_file
+                ]
+
+                logger.info(f"Running DRC command: {' '.join(cmd)}")
+
+                # Run DRC
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=600  # 10 minute timeout for large boards (21MB PCB needs time)
+                )
+
+                if result.returncode != 0:
+                    logger.error(f"DRC command failed: {result.stderr}")
+                    return {
+                        "success": False,
+                        "message": "DRC command failed",
+                        "errorDetails": result.stderr
                     }
-                })
 
-            # Save report if path provided
-            if report_path:
-                report_path = os.path.abspath(os.path.expanduser(report_path))
-                drc.WriteReport(report_path)
+                # Read JSON output
+                with open(json_output, 'r', encoding='utf-8') as f:
+                    drc_data = json.load(f)
 
+                # Parse violations from kicad-cli output
+                violations = []
+                violation_counts = {}
+                severity_counts = {"error": 0, "warning": 0, "info": 0}
+
+                for violation in drc_data.get('violations', []):
+                    vtype = violation.get("type", "unknown")
+                    vseverity = violation.get("severity", "error")
+
+                    violations.append({
+                        "type": vtype,
+                        "severity": vseverity,
+                        "message": violation.get("description", ""),
+                        "location": {
+                            "x": violation.get("x", 0),
+                            "y": violation.get("y", 0),
+                            "unit": "mm"
+                        }
+                    })
+
+                    # Count violations by type
+                    violation_counts[vtype] = violation_counts.get(vtype, 0) + 1
+
+                    # Count by severity
+                    if vseverity in severity_counts:
+                        severity_counts[vseverity] += 1
+
+                # Determine where to save the violations file
+                board_dir = os.path.dirname(board_file)
+                board_name = os.path.splitext(os.path.basename(board_file))[0]
+                violations_file = os.path.join(board_dir, f"{board_name}_drc_violations.json")
+
+                # Always save violations to JSON file (for large result sets)
+                with open(violations_file, 'w', encoding='utf-8') as f:
+                    json.dump({
+                        "board": board_file,
+                        "timestamp": drc_data.get("date", "unknown"),
+                        "total_violations": len(violations),
+                        "violation_counts": violation_counts,
+                        "severity_counts": severity_counts,
+                        "violations": violations
+                    }, f, indent=2)
+
+                # Save text report if requested
+                if report_path:
+                    report_path = os.path.abspath(os.path.expanduser(report_path))
+                    cmd_report = [
+                        kicad_cli,
+                        'pcb',
+                        'drc',
+                        '--format', 'report',
+                        '--output', report_path,
+                        '--units', 'mm',
+                        board_file
+                    ]
+                    subprocess.run(cmd_report, capture_output=True, timeout=600)
+
+                # Return summary only (not full violations list)
+                return {
+                    "success": True,
+                    "message": f"Found {len(violations)} DRC violations",
+                    "summary": {
+                        "total": len(violations),
+                        "by_severity": severity_counts,
+                        "by_type": violation_counts
+                    },
+                    "violationsFile": violations_file,
+                    "reportPath": report_path if report_path else None
+                }
+
+            finally:
+                # Clean up temp JSON file
+                if os.path.exists(json_output):
+                    os.unlink(json_output)
+
+        except subprocess.TimeoutExpired:
+            logger.error("DRC command timed out")
             return {
-                "success": True,
-                "message": f"Found {len(violations)} DRC violations",
-                "violations": violations,
-                "reportPath": report_path if report_path else None
+                "success": False,
+                "message": "DRC command timed out",
+                "errorDetails": "Command took longer than 600 seconds (10 minutes)"
             }
-
         except Exception as e:
             logger.error(f"Error running DRC: {str(e)}")
             return {
@@ -194,6 +339,50 @@ class DesignRuleCommands:
                 "message": "Failed to run DRC",
                 "errorDetails": str(e)
             }
+
+    def _find_kicad_cli(self) -> Optional[str]:
+        """Find kicad-cli executable"""
+        import platform
+        import shutil
+
+        # Try system PATH first
+        cli_name = "kicad-cli.exe" if platform.system() == "Windows" else "kicad-cli"
+        cli_path = shutil.which(cli_name)
+        if cli_path:
+            return cli_path
+
+        # Try common installation paths (version-specific)
+        if platform.system() == "Windows":
+            common_paths = [
+                r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe",
+                r"C:\Program Files\KiCad\9.0\bin\kicad-cli.exe",
+                r"C:\Program Files\KiCad\8.0\bin\kicad-cli.exe",
+                r"C:\Program Files (x86)\KiCad\10.0\bin\kicad-cli.exe",
+                r"C:\Program Files (x86)\KiCad\9.0\bin\kicad-cli.exe",
+                r"C:\Program Files (x86)\KiCad\8.0\bin\kicad-cli.exe",
+                r"C:\Program Files\KiCad\bin\kicad-cli.exe",
+            ]
+            for path in common_paths:
+                if os.path.exists(path):
+                    return path
+        elif platform.system() == "Darwin":  # macOS
+            common_paths = [
+                "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
+                "/usr/local/bin/kicad-cli",
+            ]
+            for path in common_paths:
+                if os.path.exists(path):
+                    return path
+        else:  # Linux
+            common_paths = [
+                "/usr/bin/kicad-cli",
+                "/usr/local/bin/kicad-cli",
+            ]
+            for path in common_paths:
+                if os.path.exists(path):
+                    return path
+
+        return None
 
     def get_drc_violations(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get list of DRC violations"""
