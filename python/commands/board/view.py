@@ -176,3 +176,57 @@ class BoardViewCommands:
         }
         # Note: LT_USER was removed in KiCAD 9.0
         return type_map.get(type_id, "unknown")
+
+    def get_board_extents(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get the bounding box extents of the board"""
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first"
+                }
+
+            # Get unit preference (default to mm)
+            unit = params.get("unit", "mm")
+            scale = 1000000 if unit == "mm" else 25400000  # nm to mm or inch
+
+            # Get board bounding box
+            board_box = self.board.GetBoardEdgesBoundingBox()
+
+            # Extract bounds in nanometers, then convert
+            left = board_box.GetLeft() / scale
+            top = board_box.GetTop() / scale
+            right = board_box.GetRight() / scale
+            bottom = board_box.GetBottom() / scale
+            width = board_box.GetWidth() / scale
+            height = board_box.GetHeight() / scale
+
+            # Get center point
+            center_x = board_box.GetCenter().x / scale
+            center_y = board_box.GetCenter().y / scale
+
+            return {
+                "success": True,
+                "extents": {
+                    "left": left,
+                    "top": top,
+                    "right": right,
+                    "bottom": bottom,
+                    "width": width,
+                    "height": height,
+                    "center": {
+                        "x": center_x,
+                        "y": center_y
+                    },
+                    "unit": unit
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting board extents: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to get board extents",
+                "errorDetails": str(e)
+            }

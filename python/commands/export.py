@@ -287,7 +287,11 @@ class ExportCommands:
             }
 
     def export_3d(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Export 3D model files"""
+        """Export 3D model files using kicad-cli (KiCAD 9.0 compatible)"""
+        import subprocess
+        import platform
+        import shutil
+
         try:
             if not self.board:
                 return {
@@ -310,46 +314,108 @@ class ExportCommands:
                     "errorDetails": "outputPath parameter is required"
                 }
 
+            # Get board file path
+            board_file = self.board.GetFileName()
+            if not board_file or not os.path.exists(board_file):
+                return {
+                    "success": False,
+                    "message": "Board file not found",
+                    "errorDetails": "Board must be saved before exporting 3D models"
+                }
+
             # Create output directory if it doesn't exist
             output_path = os.path.abspath(os.path.expanduser(output_path))
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-            # Get 3D viewer
-            viewer = self.board.Get3DViewer()
-            if not viewer:
+            # Find kicad-cli executable
+            kicad_cli = self._find_kicad_cli()
+            if not kicad_cli:
                 return {
                     "success": False,
-                    "message": "3D viewer not available",
-                    "errorDetails": "Could not initialize 3D viewer"
+                    "message": "kicad-cli not found",
+                    "errorDetails": "KiCAD CLI tool not found. Install KiCAD 8.0+ or set PATH."
                 }
 
-            # Set export options
-            viewer.SetCopperLayersOn(include_copper)
-            viewer.SetSolderMaskLayersOn(include_solder_mask)
-            viewer.SetSilkScreenLayersOn(include_silkscreen)
-            viewer.Set3DModelsOn(include_components)
+            # Build command based on format
+            format_upper = format.upper()
 
-            # Export based on format
-            if format == "STEP":
-                viewer.ExportSTEPFile(output_path)
-            elif format == "VRML":
-                viewer.ExportVRMLFile(output_path)
+            if format_upper == "STEP":
+                cmd = [
+                    kicad_cli,
+                    'pcb', 'export', 'step',
+                    '--output', output_path,
+                    '--force'  # Overwrite existing file
+                ]
+
+                # Add options based on parameters
+                if not include_components:
+                    cmd.append('--no-components')
+                if include_copper:
+                    cmd.extend(['--include-tracks', '--include-pads', '--include-zones'])
+                if include_silkscreen:
+                    cmd.append('--include-silkscreen')
+                if include_solder_mask:
+                    cmd.append('--include-soldermask')
+
+                cmd.append(board_file)
+
+            elif format_upper == "VRML":
+                cmd = [
+                    kicad_cli,
+                    'pcb', 'export', 'vrml',
+                    '--output', output_path,
+                    '--units', 'mm',  # Use mm for consistency
+                    '--force'
+                ]
+
+                if not include_components:
+                    # Note: VRML export doesn't have a direct --no-components flag
+                    # The models will be included by default, but can be controlled via 3D settings
+                    pass
+
+                cmd.append(board_file)
+
             else:
                 return {
                     "success": False,
                     "message": "Unsupported format",
-                    "errorDetails": f"Format {format} is not supported"
+                    "errorDetails": f"Format {format} is not supported. Use 'STEP' or 'VRML'."
+                }
+
+            # Execute kicad-cli command
+            logger.info(f"Running 3D export command: {' '.join(cmd)}")
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout for 3D export
+            )
+
+            if result.returncode != 0:
+                logger.error(f"3D export command failed: {result.stderr}")
+                return {
+                    "success": False,
+                    "message": "3D export command failed",
+                    "errorDetails": result.stderr
                 }
 
             return {
                 "success": True,
-                "message": f"Exported {format} file",
+                "message": f"Exported {format_upper} file",
                 "file": {
                     "path": output_path,
-                    "format": format
+                    "format": format_upper
                 }
             }
 
+        except subprocess.TimeoutExpired:
+            logger.error("3D export command timed out")
+            return {
+                "success": False,
+                "message": "3D export timed out",
+                "errorDetails": "Export took longer than 5 minutes"
+            }
         except Exception as e:
             logger.error(f"Error exporting 3D model: {str(e)}")
             return {
@@ -495,3 +561,44 @@ class ExportCommands:
         import json
         with open(path, 'w') as f:
             json.dump({"components": components}, f, indent=2)
+
+    def _find_kicad_cli(self) -> Optional[str]:
+        """Find kicad-cli executable in system PATH or common locations
+
+        Returns:
+            Path to kicad-cli executable, or None if not found
+        """
+        import shutil
+        import platform
+
+        # Try system PATH first
+        cli_path = shutil.which("kicad-cli")
+        if cli_path:
+            return cli_path
+
+        # Try platform-specific default locations
+        system = platform.system()
+
+        if system == "Windows":
+            possible_paths = [
+                r"C:\Program Files\KiCad\9.0\bin\kicad-cli.exe",
+                r"C:\Program Files\KiCad\8.0\bin\kicad-cli.exe",
+                r"C:\Program Files (x86)\KiCad\9.0\bin\kicad-cli.exe",
+                r"C:\Program Files (x86)\KiCad\8.0\bin\kicad-cli.exe",
+            ]
+        elif system == "Darwin":  # macOS
+            possible_paths = [
+                "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
+                "/usr/local/bin/kicad-cli",
+            ]
+        else:  # Linux
+            possible_paths = [
+                "/usr/bin/kicad-cli",
+                "/usr/local/bin/kicad-cli",
+            ]
+
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+
+        return None

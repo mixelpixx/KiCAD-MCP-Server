@@ -75,3 +75,8 @@ class BoardCommands:
         """Get a 2D image of the PCB"""
         self.view_commands.board = self.board
         return self.view_commands.get_board_2d_view(params)
+
+    def get_board_extents(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get the bounding box extents of the board"""
+        self.view_commands.board = self.board
+        return self.view_commands.get_board_extents(params)
