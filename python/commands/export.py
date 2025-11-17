@@ -77,19 +77,37 @@ class ExportCommands:
             # Generate drill files if requested
             drill_files = []
             if generate_drill_files:
-                drill_writer = pcbnew.EXCELLON_WRITER(self.board)
-                drill_writer.SetFormat(True)
-                drill_writer.SetMapFileFormat(pcbnew.PLOT_FORMAT_GERBER)
-                
-                merge_npth = False  # Keep plated/non-plated holes separate
-                drill_writer.SetOptions(merge_npth)
-                
-                drill_writer.CreateDrillandMapFilesSet(output_dir, True, generate_map_file)
-                
-                # Get list of generated drill files
-                for file in os.listdir(output_dir):
-                    if file.endswith(".drl") or file.endswith(".cnc"):
-                        drill_files.append(file)
+                # KiCAD 9.0: Use kicad-cli for more reliable drill file generation
+                # The Python API's EXCELLON_WRITER.SetOptions() signature changed
+                board_file = self.board.GetFileName()
+                kicad_cli = self._find_kicad_cli()
+
+                if kicad_cli and board_file and os.path.exists(board_file):
+                    import subprocess
+                    # Generate drill files using kicad-cli
+                    cmd = [
+                        kicad_cli,
+                        'pcb', 'export', 'drill',
+                        '--output', output_dir,
+                        '--format', 'excellon',
+                        '--drill-origin', 'absolute',
+                        '--excellon-separate-th',  # Separate plated/non-plated
+                        board_file
+                    ]
+
+                    try:
+                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                        if result.returncode == 0:
+                            # Get list of generated drill files
+                            for file in os.listdir(output_dir):
+                                if file.endswith((".drl", ".cnc")):
+                                    drill_files.append(file)
+                        else:
+                            logger.warning(f"Drill file generation failed: {result.stderr}")
+                    except Exception as drill_error:
+                        logger.warning(f"Could not generate drill files: {str(drill_error)}")
+                else:
+                    logger.warning("kicad-cli not available for drill file generation")
 
             return {
                 "success": True,
