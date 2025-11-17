@@ -1,4 +1,4 @@
-"""
+﻿"""
 Export command implementations for KiCAD interface
 """
 
@@ -474,7 +474,7 @@ class ExportCommands:
                 component = {
                     "reference": module.GetReference(),
                     "value": module.GetValue(),
-                    "footprint": module.GetFootprintName(),
+                    "footprint": str(module.GetFPID()),
                     "layer": self.board.GetLayerName(module.GetLayer())
                 }
 
