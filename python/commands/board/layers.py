@@ -151,8 +151,9 @@ class BoardLayerCommands:
                     layers.append({
                         "name": self.board.GetLayerName(layer_id),
                         "type": self._get_layer_type_name(self.board.GetLayerType(layer_id)),
-                        "id": layer_id,
-                        "isActive": layer_id == self.board.GetActiveLayer()
+                        "id": layer_id
+                        # Note: isActive removed - GetActiveLayer() doesn't exist in KiCAD 9.0
+                        # Active layer is a UI concept not applicable to headless scripting
                     })
 
             return {
@@ -173,7 +174,7 @@ class BoardLayerCommands:
         type_map = {
             "copper": pcbnew.LT_SIGNAL,
             "technical": pcbnew.LT_SIGNAL,
-            "user": pcbnew.LT_USER,
+            "user": pcbnew.LT_SIGNAL,  # LT_USER removed in KiCAD 9.0, use LT_SIGNAL instead
             "signal": pcbnew.LT_SIGNAL
         }
         return type_map.get(type_name.lower(), pcbnew.LT_SIGNAL)
@@ -184,7 +185,7 @@ class BoardLayerCommands:
             pcbnew.LT_SIGNAL: "signal",
             pcbnew.LT_POWER: "power",
             pcbnew.LT_MIXED: "mixed",
-            pcbnew.LT_JUMPER: "jumper",
-            pcbnew.LT_USER: "user"
+            pcbnew.LT_JUMPER: "jumper"
         }
+        # Note: LT_USER was removed in KiCAD 9.0
         return type_map.get(type_id, "unknown")

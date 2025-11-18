@@ -1,4 +1,4 @@
-"""
+﻿"""
 Export command implementations for KiCAD interface
 """
 
@@ -63,31 +63,51 @@ class ExportCommands:
                 for layer_name in layers:
                     layer_id = self.board.GetLayerID(layer_name)
                     if layer_id >= 0:
-                        plotter.PlotLayer(layer_id)
+                        plotter.SetLayer(layer_id)
+                        plotter.PlotLayer()
                         plotted_layers.append(layer_name)
             else:
                 for layer_id in range(pcbnew.PCB_LAYER_ID_COUNT):
                     if self.board.IsLayerEnabled(layer_id):
                         layer_name = self.board.GetLayerName(layer_id)
-                        plotter.PlotLayer(layer_id)
+                        plotter.SetLayer(layer_id)
+                        plotter.PlotLayer()
                         plotted_layers.append(layer_name)
 
             # Generate drill files if requested
             drill_files = []
             if generate_drill_files:
-                drill_writer = pcbnew.EXCELLON_WRITER(self.board)
-                drill_writer.SetFormat(True)
-                drill_writer.SetMapFileFormat(pcbnew.PLOT_FORMAT_GERBER)
-                
-                merge_npth = False  # Keep plated/non-plated holes separate
-                drill_writer.SetOptions(merge_npth)
-                
-                drill_writer.CreateDrillandMapFilesSet(output_dir, True, generate_map_file)
-                
-                # Get list of generated drill files
-                for file in os.listdir(output_dir):
-                    if file.endswith(".drl") or file.endswith(".cnc"):
-                        drill_files.append(file)
+                # KiCAD 9.0: Use kicad-cli for more reliable drill file generation
+                # The Python API's EXCELLON_WRITER.SetOptions() signature changed
+                board_file = self.board.GetFileName()
+                kicad_cli = self._find_kicad_cli()
+
+                if kicad_cli and board_file and os.path.exists(board_file):
+                    import subprocess
+                    # Generate drill files using kicad-cli
+                    cmd = [
+                        kicad_cli,
+                        'pcb', 'export', 'drill',
+                        '--output', output_dir,
+                        '--format', 'excellon',
+                        '--drill-origin', 'absolute',
+                        '--excellon-separate-th',  # Separate plated/non-plated
+                        board_file
+                    ]
+
+                    try:
+                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                        if result.returncode == 0:
+                            # Get list of generated drill files
+                            for file in os.listdir(output_dir):
+                                if file.endswith((".drl", ".cnc")):
+                                    drill_files.append(file)
+                        else:
+                            logger.warning(f"Drill file generation failed: {result.stderr}")
+                    except Exception as drill_error:
+                        logger.warning(f"Could not generate drill files: {str(drill_error)}")
+                else:
+                    logger.warning("kicad-cli not available for drill file generation")
 
             return {
                 "success": True,
@@ -137,7 +157,7 @@ class ExportCommands:
 
             # Create plot controller
             plotter = pcbnew.PLOT_CONTROLLER(self.board)
-            
+
             # Set up plot options
             plot_opts = plotter.GetPlotOptions()
             plot_opts.SetOutputDirectory(os.path.dirname(output_path))
@@ -145,22 +165,28 @@ class ExportCommands:
             plot_opts.SetPlotFrameRef(frame_reference)
             plot_opts.SetPlotValue(True)
             plot_opts.SetPlotReference(True)
-            plot_opts.SetMonochrome(black_and_white)
+            plot_opts.SetBlackAndWhite(black_and_white)
 
-            # Set page size
-            page_sizes = {
-                "A4": (297, 210),
-                "A3": (420, 297),
-                "A2": (594, 420),
-                "A1": (841, 594),
-                "A0": (1189, 841),
-                "Letter": (279.4, 215.9),
-                "Legal": (355.6, 215.9),
-                "Tabloid": (431.8, 279.4)
-            }
-            if page_size in page_sizes:
-                height, width = page_sizes[page_size]
-                plot_opts.SetPageSettings((width, height))
+            # KiCAD 9.0 page size handling:
+            # - SetPageSettings() was removed in KiCAD 9.0
+            # - SetA4Output(bool) forces A4 page size when True
+            # - For other sizes, KiCAD auto-scales to fit the board
+            # - SetAutoScale(True) enables automatic scaling to fit page
+            if page_size == "A4":
+                plot_opts.SetA4Output(True)
+            else:
+                # For non-A4 sizes, disable A4 forcing and use auto-scale
+                plot_opts.SetA4Output(False)
+                plot_opts.SetAutoScale(True)
+                # Note: KiCAD 9.0 doesn't support explicit page size selection
+                # for formats other than A4. The PDF will auto-scale to fit.
+                logger.warning(f"Page size '{page_size}' requested, but KiCAD 9.0 only supports A4 explicitly. Using auto-scale instead.")
+
+            # Open plot for writing
+            # Note: For PDF, all layers are combined into a single file
+            # KiCAD prepends the board filename to the plot file name
+            base_name = os.path.basename(output_path).replace('.pdf', '')
+            plotter.OpenPlotfile(base_name, pcbnew.PLOT_FORMAT_PDF, '')
 
             # Plot specified layers or all enabled layers
             plotted_layers = []
@@ -168,22 +194,34 @@ class ExportCommands:
                 for layer_name in layers:
                     layer_id = self.board.GetLayerID(layer_name)
                     if layer_id >= 0:
-                        plotter.PlotLayer(layer_id)
+                        plotter.SetLayer(layer_id)
+                        plotter.PlotLayer()
                         plotted_layers.append(layer_name)
             else:
                 for layer_id in range(pcbnew.PCB_LAYER_ID_COUNT):
                     if self.board.IsLayerEnabled(layer_id):
                         layer_name = self.board.GetLayerName(layer_id)
-                        plotter.PlotLayer(layer_id)
+                        plotter.SetLayer(layer_id)
+                        plotter.PlotLayer()
                         plotted_layers.append(layer_name)
+
+            # Close the plot file to finalize the PDF
+            plotter.ClosePlot()
+
+            # KiCAD automatically prepends the board name to the output file
+            # Get the actual output filename that was created
+            board_name = os.path.splitext(os.path.basename(self.board.GetFileName()))[0]
+            actual_filename = f"{board_name}-{base_name}.pdf"
+            actual_output_path = os.path.join(os.path.dirname(output_path), actual_filename)
 
             return {
                 "success": True,
                 "message": "Exported PDF file",
                 "file": {
-                    "path": output_path,
+                    "path": actual_output_path,
+                    "requestedPath": output_path,
                     "layers": plotted_layers,
-                    "pageSize": page_size
+                    "pageSize": page_size if page_size == "A4" else "auto-scaled"
                 }
             }
 
@@ -230,7 +268,7 @@ class ExportCommands:
             plot_opts.SetFormat(pcbnew.PLOT_FORMAT_SVG)
             plot_opts.SetPlotValue(include_components)
             plot_opts.SetPlotReference(include_components)
-            plot_opts.SetMonochrome(black_and_white)
+            plot_opts.SetBlackAndWhite(black_and_white)
 
             # Plot specified layers or all enabled layers
             plotted_layers = []
@@ -238,13 +276,15 @@ class ExportCommands:
                 for layer_name in layers:
                     layer_id = self.board.GetLayerID(layer_name)
                     if layer_id >= 0:
-                        plotter.PlotLayer(layer_id)
+                        plotter.SetLayer(layer_id)
+                        plotter.PlotLayer()
                         plotted_layers.append(layer_name)
             else:
                 for layer_id in range(pcbnew.PCB_LAYER_ID_COUNT):
                     if self.board.IsLayerEnabled(layer_id):
                         layer_name = self.board.GetLayerName(layer_id)
-                        plotter.PlotLayer(layer_id)
+                        plotter.SetLayer(layer_id)
+                        plotter.PlotLayer()
                         plotted_layers.append(layer_name)
 
             return {
@@ -265,7 +305,11 @@ class ExportCommands:
             }
 
     def export_3d(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Export 3D model files"""
+        """Export 3D model files using kicad-cli (KiCAD 9.0 compatible)"""
+        import subprocess
+        import platform
+        import shutil
+
         try:
             if not self.board:
                 return {
@@ -288,46 +332,108 @@ class ExportCommands:
                     "errorDetails": "outputPath parameter is required"
                 }
 
+            # Get board file path
+            board_file = self.board.GetFileName()
+            if not board_file or not os.path.exists(board_file):
+                return {
+                    "success": False,
+                    "message": "Board file not found",
+                    "errorDetails": "Board must be saved before exporting 3D models"
+                }
+
             # Create output directory if it doesn't exist
             output_path = os.path.abspath(os.path.expanduser(output_path))
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-            # Get 3D viewer
-            viewer = self.board.Get3DViewer()
-            if not viewer:
+            # Find kicad-cli executable
+            kicad_cli = self._find_kicad_cli()
+            if not kicad_cli:
                 return {
                     "success": False,
-                    "message": "3D viewer not available",
-                    "errorDetails": "Could not initialize 3D viewer"
+                    "message": "kicad-cli not found",
+                    "errorDetails": "KiCAD CLI tool not found. Install KiCAD 8.0+ or set PATH."
                 }
 
-            # Set export options
-            viewer.SetCopperLayersOn(include_copper)
-            viewer.SetSolderMaskLayersOn(include_solder_mask)
-            viewer.SetSilkScreenLayersOn(include_silkscreen)
-            viewer.Set3DModelsOn(include_components)
+            # Build command based on format
+            format_upper = format.upper()
 
-            # Export based on format
-            if format == "STEP":
-                viewer.ExportSTEPFile(output_path)
-            elif format == "VRML":
-                viewer.ExportVRMLFile(output_path)
+            if format_upper == "STEP":
+                cmd = [
+                    kicad_cli,
+                    'pcb', 'export', 'step',
+                    '--output', output_path,
+                    '--force'  # Overwrite existing file
+                ]
+
+                # Add options based on parameters
+                if not include_components:
+                    cmd.append('--no-components')
+                if include_copper:
+                    cmd.extend(['--include-tracks', '--include-pads', '--include-zones'])
+                if include_silkscreen:
+                    cmd.append('--include-silkscreen')
+                if include_solder_mask:
+                    cmd.append('--include-soldermask')
+
+                cmd.append(board_file)
+
+            elif format_upper == "VRML":
+                cmd = [
+                    kicad_cli,
+                    'pcb', 'export', 'vrml',
+                    '--output', output_path,
+                    '--units', 'mm',  # Use mm for consistency
+                    '--force'
+                ]
+
+                if not include_components:
+                    # Note: VRML export doesn't have a direct --no-components flag
+                    # The models will be included by default, but can be controlled via 3D settings
+                    pass
+
+                cmd.append(board_file)
+
             else:
                 return {
                     "success": False,
                     "message": "Unsupported format",
-                    "errorDetails": f"Format {format} is not supported"
+                    "errorDetails": f"Format {format} is not supported. Use 'STEP' or 'VRML'."
+                }
+
+            # Execute kicad-cli command
+            logger.info(f"Running 3D export command: {' '.join(cmd)}")
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout for 3D export
+            )
+
+            if result.returncode != 0:
+                logger.error(f"3D export command failed: {result.stderr}")
+                return {
+                    "success": False,
+                    "message": "3D export command failed",
+                    "errorDetails": result.stderr
                 }
 
             return {
                 "success": True,
-                "message": f"Exported {format} file",
+                "message": f"Exported {format_upper} file",
                 "file": {
                     "path": output_path,
-                    "format": format
+                    "format": format_upper
                 }
             }
 
+        except subprocess.TimeoutExpired:
+            logger.error("3D export command timed out")
+            return {
+                "success": False,
+                "message": "3D export timed out",
+                "errorDetails": "Export took longer than 5 minutes"
+            }
         except Exception as e:
             logger.error(f"Error exporting 3D model: {str(e)}")
             return {
@@ -368,7 +474,7 @@ class ExportCommands:
                 component = {
                     "reference": module.GetReference(),
                     "value": module.GetValue(),
-                    "footprint": module.GetFootprintName(),
+                    "footprint": str(module.GetFPID()),
                     "layer": self.board.GetLayerName(module.GetLayer())
                 }
 
@@ -473,3 +579,44 @@ class ExportCommands:
         import json
         with open(path, 'w') as f:
             json.dump({"components": components}, f, indent=2)
+
+    def _find_kicad_cli(self) -> Optional[str]:
+        """Find kicad-cli executable in system PATH or common locations
+
+        Returns:
+            Path to kicad-cli executable, or None if not found
+        """
+        import shutil
+        import platform
+
+        # Try system PATH first
+        cli_path = shutil.which("kicad-cli")
+        if cli_path:
+            return cli_path
+
+        # Try platform-specific default locations
+        system = platform.system()
+
+        if system == "Windows":
+            possible_paths = [
+                r"C:\Program Files\KiCad\9.0\bin\kicad-cli.exe",
+                r"C:\Program Files\KiCad\8.0\bin\kicad-cli.exe",
+                r"C:\Program Files (x86)\KiCad\9.0\bin\kicad-cli.exe",
+                r"C:\Program Files (x86)\KiCad\8.0\bin\kicad-cli.exe",
+            ]
+        elif system == "Darwin":  # macOS
+            possible_paths = [
+                "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
+                "/usr/local/bin/kicad-cli",
+            ]
+        else:  # Linux
+            possible_paths = [
+                "/usr/bin/kicad-cli",
+                "/usr/local/bin/kicad-cli",
+            ]
+
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+
+        return None

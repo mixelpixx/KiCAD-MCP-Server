@@ -107,13 +107,12 @@ async function shutdownServer(server: KiCADMcpServer) {
   }
 }
 
-// Run the main function if this file is executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((error) => {
-    logger.error(`Unhandled error in main: ${error}`);
-    process.exit(1);
-  });
-}
+// Run the main function - always run when imported as module entry point
+// The import.meta.url check was failing on Windows due to path separators
+main().catch((error) => {
+  console.error(`Unhandled error in main: ${error}`);
+  process.exit(1);
+});
 
 // For testing and programmatic usage
 export { KiCADMcpServer };
