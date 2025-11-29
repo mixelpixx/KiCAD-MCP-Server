@@ -272,6 +272,11 @@ class KiCADInterface:
             "load_schematic": self._handle_load_schematic,
             "add_schematic_component": self._handle_add_schematic_component,
             "add_schematic_wire": self._handle_add_schematic_wire,
+            "add_schematic_connection": self._handle_add_schematic_connection,
+            "add_schematic_net_label": self._handle_add_schematic_net_label,
+            "connect_to_net": self._handle_connect_to_net,
+            "get_net_connections": self._handle_get_net_connections,
+            "generate_netlist": self._handle_generate_netlist,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
             "export_schematic_pdf": self._handle_export_schematic_pdf,
 
@@ -469,6 +474,126 @@ class KiCADInterface:
             return {"success": success, "message": message}
         except Exception as e:
             logger.error(f"Error exporting schematic to PDF: {str(e)}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_add_schematic_connection(self, params):
+        """Add a pin-to-pin connection in schematic"""
+        logger.info("Adding pin-to-pin connection in schematic")
+        try:
+            schematic_path = params.get("schematicPath")
+            source_ref = params.get("sourceRef")
+            source_pin = params.get("sourcePin")
+            target_ref = params.get("targetRef")
+            target_pin = params.get("targetPin")
+
+            if not all([schematic_path, source_ref, source_pin, target_ref, target_pin]):
+                return {"success": False, "message": "Missing required parameters"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            success = ConnectionManager.add_connection(schematic, source_ref, source_pin, target_ref, target_pin)
+
+            if success:
+                SchematicManager.save_schematic(schematic, schematic_path)
+                return {"success": True}
+            else:
+                return {"success": False, "message": "Failed to add connection"}
+        except Exception as e:
+            logger.error(f"Error adding schematic connection: {str(e)}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_add_schematic_net_label(self, params):
+        """Add a net label to schematic"""
+        logger.info("Adding net label to schematic")
+        try:
+            schematic_path = params.get("schematicPath")
+            net_name = params.get("netName")
+            position = params.get("position")
+
+            if not all([schematic_path, net_name, position]):
+                return {"success": False, "message": "Missing required parameters"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            label = ConnectionManager.add_net_label(schematic, net_name, position)
+
+            if label:
+                SchematicManager.save_schematic(schematic, schematic_path)
+                return {"success": True}
+            else:
+                return {"success": False, "message": "Failed to add net label"}
+        except Exception as e:
+            logger.error(f"Error adding net label: {str(e)}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_connect_to_net(self, params):
+        """Connect a component pin to a named net"""
+        logger.info("Connecting component pin to net")
+        try:
+            schematic_path = params.get("schematicPath")
+            component_ref = params.get("componentRef")
+            pin_name = params.get("pinName")
+            net_name = params.get("netName")
+
+            if not all([schematic_path, component_ref, pin_name, net_name]):
+                return {"success": False, "message": "Missing required parameters"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            success = ConnectionManager.connect_to_net(schematic, component_ref, pin_name, net_name)
+
+            if success:
+                SchematicManager.save_schematic(schematic, schematic_path)
+                return {"success": True}
+            else:
+                return {"success": False, "message": "Failed to connect to net"}
+        except Exception as e:
+            logger.error(f"Error connecting to net: {str(e)}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_get_net_connections(self, params):
+        """Get all connections for a named net"""
+        logger.info("Getting net connections")
+        try:
+            schematic_path = params.get("schematicPath")
+            net_name = params.get("netName")
+
+            if not all([schematic_path, net_name]):
+                return {"success": False, "message": "Missing required parameters"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            connections = ConnectionManager.get_net_connections(schematic, net_name)
+            return {"success": True, "connections": connections}
+        except Exception as e:
+            logger.error(f"Error getting net connections: {str(e)}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_generate_netlist(self, params):
+        """Generate netlist from schematic"""
+        logger.info("Generating netlist from schematic")
+        try:
+            schematic_path = params.get("schematicPath")
+
+            if not schematic_path:
+                return {"success": False, "message": "Schematic path is required"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            netlist = ConnectionManager.generate_netlist(schematic)
+            return {"success": True, "netlist": netlist}
+        except Exception as e:
+            logger.error(f"Error generating netlist: {str(e)}")
             return {"success": False, "message": str(e)}
 
     def _handle_check_kicad_ui(self, params):

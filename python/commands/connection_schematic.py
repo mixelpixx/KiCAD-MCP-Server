@@ -1,65 +1,348 @@
 from skip import Schematic
-# Wire and Net classes might not be directly importable in the current version
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ConnectionManager:
-    """Manage connections between components"""
+    """Manage connections between components in schematics"""
 
     @staticmethod
     def add_wire(schematic: Schematic, start_point: list, end_point: list, properties: dict = None):
-        """Add a wire between two points"""
+        """
+        Add a wire between two points
+
+        Args:
+            schematic: Schematic object
+            start_point: [x, y] coordinates for wire start
+            end_point: [x, y] coordinates for wire end
+            properties: Optional wire properties (currently unused)
+
+        Returns:
+            Wire object or None on error
+        """
         try:
-            wire = schematic.add_wire(start=start_point, end=end_point)
-            # kicad-skip wire properties are limited, but we can potentially
-            # add graphical properties if needed in the future.
-            print(f"Added wire from {start_point} to {end_point}.")
+            # Check if wire collection exists
+            if not hasattr(schematic, 'wire'):
+                logger.error("Schematic does not have wire collection")
+                return None
+
+            wire = schematic.wire.append(
+                start={'x': start_point[0], 'y': start_point[1]},
+                end={'x': end_point[0], 'y': end_point[1]}
+            )
+            logger.info(f"Added wire from {start_point} to {end_point}")
             return wire
         except Exception as e:
-            print(f"Error adding wire: {e}")
+            logger.error(f"Error adding wire: {e}")
+            return None
+
+    @staticmethod
+    def get_pin_location(symbol, pin_name: str):
+        """
+        Get the absolute location of a pin on a symbol
+
+        Args:
+            symbol: Symbol object
+            pin_name: Name or number of the pin (e.g., "1", "GND", "VCC")
+
+        Returns:
+            [x, y] coordinates or None if pin not found
+        """
+        try:
+            if not hasattr(symbol, 'pin'):
+                logger.warning(f"Symbol {symbol.property.Reference.value} has no pins")
+                return None
+
+            # Find the pin by name
+            target_pin = None
+            for pin in symbol.pin:
+                if pin.name == pin_name:
+                    target_pin = pin
+                    break
+
+            if not target_pin:
+                logger.warning(f"Pin '{pin_name}' not found on {symbol.property.Reference.value}")
+                return None
+
+            # Get pin location relative to symbol
+            pin_loc = target_pin.location
+            # Get symbol location
+            symbol_at = symbol.at.value
+
+            # Calculate absolute position
+            # pin_loc is relative to symbol origin, need to add symbol position
+            abs_x = symbol_at[0] + pin_loc[0]
+            abs_y = symbol_at[1] + pin_loc[1]
+
+            return [abs_x, abs_y]
+        except Exception as e:
+            logger.error(f"Error getting pin location: {e}")
             return None
 
     @staticmethod
     def add_connection(schematic: Schematic, source_ref: str, source_pin: str, target_ref: str, target_pin: str):
-        """Add a connection between component pins"""
-        # kicad-skip handles connections implicitly through wires and labels.
-        # This method would typically involve adding wires and potentially net labels
-        # to connect the specified pins.
-        # A direct 'add_connection' between pins isn't a standard kicad-skip operation
-        # in the way it is in some other schematic tools.
-        # We will need to implement this logic by finding the component pins
-        # and adding wires/labels between their locations. This is more complex
-        # and might require pin location information which isn't directly
-        # exposed in a simple way by default in kicad-skip Symbol objects.
+        """
+        Add a wire connection between two component pins
 
-        # For now, this method will be a placeholder or require a more advanced
-        # implementation based on how kicad-skip handles net connections.
-        # A common approach is to add wires between graphical points and then
-        # add net labels to define the net name.
+        Args:
+            schematic: Schematic object
+            source_ref: Reference designator of source component (e.g., "R1")
+            source_pin: Pin name/number on source component
+            target_ref: Reference designator of target component (e.g., "C1")
+            target_pin: Pin name/number on target component
 
-        print(f"Attempted to add connection between {source_ref}/{source_pin} and {target_ref}/{target_pin}. This requires advanced implementation.")
-        return False # Indicate not fully implemented yet
+        Returns:
+            True if connection was successful, False otherwise
+        """
+        try:
+            # Find source and target symbols
+            source_symbol = None
+            target_symbol = None
+
+            if not hasattr(schematic, 'symbol'):
+                logger.error("Schematic has no symbols")
+                return False
+
+            for symbol in schematic.symbol:
+                ref = symbol.property.Reference.value
+                if ref == source_ref:
+                    source_symbol = symbol
+                if ref == target_ref:
+                    target_symbol = symbol
+
+            if not source_symbol:
+                logger.error(f"Source component '{source_ref}' not found")
+                return False
+
+            if not target_symbol:
+                logger.error(f"Target component '{target_ref}' not found")
+                return False
+
+            # Get pin locations
+            source_loc = ConnectionManager.get_pin_location(source_symbol, source_pin)
+            target_loc = ConnectionManager.get_pin_location(target_symbol, target_pin)
+
+            if not source_loc or not target_loc:
+                logger.error("Could not determine pin locations")
+                return False
+
+            # Add wire between pins
+            wire = ConnectionManager.add_wire(schematic, source_loc, target_loc)
+
+            if wire:
+                logger.info(f"Connected {source_ref}/{source_pin} to {target_ref}/{target_pin}")
+                return True
+            else:
+                return False
+
+        except Exception as e:
+            logger.error(f"Error adding connection: {e}")
+            return False
 
     @staticmethod
-    def remove_connection(schematic: Schematic, connection_id: str):
-        """Remove a connection"""
-        # Removing connections in kicad-skip typically means removing the wires
-        # or net labels that form the connection.
-        # This method would need to identify the relevant graphical elements
-        # based on a connection identifier (which we would need to define).
-        # This is also an advanced implementation task.
-        print(f"Attempted to remove connection with ID {connection_id}. This requires advanced implementation.")
-        return False # Indicate not fully implemented yet
+    def add_net_label(schematic: Schematic, net_name: str, position: list):
+        """
+        Add a net label to the schematic
+
+        Args:
+            schematic: Schematic object
+            net_name: Name of the net (e.g., "VCC", "GND", "SIGNAL_1")
+            position: [x, y] coordinates for the label
+
+        Returns:
+            Label object or None on error
+        """
+        try:
+            if not hasattr(schematic, 'label'):
+                logger.error("Schematic does not have label collection")
+                return None
+
+            label = schematic.label.append(
+                text=net_name,
+                at={'x': position[0], 'y': position[1]}
+            )
+            logger.info(f"Added net label '{net_name}' at {position}")
+            return label
+        except Exception as e:
+            logger.error(f"Error adding net label: {e}")
+            return None
+
+    @staticmethod
+    def connect_to_net(schematic: Schematic, component_ref: str, pin_name: str, net_name: str):
+        """
+        Connect a component pin to a named net using a label
+
+        Args:
+            schematic: Schematic object
+            component_ref: Reference designator (e.g., "U1")
+            pin_name: Pin name/number
+            net_name: Name of the net to connect to
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Find the component
+            symbol = None
+            if hasattr(schematic, 'symbol'):
+                for s in schematic.symbol:
+                    if s.property.Reference.value == component_ref:
+                        symbol = s
+                        break
+
+            if not symbol:
+                logger.error(f"Component '{component_ref}' not found")
+                return False
+
+            # Get pin location
+            pin_loc = ConnectionManager.get_pin_location(symbol, pin_name)
+            if not pin_loc:
+                return False
+
+            # Add a small wire stub from the pin (so label has something to attach to)
+            stub_end = [pin_loc[0] + 2.54, pin_loc[1]]  # 2.54mm = 0.1 inch grid
+            wire = ConnectionManager.add_wire(schematic, pin_loc, stub_end)
+
+            if not wire:
+                return False
+
+            # Add label at the end of the stub
+            label = ConnectionManager.add_net_label(schematic, net_name, stub_end)
+
+            if label:
+                logger.info(f"Connected {component_ref}/{pin_name} to net '{net_name}'")
+                return True
+            else:
+                return False
+
+        except Exception as e:
+            logger.error(f"Error connecting to net: {e}")
+            return False
 
     @staticmethod
     def get_net_connections(schematic: Schematic, net_name: str):
-        """Get all connections in a named net"""
-        # kicad-skip represents nets implicitly through connected wires and net labels.
-        # To get connections for a net, we would need to iterate through wires
-        # and net labels to build a list of connected pins/points.
-        # This requires traversing the schematic's graphical elements and understanding
-        # how they form nets. This is an advanced implementation task.
-        print(f"Attempted to get connections for net '{net_name}'. This requires advanced implementation.")
-        return [] # Return empty list for now
+        """
+        Get all connections for a named net
+
+        Args:
+            schematic: Schematic object
+            net_name: Name of the net to query
+
+        Returns:
+            List of connections: [{"component": ref, "pin": pin_name}, ...]
+        """
+        try:
+            connections = []
+
+            if not hasattr(schematic, 'label'):
+                logger.warning("Schematic has no labels")
+                return connections
+
+            # Find all labels with this net name
+            net_labels = []
+            for label in schematic.label:
+                if hasattr(label, 'value') and label.value == net_name:
+                    net_labels.append(label)
+
+            if not net_labels:
+                logger.info(f"No labels found for net '{net_name}'")
+                return connections
+
+            # For each label, find connected symbols
+            for label in net_labels:
+                # Find wires connected to this label position
+                label_pos = label.at.value if hasattr(label, 'at') else None
+                if not label_pos:
+                    continue
+
+                # Search for symbols near this label
+                if hasattr(schematic, 'symbol'):
+                    for symbol in schematic.symbol:
+                        # Check if symbol has wires attached
+                        if hasattr(symbol, 'attached_labels'):
+                            for attached_label in symbol.attached_labels:
+                                if attached_label.value == net_name:
+                                    # Find which pin is connected
+                                    if hasattr(symbol, 'pin'):
+                                        for pin in symbol.pin:
+                                            pin_loc = ConnectionManager.get_pin_location(symbol, pin.name)
+                                            if pin_loc:
+                                                # Check if pin is connected to any wire attached to this label
+                                                connections.append({
+                                                    "component": symbol.property.Reference.value,
+                                                    "pin": pin.name
+                                                })
+
+            logger.info(f"Found {len(connections)} connections for net '{net_name}'")
+            return connections
+
+        except Exception as e:
+            logger.error(f"Error getting net connections: {e}")
+            return []
+
+    @staticmethod
+    def generate_netlist(schematic: Schematic):
+        """
+        Generate a netlist from the schematic
+
+        Returns:
+            Dictionary with net information:
+            {
+                "nets": [
+                    {
+                        "name": "VCC",
+                        "connections": [
+                            {"component": "R1", "pin": "1"},
+                            {"component": "C1", "pin": "1"}
+                        ]
+                    },
+                    ...
+                ],
+                "components": [
+                    {"reference": "R1", "value": "10k", "footprint": "..."},
+                    ...
+                ]
+            }
+        """
+        try:
+            netlist = {
+                "nets": [],
+                "components": []
+            }
+
+            # Gather all components
+            if hasattr(schematic, 'symbol'):
+                for symbol in schematic.symbol:
+                    component_info = {
+                        "reference": symbol.property.Reference.value,
+                        "value": symbol.property.Value.value if hasattr(symbol.property, 'Value') else "",
+                        "footprint": symbol.property.Footprint.value if hasattr(symbol.property, 'Footprint') else ""
+                    }
+                    netlist["components"].append(component_info)
+
+            # Gather all nets from labels
+            if hasattr(schematic, 'label'):
+                net_names = set()
+                for label in schematic.label:
+                    if hasattr(label, 'value'):
+                        net_names.add(label.value)
+
+                # For each net, get connections
+                for net_name in net_names:
+                    connections = ConnectionManager.get_net_connections(schematic, net_name)
+                    if connections:
+                        netlist["nets"].append({
+                            "name": net_name,
+                            "connections": connections
+                        })
+
+            logger.info(f"Generated netlist with {len(netlist['nets'])} nets and {len(netlist['components'])} components")
+            return netlist
+
+        except Exception as e:
+            logger.error(f"Error generating netlist: {e}")
+            return {"nets": [], "components": []}
 
 if __name__ == '__main__':
     # Example Usage (for testing)
