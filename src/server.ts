@@ -17,6 +17,8 @@ import { registerComponentTools } from './tools/component.js';
 import { registerRoutingTools } from './tools/routing.js';
 import { registerDesignRuleTools } from './tools/design-rules.js';
 import { registerExportTools } from './tools/export.js';
+import { registerSchematicTools } from './tools/schematic.js';
+import { registerLibraryTools } from './tools/library.js';
 import { registerUITools } from './tools/ui.js';
 
 // Import resource registration functions
@@ -127,6 +129,8 @@ export class KiCADMcpServer {
     registerRoutingTools(this.server, this.callKicadScript.bind(this));
     registerDesignRuleTools(this.server, this.callKicadScript.bind(this));
     registerExportTools(this.server, this.callKicadScript.bind(this));
+    registerSchematicTools(this.server, this.callKicadScript.bind(this));
+    registerLibraryTools(this.server, this.callKicadScript.bind(this));
     registerUITools(this.server, this.callKicadScript.bind(this));
     
     // Register all resources
