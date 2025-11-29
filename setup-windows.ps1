@@ -79,6 +79,7 @@ function Find-KiCAD {
     $possiblePaths = @(
         "C:\Program Files\KiCad",
         "C:\Program Files (x86)\KiCad"
+        "$env:USERPROFILE\AppData\Local\Programs\KiCad"
     )
 
     $versions = @("9.0", "9.1", "10.0", "8.0")
@@ -114,6 +115,7 @@ if ($kicad) {
     Write-Info "Python Path: $($kicad.PythonLib)"
 } else {
     Write-Error-Custom "KiCAD not found in standard locations"
+    Write-Warning-Custom "Checked: C:\Program Files, C:\Program Files (x86), and $env:USERPROFILE\AppData\Local\Programs"
     Write-Warning-Custom "Please install KiCAD 9.0+ from https://www.kicad.org/download/windows/"
     $script:Results.Errors += "KiCAD not found"
 }
