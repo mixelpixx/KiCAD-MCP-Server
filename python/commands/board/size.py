@@ -16,7 +16,7 @@ class BoardSizeCommands:
         self.board = board
 
     def set_board_size(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Set the size of the PCB board"""
+        """Set the size of the PCB board by creating edge cuts outline"""
         try:
             if not self.board:
                 return {
@@ -36,35 +36,33 @@ class BoardSizeCommands:
                     "errorDetails": "Both width and height are required"
                 }
 
-            # Convert to internal units (nanometers)
-            scale = 1000000 if unit == "mm" else 25400000  # mm or inch to nm
-            width_nm = int(width * scale)
-            height_nm = int(height * scale)
+            # Create board outline using BoardOutlineCommands
+            # This properly creates edge cuts on Edge.Cuts layer
+            from commands.board.outline import BoardOutlineCommands
+            outline_commands = BoardOutlineCommands(self.board)
 
-            # Set board size using KiCAD 9.0 API
-            # Note: In KiCAD 9.0, SetSize takes two separate parameters instead of VECTOR2I
-            board_box = self.board.GetBoardEdgesBoundingBox()
-            try:
-                # Try KiCAD 9.0+ API (two parameters)
-                board_box.SetSize(width_nm, height_nm)
-            except TypeError:
-                # Fall back to older API (VECTOR2I)
-                board_box.SetSize(pcbnew.VECTOR2I(width_nm, height_nm))
+            # Create rectangular outline centered at origin
+            result = outline_commands.add_board_outline({
+                "shape": "rectangle",
+                "centerX": width / 2,      # Center X
+                "centerY": height / 2,     # Center Y
+                "width": width,
+                "height": height,
+                "unit": unit
+            })
 
-            # Note: SetBoardEdgesBoundingBox might not exist in all versions
-            # The board bounding box is typically derived from actual edge cuts
-            # For now, we'll just note the size was calculated
-            logger.info(f"Board size set to {width}x{height} {unit}")
-
-            return {
-                "success": True,
-                "message": f"Set board size to {width}x{height} {unit}",
-                "size": {
-                    "width": width,
-                    "height": height,
-                    "unit": unit
+            if result.get("success"):
+                return {
+                    "success": True,
+                    "message": f"Created board outline: {width}x{height} {unit}",
+                    "size": {
+                        "width": width,
+                        "height": height,
+                        "unit": unit
+                    }
                 }
-            }
+            else:
+                return result
 
         except Exception as e:
             logger.error(f"Error setting board size: {str(e)}")

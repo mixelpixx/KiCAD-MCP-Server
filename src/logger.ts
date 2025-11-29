@@ -86,21 +86,10 @@ class Logger {
   private log(level: LogLevel, message: string): void {
     const timestamp = new Date().toISOString();
     const formattedMessage = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
-    
-    // Log to console
-    switch (level) {
-      case 'error':
-        console.error(formattedMessage);
-        break;
-      case 'warn':
-        console.warn(formattedMessage);
-        break;
-      case 'info':
-      case 'debug':
-      default:
-        console.log(formattedMessage);
-        break;
-    }
+
+    // Log to console.error (stderr) only - stdout is reserved for MCP protocol
+    // All log levels go to stderr to avoid corrupting STDIO MCP transport
+    console.error(formattedMessage);
     
     // Log to file
     try {
