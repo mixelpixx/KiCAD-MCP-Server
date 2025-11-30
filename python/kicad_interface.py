@@ -99,20 +99,52 @@ AUTO_LAUNCH_KICAD = os.environ.get("KICAD_AUTO_LAUNCH", "false").lower() == "tru
 if AUTO_LAUNCH_KICAD:
     logger.info("KiCAD auto-launch enabled")
 
-# Import KiCAD's Python API
-try:
-    logger.info("Attempting to import pcbnew module...")
-    import pcbnew  # type: ignore
-    logger.info(f"Successfully imported pcbnew module from: {pcbnew.__file__}")
-    logger.info(f"pcbnew version: {pcbnew.GetBuildVersion()}")
-except ImportError as e:
-    logger.error(f"Failed to import pcbnew module: {e}")
-    logger.error(f"Current sys.path: {sys.path}")
+# Check which backend to use
+# KICAD_BACKEND can be: 'auto', 'ipc', or 'swig'
+KICAD_BACKEND = os.environ.get("KICAD_BACKEND", "auto").lower()
+logger.info(f"KiCAD backend preference: {KICAD_BACKEND}")
 
-    # Platform-specific help message
-    help_message = ""
-    if sys.platform == 'win32':
-        help_message = """
+# Try to use IPC backend first if available and preferred
+USE_IPC_BACKEND = False
+ipc_backend = None
+
+if KICAD_BACKEND in ('auto', 'ipc'):
+    try:
+        logger.info("Checking IPC backend availability...")
+        from kicad_api.ipc_backend import IPCBackend
+
+        # Try to connect to running KiCAD
+        ipc_backend = IPCBackend()
+        if ipc_backend.connect():
+            USE_IPC_BACKEND = True
+            logger.info(f"✓ Using IPC backend - real-time UI sync enabled!")
+            logger.info(f"  KiCAD version: {ipc_backend.get_version()}")
+        else:
+            logger.info("IPC backend available but KiCAD not running with IPC enabled")
+            ipc_backend = None
+    except ImportError:
+        logger.info("IPC backend not available (kicad-python not installed)")
+    except Exception as e:
+        logger.info(f"IPC backend connection failed: {e}")
+        ipc_backend = None
+
+# Fall back to SWIG backend if IPC not available
+if not USE_IPC_BACKEND and KICAD_BACKEND != 'ipc':
+    # Import KiCAD's Python API (SWIG)
+    try:
+        logger.info("Attempting to import pcbnew module (SWIG backend)...")
+        import pcbnew  # type: ignore
+        logger.info(f"Successfully imported pcbnew module from: {pcbnew.__file__}")
+        logger.info(f"pcbnew version: {pcbnew.GetBuildVersion()}")
+        logger.warning("Using SWIG backend - changes require manual reload in KiCAD UI")
+    except ImportError as e:
+        logger.error(f"Failed to import pcbnew module: {e}")
+        logger.error(f"Current sys.path: {sys.path}")
+
+        # Platform-specific help message
+        help_message = ""
+        if sys.platform == 'win32':
+            help_message = """
 Windows Troubleshooting:
 1. Verify KiCAD is installed: C:\\Program Files\\KiCad\\9.0
 2. Check PYTHONPATH environment variable points to:
@@ -121,37 +153,47 @@ Windows Troubleshooting:
 4. Log file location: %USERPROFILE%\\.kicad-mcp\\logs\\kicad_interface.log
 5. Run setup-windows.ps1 for automatic configuration
 """
-    elif sys.platform == 'darwin':
-        help_message = """
+        elif sys.platform == 'darwin':
+            help_message = """
 macOS Troubleshooting:
 1. Verify KiCAD is installed: /Applications/KiCad/KiCad.app
 2. Check PYTHONPATH points to KiCAD's Python packages
 3. Run: python3 -c "import pcbnew" to test
 """
-    else:  # Linux
-        help_message = """
+        else:  # Linux
+            help_message = """
 Linux Troubleshooting:
 1. Verify KiCAD is installed: apt list --installed | grep kicad
 2. Check: /usr/lib/kicad/lib/python3/dist-packages exists
 3. Test: python3 -c "import pcbnew"
 """
 
-    logger.error(help_message)
+        logger.error(help_message)
 
+        error_response = {
+            "success": False,
+            "message": "Failed to import pcbnew module - KiCAD Python API not found",
+            "errorDetails": f"Error: {str(e)}\n\n{help_message}\n\nPython sys.path:\n{chr(10).join(sys.path)}"
+        }
+        print(json.dumps(error_response))
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Unexpected error importing pcbnew: {e}")
+        logger.error(traceback.format_exc())
+        error_response = {
+            "success": False,
+            "message": "Error importing pcbnew module",
+            "errorDetails": str(e)
+        }
+        print(json.dumps(error_response))
+        sys.exit(1)
+
+# If IPC-only mode requested but not available, exit with error
+elif KICAD_BACKEND == 'ipc' and not USE_IPC_BACKEND:
     error_response = {
         "success": False,
-        "message": "Failed to import pcbnew module - KiCAD Python API not found",
-        "errorDetails": f"Error: {str(e)}\n\n{help_message}\n\nPython sys.path:\n{chr(10).join(sys.path)}"
-    }
-    print(json.dumps(error_response))
-    sys.exit(1)
-except Exception as e:
-    logger.error(f"Unexpected error importing pcbnew: {e}")
-    logger.error(traceback.format_exc())
-    error_response = {
-        "success": False,
-        "message": "Error importing pcbnew module",
-        "errorDetails": str(e)
+        "message": "IPC backend requested but not available",
+        "errorDetails": "KiCAD must be running with IPC API enabled. Enable at: Preferences > Plugins > Enable IPC API Server"
     }
     print(json.dumps(error_response))
     sys.exit(1)
@@ -188,6 +230,19 @@ class KiCADInterface:
         """Initialize the interface and command handlers"""
         self.board = None
         self.project_filename = None
+        self.use_ipc = USE_IPC_BACKEND
+        self.ipc_backend = ipc_backend
+        self.ipc_board_api = None
+
+        if self.use_ipc:
+            logger.info("Initializing with IPC backend (real-time UI sync enabled)")
+            try:
+                self.ipc_board_api = self.ipc_backend.get_board()
+                logger.info("✓ Got IPC board API")
+            except Exception as e:
+                logger.warning(f"Could not get IPC board API: {e}")
+        else:
+            logger.info("Initializing with SWIG backend")
 
         logger.info("Initializing command handlers...")
 
@@ -282,25 +337,81 @@ class KiCADInterface:
 
             # UI/Process management commands
             "check_kicad_ui": self._handle_check_kicad_ui,
-            "launch_kicad_ui": self._handle_launch_kicad_ui
+            "launch_kicad_ui": self._handle_launch_kicad_ui,
+
+            # IPC-specific commands (real-time operations)
+            "get_backend_info": self._handle_get_backend_info,
+            "ipc_add_track": self._handle_ipc_add_track,
+            "ipc_add_via": self._handle_ipc_add_via,
+            "ipc_add_text": self._handle_ipc_add_text,
+            "ipc_list_components": self._handle_ipc_list_components,
+            "ipc_get_tracks": self._handle_ipc_get_tracks,
+            "ipc_get_vias": self._handle_ipc_get_vias,
+            "ipc_save_board": self._handle_ipc_save_board
         }
-        
-        logger.info("KiCAD interface initialized")
+
+        logger.info(f"KiCAD interface initialized (backend: {'IPC' if self.use_ipc else 'SWIG'})")
+
+    # Commands that can be handled via IPC for real-time updates
+    IPC_CAPABLE_COMMANDS = {
+        # Routing commands
+        "route_trace": "_ipc_route_trace",
+        "add_via": "_ipc_add_via",
+        "add_net": "_ipc_add_net",
+        # Board commands
+        "add_text": "_ipc_add_text",
+        "add_board_text": "_ipc_add_text",
+        "set_board_size": "_ipc_set_board_size",
+        "get_board_info": "_ipc_get_board_info",
+        # Component commands
+        "place_component": "_ipc_place_component",
+        "move_component": "_ipc_move_component",
+        "delete_component": "_ipc_delete_component",
+        "get_component_list": "_ipc_get_component_list",
+        # Save command
+        "save_project": "_ipc_save_project",
+    }
 
     def handle_command(self, command: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Route command to appropriate handler"""
+        """Route command to appropriate handler, preferring IPC when available"""
         logger.info(f"Handling command: {command}")
         logger.debug(f"Command parameters: {params}")
-        
+
         try:
+            # Check if we can use IPC for this command (real-time UI sync)
+            if self.use_ipc and self.ipc_board_api and command in self.IPC_CAPABLE_COMMANDS:
+                ipc_handler_name = self.IPC_CAPABLE_COMMANDS[command]
+                ipc_handler = getattr(self, ipc_handler_name, None)
+
+                if ipc_handler:
+                    logger.info(f"Using IPC backend for {command} (real-time sync)")
+                    result = ipc_handler(params)
+
+                    # Add indicator that IPC was used
+                    if isinstance(result, dict):
+                        result["_backend"] = "ipc"
+                        result["_realtime"] = True
+
+                    logger.debug(f"IPC command result: {result}")
+                    return result
+
+            # Fall back to SWIG-based handler
+            if self.use_ipc and command in self.IPC_CAPABLE_COMMANDS:
+                logger.warning(f"IPC handler not available for {command}, falling back to SWIG (deprecated)")
+
             # Get the handler for the command
             handler = self.command_routes.get(command)
-            
+
             if handler:
                 # Execute the command
                 result = handler(params)
                 logger.debug(f"Command result: {result}")
-                
+
+                # Add backend indicator
+                if isinstance(result, dict):
+                    result["_backend"] = "swig"
+                    result["_realtime"] = False
+
                 # Update board reference if command was successful
                 if result.get("success", False):
                     if command == "create_project" or command == "open_project":
@@ -308,7 +419,7 @@ class KiCADInterface:
                         # Get board from the project commands handler
                         self.board = self.project_commands.board
                         self._update_command_handlers()
-                
+
                 return result
             else:
                 logger.error(f"Unknown command: {command}")
@@ -317,7 +428,7 @@ class KiCADInterface:
                     "message": f"Unknown command: {command}",
                     "errorDetails": "The specified command is not supported"
                 }
-                
+
         except Exception as e:
             # Get the full traceback
             traceback_str = traceback.format_exc()
@@ -634,6 +745,425 @@ class KiCADInterface:
         except Exception as e:
             logger.error(f"Error launching KiCAD UI: {str(e)}")
             return {"success": False, "message": str(e)}
+
+    # =========================================================================
+    # IPC Backend handlers - these provide real-time UI synchronization
+    # These methods are called automatically when IPC is available
+    # =========================================================================
+
+    def _ipc_route_trace(self, params):
+        """IPC handler for route_trace - adds track with real-time UI update"""
+        try:
+            # Extract parameters matching the existing route_trace interface
+            start = params.get("start", {})
+            end = params.get("end", {})
+            layer = params.get("layer", "F.Cu")
+            width = params.get("width", 0.25)
+            net = params.get("net")
+
+            # Handle both dict format and direct x/y
+            start_x = start.get("x", 0) if isinstance(start, dict) else params.get("startX", 0)
+            start_y = start.get("y", 0) if isinstance(start, dict) else params.get("startY", 0)
+            end_x = end.get("x", 0) if isinstance(end, dict) else params.get("endX", 0)
+            end_y = end.get("y", 0) if isinstance(end, dict) else params.get("endY", 0)
+
+            success = self.ipc_board_api.add_track(
+                start_x=start_x,
+                start_y=start_y,
+                end_x=end_x,
+                end_y=end_y,
+                width=width,
+                layer=layer,
+                net_name=net
+            )
+
+            return {
+                "success": success,
+                "message": "Added trace (visible in KiCAD UI)" if success else "Failed to add trace",
+                "trace": {
+                    "start": {"x": start_x, "y": start_y, "unit": "mm"},
+                    "end": {"x": end_x, "y": end_y, "unit": "mm"},
+                    "layer": layer,
+                    "width": width,
+                    "net": net
+                }
+            }
+        except Exception as e:
+            logger.error(f"IPC route_trace error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_add_via(self, params):
+        """IPC handler for add_via - adds via with real-time UI update"""
+        try:
+            position = params.get("position", {})
+            x = position.get("x", 0) if isinstance(position, dict) else params.get("x", 0)
+            y = position.get("y", 0) if isinstance(position, dict) else params.get("y", 0)
+
+            size = params.get("size", 0.8)
+            drill = params.get("drill", 0.4)
+            net = params.get("net")
+            from_layer = params.get("from_layer", "F.Cu")
+            to_layer = params.get("to_layer", "B.Cu")
+
+            success = self.ipc_board_api.add_via(
+                x=x,
+                y=y,
+                diameter=size,
+                drill=drill,
+                net_name=net,
+                via_type="through"
+            )
+
+            return {
+                "success": success,
+                "message": "Added via (visible in KiCAD UI)" if success else "Failed to add via",
+                "via": {
+                    "position": {"x": x, "y": y, "unit": "mm"},
+                    "size": size,
+                    "drill": drill,
+                    "from_layer": from_layer,
+                    "to_layer": to_layer,
+                    "net": net
+                }
+            }
+        except Exception as e:
+            logger.error(f"IPC add_via error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_add_net(self, params):
+        """IPC handler for add_net"""
+        # Note: Net creation via IPC is limited - nets are typically created
+        # when components are placed. Return success for compatibility.
+        name = params.get("name")
+        logger.info(f"IPC add_net: {name} (nets auto-created with components)")
+        return {
+            "success": True,
+            "message": f"Net '{name}' will be created when components are connected",
+            "net": {"name": name}
+        }
+
+    def _ipc_add_text(self, params):
+        """IPC handler for add_text/add_board_text - adds text with real-time UI update"""
+        try:
+            text = params.get("text", "")
+            position = params.get("position", {})
+            x = position.get("x", 0) if isinstance(position, dict) else params.get("x", 0)
+            y = position.get("y", 0) if isinstance(position, dict) else params.get("y", 0)
+            layer = params.get("layer", "F.SilkS")
+            size = params.get("size", 1.0)
+            rotation = params.get("rotation", 0)
+
+            success = self.ipc_board_api.add_text(
+                text=text,
+                x=x,
+                y=y,
+                layer=layer,
+                size=size,
+                rotation=rotation
+            )
+
+            return {
+                "success": success,
+                "message": f"Added text '{text}' (visible in KiCAD UI)" if success else "Failed to add text"
+            }
+        except Exception as e:
+            logger.error(f"IPC add_text error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_set_board_size(self, params):
+        """IPC handler for set_board_size"""
+        try:
+            width = params.get("width", 100)
+            height = params.get("height", 100)
+            unit = params.get("unit", "mm")
+
+            success = self.ipc_board_api.set_size(width, height, unit)
+
+            return {
+                "success": success,
+                "message": f"Board size set to {width}x{height} {unit} (visible in KiCAD UI)" if success else "Failed to set board size",
+                "boardSize": {"width": width, "height": height, "unit": unit}
+            }
+        except Exception as e:
+            logger.error(f"IPC set_board_size error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_get_board_info(self, params):
+        """IPC handler for get_board_info"""
+        try:
+            size = self.ipc_board_api.get_size()
+            components = self.ipc_board_api.list_components()
+            tracks = self.ipc_board_api.get_tracks()
+            vias = self.ipc_board_api.get_vias()
+            nets = self.ipc_board_api.get_nets()
+
+            return {
+                "success": True,
+                "boardInfo": {
+                    "size": size,
+                    "componentCount": len(components),
+                    "trackCount": len(tracks),
+                    "viaCount": len(vias),
+                    "netCount": len(nets),
+                    "backend": "ipc",
+                    "realtime": True
+                }
+            }
+        except Exception as e:
+            logger.error(f"IPC get_board_info error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_place_component(self, params):
+        """IPC handler for place_component - places component with real-time UI update"""
+        try:
+            reference = params.get("reference", params.get("componentId", ""))
+            footprint = params.get("footprint", "")
+            position = params.get("position", {})
+            x = position.get("x", 0) if isinstance(position, dict) else params.get("x", 0)
+            y = position.get("y", 0) if isinstance(position, dict) else params.get("y", 0)
+            rotation = params.get("rotation", 0)
+            layer = params.get("layer", "F.Cu")
+            value = params.get("value", "")
+
+            success = self.ipc_board_api.place_component(
+                reference=reference,
+                footprint=footprint,
+                x=x,
+                y=y,
+                rotation=rotation,
+                layer=layer,
+                value=value
+            )
+
+            return {
+                "success": success,
+                "message": f"Placed component {reference} (visible in KiCAD UI)" if success else "Failed to place component",
+                "component": {
+                    "reference": reference,
+                    "footprint": footprint,
+                    "position": {"x": x, "y": y, "unit": "mm"},
+                    "rotation": rotation,
+                    "layer": layer
+                }
+            }
+        except Exception as e:
+            logger.error(f"IPC place_component error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_move_component(self, params):
+        """IPC handler for move_component - moves component with real-time UI update"""
+        try:
+            reference = params.get("reference", params.get("componentId", ""))
+            position = params.get("position", {})
+            x = position.get("x", 0) if isinstance(position, dict) else params.get("x", 0)
+            y = position.get("y", 0) if isinstance(position, dict) else params.get("y", 0)
+            rotation = params.get("rotation")
+
+            success = self.ipc_board_api.move_component(
+                reference=reference,
+                x=x,
+                y=y,
+                rotation=rotation
+            )
+
+            return {
+                "success": success,
+                "message": f"Moved component {reference} (visible in KiCAD UI)" if success else "Failed to move component"
+            }
+        except Exception as e:
+            logger.error(f"IPC move_component error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_delete_component(self, params):
+        """IPC handler for delete_component - deletes component with real-time UI update"""
+        try:
+            reference = params.get("reference", params.get("componentId", ""))
+
+            success = self.ipc_board_api.delete_component(reference=reference)
+
+            return {
+                "success": success,
+                "message": f"Deleted component {reference} (visible in KiCAD UI)" if success else "Failed to delete component"
+            }
+        except Exception as e:
+            logger.error(f"IPC delete_component error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_get_component_list(self, params):
+        """IPC handler for get_component_list"""
+        try:
+            components = self.ipc_board_api.list_components()
+
+            return {
+                "success": True,
+                "components": components,
+                "count": len(components)
+            }
+        except Exception as e:
+            logger.error(f"IPC get_component_list error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_save_project(self, params):
+        """IPC handler for save_project"""
+        try:
+            success = self.ipc_board_api.save()
+
+            return {
+                "success": success,
+                "message": "Project saved" if success else "Failed to save project"
+            }
+        except Exception as e:
+            logger.error(f"IPC save_project error: {e}")
+            return {"success": False, "message": str(e)}
+
+    # =========================================================================
+    # Legacy IPC command handlers (explicit ipc_* commands)
+    # =========================================================================
+
+    def _handle_get_backend_info(self, params):
+        """Get information about the current backend"""
+        return {
+            "success": True,
+            "backend": "ipc" if self.use_ipc else "swig",
+            "realtime_sync": self.use_ipc,
+            "ipc_connected": self.ipc_backend.is_connected() if self.ipc_backend else False,
+            "version": self.ipc_backend.get_version() if self.ipc_backend else "N/A",
+            "message": "Using IPC backend with real-time UI sync" if self.use_ipc else "Using SWIG backend (requires manual reload)"
+        }
+
+    def _handle_ipc_add_track(self, params):
+        """Add a track using IPC backend (real-time)"""
+        if not self.use_ipc or not self.ipc_board_api:
+            return {"success": False, "message": "IPC backend not available"}
+
+        try:
+            success = self.ipc_board_api.add_track(
+                start_x=params.get("startX", 0),
+                start_y=params.get("startY", 0),
+                end_x=params.get("endX", 0),
+                end_y=params.get("endY", 0),
+                width=params.get("width", 0.25),
+                layer=params.get("layer", "F.Cu"),
+                net_name=params.get("net")
+            )
+            return {
+                "success": success,
+                "message": "Track added (visible in KiCAD UI)" if success else "Failed to add track",
+                "realtime": True
+            }
+        except Exception as e:
+            logger.error(f"Error adding track via IPC: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_ipc_add_via(self, params):
+        """Add a via using IPC backend (real-time)"""
+        if not self.use_ipc or not self.ipc_board_api:
+            return {"success": False, "message": "IPC backend not available"}
+
+        try:
+            success = self.ipc_board_api.add_via(
+                x=params.get("x", 0),
+                y=params.get("y", 0),
+                diameter=params.get("diameter", 0.8),
+                drill=params.get("drill", 0.4),
+                net_name=params.get("net"),
+                via_type=params.get("type", "through")
+            )
+            return {
+                "success": success,
+                "message": "Via added (visible in KiCAD UI)" if success else "Failed to add via",
+                "realtime": True
+            }
+        except Exception as e:
+            logger.error(f"Error adding via via IPC: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_ipc_add_text(self, params):
+        """Add text using IPC backend (real-time)"""
+        if not self.use_ipc or not self.ipc_board_api:
+            return {"success": False, "message": "IPC backend not available"}
+
+        try:
+            success = self.ipc_board_api.add_text(
+                text=params.get("text", ""),
+                x=params.get("x", 0),
+                y=params.get("y", 0),
+                layer=params.get("layer", "F.SilkS"),
+                size=params.get("size", 1.0),
+                rotation=params.get("rotation", 0)
+            )
+            return {
+                "success": success,
+                "message": "Text added (visible in KiCAD UI)" if success else "Failed to add text",
+                "realtime": True
+            }
+        except Exception as e:
+            logger.error(f"Error adding text via IPC: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_ipc_list_components(self, params):
+        """List components using IPC backend"""
+        if not self.use_ipc or not self.ipc_board_api:
+            return {"success": False, "message": "IPC backend not available"}
+
+        try:
+            components = self.ipc_board_api.list_components()
+            return {
+                "success": True,
+                "components": components,
+                "count": len(components)
+            }
+        except Exception as e:
+            logger.error(f"Error listing components via IPC: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_ipc_get_tracks(self, params):
+        """Get tracks using IPC backend"""
+        if not self.use_ipc or not self.ipc_board_api:
+            return {"success": False, "message": "IPC backend not available"}
+
+        try:
+            tracks = self.ipc_board_api.get_tracks()
+            return {
+                "success": True,
+                "tracks": tracks,
+                "count": len(tracks)
+            }
+        except Exception as e:
+            logger.error(f"Error getting tracks via IPC: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_ipc_get_vias(self, params):
+        """Get vias using IPC backend"""
+        if not self.use_ipc or not self.ipc_board_api:
+            return {"success": False, "message": "IPC backend not available"}
+
+        try:
+            vias = self.ipc_board_api.get_vias()
+            return {
+                "success": True,
+                "vias": vias,
+                "count": len(vias)
+            }
+        except Exception as e:
+            logger.error(f"Error getting vias via IPC: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_ipc_save_board(self, params):
+        """Save board using IPC backend"""
+        if not self.use_ipc or not self.ipc_board_api:
+            return {"success": False, "message": "IPC backend not available"}
+
+        try:
+            success = self.ipc_board_api.save()
+            return {
+                "success": success,
+                "message": "Board saved" if success else "Failed to save board"
+            }
+        except Exception as e:
+            logger.error(f"Error saving board via IPC: {e}")
+            return {"success": False, "message": str(e)}
+
 
 def main():
     """Main entry point"""

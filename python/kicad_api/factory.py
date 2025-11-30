@@ -157,12 +157,12 @@ def get_available_backends() -> dict:
     """
     results = {}
 
-    # Check IPC
+    # Check IPC (kicad-python uses 'kipy' module name)
     try:
-        import kicad
+        import kipy
         results['ipc'] = {
             'available': True,
-            'version': getattr(kicad, '__version__', 'unknown')
+            'version': getattr(kipy, '__version__', 'unknown')
         }
     except ImportError:
         results['ipc'] = {'available': False, 'version': None}

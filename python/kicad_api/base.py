@@ -185,8 +185,92 @@ class BoardAPI(ABC):
         """
         pass
 
-    # Add more abstract methods for routing, DRC, export, etc.
-    # These will be filled in during migration
+    # Routing Operations
+    def add_track(
+        self,
+        start_x: float,
+        start_y: float,
+        end_x: float,
+        end_y: float,
+        width: float = 0.25,
+        layer: str = "F.Cu",
+        net_name: Optional[str] = None
+    ) -> bool:
+        """
+        Add a track (trace) to the board
+
+        Args:
+            start_x: Start X position (mm)
+            start_y: Start Y position (mm)
+            end_x: End X position (mm)
+            end_y: End Y position (mm)
+            width: Track width (mm)
+            layer: Layer name
+            net_name: Optional net name
+
+        Returns:
+            True if successful
+        """
+        raise NotImplementedError()
+
+    def add_via(
+        self,
+        x: float,
+        y: float,
+        diameter: float = 0.8,
+        drill: float = 0.4,
+        net_name: Optional[str] = None,
+        via_type: str = "through"
+    ) -> bool:
+        """
+        Add a via to the board
+
+        Args:
+            x: X position (mm)
+            y: Y position (mm)
+            diameter: Via diameter (mm)
+            drill: Drill diameter (mm)
+            net_name: Optional net name
+            via_type: Via type ("through", "blind", "micro")
+
+        Returns:
+            True if successful
+        """
+        raise NotImplementedError()
+
+    # Transaction support for undo/redo
+    def begin_transaction(self, description: str = "MCP Operation") -> None:
+        """Begin a transaction for grouping operations."""
+        pass  # Optional - not all backends support this
+
+    def commit_transaction(self, description: str = "MCP Operation") -> None:
+        """Commit the current transaction."""
+        pass  # Optional
+
+    def rollback_transaction(self) -> None:
+        """Roll back the current transaction."""
+        pass  # Optional
+
+    def save(self) -> bool:
+        """Save the board."""
+        raise NotImplementedError()
+
+    # Query operations
+    def get_tracks(self) -> List[Dict[str, Any]]:
+        """Get all tracks on the board."""
+        raise NotImplementedError()
+
+    def get_vias(self) -> List[Dict[str, Any]]:
+        """Get all vias on the board."""
+        raise NotImplementedError()
+
+    def get_nets(self) -> List[Dict[str, Any]]:
+        """Get all nets on the board."""
+        raise NotImplementedError()
+
+    def get_selection(self) -> List[Dict[str, Any]]:
+        """Get currently selected items."""
+        raise NotImplementedError()
 
 
 class BackendError(Exception):
