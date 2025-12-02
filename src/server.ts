@@ -269,10 +269,10 @@ export class KiCADMcpServer {
       }
       this.pythonProcess = spawn(pythonExe, [this.kicadScriptPath], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        /*env: {
+        env: {
           ...process.env,
           PYTHONPATH: process.env.PYTHONPATH || 'C:/Program Files/KiCad/9.0/lib/python3/dist-packages'
-        }*/
+        }
       });
       
       // Listen for process exit
