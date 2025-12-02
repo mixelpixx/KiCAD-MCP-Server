@@ -71,7 +71,7 @@ function setupGracefulShutdown(server: KiCADMcpServer) {
   // Handle termination signals
   process.on('SIGINT', async () => {
     logger.info('Received SIGINT signal. Shutting down...');
-    await shutdownServer(server);
+    //await shutdownServer(server);
   });
   
   process.on('SIGTERM', async () => {

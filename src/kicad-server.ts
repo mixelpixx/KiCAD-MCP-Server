@@ -308,10 +308,10 @@ class KiCADServer {
       console.error(`Using Python executable: ${pythonExe}`);
       this.pythonProcess = spawn(pythonExe, [this.kicadScriptPath], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: {
+        /*env: {
           ...process.env,
           PYTHONPATH: 'C:/Program Files/KiCad/9.0/lib/python3/dist-packages'
-        }
+        }*/
       });
       
       // Listen for process exit

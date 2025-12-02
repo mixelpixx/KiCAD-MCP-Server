@@ -1,5 +1,8 @@
 from skip import Schematic
 import os
+import logging
+
+logger = logging.getLogger('kicad_interface')
 
 class SchematicManager:
     """Core schematic operations using kicad-skip"""
@@ -33,21 +36,21 @@ class SchematicManager:
                  # For now, we'll just create the schematic.
                  pass # Placeholder for potential metadata handling
 
-        print(f"Created new schematic: {name}")
+        logger.info(f"Created new schematic: {name}")
         return sch
 
     @staticmethod
     def load_schematic(file_path):
         """Load an existing schematic"""
         if not os.path.exists(file_path):
-            print(f"Error: Schematic file not found at {file_path}")
+            logger.error(f"Schematic file not found at {file_path}")
             return None
         try:
             sch = Schematic(file_path)
-            print(f"Loaded schematic from: {file_path}")
+            logger.info(f"Loaded schematic from: {file_path}")
             return sch
         except Exception as e:
-            print(f"Error loading schematic from {file_path}: {e}")
+            logger.error(f"Error loading schematic from {file_path}: {e}")
             return None
 
     @staticmethod
@@ -56,10 +59,10 @@ class SchematicManager:
         try:
             # kicad-skip uses write method, not save
             schematic.write(file_path)
-            print(f"Saved schematic to: {file_path}")
+            logger.info(f"Saved schematic to: {file_path}")
             return True
         except Exception as e:
-            print(f"Error saving schematic to {file_path}: {e}")
+            logger.error(f"Error saving schematic to {file_path}: {e}")
             return False
 
     @staticmethod
@@ -72,7 +75,7 @@ class SchematicManager:
             "generator": schematic.generator,
             # Add other relevant properties if needed
         }
-        print("Extracted schematic metadata")
+        logger.debug("Extracted schematic metadata")
         return metadata
 
 if __name__ == '__main__':
