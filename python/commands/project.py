@@ -19,7 +19,8 @@ class ProjectCommands:
     def create_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new KiCAD project"""
         try:
-            project_name = params.get("projectName", "New_Project")
+            # Accept both 'name' (from MCP tool) and 'projectName' (legacy)
+            project_name = params.get("name") or params.get("projectName", "New_Project")
             path = params.get("path", os.getcwd())
             template = params.get("template")
 

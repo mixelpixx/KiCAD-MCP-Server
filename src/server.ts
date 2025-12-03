@@ -82,6 +82,8 @@ export class KiCADMcpServer {
   private stdioTransport!: StdioServerTransport;
   private requestQueue: Array<{ request: any, resolve: Function, reject: Function }> = [];
   private processingRequest = false;
+  private responseBuffer: string = '';
+  private currentRequestHandler: { resolve: Function, reject: Function, timeoutHandle: NodeJS.Timeout } | null = null;
   
   /**
    * Constructor for the KiCAD MCP Server
@@ -290,7 +292,14 @@ export class KiCADMcpServer {
           logger.error(`Python stderr: ${data.toString()}`);
         });
       }
-      
+
+      // Set up persistent stdout handler (instead of adding/removing per request)
+      if (this.pythonProcess.stdout) {
+        this.pythonProcess.stdout.on('data', (data: Buffer) => {
+          this.handlePythonResponse(data);
+        });
+      }
+
       // Connect server to STDIO transport
       logger.info('Connecting MCP server to STDIO transport...');
       try {
@@ -366,6 +375,64 @@ export class KiCADMcpServer {
   }
   
   /**
+   * Handle incoming data from Python process stdout
+   * This is a persistent handler that processes all responses
+   */
+  private handlePythonResponse(data: Buffer): void {
+    const chunk = data.toString();
+    logger.debug(`Received data chunk: ${chunk.length} bytes`);
+    this.responseBuffer += chunk;
+
+    // Try to parse complete JSON responses (may have multiple or partial)
+    this.tryParseResponse();
+  }
+
+  /**
+   * Try to parse a complete JSON response from the buffer
+   */
+  private tryParseResponse(): void {
+    if (!this.currentRequestHandler) {
+      // No pending request, clear buffer if it has data (shouldn't happen)
+      if (this.responseBuffer.trim()) {
+        logger.warn(`Received data with no pending request: ${this.responseBuffer.substring(0, 100)}...`);
+        this.responseBuffer = '';
+      }
+      return;
+    }
+
+    try {
+      // Try to parse the response as JSON
+      const result = JSON.parse(this.responseBuffer);
+
+      // If we get here, we have a valid JSON response
+      logger.debug(`Completed KiCAD command with result: ${result.success ? 'success' : 'failure'}`);
+
+      // Clear the timeout since we got a response
+      if (this.currentRequestHandler.timeoutHandle) {
+        clearTimeout(this.currentRequestHandler.timeoutHandle);
+      }
+
+      // Get the handler before clearing
+      const handler = this.currentRequestHandler;
+
+      // Clear state
+      this.responseBuffer = '';
+      this.currentRequestHandler = null;
+      this.processingRequest = false;
+
+      // Resolve the promise with the result
+      handler.resolve(result);
+
+      // Process next request if any
+      setTimeout(() => this.processNextRequest(), 0);
+
+    } catch (e) {
+      // Not a complete JSON yet, keep collecting data
+      // This is normal for large responses that come in chunks
+    }
+  }
+
+  /**
    * Process the next request in the queue
    */
   private processNextRequest(): void {
@@ -373,102 +440,56 @@ export class KiCADMcpServer {
     if (this.requestQueue.length === 0 || this.processingRequest) {
       return;
     }
-    
+
     // Set processing flag
     this.processingRequest = true;
-    
+
     // Get the next request
     const { request, resolve, reject } = this.requestQueue.shift()!;
-    
+
     try {
       logger.debug(`Processing KiCAD command: ${request.command}`);
-      
+
       // Format the command and parameters as JSON
       const requestStr = JSON.stringify(request);
-      
-      // Set up response handling
-      let responseData = '';
-      let timeoutHandle: NodeJS.Timeout | null = null;
 
-      // Clear any previous listeners
-      if (this.pythonProcess?.stdout) {
-        this.pythonProcess.stdout.removeAllListeners('data');
-        this.pythonProcess.stdout.removeAllListeners('end');
-      }
-
-      // Set up new listeners
-      if (this.pythonProcess?.stdout) {
-        this.pythonProcess.stdout.on('data', (data: Buffer) => {
-          const chunk = data.toString();
-          logger.debug(`Received data chunk: ${chunk.length} bytes`);
-          responseData += chunk;
-
-          // Check if we have a complete response
-          try {
-            // Try to parse the response as JSON
-            const result = JSON.parse(responseData);
-
-            // If we get here, we have a valid JSON response
-            logger.debug(`Completed KiCAD command: ${request.command} with result: ${result.success ? 'success' : 'failure'}`);
-
-            // Clear the timeout since we got a response
-            if (timeoutHandle) {
-              clearTimeout(timeoutHandle);
-            }
-
-            // Reset processing flag
-            this.processingRequest = false;
-
-            // Process next request if any
-            setTimeout(() => this.processNextRequest(), 0);
-
-            // Clear listeners
-            if (this.pythonProcess?.stdout) {
-              this.pythonProcess.stdout.removeAllListeners('data');
-              this.pythonProcess.stdout.removeAllListeners('end');
-            }
-
-            // Resolve the promise with the result
-            resolve(result);
-          } catch (e) {
-            // Not a complete JSON yet, keep collecting data
-          }
-        });
-      }
+      // Clear response buffer for new request
+      this.responseBuffer = '';
 
       // Set a timeout (use command-specific timeout or default)
       const timeoutDuration = request.timeout || 30000;
-      timeoutHandle = setTimeout(() => {
+      const timeoutHandle = setTimeout(() => {
         logger.error(`Command timeout after ${timeoutDuration/1000}s: ${request.command}`);
+        logger.error(`Buffer contents: ${this.responseBuffer.substring(0, 200)}...`);
 
-        // Clear listeners
-        if (this.pythonProcess?.stdout) {
-          this.pythonProcess.stdout.removeAllListeners('data');
-          this.pythonProcess.stdout.removeAllListeners('end');
-        }
-
-        // Reset processing flag
+        // Clear state
+        this.responseBuffer = '';
+        this.currentRequestHandler = null;
         this.processingRequest = false;
-
-        // Process next request
-        setTimeout(() => this.processNextRequest(), 0);
 
         // Reject the promise
         reject(new Error(`Command timeout after ${timeoutDuration/1000}s: ${request.command}`));
+
+        // Process next request
+        setTimeout(() => this.processNextRequest(), 0);
       }, timeoutDuration);
-      
+
+      // Store the current request handler
+      this.currentRequestHandler = { resolve, reject, timeoutHandle };
+
       // Write the request to the Python process
       logger.debug(`Sending request: ${requestStr}`);
       this.pythonProcess?.stdin?.write(requestStr + '\n');
     } catch (error) {
       logger.error(`Error processing request: ${error}`);
-      
+
       // Reset processing flag
       this.processingRequest = false;
-      
+      this.currentRequestHandler = null;
+
       // Process next request
       setTimeout(() => this.processNextRequest(), 0);
-      
+
       // Reject the promise
       reject(error);
     }

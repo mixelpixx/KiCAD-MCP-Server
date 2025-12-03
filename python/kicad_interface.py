@@ -454,10 +454,11 @@ class KiCADInterface:
         """Create a new schematic"""
         logger.info("Creating schematic")
         try:
-            project_name = params.get("projectName")
+            # Accept both 'name' (from MCP tool) and 'projectName' (legacy)
+            project_name = params.get("name") or params.get("projectName")
             path = params.get("path", ".")
             metadata = params.get("metadata", {})
-            
+
             if not project_name:
                 return {"success": False, "message": "Project name is required"}
             
