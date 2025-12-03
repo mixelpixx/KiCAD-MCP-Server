@@ -464,6 +464,207 @@ class IPCBoardAPI(BoardAPI):
         Place a component on the board.
 
         The component appears immediately in the KiCAD UI.
+
+        This method uses a hybrid approach:
+        1. Load the footprint definition from the library using pcbnew (SWIG)
+        2. Place it on the board via IPC for real-time UI updates
+
+        Args:
+            reference: Component reference designator (e.g., "R1", "U1")
+            footprint: Footprint path in format "Library:FootprintName" or just "FootprintName"
+            x: X position in mm
+            y: Y position in mm
+            rotation: Rotation angle in degrees
+            layer: Layer name ("F.Cu" for top, "B.Cu" for bottom)
+            value: Component value (optional)
+        """
+        try:
+            # First, try to load the footprint from library using pcbnew SWIG
+            loaded_fp = self._load_footprint_from_library(footprint)
+
+            if loaded_fp:
+                # We have the footprint from the library - place it via SWIG
+                # then sync to IPC for UI update
+                return self._place_loaded_footprint(
+                    loaded_fp, reference, x, y, rotation, layer, value
+                )
+            else:
+                # Fallback: Create a basic placeholder footprint via IPC
+                logger.warning(f"Could not load footprint '{footprint}' from library, creating placeholder")
+                return self._place_placeholder_footprint(
+                    reference, footprint, x, y, rotation, layer, value
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to place component: {e}")
+            return False
+
+    def _load_footprint_from_library(self, footprint_path: str):
+        """
+        Load a footprint from the library using pcbnew SWIG API.
+
+        Args:
+            footprint_path: Either "Library:FootprintName" or just "FootprintName"
+
+        Returns:
+            pcbnew.FOOTPRINT object or None if not found
+        """
+        try:
+            import pcbnew
+
+            # Parse library and footprint name
+            if ':' in footprint_path:
+                lib_name, fp_name = footprint_path.split(':', 1)
+            else:
+                # Try to find the footprint in all libraries
+                lib_name = None
+                fp_name = footprint_path
+
+            # Get the footprint library table
+            fp_lib_table = pcbnew.GetGlobalFootprintLib()
+
+            if lib_name:
+                # Load from specific library
+                try:
+                    loaded_fp = pcbnew.FootprintLoad(fp_lib_table, lib_name, fp_name)
+                    if loaded_fp:
+                        logger.info(f"Loaded footprint '{fp_name}' from library '{lib_name}'")
+                        return loaded_fp
+                except Exception as e:
+                    logger.warning(f"Could not load from {lib_name}: {e}")
+            else:
+                # Search all libraries for the footprint
+                lib_names = fp_lib_table.GetLogicalLibs()
+                for lib in lib_names:
+                    try:
+                        loaded_fp = pcbnew.FootprintLoad(fp_lib_table, lib, fp_name)
+                        if loaded_fp:
+                            logger.info(f"Found footprint '{fp_name}' in library '{lib}'")
+                            return loaded_fp
+                    except:
+                        continue
+
+            logger.warning(f"Footprint '{footprint_path}' not found in any library")
+            return None
+
+        except ImportError:
+            logger.warning("pcbnew not available - cannot load footprints from library")
+            return None
+        except Exception as e:
+            logger.error(f"Error loading footprint from library: {e}")
+            return None
+
+    def _place_loaded_footprint(
+        self,
+        loaded_fp,
+        reference: str,
+        x: float,
+        y: float,
+        rotation: float,
+        layer: str,
+        value: str
+    ) -> bool:
+        """
+        Place a loaded pcbnew footprint onto the board.
+
+        Uses SWIG to add the footprint, then notifies for IPC sync.
+        """
+        try:
+            import pcbnew
+
+            # Get the board file path from IPC to load via pcbnew
+            board = self._get_board()
+
+            # Get the pcbnew board instance
+            # We need to get the actual board file path
+            project = board.get_project()
+            board_path = None
+
+            # Try to get the board path from kipy
+            try:
+                docs = self._kicad.get_open_documents()
+                for doc in docs:
+                    if hasattr(doc, 'path') and str(doc.path).endswith('.kicad_pcb'):
+                        board_path = str(doc.path)
+                        break
+            except Exception as e:
+                logger.debug(f"Could not get board path from IPC: {e}")
+
+            if board_path and os.path.exists(board_path):
+                # Load board via pcbnew
+                pcb_board = pcbnew.LoadBoard(board_path)
+            else:
+                # Try to get from pcbnew directly
+                pcb_board = pcbnew.GetBoard()
+
+            if not pcb_board:
+                logger.error("Could not get pcbnew board instance")
+                return self._place_placeholder_footprint(
+                    reference, "", x, y, rotation, layer, value
+                )
+
+            # Set footprint position and properties
+            scale = MM_TO_NM
+            loaded_fp.SetPosition(pcbnew.VECTOR2I(int(x * scale), int(y * scale)))
+            loaded_fp.SetOrientationDegrees(rotation)
+
+            # Set reference
+            loaded_fp.SetReference(reference)
+
+            # Set value if provided
+            if value:
+                loaded_fp.SetValue(value)
+
+            # Set layer (flip if bottom)
+            if layer == "B.Cu":
+                if not loaded_fp.IsFlipped():
+                    loaded_fp.Flip(loaded_fp.GetPosition(), False)
+
+            # Add to board
+            pcb_board.Add(loaded_fp)
+
+            # Save the board so IPC can see the changes
+            pcbnew.SaveBoard(board_path, pcb_board)
+
+            # Refresh IPC view
+            try:
+                board.revert()  # Reload from disk to sync IPC
+            except Exception as e:
+                logger.debug(f"Could not refresh IPC board: {e}")
+
+            self._notify("component_placed", {
+                "reference": reference,
+                "footprint": loaded_fp.GetFPIDAsString(),
+                "position": {"x": x, "y": y},
+                "rotation": rotation,
+                "layer": layer,
+                "loaded_from_library": True
+            })
+
+            logger.info(f"Placed component {reference} ({loaded_fp.GetFPIDAsString()}) at ({x}, {y}) mm")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error placing loaded footprint: {e}")
+            # Fall back to placeholder
+            return self._place_placeholder_footprint(
+                reference, "", x, y, rotation, layer, value
+            )
+
+    def _place_placeholder_footprint(
+        self,
+        reference: str,
+        footprint: str,
+        x: float,
+        y: float,
+        rotation: float,
+        layer: str,
+        value: str
+    ) -> bool:
+        """
+        Place a placeholder footprint when library loading fails.
+
+        Creates a basic footprint via IPC with just reference/value fields.
         """
         try:
             from kipy.board_types import Footprint
@@ -487,12 +688,8 @@ class IPCBoardAPI(BoardAPI):
             # Set reference and value
             if fp.reference_field:
                 fp.reference_field.text.value = reference
-            if fp.value_field and value:
-                fp.value_field.text.value = value
-
-            # Note: Loading footprint from library requires additional handling
-            # The IPC API may need the footprint definition to be set
-            # For now, we create a basic footprint placeholder
+            if fp.value_field:
+                fp.value_field.text.value = value if value else footprint
 
             # Begin transaction
             commit = board.begin_commit()
@@ -504,14 +701,16 @@ class IPCBoardAPI(BoardAPI):
                 "footprint": footprint,
                 "position": {"x": x, "y": y},
                 "rotation": rotation,
-                "layer": layer
+                "layer": layer,
+                "loaded_from_library": False,
+                "is_placeholder": True
             })
 
-            logger.info(f"Placed component {reference} at ({x}, {y}) mm")
+            logger.info(f"Placed placeholder component {reference} at ({x}, {y}) mm")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to place component: {e}")
+            logger.error(f"Failed to place placeholder component: {e}")
             return False
 
     def move_component(self, reference: str, x: float, y: float, rotation: Optional[float] = None) -> bool:
@@ -855,6 +1054,145 @@ class IPCBoardAPI(BoardAPI):
 
         except Exception as e:
             logger.error(f"Failed to get nets: {e}")
+            return []
+
+    def add_zone(
+        self,
+        points: List[Dict[str, float]],
+        layer: str = "F.Cu",
+        net_name: Optional[str] = None,
+        clearance: float = 0.5,
+        min_thickness: float = 0.25,
+        priority: int = 0,
+        fill_mode: str = "solid",
+        name: str = ""
+    ) -> bool:
+        """
+        Add a copper pour zone to the board.
+
+        The zone appears immediately in the KiCAD UI.
+
+        Args:
+            points: List of points defining the zone outline, e.g. [{"x": 0, "y": 0}, ...]
+            layer: Layer name (F.Cu, B.Cu, etc.)
+            net_name: Net to connect the zone to (e.g., "GND")
+            clearance: Clearance from other copper in mm
+            min_thickness: Minimum copper thickness in mm
+            priority: Zone priority (higher = fills first)
+            fill_mode: "solid" or "hatched"
+            name: Optional zone name
+        """
+        try:
+            from kipy.board_types import Zone, ZoneFillMode, ZoneType
+            from kipy.geometry import PolyLine, PolyLineNode, Vector2
+            from kipy.util.units import from_mm
+            from kipy.proto.board.board_types_pb2 import BoardLayer
+
+            board = self._get_board()
+
+            if len(points) < 3:
+                logger.error("Zone requires at least 3 points")
+                return False
+
+            # Create zone
+            zone = Zone()
+            zone.type = ZoneType.ZT_COPPER
+
+            # Set layer
+            layer_map = {
+                "F.Cu": BoardLayer.BL_F_Cu,
+                "B.Cu": BoardLayer.BL_B_Cu,
+                "In1.Cu": BoardLayer.BL_In1_Cu,
+                "In2.Cu": BoardLayer.BL_In2_Cu,
+                "In3.Cu": BoardLayer.BL_In3_Cu,
+                "In4.Cu": BoardLayer.BL_In4_Cu,
+            }
+            zone.layers = [layer_map.get(layer, BoardLayer.BL_F_Cu)]
+
+            # Set net if specified
+            if net_name:
+                nets = board.get_nets()
+                for net in nets:
+                    if net.name == net_name:
+                        zone.net = net
+                        break
+
+            # Set zone properties
+            zone.clearance = from_mm(clearance)
+            zone.min_thickness = from_mm(min_thickness)
+            zone.priority = priority
+
+            if name:
+                zone.name = name
+
+            # Set fill mode
+            if fill_mode == "hatched":
+                zone.fill_mode = ZoneFillMode.ZFM_HATCHED
+            else:
+                zone.fill_mode = ZoneFillMode.ZFM_SOLID
+
+            # Create outline polyline
+            outline = PolyLine()
+            outline.closed = True
+
+            for point in points:
+                x = point.get("x", 0)
+                y = point.get("y", 0)
+                node = PolyLineNode.from_xy(from_mm(x), from_mm(y))
+                outline.append(node)
+
+            # Set the outline on the zone
+            # Note: Zone outline is set via the proto directly since kipy
+            # doesn't expose a direct setter for creating new zones
+            zone._proto.outline.polygons.add()
+            zone._proto.outline.polygons[0].outline.CopyFrom(outline._proto)
+
+            # Add zone with transaction
+            commit = board.begin_commit()
+            board.create_items(zone)
+            board.push_commit(commit, f"Added copper zone on {layer}")
+
+            self._notify("zone_added", {
+                "layer": layer,
+                "net": net_name,
+                "points": len(points),
+                "priority": priority
+            })
+
+            logger.info(f"Added zone on {layer} with {len(points)} points")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to add zone: {e}")
+            return False
+
+    def get_zones(self) -> List[Dict[str, Any]]:
+        """Get all zones on the board."""
+        try:
+            from kipy.util.units import to_mm
+
+            board = self._get_board()
+            zones = board.get_zones()
+
+            result = []
+            for zone in zones:
+                try:
+                    result.append({
+                        "name": zone.name if hasattr(zone, 'name') else "",
+                        "net": zone.net.name if zone.net else "",
+                        "priority": zone.priority if hasattr(zone, 'priority') else 0,
+                        "layers": [str(l) for l in zone.layers] if hasattr(zone, 'layers') else [],
+                        "filled": zone.filled if hasattr(zone, 'filled') else False,
+                        "id": str(zone.id) if hasattr(zone, 'id') else ""
+                    })
+                except Exception as e:
+                    logger.warning(f"Error processing zone: {e}")
+                    continue
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to get zones: {e}")
             return []
 
     def refill_zones(self) -> bool:

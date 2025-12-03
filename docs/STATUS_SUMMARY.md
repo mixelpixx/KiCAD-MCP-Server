@@ -1,8 +1,8 @@
 # KiCAD MCP - Current Status Summary
 
-**Date:** 2025-11-01
+**Date:** 2025-12-02
 **Version:** 2.1.0-alpha
-**Phase:** Week 2 Nearly Complete - Production Features Ready
+**Phase:** IPC Backend Implementation and Testing
 
 ---
 
@@ -11,17 +11,17 @@
 | Metric | Value | Status |
 |--------|-------|--------|
 | Core Features Working | 18/20 | 90% |
-| KiCAD 9.0 Compatible | Yes | Yes |
-| UI Auto-launch | Working | Yes |
-| Component Placement | Working | Yes |
-| Component Libraries | 153 libraries | Yes |
-| Routing Operations | Working | Yes |
-| Real-time Collaboration | Working | Yes |
+| KiCAD 9.0 Compatible | Yes | Verified |
+| UI Auto-launch | Working | Verified |
+| Component Placement | Working | Verified |
+| Component Libraries | 153 libraries | Verified |
+| Routing Operations | Working | Verified |
+| IPC Backend | Under Testing | Experimental |
 | Tests Passing | 18/20 | 90% |
 
 ---
 
-## What's Working (Verified 2025-11-01)
+## What's Working (Verified 2025-12-02)
 
 ### Project Management
 - `create_project` - Create new KiCAD projects
@@ -38,7 +38,7 @@
 - `set_active_layer` - Layer switching
 - `get_layer_list` - List all layers
 
-### Component Operations (NEW - WORKING)
+### Component Operations
 - `place_component` - Place components with library footprints (KiCAD 9.0 fixed)
 - `move_component` - Move components
 - `rotate_component` - Rotate components (EDA_ANGLE fixed)
@@ -57,7 +57,7 @@
 - `GetOrientation()` returns `EDA_ANGLE`, call `.AsDegrees()`
 - `GetFootprintName()` now `GetFPIDAsString()`
 
-### Routing Operations (NEW - WORKING)
+### Routing Operations
 - `add_net` - Create electrical nets
 - `route_trace` - Add copper traces (KiCAD 9.0 fixed)
 - `add_via` - Add vias between layers (KiCAD 9.0 fixed)
@@ -69,18 +69,10 @@
 - `zone.SetPriority()` now `zone.SetAssignedPriority()`
 - `ZONE_FILL_MODE_POLYGON` now `ZONE_FILL_MODE_POLYGONS`
 - Zone outline requires `outline.NewOutline()` first
-- Zone filling disabled (SWIG API segfault) - zones filled when opened in UI
-
-### Real-time Collaboration (NEW - TESTED)
-- **MCP to UI Workflow:** AI places components, Human reloads in KiCAD UI, Components visible
-- **UI to MCP Workflow:** Human edits in UI, Save, AI reads changes
-- Latency: ~1-5 seconds (manual save/reload)
-- Full documentation: [REALTIME_WORKFLOW.md](./REALTIME_WORKFLOW.md)
 
 ### UI Management
 - `check_kicad_ui` - Detect running KiCAD
 - `launch_kicad_ui` - Auto-launch with project
-- Visual feedback workflow (manual reload)
 
 ### Export
 - `export_gerber` - Manufacturing files
@@ -96,6 +88,59 @@
 
 ---
 
+## IPC Backend (Under Development)
+
+We are currently implementing and testing the KiCAD 9.0 IPC API for real-time UI synchronization. This is experimental and may not work perfectly in all scenarios.
+
+### IPC-Capable Commands (21 total)
+
+The following commands have IPC handlers implemented:
+
+| Command | IPC Handler | Notes |
+|---------|-------------|-------|
+| `route_trace` | `_ipc_route_trace` | Implemented |
+| `add_via` | `_ipc_add_via` | Implemented |
+| `add_net` | `_ipc_add_net` | Implemented |
+| `delete_trace` | `_ipc_delete_trace` | Falls back to SWIG |
+| `get_nets_list` | `_ipc_get_nets_list` | Implemented |
+| `add_copper_pour` | `_ipc_add_copper_pour` | Implemented |
+| `refill_zones` | `_ipc_refill_zones` | Implemented |
+| `add_text` | `_ipc_add_text` | Implemented |
+| `add_board_text` | `_ipc_add_text` | Implemented |
+| `set_board_size` | `_ipc_set_board_size` | Implemented |
+| `get_board_info` | `_ipc_get_board_info` | Implemented |
+| `add_board_outline` | `_ipc_add_board_outline` | Implemented |
+| `add_mounting_hole` | `_ipc_add_mounting_hole` | Implemented |
+| `get_layer_list` | `_ipc_get_layer_list` | Implemented |
+| `place_component` | `_ipc_place_component` | Hybrid (SWIG+IPC) |
+| `move_component` | `_ipc_move_component` | Implemented |
+| `rotate_component` | `_ipc_rotate_component` | Implemented |
+| `delete_component` | `_ipc_delete_component` | Implemented |
+| `get_component_list` | `_ipc_get_component_list` | Implemented |
+| `get_component_properties` | `_ipc_get_component_properties` | Implemented |
+| `save_project` | `_ipc_save_project` | Implemented |
+
+### How IPC Works
+
+When KiCAD is running with IPC enabled:
+1. Commands check if IPC is connected
+2. If connected, use IPC handler for real-time UI updates
+3. If not connected, fall back to SWIG API
+
+**To enable IPC:**
+1. KiCAD 9.0+ must be running
+2. Enable IPC API: `Preferences > Plugins > Enable IPC API Server`
+3. Have a board open in the PCB editor
+
+### Known Limitations
+
+- KiCAD must be running for IPC to work
+- Some commands may not work as expected (still testing)
+- Footprint loading uses hybrid approach (SWIG for library, IPC for placement)
+- Delete trace falls back to SWIG (IPC API limitation)
+
+---
+
 ## What Needs Work
 
 ### Minor Issues (NON-BLOCKING)
@@ -104,67 +149,37 @@
 - Error: `AttributeError: 'BOARD' object has no attribute 'LT_USER'`
 - Impact: Low (informational command only)
 - Workaround: Use `get_project_info` or read components directly
-- Fix: Update layer constants for KiCAD 9.0 (30 min task)
 
-**2. Zone filling**
-- Copper pours created but not filled automatically
+**2. Zone filling via SWIG**
+- Copper pours created but not filled automatically via SWIG
 - Cause: SWIG API segfault when calling `ZONE_FILLER`
-- Workaround: Zones are filled automatically when opened in KiCAD UI
-- Fix: Will be resolved with IPC backend (Week 3)
+- Workaround: Use IPC backend or zones are filled when opened in KiCAD UI
 
-**3. UI manual reload**
-- User must manually reload to see MCP changes
-- Impact: Workflow friction (~2 seconds)
-- Workaround: File → Revert or close/reopen PCB editor
-- Fix: IPC backend will enable automatic refresh (Week 3)
-
----
-
-## Current Progress
-
-### Week 2 Goals (NEARLY COMPLETE)
-
-**Must Have:**
-1. **Component library integration** → 153 libraries auto-discovered, search working
-2. **Routing operations** → All operations tested and working with KiCAD 9.0
-3. **JLCPCB integration** → Planned and designed, ready to implement
-
-**Should Have:**
-4. Fix `get_board_info` API issue (deferred, low priority)
-5. Create example project (LED blinker)
-6. Real-time collaboration documented
-
-**Bonus Achievements:**
-- Real-time collaboration workflow tested end-to-end
-- Comprehensive documentation (3 new docs created)
-- All KiCAD 9.0 API compatibility issues resolved
-
-### Overall v2.0 Progress
-```
-Week 1:  ████████████████████ 100% Linux support + IPC prep
-Week 2:  ████████████████░░░░  80% Libraries + Routing + Real-time
-Week 3:  ░░░░░░░░░░░░░░░░░░░░   0% IPC Backend (next)
-...
-Overall: ████████░░░░░░░░░░░░  40%
-```
-
-**Production Readiness:** 75% - Can design and manufacture PCBs, needs IPC for optimal UX
+**3. UI manual reload (SWIG mode)**
+- User must manually reload to see MCP changes when using SWIG
+- Impact: Workflow friction
+- Workaround: Use IPC backend for automatic updates
 
 ---
 
 ## Architecture Status
 
-### SWIG Backend (Current) **PRODUCTION READY**
-- **Status:** Stable and fully functional
+### SWIG Backend (File-based)
+- **Status:** Stable and functional
 - **Pros:** No KiCAD process required, works offline, reliable
 - **Cons:** Requires manual file reload for UI updates, no zone filling
-- **Future:** Will be maintained alongside IPC as fallback/offline mode
+- **Use Case:** Offline work, automated pipelines, batch operations
 
-### IPC Backend (Week 3) **NEXT PRIORITY**
-- **Status:** Planned, not yet implemented
-- **Pros:** Real-time UI updates (<100ms), no file I/O, zone filling works
-- **Cons:** Requires KiCAD running, more complex
-- **Future:** Primary backend for interactive use
+### IPC Backend (Real-time)
+- **Status:** Under active development and testing
+- **Pros:** Real-time UI updates, no file I/O for many operations, zone filling works
+- **Cons:** Requires KiCAD running, experimental
+- **Use Case:** Interactive design sessions, paired programming with AI
+
+### Hybrid Approach
+The server automatically selects the best backend:
+- IPC when KiCAD is running with IPC enabled
+- SWIG fallback when IPC is unavailable
 
 ---
 
@@ -175,40 +190,38 @@ Overall: ████████░░░░░░░░░░░░  40%
 | Project Management | 100% | Create, open, save, info |
 | Board Setup | 100% | Size, outline, mounting holes |
 | Component Placement | 100% | Place, move, rotate, delete + 153 libraries |
-| Routing | 90% | Traces, vias, copper (no auto-fill) |
+| Routing | 90% | Traces, vias, copper (zone filling via IPC) |
 | Design Rules | 100% | Set, get, run DRC |
 | Export | 100% | Gerber, PDF, SVG, 3D, BOM |
-| UI Integration | 85% | Launch, check, manual reload |
-| Real-time Collab | 85% | MCP↔UI sync (manual save/reload) |
-| JLCPCB Integration | 0% | Planned, not implemented |
-| IPC Backend | 0% | Planned for Week 3 |
+| UI Integration | 85% | Launch, check, IPC auto-updates |
+| IPC Backend | 60% | Under testing, 21 commands implemented |
+| JLCPCB Integration | 0% | Planned |
 
 ---
 
 ## Developer Setup Status
 
-### Linux **EXCELLENT**
-- KiCAD 9.0 detection:
-- Process management:
-- venv support:
-- Library discovery: (153 libraries)
-- Testing:
-- Real-time workflow:
+### Linux - Primary Platform
+- KiCAD 9.0 detection: Working
+- Process management: Working
+- venv support: Working
+- Library discovery: Working (153 libraries)
+- Testing: Working
+- IPC backend: Under testing
 
-### Windows **SUPPORTED**
+### Windows - Supported
 - Automated setup script (`setup-windows.ps1`)
 - Process detection implemented
 - Library paths auto-detected
 - Comprehensive error diagnostics
 - Startup validation with helpful errors
 - Troubleshooting guide (WINDOWS_TROUBLESHOOTING.md)
-- Community tested (needs more testing)
 
-### macOS **UNTESTED**
+### macOS - Untested
 - Configuration provided
 - Process detection implemented
 - Library paths configured
-- Needs testing
+- Needs community testing
 
 ---
 
@@ -216,129 +229,59 @@ Overall: ████████░░░░░░░░░░░░  40%
 
 ### Complete
 - [x] README.md
-- [x] CHANGELOG_2025-10-26.md
+- [x] ROADMAP.md
+- [x] IPC_BACKEND_STATUS.md
+- [x] IPC_API_MIGRATION_PLAN.md
+- [x] REALTIME_WORKFLOW.md
+- [x] LIBRARY_INTEGRATION.md
+- [x] KNOWN_ISSUES.md
 - [x] UI_AUTO_LAUNCH.md
 - [x] VISUAL_FEEDBACK.md
 - [x] CLIENT_CONFIGURATION.md
 - [x] BUILD_AND_TEST_SESSION.md
-- [x] KNOWN_ISSUES.md
-- [x] ROADMAP.md
 - [x] STATUS_SUMMARY.md (this document)
-- [x] **LIBRARY_INTEGRATION.md** (new 2025-11-01) ✨
-- [x] **REALTIME_WORKFLOW.md** (new 2025-11-01) ✨
-- [x] **JLCPCB_INTEGRATION_PLAN.md** (new 2025-11-01) ✨
+- [x] WINDOWS_SETUP.md
+- [x] WINDOWS_TROUBLESHOOTING.md
 
 ### Needed
-- [ ] EXAMPLE_PROJECTS.md (LED blinker, Arduino shield)
-- [ ] VIDEO_TUTORIALS.md (when created)
+- [ ] EXAMPLE_PROJECTS.md
 - [ ] CONTRIBUTING.md
-- [ ] API_REFERENCE.md (comprehensive tool docs)
-- [ ] IPC_BACKEND.md (Week 3)
-
----
-
-## Recent Achievements (2025-11-01)
-
-**Week 2 Major Milestones:**
-
-1. **Component Library Integration**
-   - Auto-discovered 153 KiCAD footprint libraries
-   - Full search, list, and find functionality
-   - Supports both `Library:Footprint` and `Footprint` formats
-   - Component placement working end-to-end
-
-2. **Routing Operations**
-   - All routing commands tested with KiCAD 9.0
-   - Fixed 6 API compatibility issues
-   - Nets, traces, vias, copper pours all working
-   - Comprehensive testing completed
-
-3. **Real-time Collaboration**
-   - Tested MCP→UI workflow (AI places, human sees)
-   - Tested UI→MCP workflow (human edits, AI reads)
-   - Both directions confirmed working
-   - Documentation created with best practices
-
-4. **KiCAD 9.0 Compatibility**
-   - All API breaking changes identified and fixed
-   - `EDA_ANGLE`, `NetsByName`, zone APIs updated
-   - No known API issues remaining
-
-5. **JLCPCB Integration Planning**
-   - Researched official JLCPCB API
-   - Designed complete implementation architecture
-   - Ready to implement (~3-4 days estimated)
-
----
-
-## Learning Resources
-
-**For Users:**
-1. Start with [README.md](../README.md) - Installation and quick start
-2. Read [LIBRARY_INTEGRATION.md](LIBRARY_INTEGRATION.md) - Using footprint libraries
-3. Read [REALTIME_WORKFLOW.md](REALTIME_WORKFLOW.md) - AI-human collaboration
-4. Try example: "Place a 10k resistor at 50, 40mm using 0603 footprint"
-5. Check [KNOWN_ISSUES.md](KNOWN_ISSUES.md) if you hit problems
-
-**For Developers:**
-1. Read [BUILD_AND_TEST_SESSION.md](BUILD_AND_TEST_SESSION.md) - Build setup
-2. Check [ROADMAP.md](ROADMAP.md) - See what's coming next
-3. Review [LIBRARY_INTEGRATION.md](LIBRARY_INTEGRATION.md) - Library system internals
-4. See [JLCPCB_INTEGRATION_PLAN.md](JLCPCB_INTEGRATION_PLAN.md) - Next feature to build
-5. Pick a task and contribute!
+- [ ] API_REFERENCE.md
 
 ---
 
 ## What's Next?
 
-### Immediate (Week 2 Completion)
-1. **JLCPCB Parts Integration** (3-4 days)
-   - Download and cache ~108k parts database
-   - Parametric search (resistance, package, price)
-   - Map JLCPCB parts → KiCAD footprints
-   - Enable cost-optimized component selection
+### Immediate Priorities
+1. **Complete IPC Testing** - Verify all 21 IPC handlers work correctly
+2. **Fix Edge Cases** - Address any issues found during testing
+3. **Improve Error Handling** - Better fallback behavior
 
-### Next Phase (Week 3)
-2. **IPC Backend Implementation** (1 week)
-   - Replace file I/O with IPC socket communication
-   - Enable real-time UI updates (<100ms latency)
-   - Fix zone filling (no more SWIG segfaults)
-   - True paired programming experience
-
-### Polish (Week 4+)
-3. Example projects and tutorials
-4. Windows/macOS testing
-5. Performance optimization
-6. v2.0 stable release preparation
+### Planned Features
+- JLCPCB parts integration
+- Digikey API integration
+- Advanced routing algorithms
+- Smart BOM management
+- Design pattern library (Arduino shields, RPi HATs)
 
 ---
 
-## Call to Action
+## Getting Help
 
-**Ready to use it?**
-1. Follow [installation guide](../README.md#installation)
-2. Try placing components: "Place a 10k 0603 resistor at 50, 40mm"
-3. Test real-time collaboration workflow
-4. Report any issues you find
+**For Users:**
+1. Check [README.md](../README.md) for installation
+2. Review [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for common problems
+3. Check logs: `~/.kicad-mcp/logs/kicad_interface.log`
 
-**Want to contribute?**
-1. Check [ROADMAP.md](ROADMAP.md) for priorities
-2. JLCPCB integration is ready to implement
-3. Help test on Windows/macOS
-4. Open a PR!
+**For Developers:**
+1. Read [BUILD_AND_TEST_SESSION.md](BUILD_AND_TEST_SESSION.md)
+2. Check [ROADMAP.md](ROADMAP.md) for priorities
+3. Review [IPC_BACKEND_STATUS.md](IPC_BACKEND_STATUS.md) for IPC details
 
-**Need help?**
-- Check documentation (now with 11 comprehensive guides!)
-- Review logs: `~/.kicad-mcp/logs/kicad_interface.log`
-- Open an issue on GitHub
+**Issues:**
+- Open an issue on GitHub with OS, KiCAD version, and error details
 
 ---
 
-**Bottom Line:** Week 2 is 80% complete with major features working! Component placement, routing, and real-time collaboration all functional. JLCPCB integration planned, IPC backend next. On track for production-ready v2.0 release.
-
-**Confidence Level:** Very High - Exceeding expectations
-
----
-
-*Last Updated: 2025-11-01*
+*Last Updated: 2025-12-02*
 *Maintained by: KiCAD MCP Team*

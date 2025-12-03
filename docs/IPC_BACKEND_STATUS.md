@@ -1,7 +1,7 @@
 # KiCAD IPC Backend Implementation Status
 
-**Status:** 🟢 **FULLY INTEGRATED**
-**Date:** 2025-11-30
+**Status:** Under Active Development and Testing
+**Date:** 2025-12-02
 **KiCAD Version:** 9.0.6
 **kicad-python Version:** 0.5.0
 
@@ -9,80 +9,94 @@
 
 ## Overview
 
-The IPC backend is now **fully integrated** as the **default backend** for all MCP tools. When KiCAD is running with IPC enabled, all commands automatically use real-time UI synchronization. Changes made through the MCP tools appear **instantly** in the KiCAD UI without requiring manual reload.
+The IPC backend provides real-time UI synchronization with KiCAD 9.0+ via the official IPC API. When KiCAD is running with IPC enabled, commands can update the KiCAD UI immediately without requiring manual reload.
 
-**SWIG backend is deprecated** and will be removed in a future version when KiCAD removes it (KiCAD 10.0).
+This feature is experimental and under active testing. The server uses a hybrid approach: IPC when available, automatic fallback to SWIG when IPC is not connected.
 
-## Key Benefits
+## Key Differences
 
-| Feature | SWIG (Old) | IPC (New) |
-|---------|------------|-----------|
-| UI Updates | Manual reload required | **Instant** |
-| Undo/Redo | Not supported | **Transaction support** |
-| API Stability | Deprecated, will break | **Stable, versioned** |
-| Connection | File-based | **Live socket connection** |
-| Future Support | Removed in KiCAD 10.0 | **Official & maintained** |
+| Feature | SWIG | IPC |
+|---------|------|-----|
+| UI Updates | Manual reload required | Immediate (when working) |
+| Undo/Redo | Not supported | Transaction support |
+| API Stability | Deprecated in KiCAD 9 | Official, versioned |
+| Connection | File-based | Live socket connection |
+| KiCAD Required | No (file operations) | Yes (must be running) |
 
-## Implemented Features
+## Implemented IPC Commands
 
-### Automatic IPC Routing
-The following MCP commands **automatically use IPC** when available:
+The following MCP commands have IPC handlers:
 
-| Command | IPC Handler | Real-time |
-|---------|-------------|-----------|
-| `route_trace` | `_ipc_route_trace` | Yes |
-| `add_via` | `_ipc_add_via` | Yes |
-| `add_net` | `_ipc_add_net` | Yes |
-| `add_text` | `_ipc_add_text` | Yes |
-| `add_board_text` | `_ipc_add_text` | Yes |
-| `set_board_size` | `_ipc_set_board_size` | Yes |
-| `get_board_info` | `_ipc_get_board_info` | Yes |
-| `place_component` | `_ipc_place_component` | Yes |
-| `move_component` | `_ipc_move_component` | Yes |
-| `delete_component` | `_ipc_delete_component` | Yes |
-| `get_component_list` | `_ipc_get_component_list` | Yes |
-| `save_project` | `_ipc_save_project` | Yes |
+| Command | IPC Handler | Status |
+|---------|-------------|--------|
+| `route_trace` | `_ipc_route_trace` | Implemented |
+| `add_via` | `_ipc_add_via` | Implemented |
+| `add_net` | `_ipc_add_net` | Implemented |
+| `delete_trace` | `_ipc_delete_trace` | Falls back to SWIG |
+| `get_nets_list` | `_ipc_get_nets_list` | Implemented |
+| `add_copper_pour` | `_ipc_add_copper_pour` | Implemented |
+| `refill_zones` | `_ipc_refill_zones` | Implemented |
+| `add_text` | `_ipc_add_text` | Implemented |
+| `add_board_text` | `_ipc_add_text` | Implemented |
+| `set_board_size` | `_ipc_set_board_size` | Implemented |
+| `get_board_info` | `_ipc_get_board_info` | Implemented |
+| `add_board_outline` | `_ipc_add_board_outline` | Implemented |
+| `add_mounting_hole` | `_ipc_add_mounting_hole` | Implemented |
+| `get_layer_list` | `_ipc_get_layer_list` | Implemented |
+| `place_component` | `_ipc_place_component` | Implemented (hybrid) |
+| `move_component` | `_ipc_move_component` | Implemented |
+| `rotate_component` | `_ipc_rotate_component` | Implemented |
+| `delete_component` | `_ipc_delete_component` | Implemented |
+| `get_component_list` | `_ipc_get_component_list` | Implemented |
+| `get_component_properties` | `_ipc_get_component_properties` | Implemented |
+| `save_project` | `_ipc_save_project` | Implemented |
 
-### Core Connection
-- [x] Connect to running KiCAD instance
-- [x] Auto-detect socket path (`/tmp/kicad/api.sock`)
-- [x] Version checking and validation
-- [x] Ping/health check
-- [x] Auto-fallback to SWIG when IPC unavailable
-- [x] Change notification callbacks
+### Implemented Backend Features
 
-### Board Operations
-- [x] Get board reference
-- [x] Get/Set board size (via Edge.Cuts)
-- [x] List enabled layers
-- [x] Save board
-- [x] Get board bounding box
+**Core Connection:**
+- Connect to running KiCAD instance
+- Auto-detect socket path (`/tmp/kicad/api.sock`)
+- Version checking and validation
+- Auto-fallback to SWIG when IPC unavailable
+- Change notification callbacks
 
-### Component Operations
-- [x] List all components
-- [x] Place component (real-time)
-- [x] Move component (real-time)
-- [x] Delete component (real-time)
-- [x] Get component properties
+**Board Operations:**
+- Get board reference
+- Get/Set board size
+- List enabled layers
+- Save board
+- Add board outline segments
+- Add mounting holes
 
-### Routing Operations
-- [x] Add track (real-time)
-- [x] Add via (real-time)
-- [x] Get all tracks
-- [x] Get all vias
-- [x] Get all nets
+**Component Operations:**
+- List all components
+- Place component (hybrid: SWIG for library loading, IPC for placement)
+- Move component
+- Rotate component
+- Delete component
+- Get component properties
 
-### UI Integration
-- [x] Add text to board (real-time)
-- [x] Get current selection
-- [x] Clear selection
-- [x] Refill zones
+**Routing Operations:**
+- Add track
+- Add via
+- Get all tracks
+- Get all vias
+- Get all nets
 
-### Transaction Support
-- [x] Begin transaction
-- [x] Commit transaction (with description)
-- [x] Rollback transaction
-- [x] Proper undo/redo in KiCAD
+**Zone Operations:**
+- Add copper pour zones
+- Get zones list
+- Refill zones
+
+**UI Integration:**
+- Add text to board
+- Get current selection
+- Clear selection
+
+**Transaction Support:**
+- Begin transaction
+- Commit transaction (with description for undo)
+- Rollback transaction
 
 ## Usage
 
@@ -98,46 +112,7 @@ The following MCP commands **automatically use IPC** when available:
 pip install kicad-python
 ```
 
-### Basic Usage
-
-```python
-from kicad_api import create_backend
-
-# Auto-detect and connect
-backend = create_backend()  # Will try IPC first, fall back to SWIG
-backend.connect()
-
-# Get board API
-board = backend.get_board()
-
-# Operations appear instantly in KiCAD UI!
-board.add_track(
-    start_x=100.0, start_y=100.0,
-    end_x=120.0, end_y=100.0,
-    width=0.25, layer="F.Cu"
-)
-
-# With transaction support for undo
-board.begin_transaction("Add components")
-board.place_component("R1", "Resistor_SMD:R_0603", 50, 50)
-board.place_component("C1", "Capacitor_SMD:C_0603", 60, 50)
-board.commit_transaction("Added R1 and C1")  # Single undo step
-```
-
-### Force Backend Selection
-
-```python
-# Force IPC backend
-backend = create_backend('ipc')
-
-# Force SWIG backend (deprecated)
-backend = create_backend('swig')
-
-# Or via environment variable
-# export KICAD_BACKEND=ipc
-```
-
-## Testing
+### Testing
 
 Run the test script to verify IPC functionality:
 
@@ -146,46 +121,43 @@ Run the test script to verify IPC functionality:
 ./venv/bin/python python/test_ipc_backend.py
 ```
 
-The test script will:
-1. Connect to KiCAD
-2. List components on the board
-3. Add a test track (visible instantly in UI)
-4. Add a test via (visible instantly in UI)
-5. Add test text (visible instantly in UI)
-6. Read the current selection
-
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│              MCP Server (TypeScript/Node.js)                 │
-└──────────────────────┬──────────────────────────────────────┘
-                       │ JSON commands
-┌──────────────────────▼──────────────────────────────────────┐
-│              Python Interface Layer                          │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │  kicad_api/ipc_backend.py                              │ │
-│  │  - IPCBackend (connection management)                  │ │
-│  │  - IPCBoardAPI (board operations)                      │ │
-│  └────────────────────────────────────────────────────────┘ │
-└──────────────────────┬──────────────────────────────────────┘
-                       │ kicad-python (kipy) library
-┌──────────────────────▼──────────────────────────────────────┐
-│          Protocol Buffers over UNIX Sockets                  │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────────────┐
-│              KiCAD 9.0+ (IPC Server)                         │
-│              Changes appear instantly in UI!                 │
-└─────────────────────────────────────────────────────────────┘
++-------------------------------------------------------------+
+|              MCP Server (TypeScript/Node.js)                |
++---------------------------+---------------------------------+
+                            | JSON commands
++---------------------------v---------------------------------+
+|              Python Interface Layer                         |
+|  +--------------------------------------------------------+ |
+|  |  kicad_interface.py                                    | |
+|  |  - Routes commands to IPC or SWIG handlers             | |
+|  |  - IPC_CAPABLE_COMMANDS dict defines routing           | |
+|  +--------------------------------------------------------+ |
+|  +--------------------------------------------------------+ |
+|  |  kicad_api/ipc_backend.py                              | |
+|  |  - IPCBackend (connection management)                  | |
+|  |  - IPCBoardAPI (board operations)                      | |
+|  +--------------------------------------------------------+ |
++---------------------------+---------------------------------+
+                            | kicad-python (kipy) library
++---------------------------v---------------------------------+
+|          Protocol Buffers over UNIX Sockets                 |
++---------------------------+---------------------------------+
+                            |
++---------------------------v---------------------------------+
+|              KiCAD 9.0+ (IPC Server)                        |
++-------------------------------------------------------------+
 ```
 
 ## Known Limitations
 
 1. **KiCAD must be running**: Unlike SWIG, IPC requires KiCAD to be open
-2. **Project creation**: Must be done through KiCAD UI or file system
-3. **Footprint library access**: Limited - best to use library management separately
-4. **Layer management**: Layers are predefined in KiCAD
+2. **Project creation**: Not supported via IPC, uses file system
+3. **Footprint library access**: Uses hybrid approach (SWIG loads from library, IPC places)
+4. **Delete trace**: Falls back to SWIG (IPC API doesn't support direct deletion)
+5. **Some operations may not work as expected**: This is experimental code
 
 ## Troubleshooting
 
@@ -213,19 +185,20 @@ python/kicad_api/
 ├── __init__.py          # Package exports
 ├── base.py              # Abstract base classes
 ├── factory.py           # Backend auto-detection
-├── ipc_backend.py       # IPC implementation (NEW)
+├── ipc_backend.py       # IPC implementation
 └── swig_backend.py      # Legacy SWIG wrapper
 
 python/
 └── test_ipc_backend.py  # IPC test script
 ```
 
-## Future Enhancements
+## Future Work
 
-1. **Footprint library integration via IPC** - Load footprints directly
-2. **Schematic IPC support** - When available in kicad-python
-3. **Event subscriptions** - React to changes made in KiCAD UI
-4. **Multi-board support** - Handle multiple open boards
+1. More comprehensive testing of all IPC commands
+2. Footprint library integration via IPC (when kipy supports it)
+3. Schematic IPC support (when available in kicad-python)
+4. Event subscriptions to react to changes made in KiCAD UI
+5. Multi-board support
 
 ## Related Documentation
 
@@ -236,5 +209,4 @@ python/
 
 ---
 
-**Last Updated:** 2025-11-30
-**Maintained by:** KiCAD MCP Team
+**Last Updated:** 2025-12-02

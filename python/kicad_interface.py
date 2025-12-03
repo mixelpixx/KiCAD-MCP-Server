@@ -302,7 +302,8 @@ class KiCADInterface:
             "create_netclass": self.routing_commands.create_netclass,
             "add_copper_pour": self.routing_commands.add_copper_pour,
             "route_differential_pair": self.routing_commands.route_differential_pair,
-            
+            "refill_zones": self._handle_refill_zones,
+
             # Design rule commands
             "set_design_rules": self.design_rule_commands.set_design_rules,
             "get_design_rules": self.design_rule_commands.get_design_rules,
@@ -358,16 +359,26 @@ class KiCADInterface:
         "route_trace": "_ipc_route_trace",
         "add_via": "_ipc_add_via",
         "add_net": "_ipc_add_net",
+        "delete_trace": "_ipc_delete_trace",
+        "get_nets_list": "_ipc_get_nets_list",
+        # Zone commands
+        "add_copper_pour": "_ipc_add_copper_pour",
+        "refill_zones": "_ipc_refill_zones",
         # Board commands
         "add_text": "_ipc_add_text",
         "add_board_text": "_ipc_add_text",
         "set_board_size": "_ipc_set_board_size",
         "get_board_info": "_ipc_get_board_info",
+        "add_board_outline": "_ipc_add_board_outline",
+        "add_mounting_hole": "_ipc_add_mounting_hole",
+        "get_layer_list": "_ipc_get_layer_list",
         # Component commands
         "place_component": "_ipc_place_component",
         "move_component": "_ipc_move_component",
+        "rotate_component": "_ipc_rotate_component",
         "delete_component": "_ipc_delete_component",
         "get_component_list": "_ipc_get_component_list",
+        "get_component_properties": "_ipc_get_component_properties",
         # Save command
         "save_project": "_ipc_save_project",
     }
@@ -454,18 +465,38 @@ class KiCADInterface:
         """Create a new schematic"""
         logger.info("Creating schematic")
         try:
-            # Accept both 'name' (from MCP tool) and 'projectName' (legacy)
-            project_name = params.get("name") or params.get("projectName")
-            path = params.get("path", ".")
+            # Support multiple parameter naming conventions for compatibility:
+            # - TypeScript tools use: name, path
+            # - Python schema uses: filename, title
+            # - Legacy uses: projectName, path, metadata
+            project_name = (
+                params.get("projectName") or
+                params.get("name") or
+                params.get("title")
+            )
+
+            # Handle filename parameter - it may contain full path
+            filename = params.get("filename")
+            if filename:
+                # If filename provided, extract name and path from it
+                if filename.endswith('.kicad_sch'):
+                    filename = filename[:-10]  # Remove .kicad_sch extension
+                path = os.path.dirname(filename) or "."
+                project_name = project_name or os.path.basename(filename)
+            else:
+                path = params.get("path", ".")
             metadata = params.get("metadata", {})
 
             if not project_name:
-                return {"success": False, "message": "Project name is required"}
-            
+                return {
+                    "success": False,
+                    "message": "Schematic name is required. Provide 'name', 'projectName', or 'filename' parameter."
+                }
+
             schematic = SchematicManager.create_schematic(project_name, metadata)
             file_path = f"{path}/{project_name}.kicad_sch"
             success = SchematicManager.save_schematic(schematic, file_path)
-            
+
             return {"success": success, "file_path": file_path}
         except Exception as e:
             logger.error(f"Error creating schematic: {str(e)}")
@@ -747,6 +778,31 @@ class KiCADInterface:
             logger.error(f"Error launching KiCAD UI: {str(e)}")
             return {"success": False, "message": str(e)}
 
+    def _handle_refill_zones(self, params):
+        """Refill all copper pour zones on the board"""
+        logger.info("Refilling zones")
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first"
+                }
+
+            # Use pcbnew's zone filler for SWIG backend
+            filler = pcbnew.ZONE_FILLER(self.board)
+            zones = self.board.Zones()
+            filler.Fill(zones)
+
+            return {
+                "success": True,
+                "message": "Zones refilled successfully",
+                "zoneCount": zones.size() if hasattr(zones, 'size') else len(list(zones))
+            }
+        except Exception as e:
+            logger.error(f"Error refilling zones: {str(e)}")
+            return {"success": False, "message": str(e)}
+
     # =========================================================================
     # IPC Backend handlers - these provide real-time UI synchronization
     # These methods are called automatically when IPC is available
@@ -842,6 +898,73 @@ class KiCADInterface:
             "message": f"Net '{name}' will be created when components are connected",
             "net": {"name": name}
         }
+
+    def _ipc_add_copper_pour(self, params):
+        """IPC handler for add_copper_pour - adds zone with real-time UI update"""
+        try:
+            layer = params.get("layer", "F.Cu")
+            net = params.get("net")
+            clearance = params.get("clearance", 0.5)
+            min_width = params.get("minWidth", 0.25)
+            points = params.get("points", [])
+            priority = params.get("priority", 0)
+            fill_type = params.get("fillType", "solid")
+            name = params.get("name", "")
+
+            if not points or len(points) < 3:
+                return {
+                    "success": False,
+                    "message": "At least 3 points are required for copper pour outline"
+                }
+
+            # Convert points format if needed (handle both {x, y} and {x, y, unit})
+            formatted_points = []
+            for point in points:
+                formatted_points.append({
+                    "x": point.get("x", 0),
+                    "y": point.get("y", 0)
+                })
+
+            success = self.ipc_board_api.add_zone(
+                points=formatted_points,
+                layer=layer,
+                net_name=net,
+                clearance=clearance,
+                min_thickness=min_width,
+                priority=priority,
+                fill_mode=fill_type,
+                name=name
+            )
+
+            return {
+                "success": success,
+                "message": "Added copper pour (visible in KiCAD UI)" if success else "Failed to add copper pour",
+                "pour": {
+                    "layer": layer,
+                    "net": net,
+                    "clearance": clearance,
+                    "minWidth": min_width,
+                    "priority": priority,
+                    "fillType": fill_type,
+                    "pointCount": len(points)
+                }
+            }
+        except Exception as e:
+            logger.error(f"IPC add_copper_pour error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_refill_zones(self, params):
+        """IPC handler for refill_zones - refills all zones with real-time UI update"""
+        try:
+            success = self.ipc_board_api.refill_zones()
+
+            return {
+                "success": success,
+                "message": "Zones refilled (visible in KiCAD UI)" if success else "Failed to refill zones"
+            }
+        except Exception as e:
+            logger.error(f"IPC refill_zones error: {e}")
+            return {"success": False, "message": str(e)}
 
     def _ipc_add_text(self, params):
         """IPC handler for add_text/add_board_text - adds text with real-time UI update"""
@@ -1015,6 +1138,184 @@ class KiCADInterface:
             }
         except Exception as e:
             logger.error(f"IPC save_project error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_delete_trace(self, params):
+        """IPC handler for delete_trace - Note: IPC doesn't support direct trace deletion yet"""
+        # IPC API doesn't have a direct delete track method
+        # Fall back to SWIG for this operation
+        logger.info("delete_trace: Falling back to SWIG (IPC doesn't support trace deletion)")
+        return self.routing_commands.delete_trace(params)
+
+    def _ipc_get_nets_list(self, params):
+        """IPC handler for get_nets_list - gets nets with real-time data"""
+        try:
+            nets = self.ipc_board_api.get_nets()
+
+            return {
+                "success": True,
+                "nets": nets,
+                "count": len(nets)
+            }
+        except Exception as e:
+            logger.error(f"IPC get_nets_list error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_add_board_outline(self, params):
+        """IPC handler for add_board_outline - adds board edge with real-time UI update"""
+        try:
+            from kipy.board_types import BoardSegment
+            from kipy.geometry import Vector2
+            from kipy.util.units import from_mm
+            from kipy.proto.board.board_types_pb2 import BoardLayer
+
+            board = self.ipc_board_api._get_board()
+
+            points = params.get("points", [])
+            width = params.get("width", 0.1)
+
+            if len(points) < 2:
+                return {"success": False, "message": "At least 2 points required for board outline"}
+
+            commit = board.begin_commit()
+            lines_created = 0
+
+            # Create line segments connecting the points
+            for i in range(len(points)):
+                start = points[i]
+                end = points[(i + 1) % len(points)]  # Wrap around to close the outline
+
+                segment = BoardSegment()
+                segment.start = Vector2.from_xy(from_mm(start.get("x", 0)), from_mm(start.get("y", 0)))
+                segment.end = Vector2.from_xy(from_mm(end.get("x", 0)), from_mm(end.get("y", 0)))
+                segment.layer = BoardLayer.BL_Edge_Cuts
+                segment.attributes.stroke.width = from_mm(width)
+
+                board.create_items(segment)
+                lines_created += 1
+
+            board.push_commit(commit, "Added board outline")
+
+            return {
+                "success": True,
+                "message": f"Added board outline with {lines_created} segments (visible in KiCAD UI)",
+                "segments": lines_created
+            }
+        except Exception as e:
+            logger.error(f"IPC add_board_outline error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_add_mounting_hole(self, params):
+        """IPC handler for add_mounting_hole - adds mounting hole with real-time UI update"""
+        try:
+            from kipy.board_types import BoardCircle
+            from kipy.geometry import Vector2
+            from kipy.util.units import from_mm
+            from kipy.proto.board.board_types_pb2 import BoardLayer
+
+            board = self.ipc_board_api._get_board()
+
+            x = params.get("x", 0)
+            y = params.get("y", 0)
+            diameter = params.get("diameter", 3.2)  # M3 hole default
+
+            commit = board.begin_commit()
+
+            # Create circle on Edge.Cuts layer for the hole
+            circle = BoardCircle()
+            circle.center = Vector2.from_xy(from_mm(x), from_mm(y))
+            circle.radius = from_mm(diameter / 2)
+            circle.layer = BoardLayer.BL_Edge_Cuts
+            circle.attributes.stroke.width = from_mm(0.1)
+
+            board.create_items(circle)
+            board.push_commit(commit, f"Added mounting hole at ({x}, {y})")
+
+            return {
+                "success": True,
+                "message": f"Added mounting hole at ({x}, {y}) mm (visible in KiCAD UI)",
+                "hole": {
+                    "position": {"x": x, "y": y},
+                    "diameter": diameter
+                }
+            }
+        except Exception as e:
+            logger.error(f"IPC add_mounting_hole error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_get_layer_list(self, params):
+        """IPC handler for get_layer_list - gets enabled layers"""
+        try:
+            layers = self.ipc_board_api.get_enabled_layers()
+
+            return {
+                "success": True,
+                "layers": layers,
+                "count": len(layers)
+            }
+        except Exception as e:
+            logger.error(f"IPC get_layer_list error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_rotate_component(self, params):
+        """IPC handler for rotate_component - rotates component with real-time UI update"""
+        try:
+            reference = params.get("reference", params.get("componentId", ""))
+            angle = params.get("angle", params.get("rotation", 90))
+
+            # Get current component to find its position
+            components = self.ipc_board_api.list_components()
+            target = None
+            for comp in components:
+                if comp.get("reference") == reference:
+                    target = comp
+                    break
+
+            if not target:
+                return {"success": False, "message": f"Component {reference} not found"}
+
+            # Calculate new rotation
+            current_rotation = target.get("rotation", 0)
+            new_rotation = (current_rotation + angle) % 360
+
+            # Use move_component with new rotation (position stays the same)
+            success = self.ipc_board_api.move_component(
+                reference=reference,
+                x=target.get("position", {}).get("x", 0),
+                y=target.get("position", {}).get("y", 0),
+                rotation=new_rotation
+            )
+
+            return {
+                "success": success,
+                "message": f"Rotated component {reference} by {angle}° (visible in KiCAD UI)" if success else "Failed to rotate component",
+                "newRotation": new_rotation
+            }
+        except Exception as e:
+            logger.error(f"IPC rotate_component error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_get_component_properties(self, params):
+        """IPC handler for get_component_properties - gets detailed component info"""
+        try:
+            reference = params.get("reference", params.get("componentId", ""))
+
+            components = self.ipc_board_api.list_components()
+            target = None
+            for comp in components:
+                if comp.get("reference") == reference:
+                    target = comp
+                    break
+
+            if not target:
+                return {"success": False, "message": f"Component {reference} not found"}
+
+            return {
+                "success": True,
+                "component": target
+            }
+        except Exception as e:
+            logger.error(f"IPC get_component_properties error: {e}")
             return {"success": False, "message": str(e)}
 
     # =========================================================================

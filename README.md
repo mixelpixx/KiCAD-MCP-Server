@@ -4,17 +4,26 @@ A Model Context Protocol (MCP) server that enables AI assistants like Claude to 
 
 ## Overview
 
-The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standard from Anthropic that allows AI assistants to securely connect to external tools and data sources. This implementation provides a standardized bridge between AI assistants and KiCAD, enabling natural language control of professional PCB design operations.
+The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standard from Anthropic that allows AI assistants to securely connect to external tools and data sources. This implementation provides a standardized bridge between AI assistants and KiCAD, enabling natural language control of PCB design operations.
 
 **Key Capabilities:**
 - 52 fully-documented tools with JSON Schema validation
 - 8 dynamic resources exposing project state
 - Full MCP 2025-06-18 protocol compliance
 - Cross-platform support (Linux, Windows, macOS)
-- Real-time KiCAD UI integration
+- Real-time KiCAD UI integration via IPC API (experimental)
 - Comprehensive error handling and logging
 
 ## What's New in v2.1.0
+
+### IPC Backend (Experimental)
+We are currently implementing and testing the KiCAD 9.0 IPC API for real-time UI synchronization:
+- Changes made via MCP tools appear immediately in the KiCAD UI
+- No manual reload required when IPC is active
+- Hybrid backend: uses IPC when available, falls back to SWIG API
+- 20+ commands now support IPC including routing, component placement, and zone operations
+
+Note: IPC features are under active development and testing. Enable IPC in KiCAD via Preferences > Plugins > Enable IPC API Server.
 
 ### Comprehensive Tool Schemas
 Every tool now includes complete JSON Schema definitions with:
@@ -134,6 +143,7 @@ The server provides 52 tools organized into functional categories:
 **Python 3.10 or Higher**
 - Usually included with KiCAD
 - Required packages (auto-installed):
+  - kicad-python (kipy) >= 0.5.0 (IPC API support, optional but recommended)
   - kicad-skip >= 0.1.0 (schematic support)
   - Pillow >= 9.0.0 (image processing)
   - cairosvg >= 2.7.0 (SVG rendering)
@@ -314,7 +324,12 @@ List all electrical nets.
 - Provides logging and error recovery
 
 ### Python Interface (`python/`)
-- **kicad_interface.py:** Main entry point, MCP message handler
+- **kicad_interface.py:** Main entry point, MCP message handler, command routing
+- **kicad_api/:** Backend implementations
+  - `base.py` - Abstract base classes for backends
+  - `ipc_backend.py` - KiCAD 9.0 IPC API backend (real-time UI sync)
+  - `swig_backend.py` - pcbnew SWIG API backend (file-based operations)
+  - `factory.py` - Backend auto-detection and instantiation
 - **schemas/tool_schemas.py:** JSON Schema definitions for all tools
 - **resources/resource_definitions.py:** Resource handlers and URIs
 - **commands/:** Modular command implementations
@@ -328,7 +343,9 @@ List all electrical nets.
   - `library.py` - Footprint libraries
 
 ### KiCAD Integration
-- **pcbnew API:** Direct Python bindings to KiCAD
+- **pcbnew API (SWIG):** Direct Python bindings to KiCAD for file operations
+- **IPC API (kipy):** Real-time communication with running KiCAD instance (experimental)
+- **Hybrid Backend:** Automatically uses IPC when available, falls back to SWIG
 - **kicad-skip:** Schematic file manipulation
 - **Platform Detection:** Cross-platform path handling
 - **UI Management:** Automatic KiCAD UI launch/detection
@@ -428,11 +445,11 @@ npm run format
 
 **Current Version:** 2.1.0-alpha
 
-**Production-Ready Features:**
+**Working Features:**
 - Project creation and management
 - Board outline and sizing
 - Layer management
-- Component placement (with library integration needed)
+- Component placement with footprint library loading
 - Mounting holes and text annotations
 - Design rule checking
 - Export to Gerber, PDF, SVG, 3D
@@ -440,19 +457,21 @@ npm run format
 - UI auto-launch
 - Full MCP protocol compliance
 
-**In Development:**
+**Under Active Development (IPC Backend):**
+- Real-time UI synchronization via KiCAD 9.0 IPC API
+- IPC-enabled commands: route_trace, add_via, place_component, move_component, delete_component, add_copper_pour, refill_zones, add_board_outline, add_mounting_hole, and more
+- Hybrid footprint loading (SWIG for library access, IPC for placement)
+- Zone/copper pour support via IPC
+
+Note: IPC features are experimental and under testing. Some commands may not work as expected in all scenarios.
+
+**Planned:**
 - JLCPCB parts integration
 - Digikey API integration
 - Advanced routing algorithms
-- Real-time UI synchronization via IPC API
 - Smart BOM management
-
-**Roadmap:**
 - AI-assisted component selection
 - Design pattern library (Arduino shields, RPi HATs)
-- Interactive design review mode
-- Automated documentation generation
-- Multi-board projects
 
 See [ROADMAP.md](docs/ROADMAP.md) for detailed development timeline.
 
