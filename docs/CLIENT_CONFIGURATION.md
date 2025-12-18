@@ -46,17 +46,29 @@ This guide shows how to configure the KiCAD MCP Server with various MCP-compatib
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/Users/YOUR_USERNAME/MCP/KiCAD-MCP-Server/dist/index.js"],
-      "env": {
-        "PYTHONPATH": "/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/lib/python3.11/site-packages",
-        "NODE_ENV": "production"
-      }
+      "args": ["/Users/YOUR_USERNAME/MCP/KiCAD-MCP-Server/dist/index.js"]
     }
   }
 }
 ```
 
-**Note:** Adjust Python version (3.11) and KiCAD path based on your installation.
+**Note:** For standard KiCad installations in `/Applications/KiCad/`, the server auto-detects KiCad's bundled Python (versions 3.9-3.12). No `PYTHONPATH` configuration is required.
+
+If KiCad is installed in a non-standard location, you can override the Python path:
+
+```json
+{
+  "mcpServers": {
+    "kicad": {
+      "command": "node",
+      "args": ["/Users/YOUR_USERNAME/MCP/KiCAD-MCP-Server/dist/index.js"],
+      "env": {
+        "KICAD_PYTHON": "/custom/path/to/python3"
+      }
+    }
+  }
+}
+```
 
 ### Windows Configuration
 
