@@ -55,15 +55,31 @@ function findPythonExecutable(scriptPath: string): string {
     }
   }
 
-  // Fall back to system Python or environment-specified Python
-  if (isWindows && process.env.KICAD_PYTHON) {
-    // Allow override via KICAD_PYTHON environment variable
+  // Allow override via KICAD_PYTHON environment variable (any platform)
+  if (process.env.KICAD_PYTHON) {
+    logger.info(`Using KICAD_PYTHON environment variable: ${process.env.KICAD_PYTHON}`);
     return process.env.KICAD_PYTHON;
-  } else if (isWindows && process.env.PYTHONPATH?.includes('KiCad')) {
+  }
+
+  // Platform-specific KiCAD bundled Python detection
+  const isMac = process.platform === 'darwin';
+
+  if (isWindows && process.env.PYTHONPATH?.includes('KiCad')) {
     // Windows: Try KiCAD's bundled Python
     const kicadPython = 'C:\\Program Files\\KiCad\\9.0\\bin\\python.exe';
     if (existsSync(kicadPython)) {
+      logger.info(`Found KiCAD bundled Python at: ${kicadPython}`);
       return kicadPython;
+    }
+  } else if (isMac) {
+    // macOS: Try KiCAD's bundled Python (check multiple versions)
+    const kicadPythonVersions = ['3.9', '3.10', '3.11', '3.12'];
+    for (const version of kicadPythonVersions) {
+      const kicadPython = `/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/${version}/bin/python3`;
+      if (existsSync(kicadPython)) {
+        logger.info(`Found KiCAD bundled Python at: ${kicadPython}`);
+        return kicadPython;
+      }
     }
   }
 
