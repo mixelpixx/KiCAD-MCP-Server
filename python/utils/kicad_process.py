@@ -8,6 +8,8 @@ import subprocess
 import logging
 import platform
 import time
+import ctypes
+from ctypes import wintypes
 from pathlib import Path
 from typing import Optional, List
 
@@ -16,6 +18,59 @@ logger = logging.getLogger(__name__)
 
 class KiCADProcessManager:
     """Manages KiCAD process detection and launching"""
+
+    @staticmethod
+    def _windows_list_processes() -> List[dict]:
+        """List running processes on Windows using Toolhelp API."""
+        processes: List[dict] = []
+        try:
+            TH32CS_SNAPPROCESS = 0x00000002
+            try:
+                ulong_ptr = wintypes.ULONG_PTR  # type: ignore[attr-defined]
+            except AttributeError:
+                ulong_ptr = ctypes.c_ulonglong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_ulong
+
+            class PROCESSENTRY32W(ctypes.Structure):
+                _fields_ = [
+                    ("dwSize", wintypes.DWORD),
+                    ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD),
+                    ("th32DefaultHeapID", ulong_ptr),
+                    ("th32ModuleID", wintypes.DWORD),
+                    ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD),
+                    ("pcPriClassBase", wintypes.LONG),
+                    ("dwFlags", wintypes.DWORD),
+                    ("szExeFile", wintypes.WCHAR * wintypes.MAX_PATH),
+                ]
+
+            CreateToolhelp32Snapshot = ctypes.windll.kernel32.CreateToolhelp32Snapshot
+            Process32FirstW = ctypes.windll.kernel32.Process32FirstW
+            Process32NextW = ctypes.windll.kernel32.Process32NextW
+            CloseHandle = ctypes.windll.kernel32.CloseHandle
+
+            snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+            if snapshot == wintypes.HANDLE(-1).value:
+                return processes
+
+            entry = PROCESSENTRY32W()
+            entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+
+            if Process32FirstW(snapshot, ctypes.byref(entry)):
+                while True:
+                    processes.append({
+                        "pid": str(entry.th32ProcessID),
+                        "name": entry.szExeFile,
+                        "command": entry.szExeFile
+                    })
+                    if not Process32NextW(snapshot, ctypes.byref(entry)):
+                        break
+
+            CloseHandle(snapshot)
+        except Exception as e:
+            logger.error(f"Error listing Windows processes: {e}")
+
+        return processes
 
     @staticmethod
     def is_running() -> bool:
@@ -69,12 +124,12 @@ class KiCADProcessManager:
                 return result.returncode == 0
 
             elif system == "Windows":
-                result = subprocess.run(
-                    ["tasklist", "/FI", "IMAGENAME eq pcbnew.exe"],
-                    capture_output=True,
-                    text=True
-                )
-                return "pcbnew.exe" in result.stdout
+                processes = KiCADProcessManager._windows_list_processes()
+                for proc in processes:
+                    name = (proc.get("name") or "").lower()
+                    if name in ("pcbnew.exe", "kicad.exe"):
+                        return True
+                return False
 
             else:
                 logger.warning(f"Process detection not implemented for {system}")
@@ -99,7 +154,10 @@ class KiCADProcessManager:
             result = subprocess.run(
                 ["which", cmd] if system != "Windows" else ["where", cmd],
                 capture_output=True,
-                text=True
+                text=True,
+                encoding="mbcs" if system == "Windows" else None,
+                errors="ignore" if system == "Windows" else None,
+                timeout=5 if system == "Windows" else None
             )
             if result.returncode == 0:
                 path = result.stdout.strip().split("\n")[0]
@@ -236,27 +294,15 @@ class KiCADProcessManager:
                                 })
 
             elif system == "Windows":
-                result = subprocess.run(
-                    ["tasklist", "/V", "/FO", "CSV"],
-                    capture_output=True,
-                    text=True
-                )
-                import csv
-                reader = csv.reader(result.stdout.split("\n"))
-                for row in reader:
-                    if row and len(row) > 0:
-                        if "pcbnew" in row[0].lower() or "kicad" in row[0].lower():
-                            processes.append({
-                                "pid": row[1] if len(row) > 1 else "unknown",
-                                "name": row[0],
-                                "command": row[0]
-                            })
+                for proc in KiCADProcessManager._windows_list_processes():
+                    name = (proc.get("name") or "").lower()
+                    if "pcbnew" in name or "kicad" in name:
+                        processes.append(proc)
 
         except Exception as e:
             logger.error(f"Error getting process info: {e}")
 
         return processes
-
 
 def check_and_launch_kicad(project_path: Optional[Path] = None, auto_launch: bool = True) -> dict:
     """
