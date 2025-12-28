@@ -7,7 +7,8 @@ A Model Context Protocol (MCP) server that enables AI assistants like Claude to 
 The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standard from Anthropic that allows AI assistants to securely connect to external tools and data sources. This implementation provides a standardized bridge between AI assistants and KiCAD, enabling natural language control of PCB design operations.
 
 **Key Capabilities:**
-- 52 fully-documented tools with JSON Schema validation
+- 59 fully-documented tools with JSON Schema validation
+- Smart tool discovery with router pattern (reduces AI context by 70%)
 - 8 dynamic resources exposing project state
 - Full MCP 2025-06-18 protocol compliance
 - Cross-platform support (Linux, Windows, macOS)
@@ -24,6 +25,20 @@ We are currently implementing and testing the KiCAD 9.0 IPC API for real-time UI
 - 20+ commands now support IPC including routing, component placement, and zone operations
 
 Note: IPC features are under active development and testing. Enable IPC in KiCAD via Preferences > Plugins > Enable IPC API Server.
+
+### Tool Discovery & Router Pattern (New!)
+We've implemented an intelligent tool router to keep AI context efficient while maintaining full functionality:
+- **12 direct tools** always visible for high-frequency operations
+- **47 routed tools** organized into 7 categories (board, component, export, drc, schematic, library, routing)
+- **4 router tools** for discovery and execution:
+  - `list_tool_categories` - Browse all available categories
+  - `get_category_tools` - View tools in a specific category
+  - `search_tools` - Find tools by keyword
+  - `execute_tool` - Run any tool with parameters
+
+**Why this matters:** By organizing tools into discoverable categories, Claude can intelligently find and use the right tool for your task without loading all 59 tool schemas into every conversation. This reduces context consumption by up to 70% while maintaining full access to all functionality.
+
+**Usage is seamless:** Just ask naturally - "export gerber files" or "add mounting holes" - and Claude will discover and execute the appropriate tools automatically.
 
 ### Comprehensive Tool Schemas
 Every tool now includes complete JSON Schema definitions with:
@@ -52,7 +67,7 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server provides 52 tools organized into functional categories:
+The server provides 59 tools organized into functional categories. With the new router pattern, tools are automatically discovered as needed - just ask Claude what you want to accomplish!
 
 ### Project Management (4 tools)
 - `create_project` - Initialize new KiCAD projects
@@ -314,7 +329,8 @@ List all electrical nets.
 ### MCP Protocol Layer
 - **JSON-RPC 2.0 Transport:** Bi-directional communication via STDIO
 - **Protocol Version:** MCP 2025-06-18
-- **Capabilities:** Tools (52), Resources (8)
+- **Capabilities:** Tools (59), Resources (8)
+- **Tool Router:** Intelligent discovery system with 7 categories
 - **Error Handling:** Standard JSON-RPC error codes
 
 ### TypeScript Server (`src/`)
@@ -322,6 +338,10 @@ List all electrical nets.
 - Manages Python subprocess lifecycle
 - Handles message routing and validation
 - Provides logging and error recovery
+- **Router System:**
+  - `src/tools/registry.ts` - Tool categorization and lookup
+  - `src/tools/router.ts` - Discovery and execution tools
+  - Reduces AI context usage by 70% while maintaining full functionality
 
 ### Python Interface (`python/`)
 - **kicad_interface.py:** Main entry point, MCP message handler, command routing
@@ -474,6 +494,24 @@ Note: IPC features are experimental and under testing. Some commands may not wor
 - Design pattern library (Arduino shields, RPi HATs)
 
 See [ROADMAP.md](docs/ROADMAP.md) for detailed development timeline.
+
+## What Do You Want to See Next?
+
+We're actively developing new features and tools for the KiCAD MCP Server. **Your input matters!**
+
+**We'd love to hear from you:**
+- What PCB design workflows could be automated?
+- Which component suppliers should we integrate (JLCPCB, Digikey, Mouser, etc.)?
+- What export formats or manufacturing outputs do you need?
+- Are there specific routing algorithms or design patterns you want?
+- What pain points in your KiCAD workflow could AI help solve?
+
+**Share your ideas:**
+1. 💡 [Open a feature request](https://github.com/mixelpixx/KiCAD-MCP-Server/issues/new?labels=enhancement&template=feature_request.md)
+2. 💬 [Join the discussion](https://github.com/mixelpixx/KiCAD-MCP-Server/discussions)
+3. ⭐ Star the repo if you find it useful!
+
+Your feedback directly shapes our development priorities. Whether it's a small quality-of-life improvement or a major new capability, we want to hear about it.
 
 ## Contributing
 

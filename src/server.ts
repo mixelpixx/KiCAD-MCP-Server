@@ -20,6 +20,7 @@ import { registerExportTools } from './tools/export.js';
 import { registerSchematicTools } from './tools/schematic.js';
 import { registerLibraryTools } from './tools/library.js';
 import { registerUITools } from './tools/ui.js';
+import { registerRouterTools } from './tools/router.js';
 
 // Import resource registration functions
 import { registerProjectResources } from './resources/project.js';
@@ -123,7 +124,10 @@ export class KiCADMcpServer {
    */
   private registerAll(): void {
     logger.info('Registering KiCAD tools, resources, and prompts...');
-    
+
+    // Register router tools FIRST (for tool discovery and execution)
+    registerRouterTools(this.server, this.callKicadScript.bind(this));
+
     // Register all tools
     registerProjectTools(this.server, this.callKicadScript.bind(this));
     registerBoardTools(this.server, this.callKicadScript.bind(this));
@@ -134,19 +138,20 @@ export class KiCADMcpServer {
     registerSchematicTools(this.server, this.callKicadScript.bind(this));
     registerLibraryTools(this.server, this.callKicadScript.bind(this));
     registerUITools(this.server, this.callKicadScript.bind(this));
-    
+
     // Register all resources
     registerProjectResources(this.server, this.callKicadScript.bind(this));
     registerBoardResources(this.server, this.callKicadScript.bind(this));
     registerComponentResources(this.server, this.callKicadScript.bind(this));
     registerLibraryResources(this.server, this.callKicadScript.bind(this));
-    
+
     // Register all prompts
     registerComponentPrompts(this.server);
     registerRoutingPrompts(this.server);
     registerDesignPrompts(this.server);
-    
+
     logger.info('All KiCAD tools, resources, and prompts registered');
+    logger.info('Router pattern enabled: 4 router tools + direct tools for discovery');
   }
   
   /**
