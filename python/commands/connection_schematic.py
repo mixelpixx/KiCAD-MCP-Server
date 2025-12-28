@@ -1,6 +1,7 @@
 from skip import Schematic
 import os
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -282,9 +283,124 @@ class ConnectionManager:
             return []
 
     @staticmethod
-    def generate_netlist(schematic: Schematic):
+    def _collect_from_schematic(schematic: Schematic, base_path: str, prefix: str = ""):
         """
-        Generate a netlist from the schematic
+        Recursively collect components and nets from a schematic and its hierarchical sheets.
+
+        Args:
+            schematic: Schematic object
+            base_path: Base directory path for resolving relative sheet file paths
+            prefix: Hierarchical path prefix for component references
+
+        Returns:
+            Tuple of (components list, net_names set, global_labels set)
+        """
+        components = []
+        net_names = set()
+        global_labels = set()
+
+        # Collect components from this schematic
+        if hasattr(schematic, 'symbol'):
+            for symbol in schematic.symbol:
+                try:
+                    ref = symbol.property.Reference.value
+                    # Skip power symbols (start with #)
+                    if ref.startswith('#'):
+                        continue
+
+                    full_ref = f"{prefix}/{ref}" if prefix else ref
+                    component_info = {
+                        "reference": full_ref,
+                        "value": symbol.property.Value.value if hasattr(symbol.property, 'Value') else "",
+                        "footprint": symbol.property.Footprint.value if hasattr(symbol.property, 'Footprint') else "",
+                        "sheet": prefix if prefix else "/"
+                    }
+                    components.append(component_info)
+                except Exception as e:
+                    logger.debug(f"Error processing symbol: {e}")
+                    continue
+
+        # Collect local labels
+        if hasattr(schematic, 'label'):
+            for label in schematic.label:
+                if hasattr(label, 'value'):
+                    net_names.add(label.value)
+
+        # Collect global labels
+        if hasattr(schematic, 'global_label'):
+            for label in schematic.global_label:
+                if hasattr(label, 'value'):
+                    global_labels.add(label.value)
+                    net_names.add(label.value)
+
+        # Collect hierarchical labels (these connect to parent sheet)
+        if hasattr(schematic, 'hierarchical_label'):
+            for label in schematic.hierarchical_label:
+                if hasattr(label, 'value'):
+                    net_names.add(label.value)
+
+        # Process hierarchical sheets recursively
+        if hasattr(schematic, 'sheet'):
+            for sheet in schematic.sheet:
+                try:
+                    # Get sheet properties
+                    sheet_name = ""
+                    sheet_file = ""
+
+                    if hasattr(sheet, 'property'):
+                        if hasattr(sheet.property, 'Sheetname'):
+                            sheet_name = sheet.property.Sheetname.value
+                        elif hasattr(sheet.property, 'Sheet_name'):
+                            sheet_name = sheet.property.Sheet_name.value
+
+                        if hasattr(sheet.property, 'Sheetfile'):
+                            sheet_file = sheet.property.Sheetfile.value
+                        elif hasattr(sheet.property, 'Sheet_file'):
+                            sheet_file = sheet.property.Sheet_file.value
+
+                    if not sheet_file:
+                        logger.warning(f"Sheet has no file property: {sheet_name}")
+                        continue
+
+                    # Resolve sheet file path (relative to base_path)
+                    sheet_path = Path(base_path) / sheet_file
+
+                    if not sheet_path.exists():
+                        logger.warning(f"Sheet file not found: {sheet_path}")
+                        continue
+
+                    # Load the sub-schematic
+                    logger.info(f"Loading hierarchical sheet: {sheet_name} from {sheet_path}")
+                    sub_schematic = Schematic(str(sheet_path))
+
+                    # Build hierarchical prefix
+                    new_prefix = f"{prefix}/{sheet_name}" if prefix else sheet_name
+
+                    # Recursively collect from sub-schematic
+                    sub_components, sub_nets, sub_globals = ConnectionManager._collect_from_schematic(
+                        sub_schematic,
+                        str(sheet_path.parent),
+                        new_prefix
+                    )
+
+                    components.extend(sub_components)
+                    net_names.update(sub_nets)
+                    global_labels.update(sub_globals)
+
+                except Exception as e:
+                    logger.error(f"Error processing sheet: {e}")
+                    continue
+
+        return components, net_names, global_labels
+
+    @staticmethod
+    def generate_netlist(schematic: Schematic, schematic_path: str = None):
+        """
+        Generate a netlist from the schematic, including hierarchical sheets.
+
+        Args:
+            schematic: Schematic object
+            schematic_path: Optional path to the schematic file (for resolving relative paths)
 
         Returns:
             Dictionary with net information:
@@ -300,49 +416,47 @@ class ConnectionManager:
                     ...
                 ],
                 "components": [
-                    {"reference": "R1", "value": "10k", "footprint": "..."},
+                    {"reference": "R1", "value": "10k", "footprint": "...", "sheet": "/"},
                     ...
                 ]
             }
         """
         try:
+            # Determine base path for resolving relative sheet paths
+            if schematic_path:
+                base_path = str(Path(schematic_path).parent)
+            elif hasattr(schematic, '_filepath'):
+                base_path = str(Path(schematic._filepath).parent)
+            else:
+                base_path = os.getcwd()
+
+            # Collect components and nets recursively
+            components, net_names, global_labels = ConnectionManager._collect_from_schematic(
+                schematic, base_path, ""
+            )
+
             netlist = {
                 "nets": [],
-                "components": []
+                "components": components,
+                "global_nets": list(global_labels)
             }
 
-            # Gather all components
-            if hasattr(schematic, 'symbol'):
-                for symbol in schematic.symbol:
-                    component_info = {
-                        "reference": symbol.property.Reference.value,
-                        "value": symbol.property.Value.value if hasattr(symbol.property, 'Value') else "",
-                        "footprint": symbol.property.Footprint.value if hasattr(symbol.property, 'Footprint') else ""
-                    }
-                    netlist["components"].append(component_info)
+            # For each net, get connections (simplified - just list the net names)
+            for net_name in net_names:
+                connections = ConnectionManager.get_net_connections(schematic, net_name)
+                netlist["nets"].append({
+                    "name": net_name,
+                    "connections": connections
+                })
 
-            # Gather all nets from labels
-            if hasattr(schematic, 'label'):
-                net_names = set()
-                for label in schematic.label:
-                    if hasattr(label, 'value'):
-                        net_names.add(label.value)
-
-                # For each net, get connections
-                for net_name in net_names:
-                    connections = ConnectionManager.get_net_connections(schematic, net_name)
-                    if connections:
-                        netlist["nets"].append({
-                            "name": net_name,
-                            "connections": connections
-                        })
-
-            logger.info(f"Generated netlist with {len(netlist['nets'])} nets and {len(netlist['components'])} components")
+            logger.info(f"Generated hierarchical netlist with {len(netlist['components'])} components from {len(set(c.get('sheet', '/') for c in components))} sheets")
             return netlist
 
         except Exception as e:
             logger.error(f"Error generating netlist: {e}")
-            return {"nets": [], "components": []}
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"nets": [], "components": [], "global_nets": []}
 
 if __name__ == '__main__':
     # Example Usage (for testing)
