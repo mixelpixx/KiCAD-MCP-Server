@@ -237,4 +237,61 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
       }
     }
   );
+
+  // Update PCB from schematic (like KiCad's F8)
+  server.tool(
+    "update_pcb_from_schematic",
+    "Update PCB with components from schematic. Places all components from the schematic onto the PCB in a grid layout. Similar to KiCad's 'Update PCB from Schematic' (F8) function.",
+    {
+      schematicPath: z.string().describe("Path to the schematic file"),
+      gridSpacing: z.number().optional().describe("Spacing between components in mm (default: 10)"),
+      startX: z.number().optional().describe("Starting X position in mm (default: 20)"),
+      startY: z.number().optional().describe("Starting Y position in mm (default: 20)"),
+      colsPerRow: z.number().optional().describe("Number of components per row (default: 20)")
+    },
+    async (args: { schematicPath: string; gridSpacing?: number; startX?: number; startY?: number; colsPerRow?: number }) => {
+      const result = await callKicadScript("update_pcb_from_schematic", args);
+      if (result.success) {
+        const details = result.details || {};
+        let output = [
+          `=== Update PCB from Schematic ===`,
+          ``,
+          `Summary:`,
+          `  Placed: ${result.placed || 0} components`,
+          `  Skipped: ${result.skipped || 0} components`,
+          `  Errors: ${result.errors || 0} components`,
+          ``
+        ];
+
+        if (details.placed && details.placed.length > 0) {
+          output.push(`Placed components (first 20):`);
+          details.placed.forEach((p: any) => {
+            output.push(`  ${p.reference}: ${p.footprint} at (${p.x}, ${p.y})`);
+          });
+          output.push(``);
+        }
+
+        if (details.errors && details.errors.length > 0) {
+          output.push(`Errors:`);
+          details.errors.forEach((e: any) => {
+            output.push(`  ${e.reference}: ${e.error}`);
+          });
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: output.join('\n')
+          }]
+        };
+      } else {
+        return {
+          content: [{
+            type: "text",
+            text: `Failed to update PCB: ${result.message || 'Unknown error'}${result.traceback ? '\n\n' + result.traceback : ''}`
+          }]
+        };
+      }
+    }
+  );
 }

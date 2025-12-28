@@ -333,6 +333,7 @@ class KiCADInterface:
             "connect_to_net": self._handle_connect_to_net,
             "get_net_connections": self._handle_get_net_connections,
             "generate_netlist": self._handle_generate_netlist,
+            "update_pcb_from_schematic": self._handle_update_pcb_from_schematic,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
             "export_schematic_pdf": self._handle_export_schematic_pdf,
 
@@ -738,6 +739,103 @@ class KiCADInterface:
         except Exception as e:
             logger.error(f"Error generating netlist: {str(e)}")
             return {"success": False, "message": str(e)}
+
+    def _handle_update_pcb_from_schematic(self, params):
+        """Update PCB with components from schematic (like KiCad's F8 function)"""
+        logger.info("Updating PCB from schematic")
+        try:
+            schematic_path = params.get("schematicPath")
+            grid_spacing = params.get("gridSpacing", 10)  # mm between components
+            start_x = params.get("startX", 20)  # mm from left edge
+            start_y = params.get("startY", 20)  # mm from top edge
+            cols_per_row = params.get("colsPerRow", 20)  # components per row
+
+            if not schematic_path:
+                return {"success": False, "message": "Schematic path is required"}
+
+            if not self.board:
+                return {"success": False, "message": "No board is loaded. Load or create a board first."}
+
+            # Load schematic and generate netlist
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            netlist = ConnectionManager.generate_netlist(schematic, schematic_path)
+            components = netlist.get("components", [])
+
+            if not components:
+                return {"success": False, "message": "No components found in schematic"}
+
+            # Get existing footprints on board
+            existing_refs = set()
+            for fp in self.board.GetFootprints():
+                existing_refs.add(fp.GetReference())
+
+            # Place new components
+            placed = []
+            skipped = []
+            errors = []
+            col = 0
+            row = 0
+
+            for comp in components:
+                ref = comp.get("reference", "")
+                value = comp.get("value", "")
+                footprint = comp.get("footprint", "")
+
+                # Skip power symbols and components without footprint
+                if ref.startswith("#") or not footprint:
+                    skipped.append({"reference": ref, "reason": "No footprint or power symbol"})
+                    continue
+
+                # Skip if already on board
+                if ref in existing_refs:
+                    skipped.append({"reference": ref, "reason": "Already on board"})
+                    continue
+
+                # Calculate position
+                x = start_x + (col * grid_spacing)
+                y = start_y + (row * grid_spacing)
+
+                # Place component using ComponentCommands
+                place_result = self.component_commands.place_component({
+                    "componentId": footprint,
+                    "position": {"x": x, "y": y, "unit": "mm"},
+                    "reference": ref,
+                    "value": value
+                })
+
+                if place_result.get("success"):
+                    placed.append({"reference": ref, "footprint": footprint, "x": x, "y": y})
+                    col += 1
+                    if col >= cols_per_row:
+                        col = 0
+                        row += 1
+                else:
+                    errors.append({"reference": ref, "error": place_result.get("message", "Unknown error")})
+
+            # Save the board
+            if placed:
+                self.board.Save(self.board.GetFileName())
+
+            return {
+                "success": True,
+                "message": f"Updated PCB: {len(placed)} placed, {len(skipped)} skipped, {len(errors)} errors",
+                "placed": len(placed),
+                "skipped": len(skipped),
+                "errors": len(errors),
+                "details": {
+                    "placed": placed[:20],  # Limit output size
+                    "skipped": skipped[:20],
+                    "errors": errors
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error updating PCB from schematic: {str(e)}")
+            import traceback
+            return {"success": False, "message": str(e), "traceback": traceback.format_exc()}
 
     def _handle_check_kicad_ui(self, params):
         """Check if KiCAD UI is running"""
