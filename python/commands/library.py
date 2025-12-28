@@ -44,6 +44,15 @@ class LibraryManager:
             self._parse_fp_lib_table(global_table)
         else:
             logger.warning(f"Global fp-lib-table not found at: {global_table}")
+            # Fallback: try system template
+            system_template = self._get_system_fp_lib_table_template()
+            if system_template and system_template.exists():
+                logger.info(f"Using system template fp-lib-table from: {system_template}")
+                self._parse_fp_lib_table(system_template)
+            else:
+                # Last resort: scan footprint directory directly
+                logger.info("Scanning footprint directory directly...")
+                self._scan_footprint_directory()
 
         # Load project-specific libraries if project path provided
         if self.project_path:
@@ -74,6 +83,46 @@ class LibraryManager:
                 return path
 
         return None
+
+    def _get_system_fp_lib_table_template(self) -> Optional[Path]:
+        """Get path to system default fp-lib-table template"""
+        # Try common system template locations
+        template_paths = [
+            Path("/usr/share/kicad/template/fp-lib-table"),
+            Path("/usr/local/share/kicad/template/fp-lib-table"),
+            Path("C:/Program Files/KiCad/9.0/share/kicad/template/fp-lib-table"),
+            Path("C:/Program Files/KiCad/8.0/share/kicad/template/fp-lib-table"),
+            Path("/Applications/KiCad/KiCad.app/Contents/SharedSupport/template/fp-lib-table"),
+        ]
+
+        for path in template_paths:
+            if path.exists():
+                logger.info(f"Found system fp-lib-table template at: {path}")
+                return path
+
+        return None
+
+    def _scan_footprint_directory(self):
+        """Scan footprint directory directly and add all .pretty directories as libraries"""
+        footprint_dir = self._find_kicad_footprint_dir()
+        if not footprint_dir:
+            logger.warning("Could not find KiCAD footprint directory")
+            return
+
+        footprint_path = Path(footprint_dir)
+        if not footprint_path.exists():
+            logger.warning(f"Footprint directory does not exist: {footprint_path}")
+            return
+
+        # Find all .pretty directories
+        for lib_dir in footprint_path.glob("*.pretty"):
+            if lib_dir.is_dir():
+                # Use directory name without .pretty as nickname
+                nickname = lib_dir.stem
+                self.libraries[nickname] = str(lib_dir)
+                logger.debug(f"  Found library: {nickname} -> {lib_dir}")
+
+        logger.info(f"Scanned {len(self.libraries)} footprint libraries from {footprint_dir}")
 
     def _parse_fp_lib_table(self, table_path: Path):
         """
@@ -357,7 +406,8 @@ class LibraryCommands:
     def search_footprints(self, params: Dict) -> Dict:
         """Search for footprints by pattern"""
         try:
-            pattern = params.get("pattern", "*")
+            # Accept both 'search_term' (from MCP) and 'pattern' (legacy)
+            pattern = params.get("search_term") or params.get("pattern", "*")
             limit = params.get("limit", 20)
 
             results = self.library_manager.search_footprints(pattern, limit)
@@ -379,7 +429,8 @@ class LibraryCommands:
     def list_library_footprints(self, params: Dict) -> Dict:
         """List all footprints in a specific library"""
         try:
-            library = params.get("library")
+            # Accept both 'library_name' (from MCP) and 'library' (legacy)
+            library = params.get("library_name") or params.get("library")
             if not library:
                 return {
                     "success": False,
