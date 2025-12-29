@@ -28,9 +28,10 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
   // Add component to schematic
   server.tool(
     "add_schematic_component",
-    "Add a component to the schematic",
+    "Add a component to the schematic. Symbol format is 'Library:SymbolName' (e.g., 'Device:R', 'EDA-MCP:ESP32-C3')",
     {
-      symbol: z.string().describe("Symbol library reference"),
+      schematicPath: z.string().describe("Path to the schematic file"),
+      symbol: z.string().describe("Symbol library:name reference (e.g., Device:R, EDA-MCP:ESP32-C3)"),
       reference: z.string().describe("Component reference (e.g., R1, U1)"),
       value: z.string().optional().describe("Component value"),
       position: z.object({
@@ -38,14 +39,39 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
         y: z.number()
       }).optional().describe("Position on schematic"),
     },
-    async (args: any) => {
-      const result = await callKicadScript("add_schematic_component", args);
-      return {
-        content: [{
-          type: "text",
-          text: JSON.stringify(result, null, 2)
-        }]
+    async (args: { schematicPath: string; symbol: string; reference: string; value?: string; position?: { x: number; y: number } }) => {
+      // Transform to what Python backend expects
+      const [library, symbolName] = args.symbol.includes(':')
+        ? args.symbol.split(':')
+        : ['Device', args.symbol];
+
+      const transformed = {
+        schematicPath: args.schematicPath,
+        component: {
+          library,
+          type: symbolName,
+          reference: args.reference,
+          value: args.value,
+          position: args.position
+        }
       };
+
+      const result = await callKicadScript("add_schematic_component", transformed);
+      if (result.success) {
+        return {
+          content: [{
+            type: "text",
+            text: `Successfully added ${args.reference} (${args.symbol}) to schematic`
+          }]
+        };
+      } else {
+        return {
+          content: [{
+            type: "text",
+            text: `Failed to add component: ${result.message || JSON.stringify(result)}`
+          }]
+        };
+      }
     }
   );
 
