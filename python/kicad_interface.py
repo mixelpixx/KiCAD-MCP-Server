@@ -212,6 +212,7 @@ try:
     from commands.connection_schematic import ConnectionManager
     from commands.library_schematic import LibraryManager as SchematicLibraryManager
     from commands.library import LibraryManager as FootprintLibraryManager, LibraryCommands
+    from commands.library_symbol import SymbolLibraryManager, SymbolLibraryCommands
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
     logger.error(f"Failed to import command handlers: {e}")
@@ -257,6 +258,9 @@ class KiCADInterface:
         self.design_rule_commands = DesignRuleCommands(self.board)
         self.export_commands = ExportCommands(self.board)
         self.library_commands = LibraryCommands(self.footprint_library)
+
+        # Initialize symbol library manager (for searching local KiCad symbol libraries)
+        self.symbol_library_commands = SymbolLibraryCommands()
 
         # Schematic-related classes don't need board reference
         # as they operate directly on schematic files
@@ -322,6 +326,12 @@ class KiCADInterface:
             "search_footprints": self.library_commands.search_footprints,
             "list_library_footprints": self.library_commands.list_library_footprints,
             "get_footprint_info": self.library_commands.get_footprint_info,
+
+            # Symbol library commands (local KiCad symbol library search)
+            "list_symbol_libraries": self.symbol_library_commands.list_symbol_libraries,
+            "search_symbols": self.symbol_library_commands.search_symbols,
+            "list_library_symbols": self.symbol_library_commands.list_library_symbols,
+            "get_symbol_info": self.symbol_library_commands.get_symbol_info,
 
             # Schematic commands
             "create_schematic": self._handle_create_schematic,
