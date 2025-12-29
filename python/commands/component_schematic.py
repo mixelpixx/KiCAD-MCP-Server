@@ -1,6 +1,9 @@
 from skip import Schematic
 # Symbol class might not be directly importable in the current version
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ComponentManager:
     """Manage components in a schematic"""
@@ -9,6 +12,9 @@ class ComponentManager:
     def add_component(schematic: Schematic, component_def: dict):
         """Add a component to the schematic"""
         try:
+            logger.info(f"Adding component: lib={component_def.get('library')}, name={component_def.get('type')}, ref={component_def.get('reference')}")
+            logger.debug(f"Full component_def: {component_def}")
+
             # Create a new symbol
             symbol = schematic.add_symbol(
                 lib=component_def.get('library', 'Device'),
@@ -33,10 +39,10 @@ class ComponentManager:
                 if key not in ['Reference', 'Value', 'Footprint', 'Datasheet']:
                     symbol.property.append(key, value)
 
-            print(f"Added component {symbol.reference} ({symbol.name}) to schematic.")
+            logger.info(f"Successfully added component {symbol.reference} ({symbol.name}) to schematic.")
             return symbol
         except Exception as e:
-            print(f"Error adding component: {e}")
+            logger.error(f"Error adding component: {e}", exc_info=True)
             return None
 
     @staticmethod
