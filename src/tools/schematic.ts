@@ -52,7 +52,9 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
           type: symbolName,
           reference: args.reference,
           value: args.value,
-          position: args.position
+          // Python expects flat x, y not nested position
+          x: args.position?.x ?? 0,
+          y: args.position?.y ?? 0
         }
       };
 
