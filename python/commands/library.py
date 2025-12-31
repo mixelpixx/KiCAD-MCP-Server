@@ -128,6 +128,8 @@ class LibraryManager:
             'KICAD8_FOOTPRINT_DIR': self._find_kicad_footprint_dir(),
             'KICAD_FOOTPRINT_DIR': self._find_kicad_footprint_dir(),
             'KISYSMOD': self._find_kicad_footprint_dir(),
+            'KICAD9_3RD_PARTY': self._find_kicad_3rdparty_dir(),
+            'KICAD8_3RD_PARTY': self._find_kicad_3rdparty_dir(),
         }
 
         # Project directory
@@ -174,6 +176,67 @@ class LibraryManager:
             if os.path.isdir(path):
                 return path
 
+        return None
+
+    def _find_kicad_3rdparty_dir(self) -> Optional[str]:
+        """
+        Find KiCAD 3rd party libraries directory.
+
+        Resolution order:
+        1. Shell environment variable KICAD9_3RD_PARTY
+        2. User settings in kicad_common.json
+        3. Platform-specific defaults based on detected KiCad version
+        """
+        import json
+
+        # 1. Check shell environment variable first
+        if 'KICAD9_3RD_PARTY' in os.environ:
+            path = os.environ['KICAD9_3RD_PARTY']
+            if os.path.isdir(path):
+                return path
+
+        # 2. Check kicad_common.json for user-defined variables
+        kicad_common_paths = [
+            Path.home() / "Library" / "Preferences" / "kicad" / "9.0" / "kicad_common.json",  # macOS
+            Path.home() / ".config" / "kicad" / "9.0" / "kicad_common.json",  # Linux
+            Path.home() / "AppData" / "Roaming" / "kicad" / "9.0" / "kicad_common.json",  # Windows
+        ]
+
+        for config_path in kicad_common_paths:
+            if config_path.exists():
+                try:
+                    with open(config_path, 'r') as f:
+                        config = json.load(f)
+                    env_vars = config.get('environment', {}).get('vars', {})
+                    if env_vars and 'KICAD9_3RD_PARTY' in env_vars:
+                        path = env_vars['KICAD9_3RD_PARTY']
+                        if os.path.isdir(path):
+                            return path
+                except (json.JSONDecodeError, KeyError, TypeError):
+                    pass
+
+                # Derive version from config path location
+                version = config_path.parent.name  # e.g., "9.0"
+                break
+        else:
+            version = "9.0"  # Default
+
+        # 3. Use platform-specific defaults
+        possible_paths = [
+            # macOS - Documents/KiCad/{version}/3rdparty
+            Path.home() / "Documents" / "KiCad" / version / "3rdparty",
+            # Linux - ~/.local/share/kicad/{version}/3rdparty
+            Path.home() / ".local" / "share" / "kicad" / version / "3rdparty",
+            # Windows - Documents/KiCad/{version}/3rdparty
+            Path.home() / "Documents" / "KiCad" / version / "3rdparty",
+        ]
+
+        for path in possible_paths:
+            if path.exists():
+                logger.info(f"Found KiCad 3rd party directory: {path}")
+                return str(path)
+
+        logger.warning("Could not find KiCad 3rd party directory")
         return None
 
     def list_libraries(self) -> List[str]:
