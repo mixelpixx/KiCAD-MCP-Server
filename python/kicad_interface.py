@@ -213,6 +213,8 @@ try:
     from commands.library_schematic import LibraryManager as SchematicLibraryManager
     from commands.library import LibraryManager as FootprintLibraryManager, LibraryCommands
     from commands.library_symbol import SymbolLibraryManager, SymbolLibraryCommands
+    from commands.jlcpcb import JLCPCBClient, test_jlcpcb_connection
+    from commands.jlcpcb_parts import JLCPCBPartsManager
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
     logger.error(f"Failed to import command handlers: {e}")
@@ -261,6 +263,10 @@ class KiCADInterface:
 
         # Initialize symbol library manager (for searching local KiCad symbol libraries)
         self.symbol_library_commands = SymbolLibraryCommands()
+
+        # Initialize JLCPCB API integration
+        self.jlcpcb_client = JLCPCBClient()
+        self.jlcpcb_parts = JLCPCBPartsManager()
 
         # Schematic-related classes don't need board reference
         # as they operate directly on schematic files
@@ -332,6 +338,13 @@ class KiCADInterface:
             "search_symbols": self.symbol_library_commands.search_symbols,
             "list_library_symbols": self.symbol_library_commands.list_library_symbols,
             "get_symbol_info": self.symbol_library_commands.get_symbol_info,
+
+            # JLCPCB API commands (complete parts catalog via API)
+            "download_jlcpcb_database": self._handle_download_jlcpcb_database,
+            "search_jlcpcb_parts": self._handle_search_jlcpcb_parts,
+            "get_jlcpcb_part": self._handle_get_jlcpcb_part,
+            "get_jlcpcb_database_stats": self._handle_get_jlcpcb_database_stats,
+            "suggest_jlcpcb_alternatives": self._handle_suggest_jlcpcb_alternatives,
 
             # Schematic commands
             "create_schematic": self._handle_create_schematic,
@@ -1475,6 +1488,198 @@ class KiCADInterface:
         except Exception as e:
             logger.error(f"Error saving board via IPC: {e}")
             return {"success": False, "message": str(e)}
+
+    # JLCPCB API handlers
+
+    def _handle_download_jlcpcb_database(self, params):
+        """Download JLCPCB parts database from API"""
+        try:
+            force = params.get('force', False)
+
+            # Check if database exists
+            import os
+            stats = self.jlcpcb_parts.get_database_stats()
+            if stats['total_parts'] > 0 and not force:
+                return {
+                    "success": False,
+                    "message": "Database already exists. Use force=true to re-download.",
+                    "stats": stats
+                }
+
+            logger.info("Downloading JLCPCB parts database...")
+
+            # Download parts from API
+            parts = self.jlcpcb_client.download_full_database(
+                callback=lambda page, total, msg: logger.info(f"Page {page}: {msg}")
+            )
+
+            # Import into database
+            logger.info(f"Importing {len(parts)} parts into database...")
+            self.jlcpcb_parts.import_parts(
+                parts,
+                progress_callback=lambda curr, total, msg: logger.info(msg)
+            )
+
+            # Get final stats
+            stats = self.jlcpcb_parts.get_database_stats()
+
+            # Calculate database size
+            db_size_mb = os.path.getsize(self.jlcpcb_parts.db_path) / (1024 * 1024)
+
+            return {
+                "success": True,
+                "total_parts": stats['total_parts'],
+                "basic_parts": stats['basic_parts'],
+                "extended_parts": stats['extended_parts'],
+                "db_size_mb": round(db_size_mb, 2),
+                "db_path": stats['db_path']
+            }
+
+        except Exception as e:
+            logger.error(f"Error downloading JLCPCB database: {e}", exc_info=True)
+            return {
+                "success": False,
+                "message": f"Failed to download database: {str(e)}"
+            }
+
+    def _handle_search_jlcpcb_parts(self, params):
+        """Search JLCPCB parts database"""
+        try:
+            query = params.get('query')
+            category = params.get('category')
+            package = params.get('package')
+            library_type = params.get('library_type', 'All')
+            manufacturer = params.get('manufacturer')
+            in_stock = params.get('in_stock', True)
+            limit = params.get('limit', 20)
+
+            # Adjust library_type filter
+            if library_type == 'All':
+                library_type = None
+
+            parts = self.jlcpcb_parts.search_parts(
+                query=query,
+                category=category,
+                package=package,
+                library_type=library_type,
+                manufacturer=manufacturer,
+                in_stock=in_stock,
+                limit=limit
+            )
+
+            # Add price breaks and footprints to each part
+            for part in parts:
+                if part.get('price_json'):
+                    try:
+                        part['price_breaks'] = json.loads(part['price_json'])
+                    except:
+                        part['price_breaks'] = []
+
+            return {
+                "success": True,
+                "parts": parts,
+                "count": len(parts)
+            }
+
+        except Exception as e:
+            logger.error(f"Error searching JLCPCB parts: {e}", exc_info=True)
+            return {
+                "success": False,
+                "message": f"Search failed: {str(e)}"
+            }
+
+    def _handle_get_jlcpcb_part(self, params):
+        """Get detailed information for a specific JLCPCB part"""
+        try:
+            lcsc_number = params.get('lcsc_number')
+            if not lcsc_number:
+                return {
+                    "success": False,
+                    "message": "Missing lcsc_number parameter"
+                }
+
+            part = self.jlcpcb_parts.get_part_info(lcsc_number)
+            if not part:
+                return {
+                    "success": False,
+                    "message": f"Part not found: {lcsc_number}"
+                }
+
+            # Get suggested KiCAD footprints
+            footprints = self.jlcpcb_parts.map_package_to_footprint(part.get('package', ''))
+
+            return {
+                "success": True,
+                "part": part,
+                "footprints": footprints
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting JLCPCB part: {e}", exc_info=True)
+            return {
+                "success": False,
+                "message": f"Failed to get part info: {str(e)}"
+            }
+
+    def _handle_get_jlcpcb_database_stats(self, params):
+        """Get statistics about JLCPCB database"""
+        try:
+            stats = self.jlcpcb_parts.get_database_stats()
+            return {
+                "success": True,
+                "stats": stats
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting database stats: {e}", exc_info=True)
+            return {
+                "success": False,
+                "message": f"Failed to get stats: {str(e)}"
+            }
+
+    def _handle_suggest_jlcpcb_alternatives(self, params):
+        """Suggest alternative JLCPCB parts"""
+        try:
+            lcsc_number = params.get('lcsc_number')
+            limit = params.get('limit', 5)
+
+            if not lcsc_number:
+                return {
+                    "success": False,
+                    "message": "Missing lcsc_number parameter"
+                }
+
+            # Get original part for price comparison
+            original_part = self.jlcpcb_parts.get_part_info(lcsc_number)
+            reference_price = None
+            if original_part and original_part.get('price_breaks'):
+                try:
+                    reference_price = float(original_part['price_breaks'][0].get('price', 0))
+                except:
+                    pass
+
+            alternatives = self.jlcpcb_parts.suggest_alternatives(lcsc_number, limit)
+
+            # Add price breaks to alternatives
+            for part in alternatives:
+                if part.get('price_json'):
+                    try:
+                        part['price_breaks'] = json.loads(part['price_json'])
+                    except:
+                        part['price_breaks'] = []
+
+            return {
+                "success": True,
+                "alternatives": alternatives,
+                "reference_price": reference_price
+            }
+
+        except Exception as e:
+            logger.error(f"Error suggesting alternatives: {e}", exc_info=True)
+            return {
+                "success": False,
+                "message": f"Failed to suggest alternatives: {str(e)}"
+            }
 
 
 def main():

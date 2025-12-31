@@ -20,6 +20,7 @@ import { registerExportTools } from './tools/export.js';
 import { registerSchematicTools } from './tools/schematic.js';
 import { registerLibraryTools } from './tools/library.js';
 import { registerSymbolLibraryTools } from './tools/library-symbol.js';
+import { registerJLCPCBApiTools } from './tools/jlcpcb-api.js';
 import { registerUITools } from './tools/ui.js';
 import { registerRouterTools } from './tools/router.js';
 
@@ -155,6 +156,7 @@ export class KiCADMcpServer {
     registerSchematicTools(this.server, this.callKicadScript.bind(this));
     registerLibraryTools(this.server, this.callKicadScript.bind(this));
     registerSymbolLibraryTools(this.server, this.callKicadScript.bind(this));
+    registerJLCPCBApiTools(this.server, this.callKicadScript.bind(this));
     registerUITools(this.server, this.callKicadScript.bind(this));
 
     // Register all resources
