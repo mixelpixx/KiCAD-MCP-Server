@@ -2,10 +2,15 @@
 
 The KiCAD MCP Server provides **two complementary approaches** for working with JLCPCB parts:
 
-1. **Local Symbol Libraries** - Search JLCPCB libraries installed via KiCad PCM
+1. **Local Symbol Libraries** - Search JLCPCB libraries installed via KiCad PCM _(contributed by [@l3wi](https://github.com/l3wi) in [PR #25](https://github.com/mixelpixx/KiCAD-MCP-Server/pull/25))_
 2. **JLCPCB API Integration** - Access the complete 100k+ parts catalog with real-time pricing
 
 Both approaches can be used together to give you maximum flexibility.
+
+## Credits
+
+- **Local Symbol Library Search**: Implementation by [@l3wi](https://github.com/l3wi) - [PR #25](https://github.com/mixelpixx/KiCAD-MCP-Server/pull/25)
+- **JLCPCB API Integration**: Built on top of the local library foundation
 
 ---
 
