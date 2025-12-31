@@ -7,9 +7,10 @@ A Model Context Protocol (MCP) server that enables AI assistants like Claude to 
 The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standard from Anthropic that allows AI assistants to securely connect to external tools and data sources. This implementation provides a standardized bridge between AI assistants and KiCAD, enabling natural language control of PCB design operations.
 
 **Key Capabilities:**
-- 59 fully-documented tools with JSON Schema validation
+- 64 fully-documented tools with JSON Schema validation
 - Smart tool discovery with router pattern (reduces AI context by 70%)
 - 8 dynamic resources exposing project state
+- JLCPCB parts integration with 100k+ component catalog and local library search
 - Full MCP 2025-06-18 protocol compliance
 - Cross-platform support (Linux, Windows, macOS)
 - Real-time KiCAD UI integration via IPC API (experimental)
@@ -26,7 +27,7 @@ We are currently implementing and testing the KiCAD 9.0 IPC API for real-time UI
 
 Note: IPC features are under active development and testing. Enable IPC in KiCAD via Preferences > Plugins > Enable IPC API Server.
 
-### Tool Discovery & Router Pattern (New!)
+### Tool Discovery & Router Pattern
 We've implemented an intelligent tool router to keep AI context efficient while maintaining full functionality:
 - **12 direct tools** always visible for high-frequency operations
 - **47 routed tools** organized into 7 categories (board, component, export, drc, schematic, library, routing)
@@ -36,9 +37,30 @@ We've implemented an intelligent tool router to keep AI context efficient while 
   - `search_tools` - Find tools by keyword
   - `execute_tool` - Run any tool with parameters
 
-**Why this matters:** By organizing tools into discoverable categories, Claude can intelligently find and use the right tool for your task without loading all 59 tool schemas into every conversation. This reduces context consumption by up to 70% while maintaining full access to all functionality.
+**Why this matters:** By organizing tools into discoverable categories, Claude can intelligently find and use the right tool for your task without loading all 64 tool schemas into every conversation. This reduces context consumption by up to 70% while maintaining full access to all functionality.
 
 **Usage is seamless:** Just ask naturally - "export gerber files" or "add mounting holes" - and Claude will discover and execute the appropriate tools automatically.
+
+### JLCPCB Parts Integration (New!)
+Complete integration with JLCPCB's parts catalog, providing two complementary approaches for component selection:
+
+**Dual-Mode Architecture:**
+1. **Local Symbol Libraries** - Search JLCPCB libraries installed via KiCAD Plugin and Content Manager (contributed by [@l3wi](https://github.com/l3wi))
+2. **JLCPCB API Integration** - Access the complete 100k+ parts catalog with real-time pricing and stock data
+
+**Key Features:**
+- Real-time pricing with quantity breaks (1+, 10+, 100+, 1000+)
+- Stock availability checking
+- Basic vs Extended library type identification (Basic = free assembly)
+- Intelligent cost optimization with alternative part suggestions
+- Package-to-footprint mapping for KiCAD compatibility
+- Parametric search by category, package, manufacturer
+- Local SQLite database for fast offline searching
+- No API credentials required for local library search
+
+**Why this matters:** JLCPCB offers PCB assembly services where Basic parts have no assembly fee, while Extended parts charge $3 per unique component. This integration helps you find the cheapest components with the best availability, potentially saving hundreds of dollars on assembly costs for production runs.
+
+See [JLCPCB Usage Guide](docs/JLCPCB_USAGE_GUIDE.md) for detailed setup and usage instructions.
 
 ### Comprehensive Tool Schemas
 Every tool now includes complete JSON Schema definitions with:
@@ -67,7 +89,7 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server provides 59 tools organized into functional categories. With the new router pattern, tools are automatically discovered as needed - just ask Claude what you want to accomplish!
+The server provides 64 tools organized into functional categories. With the new router pattern, tools are automatically discovered as needed - just ask Claude what you want to accomplish!
 
 ### Project Management (4 tools)
 - `create_project` - Initialize new KiCAD projects
@@ -113,6 +135,13 @@ The server provides 59 tools organized into functional categories. With the new 
 - `search_footprints` - Search for footprints
 - `list_library_footprints` - List footprints in library
 - `get_footprint_info` - Get footprint details
+
+### JLCPCB Integration (5 tools)
+- `download_jlcpcb_database` - Download complete JLCPCB parts catalog (one-time setup)
+- `search_jlcpcb_parts` - Search 100k+ parts with parametric filters
+- `get_jlcpcb_part` - Get detailed part info with pricing and footprints
+- `get_jlcpcb_database_stats` - View database statistics and coverage
+- `suggest_jlcpcb_alternatives` - Find cheaper or more available alternatives
 
 ### Design Rules (4 tools)
 - `set_design_rules` - Configure DRC parameters
@@ -278,6 +307,50 @@ Use the same configuration format as Claude Desktop above.
 
 Claude Code automatically detects MCP servers in the current directory. No additional configuration needed.
 
+### JLCPCB Integration Setup (Optional)
+
+The JLCPCB integration provides two modes that can be used independently or together:
+
+**Mode 1: Local Symbol Libraries (No Setup Required)**
+
+Install JLCPCB libraries via KiCAD's Plugin and Content Manager:
+1. Open KiCAD
+2. Go to Tools > Plugin and Content Manager
+3. Search for "JLCPCB" or "JLC"
+4. Install libraries like `JLCPCB-KiCAD-Library` or `EDA_MCP`
+5. Use `search_symbols` to find components with pre-configured footprints and LCSC IDs
+
+**Mode 2: JLCPCB API (Complete Catalog Access)**
+
+For access to the full 100k+ parts catalog with pricing:
+
+1. **Get API Credentials**
+   - Log in to [JLCPCB](https://jlcpcb.com/)
+   - Navigate to Account > API Management
+   - Create API Key and save your `appKey` and `appSecret`
+
+2. **Configure Environment Variables**
+
+   Add to your shell profile (`~/.bashrc`, `~/.zshrc`, or `~/.profile`):
+   ```bash
+   export JLCPCB_API_KEY="your_app_key_here"
+   export JLCPCB_API_SECRET="your_app_secret_here"
+   ```
+
+   Or create a `.env` file in the project root:
+   ```
+   JLCPCB_API_KEY=your_app_key_here
+   JLCPCB_API_SECRET=your_app_secret_here
+   ```
+
+3. **Download Parts Database (One-time setup, takes 5-10 minutes)**
+   ```
+   Ask Claude: "Download the JLCPCB parts database"
+   ```
+   This creates a local SQLite database at `data/jlcpcb_parts.db` with ~100k parts.
+
+See [JLCPCB Usage Guide](docs/JLCPCB_USAGE_GUIDE.md) for detailed documentation.
+
 ## Usage Examples
 
 ### Basic PCB Design Workflow
@@ -324,6 +397,43 @@ Display the board preview.
 List all electrical nets.
 ```
 
+### JLCPCB Component Selection
+
+**Finding Components with Local Libraries:**
+
+```text
+Search for ESP32 modules in JLCPCB libraries.
+Find a 10k resistor in 0603 package from installed libraries.
+Show me details for LCSC part C2934196.
+```
+
+**Optimizing Costs with JLCPCB API:**
+
+```text
+Search for 10k ohm resistors in 0603 package, only Basic parts.
+Find the cheapest capacitor 10uF 25V in 0805 package with good stock.
+Show me pricing and stock for JLCPCB part C25804.
+Suggest cheaper alternatives to C25804.
+```
+
+**Complete Design Workflow:**
+
+```text
+I'm designing a board with an ESP32 and need to select components for JLCPCB assembly.
+Search JLCPCB for ESP32-C3 modules.
+Find Basic parts for: 10k resistor 0603, 100nF capacitor 0603, LED 0805.
+For each component, show me the cheapest option with good stock availability.
+Place these components on my board using the suggested footprints.
+```
+
+**Database Management:**
+
+```text
+Download the JLCPCB parts database (first time setup).
+Show me JLCPCB database statistics.
+How many Basic parts are available?
+```
+
 ## Architecture
 
 ### MCP Protocol Layer
@@ -361,6 +471,9 @@ List all electrical nets.
   - `export.py` - File generation
   - `schematic.py` - Schematic design
   - `library.py` - Footprint libraries
+  - `library_symbol.py` - Symbol library search (local JLCPCB libraries)
+  - `jlcpcb.py` - JLCPCB API client
+  - `jlcpcb_parts.py` - JLCPCB parts database manager
 
 ### KiCAD Integration
 - **pcbnew API (SWIG):** Direct Python bindings to KiCAD for file operations
@@ -476,6 +589,8 @@ npm run format
 - Schematic creation and editing
 - UI auto-launch
 - Full MCP protocol compliance
+- JLCPCB parts integration (local libraries + API)
+- Cost optimization and component selection
 
 **Under Active Development (IPC Backend):**
 - Real-time UI synchronization via KiCAD 9.0 IPC API
@@ -486,12 +601,13 @@ npm run format
 Note: IPC features are experimental and under testing. Some commands may not work as expected in all scenarios.
 
 **Planned:**
-- JLCPCB parts integration
 - Digikey API integration
+- Mouser API integration
 - Advanced routing algorithms
-- Smart BOM management
-- AI-assisted component selection
+- Smart BOM management with real-time pricing
+- AI-assisted component selection and optimization
 - Design pattern library (Arduino shields, RPi HATs)
+- Panelization support
 
 See [ROADMAP.md](docs/ROADMAP.md) for detailed development timeline.
 
@@ -501,10 +617,11 @@ We're actively developing new features and tools for the KiCAD MCP Server. **You
 
 **We'd love to hear from you:**
 - What PCB design workflows could be automated?
-- Which component suppliers should we integrate (JLCPCB, Digikey, Mouser, etc.)?
+- Which component suppliers should we integrate next (Digikey, Mouser, Arrow, etc.)?
 - What export formats or manufacturing outputs do you need?
 - Are there specific routing algorithms or design patterns you want?
 - What pain points in your KiCAD workflow could AI help solve?
+- How can we improve the JLCPCB integration?
 
 **Share your ideas:**
 1. 💡 [Open a feature request](https://github.com/mixelpixx/KiCAD-MCP-Server/issues/new?labels=enhancement&template=feature_request.md)
@@ -538,6 +655,7 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 - Built on the [Model Context Protocol](https://modelcontextprotocol.io/) by Anthropic
 - Powered by [KiCAD](https://www.kicad.org/) open-source PCB design software
 - Uses [kicad-skip](https://github.com/kicad-skip) for schematic manipulation
+- JLCPCB local library search contributed by [@l3wi](https://github.com/l3wi) - [PR #25](https://github.com/mixelpixx/KiCAD-MCP-Server/pull/25)
 
 ## Citation
 
