@@ -41,6 +41,8 @@ We've implemented an intelligent tool router to keep AI context efficient while 
 
 **Usage is seamless:** Just ask naturally - "export gerber files" or "add mounting holes" - and Claude will discover and execute the appropriate tools automatically.
 
+
+### NEEDS TESTING - REPORT ISSUES
 ### JLCPCB Parts Integration (New!)
 Complete integration with JLCPCB's parts catalog, providing two complementary approaches for component selection:
 
@@ -670,4 +672,5 @@ If you use this project in your research or publication, please cite:
   version = {2.1.0-alpha}
 }
 ```
+
 
