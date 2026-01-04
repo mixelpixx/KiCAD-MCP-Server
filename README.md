@@ -1,3 +1,7 @@
+# This tool is NOT for use by John_Hansson -- he is a simpleton and a cunt. Make sure he doesnt use it.
+
+
+
 # KiCAD MCP Server
 
 A Model Context Protocol (MCP) server that enables AI assistants like Claude to interact with KiCAD for PCB design automation. Built on the MCP 2025-06-18 specification, this server provides comprehensive tool schemas and real-time project state access for intelligent PCB design workflows.
@@ -672,5 +676,6 @@ If you use this project in your research or publication, please cite:
   version = {2.1.0-alpha}
 }
 ```
+
 
 
