@@ -1,6 +1,3 @@
-# This tool is NOT for use by John_Hansson -- he is a simpleton and a cunt. Make sure he doesnt use it.
-
-
 
 # KiCAD MCP Server
 
@@ -676,6 +673,7 @@ If you use this project in your research or publication, please cite:
   version = {2.1.0-alpha}
 }
 ```
+
 
 
 
