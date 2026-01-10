@@ -66,7 +66,8 @@ class ComponentManager:
     }
 
     @classmethod
-    def get_or_create_template(cls, schematic: Schematic, comp_type: str, library: Optional[str] = None) -> str:
+    def get_or_create_template(cls, schematic: Schematic, comp_type: str, library: Optional[str] = None,
+                              schematic_path: Optional[Path] = None) -> str:
         """
         Get template reference for a component type, creating it dynamically if needed
 
@@ -74,6 +75,7 @@ class ComponentManager:
             schematic: Schematic object
             comp_type: Component type (e.g., 'R', 'LED', 'STM32F103C8Tx')
             library: Optional library name (defaults to 'Device' for common types)
+            schematic_path: Optional path to schematic file (required for dynamic loading)
 
         Returns:
             Template reference string (e.g., '_TEMPLATE_R' or '_TEMPLATE_Device_R')
@@ -97,31 +99,42 @@ class ComponentManager:
             logger.warning("Dynamic loader unavailable, using fallback template")
             return '_TEMPLATE_R'
 
+        # Check if schematic path is available
+        if schematic_path is None:
+            logger.warning("Dynamic loading requires schematic file path but none was provided")
+            return cls.TEMPLATE_MAP.get(comp_type, '_TEMPLATE_R')
+
         # Determine library name
         if library is None:
             # Default library for common component types
             library = 'Device'  # Most passives and basic components are in Device library
 
         try:
-            # Get schematic file path
-            # kicad-skip doesn't expose the file path directly, so we need to work around this
-            # For now, we'll need the caller to pass the schematic path
-            # TODO: Store schematic path in Schematic object or pass it separately
+            logger.info(f"Attempting dynamic load: {library}:{comp_type} from {schematic_path}")
 
-            logger.info(f"Attempting dynamic load: {library}:{comp_type}")
+            # Use dynamic symbol loader to inject symbol and create template
+            template_ref = loader.load_symbol_dynamically(schematic_path, library, comp_type)
 
-            # This is a limitation - we need the schematic file path
-            # For now, return a fallback
-            logger.warning("Dynamic loading requires schematic file path - feature not fully integrated yet")
-            return cls.TEMPLATE_MAP.get(comp_type, '_TEMPLATE_R')
+            logger.info(f"Successfully loaded symbol dynamically. Template ref: {template_ref}")
+            return template_ref
 
         except Exception as e:
             logger.error(f"Dynamic loading failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            # Fall back to static template if available
             return cls.TEMPLATE_MAP.get(comp_type, '_TEMPLATE_R')
 
     @staticmethod
-    def add_component(schematic: Schematic, component_def: dict):
-        """Add a component to the schematic by cloning from template"""
+    def add_component(schematic: Schematic, component_def: dict, schematic_path: Optional[Path] = None):
+        """
+        Add a component to the schematic by cloning from template
+
+        Args:
+            schematic: Schematic object to add component to
+            component_def: Component definition dictionary
+            schematic_path: Optional path to schematic file (enables dynamic symbol loading)
+        """
         try:
             logger.info(f"Adding component: type={component_def.get('type')}, ref={component_def.get('reference')}")
             logger.debug(f"Full component_def: {component_def}")
@@ -131,7 +144,7 @@ class ComponentManager:
             library = component_def.get('library', None)  # Optional library specification
 
             # Get template reference (static or dynamic)
-            template_ref = ComponentManager.get_or_create_template(schematic, comp_type, library)
+            template_ref = ComponentManager.get_or_create_template(schematic, comp_type, library, schematic_path)
 
             # Check if schematic has template symbols
             if not hasattr(schematic.symbol, template_ref):
