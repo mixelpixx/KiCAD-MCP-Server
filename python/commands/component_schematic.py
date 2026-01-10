@@ -67,7 +67,7 @@ class ComponentManager:
 
     @classmethod
     def get_or_create_template(cls, schematic: Schematic, comp_type: str, library: Optional[str] = None,
-                              schematic_path: Optional[Path] = None) -> str:
+                              schematic_path: Optional[Path] = None) -> tuple:
         """
         Get template reference for a component type, creating it dynamically if needed
 
@@ -78,31 +78,55 @@ class ComponentManager:
             schematic_path: Optional path to schematic file (required for dynamic loading)
 
         Returns:
-            Template reference string (e.g., '_TEMPLATE_R' or '_TEMPLATE_Device_R')
+            Tuple of (template_ref, needs_reload) where needs_reload indicates if schematic must be reloaded
         """
+        # Helper function to check if template exists in schematic
+        def template_exists(schematic, template_ref):
+            """Check if template exists by iterating symbols (handles special characters)"""
+            for symbol in schematic.symbol:
+                if hasattr(symbol.property, 'Reference') and symbol.property.Reference.value == template_ref:
+                    return True
+            return False
+
         # 1. Check static template map first
         if comp_type in cls.TEMPLATE_MAP:
             template_ref = cls.TEMPLATE_MAP[comp_type]
             # Verify template exists in schematic
-            if hasattr(schematic.symbol, template_ref):
+            if template_exists(schematic, template_ref):
                 logger.debug(f"Using static template: {template_ref}")
-                return template_ref
+                return (template_ref, False)
 
-        # 2. Try dynamic loading
+        # 2. Check if dynamically loaded template already exists
+        # Build potential template reference names
+        potential_refs = []
+        if library:
+            potential_refs.append(f"_TEMPLATE_{library}_{comp_type}")
+        potential_refs.append(f"_TEMPLATE_{comp_type}")
+        if comp_type in cls.TEMPLATE_MAP:
+            potential_refs.append(cls.TEMPLATE_MAP[comp_type])
+
+        # Check each potential reference
+        for template_ref in potential_refs:
+            if template_exists(schematic, template_ref):
+                logger.debug(f"Found existing template: {template_ref}")
+                return (template_ref, False)
+
+        # 3. Try dynamic loading
         if not DYNAMIC_LOADING_AVAILABLE:
             logger.warning(f"Component type '{comp_type}' not in static templates and dynamic loading unavailable")
             # Fall back to basic resistor template
-            return '_TEMPLATE_R'
+            return ('_TEMPLATE_R', False)
 
         loader = cls.get_dynamic_loader()
         if not loader:
             logger.warning("Dynamic loader unavailable, using fallback template")
-            return '_TEMPLATE_R'
+            return ('_TEMPLATE_R', False)
 
         # Check if schematic path is available
         if schematic_path is None:
             logger.warning("Dynamic loading requires schematic file path but none was provided")
-            return cls.TEMPLATE_MAP.get(comp_type, '_TEMPLATE_R')
+            fallback = cls.TEMPLATE_MAP.get(comp_type, '_TEMPLATE_R')
+            return (fallback, False)
 
         # Determine library name
         if library is None:
@@ -116,14 +140,16 @@ class ComponentManager:
             template_ref = loader.load_symbol_dynamically(schematic_path, library, comp_type)
 
             logger.info(f"Successfully loaded symbol dynamically. Template ref: {template_ref}")
-            return template_ref
+            # Signal that schematic needs reload to see new template
+            return (template_ref, True)
 
         except Exception as e:
             logger.error(f"Dynamic loading failed: {e}")
             import traceback
             logger.error(traceback.format_exc())
             # Fall back to static template if available
-            return cls.TEMPLATE_MAP.get(comp_type, '_TEMPLATE_R')
+            fallback = cls.TEMPLATE_MAP.get(comp_type, '_TEMPLATE_R')
+            return (fallback, False)
 
     @staticmethod
     def add_component(schematic: Schematic, component_def: dict, schematic_path: Optional[Path] = None):
@@ -134,8 +160,13 @@ class ComponentManager:
             schematic: Schematic object to add component to
             component_def: Component definition dictionary
             schematic_path: Optional path to schematic file (enables dynamic symbol loading)
+
+        Returns:
+            Tuple of (new_symbol, needs_reload) where needs_reload indicates if caller should reload schematic
         """
         try:
+            from commands.schematic import SchematicManager
+
             logger.info(f"Adding component: type={component_def.get('type')}, ref={component_def.get('reference')}")
             logger.debug(f"Full component_def: {component_def}")
 
@@ -144,15 +175,25 @@ class ComponentManager:
             library = component_def.get('library', None)  # Optional library specification
 
             # Get template reference (static or dynamic)
-            template_ref = ComponentManager.get_or_create_template(schematic, comp_type, library, schematic_path)
+            template_ref, needs_reload = ComponentManager.get_or_create_template(schematic, comp_type, library, schematic_path)
 
-            # Check if schematic has template symbols
-            if not hasattr(schematic.symbol, template_ref):
+            # If dynamic loading occurred, reload schematic to see new template
+            if needs_reload and schematic_path:
+                logger.info(f"Reloading schematic after dynamic loading: {schematic_path}")
+                schematic = SchematicManager.load_schematic(str(schematic_path))
+
+            # Find template symbol by reference (handles special characters like +)
+            template_symbol = None
+            for symbol in schematic.symbol:
+                if hasattr(symbol.property, 'Reference') and symbol.property.Reference.value == template_ref:
+                    template_symbol = symbol
+                    break
+
+            if not template_symbol:
                 logger.error(f"Template symbol {template_ref} not found in schematic. Available symbols: {[str(s.property.Reference.value) for s in schematic.symbol]}")
                 raise ValueError(f"Template symbol {template_ref} not found. The schematic must be created from template_with_symbols.kicad_sch")
 
-            # Get template symbol and clone it
-            template_symbol = getattr(schematic.symbol, template_ref)
+            # Clone the template symbol
             new_symbol = template_symbol.clone()
             logger.debug(f"Cloned template symbol {template_ref}")
 
