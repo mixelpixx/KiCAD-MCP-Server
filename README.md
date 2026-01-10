@@ -19,25 +19,50 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 ## What's New in v2.1.0
 
-### Critical Schematic Workflow Fix (Issue #26 Resolved)
-The schematic workflow was completely broken in previous versions - **this is now fixed!**
+### 🚀 Critical Schematic Workflow Fix + Dynamic Symbol Loading (Issue #26)
+The schematic workflow was completely broken in previous versions - **this is now fixed AND dramatically enhanced!**
 
 **What was broken:**
 - `create_project` only created PCB files, no schematics
 - `add_schematic_component` called non-existent API methods
 - Schematics couldn't be created or edited at all
+- Only 13 component types available (severe limitation)
 
 **How we fixed it:**
-- Implemented template-based symbol cloning approach (kicad-skip limitation workaround)
-- `create_project` now creates both .kicad_pcb and .kicad_sch files
-- Added pre-configured template schematics with cloneable R, C, LED symbols
-- Rewrote component placement to use proper `clone()` API
-- Full end-to-end schematic workflow now functional
+1. **Phase 1:** Template-based symbol cloning approach
+   - `create_project` now creates both .kicad_pcb and .kicad_sch files
+   - Added pre-configured template schematics with 13 common component types
+   - Rewrote component placement to use proper `clone()` API
 
-**Technical Details:**
-The kicad-skip library cannot create symbols from scratch - it can only clone existing symbols from loaded schematics. We solved this by creating template schematic files (`python/templates/`) with pre-configured symbols that can be cloned and modified.
+2. **Phase 2:** Dynamic Symbol Loading (BREAKTHROUGH!) 🎉
+   - **Access to ALL ~10,000 KiCad symbols** from standard libraries!
+   - Automatic detection and dynamic loading from `.kicad_sym` library files
+   - Zero configuration required - just specify library and symbol name
+   - Seamless integration with existing MCP tools
+   - Full S-expression parsing and injection system
 
-See [Schematic Workflow Fix Documentation](docs/SCHEMATIC_WORKFLOW_FIX.md) for technical details.
+**Technical Architecture:**
+The kicad-skip library cannot create symbols from scratch - it can only clone existing symbols. We implemented a two-phase solution:
+
+1. **Static Templates:** 13 pre-configured symbols (R, C, L, LED, etc.) for instant use
+2. **Dynamic Loading:** On-demand injection of ANY symbol from KiCad libraries:
+   - Parse `.kicad_sym` library files using S-expression parser
+   - Inject symbol definition into schematic's `lib_symbols` section
+   - Create offscreen template instance
+   - Reload schematic so kicad-skip sees new template
+   - Clone template to create actual component
+
+**Example - Now Works with ANY Symbol:**
+```json
+{
+  "type": "STM32F103C8Tx",
+  "library": "MCU_ST_STM32F1",
+  "reference": "U1",
+  "footprint": "Package_QFP:LQFP-48_7x7mm_P0.5mm"
+}
+```
+
+See [Dynamic Loading Status](docs/DYNAMIC_LOADING_STATUS.md) for technical details and test results.
 
 ### IPC Backend (Experimental)
 We are currently implementing and testing the KiCAD 9.0 IPC API for real-time UI synchronization:
@@ -180,15 +205,21 @@ The server provides 64 tools organized into functional categories. With the new 
 - `export_bom` - Produce bill of materials
 
 ### Schematic Design (6 tools)
-**Now fully functional!** (Fixed in v2.1.0 - see Issue #26)
+**Now fully functional with DYNAMIC SYMBOL LOADING!** (Fixed in v2.1.0 - see Issue #26)
 - `create_schematic` - Initialize new schematic from template
 - `load_schematic` - Open existing schematic
-- `add_schematic_component` - Place symbols using template-based cloning
+- `add_schematic_component` - Place symbols with automatic dynamic loading from KiCad libraries
 - `add_schematic_wire` - Connect component pins
 - `list_schematic_libraries` - List symbol libraries
 - `export_schematic_pdf` - Export schematic PDF
 
-**Note:** Uses template-based approach due to kicad-skip library limitations. Templates include R, C, LED symbols that are cloned and modified for each placement.
+**Major Enhancement:** Now supports **ALL ~10,000 KiCad symbols** through dynamic loading! Specify any `library` and `type` (e.g., `"library": "MCU_ST_STM32F1", "type": "STM32F103C8Tx"`) and the system automatically:
+- Searches KiCad symbol libraries
+- Injects symbol definition into your schematic
+- Creates cloneable template instance
+- Places component seamlessly
+
+Fallback to 13 static templates (R, C, L, LED, etc.) when dynamic loading unavailable.
 
 ### UI Management (2 tools)
 - `check_kicad_ui` - Check if KiCAD is running
@@ -613,7 +644,9 @@ npm run format
 - Design rule checking
 - Export to Gerber, PDF, SVG, 3D
 - **Schematic creation and editing (Issue #26 RESOLVED - fully functional!)**
-- Template-based schematic workflow with symbol cloning
+- **DYNAMIC SYMBOL LOADING - Access to ALL ~10,000 KiCad symbols! 🚀**
+- Template-based schematic workflow with automatic dynamic injection
+- Symbol cloning from static templates (13 types) and dynamic libraries
 - UI auto-launch
 - Full MCP protocol compliance
 - JLCPCB parts integration (local libraries + JLCSearch API)
