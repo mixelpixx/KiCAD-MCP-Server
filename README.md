@@ -204,22 +204,36 @@ The server provides 64 tools organized into functional categories. With the new 
 - `export_3d` - Generate 3D models (STEP/VRML)
 - `export_bom` - Produce bill of materials
 
-### Schematic Design (6 tools)
-**Now fully functional with DYNAMIC SYMBOL LOADING!** (Fixed in v2.1.0 - see Issue #26)
+### Schematic Design (9 tools)
+**Now fully functional with DYNAMIC SYMBOL LOADING + INTELLIGENT WIRING!** (Fixed in v2.1.0 - see Issue #26)
+
+**Component Placement:**
 - `create_schematic` - Initialize new schematic from template
 - `load_schematic` - Open existing schematic
 - `add_schematic_component` - Place symbols with automatic dynamic loading from KiCad libraries
-- `add_schematic_wire` - Connect component pins
 - `list_schematic_libraries` - List symbol libraries
 - `export_schematic_pdf` - Export schematic PDF
 
-**Major Enhancement:** Now supports **ALL ~10,000 KiCad symbols** through dynamic loading! Specify any `library` and `type` (e.g., `"library": "MCU_ST_STM32F1", "type": "STM32F103C8Tx"`) and the system automatically:
-- Searches KiCad symbol libraries
-- Injects symbol definition into your schematic
-- Creates cloneable template instance
-- Places component seamlessly
+**Wiring & Connections:** ⭐ NEW in v2.1.0!
+- `add_schematic_wire` - Create wires between points with customizable stroke
+- `add_schematic_connection` - **Auto-connect pins with intelligent routing** (direct, orthogonal)
+- `add_schematic_net_label` - Add net labels (VCC, GND, signals) with orientation control
+- `connect_to_net` - Connect component pins to named nets
 
-Fallback to 13 static templates (R, C, L, LED, etc.) when dynamic loading unavailable.
+**Major Enhancements:**
+
+1. **Dynamic Symbol Loading** - Access to **ALL ~10,000 KiCad symbols**! Specify any `library` and `type` (e.g., `"library": "MCU_ST_STM32F1", "type": "STM32F103C8Tx"`) and the system automatically:
+   - Searches KiCad symbol libraries
+   - Injects symbol definition into your schematic
+   - Creates cloneable template instance
+   - Places component seamlessly
+   - Fallback to 13 static templates (R, C, L, LED, etc.) when needed
+
+2. **Intelligent Wiring System** - Professional schematic wiring with automation:
+   - **Automatic pin discovery** - rotation-aware (0°, 90°, 180°, 270°)
+   - **Smart routing** - direct lines or orthogonal (right-angle) paths
+   - **Net label management** - local, global, and hierarchical labels
+   - **S-expression precision** - guaranteed KiCad format compliance
 
 ### UI Management (2 tools)
 - `check_kicad_ui` - Check if KiCAD is running

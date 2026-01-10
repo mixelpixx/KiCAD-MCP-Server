@@ -4,6 +4,44 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [2.1.0-alpha] - 2026-01-10
 
+### Phase 1: Intelligent Schematic Wiring System
+
+**Major Features:**
+- ✅ Automatic pin location discovery with rotation support
+- ✅ Smart wire routing (direct, orthogonal horizontal/vertical)
+- ✅ Net label management (local, global, hierarchical)
+- ✅ S-expression-based wire creation
+- ✅ Professional right-angle routing
+
+**New Components:**
+- `python/commands/wire_manager.py` - S-expression wire creation engine
+- `python/commands/pin_locator.py` - Intelligent pin discovery with rotation
+- Updated `python/commands/connection_schematic.py` - High-level connection API
+- `docs/SCHEMATIC_WIRING_PLAN.md` - Implementation roadmap
+
+**MCP Tools Enhanced:**
+- `add_schematic_wire` - Create wires with stroke customization
+- `add_schematic_connection` - Auto-connect pins with routing options (NEW!)
+- `add_schematic_net_label` - Add labels with type and orientation control (NEW!)
+- `connect_to_net` - Connect pins to named nets (ENHANCED)
+
+**Technical Implementation:**
+- Rotation transformation matrix for pin coordinates
+- S-expression injection for guaranteed format compliance
+- Pin definition caching for performance
+- Orthogonal path generation for professional schematics
+
+**Testing:**
+- End-to-end integration test: 100% passing
+- MCP handler integration test: 100% passing
+- Pin discovery with rotation: Verified working
+- KiCad-skip verification: All wires/labels correctly formed
+
+**Addresses:**
+- Issue #26 - Schematic workflow wiring functionality
+
+---
+
 ### Phase 2: JLCPCB Integration Complete
 
 **Major Features:**
