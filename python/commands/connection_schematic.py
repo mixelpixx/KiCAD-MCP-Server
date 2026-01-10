@@ -1,41 +1,61 @@
 from skip import Schematic
 import os
 import logging
+from pathlib import Path
+from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# Import new wire and pin managers
+try:
+    from commands.wire_manager import WireManager
+    from commands.pin_locator import PinLocator
+    WIRE_MANAGER_AVAILABLE = True
+except ImportError:
+    logger.warning("WireManager/PinLocator not available")
+    WIRE_MANAGER_AVAILABLE = False
 
 class ConnectionManager:
     """Manage connections between components in schematics"""
 
+    # Initialize pin locator (class variable, shared across instances)
+    _pin_locator = None
+
+    @classmethod
+    def get_pin_locator(cls):
+        """Get or create pin locator instance"""
+        if cls._pin_locator is None and WIRE_MANAGER_AVAILABLE:
+            cls._pin_locator = PinLocator()
+        return cls._pin_locator
+
     @staticmethod
-    def add_wire(schematic: Schematic, start_point: list, end_point: list, properties: dict = None):
+    def add_wire(schematic_path: Path, start_point: list, end_point: list, properties: dict = None):
         """
-        Add a wire between two points
+        Add a wire between two points using WireManager
 
         Args:
-            schematic: Schematic object
+            schematic_path: Path to .kicad_sch file
             start_point: [x, y] coordinates for wire start
             end_point: [x, y] coordinates for wire end
-            properties: Optional wire properties (currently unused)
+            properties: Optional wire properties (stroke_width, stroke_type)
 
         Returns:
-            Wire object or None on error
+            True if successful, False otherwise
         """
         try:
-            # Check if wire collection exists
-            if not hasattr(schematic, 'wire'):
-                logger.error("Schematic does not have wire collection")
-                return None
+            if not WIRE_MANAGER_AVAILABLE:
+                logger.error("WireManager not available")
+                return False
 
-            wire = schematic.wire.append(
-                start={'x': start_point[0], 'y': start_point[1]},
-                end={'x': end_point[0], 'y': end_point[1]}
-            )
-            logger.info(f"Added wire from {start_point} to {end_point}")
-            return wire
+            stroke_width = properties.get('stroke_width', 0) if properties else 0
+            stroke_type = properties.get('stroke_type', 'default') if properties else 'default'
+
+            success = WireManager.add_wire(schematic_path, start_point, end_point,
+                                          stroke_width=stroke_width, stroke_type=stroke_type)
+            return success
         except Exception as e:
             logger.error(f"Error adding wire: {e}")
-            return None
+            return False
 
     @staticmethod
     def get_pin_location(symbol, pin_name: str):
@@ -81,63 +101,66 @@ class ConnectionManager:
             return None
 
     @staticmethod
-    def add_connection(schematic: Schematic, source_ref: str, source_pin: str, target_ref: str, target_pin: str):
+    def add_connection(schematic_path: Path, source_ref: str, source_pin: str,
+                      target_ref: str, target_pin: str, routing: str = 'direct'):
         """
         Add a wire connection between two component pins
 
         Args:
-            schematic: Schematic object
-            source_ref: Reference designator of source component (e.g., "R1")
+            schematic_path: Path to .kicad_sch file
+            source_ref: Reference designator of source component (e.g., "R1", "R1_")
             source_pin: Pin name/number on source component
-            target_ref: Reference designator of target component (e.g., "C1")
+            target_ref: Reference designator of target component (e.g., "C1", "C1_")
             target_pin: Pin name/number on target component
+            routing: Routing style ('direct', 'orthogonal_h', 'orthogonal_v')
 
         Returns:
             True if connection was successful, False otherwise
         """
         try:
-            # Find source and target symbols
-            source_symbol = None
-            target_symbol = None
-
-            if not hasattr(schematic, 'symbol'):
-                logger.error("Schematic has no symbols")
+            if not WIRE_MANAGER_AVAILABLE:
+                logger.error("WireManager/PinLocator not available")
                 return False
 
-            for symbol in schematic.symbol:
-                ref = symbol.property.Reference.value
-                if ref == source_ref:
-                    source_symbol = symbol
-                if ref == target_ref:
-                    target_symbol = symbol
-
-            if not source_symbol:
-                logger.error(f"Source component '{source_ref}' not found")
-                return False
-
-            if not target_symbol:
-                logger.error(f"Target component '{target_ref}' not found")
+            locator = ConnectionManager.get_pin_locator()
+            if not locator:
+                logger.error("Pin locator unavailable")
                 return False
 
             # Get pin locations
-            source_loc = ConnectionManager.get_pin_location(source_symbol, source_pin)
-            target_loc = ConnectionManager.get_pin_location(target_symbol, target_pin)
+            source_loc = locator.get_pin_location(schematic_path, source_ref, source_pin)
+            target_loc = locator.get_pin_location(schematic_path, target_ref, target_pin)
 
             if not source_loc or not target_loc:
                 logger.error("Could not determine pin locations")
                 return False
 
-            # Add wire between pins
-            wire = ConnectionManager.add_wire(schematic, source_loc, target_loc)
+            # Create wire based on routing style
+            if routing == 'direct':
+                # Simple direct wire
+                success = WireManager.add_wire(schematic_path, source_loc, target_loc)
+            elif routing == 'orthogonal_h':
+                # Orthogonal routing (horizontal first)
+                path = WireManager.create_orthogonal_path(source_loc, target_loc, prefer_horizontal_first=True)
+                success = WireManager.add_polyline_wire(schematic_path, path)
+            elif routing == 'orthogonal_v':
+                # Orthogonal routing (vertical first)
+                path = WireManager.create_orthogonal_path(source_loc, target_loc, prefer_horizontal_first=False)
+                success = WireManager.add_polyline_wire(schematic_path, path)
+            else:
+                logger.error(f"Unknown routing style: {routing}")
+                return False
 
-            if wire:
-                logger.info(f"Connected {source_ref}/{source_pin} to {target_ref}/{target_pin}")
+            if success:
+                logger.info(f"Connected {source_ref}/{source_pin} to {target_ref}/{target_pin} (routing: {routing})")
                 return True
             else:
                 return False
 
         except Exception as e:
             logger.error(f"Error adding connection: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
 
     @staticmethod

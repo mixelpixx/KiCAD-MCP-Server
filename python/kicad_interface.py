@@ -644,33 +644,44 @@ class KiCADInterface:
             return {"success": False, "message": str(e), "errorDetails": traceback.format_exc()}
     
     def _handle_add_schematic_wire(self, params):
-        """Add a wire to a schematic"""
+        """Add a wire to a schematic using WireManager"""
         logger.info("Adding wire to schematic")
         try:
+            from pathlib import Path
+            from commands.wire_manager import WireManager
+
             schematic_path = params.get("schematicPath")
             start_point = params.get("startPoint")
             end_point = params.get("endPoint")
-            
+            properties = params.get("properties", {})
+
             if not schematic_path:
                 return {"success": False, "message": "Schematic path is required"}
             if not start_point or not end_point:
                 return {"success": False, "message": "Start and end points are required"}
-            
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
-            
-            wire = ConnectionManager.add_wire(schematic, start_point, end_point)
-            success = wire is not None
-            
+
+            # Extract wire properties
+            stroke_width = properties.get('stroke_width', 0)
+            stroke_type = properties.get('stroke_type', 'default')
+
+            # Use WireManager for S-expression manipulation
+            success = WireManager.add_wire(
+                Path(schematic_path),
+                start_point,
+                end_point,
+                stroke_width=stroke_width,
+                stroke_type=stroke_type
+            )
+
             if success:
-                SchematicManager.save_schematic(schematic, schematic_path)
-                return {"success": True}
+                return {"success": True, "message": "Wire added successfully"}
             else:
                 return {"success": False, "message": "Failed to add wire"}
         except Exception as e:
             logger.error(f"Error adding wire to schematic: {str(e)}")
-            return {"success": False, "message": str(e)}
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e), "errorDetails": traceback.format_exc()}
     
     def _handle_list_schematic_libraries(self, params):
         """List available symbol libraries"""
@@ -712,58 +723,78 @@ class KiCADInterface:
             return {"success": False, "message": str(e)}
 
     def _handle_add_schematic_connection(self, params):
-        """Add a pin-to-pin connection in schematic"""
+        """Add a pin-to-pin connection in schematic with automatic pin discovery and routing"""
         logger.info("Adding pin-to-pin connection in schematic")
         try:
+            from pathlib import Path
+
             schematic_path = params.get("schematicPath")
             source_ref = params.get("sourceRef")
             source_pin = params.get("sourcePin")
             target_ref = params.get("targetRef")
             target_pin = params.get("targetPin")
+            routing = params.get("routing", "direct")  # 'direct', 'orthogonal_h', 'orthogonal_v'
 
             if not all([schematic_path, source_ref, source_pin, target_ref, target_pin]):
                 return {"success": False, "message": "Missing required parameters"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
-
-            success = ConnectionManager.add_connection(schematic, source_ref, source_pin, target_ref, target_pin)
+            # Use ConnectionManager with new PinLocator and WireManager integration
+            success = ConnectionManager.add_connection(
+                Path(schematic_path),
+                source_ref,
+                source_pin,
+                target_ref,
+                target_pin,
+                routing=routing
+            )
 
             if success:
-                SchematicManager.save_schematic(schematic, schematic_path)
-                return {"success": True}
+                return {
+                    "success": True,
+                    "message": f"Connected {source_ref}/{source_pin} to {target_ref}/{target_pin} (routing: {routing})"
+                }
             else:
                 return {"success": False, "message": "Failed to add connection"}
         except Exception as e:
             logger.error(f"Error adding schematic connection: {str(e)}")
-            return {"success": False, "message": str(e)}
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e), "errorDetails": traceback.format_exc()}
 
     def _handle_add_schematic_net_label(self, params):
-        """Add a net label to schematic"""
+        """Add a net label to schematic using WireManager"""
         logger.info("Adding net label to schematic")
         try:
+            from pathlib import Path
+            from commands.wire_manager import WireManager
+
             schematic_path = params.get("schematicPath")
             net_name = params.get("netName")
             position = params.get("position")
+            label_type = params.get("labelType", "label")  # 'label', 'global_label', 'hierarchical_label'
+            orientation = params.get("orientation", 0)  # 0, 90, 180, 270
 
             if not all([schematic_path, net_name, position]):
                 return {"success": False, "message": "Missing required parameters"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            # Use WireManager for S-expression manipulation
+            success = WireManager.add_label(
+                Path(schematic_path),
+                net_name,
+                position,
+                label_type=label_type,
+                orientation=orientation
+            )
 
-            label = ConnectionManager.add_net_label(schematic, net_name, position)
-
-            if label:
-                SchematicManager.save_schematic(schematic, schematic_path)
-                return {"success": True}
+            if success:
+                return {"success": True, "message": f"Added net label '{net_name}' at {position}"}
             else:
                 return {"success": False, "message": "Failed to add net label"}
         except Exception as e:
             logger.error(f"Error adding net label: {str(e)}")
-            return {"success": False, "message": str(e)}
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e), "errorDetails": traceback.format_exc()}
 
     def _handle_connect_to_net(self, params):
         """Connect a component pin to a named net"""
