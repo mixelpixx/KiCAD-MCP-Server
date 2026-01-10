@@ -104,9 +104,22 @@ class ComponentCommands:
             if value:
                 module.SetValue(value)
 
-            # Set footprint if provided
+            # Set footprint if provided (use existing library_nickname and footprint_name)
+            # For KiCAD 9.x compatibility, use SetFPID instead of SetFootprintName
             if footprint:
-                module.SetFootprintName(footprint)
+                # Parse footprint string if it's in "Library:Footprint" format
+                if ":" in footprint:
+                    lib_name, fp_name = footprint.split(":", 1)
+                else:
+                    # Use the library_nickname we already have from loading
+                    lib_name = library_nickname
+                    fp_name = footprint
+                fpid = pcbnew.LIB_ID(lib_name, fp_name)
+                module.SetFPID(fpid)
+            else:
+                # Use the footprint we just loaded
+                fpid = pcbnew.LIB_ID(library_nickname, footprint_name)
+                module.SetFPID(fpid)
 
             # Set rotation (KiCAD 9.0 uses EDA_ANGLE)
             angle = pcbnew.EDA_ANGLE(rotation, pcbnew.DEGREES_T)
@@ -337,7 +350,18 @@ class ComponentCommands:
             if value:
                 module.SetValue(value)
             if footprint:
-                module.SetFootprintName(footprint)
+                # For KiCAD 9.x compatibility, use SetFPID instead of SetFootprintName
+                # Parse footprint string (format: "Library:Footprint")
+                if ":" in footprint:
+                    lib_name, fp_name = footprint.split(":", 1)
+                    fpid = pcbnew.LIB_ID(lib_name, fp_name)
+                    module.SetFPID(fpid)
+                else:
+                    # If no library specified, keep existing library
+                    current_fpid = module.GetFPID()
+                    lib_name = current_fpid.GetLibNickname().GetUTF8()
+                    fpid = pcbnew.LIB_ID(lib_name, footprint)
+                    module.SetFPID(fpid)
 
             return {
                 "success": True,
@@ -694,7 +718,8 @@ class ComponentCommands:
                 
             # Create new footprint with the same properties
             new_module = pcbnew.FOOTPRINT(self.board)
-            new_module.SetFootprintName(source.GetFPIDAsString())
+            # For KiCAD 9.x compatibility, use SetFPID instead of SetFootprintName
+            new_module.SetFPID(source.GetFPID())
             new_module.SetValue(source.GetValue())
             new_module.SetReference(new_reference)
             new_module.SetLayer(source.GetLayer())
