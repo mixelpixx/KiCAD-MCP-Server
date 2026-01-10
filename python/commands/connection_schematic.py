@@ -246,64 +246,164 @@ class ConnectionManager:
             return False
 
     @staticmethod
-    def get_net_connections(schematic: Schematic, net_name: str):
+    def get_net_connections(schematic: Schematic, net_name: str, schematic_path: Optional[Path] = None):
         """
-        Get all connections for a named net
+        Get all connections for a named net using wire graph analysis
 
         Args:
             schematic: Schematic object
             net_name: Name of the net to query
+            schematic_path: Optional path to schematic file (enables accurate pin matching)
 
         Returns:
             List of connections: [{"component": ref, "pin": pin_name}, ...]
         """
         try:
-            connections = []
+            from commands.pin_locator import PinLocator
 
+            connections = []
+            tolerance = 0.5  # 0.5mm tolerance for point coincidence (grid spacing consideration)
+
+            def points_coincide(p1, p2):
+                """Check if two points are the same (within tolerance)"""
+                if not p1 or not p2:
+                    return False
+                dx = abs(p1[0] - p2[0])
+                dy = abs(p1[1] - p2[1])
+                return dx < tolerance and dy < tolerance
+
+            # 1. Find all labels with this net name
             if not hasattr(schematic, 'label'):
                 logger.warning("Schematic has no labels")
                 return connections
 
-            # Find all labels with this net name
-            net_labels = []
+            net_label_positions = []
             for label in schematic.label:
                 if hasattr(label, 'value') and label.value == net_name:
-                    net_labels.append(label)
+                    if hasattr(label, 'at') and hasattr(label.at, 'value'):
+                        pos = label.at.value
+                        net_label_positions.append([float(pos[0]), float(pos[1])])
 
-            if not net_labels:
+            if not net_label_positions:
                 logger.info(f"No labels found for net '{net_name}'")
                 return connections
 
-            # For each label, find connected symbols
-            for label in net_labels:
-                # Find wires connected to this label position
-                label_pos = label.at.value if hasattr(label, 'at') else None
-                if not label_pos:
+            logger.debug(f"Found {len(net_label_positions)} labels for net '{net_name}'")
+
+            # 2. Find all wires connected to these label positions
+            if not hasattr(schematic, 'wire'):
+                logger.warning("Schematic has no wires")
+                return connections
+
+            connected_wire_points = set()
+            for wire in schematic.wire:
+                if hasattr(wire, 'pts') and hasattr(wire.pts, 'xy'):
+                    # Get all points in this wire (polyline)
+                    wire_points = []
+                    for point in wire.pts.xy:
+                        if hasattr(point, 'value'):
+                            wire_points.append([float(point.value[0]), float(point.value[1])])
+
+                    # Check if any wire point touches a label
+                    wire_connected = False
+                    for wire_pt in wire_points:
+                        for label_pt in net_label_positions:
+                            if points_coincide(wire_pt, label_pt):
+                                wire_connected = True
+                                break
+                        if wire_connected:
+                            break
+
+                    # If this wire is connected to the net, add all its points
+                    if wire_connected:
+                        for pt in wire_points:
+                            connected_wire_points.add((pt[0], pt[1]))
+
+            if not connected_wire_points:
+                logger.debug(f"No wires connected to net '{net_name}' labels")
+                return connections
+
+            logger.debug(f"Found {len(connected_wire_points)} wire connection points for net '{net_name}'")
+
+            # 3. Find component pins at wire endpoints
+            if not hasattr(schematic, 'symbol'):
+                logger.warning("Schematic has no symbols")
+                return connections
+
+            # Create pin locator for accurate pin matching (if schematic_path available)
+            locator = None
+            if schematic_path and WIRE_MANAGER_AVAILABLE:
+                locator = PinLocator()
+
+            for symbol in schematic.symbol:
+                # Skip template symbols
+                if not hasattr(symbol.property, 'Reference'):
                     continue
 
-                # Search for symbols near this label
-                if hasattr(schematic, 'symbol'):
-                    for symbol in schematic.symbol:
-                        # Check if symbol has wires attached
-                        if hasattr(symbol, 'attached_labels'):
-                            for attached_label in symbol.attached_labels:
-                                if attached_label.value == net_name:
-                                    # Find which pin is connected
-                                    if hasattr(symbol, 'pin'):
-                                        for pin in symbol.pin:
-                                            pin_loc = ConnectionManager.get_pin_location(symbol, pin.name)
-                                            if pin_loc:
-                                                # Check if pin is connected to any wire attached to this label
-                                                connections.append({
-                                                    "component": symbol.property.Reference.value,
-                                                    "pin": pin.name
-                                                })
+                ref = symbol.property.Reference.value
+                if ref.startswith('_TEMPLATE'):
+                    continue
+
+                # Get lib_id for pin location lookup
+                lib_id = symbol.lib_id.value if hasattr(symbol, 'lib_id') else None
+                if not lib_id:
+                    continue
+
+                # If we have PinLocator and schematic_path, do accurate pin matching
+                if locator and schematic_path:
+                    try:
+                        # Get all pins for this symbol
+                        pins = locator.get_symbol_pins(schematic_path, lib_id)
+                        if not pins:
+                            continue
+
+                        # Check each pin
+                        for pin_num, pin_data in pins.items():
+                            # Get pin location
+                            pin_loc = locator.get_pin_location(schematic_path, ref, pin_num)
+                            if not pin_loc:
+                                continue
+
+                            # Check if pin coincides with any wire point
+                            for wire_pt in connected_wire_points:
+                                if points_coincide(pin_loc, list(wire_pt)):
+                                    connections.append({
+                                        "component": ref,
+                                        "pin": pin_num
+                                    })
+                                    break  # Pin found, no need to check more wire points
+
+                    except Exception as e:
+                        logger.warning(f"Error matching pins for {ref}: {e}")
+                        # Fall back to proximity matching
+                        pass
+
+                # Fallback: proximity-based matching if no PinLocator
+                if not locator or not schematic_path:
+                    symbol_pos = symbol.at.value if hasattr(symbol, 'at') else None
+                    if not symbol_pos:
+                        continue
+
+                    symbol_x = float(symbol_pos[0])
+                    symbol_y = float(symbol_pos[1])
+
+                    # Check if symbol is near any wire point (within 10mm)
+                    for wire_pt in connected_wire_points:
+                        dist = ((symbol_x - wire_pt[0])**2 + (symbol_y - wire_pt[1])**2)**0.5
+                        if dist < 10.0:  # 10mm proximity threshold
+                            connections.append({
+                                "component": ref,
+                                "pin": "unknown"
+                            })
+                            break  # Only add once per component
 
             logger.info(f"Found {len(connections)} connections for net '{net_name}'")
             return connections
 
         except Exception as e:
             logger.error(f"Error getting net connections: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return []
 
     @staticmethod
