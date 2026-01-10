@@ -529,6 +529,19 @@ class SymbolLibraryCommands:
                     "message": "Missing library parameter"
                 }
 
+            # Check if library exists in sym-lib-table
+            if library not in self.library_manager.libraries:
+                available_libs = list(self.library_manager.libraries.keys())
+                return {
+                    "success": False,
+                    "message": f"Library '{library}' not found in sym-lib-table",
+                    "errorDetails": f"Library '{library}' is not registered in your KiCad symbol library table. "
+                                   f"Found {len(available_libs)} libraries. "
+                                   f"Please add this library to your sym-lib-table file, or use one of the available libraries.",
+                    "available_libraries_count": len(available_libs),
+                    "suggestion": "Use 'list_symbol_libraries' to see all available libraries"
+                }
+
             symbols = self.library_manager.list_symbols(library)
 
             return {
