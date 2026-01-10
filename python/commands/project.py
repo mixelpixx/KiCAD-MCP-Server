@@ -58,11 +58,11 @@ class ProjectCommands:
             board.SetFileName(board_path)
             pcbnew.SaveBoard(board_path, board)
 
-            # Create schematic from template (use template_with_symbols for component cloning support)
+            # Create schematic from template (use expanded template with many component types)
             schematic_path = project_path.replace(".kicad_pro", ".kicad_sch")
             template_sch_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
-                '..', 'templates', 'template_with_symbols.kicad_sch'
+                '..', 'templates', 'template_with_symbols_expanded.kicad_sch'
             )
 
             if os.path.exists(template_sch_path):

@@ -10,11 +10,39 @@ class ComponentManager:
 
     # Template symbol references mapping component type to template reference
     TEMPLATE_MAP = {
+        # Passives
         'R': '_TEMPLATE_R',
         'C': '_TEMPLATE_C',
+        'L': '_TEMPLATE_L',
+        'Y': '_TEMPLATE_Y',
+        'Crystal': '_TEMPLATE_Y',
+
+        # Semiconductors
         'D': '_TEMPLATE_D',
-        'LED': '_TEMPLATE_D',
-        # Add more mappings as needed
+        'LED': '_TEMPLATE_LED',
+        'Q': '_TEMPLATE_Q_NPN',
+        'Q_NPN': '_TEMPLATE_Q_NPN',
+        'Q_NMOS': '_TEMPLATE_Q_NMOS',
+        'MOSFET': '_TEMPLATE_Q_NMOS',
+
+        # ICs
+        'U': '_TEMPLATE_U_OPAMP',
+        'OpAmp': '_TEMPLATE_U_OPAMP',
+        'IC': '_TEMPLATE_U_OPAMP',
+        'U_REG': '_TEMPLATE_U_REG',
+        'Regulator': '_TEMPLATE_U_REG',
+
+        # Connectors
+        'J': '_TEMPLATE_J2',
+        'J2': '_TEMPLATE_J2',
+        'J4': '_TEMPLATE_J4',
+        'Conn_2': '_TEMPLATE_J2',
+        'Conn_4': '_TEMPLATE_J4',
+
+        # Misc
+        'SW': '_TEMPLATE_SW',
+        'Button': '_TEMPLATE_SW',
+        'Switch': '_TEMPLATE_SW',
     }
 
     @staticmethod
