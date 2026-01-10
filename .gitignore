@@ -74,6 +74,11 @@ schematic_test_output/
 coverage.xml
 .coverage.*
 
+# Data & Databases
+data/
+*.db
+*.db-journal
+
 # OS
 Thumbs.db
 Desktop.ini

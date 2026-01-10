@@ -9,6 +9,12 @@ import os
 import logging
 import requests
 import time
+import hmac
+import hashlib
+import secrets
+import string
+import base64
+import json
 from typing import Optional, Dict, List, Callable
 from pathlib import Path
 
@@ -19,73 +25,100 @@ class JLCPCBClient:
     """
     Client for JLCPCB API
 
-    Handles authentication and fetching the complete parts library
-    from JLCPCB's external API.
+    Handles HMAC-SHA256 signature-based authentication and fetching
+    the complete parts library from JLCPCB's external API.
     """
 
     BASE_URL = "https://jlcpcb.com/external"
 
-    def __init__(self, api_key: Optional[str] = None, api_secret: Optional[str] = None):
+    def __init__(self, app_id: Optional[str] = None, access_key: Optional[str] = None, secret_key: Optional[str] = None):
         """
         Initialize JLCPCB API client
 
         Args:
-            api_key: JLCPCB API key (or reads from JLCPCB_API_KEY env var)
-            api_secret: JLCPCB API secret (or reads from JLCPCB_API_SECRET env var)
+            app_id: JLCPCB App ID (or reads from JLCPCB_APP_ID env var)
+            access_key: JLCPCB Access Key (or reads from JLCPCB_API_KEY env var)
+            secret_key: JLCPCB Secret Key (or reads from JLCPCB_API_SECRET env var)
         """
-        self.api_key = api_key or os.getenv('JLCPCB_API_KEY')
-        self.api_secret = api_secret or os.getenv('JLCPCB_API_SECRET')
-        self.token = None
-        self.token_expiry = 0
+        self.app_id = app_id or os.getenv('JLCPCB_APP_ID')
+        self.access_key = access_key or os.getenv('JLCPCB_API_KEY')
+        self.secret_key = secret_key or os.getenv('JLCPCB_API_SECRET')
 
-        if not self.api_key or not self.api_secret:
-            logger.warning("JLCPCB API credentials not found. Set JLCPCB_API_KEY and JLCPCB_API_SECRET environment variables.")
+        if not self.app_id or not self.access_key or not self.secret_key:
+            logger.warning("JLCPCB API credentials not found. Set JLCPCB_APP_ID, JLCPCB_API_KEY, and JLCPCB_API_SECRET environment variables.")
 
-    def authenticate(self) -> str:
+    @staticmethod
+    def _generate_nonce() -> str:
+        """Generate a 32-character random nonce"""
+        chars = string.ascii_letters + string.digits
+        return ''.join(secrets.choice(chars) for _ in range(32))
+
+    def _build_signature_string(self, method: str, path: str, timestamp: int, nonce: str, body: str) -> str:
         """
-        Get authentication token from JLCPCB API
+        Build the signature string according to JLCPCB spec
+
+        Format:
+        <HTTP Method>\n
+        <Request Path>\n
+        <Timestamp>\n
+        <Nonce>\n
+        <Request Body>\n
+
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            path: Request path with query params
+            timestamp: Unix timestamp in seconds
+            nonce: 32-character random string
+            body: Request body (empty string for GET)
 
         Returns:
-            Authentication token
-
-        Raises:
-            Exception if authentication fails
+            Signature string
         """
-        if not self.api_key or not self.api_secret:
-            raise Exception("JLCPCB API credentials not configured. Please set JLCPCB_API_KEY and JLCPCB_API_SECRET environment variables.")
+        return f"{method}\n{path}\n{timestamp}\n{nonce}\n{body}\n"
 
-        # Check if we have a valid token
-        if self.token and time.time() < self.token_expiry:
-            return self.token
+    def _sign(self, signature_string: str) -> str:
+        """
+        Sign the signature string with HMAC-SHA256
 
-        logger.info("Authenticating with JLCPCB API...")
+        Args:
+            signature_string: The string to sign
 
-        try:
-            response = requests.post(
-                f"{self.BASE_URL}/genToken",
-                json={
-                    "appKey": self.api_key,
-                    "appSecret": self.api_secret
-                },
-                timeout=30
-            )
+        Returns:
+            Base64-encoded signature
+        """
+        signature_bytes = hmac.new(
+            self.secret_key.encode('utf-8'),
+            signature_string.encode('utf-8'),
+            hashlib.sha256
+        ).digest()
+        return base64.b64encode(signature_bytes).decode('utf-8')
 
-            response.raise_for_status()
-            data = response.json()
+    def _get_auth_header(self, method: str, path: str, body: str = "") -> str:
+        """
+        Generate the Authorization header for JLCPCB API requests
 
-            if data.get('code') != 200:
-                raise Exception(f"Authentication failed: {data.get('msg', 'Unknown error')}")
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            path: Request path with query params
+            body: Request body JSON string (empty for GET)
 
-            self.token = data['data']['token']
-            # Tokens typically expire after 2 hours, we'll refresh after 1.5 hours to be safe
-            self.token_expiry = time.time() + (90 * 60)
+        Returns:
+            Authorization header value
+        """
+        if not self.app_id or not self.access_key or not self.secret_key:
+            raise Exception("JLCPCB API credentials not configured. Please set JLCPCB_APP_ID, JLCPCB_API_KEY, and JLCPCB_API_SECRET environment variables.")
 
-            logger.info("Successfully authenticated with JLCPCB API")
-            return self.token
+        nonce = self._generate_nonce()
+        timestamp = int(time.time())
 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to authenticate with JLCPCB API: {e}")
-            raise Exception(f"JLCPCB API authentication failed: {e}")
+        signature_string = self._build_signature_string(method, path, timestamp, nonce, body)
+        signature = self._sign(signature_string)
+
+        logger.debug(f"Signature string:\n{repr(signature_string)}")
+        logger.debug(f"Signature: {signature}")
+        logger.debug(f"Auth header: JOP appid=\"{self.app_id}\",accesskey=\"{self.access_key}\",nonce=\"{nonce}\",timestamp=\"{timestamp}\",signature=\"{signature}\"")
+
+        return f'JOP appid="{self.app_id}",accesskey="{self.access_key}",nonce="{nonce}",timestamp="{timestamp}",signature="{signature}"'
 
     def fetch_parts_page(self, last_key: Optional[str] = None) -> Dict:
         """
@@ -97,29 +130,41 @@ class JLCPCBClient:
         Returns:
             Response dict with parts data and pagination info
         """
-        token = self.authenticate()
-
-        headers = {
-            "externalApiToken": token
-        }
+        path = "/component/getComponentInfos"
 
         payload = {}
         if last_key:
             payload["lastKey"] = last_key
 
+        # Convert payload to JSON string for signing
+        # For POST requests, we always send JSON, even if empty dict
+        body_str = json.dumps(payload, separators=(',', ':'))
+
+        # Generate authorization header
+        auth_header = self._get_auth_header("POST", path, body_str)
+
+        headers = {
+            "Authorization": auth_header,
+            "Content-Type": "application/json"
+        }
+
         try:
             response = requests.post(
-                f"{self.BASE_URL}/component/getComponentInfos",
+                f"{self.BASE_URL}{path}",
                 headers=headers,
                 json=payload,
                 timeout=60
             )
 
+            logger.debug(f"Response status: {response.status_code}")
+            logger.debug(f"Response headers: {response.headers}")
+            logger.debug(f"Response text: {response.text}")
+
             response.raise_for_status()
             data = response.json()
 
             if data.get('code') != 200:
-                raise Exception(f"API request failed: {data.get('msg', 'Unknown error')}")
+                raise Exception(f"API request failed (code {data.get('code')}): {data.get('msg', 'Unknown error')} - Full response: {data}")
 
             return data['data']
 
@@ -200,20 +245,22 @@ class JLCPCBClient:
         return None
 
 
-def test_jlcpcb_connection(api_key: Optional[str] = None, api_secret: Optional[str] = None) -> bool:
+def test_jlcpcb_connection(app_id: Optional[str] = None, access_key: Optional[str] = None, secret_key: Optional[str] = None) -> bool:
     """
     Test JLCPCB API connection
 
     Args:
-        api_key: Optional API key (uses env var if not provided)
-        api_secret: Optional API secret (uses env var if not provided)
+        app_id: Optional App ID (uses env var if not provided)
+        access_key: Optional Access Key (uses env var if not provided)
+        secret_key: Optional Secret Key (uses env var if not provided)
 
     Returns:
         True if connection successful, False otherwise
     """
     try:
-        client = JLCPCBClient(api_key, api_secret)
-        token = client.authenticate()
+        client = JLCPCBClient(app_id, access_key, secret_key)
+        # Test by fetching first page
+        data = client.fetch_parts_page()
         logger.info("JLCPCB API connection test successful")
         return True
     except Exception as e:

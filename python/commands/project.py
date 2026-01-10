@@ -5,6 +5,7 @@ Project-related command implementations for KiCAD interface
 import os
 import pcbnew  # type: ignore
 import logging
+import shutil
 from typing import Dict, Any, Optional
 
 logger = logging.getLogger('kicad_interface')
@@ -57,12 +58,37 @@ class ProjectCommands:
             board.SetFileName(board_path)
             pcbnew.SaveBoard(board_path, board)
 
-            # Create project file
+            # Create schematic from template (use template_with_symbols for component cloning support)
+            schematic_path = project_path.replace(".kicad_pro", ".kicad_sch")
+            template_sch_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                '..', 'templates', 'template_with_symbols.kicad_sch'
+            )
+
+            if os.path.exists(template_sch_path):
+                # Copy template schematic
+                shutil.copy(template_sch_path, schematic_path)
+                logger.info(f"Created schematic from template: {schematic_path}")
+            else:
+                # Fallback: create minimal schematic
+                logger.warning(f"Template not found at {template_sch_path}, creating minimal schematic")
+                with open(schematic_path, 'w') as f:
+                    f.write(f'(kicad_sch (version 20230121) (generator "KiCAD-MCP-Server")\n\n')
+                    f.write(f'  (uuid 00000000-0000-0000-0000-000000000000)\n\n')
+                    f.write(f'  (paper "A4")\n\n')
+                    f.write(f'  (lib_symbols\n  )\n\n')
+                    f.write(f'  (sheet_instances\n    (path "/" (page "1"))\n  )\n')
+                    f.write(f')\n')
+
+            # Create project file with schematic reference
             with open(project_path, 'w') as f:
                 f.write('{\n')
                 f.write('  "board": {\n')
                 f.write(f'    "filename": "{os.path.basename(board_path)}"\n')
-                f.write('  }\n')
+                f.write('  },\n')
+                f.write('  "sheets": [\n')
+                f.write(f'    ["root", "{os.path.basename(schematic_path)}"]\n')
+                f.write('  ]\n')
                 f.write('}\n')
 
             self.board = board
@@ -73,7 +99,8 @@ class ProjectCommands:
                 "project": {
                     "name": project_name,
                     "path": project_path,
-                    "boardPath": board_path
+                    "boardPath": board_path,
+                    "schematicPath": schematic_path
                 }
             }
 

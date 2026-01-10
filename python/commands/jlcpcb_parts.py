@@ -162,6 +162,91 @@ class JLCPCBPartsManager:
         else:
             return 'Extended'  # Default to Extended
 
+    def import_jlcsearch_parts(self, parts: List[Dict], progress_callback=None):
+        """
+        Import parts into database from JLCSearch API response
+
+        Args:
+            parts: List of part dicts from JLCSearch API
+            progress_callback: Optional callback(current, total, message)
+        """
+        cursor = self.conn.cursor()
+        imported = 0
+        skipped = 0
+
+        for i, part in enumerate(parts):
+            try:
+                # JLCSearch format is different from official API
+                # LCSC is an integer, we need to add 'C' prefix
+                lcsc = part.get('lcsc')
+                if isinstance(lcsc, int):
+                    lcsc = f"C{lcsc}"
+
+                # Build price JSON from jlcsearch single price
+                price = part.get('price') or part.get('price1')
+                price_json = json.dumps([{"qty": 1, "price": price}] if price else [])
+
+                # Determine library type from is_basic flag
+                library_type = 'Basic' if part.get('is_basic') else 'Extended'
+                if part.get('is_preferred'):
+                    library_type = 'Preferred'
+
+                # Extract description from various fields
+                description_parts = []
+                if 'resistance' in part:
+                    description_parts.append(f"{part['resistance']}Ω")
+                if 'capacitance' in part:
+                    description_parts.append(f"{part['capacitance']}F")
+                if 'tolerance_fraction' in part:
+                    tol = part['tolerance_fraction'] * 100
+                    description_parts.append(f"±{tol}%")
+                if 'power_watts' in part:
+                    description_parts.append(f"{part['power_watts']}mW")
+                if 'voltage' in part:
+                    description_parts.append(f"{part['voltage']}V")
+
+                description = part.get('description', ' '.join(description_parts))
+
+                cursor.execute('''
+                    INSERT OR REPLACE INTO components (
+                        lcsc, category, subcategory, mfr_part, package,
+                        solder_joints, manufacturer, library_type, description,
+                        datasheet, stock, price_json, last_updated
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    lcsc,  # lcsc with C prefix
+                    part.get('category', ''),  # category
+                    part.get('subcategory', ''),  # subcategory
+                    part.get('mfr', ''),  # mfr_part
+                    part.get('package', ''),  # package
+                    0,  # solder_joints (not in jlcsearch)
+                    part.get('manufacturer', ''),  # manufacturer
+                    library_type,  # library_type
+                    description,  # description
+                    '',  # datasheet (not in jlcsearch)
+                    part.get('stock', 0),  # stock
+                    price_json,  # price_json
+                    int(datetime.now().timestamp())  # last_updated
+                ))
+
+                imported += 1
+
+                if progress_callback and (i + 1) % 1000 == 0:
+                    progress_callback(i + 1, len(parts), f"Imported {imported} parts...")
+
+            except Exception as e:
+                logger.error(f"Error importing part {part.get('lcsc')}: {e}")
+                skipped += 1
+
+        # Update FTS index
+        cursor.execute('''
+            INSERT INTO components_fts(components_fts)
+            VALUES('rebuild')
+        ''')
+
+        self.conn.commit()
+        logger.info(f"Import complete: {imported} parts imported, {skipped} skipped")
+
     def search_parts(
         self,
         query: Optional[str] = None,

@@ -1,5 +1,6 @@
 from skip import Schematic
 import os
+import shutil
 import logging
 
 logger = logging.getLogger('kicad_interface')
@@ -9,35 +10,40 @@ class SchematicManager:
 
     @staticmethod
     def create_schematic(name, metadata=None):
-        """Create a new empty schematic"""
-        # kicad-skip requires a filepath to create a schematic
-        # We'll create a blank schematic file by loading an existing file
-        # or we can create a template file first.
-        
-        # Create an empty template file first
-        temp_path = f"{name}_template.kicad_sch"
-        with open(temp_path, 'w') as f:
-            # Write minimal schematic file content
-            f.write("(kicad_sch (version 20230121) (generator \"KiCAD-MCP-Server\"))\n")
-        
-        # Now load it
-        sch = Schematic(temp_path)
-        sch.version = "20230121"  # Set appropriate version
-        sch.generator = "KiCAD-MCP-Server"
-        
-        # Clean up the template
-        os.remove(temp_path)
-        # Add metadata if provided
-        if metadata:
-            for key, value in metadata.items():
-                 # kicad-skip doesn't have a direct metadata property on Schematic,
-                 # but we can add properties to the root sheet if needed, or
-                 # include it in the file path/name convention.
-                 # For now, we'll just create the schematic.
-                 pass # Placeholder for potential metadata handling
+        """Create a new empty schematic from template"""
+        try:
+            # Determine template path (use template_with_symbols for component cloning support)
+            template_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                '..', 'templates', 'template_with_symbols.kicad_sch'
+            )
 
-        logger.info(f"Created new schematic: {name}")
-        return sch
+            # Determine output path
+            output_path = name if name.endswith('.kicad_sch') else f"{name}.kicad_sch"
+
+            if os.path.exists(template_path):
+                # Copy template to target location
+                shutil.copy(template_path, output_path)
+                logger.info(f"Created schematic from template: {output_path}")
+            else:
+                # Fallback: create minimal schematic
+                logger.warning(f"Template not found at {template_path}, creating minimal schematic")
+                with open(output_path, 'w') as f:
+                    f.write('(kicad_sch (version 20230121) (generator "KiCAD-MCP-Server")\n\n')
+                    f.write('  (uuid 00000000-0000-0000-0000-000000000000)\n\n')
+                    f.write('  (paper "A4")\n\n')
+                    f.write('  (lib_symbols\n  )\n\n')
+                    f.write('  (sheet_instances\n    (path "/" (page "1"))\n  )\n')
+                    f.write(')\n')
+
+            # Load the schematic
+            sch = Schematic(output_path)
+            logger.info(f"Loaded new schematic: {output_path}")
+            return sch
+
+        except Exception as e:
+            logger.error(f"Error creating schematic: {e}")
+            raise
 
     @staticmethod
     def load_schematic(file_path):

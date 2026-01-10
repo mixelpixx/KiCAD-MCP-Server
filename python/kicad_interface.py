@@ -265,7 +265,9 @@ class KiCADInterface:
         self.symbol_library_commands = SymbolLibraryCommands()
 
         # Initialize JLCPCB API integration
-        self.jlcpcb_client = JLCPCBClient()
+        self.jlcpcb_client = JLCPCBClient()  # Official API (requires auth)
+        from commands.jlcsearch import JLCSearchClient
+        self.jlcsearch_client = JLCSearchClient()  # Public API (no auth required)
         self.jlcpcb_parts = JLCPCBPartsManager()
 
         # Schematic-related classes don't need board reference
@@ -1492,7 +1494,7 @@ class KiCADInterface:
     # JLCPCB API handlers
 
     def _handle_download_jlcpcb_database(self, params):
-        """Download JLCPCB parts database from API"""
+        """Download JLCPCB parts database from JLCSearch API"""
         try:
             force = params.get('force', False)
 
@@ -1506,16 +1508,16 @@ class KiCADInterface:
                     "stats": stats
                 }
 
-            logger.info("Downloading JLCPCB parts database...")
+            logger.info("Downloading JLCPCB parts database from JLCSearch...")
 
-            # Download parts from API
-            parts = self.jlcpcb_client.download_full_database(
-                callback=lambda page, total, msg: logger.info(f"Page {page}: {msg}")
+            # Download parts from JLCSearch public API (no auth required)
+            parts = self.jlcsearch_client.download_all_components(
+                callback=lambda total, msg: logger.info(f"{msg}")
             )
 
             # Import into database
             logger.info(f"Importing {len(parts)} parts into database...")
-            self.jlcpcb_parts.import_parts(
+            self.jlcpcb_parts.import_jlcsearch_parts(
                 parts,
                 progress_callback=lambda curr, total, msg: logger.info(msg)
             )

@@ -1,6 +1,6 @@
 from skip import Schematic
-# Symbol class might not be directly importable in the current version
 import os
+import uuid
 import logging
 
 logger = logging.getLogger(__name__)
@@ -8,42 +8,78 @@ logger = logging.getLogger(__name__)
 class ComponentManager:
     """Manage components in a schematic"""
 
+    # Template symbol references mapping component type to template reference
+    TEMPLATE_MAP = {
+        'R': '_TEMPLATE_R',
+        'C': '_TEMPLATE_C',
+        'D': '_TEMPLATE_D',
+        'LED': '_TEMPLATE_D',
+        # Add more mappings as needed
+    }
+
     @staticmethod
     def add_component(schematic: Schematic, component_def: dict):
-        """Add a component to the schematic"""
+        """Add a component to the schematic by cloning from template"""
         try:
-            logger.info(f"Adding component: lib={component_def.get('library')}, name={component_def.get('type')}, ref={component_def.get('reference')}")
+            logger.info(f"Adding component: type={component_def.get('type')}, ref={component_def.get('reference')}")
             logger.debug(f"Full component_def: {component_def}")
 
-            # Create a new symbol
-            symbol = schematic.add_symbol(
-                lib=component_def.get('library', 'Device'),
-                name=component_def.get('type', 'R'), # Default to Resistor symbol 'R'
-                reference=component_def.get('reference', 'R?'),
-                at=[component_def.get('x', 0), component_def.get('y', 0)],
-                unit=component_def.get('unit', 1),
-                rotation=component_def.get('rotation', 0)
-            )
+            # Get component type and determine template
+            comp_type = component_def.get('type', 'R')
+            template_ref = ComponentManager.TEMPLATE_MAP.get(comp_type, '_TEMPLATE_R')
 
-            # Set properties
+            # Check if schematic has template symbols
+            if not hasattr(schematic.symbol, template_ref):
+                logger.error(f"Template symbol {template_ref} not found in schematic. Available symbols: {[str(s.property.Reference.value) for s in schematic.symbol]}")
+                raise ValueError(f"Template symbol {template_ref} not found. The schematic must be created from template_with_symbols.kicad_sch")
+
+            # Get template symbol and clone it
+            template_symbol = getattr(schematic.symbol, template_ref)
+            new_symbol = template_symbol.clone()
+            logger.debug(f"Cloned template symbol {template_ref}")
+
+            # Set reference
+            reference = component_def.get('reference', 'R?')
+            new_symbol.property.Reference.value = reference
+            logger.debug(f"Set reference to {reference}")
+
+            # Set value
             if 'value' in component_def:
-                symbol.property.Value.value = component_def['value']
+                new_symbol.property.Value.value = component_def['value']
+                logger.debug(f"Set value to {component_def['value']}")
+
+            # Set footprint
             if 'footprint' in component_def:
-                symbol.property.Footprint.value = component_def['footprint']
+                new_symbol.property.Footprint.value = component_def['footprint']
+                logger.debug(f"Set footprint to {component_def['footprint']}")
+
+            # Set datasheet
             if 'datasheet' in component_def:
-                 symbol.property.Datasheet.value = component_def['datasheet']
+                new_symbol.property.Datasheet.value = component_def['datasheet']
 
-            # Add additional properties
-            for key, value in component_def.get('properties', {}).items():
-                # Avoid overwriting standard properties unless explicitly intended
-                if key not in ['Reference', 'Value', 'Footprint', 'Datasheet']:
-                    symbol.property.append(key, value)
+            # Set position
+            x = component_def.get('x', 0)
+            y = component_def.get('y', 0)
+            rotation = component_def.get('rotation', 0)
+            new_symbol.at.value = [x, y, rotation]
+            logger.debug(f"Set position to ({x}, {y}, {rotation})")
 
-            logger.info(f"Successfully added component {symbol.reference} ({symbol.name}) to schematic.")
-            return symbol
+            # Set BOM and board flags
+            new_symbol.in_bom.value = component_def.get('in_bom', True)
+            new_symbol.on_board.value = component_def.get('on_board', True)
+            new_symbol.dnp.value = component_def.get('dnp', False)
+
+            # Generate new UUID
+            new_symbol.uuid.value = str(uuid.uuid4())
+
+            # Append to schematic
+            schematic.symbol.append(new_symbol)
+            logger.info(f"Successfully added component {reference} to schematic")
+
+            return new_symbol
         except Exception as e:
             logger.error(f"Error adding component: {e}", exc_info=True)
-            return None
+            raise
 
     @staticmethod
     def remove_component(schematic: Schematic, component_ref: str):
