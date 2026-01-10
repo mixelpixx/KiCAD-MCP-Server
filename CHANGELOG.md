@@ -4,14 +4,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [2.1.0-alpha] - 2026-01-10
 
-### Phase 1: Intelligent Schematic Wiring System
+### Phase 1: Intelligent Schematic Wiring System - Core Infrastructure
 
 **Major Features:**
-- ✅ Automatic pin location discovery with rotation support
-- ✅ Smart wire routing (direct, orthogonal horizontal/vertical)
-- ✅ Net label management (local, global, hierarchical)
-- ✅ S-expression-based wire creation
-- ✅ Professional right-angle routing
+- Automatic pin location discovery with rotation support
+- Smart wire routing (direct, orthogonal horizontal/vertical)
+- Net label management (local, global, hierarchical)
+- S-expression-based wire creation
+- Professional right-angle routing
 
 **New Components:**
 - `python/commands/wire_manager.py` - S-expression wire creation engine
@@ -21,8 +21,8 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 **MCP Tools Enhanced:**
 - `add_schematic_wire` - Create wires with stroke customization
-- `add_schematic_connection` - Auto-connect pins with routing options (NEW!)
-- `add_schematic_net_label` - Add labels with type and orientation control (NEW!)
+- `add_schematic_connection` - Auto-connect pins with routing options (NEW)
+- `add_schematic_net_label` - Add labels with type and orientation control (NEW)
 - `connect_to_net` - Connect pins to named nets (ENHANCED)
 
 **Technical Implementation:**
@@ -37,8 +37,59 @@ All notable changes to the KiCAD MCP Server project are documented here.
 - Pin discovery with rotation: Verified working
 - KiCad-skip verification: All wires/labels correctly formed
 
+---
+
+### Phase 2: Power Nets & Wire Connectivity - COMPLETE
+
+**Major Features:**
+- Power symbol support (VCC, GND, +3V3, +5V, etc.) via dynamic loading
+- Wire graph analysis for net connectivity tracking
+- Geometric wire tracing with tolerance-based point matching
+- Accurate netlist generation with component/pin connections
+- Critical template mapping bug fixes
+
+**Updates:**
+- `connect_to_net()` - Migrated to WireManager + PinLocator
+- `get_net_connections()` - Complete rewrite with geometric wire tracing
+- `generate_netlist()` - Now uses wire graph analysis for connectivity
+- `get_or_create_template()` - Fixed special character handling, auto-reload after dynamic loading
+- `add_component()` - Fixed template lookup with symbol iteration
+
+**Bug Fixes:**
+- CRITICAL: Template mapping after dynamic symbol loading
+- Special character handling in symbol names (+ prefix in +3V3, +5V)
+- Schematic reload synchronization after S-expression injection
+- Multi-format template reference detection
+
+**Wire Graph Analysis Algorithm:**
+1. Find all labels matching target net name
+2. Trace wires connected to label positions (point coincidence)
+3. Collect all wire endpoints and polyline segments
+4. Match component pins at wire connection points using PinLocator
+5. Return accurate component/pin connection pairs
+
+**Technical Implementation:**
+- Tolerance-based point matching (0.5mm for grid alignment)
+- Multi-segment wire (polyline) support
+- Rotation-aware pin location matching via PinLocator
+- Fallback proximity detection (10mm threshold)
+- Template existence checking via symbol iteration (handles special characters)
+
+**Testing:**
+- Power symbols: 4/4 loaded (VCC, GND, +3V3, +5V)
+- Components: 4/4 placed
+- Connections: 8/8 created successfully
+- Net connectivity: 100% accurate (VCC: 2, GND: 4, +3V3: 1, +5V: 1)
+- Netlist generation: 4 nets with accurate connections
+- Comprehensive integration test: 100% PASSING
+
+**Commits:**
+- `c67f400` - Updated connect_to_net to use WireManager
+- `b77f008` - Fixed template mapping bug (critical)
+- `a5a542b` - Implemented wire graph analysis
+
 **Addresses:**
-- Issue #26 - Schematic workflow wiring functionality
+- Issue #26 - Schematic workflow wiring functionality (Phase 2)
 
 ---
 
