@@ -19,6 +19,26 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 ## What's New in v2.1.0
 
+### Critical Schematic Workflow Fix (Issue #26 Resolved)
+The schematic workflow was completely broken in previous versions - **this is now fixed!**
+
+**What was broken:**
+- `create_project` only created PCB files, no schematics
+- `add_schematic_component` called non-existent API methods
+- Schematics couldn't be created or edited at all
+
+**How we fixed it:**
+- Implemented template-based symbol cloning approach (kicad-skip limitation workaround)
+- `create_project` now creates both .kicad_pcb and .kicad_sch files
+- Added pre-configured template schematics with cloneable R, C, LED symbols
+- Rewrote component placement to use proper `clone()` API
+- Full end-to-end schematic workflow now functional
+
+**Technical Details:**
+The kicad-skip library cannot create symbols from scratch - it can only clone existing symbols from loaded schematics. We solved this by creating template schematic files (`python/templates/`) with pre-configured symbols that can be cloned and modified.
+
+See [Schematic Workflow Fix Documentation](docs/SCHEMATIC_WORKFLOW_FIX.md) for technical details.
+
 ### IPC Backend (Experimental)
 We are currently implementing and testing the KiCAD 9.0 IPC API for real-time UI synchronization:
 - Changes made via MCP tools appear immediately in the KiCAD UI
@@ -160,12 +180,15 @@ The server provides 64 tools organized into functional categories. With the new 
 - `export_bom` - Produce bill of materials
 
 ### Schematic Design (6 tools)
-- `create_schematic` - Initialize new schematic
+**Now fully functional!** (Fixed in v2.1.0 - see Issue #26)
+- `create_schematic` - Initialize new schematic from template
 - `load_schematic` - Open existing schematic
-- `add_schematic_component` - Place symbols
+- `add_schematic_component` - Place symbols using template-based cloning
 - `add_schematic_wire` - Connect component pins
 - `list_schematic_libraries` - List symbol libraries
 - `export_schematic_pdf` - Export schematic PDF
+
+**Note:** Uses template-based approach due to kicad-skip library limitations. Templates include R, C, LED symbols that are cloned and modified for each placement.
 
 ### UI Management (2 tools)
 - `check_kicad_ui` - Check if KiCAD is running
@@ -582,18 +605,19 @@ npm run format
 **Current Version:** 2.1.0-alpha
 
 **Working Features:**
-- Project creation and management
+- Project creation and management (PCB + Schematic)
 - Board outline and sizing
 - Layer management
 - Component placement with footprint library loading
 - Mounting holes and text annotations
 - Design rule checking
 - Export to Gerber, PDF, SVG, 3D
-- Schematic creation and editing
+- **Schematic creation and editing (Issue #26 RESOLVED - fully functional!)**
+- Template-based schematic workflow with symbol cloning
 - UI auto-launch
 - Full MCP protocol compliance
-- JLCPCB parts integration (local libraries + API)
-- Cost optimization and component selection
+- JLCPCB parts integration (local libraries + JLCSearch API)
+- Cost optimization and component selection with 100k+ parts catalog
 
 **Under Active Development (IPC Backend):**
 - Real-time UI synchronization via KiCAD 9.0 IPC API
@@ -659,6 +683,8 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 - Powered by [KiCAD](https://www.kicad.org/) open-source PCB design software
 - Uses [kicad-skip](https://github.com/kicad-skip) for schematic manipulation
 - JLCPCB local library search contributed by [@l3wi](https://github.com/l3wi) - [PR #25](https://github.com/mixelpixx/KiCAD-MCP-Server/pull/25)
+- [JLCSearch API](https://jlcsearch.tscircuit.com/) by [@tscircuit](https://github.com/tscircuit/jlcsearch) - Public JLCPCB parts API
+- [JLCParts Database](https://github.com/yaqwsx/jlcparts) by [@yaqwsx](https://github.com/yaqwsx) - JLCPCB parts data
 
 ## Citation
 
