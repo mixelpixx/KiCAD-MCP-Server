@@ -797,9 +797,11 @@ class KiCADInterface:
             return {"success": False, "message": str(e), "errorDetails": traceback.format_exc()}
 
     def _handle_connect_to_net(self, params):
-        """Connect a component pin to a named net"""
+        """Connect a component pin to a named net using wire stub and label"""
         logger.info("Connecting component pin to net")
         try:
+            from pathlib import Path
+
             schematic_path = params.get("schematicPath")
             component_ref = params.get("componentRef")
             pin_name = params.get("pinName")
@@ -808,20 +810,26 @@ class KiCADInterface:
             if not all([schematic_path, component_ref, pin_name, net_name]):
                 return {"success": False, "message": "Missing required parameters"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
-
-            success = ConnectionManager.connect_to_net(schematic, component_ref, pin_name, net_name)
+            # Use ConnectionManager with new WireManager integration
+            success = ConnectionManager.connect_to_net(
+                Path(schematic_path),
+                component_ref,
+                pin_name,
+                net_name
+            )
 
             if success:
-                SchematicManager.save_schematic(schematic, schematic_path)
-                return {"success": True}
+                return {
+                    "success": True,
+                    "message": f"Connected {component_ref}/{pin_name} to net '{net_name}'"
+                }
             else:
                 return {"success": False, "message": "Failed to connect to net"}
         except Exception as e:
             logger.error(f"Error connecting to net: {str(e)}")
-            return {"success": False, "message": str(e)}
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e), "errorDetails": traceback.format_exc()}
 
     def _handle_get_net_connections(self, params):
         """Get all connections for a named net"""

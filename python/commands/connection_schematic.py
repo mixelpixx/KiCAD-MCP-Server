@@ -192,55 +192,57 @@ class ConnectionManager:
             return None
 
     @staticmethod
-    def connect_to_net(schematic: Schematic, component_ref: str, pin_name: str, net_name: str):
+    def connect_to_net(schematic_path: Path, component_ref: str, pin_name: str, net_name: str):
         """
-        Connect a component pin to a named net using a label
+        Connect a component pin to a named net using a wire stub and label
 
         Args:
-            schematic: Schematic object
-            component_ref: Reference designator (e.g., "U1")
+            schematic_path: Path to .kicad_sch file
+            component_ref: Reference designator (e.g., "U1", "U1_")
             pin_name: Pin name/number
-            net_name: Name of the net to connect to
+            net_name: Name of the net to connect to (e.g., "VCC", "GND", "SIGNAL_1")
 
         Returns:
             True if successful, False otherwise
         """
         try:
-            # Find the component
-            symbol = None
-            if hasattr(schematic, 'symbol'):
-                for s in schematic.symbol:
-                    if s.property.Reference.value == component_ref:
-                        symbol = s
-                        break
-
-            if not symbol:
-                logger.error(f"Component '{component_ref}' not found")
+            if not WIRE_MANAGER_AVAILABLE:
+                logger.error("WireManager/PinLocator not available")
                 return False
 
-            # Get pin location
-            pin_loc = ConnectionManager.get_pin_location(symbol, pin_name)
+            locator = ConnectionManager.get_pin_locator()
+            if not locator:
+                logger.error("Pin locator unavailable")
+                return False
+
+            # Get pin location using PinLocator
+            pin_loc = locator.get_pin_location(schematic_path, component_ref, pin_name)
             if not pin_loc:
+                logger.error(f"Could not locate pin {component_ref}/{pin_name}")
                 return False
 
-            # Add a small wire stub from the pin (so label has something to attach to)
-            stub_end = [pin_loc[0] + 2.54, pin_loc[1]]  # 2.54mm = 0.1 inch grid
-            wire = ConnectionManager.add_wire(schematic, pin_loc, stub_end)
+            # Add a small wire stub from the pin (2.54mm = 0.1 inch, standard grid spacing)
+            stub_end = [pin_loc[0] + 2.54, pin_loc[1]]
 
-            if not wire:
+            # Create wire stub using WireManager
+            wire_success = WireManager.add_wire(schematic_path, pin_loc, stub_end)
+            if not wire_success:
+                logger.error(f"Failed to create wire stub for net connection")
                 return False
 
-            # Add label at the end of the stub
-            label = ConnectionManager.add_net_label(schematic, net_name, stub_end)
-
-            if label:
-                logger.info(f"Connected {component_ref}/{pin_name} to net '{net_name}'")
-                return True
-            else:
+            # Add label at the end of the stub using WireManager
+            label_success = WireManager.add_label(schematic_path, net_name, stub_end, label_type='label')
+            if not label_success:
+                logger.error(f"Failed to add net label '{net_name}'")
                 return False
+
+            logger.info(f"Connected {component_ref}/{pin_name} to net '{net_name}'")
+            return True
 
         except Exception as e:
             logger.error(f"Error connecting to net: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
 
     @staticmethod
