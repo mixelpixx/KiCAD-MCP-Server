@@ -406,6 +406,43 @@ Edit configuration file:
 - **Windows:** `C:\Program Files\KiCad\9.0\lib\python3\dist-packages`
 - **macOS:** `/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages`
 
+#### Linux Python Detection
+
+The server automatically detects Python on Linux in this priority order:
+
+1. **Virtual environment** - `venv/bin/python` or `.venv/bin/python` (highest priority)
+2. **KICAD_PYTHON env var** - User override for non-standard installations
+3. **KiCad bundled Python** - `/usr/lib/kicad/bin/python3`, `/usr/local/lib/kicad/bin/python3`, `/opt/kicad/bin/python3`
+4. **System Python via which** - Resolves `which python3` to absolute path (e.g., `/usr/bin/python3`)
+5. **Common system paths** - `/usr/bin/python3`, `/bin/python3`
+
+**For most standard Linux installations (Ubuntu, Debian, Fedora, Arch), no KICAD_PYTHON configuration is needed** - the server will automatically find your Python installation.
+
+**Troubleshooting:**
+
+If you see "Python executable not found: python3", you can manually specify the Python path:
+
+```json
+{
+  "mcpServers": {
+    "kicad": {
+      "command": "node",
+      "args": ["/path/to/KiCAD-MCP-Server/dist/index.js"],
+      "env": {
+        "KICAD_PYTHON": "/usr/bin/python3",
+        "PYTHONPATH": "/usr/lib/kicad/lib/python3/dist-packages"
+      }
+    }
+  }
+}
+```
+
+To find your Python path:
+```bash
+which python3  # Example output: /usr/bin/python3
+python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"  # Verify pcbnew access
+```
+
 ### Cline (VSCode)
 
 Edit: `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`

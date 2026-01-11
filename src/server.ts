@@ -5,7 +5,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import express from 'express';
-import { spawn, exec, ChildProcess } from 'child_process';
+import { spawn, exec, execSync, ChildProcess } from 'child_process';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { logger } from './logger.js';
@@ -41,6 +41,8 @@ import { registerDesignPrompts } from './prompts/design.js';
  */
 function findPythonExecutable(scriptPath: string): string {
   const isWindows = process.platform === 'win32';
+  const isMac = process.platform === 'darwin';
+  const isLinux = !isWindows && !isMac;
 
   // Get the project root (parent of the python/ directory)
   const projectRoot = dirname(dirname(scriptPath));
@@ -65,8 +67,6 @@ function findPythonExecutable(scriptPath: string): string {
   }
 
   // Platform-specific KiCAD bundled Python detection
-  const isMac = process.platform === 'darwin';
-
   if (isWindows && process.env.PYTHONPATH?.includes('KiCad')) {
     // Windows: Try KiCAD's bundled Python
     const kicadPython = 'C:\\Program Files\\KiCad\\9.0\\bin\\python.exe';
@@ -84,9 +84,43 @@ function findPythonExecutable(scriptPath: string): string {
         return kicadPython;
       }
     }
+  } else if (isLinux) {
+    // Linux: Try KiCAD bundled Python locations first
+    const linuxKicadPaths = [
+      '/usr/lib/kicad/bin/python3',
+      '/usr/local/lib/kicad/bin/python3',
+      '/opt/kicad/bin/python3',
+    ];
+
+    for (const path of linuxKicadPaths) {
+      if (existsSync(path)) {
+        logger.info(`Found KiCAD bundled Python at: ${path}`);
+        return path;
+      }
+    }
+
+    // Resolve system python3 to full path using 'which'
+    try {
+      const result = execSync('which python3', { encoding: 'utf-8' }).trim();
+      if (result && existsSync(result)) {
+        logger.info(`Resolved system Python via which: ${result}`);
+        return result;
+      }
+    } catch (e) {
+      logger.warn('Failed to resolve python3 via which command');
+    }
+
+    // Fallback to common system paths
+    const systemPaths = ['/usr/bin/python3', '/bin/python3'];
+    for (const path of systemPaths) {
+      if (existsSync(path)) {
+        logger.info(`Found system Python at: ${path}`);
+        return path;
+      }
+    }
   }
 
-  // Default to system Python
+  // Default to system Python (last resort)
   logger.info('Using system Python (no venv found)');
   return isWindows ? 'python.exe' : 'python3';
 }
@@ -179,15 +213,55 @@ export class KiCADMcpServer {
    */
   private async validatePrerequisites(pythonExe: string): Promise<boolean> {
     const isWindows = process.platform === 'win32';
+    const isLinux = process.platform !== 'win32' && process.platform !== 'darwin';
     const errors: string[] = [];
 
-    // Check if Python executable exists
-    if (!existsSync(pythonExe)) {
-      errors.push(`Python executable not found: ${pythonExe}`);
+    // Check if Python executable exists (for absolute paths) or is executable (for commands)
+    const isAbsolutePath = pythonExe.startsWith('/') || pythonExe.startsWith('C:') || pythonExe.startsWith('\\');
 
-      if (isWindows) {
-        errors.push('Windows: Install KiCAD 9.0+ from https://www.kicad.org/download/windows/');
-        errors.push('Or run: .\\setup-windows.ps1 for automatic configuration');
+    if (isAbsolutePath) {
+      // Absolute path: use existsSync
+      if (!existsSync(pythonExe)) {
+        errors.push(`Python executable not found: ${pythonExe}`);
+
+        if (isWindows) {
+          errors.push('Windows: Install KiCAD 9.0+ from https://www.kicad.org/download/windows/');
+          errors.push('Or run: .\\setup-windows.ps1 for automatic configuration');
+        } else if (isLinux) {
+          errors.push('Linux: Install KiCAD 9.0+ or set KICAD_PYTHON environment variable');
+          errors.push('Set KICAD_PYTHON to specify a custom Python path');
+        }
+      }
+    } else {
+      // Command name: verify it's executable via --version test
+      logger.info(`Validating command-based Python executable: ${pythonExe}`);
+      try {
+        const { stdout } = await new Promise<{stdout: string, stderr: string}>((resolve, reject) => {
+          exec(`"${pythonExe}" --version`, {
+            timeout: 3000,
+            env: { ...process.env }
+          }, (error: any, stdout: string, stderr: string) => {
+            if (error) {
+              reject(error);
+            } else {
+              resolve({ stdout, stderr });
+            }
+          });
+        });
+
+        logger.info(`Python version check passed: ${stdout.trim()}`);
+      } catch (error: any) {
+        errors.push(`Python executable not found in PATH: ${pythonExe}`);
+        errors.push(`Error: ${error.message}`);
+        errors.push('Set KICAD_PYTHON environment variable to specify full path');
+
+        if (isLinux) {
+          errors.push('');
+          errors.push('Linux troubleshooting:');
+          errors.push('1. Check if python3 is installed: which python3');
+          errors.push('2. Install KiCAD: sudo apt install kicad (Ubuntu/Debian)');
+          errors.push('3. Set KICAD_PYTHON=/usr/bin/python3 in your MCP config');
+        }
       }
     }
 
