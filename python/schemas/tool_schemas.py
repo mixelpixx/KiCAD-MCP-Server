@@ -735,16 +735,38 @@ ROUTING_TOOLS = [
     {
         "name": "delete_trace",
         "title": "Delete Trace",
-        "description": "Removes a trace or segment from the board.",
+        "description": "Removes traces from the board. Can delete by UUID, position, or bulk-delete all traces on a net.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "traceId": {
+                "uuid": {
                     "type": "string",
-                    "description": "Identifier of the trace to delete"
+                    "description": "UUID of a specific trace to delete"
+                },
+                "position": {
+                    "type": "object",
+                    "description": "Delete trace nearest to this position",
+                    "properties": {
+                        "x": {"type": "number", "description": "X coordinate"},
+                        "y": {"type": "number", "description": "Y coordinate"},
+                        "unit": {"type": "string", "enum": ["mm", "inch"], "default": "mm"}
+                    },
+                    "required": ["x", "y"]
+                },
+                "net": {
+                    "type": "string",
+                    "description": "Delete all traces on this net (bulk delete)"
+                },
+                "layer": {
+                    "type": "string",
+                    "description": "Filter by layer when using net-based deletion"
+                },
+                "includeVias": {
+                    "type": "boolean",
+                    "description": "Include vias in net-based deletion",
+                    "default": False
                 }
-            },
-            "required": ["traceId"]
+            }
         }
     },
     {
@@ -779,6 +801,72 @@ ROUTING_TOOLS = [
                     "default": False
                 }
             }
+        }
+    },
+    {
+        "name": "modify_trace",
+        "title": "Modify Trace",
+        "description": "Modifies properties of an existing trace. Find trace by UUID or position, then change width, layer, or net assignment.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "uuid": {
+                    "type": "string",
+                    "description": "UUID of the trace to modify"
+                },
+                "position": {
+                    "type": "object",
+                    "description": "Find trace nearest to this position",
+                    "properties": {
+                        "x": {"type": "number", "description": "X coordinate"},
+                        "y": {"type": "number", "description": "Y coordinate"},
+                        "unit": {"type": "string", "enum": ["mm", "inch"], "default": "mm"}
+                    },
+                    "required": ["x", "y"]
+                },
+                "width": {
+                    "type": "number",
+                    "description": "New trace width in mm"
+                },
+                "layer": {
+                    "type": "string",
+                    "description": "New layer name (e.g., 'F.Cu', 'B.Cu')"
+                },
+                "net": {
+                    "type": "string",
+                    "description": "New net name to assign"
+                }
+            }
+        }
+    },
+    {
+        "name": "copy_routing_pattern",
+        "title": "Copy Routing Pattern",
+        "description": "Copies routing pattern from source components to target components. Enables routing replication between identical component groups by calculating and applying position offset.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "sourceRefs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Source component references (e.g., ['U1', 'U2', 'U3'])"
+                },
+                "targetRefs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Target component references (e.g., ['U4', 'U5', 'U6'])"
+                },
+                "includeVias": {
+                    "type": "boolean",
+                    "description": "Include vias in the pattern copy",
+                    "default": True
+                },
+                "traceWidth": {
+                    "type": "number",
+                    "description": "Override trace width in mm (uses original if not specified)"
+                }
+            },
+            "required": ["sourceRefs", "targetRefs"]
         }
     },
     {

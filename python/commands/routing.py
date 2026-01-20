@@ -267,12 +267,44 @@ class RoutingCommands:
 
             trace_uuid = params.get("traceUuid")
             position = params.get("position")
+            net_name = params.get("net")
+            layer = params.get("layer")
+            include_vias = params.get("includeVias", False)
 
-            if not trace_uuid and not position:
+            if not trace_uuid and not position and not net_name:
                 return {
                     "success": False,
                     "message": "Missing parameters",
-                    "errorDetails": "Either traceUuid or position must be provided"
+                    "errorDetails": "One of traceUuid, position, or net must be provided"
+                }
+
+            # Delete by net name (bulk delete)
+            if net_name:
+                tracks_to_remove = []
+                for track in self.board.Tracks():
+                    if track.GetNetname() != net_name:
+                        continue
+
+                    # Skip vias if not requested
+                    is_via = track.Type() == pcbnew.PCB_VIA_T
+                    if is_via and not include_vias:
+                        continue
+
+                    # Filter by layer if specified (only for non-vias)
+                    if layer and not is_via:
+                        layer_id = self.board.GetLayerID(layer)
+                        if track.GetLayer() != layer_id:
+                            continue
+
+                    tracks_to_remove.append(track)
+
+                for track in tracks_to_remove:
+                    self.board.Remove(track)
+
+                return {
+                    "success": True,
+                    "message": f"Deleted {len(tracks_to_remove)} traces on net '{net_name}'",
+                    "deletedCount": len(tracks_to_remove)
                 }
 
             # Find track by UUID
@@ -480,6 +512,275 @@ class RoutingCommands:
             return {
                 "success": False,
                 "message": "Failed to query traces",
+                "errorDetails": str(e)
+            }
+
+    def modify_trace(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Modify properties of an existing trace
+
+        Allows changing trace width, layer, and net assignment.
+        Find trace by UUID or position.
+        """
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first"
+                }
+
+            # Identification parameters
+            trace_uuid = params.get("uuid")
+            position = params.get("position")  # {x, y, unit}
+
+            # Modification parameters
+            new_width = params.get("width")  # in mm
+            new_layer = params.get("layer")
+            new_net = params.get("net")
+
+            if not trace_uuid and not position:
+                return {
+                    "success": False,
+                    "message": "Missing trace identifier",
+                    "errorDetails": "Provide either 'uuid' or 'position' to identify the trace"
+                }
+
+            scale = 1000000  # nm to mm conversion
+
+            # Find the track
+            track = None
+
+            if trace_uuid:
+                for item in self.board.Tracks():
+                    if str(item.m_Uuid) == trace_uuid:
+                        track = item
+                        break
+            elif position:
+                pos_unit = position.get("unit", "mm")
+                pos_scale = scale if pos_unit == "mm" else 25400000
+                x_nm = int(position["x"] * pos_scale)
+                y_nm = int(position["y"] * pos_scale)
+                point = pcbnew.VECTOR2I(x_nm, y_nm)
+
+                # Find closest track
+                min_distance = float('inf')
+                for item in self.board.Tracks():
+                    dist = self._point_to_track_distance(point, item)
+                    if dist < min_distance:
+                        min_distance = dist
+                        track = item
+
+                # Only accept if within 1mm
+                if min_distance >= 1000000:
+                    track = None
+
+            if not track:
+                return {
+                    "success": False,
+                    "message": "Track not found",
+                    "errorDetails": "Could not find track with specified identifier"
+                }
+
+            # Check if it's a via (some modifications don't apply)
+            is_via = track.Type() == pcbnew.PCB_VIA_T
+            modifications = []
+
+            # Apply modifications
+            if new_width is not None:
+                width_nm = int(new_width * scale)
+                track.SetWidth(width_nm)
+                modifications.append(f"width={new_width}mm")
+
+            if new_layer and not is_via:
+                layer_id = self.board.GetLayerID(new_layer)
+                if layer_id < 0:
+                    return {
+                        "success": False,
+                        "message": "Invalid layer",
+                        "errorDetails": f"Layer '{new_layer}' not found"
+                    }
+                track.SetLayer(layer_id)
+                modifications.append(f"layer={new_layer}")
+
+            if new_net:
+                netinfo = self.board.GetNetInfo()
+                net = netinfo.GetNetItem(new_net)
+                if not net:
+                    return {
+                        "success": False,
+                        "message": "Invalid net",
+                        "errorDetails": f"Net '{new_net}' not found"
+                    }
+                track.SetNet(net)
+                modifications.append(f"net={new_net}")
+
+            if not modifications:
+                return {
+                    "success": False,
+                    "message": "No modifications specified",
+                    "errorDetails": "Provide at least one of: width, layer, net"
+                }
+
+            return {
+                "success": True,
+                "message": f"Modified trace: {', '.join(modifications)}",
+                "uuid": str(track.m_Uuid),
+                "modifications": modifications
+            }
+
+        except Exception as e:
+            logger.error(f"Error modifying trace: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to modify trace",
+                "errorDetails": str(e)
+            }
+
+    def copy_routing_pattern(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Copy routing pattern from source components to target components
+
+        This enables routing replication between identical component groups.
+        The pattern is copied with a translation offset calculated from
+        the position difference between source and target components.
+        """
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first"
+                }
+
+            source_refs = params.get("sourceRefs", [])  # e.g., ["U1", "U2", "U3"]
+            target_refs = params.get("targetRefs", [])  # e.g., ["U4", "U5", "U6"]
+            include_vias = params.get("includeVias", True)
+            trace_width = params.get("traceWidth")  # Optional override
+
+            if not source_refs or not target_refs:
+                return {
+                    "success": False,
+                    "message": "Missing component references",
+                    "errorDetails": "Provide both 'sourceRefs' and 'targetRefs' arrays"
+                }
+
+            if len(source_refs) != len(target_refs):
+                return {
+                    "success": False,
+                    "message": "Mismatched component counts",
+                    "errorDetails": f"sourceRefs has {len(source_refs)} items, targetRefs has {len(target_refs)}"
+                }
+
+            scale = 1000000  # nm to mm conversion
+
+            # Get footprints
+            footprints = {fp.GetReference(): fp for fp in self.board.GetFootprints()}
+
+            # Validate all references exist
+            for ref in source_refs + target_refs:
+                if ref not in footprints:
+                    return {
+                        "success": False,
+                        "message": "Component not found",
+                        "errorDetails": f"Component '{ref}' not found on board"
+                    }
+
+            # Calculate offset from first source to first target component
+            source_fp = footprints[source_refs[0]]
+            target_fp = footprints[target_refs[0]]
+            source_pos = source_fp.GetPosition()
+            target_pos = target_fp.GetPosition()
+
+            offset_x = target_pos.x - source_pos.x
+            offset_y = target_pos.y - source_pos.y
+
+            # Build mapping from source refs to target refs
+            ref_mapping = dict(zip(source_refs, target_refs))
+
+            # Collect all nets connected to source components
+            source_nets = set()
+            for ref in source_refs:
+                fp = footprints[ref]
+                for pad in fp.Pads():
+                    net_name = pad.GetNetname()
+                    if net_name and net_name != "":
+                        source_nets.add(net_name)
+
+            # Collect traces and vias connected to source nets
+            traces_to_copy = []
+            vias_to_copy = []
+
+            for track in self.board.Tracks():
+                if track.GetNetname() not in source_nets:
+                    continue
+
+                is_via = track.Type() == pcbnew.PCB_VIA_T
+
+                if is_via:
+                    if include_vias:
+                        vias_to_copy.append(track)
+                else:
+                    traces_to_copy.append(track)
+
+            # Create new traces with offset
+            created_traces = 0
+            created_vias = 0
+
+            for track in traces_to_copy:
+                start = track.GetStart()
+                end = track.GetEnd()
+
+                # Create new track
+                new_track = pcbnew.PCB_TRACK(self.board)
+                new_track.SetStart(pcbnew.VECTOR2I(start.x + offset_x, start.y + offset_y))
+                new_track.SetEnd(pcbnew.VECTOR2I(end.x + offset_x, end.y + offset_y))
+                new_track.SetLayer(track.GetLayer())
+
+                # Set width (use override or original)
+                if trace_width:
+                    new_track.SetWidth(int(trace_width * scale))
+                else:
+                    new_track.SetWidth(track.GetWidth())
+
+                # Try to find corresponding target net
+                # This is a simplification - more sophisticated mapping would be needed
+                # for complex designs
+                self.board.Add(new_track)
+                created_traces += 1
+
+            for via in vias_to_copy:
+                pos = via.GetPosition()
+
+                # Create new via
+                new_via = pcbnew.PCB_VIA(self.board)
+                new_via.SetPosition(pcbnew.VECTOR2I(pos.x + offset_x, pos.y + offset_y))
+                new_via.SetWidth(via.GetWidth())
+                new_via.SetDrill(via.GetDrillValue())
+                new_via.SetViaType(via.GetViaType())
+
+                self.board.Add(new_via)
+                created_vias += 1
+
+            result = {
+                "success": True,
+                "message": f"Copied routing pattern: {created_traces} traces, {created_vias} vias",
+                "offset": {
+                    "x": offset_x / scale,
+                    "y": offset_y / scale,
+                    "unit": "mm"
+                },
+                "createdTraces": created_traces,
+                "createdVias": created_vias,
+                "sourceComponents": source_refs,
+                "targetComponents": target_refs
+            }
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error copying routing pattern: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to copy routing pattern",
                 "errorDetails": str(e)
             }
 
