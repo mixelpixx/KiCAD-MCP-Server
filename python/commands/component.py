@@ -483,7 +483,244 @@ class ComponentCommands:
                 "message": "Failed to get component list",
                 "errorDetails": str(e)
             }
-            
+
+    def find_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Find components matching search criteria (reference, value, or footprint pattern)"""
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first"
+                }
+
+            # Get search parameters
+            reference_pattern = params.get("reference", "").lower()
+            value_pattern = params.get("value", "").lower()
+            footprint_pattern = params.get("footprint", "").lower()
+
+            if not reference_pattern and not value_pattern and not footprint_pattern:
+                return {
+                    "success": False,
+                    "message": "Missing search criteria",
+                    "errorDetails": "At least one of reference, value, or footprint pattern is required"
+                }
+
+            matches = []
+            for module in self.board.GetFootprints():
+                ref = module.GetReference().lower()
+                val = module.GetValue().lower()
+                fp = module.GetFPIDAsString().lower()
+
+                # Check if component matches all provided patterns
+                match = True
+                if reference_pattern and reference_pattern not in ref:
+                    match = False
+                if value_pattern and value_pattern not in val:
+                    match = False
+                if footprint_pattern and footprint_pattern not in fp:
+                    match = False
+
+                if match:
+                    pos = module.GetPosition()
+                    matches.append({
+                        "reference": module.GetReference(),
+                        "value": module.GetValue(),
+                        "footprint": module.GetFPIDAsString(),
+                        "position": {
+                            "x": pos.x / 1000000,
+                            "y": pos.y / 1000000,
+                            "unit": "mm"
+                        },
+                        "rotation": module.GetOrientation().AsDegrees(),
+                        "layer": self.board.GetLayerName(module.GetLayer())
+                    })
+
+            return {
+                "success": True,
+                "matchCount": len(matches),
+                "components": matches
+            }
+
+        except Exception as e:
+            logger.error(f"Error finding components: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to find components",
+                "errorDetails": str(e)
+            }
+
+    def get_component_pads(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get all pads for a component with their positions and net connections"""
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first"
+                }
+
+            reference = params.get("reference")
+            if not reference:
+                return {
+                    "success": False,
+                    "message": "Missing reference",
+                    "errorDetails": "reference parameter is required"
+                }
+
+            # Find the component
+            module = self.board.FindFootprintByReference(reference)
+            if not module:
+                return {
+                    "success": False,
+                    "message": "Component not found",
+                    "errorDetails": f"Could not find component: {reference}"
+                }
+
+            pads = []
+            for pad in module.Pads():
+                pos = pad.GetPosition()
+                size = pad.GetSize()
+
+                # Get pad shape as string
+                shape_map = {
+                    pcbnew.PAD_SHAPE_CIRCLE: "circle",
+                    pcbnew.PAD_SHAPE_RECT: "rect",
+                    pcbnew.PAD_SHAPE_OVAL: "oval",
+                    pcbnew.PAD_SHAPE_TRAPEZOID: "trapezoid",
+                    pcbnew.PAD_SHAPE_ROUNDRECT: "roundrect",
+                    pcbnew.PAD_SHAPE_CHAMFERED_RECT: "chamfered_rect",
+                    pcbnew.PAD_SHAPE_CUSTOM: "custom"
+                }
+                shape = shape_map.get(pad.GetShape(), "unknown")
+
+                # Get pad type
+                type_map = {
+                    pcbnew.PAD_ATTRIB_PTH: "through_hole",
+                    pcbnew.PAD_ATTRIB_SMD: "smd",
+                    pcbnew.PAD_ATTRIB_CONN: "connector",
+                    pcbnew.PAD_ATTRIB_NPTH: "npth"
+                }
+                pad_type = type_map.get(pad.GetAttribute(), "unknown")
+
+                pads.append({
+                    "name": pad.GetName(),
+                    "number": pad.GetNumber(),
+                    "position": {
+                        "x": pos.x / 1000000,
+                        "y": pos.y / 1000000,
+                        "unit": "mm"
+                    },
+                    "net": pad.GetNetname(),
+                    "netCode": pad.GetNetCode(),
+                    "shape": shape,
+                    "type": pad_type,
+                    "size": {
+                        "x": size.x / 1000000,
+                        "y": size.y / 1000000,
+                        "unit": "mm"
+                    },
+                    "drillSize": pad.GetDrillSize().x / 1000000 if pad.GetDrillSize().x > 0 else None
+                })
+
+            # Get component position for reference
+            comp_pos = module.GetPosition()
+
+            return {
+                "success": True,
+                "reference": reference,
+                "componentPosition": {
+                    "x": comp_pos.x / 1000000,
+                    "y": comp_pos.y / 1000000,
+                    "unit": "mm"
+                },
+                "padCount": len(pads),
+                "pads": pads
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting component pads: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to get component pads",
+                "errorDetails": str(e)
+            }
+
+    def get_pad_position(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get the position of a specific pad on a component"""
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first"
+                }
+
+            reference = params.get("reference")
+            pad_name = params.get("padName") or params.get("padNumber")
+
+            if not reference:
+                return {
+                    "success": False,
+                    "message": "Missing reference",
+                    "errorDetails": "reference parameter is required"
+                }
+            if not pad_name:
+                return {
+                    "success": False,
+                    "message": "Missing pad identifier",
+                    "errorDetails": "padName or padNumber parameter is required"
+                }
+
+            # Find the component
+            module = self.board.FindFootprintByReference(reference)
+            if not module:
+                return {
+                    "success": False,
+                    "message": "Component not found",
+                    "errorDetails": f"Could not find component: {reference}"
+                }
+
+            # Find the specific pad
+            pad = module.FindPadByNumber(str(pad_name))
+            if not pad:
+                # List available pads in error message
+                available_pads = [p.GetNumber() for p in module.Pads()]
+                return {
+                    "success": False,
+                    "message": "Pad not found",
+                    "errorDetails": f"Pad '{pad_name}' not found on {reference}. Available pads: {', '.join(available_pads)}"
+                }
+
+            pos = pad.GetPosition()
+            size = pad.GetSize()
+
+            return {
+                "success": True,
+                "reference": reference,
+                "padName": pad.GetNumber(),
+                "position": {
+                    "x": pos.x / 1000000,
+                    "y": pos.y / 1000000,
+                    "unit": "mm"
+                },
+                "net": pad.GetNetname(),
+                "netCode": pad.GetNetCode(),
+                "size": {
+                    "x": size.x / 1000000,
+                    "y": size.y / 1000000,
+                    "unit": "mm"
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting pad position: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to get pad position",
+                "errorDetails": str(e)
+            }
+
     def place_component_array(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Place an array of components in a grid or circular pattern"""
         try:

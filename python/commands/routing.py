@@ -366,7 +366,123 @@ class RoutingCommands:
                 "message": "Failed to get nets list",
                 "errorDetails": str(e)
             }
-            
+
+    def query_traces(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Query traces by net, layer, or bounding box"""
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first"
+                }
+
+            # Get filter parameters
+            net_name = params.get("net")
+            layer = params.get("layer")
+            bbox = params.get("boundingBox")  # {x1, y1, x2, y2, unit}
+            include_vias = params.get("includeVias", False)
+
+            scale = 1000000  # nm to mm conversion factor
+            traces = []
+            vias = []
+
+            # Process tracks
+            for track in self.board.Tracks():
+                # Check if it's a via
+                is_via = track.Type() == pcbnew.PCB_VIA_T
+
+                if is_via and not include_vias:
+                    continue
+
+                # Filter by net
+                if net_name and track.GetNetname() != net_name:
+                    continue
+
+                # Filter by layer (only for tracks, not vias)
+                if layer and not is_via:
+                    layer_id = self.board.GetLayerID(layer)
+                    if track.GetLayer() != layer_id:
+                        continue
+
+                # Filter by bounding box
+                if bbox:
+                    bbox_unit = bbox.get("unit", "mm")
+                    bbox_scale = scale if bbox_unit == "mm" else 25400000
+                    x1 = int(bbox.get("x1", 0) * bbox_scale)
+                    y1 = int(bbox.get("y1", 0) * bbox_scale)
+                    x2 = int(bbox.get("x2", 0) * bbox_scale)
+                    y2 = int(bbox.get("y2", 0) * bbox_scale)
+
+                    if is_via:
+                        pos = track.GetPosition()
+                        if not (x1 <= pos.x <= x2 and y1 <= pos.y <= y2):
+                            continue
+                    else:
+                        start = track.GetStart()
+                        end = track.GetEnd()
+                        # Check if either endpoint is within bbox
+                        start_in = x1 <= start.x <= x2 and y1 <= start.y <= y2
+                        end_in = x1 <= end.x <= x2 and y1 <= end.y <= y2
+                        if not (start_in or end_in):
+                            continue
+
+                if is_via:
+                    pos = track.GetPosition()
+                    vias.append({
+                        "uuid": str(track.m_Uuid),
+                        "position": {
+                            "x": pos.x / scale,
+                            "y": pos.y / scale,
+                            "unit": "mm"
+                        },
+                        "net": track.GetNetname(),
+                        "netCode": track.GetNetCode(),
+                        "diameter": track.GetWidth() / scale,
+                        "drill": track.GetDrillValue() / scale
+                    })
+                else:
+                    start = track.GetStart()
+                    end = track.GetEnd()
+                    traces.append({
+                        "uuid": str(track.m_Uuid),
+                        "net": track.GetNetname(),
+                        "netCode": track.GetNetCode(),
+                        "layer": self.board.GetLayerName(track.GetLayer()),
+                        "width": track.GetWidth() / scale,
+                        "start": {
+                            "x": start.x / scale,
+                            "y": start.y / scale,
+                            "unit": "mm"
+                        },
+                        "end": {
+                            "x": end.x / scale,
+                            "y": end.y / scale,
+                            "unit": "mm"
+                        },
+                        "length": track.GetLength() / scale
+                    })
+
+            result = {
+                "success": True,
+                "traceCount": len(traces),
+                "traces": traces
+            }
+
+            if include_vias:
+                result["viaCount"] = len(vias)
+                result["vias"] = vias
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error querying traces: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to query traces",
+                "errorDetails": str(e)
+            }
+
     def create_netclass(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new net class with specified properties"""
         try:

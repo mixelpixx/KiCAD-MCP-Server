@@ -225,6 +225,22 @@ BOARD_TOOLS = [
         }
     },
     {
+        "name": "get_board_extents",
+        "title": "Get Board Bounding Box",
+        "description": "Returns the bounding box extents of the PCB board including all edge cuts, components, and traces.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "unit": {
+                    "type": "string",
+                    "enum": ["mm", "inch"],
+                    "description": "Unit for returned coordinates (default: mm)",
+                    "default": "mm"
+                }
+            }
+        }
+    },
+    {
         "name": "add_mounting_hole",
         "title": "Add Mounting Hole",
         "description": "Adds a mounting hole (non-plated through hole) at the specified position with given diameter.",
@@ -438,6 +454,66 @@ COMPONENT_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {}
+        }
+    },
+    {
+        "name": "find_component",
+        "title": "Find Components",
+        "description": "Searches for components matching specified criteria. Supports partial matching on reference, value, or footprint patterns.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "reference": {
+                    "type": "string",
+                    "description": "Reference designator pattern to match (e.g., 'R1', 'U', 'C2')"
+                },
+                "value": {
+                    "type": "string",
+                    "description": "Value pattern to match (e.g., '10k', '100nF')"
+                },
+                "footprint": {
+                    "type": "string",
+                    "description": "Footprint pattern to match (e.g., '0805', 'SOIC')"
+                }
+            }
+        }
+    },
+    {
+        "name": "get_component_pads",
+        "title": "Get Component Pads",
+        "description": "Returns all pads for a component with their positions, net connections, sizes, and shapes.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "reference": {
+                    "type": "string",
+                    "description": "Component reference designator (e.g., U1, R5)"
+                }
+            },
+            "required": ["reference"]
+        }
+    },
+    {
+        "name": "get_pad_position",
+        "title": "Get Pad Position",
+        "description": "Returns the position and properties of a specific pad on a component.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "reference": {
+                    "type": "string",
+                    "description": "Component reference designator"
+                },
+                "padName": {
+                    "type": "string",
+                    "description": "Pad name or number (e.g., '1', '2', 'A1')"
+                },
+                "padNumber": {
+                    "type": "string",
+                    "description": "Alternative to padName - pad number"
+                }
+            },
+            "required": ["reference"]
         }
     },
     {
@@ -669,6 +745,40 @@ ROUTING_TOOLS = [
                 }
             },
             "required": ["traceId"]
+        }
+    },
+    {
+        "name": "query_traces",
+        "title": "Query Traces",
+        "description": "Queries traces on the board with optional filters by net, layer, or bounding box. Returns trace details including UUID, positions, width, and length.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {
+                    "type": "string",
+                    "description": "Filter by net name (e.g., 'GND', 'VCC')"
+                },
+                "layer": {
+                    "type": "string",
+                    "description": "Filter by layer name (e.g., 'F.Cu', 'B.Cu')"
+                },
+                "boundingBox": {
+                    "type": "object",
+                    "description": "Filter by bounding box region",
+                    "properties": {
+                        "x1": {"type": "number", "description": "Left X coordinate"},
+                        "y1": {"type": "number", "description": "Top Y coordinate"},
+                        "x2": {"type": "number", "description": "Right X coordinate"},
+                        "y2": {"type": "number", "description": "Bottom Y coordinate"},
+                        "unit": {"type": "string", "enum": ["mm", "inch"], "default": "mm"}
+                    }
+                },
+                "includeVias": {
+                    "type": "boolean",
+                    "description": "Include vias in the result",
+                    "default": False
+                }
+            }
         }
     },
     {
@@ -1162,6 +1272,132 @@ SCHEMATIC_TOOLS = [
                 }
             },
             "required": ["points"]
+        }
+    },
+    {
+        "name": "add_schematic_connection",
+        "title": "Add Junction/Connection Point",
+        "description": "Adds a junction (connection point) at the specified location on the schematic where wires cross and should connect.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to schematic file"
+                },
+                "x": {
+                    "type": "number",
+                    "description": "X coordinate on schematic"
+                },
+                "y": {
+                    "type": "number",
+                    "description": "Y coordinate on schematic"
+                }
+            },
+            "required": ["schematicPath", "x", "y"]
+        }
+    },
+    {
+        "name": "add_schematic_net_label",
+        "title": "Add Net Label",
+        "description": "Adds a net label to assign a name to a wire/net on the schematic.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to schematic file"
+                },
+                "netName": {
+                    "type": "string",
+                    "description": "Name of the net (e.g., VCC, GND, SDA)"
+                },
+                "x": {
+                    "type": "number",
+                    "description": "X coordinate on schematic"
+                },
+                "y": {
+                    "type": "number",
+                    "description": "Y coordinate on schematic"
+                },
+                "rotation": {
+                    "type": "number",
+                    "description": "Rotation angle in degrees (0, 90, 180, 270)",
+                    "default": 0
+                }
+            },
+            "required": ["schematicPath", "netName", "x", "y"]
+        }
+    },
+    {
+        "name": "connect_to_net",
+        "title": "Connect Pin to Net",
+        "description": "Intelligently connects a component pin to a named net, automatically routing wires as needed.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to schematic file"
+                },
+                "reference": {
+                    "type": "string",
+                    "description": "Component reference designator (e.g., R1, U3)"
+                },
+                "pinNumber": {
+                    "type": "string",
+                    "description": "Pin number or name on the component"
+                },
+                "netName": {
+                    "type": "string",
+                    "description": "Name of the net to connect to"
+                }
+            },
+            "required": ["schematicPath", "reference", "pinNumber", "netName"]
+        }
+    },
+    {
+        "name": "get_net_connections",
+        "title": "Get Net Connections",
+        "description": "Returns all components and pins connected to a specified net.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to schematic file"
+                },
+                "netName": {
+                    "type": "string",
+                    "description": "Name of the net to query"
+                }
+            },
+            "required": ["schematicPath", "netName"]
+        }
+    },
+    {
+        "name": "generate_netlist",
+        "title": "Generate Netlist",
+        "description": "Generates a netlist from the schematic showing all components and their net connections.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to schematic file"
+                },
+                "outputPath": {
+                    "type": "string",
+                    "description": "Optional path to save netlist file"
+                },
+                "format": {
+                    "type": "string",
+                    "enum": ["kicad", "json", "spice"],
+                    "description": "Netlist output format",
+                    "default": "json"
+                }
+            },
+            "required": ["schematicPath"]
         }
     },
     {

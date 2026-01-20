@@ -75,13 +75,39 @@ function findPythonExecutable(scriptPath: string): string {
       return kicadPython;
     }
   } else if (isMac) {
-    // macOS: Try KiCAD's bundled Python (check multiple versions)
-    const kicadPythonVersions = ['3.9', '3.10', '3.11', '3.12'];
-    for (const version of kicadPythonVersions) {
-      const kicadPython = `/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/${version}/bin/python3`;
-      if (existsSync(kicadPython)) {
-        logger.info(`Found KiCAD bundled Python at: ${kicadPython}`);
-        return kicadPython;
+    // macOS: Try KiCAD's bundled Python (check multiple versions and locations)
+    const kicadPythonVersions = ['3.9', '3.10', '3.11', '3.12', '3.13'];
+
+    // Standard KiCAD installation paths
+    const kicadAppPaths = [
+      '/Applications/KiCad/KiCad.app',
+      '/Applications/KiCAD/KiCad.app',  // Alternative capitalization
+      `${process.env.HOME}/Applications/KiCad/KiCad.app`,  // User Applications folder
+    ];
+
+    // Check all KiCAD app locations with all Python versions
+    for (const appPath of kicadAppPaths) {
+      for (const version of kicadPythonVersions) {
+        const kicadPython = `${appPath}/Contents/Frameworks/Python.framework/Versions/${version}/bin/python3`;
+        if (existsSync(kicadPython)) {
+          logger.info(`Found KiCAD bundled Python at: ${kicadPython}`);
+          return kicadPython;
+        }
+      }
+    }
+
+    // Fallback to Homebrew Python (if pcbnew is installed via pip)
+    const homebrewPaths = [
+      '/opt/homebrew/bin/python3',      // Apple Silicon
+      '/usr/local/bin/python3',          // Intel Mac
+      '/opt/homebrew/bin/python3.12',
+      '/opt/homebrew/bin/python3.11',
+    ];
+
+    for (const path of homebrewPaths) {
+      if (existsSync(path)) {
+        logger.info(`Found Homebrew Python at: ${path} (ensure pcbnew is importable)`);
+        return path;
       }
     }
   } else if (isLinux) {

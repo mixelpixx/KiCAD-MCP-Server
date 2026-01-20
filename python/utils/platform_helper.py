@@ -91,14 +91,32 @@ class PlatformHelper:
             paths = [p for p in candidates if p.exists()]
 
         elif PlatformHelper.is_macos():
-            # macOS: Check application bundle
-            kicad_app = Path("/Applications/KiCad/KiCad.app")
-            if kicad_app.exists():
-                # Check Python framework path
-                for version in ["3.9", "3.10", "3.11", "3.12"]:
-                    path = kicad_app / "Contents" / "Frameworks" / "Python.framework" / "Versions" / version / "lib" / f"python{version}" / "site-packages"
-                    if path.exists():
-                        paths.append(path)
+            # macOS: Check multiple KiCAD application bundle locations
+            kicad_app_paths = [
+                Path("/Applications/KiCad/KiCad.app"),
+                Path("/Applications/KiCAD/KiCad.app"),  # Alternative capitalization
+                Path.home() / "Applications" / "KiCad" / "KiCad.app",  # User Applications
+            ]
+
+            # Check Python framework paths in each KiCAD installation
+            for kicad_app in kicad_app_paths:
+                if kicad_app.exists():
+                    for version in ["3.9", "3.10", "3.11", "3.12", "3.13"]:
+                        path = kicad_app / "Contents" / "Frameworks" / "Python.framework" / "Versions" / version / "lib" / f"python{version}" / "site-packages"
+                        if path.exists():
+                            paths.append(path)
+
+            # Also check Homebrew Python site-packages (if pcbnew installed via pip)
+            homebrew_paths = [
+                Path("/opt/homebrew/lib/python3.12/site-packages"),  # Apple Silicon
+                Path("/opt/homebrew/lib/python3.11/site-packages"),
+                Path("/usr/local/lib/python3.12/site-packages"),     # Intel Mac
+                Path("/usr/local/lib/python3.11/site-packages"),
+            ]
+            for hp in homebrew_paths:
+                pcbnew_path = hp / "pcbnew.py"
+                if pcbnew_path.exists():
+                    paths.append(hp)
 
         if not paths:
             logger.warning(f"No KiCAD Python paths found for {PlatformHelper.get_platform_name()}")
@@ -142,6 +160,8 @@ class PlatformHelper:
         elif PlatformHelper.is_macos():
             patterns = [
                 "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym",
+                "/Applications/KiCAD/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym",
+                str(Path.home() / "Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym"),
             ]
 
         # Add user library paths for all platforms
