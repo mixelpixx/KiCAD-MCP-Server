@@ -74,12 +74,18 @@ class IPCBackend(KiCADBackend):
             if socket_path:
                 socket_paths_to_try.append(socket_path)
             else:
-                # Common socket locations
-                socket_paths_to_try = [
-                    'ipc:///tmp/kicad/api.sock',  # Linux default
-                    f'ipc:///run/user/{os.getuid()}/kicad/api.sock',  # XDG runtime
-                    None  # Let kipy auto-detect
-                ]
+                # Common socket locations (platform-specific)
+                socket_paths_to_try = []
+
+                # Unix-specific socket paths (Linux/macOS)
+                if hasattr(os, 'getuid'):
+                    socket_paths_to_try.extend([
+                        'ipc:///tmp/kicad/api.sock',  # Linux default
+                        f'ipc:///run/user/{os.getuid()}/kicad/api.sock',  # XDG runtime
+                    ])
+
+                # Always try auto-detect last (works on all platforms including Windows)
+                socket_paths_to_try.append(None)
 
             last_error = None
             for path in socket_paths_to_try:
