@@ -420,15 +420,23 @@ class LibraryCommands:
     def search_footprints(self, params: Dict) -> Dict:
         """Search for footprints by pattern"""
         try:
-            pattern = params.get("pattern", "*")
+            # Accept both "search_term" (from TypeScript) and "pattern" (legacy)
+            pattern = params.get("search_term") or params.get("pattern", "*")
             limit = params.get("limit", 20)
 
             results = self.library_manager.search_footprints(pattern, limit)
 
+            # Include "name" field alongside "footprint" for TypeScript compatibility
+            footprints_with_name = []
+            for r in results:
+                entry = dict(r)
+                entry['name'] = r['footprint']
+                footprints_with_name.append(entry)
+
             return {
                 "success": True,
-                "footprints": results,
-                "count": len(results),
+                "footprints": footprints_with_name,
+                "count": len(footprints_with_name),
                 "pattern": pattern
             }
         except Exception as e:
@@ -442,7 +450,8 @@ class LibraryCommands:
     def list_library_footprints(self, params: Dict) -> Dict:
         """List all footprints in a specific library"""
         try:
-            library = params.get("library")
+            # Accept both "library_name" (from TypeScript) and "library" (legacy)
+            library = params.get("library_name") or params.get("library")
             if not library:
                 return {
                     "success": False,
@@ -468,7 +477,13 @@ class LibraryCommands:
     def get_footprint_info(self, params: Dict) -> Dict:
         """Get information about a specific footprint"""
         try:
+            # Accept "library_name"+"footprint_name" (from TypeScript) or "footprint" (legacy)
             footprint_spec = params.get("footprint")
+            if not footprint_spec:
+                library_name = params.get("library_name")
+                footprint_name = params.get("footprint_name")
+                if library_name and footprint_name:
+                    footprint_spec = f"{library_name}:{footprint_name}"
             if not footprint_spec:
                 return {
                     "success": False,
@@ -489,6 +504,7 @@ class LibraryCommands:
 
                 info = {
                     "library": library_nickname,
+                    "name": footprint_name,
                     "footprint": footprint_name,
                     "full_name": f"{library_nickname}:{footprint_name}",
                     "library_path": library_path
@@ -496,6 +512,7 @@ class LibraryCommands:
 
                 return {
                     "success": True,
+                    "info": info,
                     "footprint_info": info
                 }
             else:
