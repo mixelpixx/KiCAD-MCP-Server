@@ -1179,6 +1179,67 @@ class RoutingCommands:
                 "errorDetails": str(e)
             }
 
+    def assign_net_to_class(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Assign a net to a specific net class"""
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first"
+                }
+
+            net_name = params.get("net")
+            net_class_name = params.get("netClass")
+
+            if not net_name or not net_class_name:
+                return {
+                    "success": False,
+                    "message": "Missing parameters",
+                    "errorDetails": "Both 'net' and 'netClass' are required"
+                }
+
+            # Find the net
+            netinfo = self.board.GetNetInfo()
+            nets_map = netinfo.NetsByName()
+            if not nets_map.has_key(net_name):
+                available_nets = [netinfo.GetNetItem(i).GetNetname() for i in range(netinfo.GetNetCount()) if netinfo.GetNetItem(i)]
+                return {
+                    "success": False,
+                    "message": f"Net '{net_name}' not found",
+                    "availableNets": available_nets[:50]
+                }
+
+            net = nets_map[net_name]
+
+            # Find the net class
+            net_classes = self.board.GetNetClasses()
+            netclass = net_classes.Find(net_class_name)
+            if not netclass:
+                return {
+                    "success": False,
+                    "message": f"Net class '{net_class_name}' not found",
+                    "errorDetails": "Create the net class first using create_netclass/add_net_class"
+                }
+
+            # Assign net to class
+            net.SetClass(netclass)
+
+            return {
+                "success": True,
+                "message": f"Assigned net '{net_name}' to class '{net_class_name}'",
+                "net": net_name,
+                "netClass": net_class_name
+            }
+
+        except Exception as e:
+            logger.error(f"Error assigning net to class: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to assign net to class",
+                "errorDetails": str(e)
+            }
+
     def _get_point(self, point_spec: Dict[str, Any]) -> pcbnew.VECTOR2I:
         """Convert point specification to KiCAD point"""
         if "x" in point_spec and "y" in point_spec:

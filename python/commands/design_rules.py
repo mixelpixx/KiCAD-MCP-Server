@@ -384,6 +384,219 @@ class DesignRuleCommands:
 
         return None
 
+    def set_layer_constraints(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Set design constraints for a specific layer"""
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first"
+                }
+
+            layer_name = params.get("layer")
+            if not layer_name:
+                return {
+                    "success": False,
+                    "message": "Missing layer name",
+                    "errorDetails": "layer parameter is required"
+                }
+
+            layer_id = self.board.GetLayerID(layer_name)
+            if layer_id < 0:
+                return {
+                    "success": False,
+                    "message": f"Invalid layer: {layer_name}",
+                    "errorDetails": f"Layer '{layer_name}' does not exist on this board"
+                }
+
+            # KiCAD 9.0: Layer-specific constraints are managed through custom rules
+            # We can set them via the design settings' per-layer overrides
+            design_settings = self.board.GetDesignSettings()
+            scale = 1000000  # mm to nm
+
+            constraints_set = []
+
+            # Note: KiCAD's SWIG API has limited per-layer constraint support
+            # Most layer constraints are handled through custom DRC rules
+            # We apply what we can through the design settings
+
+            min_track_width = params.get("minTrackWidth")
+            min_clearance = params.get("minClearance")
+            min_via_diameter = params.get("minViaDiameter")
+            min_via_drill = params.get("minViaDrill")
+
+            # Apply global minimums if they're more restrictive
+            if min_track_width is not None:
+                current = design_settings.m_TrackMinWidth / scale
+                if min_track_width > current:
+                    design_settings.m_TrackMinWidth = int(min_track_width * scale)
+                    constraints_set.append(f"minTrackWidth={min_track_width}mm")
+                else:
+                    constraints_set.append(f"minTrackWidth={min_track_width}mm (note: global min is {current}mm)")
+
+            if min_clearance is not None:
+                current = design_settings.m_MinClearance / scale
+                if min_clearance > current:
+                    design_settings.m_MinClearance = int(min_clearance * scale)
+                    constraints_set.append(f"minClearance={min_clearance}mm")
+                else:
+                    constraints_set.append(f"minClearance={min_clearance}mm (note: global min is {current}mm)")
+
+            if min_via_diameter is not None:
+                current = design_settings.m_ViasMinSize / scale
+                if min_via_diameter > current:
+                    design_settings.m_ViasMinSize = int(min_via_diameter * scale)
+                    constraints_set.append(f"minViaDiameter={min_via_diameter}mm")
+                else:
+                    constraints_set.append(f"minViaDiameter={min_via_diameter}mm (note: global min is {current}mm)")
+
+            if min_via_drill is not None:
+                current = design_settings.m_MinThroughDrill / scale
+                if min_via_drill > current:
+                    design_settings.m_MinThroughDrill = int(min_via_drill * scale)
+                    constraints_set.append(f"minViaDrill={min_via_drill}mm")
+                else:
+                    constraints_set.append(f"minViaDrill={min_via_drill}mm (note: global min is {current}mm)")
+
+            if not constraints_set:
+                return {
+                    "success": False,
+                    "message": "No constraints specified",
+                    "errorDetails": "Provide at least one constraint: minTrackWidth, minClearance, minViaDiameter, minViaDrill"
+                }
+
+            return {
+                "success": True,
+                "message": f"Set constraints for layer {layer_name}: {', '.join(constraints_set)}",
+                "layer": layer_name,
+                "constraints": constraints_set,
+                "note": "KiCAD applies these as global minimums. For per-layer rules, use custom DRC rules."
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting layer constraints: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to set layer constraints",
+                "errorDetails": str(e)
+            }
+
+    def check_clearance(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Check clearance between two items on the PCB"""
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first"
+                }
+
+            item1 = params.get("item1", {})
+            item2 = params.get("item2", {})
+
+            if not item1 or not item2:
+                return {
+                    "success": False,
+                    "message": "Missing items",
+                    "errorDetails": "Both item1 and item2 are required"
+                }
+
+            scale = 1000000  # nm to mm conversion
+
+            # Resolve item positions
+            pos1 = self._resolve_item_position(item1)
+            pos2 = self._resolve_item_position(item2)
+
+            if not pos1 or not pos2:
+                return {
+                    "success": False,
+                    "message": "Could not resolve item positions",
+                    "errorDetails": "Provide position or reference for both items"
+                }
+
+            # Calculate distance between positions
+            dx = pos1.x - pos2.x
+            dy = pos1.y - pos2.y
+            distance_nm = (dx * dx + dy * dy) ** 0.5
+            distance_mm = distance_nm / scale
+
+            # Get minimum clearance from design rules
+            design_settings = self.board.GetDesignSettings()
+            min_clearance = design_settings.m_MinClearance / scale
+
+            # Determine if clearance is adequate
+            passes = distance_mm >= min_clearance
+
+            return {
+                "success": True,
+                "clearance": {
+                    "distance": round(distance_mm, 4),
+                    "unit": "mm",
+                    "minRequired": round(min_clearance, 4),
+                    "passes": passes
+                },
+                "item1": {
+                    "type": item1.get("type"),
+                    "position": {"x": round(pos1.x / scale, 4), "y": round(pos1.y / scale, 4)}
+                },
+                "item2": {
+                    "type": item2.get("type"),
+                    "position": {"x": round(pos2.x / scale, 4), "y": round(pos2.y / scale, 4)}
+                },
+                "message": f"Clearance: {distance_mm:.4f}mm ({'PASS' if passes else 'FAIL'}, min: {min_clearance:.4f}mm)"
+            }
+
+        except Exception as e:
+            logger.error(f"Error checking clearance: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to check clearance",
+                "errorDetails": str(e)
+            }
+
+    def _resolve_item_position(self, item: Dict[str, Any]):
+        """Resolve an item specification to a board position"""
+        item_type = item.get("type")
+        reference = item.get("reference")
+        position = item.get("position")
+
+        scale = 1000000  # mm to nm
+
+        # If position is directly provided
+        if position:
+            unit = position.get("unit", "mm")
+            unit_scale = scale if unit == "mm" else 25400000
+            x = int(position.get("x", 0) * unit_scale)
+            y = int(position.get("y", 0) * unit_scale)
+            return pcbnew.VECTOR2I(x, y)
+
+        # If reference is provided (for components)
+        if reference and item_type == "component":
+            fp = self.board.FindFootprintByReference(reference)
+            if fp:
+                return fp.GetPosition()
+
+        # If reference is a pad
+        if reference and item_type == "pad":
+            # reference format: "R1:1" or just "R1" with pad in id
+            pad_id = item.get("id")
+            parts = reference.split(":") if ":" in reference else [reference]
+            fp = self.board.FindFootprintByReference(parts[0])
+            if fp:
+                if len(parts) > 1:
+                    pad = fp.FindPadByName(parts[1])
+                elif pad_id:
+                    pad = fp.FindPadByName(pad_id)
+                else:
+                    # Return first pad
+                    pads = list(fp.Pads())
+                    pad = pads[0] if pads else None
+                if pad:
+                    return pad.GetPosition()
+
+        return None
+
     def get_drc_violations(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get list of DRC violations"""
         try:

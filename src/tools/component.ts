@@ -353,5 +353,118 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
     }
   );
 
+  // ------------------------------------------------------
+  // Get Component List Tool (exposes hidden Python command)
+  // ------------------------------------------------------
+  server.tool(
+    "get_component_list",
+    "Get a list of all components on the PCB with their references, values, footprints, and positions",
+    {},
+    async () => {
+      logger.debug('Getting component list');
+      const result = await callKicadScript("get_component_list", {});
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(result)
+        }]
+      };
+    }
+  );
+
+  // ------------------------------------------------------
+  // Align Components Tool (exposes hidden Python command)
+  // ------------------------------------------------------
+  server.tool(
+    "align_components",
+    "Align multiple components horizontally, vertically, or to a board edge. Supports equal distribution and fixed spacing.",
+    {
+      references: z.array(z.string()).describe("Reference designators of components to align (e.g., ['R1', 'R2', 'R3'])"),
+      alignment: z.enum(["horizontal", "vertical", "left", "right", "top", "bottom"]).describe("Alignment direction or edge"),
+      distribution: z.enum(["none", "equal", "spacing"]).optional().describe("Distribution mode (default: none)"),
+      spacing: z.number().optional().describe("Spacing in mm (required when distribution='spacing')")
+    },
+    async (args: any) => {
+      logger.debug(`Aligning components: ${args.references.join(', ')}`);
+      const result = await callKicadScript("align_components", args);
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(result)
+        }]
+      };
+    }
+  );
+
+  // ------------------------------------------------------
+  // Duplicate Component Tool (exposes hidden Python command)
+  // ------------------------------------------------------
+  server.tool(
+    "duplicate_component",
+    "Duplicate an existing component on the PCB with a new reference designator",
+    {
+      reference: z.string().describe("Reference designator of the component to duplicate (e.g., 'R1')"),
+      newReference: z.string().describe("Reference designator for the new component (e.g., 'R2')"),
+      position: z.object({
+        x: z.number(),
+        y: z.number(),
+        unit: z.enum(["mm", "inch"]).optional()
+      }).optional().describe("Optional position for the new component"),
+      rotation: z.number().optional().describe("Optional rotation in degrees")
+    },
+    async (args: any) => {
+      logger.debug(`Duplicating component ${args.reference} to ${args.newReference}`);
+      const result = await callKicadScript("duplicate_component", args);
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(result)
+        }]
+      };
+    }
+  );
+
+  // ------------------------------------------------------
+  // Place Component Array Tool (exposes hidden Python command)
+  // ------------------------------------------------------
+  server.tool(
+    "place_component_array",
+    "Place multiple components in a grid or circular array pattern",
+    {
+      componentId: z.string().describe("Component/footprint identifier"),
+      pattern: z.enum(["grid", "circular"]).describe("Array pattern type"),
+      position: z.object({
+        x: z.number(),
+        y: z.number(),
+        unit: z.enum(["mm", "inch"]).optional()
+      }).describe("Start position (grid) or center position (circular)"),
+      rows: z.number().optional().describe("Number of rows (grid pattern)"),
+      columns: z.number().optional().describe("Number of columns (grid pattern)"),
+      spacingX: z.number().optional().describe("X spacing in mm (grid pattern)"),
+      spacingY: z.number().optional().describe("Y spacing in mm (grid pattern)"),
+      count: z.number().optional().describe("Number of components (circular pattern)"),
+      radius: z.number().optional().describe("Radius in mm (circular pattern)"),
+      angleStart: z.number().optional().describe("Starting angle in degrees (circular pattern, default 0)"),
+      angleStep: z.number().optional().describe("Angle step between components (circular pattern)"),
+      referencePrefix: z.string().optional().describe("Reference prefix (e.g., 'R' for R1, R2...)"),
+      value: z.string().optional().describe("Component value"),
+      rotation: z.number().optional().describe("Rotation in degrees")
+    },
+    async (args: any) => {
+      logger.debug(`Placing component array: ${args.pattern}`);
+      const result = await callKicadScript("place_component_array", args);
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(result)
+        }]
+      };
+    }
+  );
+
   logger.info('Component management tools registered');
 }

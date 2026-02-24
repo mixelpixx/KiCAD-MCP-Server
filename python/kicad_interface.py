@@ -309,6 +309,9 @@ class KiCADInterface:
             "place_component_array": self.component_commands.place_component_array,
             "align_components": self.component_commands.align_components,
             "duplicate_component": self.component_commands.duplicate_component,
+            "add_component_annotation": self.component_commands.add_component_annotation,
+            "group_components": self.component_commands.group_components,
+            "replace_component": self.component_commands.replace_component,
             
             # Routing commands
             "add_net": self.routing_commands.add_net,
@@ -321,8 +324,11 @@ class KiCADInterface:
             "copy_routing_pattern": self.routing_commands.copy_routing_pattern,
             "get_nets_list": self.routing_commands.get_nets_list,
             "create_netclass": self.routing_commands.create_netclass,
+            "add_net_class": self.routing_commands.create_netclass,  # Alias: TS "add_net_class" → Python "create_netclass"
             "add_copper_pour": self.routing_commands.add_copper_pour,
+            "add_zone": self.routing_commands.add_copper_pour,  # Alias: TS "add_zone" → Python "add_copper_pour"
             "route_differential_pair": self.routing_commands.route_differential_pair,
+            "assign_net_to_class": self.routing_commands.assign_net_to_class,
             "refill_zones": self._handle_refill_zones,
 
             # Design rule commands
@@ -330,13 +336,18 @@ class KiCADInterface:
             "get_design_rules": self.design_rule_commands.get_design_rules,
             "run_drc": self.design_rule_commands.run_drc,
             "get_drc_violations": self.design_rule_commands.get_drc_violations,
-            
+            "set_layer_constraints": self.design_rule_commands.set_layer_constraints,
+            "check_clearance": self.design_rule_commands.check_clearance,
+
             # Export commands
             "export_gerber": self.export_commands.export_gerber,
             "export_pdf": self.export_commands.export_pdf,
             "export_svg": self.export_commands.export_svg,
             "export_3d": self.export_commands.export_3d,
             "export_bom": self.export_commands.export_bom,
+            "export_netlist": self.export_commands.export_netlist,
+            "export_position_file": self.export_commands.export_position_file,
+            "export_vrml": self.export_commands.export_vrml,
 
             # Library commands (footprint management)
             "list_libraries": self.library_commands.list_libraries,
@@ -362,6 +373,7 @@ class KiCADInterface:
             "load_schematic": self._handle_load_schematic,
             "add_schematic_component": self._handle_add_schematic_component,
             "add_schematic_wire": self._handle_add_schematic_wire,
+            "add_wire": self._handle_add_schematic_wire,  # Alias: TS "add_wire" → Python "add_schematic_wire"
             "add_schematic_connection": self._handle_add_schematic_connection,
             "add_schematic_net_label": self._handle_add_schematic_net_label,
             "connect_to_net": self._handle_connect_to_net,

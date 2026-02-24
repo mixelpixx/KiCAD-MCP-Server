@@ -265,4 +265,41 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
       }
     }
   );
+
+  // Load schematic (exposes hidden Python command)
+  server.tool(
+    "load_schematic",
+    "Load an existing KiCAD schematic file for editing",
+    {
+      filename: z.string().describe("Path to the .kicad_sch file to load")
+    },
+    async (args: { filename: string }) => {
+      const result = await callKicadScript("load_schematic", args);
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(result, null, 2)
+        }]
+      };
+    }
+  );
+
+  // Export schematic PDF (exposes hidden Python command)
+  server.tool(
+    "export_schematic_pdf",
+    "Export a schematic to PDF format using kicad-cli",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      outputPath: z.string().describe("Path to save the output PDF file")
+    },
+    async (args: { schematicPath: string; outputPath: string }) => {
+      const result = await callKicadScript("export_schematic_pdf", args);
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(result, null, 2)
+        }]
+      };
+    }
+  );
 }

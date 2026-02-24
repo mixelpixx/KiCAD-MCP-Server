@@ -28,18 +28,30 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   // Route trace tool
   server.tool(
     "route_trace",
-    "Route a trace between two points",
+    "Route a trace between two points or component pads. Supports both coordinate-based ({x, y, unit}) and pad-based ({componentRef, pad}) start/end points.",
     {
-      start: z.object({
-        x: z.number(),
-        y: z.number(),
-        unit: z.string().optional()
-      }).describe("Start position"),
-      end: z.object({
-        x: z.number(),
-        y: z.number(),
-        unit: z.string().optional()
-      }).describe("End position"),
+      start: z.union([
+        z.object({
+          x: z.number(),
+          y: z.number(),
+          unit: z.string().optional()
+        }).describe("Start position as coordinates"),
+        z.object({
+          componentRef: z.string().describe("Component reference (e.g., 'U1')"),
+          pad: z.string().describe("Pad name/number (e.g., '1', 'A5')")
+        }).describe("Start position as component pad")
+      ]).describe("Start position (coordinates or pad reference)"),
+      end: z.union([
+        z.object({
+          x: z.number(),
+          y: z.number(),
+          unit: z.string().optional()
+        }).describe("End position as coordinates"),
+        z.object({
+          componentRef: z.string().describe("Component reference (e.g., 'R1')"),
+          pad: z.string().describe("Pad name/number (e.g., '1', '2')")
+        }).describe("End position as component pad")
+      ]).describe("End position (coordinates or pad reference)"),
       layer: z.string().describe("PCB layer"),
       width: z.number().describe("Trace width in mm"),
       net: z.string().describe("Net name"),
@@ -224,6 +236,59 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
     {},
     async () => {
       const result = await callKicadScript("refill_zones", {});
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(result, null, 2)
+        }]
+      };
+    }
+  );
+
+  // Route differential pair tool (exposes hidden Python command)
+  server.tool(
+    "route_differential_pair",
+    "Route a differential pair between two sets of points. Creates two parallel traces with controlled spacing.",
+    {
+      startPos: z.object({
+        x: z.number(),
+        y: z.number(),
+        unit: z.string().optional()
+      }).describe("Start position (center between the pair)"),
+      endPos: z.object({
+        x: z.number(),
+        y: z.number(),
+        unit: z.string().optional()
+      }).describe("End position (center between the pair)"),
+      netPos: z.string().describe("Net name for the positive trace"),
+      netNeg: z.string().describe("Net name for the negative trace"),
+      layer: z.string().optional().describe("PCB layer (default: F.Cu)"),
+      width: z.number().optional().describe("Trace width in mm"),
+      gap: z.number().optional().describe("Gap between traces in mm (default: 0.2)")
+    },
+    async (args: any) => {
+      const result = await callKicadScript("route_differential_pair", args);
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(result, null, 2)
+        }]
+      };
+    }
+  );
+
+  // Copy routing pattern tool (exposes hidden Python command)
+  server.tool(
+    "copy_routing_pattern",
+    "Copy routing pattern from source components to target components. Enables routing replication between identical component groups.",
+    {
+      sourceRefs: z.array(z.string()).describe("Source component references (e.g., ['U1', 'R1', 'C1'])"),
+      targetRefs: z.array(z.string()).describe("Target component references (same count as sourceRefs)"),
+      includeVias: z.boolean().optional().describe("Whether to copy vias (default: true)"),
+      traceWidth: z.number().optional().describe("Optional trace width override in mm")
+    },
+    async (args: any) => {
+      const result = await callKicadScript("copy_routing_pattern", args);
       return {
         content: [{
           type: "text",

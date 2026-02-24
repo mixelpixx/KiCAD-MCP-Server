@@ -580,6 +580,409 @@ class ExportCommands:
         with open(path, 'w') as f:
             json.dump({"components": components}, f, indent=2)
 
+    def export_netlist(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export netlist from the PCB using kicad-cli"""
+        import subprocess
+
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first"
+                }
+
+            output_path = params.get("outputPath")
+            format = params.get("format", "KiCad")
+
+            if not output_path:
+                return {
+                    "success": False,
+                    "message": "Missing output path",
+                    "errorDetails": "outputPath parameter is required"
+                }
+
+            board_file = self.board.GetFileName()
+            if not board_file or not os.path.exists(board_file):
+                return {
+                    "success": False,
+                    "message": "Board file not found",
+                    "errorDetails": "Board must be saved before exporting netlist"
+                }
+
+            output_path = os.path.abspath(os.path.expanduser(output_path))
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+            kicad_cli = self._find_kicad_cli()
+            if not kicad_cli:
+                return {
+                    "success": False,
+                    "message": "kicad-cli not found",
+                    "errorDetails": "KiCAD CLI tool not found. Install KiCAD 8.0+ or set PATH."
+                }
+
+            # Build command - kicad-cli uses schematic for netlist, but we can export IPC netlist from PCB
+            # For PCB netlist, use 'pcb export' commands
+            # Map format to kicad-cli format flag
+            format_map = {
+                "KiCad": "kicad",
+                "Spice": "spice",
+                "Cadstar": "cadstar",
+                "OrcadPCB2": "orcadpcb2"
+            }
+            cli_format = format_map.get(format, "kicad")
+
+            # Try schematic netlist export first (preferred)
+            # Look for schematic file alongside PCB
+            board_dir = os.path.dirname(board_file)
+            board_name = os.path.splitext(os.path.basename(board_file))[0]
+            sch_file = os.path.join(board_dir, f"{board_name}.kicad_sch")
+
+            if os.path.exists(sch_file):
+                cmd = [
+                    kicad_cli,
+                    'sch', 'export', 'netlist',
+                    '--output', output_path,
+                    '--format', cli_format,
+                    sch_file
+                ]
+            else:
+                # Fall back: generate netlist from PCB footprint data
+                # This is a simplified IPC-D-356 netlist from the PCB
+                return self._export_pcb_netlist(output_path, format)
+
+            logger.info(f"Running netlist export: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": "Netlist export failed",
+                    "errorDetails": result.stderr
+                }
+
+            return {
+                "success": True,
+                "message": f"Exported netlist in {format} format",
+                "file": {
+                    "path": output_path,
+                    "format": format
+                }
+            }
+
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "message": "Netlist export timed out",
+                "errorDetails": "Export took longer than 2 minutes"
+            }
+        except Exception as e:
+            logger.error(f"Error exporting netlist: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to export netlist",
+                "errorDetails": str(e)
+            }
+
+    def _export_pcb_netlist(self, output_path: str, format: str) -> Dict[str, Any]:
+        """Generate a basic netlist from PCB data when schematic is not available"""
+        try:
+            import json as json_mod
+
+            nets = {}
+            netinfo = self.board.GetNetInfo()
+
+            for net_code in range(netinfo.GetNetCount()):
+                net = netinfo.GetNetItem(net_code)
+                if net and net.GetNetname():
+                    nets[net.GetNetname()] = {
+                        "code": net.GetNetCode(),
+                        "class": net.GetClassName(),
+                        "pads": []
+                    }
+
+            # Get pad connections
+            for fp in self.board.GetFootprints():
+                ref = fp.GetReference()
+                for pad in fp.Pads():
+                    net_name = pad.GetNetname()
+                    if net_name and net_name in nets:
+                        nets[net_name]["pads"].append({
+                            "component": ref,
+                            "pad": pad.GetName()
+                        })
+
+            # Write as JSON netlist
+            with open(output_path, 'w') as f:
+                json_mod.dump({
+                    "format": "PCB-extracted netlist",
+                    "nets": nets
+                }, f, indent=2)
+
+            return {
+                "success": True,
+                "message": "Exported PCB-extracted netlist (schematic not found)",
+                "file": {
+                    "path": output_path,
+                    "format": "JSON (PCB-extracted)",
+                    "note": "Generated from PCB data - for full netlist, provide schematic file"
+                }
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": "Failed to generate PCB netlist",
+                "errorDetails": str(e)
+            }
+
+    def export_position_file(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export component position/placement file (CPL) for pick-and-place assembly"""
+        import subprocess
+
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first"
+                }
+
+            output_path = params.get("outputPath")
+            format = params.get("format", "CSV")
+            units = params.get("units", "mm")
+            side = params.get("side", "both")
+
+            if not output_path:
+                return {
+                    "success": False,
+                    "message": "Missing output path",
+                    "errorDetails": "outputPath parameter is required"
+                }
+
+            board_file = self.board.GetFileName()
+            if not board_file or not os.path.exists(board_file):
+                return {
+                    "success": False,
+                    "message": "Board file not found",
+                    "errorDetails": "Board must be saved before exporting position file"
+                }
+
+            output_path = os.path.abspath(os.path.expanduser(output_path))
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+            kicad_cli = self._find_kicad_cli()
+            if not kicad_cli:
+                # Fall back to manual generation
+                return self._export_position_manual(output_path, format, units, side)
+
+            # Build kicad-cli command
+            cmd = [
+                kicad_cli,
+                'pcb', 'export', 'pos',
+                '--output', output_path,
+                '--units', units.lower(),
+                '--format', format.lower(),
+            ]
+
+            # Add side filter
+            if side == "top":
+                cmd.extend(['--side', 'front'])
+            elif side == "bottom":
+                cmd.extend(['--side', 'back'])
+            else:
+                cmd.extend(['--side', 'both'])
+
+            # SMD only (typical for JLCPCB)
+            cmd.append('--smd-only')
+
+            cmd.append(board_file)
+
+            logger.info(f"Running position file export: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+            if result.returncode != 0:
+                logger.warning(f"kicad-cli pos export failed: {result.stderr}")
+                # Fall back to manual generation
+                return self._export_position_manual(output_path, format, units, side)
+
+            return {
+                "success": True,
+                "message": f"Exported position file ({format}, {units}, {side})",
+                "file": {
+                    "path": output_path,
+                    "format": format,
+                    "units": units,
+                    "side": side
+                }
+            }
+
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "message": "Position file export timed out",
+                "errorDetails": "Export took longer than 60 seconds"
+            }
+        except Exception as e:
+            logger.error(f"Error exporting position file: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to export position file",
+                "errorDetails": str(e)
+            }
+
+    def _export_position_manual(self, output_path: str, format: str, units: str, side: str) -> Dict[str, Any]:
+        """Manually generate position file from board data (fallback)"""
+        try:
+            import csv
+
+            scale = 1000000.0  # nm to mm
+            if units == "inch":
+                scale = 25400000.0  # nm to inch
+
+            components = []
+            for fp in self.board.GetFootprints():
+                pos = fp.GetPosition()
+                layer = self.board.GetLayerName(fp.GetLayer())
+
+                # Filter by side
+                is_top = layer == "F.Cu"
+                if side == "top" and not is_top:
+                    continue
+                if side == "bottom" and is_top:
+                    continue
+
+                components.append({
+                    "Ref": fp.GetReference(),
+                    "Val": fp.GetValue(),
+                    "Package": str(fp.GetFPID()),
+                    "PosX": round(pos.x / scale, 4),
+                    "PosY": round(pos.y / scale, 4),
+                    "Rot": round(fp.GetOrientationDegrees(), 2),
+                    "Side": "top" if is_top else "bottom"
+                })
+
+            # Sort by reference
+            components.sort(key=lambda c: c["Ref"])
+
+            if format.upper() == "CSV":
+                with open(output_path, 'w', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=["Ref", "Val", "Package", "PosX", "PosY", "Rot", "Side"])
+                    writer.writeheader()
+                    writer.writerows(components)
+            else:
+                # ASCII format
+                with open(output_path, 'w') as f:
+                    f.write("### Component Position Report ###\n")
+                    f.write(f"### Units: {units} ###\n\n")
+                    f.write(f"{'Ref':<10} {'Val':<15} {'Package':<30} {'PosX':>10} {'PosY':>10} {'Rot':>8} {'Side':<6}\n")
+                    for c in components:
+                        f.write(f"{c['Ref']:<10} {c['Val']:<15} {c['Package']:<30} {c['PosX']:>10.4f} {c['PosY']:>10.4f} {c['Rot']:>8.2f} {c['Side']:<6}\n")
+
+            return {
+                "success": True,
+                "message": f"Exported position file ({format}, {units}, {side}) - {len(components)} components",
+                "file": {
+                    "path": output_path,
+                    "format": format,
+                    "units": units,
+                    "side": side,
+                    "componentCount": len(components)
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error in manual position export: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to generate position file",
+                "errorDetails": str(e)
+            }
+
+    def export_vrml(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export VRML 3D model file"""
+        import subprocess
+
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first"
+                }
+
+            output_path = params.get("outputPath")
+            include_components = params.get("includeComponents", True)
+            use_relative_paths = params.get("useRelativePaths", True)
+
+            if not output_path:
+                return {
+                    "success": False,
+                    "message": "Missing output path",
+                    "errorDetails": "outputPath parameter is required"
+                }
+
+            board_file = self.board.GetFileName()
+            if not board_file or not os.path.exists(board_file):
+                return {
+                    "success": False,
+                    "message": "Board file not found",
+                    "errorDetails": "Board must be saved before exporting VRML"
+                }
+
+            output_path = os.path.abspath(os.path.expanduser(output_path))
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+            kicad_cli = self._find_kicad_cli()
+            if not kicad_cli:
+                return {
+                    "success": False,
+                    "message": "kicad-cli not found",
+                    "errorDetails": "KiCAD CLI tool not found. Install KiCAD 8.0+ or set PATH."
+                }
+
+            cmd = [
+                kicad_cli,
+                'pcb', 'export', 'vrml',
+                '--output', output_path,
+                '--units', 'mm',
+                '--force'
+            ]
+
+            cmd.append(board_file)
+
+            logger.info(f"Running VRML export: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": "VRML export failed",
+                    "errorDetails": result.stderr
+                }
+
+            return {
+                "success": True,
+                "message": "Exported VRML file",
+                "file": {
+                    "path": output_path,
+                    "format": "VRML"
+                }
+            }
+
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "message": "VRML export timed out",
+                "errorDetails": "Export took longer than 5 minutes"
+            }
+        except Exception as e:
+            logger.error(f"Error exporting VRML: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to export VRML",
+                "errorDetails": str(e)
+            }
+
     def _find_kicad_cli(self) -> Optional[str]:
         """Find kicad-cli executable in system PATH or common locations
 
