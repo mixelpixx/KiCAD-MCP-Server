@@ -287,5 +287,71 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
     }
   );
 
+  // ------------------------------------------------------
+  // Get Component Pads Tool (was in Python, not exposed)
+  // ------------------------------------------------------
+  server.tool(
+    "get_component_pads",
+    {
+      reference: z.string().describe("Reference designator of the component (e.g., 'U1', 'J2')")
+    },
+    async ({ reference }) => {
+      logger.debug(`Getting pads for component: ${reference}`);
+      const result = await callKicadScript("get_component_pads", { reference });
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(result)
+        }]
+      };
+    }
+  );
+
+  // ------------------------------------------------------
+  // Get Pad Position Tool (was in Python, not exposed)
+  // ------------------------------------------------------
+  server.tool(
+    "get_pad_position",
+    {
+      reference: z.string().describe("Reference designator of the component (e.g., 'U1')"),
+      padName: z.string().describe("Pad name or number (e.g., '1', 'A5', 'SH')")
+    },
+    async ({ reference, padName }) => {
+      logger.debug(`Getting position for pad ${padName} on component: ${reference}`);
+      const result = await callKicadScript("get_pad_position", { reference, padName });
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(result)
+        }]
+      };
+    }
+  );
+
+  // ------------------------------------------------------
+  // Set Pad Net Tool (NEW - assigns a net to a component pad)
+  // ------------------------------------------------------
+  server.tool(
+    "set_pad_net",
+    {
+      reference: z.string().describe("Reference designator of the component (e.g., 'J2', 'U1')"),
+      padName: z.string().describe("Pad name or number (e.g., '1', 'A5', 'SH')"),
+      net: z.string().describe("Net name to assign (e.g., 'GND', 'VCC_5V'). Use empty string to clear.")
+    },
+    async ({ reference, padName, net }) => {
+      logger.debug(`Setting pad ${padName} on ${reference} to net: ${net}`);
+      const result = await callKicadScript("set_pad_net", { reference, padName, net });
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(result)
+        }]
+      };
+    }
+  );
+
   logger.info('Component management tools registered');
 }

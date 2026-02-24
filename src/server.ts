@@ -479,7 +479,7 @@ export class KiCADMcpServer {
       // Determine timeout based on command type
       // DRC and export operations need longer timeouts for large boards
       let commandTimeout = 30000; // Default 30 seconds
-      const longRunningCommands = ['run_drc', 'export_gerber', 'export_pdf', 'export_3d'];
+      const longRunningCommands = ['run_drc', 'export_gerber', 'export_pdf', 'export_3d', 'save_project', 'refill_zones', 'delete_all_traces'];
       if (longRunningCommands.includes(command)) {
         commandTimeout = 600000; // 10 minutes for long operations
         logger.info(`Using extended timeout (${commandTimeout/1000}s) for command: ${command}`);
