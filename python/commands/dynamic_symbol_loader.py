@@ -2,403 +2,345 @@
 Dynamic Symbol Loader for KiCad Schematics
 
 Loads symbols from .kicad_sym library files and injects them into schematics
-on-the-fly, eliminating the need for static templates.
+on-the-fly using TEXT MANIPULATION (not sexpdata) to preserve file formatting.
 
 This enables access to all ~10,000+ KiCad symbols dynamically.
 """
 
 import os
+import re
 import uuid
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-import sexpdata
-from sexpdata import Symbol
 
 logger = logging.getLogger('kicad_interface')
 
 
 class DynamicSymbolLoader:
     """
-    Dynamically loads symbols from KiCad library files and injects them into schematics
+    Dynamically loads symbols from KiCad library files and injects them into schematics.
 
-    Workflow:
-    1. Parse .kicad_sym library file to extract symbol definition
-    2. Inject symbol definition into schematic's lib_symbols section
-    3. Create an offscreen template instance that can be cloned
-    4. Clone the template to create actual component instances
+    Uses raw text manipulation instead of sexpdata to avoid corrupting the KiCad file format.
+
+    Key rules for KiCad 9 .kicad_sch format:
+    - Top-level symbols in lib_symbols must have library prefix: (symbol "Device:R" ...)
+    - Sub-symbols must NOT have library prefix: (symbol "R_0_1" ...), (symbol "R_1_1" ...)
+    - Parent symbols must appear BEFORE child symbols that use (extends ...)
     """
 
     def __init__(self):
-        """Initialize the dynamic symbol loader"""
-        self.library_cache = {}  # Cache parsed library files: path -> parsed data
-        self.symbol_cache = {}   # Cache extracted symbols: "lib:symbol" -> symbol_def
+        self.symbol_cache = {}  # Cache: "lib:symbol" -> raw text block
 
     def find_kicad_symbol_libraries(self) -> List[Path]:
-        """
-        Find all KiCad symbol library directories
-
-        Returns:
-            List of paths to symbol library directories
-        """
+        """Find all KiCad symbol library directories"""
         possible_paths = [
-            # Linux
             Path("/usr/share/kicad/symbols"),
             Path("/usr/local/share/kicad/symbols"),
-            # Windows
             Path("C:/Program Files/KiCad/9.0/share/kicad/symbols"),
             Path("C:/Program Files/KiCad/8.0/share/kicad/symbols"),
-            # macOS
             Path("/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols"),
-            # User libraries
             Path.home() / ".local" / "share" / "kicad" / "9.0" / "symbols",
-            Path.home() / ".local" / "share" / "kicad" / "8.0" / "symbols",
             Path.home() / "Documents" / "KiCad" / "9.0" / "3rdparty" / "symbols",
         ]
-
-        # Check environment variables
         for env_var in ['KICAD9_SYMBOL_DIR', 'KICAD8_SYMBOL_DIR', 'KICAD_SYMBOL_DIR']:
             if env_var in os.environ:
                 possible_paths.insert(0, Path(os.environ[env_var]))
 
-        found_paths = []
-        for path in possible_paths:
-            if path.exists() and path.is_dir():
-                found_paths.append(path)
-                logger.info(f"Found KiCad symbol library directory: {path}")
-
-        return found_paths
+        return [p for p in possible_paths if p.exists() and p.is_dir()]
 
     def find_library_file(self, library_name: str) -> Optional[Path]:
-        """
-        Find the .kicad_sym file for a given library name
-
-        Args:
-            library_name: Library name (e.g., "Device", "Connector_Generic")
-
-        Returns:
-            Path to .kicad_sym file or None if not found
-        """
-        library_dirs = self.find_kicad_symbol_libraries()
-
-        for lib_dir in library_dirs:
+        """Find the .kicad_sym file for a given library name"""
+        for lib_dir in self.find_kicad_symbol_libraries():
             lib_file = lib_dir / f"{library_name}.kicad_sym"
             if lib_file.exists():
-                logger.debug(f"Found library file: {lib_file}")
                 return lib_file
-
         logger.warning(f"Library file not found: {library_name}.kicad_sym")
         return None
 
-    def parse_library_file(self, library_path: Path) -> List:
+    def _extract_symbol_block(self, text: str, symbol_name: str) -> Optional[str]:
         """
-        Parse a .kicad_sym file into S-expression data structure
-
-        Args:
-            library_path: Path to .kicad_sym file
-
-        Returns:
-            Parsed S-expression data
+        Extract a complete symbol block from a library or schematic file by matching
+        parentheses depth. Returns the raw text of the symbol definition.
         """
-        # Check cache first
-        cache_key = str(library_path)
-        if cache_key in self.library_cache:
-            logger.debug(f"Using cached library data for: {library_path.name}")
-            return self.library_cache[cache_key]
+        lines = text.split('\n')
+        start = None
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            # Match exact symbol name (not sub-symbols like Name_0_1)
+            if stripped.startswith(f'(symbol "{symbol_name}"') and \
+               not re.match(r'.*_\d+_\d+"', stripped):
+                start = i
+                break
 
-        logger.info(f"Parsing library file: {library_path}")
+        if start is None:
+            return None
 
-        try:
-            with open(library_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+        depth = 0
+        end = None
+        for i in range(start, len(lines)):
+            for ch in lines[i]:
+                if ch == '(':
+                    depth += 1
+                elif ch == ')':
+                    depth -= 1
+                    if depth == 0:
+                        end = i
+                        break
+            if end is not None:
+                break
 
-            # Parse S-expression
-            parsed = sexpdata.loads(content)
+        if end is None:
+            return None
 
-            # Cache the result
-            self.library_cache[cache_key] = parsed
+        return '\n'.join(lines[start:end + 1])
 
-            logger.debug(f"Successfully parsed library: {library_path.name}")
-            return parsed
-
-        except Exception as e:
-            logger.error(f"Error parsing library file {library_path}: {e}")
-            raise
-
-    def extract_symbol_definition(self, library_path: Path, symbol_name: str) -> Optional[List]:
+    def extract_symbol_from_library(self, library_name: str, symbol_name: str) -> Optional[str]:
         """
-        Extract a specific symbol definition from a library file
+        Extract a symbol definition from a KiCad .kicad_sym library file.
+        Returns the raw text block, ready to be injected into a schematic.
 
-        Args:
-            library_path: Path to .kicad_sym file
-            symbol_name: Name of symbol to extract (e.g., "R", "LED")
-
-        Returns:
-            Symbol definition as S-expression list, or None if not found
+        The returned block has:
+        - Top-level name prefixed with library: (symbol "Library:Name" ...)
+        - Sub-symbol names WITHOUT prefix: (symbol "Name_0_1" ...)
         """
-        cache_key = f"{library_path.name}:{symbol_name}"
+        cache_key = f"{library_name}:{symbol_name}"
         if cache_key in self.symbol_cache:
-            logger.debug(f"Using cached symbol: {cache_key}")
             return self.symbol_cache[cache_key]
 
-        parsed_lib = self.parse_library_file(library_path)
+        lib_path = self.find_library_file(library_name)
+        if not lib_path:
+            return None
 
-        # Library structure: (kicad_symbol_lib (version ...) (generator ...) (symbol ...) (symbol ...) ...)
-        # We need to find the symbol with matching name
+        with open(lib_path, 'r', encoding='utf-8') as f:
+            lib_content = f.read()
 
-        for item in parsed_lib:
-            if isinstance(item, list) and len(item) > 0:
-                if item[0] == Symbol('symbol'):
-                    # Symbol structure: (symbol "Name" ...)
-                    if len(item) > 1 and isinstance(item[1], str):
-                        # Handle both "Device:R" and "R" formats
-                        item_name = item[1]
-                        if ':' in item_name:
-                            item_name = item_name.split(':')[1]
+        block = self._extract_symbol_block(lib_content, symbol_name)
+        if block is None:
+            logger.warning(f"Symbol '{symbol_name}' not found in {library_name}.kicad_sym")
+            return None
 
-                        if item_name == symbol_name:
-                            logger.info(f"Found symbol definition: {symbol_name}")
-                            # Cache and return
-                            self.symbol_cache[cache_key] = item
-                            return item
+        # Check if this symbol uses (extends "ParentName")
+        extends_match = re.search(r'\(extends "([^"]+)"\)', block)
+        parent_block = None
+        if extends_match:
+            parent_name = extends_match.group(1)
+            logger.info(f"Symbol {symbol_name} extends {parent_name}, extracting parent too")
+            parent_block = self._extract_symbol_block(lib_content, parent_name)
+            if parent_block:
+                # Prefix parent top-level name with library
+                parent_block = parent_block.replace(
+                    f'(symbol "{parent_name}"',
+                    f'(symbol "{library_name}:{parent_name}"',
+                    1  # Only first occurrence (top-level)
+                )
 
-        logger.warning(f"Symbol '{symbol_name}' not found in {library_path.name}")
-        return None
+        # Prefix top-level symbol name with library
+        full_name = f"{library_name}:{symbol_name}"
+        block = block.replace(
+            f'(symbol "{symbol_name}"',
+            f'(symbol "{full_name}"',
+            1  # Only first occurrence (top-level)
+        )
+        # Sub-symbols like "Name_0_1" keep their short names (already correct from library)
+
+        # Combine parent + child if extends is used
+        if parent_block:
+            result = parent_block + '\n' + block
+        else:
+            result = block
+
+        self.symbol_cache[cache_key] = result
+        logger.info(f"Extracted symbol {full_name} ({len(result)} chars)")
+        return result
 
     def inject_symbol_into_schematic(self, schematic_path: Path, library_name: str, symbol_name: str) -> bool:
         """
-        Inject a symbol definition from a library into a schematic file
-
-        Args:
-            schematic_path: Path to .kicad_sch file to modify
-            library_name: Source library name (e.g., "Device")
-            symbol_name: Symbol to inject (e.g., "R")
-
-        Returns:
-            True if successful, False otherwise
+        Inject a symbol definition into a schematic's lib_symbols section.
+        Uses text manipulation to preserve file formatting.
         """
-        try:
-            # 1. Find and parse the library file
-            library_path = self.find_library_file(library_name)
-            if not library_path:
-                raise ValueError(f"Library not found: {library_name}")
+        full_name = f"{library_name}:{symbol_name}"
 
-            # 2. Extract the symbol definition
-            symbol_def = self.extract_symbol_definition(library_path, symbol_name)
-            if not symbol_def:
-                raise ValueError(f"Symbol '{symbol_name}' not found in library '{library_name}'")
+        with open(schematic_path, 'r', encoding='utf-8') as f:
+            content = f.read()
 
-            # 3. Read the schematic file
-            with open(schematic_path, 'r', encoding='utf-8') as f:
-                sch_content = f.read()
-
-            sch_data = sexpdata.loads(sch_content)
-
-            # 4. Find the lib_symbols section
-            lib_symbols_index = None
-            for i, item in enumerate(sch_data):
-                if isinstance(item, list) and len(item) > 0 and item[0] == Symbol('lib_symbols'):
-                    lib_symbols_index = i
-                    break
-
-            if lib_symbols_index is None:
-                raise ValueError("No lib_symbols section found in schematic")
-
-            # 5. Check if symbol already exists in lib_symbols
-            full_symbol_name = f"{library_name}:{symbol_name}"
-            symbol_exists = False
-
-            for item in sch_data[lib_symbols_index][1:]:  # Skip the 'lib_symbols' symbol itself
-                if isinstance(item, list) and len(item) > 1 and item[0] == Symbol('symbol'):
-                    if item[1] == full_symbol_name or item[1] == symbol_name:
-                        logger.info(f"Symbol {full_symbol_name} already exists in schematic")
-                        symbol_exists = True
-                        break
-
-            if not symbol_exists:
-                # 6. Inject the symbol definition
-                # Need to update the symbol name to include library prefix
-                modified_symbol_def = list(symbol_def)  # Make a copy
-                modified_symbol_def[1] = full_symbol_name  # Update name to "Library:Symbol"
-
-                sch_data[lib_symbols_index].append(modified_symbol_def)
-                logger.info(f"Injected symbol {full_symbol_name} into schematic")
-
-            # 7. Write the modified schematic back
-            with open(schematic_path, 'w', encoding='utf-8') as f:
-                output = sexpdata.dumps(sch_data)
-                f.write(output)
-
-            logger.info(f"Successfully injected symbol {full_symbol_name} into {schematic_path.name}")
+        # Check if symbol already exists
+        if f'(symbol "{full_name}"' in content:
+            logger.info(f"Symbol {full_name} already exists in schematic")
             return True
 
-        except Exception as e:
-            logger.error(f"Error injecting symbol into schematic: {e}")
-            raise
+        # Extract symbol from library
+        symbol_block = self.extract_symbol_from_library(library_name, symbol_name)
+        if not symbol_block:
+            raise ValueError(f"Symbol '{symbol_name}' not found in library '{library_name}'")
 
-    def create_template_instance(self, schematic_path: Path, library_name: str, symbol_name: str,
-                                 template_ref: Optional[str] = None) -> str:
-        """
-        Create an offscreen template instance of a symbol that can be cloned
+        # Indent the block to match lib_symbols indentation (4 spaces for top-level)
+        indented_lines = []
+        for line in symbol_block.split('\n'):
+            # Add 4-space indent for the content inside lib_symbols
+            indented_lines.append('    ' + line if line.strip() else line)
+        indented_block = '\n'.join(indented_lines)
 
-        Args:
-            schematic_path: Path to .kicad_sch file
-            library_name: Library name (e.g., "Device")
-            symbol_name: Symbol name (e.g., "R")
-            template_ref: Optional custom reference (defaults to _TEMPLATE_{LIBRARY}_{SYMBOL})
+        # Find the end of lib_symbols section to insert before closing )
+        lines = content.split('\n')
+        lib_sym_start = None
+        lib_sym_end = None
+        depth = 0
 
-        Returns:
-            Template reference name
-        """
-        try:
-            if template_ref is None:
-                # Clean up library and symbol names for reference
-                lib_clean = library_name.replace('-', '_').replace('.', '_')
-                sym_clean = symbol_name.replace('-', '_').replace('.', '_')
-                template_ref = f"_TEMPLATE_{lib_clean}_{sym_clean}"
-
-            # Read schematic
-            with open(schematic_path, 'r', encoding='utf-8') as f:
-                sch_content = f.read()
-
-            sch_data = sexpdata.loads(sch_content)
-
-            # Check if template already exists
-            for item in sch_data:
-                if isinstance(item, list) and len(item) > 0 and item[0] == Symbol('symbol'):
-                    # Find Reference property
-                    for prop in item:
-                        if isinstance(prop, list) and len(prop) > 2 and prop[0] == Symbol('property'):
-                            if prop[1] == "Reference" and prop[2] == template_ref:
-                                logger.info(f"Template instance {template_ref} already exists")
-                                return template_ref
-
-            # Find sheet_instances index (we'll insert before this)
-            sheet_instances_index = None
-            for i, item in enumerate(sch_data):
-                if isinstance(item, list) and len(item) > 0 and item[0] == Symbol('sheet_instances'):
-                    sheet_instances_index = i
+        for i, line in enumerate(lines):
+            if '(lib_symbols' in line and lib_sym_start is None:
+                lib_sym_start = i
+                depth = 0
+                for ch in line:
+                    if ch == '(':
+                        depth += 1
+                    elif ch == ')':
+                        depth -= 1
+                continue
+            if lib_sym_start is not None and lib_sym_end is None:
+                for ch in line:
+                    if ch == '(':
+                        depth += 1
+                    elif ch == ')':
+                        depth -= 1
+                        if depth == 0:
+                            lib_sym_end = i
+                            break
+                if lib_sym_end is not None:
                     break
 
-            if sheet_instances_index is None:
-                raise ValueError("No sheet_instances section found in schematic")
+        if lib_sym_end is None:
+            raise ValueError("No lib_symbols section found in schematic")
 
-            # Create template symbol instance
-            full_lib_id = f"{library_name}:{symbol_name}"
+        # Insert the symbol block just before the closing ) of lib_symbols
+        lines.insert(lib_sym_end, indented_block)
 
-            # Calculate y position based on existing templates
-            template_count = sum(1 for item in sch_data if isinstance(item, list) and len(item) > 0
-                               and item[0] == Symbol('symbol')
-                               and any(isinstance(p, list) and len(p) > 2 and p[0] == Symbol('property')
-                                      and p[1] == "Reference" and str(p[2]).startswith('_TEMPLATE')
-                                      for p in item))
-            y_offset = -100 - (template_count * 10)
+        with open(schematic_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(lines))
 
-            new_uuid = str(uuid.uuid4())
+        logger.info(f"Injected symbol {full_name} into {schematic_path.name}")
+        return True
 
-            # Build the symbol instance S-expression
-            template_instance = [
-                Symbol('symbol'),
-                [Symbol('lib_id'), full_lib_id],
-                [Symbol('at'), -100, y_offset, 0],
-                [Symbol('unit'), 1],
-                [Symbol('in_bom'), Symbol('no')],
-                [Symbol('on_board'), Symbol('no')],
-                [Symbol('dnp'), Symbol('yes')],
-                [Symbol('uuid'), new_uuid],
-                [Symbol('property'), "Reference", template_ref,
-                 [Symbol('at'), -100, y_offset - 2.54, 0],
-                 [Symbol('effects'), [Symbol('font'), [Symbol('size'), 1.27, 1.27]]]
-                ],
-                [Symbol('property'), "Value", symbol_name,
-                 [Symbol('at'), -100, y_offset + 2.54, 0],
-                 [Symbol('effects'), [Symbol('font'), [Symbol('size'), 1.27, 1.27]]]
-                ],
-                [Symbol('property'), "Footprint", "",
-                 [Symbol('at'), -100, y_offset, 0],
-                 [Symbol('effects'), [Symbol('font'), [Symbol('size'), 1.27, 1.27]], Symbol('hide')]
-                ],
-                [Symbol('property'), "Datasheet", "~",
-                 [Symbol('at'), -100, y_offset, 0],
-                 [Symbol('effects'), [Symbol('font'), [Symbol('size'), 1.27, 1.27]], Symbol('hide')]
-                ],
-            ]
+    def create_component_instance(self, schematic_path: Path, library_name: str,
+                                   symbol_name: str, reference: str,
+                                   value: str = "", x: float = 0, y: float = 0) -> bool:
+        """
+        Add a component instance to the schematic.
+        This creates the (symbol ...) block with lib_id reference.
+        """
+        full_lib_id = f"{library_name}:{symbol_name}"
+        new_uuid = str(uuid.uuid4())
 
-            # Insert before sheet_instances
-            sch_data.insert(sheet_instances_index, template_instance)
+        instance_block = f'''  (symbol (lib_id "{full_lib_id}") (at {x} {y} 0) (unit 1)
+    (in_bom yes) (on_board yes) (dnp no)
+    (uuid "{new_uuid}")
+    (property "Reference" "{reference}" (at {x} {y - 2.54} 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Value" "{value or symbol_name}" (at {x} {y + 2.54} 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Footprint" "" (at {x} {y} 0)
+      (effects (font (size 1.27 1.27)) (hide yes))
+    )
+    (property "Datasheet" "~" (at {x} {y} 0)
+      (effects (font (size 1.27 1.27)) (hide yes))
+    )
+  )'''
 
-            # Write back
-            with open(schematic_path, 'w', encoding='utf-8') as f:
-                output = sexpdata.dumps(sch_data)
-                f.write(output)
+        with open(schematic_path, 'r', encoding='utf-8') as f:
+            content = f.read()
 
-            logger.info(f"Created template instance: {template_ref} at y={y_offset}")
-            return template_ref
+        # Insert before (sheet_instances or at end before final )
+        lines = content.split('\n')
+        insert_pos = None
 
-        except Exception as e:
-            logger.error(f"Error creating template instance: {e}")
-            raise
+        for i, line in enumerate(lines):
+            if '(sheet_instances' in line:
+                insert_pos = i
+                break
+
+        if insert_pos is None:
+            # Insert before the last closing parenthesis
+            for i in range(len(lines) - 1, -1, -1):
+                if lines[i].strip() == ')':
+                    insert_pos = i
+                    break
+
+        if insert_pos is None:
+            raise ValueError("Could not find insertion point in schematic")
+
+        lines.insert(insert_pos, instance_block)
+
+        with open(schematic_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(lines))
+
+        logger.info(f"Added component instance {reference} ({full_lib_id}) at ({x}, {y})")
+        return True
 
     def load_symbol_dynamically(self, schematic_path: Path, library_name: str, symbol_name: str) -> str:
         """
-        Complete workflow: inject symbol and create template instance
-
-        Args:
-            schematic_path: Path to .kicad_sch file
-            library_name: Library name (e.g., "Device")
-            symbol_name: Symbol name (e.g., "R")
-
-        Returns:
-            Template reference that can be used with kicad-skip clone()
+        Complete workflow: inject symbol definition and create a template instance.
+        Returns a template reference name.
         """
         logger.info(f"Loading symbol dynamically: {library_name}:{symbol_name}")
 
         # Step 1: Inject symbol definition into lib_symbols
         self.inject_symbol_into_schematic(schematic_path, library_name, symbol_name)
 
-        # Step 2: Create template instance
-        template_ref = self.create_template_instance(schematic_path, library_name, symbol_name)
+        # Step 2: Create an offscreen template instance
+        lib_clean = library_name.replace('-', '_').replace('.', '_')
+        sym_clean = symbol_name.replace('-', '_').replace('.', '_')
+        template_ref = f"_TEMPLATE_{lib_clean}_{sym_clean}"
 
-        logger.info(f"Symbol loaded successfully. Template reference: {template_ref}")
+        self.create_component_instance(
+            schematic_path, library_name, symbol_name,
+            reference=template_ref, value=symbol_name,
+            x=-200, y=-200
+        )
+
+        logger.info(f"Symbol loaded. Template reference: {template_ref}")
         return template_ref
+
+    def add_component(self, schematic_path: Path, library_name: str, symbol_name: str,
+                      reference: str, value: str = "", x: float = 0, y: float = 0) -> bool:
+        """
+        High-level: ensure symbol definition exists in schematic, then add an instance.
+        This is the main entry point for adding components.
+        """
+        # Ensure symbol definition is in lib_symbols
+        self.inject_symbol_into_schematic(schematic_path, library_name, symbol_name)
+
+        # Add the component instance
+        return self.create_component_instance(
+            schematic_path, library_name, symbol_name,
+            reference=reference, value=value, x=x, y=y
+        )
 
 
 if __name__ == '__main__':
-    # Test the dynamic symbol loader
     logging.basicConfig(level=logging.INFO)
-
     loader = DynamicSymbolLoader()
 
-    print("\n=== Testing Dynamic Symbol Loader ===\n")
+    print("\n=== Testing Dynamic Symbol Loader (Text-based) ===\n")
 
-    # Test 1: Find library directories
     print("1. Finding KiCad symbol library directories...")
     lib_dirs = loader.find_kicad_symbol_libraries()
-    print(f"   Found {len(lib_dirs)} directories:")
-    for lib_dir in lib_dirs:
-        print(f"     - {lib_dir}")
+    print(f"   Found {len(lib_dirs)} directories")
 
-    # Test 2: Find Device library
-    print("\n2. Finding Device.kicad_sym library file...")
-    device_lib = loader.find_library_file("Device")
-    if device_lib:
-        print(f"   ✓ Found: {device_lib}")
-    else:
-        print("   ✗ Not found")
-        exit(1)
-
-    # Test 3: Parse library file
-    print("\n3. Parsing Device.kicad_sym...")
-    parsed = loader.parse_library_file(device_lib)
-    print(f"   ✓ Parsed successfully ({len(parsed)} top-level items)")
-
-    # Test 4: Extract specific symbols
-    print("\n4. Extracting symbol definitions...")
-    for symbol in ['R', 'C', 'LED']:
-        symbol_def = loader.extract_symbol_definition(device_lib, symbol)
-        if symbol_def:
-            print(f"   ✓ Extracted: {symbol}")
+    print("\n2. Extracting symbols...")
+    for lib, sym in [('Device', 'R'), ('Device', 'C'), ('Device', 'LED'), ('Device', 'Q_NMOS')]:
+        block = loader.extract_symbol_from_library(lib, sym)
+        if block:
+            print(f"   OK: {lib}:{sym} ({len(block)} chars)")
         else:
-            print(f"   ✗ Failed: {symbol}")
+            print(f"   FAIL: {lib}:{sym}")
 
-    print("\n✓ All basic tests passed!")
+    print("\n3. Testing extends resolution...")
+    block = loader.extract_symbol_from_library('Regulator_Switching', 'LM2596S-5')
+    if block and 'LM2596S-12' in block:
+        print(f"   OK: LM2596S-5 includes parent LM2596S-12 ({len(block)} chars)")
+    else:
+        print(f"   FAIL: extends not resolved")
+
+    print("\nAll tests passed!")

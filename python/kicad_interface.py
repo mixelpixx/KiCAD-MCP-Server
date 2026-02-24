@@ -305,7 +305,6 @@ class KiCADInterface:
             "find_component": self.component_commands.find_component,
             "get_component_pads": self.component_commands.get_component_pads,
             "get_pad_position": self.component_commands.get_pad_position,
-            "set_pad_net": self.component_commands.set_pad_net,
             "place_component_array": self.component_commands.place_component_array,
             "align_components": self.component_commands.align_components,
             "duplicate_component": self.component_commands.duplicate_component,
@@ -315,7 +314,6 @@ class KiCADInterface:
             "route_trace": self.routing_commands.route_trace,
             "add_via": self.routing_commands.add_via,
             "delete_trace": self.routing_commands.delete_trace,
-            "delete_all_traces": self.routing_commands.delete_all_traces,
             "query_traces": self.routing_commands.query_traces,
             "modify_trace": self.routing_commands.modify_trace,
             "copy_routing_pattern": self.routing_commands.copy_routing_pattern,
@@ -558,10 +556,11 @@ class KiCADInterface:
             return {"success": False, "message": str(e)}
     
     def _handle_add_schematic_component(self, params):
-        """Add a component to a schematic with dynamic symbol loading support"""
+        """Add a component to a schematic using text-based injection (no sexpdata)"""
         logger.info("Adding component to schematic")
         try:
             from pathlib import Path
+            from commands.dynamic_symbol_loader import DynamicSymbolLoader
 
             schematic_path = params.get("schematicPath")
             component = params.get("component", {})
@@ -571,87 +570,30 @@ class KiCADInterface:
             if not component:
                 return {"success": False, "message": "Component definition is required"}
 
-            # Convert to Path object for dynamic loader
-            schematic_path_obj = Path(schematic_path)
-
-            # Load schematic
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
-
-            # Check if component type requires dynamic loading
             comp_type = component.get('type', 'R')
             library = component.get('library', 'Device')
+            reference = component.get('reference', 'X?')
+            value = component.get('value', comp_type)
+            x = component.get('x', 0)
+            y = component.get('y', 0)
 
-            # Check if template exists in static templates
-            template_ref = ComponentManager.TEMPLATE_MAP.get(comp_type)
-            needs_dynamic_loading = False
+            loader = DynamicSymbolLoader()
+            loader.add_component(
+                Path(schematic_path), library, comp_type,
+                reference=reference, value=value, x=x, y=y
+            )
 
-            if template_ref:
-                # Check if template exists in schematic
-                if not hasattr(schematic.symbol, template_ref):
-                    needs_dynamic_loading = True
-                    logger.info(f"Static template {template_ref} not found in schematic, will try dynamic loading")
-            else:
-                # Not in static map, definitely needs dynamic loading
-                needs_dynamic_loading = True
-                logger.info(f"Component type {comp_type} not in static templates, will use dynamic loading")
-
-            # If dynamic loading is needed and available
-            if needs_dynamic_loading:
-                try:
-                    from commands.dynamic_symbol_loader import DynamicSymbolLoader
-
-                    loader = DynamicSymbolLoader()
-
-                    # Save current schematic first to preserve any changes
-                    SchematicManager.save_schematic(schematic, schematic_path)
-                    logger.info("Saved schematic before dynamic loading")
-
-                    # Dynamically load the symbol (injects into file and creates template)
-                    logger.info(f"Dynamically loading symbol: {library}:{comp_type}")
-                    template_ref = loader.load_symbol_dynamically(schematic_path_obj, library, comp_type)
-                    logger.info(f"Dynamic loading successful. Template ref: {template_ref}")
-
-                    # Reload schematic to get the newly injected symbol
-                    schematic = SchematicManager.load_schematic(schematic_path)
-                    if not schematic:
-                        return {"success": False, "message": "Failed to reload schematic after dynamic loading"}
-                    logger.info("Reloaded schematic with new symbol definition")
-
-                except ImportError:
-                    logger.warning("Dynamic symbol loader not available, falling back to static templates")
-                except Exception as e:
-                    logger.error(f"Dynamic loading failed: {e}")
-                    logger.warning("Falling back to static templates")
-
-            # Add component (now with template available in schematic)
-            component_obj = ComponentManager.add_component(schematic, component, schematic_path_obj)
-            success = component_obj is not None
-
-            if success:
-                SchematicManager.save_schematic(schematic, schematic_path)
-
-                # Prepare response with dynamic loading info
-                response = {
-                    "success": True,
-                    "component_reference": component.get('reference', 'unknown'),
-                    "dynamic_loading_used": needs_dynamic_loading
-                }
-
-                if needs_dynamic_loading:
-                    response["symbol_source"] = f"{library}:{comp_type}"
-                    response["template_reference"] = template_ref if 'template_ref' in locals() else "unknown"
-
-                return response
-            else:
-                return {"success": False, "message": "Failed to add component"}
+            return {
+                "success": True,
+                "component_reference": reference,
+                "symbol_source": f"{library}:{comp_type}"
+            }
         except Exception as e:
             logger.error(f"Error adding component to schematic: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-            return {"success": False, "message": str(e), "errorDetails": traceback.format_exc()}
-    
+            return {"success": False, "message": str(e)}
+
     def _handle_add_schematic_wire(self, params):
         """Add a wire to a schematic using WireManager"""
         logger.info("Adding wire to schematic")
