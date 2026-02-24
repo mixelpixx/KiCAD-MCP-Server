@@ -12,27 +12,33 @@ export function registerJLCPCBApiTools(server: McpServer, callKicadScript: Funct
     "download_jlcpcb_database",
     `Download the complete JLCPCB parts catalog to local database.
 
-This is a one-time setup that downloads ~100k+ parts from JLCPCB API.
-Requires JLCPCB_API_KEY and JLCPCB_API_SECRET environment variables.
+This is a one-time setup that downloads JLCPCB parts into a local SQLite database.
+Use source='official' for full-catalog download (requires JLCPCB_APP_ID, JLCPCB_API_KEY, JLCPCB_API_SECRET).
+Use source='jlcsearch' as public fallback when official credentials are unavailable.
 
 The download takes 5-10 minutes and creates a local SQLite database
 for fast offline searching.`,
     {
       force: z.boolean().optional().default(false)
-        .describe("Force re-download even if database exists")
+        .describe("Force re-download even if database exists"),
+      source: z.enum(["auto", "official", "jlcsearch"]).optional().default("auto")
+        .describe("Download source: auto-detect, official JLCPCB API, or JLCSearch fallback")
     },
-    async (args: { force?: boolean }) => {
+    async (args: { force?: boolean; source?: "auto" | "official" | "jlcsearch" }) => {
       const result = await callKicadScript("download_jlcpcb_database", args);
       if (result.success) {
+        const warningLine = result.warning ? `\nWarning: ${result.warning}` : '';
         return {
           content: [{
             type: "text",
             text: `✓ Successfully downloaded JLCPCB parts database\n\n` +
+                  `Source: ${result.source || 'unknown'}\n` +
                   `Total parts: ${result.total_parts}\n` +
                   `Basic parts: ${result.basic_parts}\n` +
                   `Extended parts: ${result.extended_parts}\n` +
                   `Database size: ${result.db_size_mb} MB\n` +
-                  `Database path: ${result.db_path}`
+                  `Database path: ${result.db_path}` +
+                  warningLine
           }]
         };
       }
@@ -40,7 +46,7 @@ for fast offline searching.`,
         content: [{
           type: "text",
           text: `✗ Failed to download JLCPCB database: ${result.message || 'Unknown error'}\n\n` +
-                `Make sure JLCPCB_API_KEY and JLCPCB_API_SECRET environment variables are set.`
+                `For official source, set JLCPCB_APP_ID, JLCPCB_API_KEY, and JLCPCB_API_SECRET.`
         }]
       };
     }

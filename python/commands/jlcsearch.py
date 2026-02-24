@@ -10,7 +10,7 @@ import requests
 from typing import Optional, Dict, List, Callable
 import time
 
-logger = logging.getLogger('kicad_interface')
+logger = logging.getLogger("kicad_interface")
 
 
 class JLCSearchClient:
@@ -22,17 +22,52 @@ class JLCSearchClient:
     """
 
     BASE_URL = "https://jlcsearch.tscircuit.com"
+    DEFAULT_CATALOG_ENDPOINTS = [
+        "components",
+        "resistors",
+        "resistor_arrays",
+        "capacitors",
+        "potentiometers",
+        "headers",
+        "usb_c_connectors",
+        "pcie_m2_connectors",
+        "fpc_connectors",
+        "jst_connectors",
+        "wire_to_board_connectors",
+        "battery_holders",
+        "leds",
+        "adcs",
+        "analog_multiplexers",
+        "analog_switches",
+        "io_expanders",
+        "gyroscopes",
+        "accelerometers",
+        "gas_sensors",
+        "diodes",
+        "dacs",
+        "wifi_modules",
+        "microcontrollers",
+        "arm_processors",
+        "risc_v_processors",
+        "fpgas",
+        "voltage_regulators",
+        "ldos",
+        "boost_converters",
+        "buck_boost_converters",
+        "led_drivers",
+        "mosfets",
+        "switches",
+        "relays",
+        "fuses",
+        "bjt_transistors",
+    ]
 
     def __init__(self):
         """Initialize JLCSearch API client"""
         pass
 
     def search_components(
-        self,
-        category: str = "components",
-        limit: int = 100,
-        offset: int = 0,
-        **filters
+        self, category: str = "components", limit: int = 100, offset: int = 0, **filters
     ) -> List[Dict]:
         """
         Search components in JLCSearch database
@@ -48,11 +83,8 @@ class JLCSearchClient:
         """
         url = f"{self.BASE_URL}/{category}/list.json"
 
-        params = {
-            "limit": limit,
-            "offset": offset,
-            **filters
-        }
+        safe_limit = max(1, min(int(limit), 100))
+        params = {"limit": safe_limit, "offset": offset, **filters}
 
         try:
             response = requests.get(url, params=params, timeout=30)
@@ -71,7 +103,12 @@ class JLCSearchClient:
             logger.error(f"Failed to search JLCSearch: {e}")
             raise Exception(f"JLCSearch API request failed: {e}")
 
-    def search_resistors(self, resistance: Optional[int] = None, package: Optional[str] = None, limit: int = 100) -> List[Dict]:
+    def search_resistors(
+        self,
+        resistance: Optional[int] = None,
+        package: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict]:
         """
         Search for resistors
 
@@ -100,7 +137,12 @@ class JLCSearchClient:
 
         return self.search_components("resistors", limit=limit, **filters)
 
-    def search_capacitors(self, capacitance: Optional[float] = None, package: Optional[str] = None, limit: int = 100) -> List[Dict]:
+    def search_capacitors(
+        self,
+        capacitance: Optional[float] = None,
+        package: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict]:
         """
         Search for capacitors
 
@@ -143,7 +185,9 @@ class JLCSearchClient:
     def download_all_components(
         self,
         callback: Optional[Callable[[int, str], None]] = None,
-        batch_size: int = 1000
+        batch_size: int = 100,
+        endpoints: Optional[List[str]] = None,
+        max_pages_per_endpoint: int = 20,
     ) -> List[Dict]:
         """
         Download all components from jlcsearch database
@@ -155,44 +199,71 @@ class JLCSearchClient:
         Returns:
             List of all parts
         """
-        all_parts = []
-        offset = 0
+        all_parts: List[Dict] = []
+        seen_lcsc = set()
+        endpoint_list = endpoints or self.DEFAULT_CATALOG_ENDPOINTS
+        page_limit = max(1, min(int(batch_size), 100))
 
         logger.info("Starting full jlcsearch parts database download...")
 
-        while True:
+        for endpoint in endpoint_list:
+            offset = 0
+            previous_signature = None
             try:
-                batch = self.search_components(
-                    "components",
-                    limit=batch_size,
-                    offset=offset
-                )
+                for _ in range(max_pages_per_endpoint):
+                    batch = self.search_components(
+                        endpoint, limit=page_limit, offset=offset
+                    )
+                    if not batch:
+                        break
 
-                if not batch:
-                    break
+                    signature = (
+                        len(batch),
+                        batch[0].get("lcsc"),
+                        batch[-1].get("lcsc"),
+                    )
 
-                all_parts.extend(batch)
-                offset += len(batch)
+                    if previous_signature == signature:
+                        logger.debug(
+                            f"Endpoint '{endpoint}' appears offset-insensitive; stopping pagination"
+                        )
+                        break
+                    previous_signature = signature
 
-                if callback:
-                    callback(len(all_parts), f"Downloaded {len(all_parts)} parts...")
-                else:
-                    logger.info(f"Downloaded {len(all_parts)} parts so far...")
+                    added = 0
+                    for part in batch:
+                        lcsc = part.get("lcsc")
+                        if lcsc in seen_lcsc:
+                            continue
+                        seen_lcsc.add(lcsc)
+                        all_parts.append(part)
+                        added += 1
 
-                # If we got fewer results than requested, we've reached the end
-                if len(batch) < batch_size:
-                    break
+                    if callback:
+                        callback(
+                            len(all_parts),
+                            f"[{endpoint}] +{added} unique parts (total={len(all_parts)})",
+                        )
+                    else:
+                        logger.info(
+                            f"[{endpoint}] +{added} unique parts (total={len(all_parts)})"
+                        )
 
-                # Rate limiting - be nice to the API
-                time.sleep(0.1)
+                    if len(batch) < page_limit:
+                        break
+
+                    offset += len(batch)
+                    time.sleep(0.05)
 
             except Exception as e:
-                logger.error(f"Error downloading parts at offset {offset}: {e}")
-                if len(all_parts) > 0:
-                    logger.warning(f"Partial download available: {len(all_parts)} parts")
-                    return all_parts
-                else:
-                    raise
+                logger.warning(f"Skipping endpoint '{endpoint}' due to error: {e}")
+                continue
+
+        if len(all_parts) <= 100:
+            logger.warning(
+                "JLCSearch source returned very limited results. "
+                "For full catalog downloads, use official JLCPCB credentials and API source."
+            )
 
         logger.info(f"Download complete: {len(all_parts)} parts retrieved")
         return all_parts
@@ -209,14 +280,16 @@ def test_jlcsearch_connection() -> bool:
         client = JLCSearchClient()
         # Test by searching for 1k resistors
         results = client.search_resistors(resistance=1000, limit=5)
-        logger.info(f"JLCSearch API connection test successful - found {len(results)} resistors")
+        logger.info(
+            f"JLCSearch API connection test successful - found {len(results)} resistors"
+        )
         return True
     except Exception as e:
         logger.error(f"JLCSearch API connection test failed: {e}")
         return False
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Test the JLCSearch client
     logging.basicConfig(level=logging.INFO)
 

@@ -473,18 +473,20 @@ For access to the full 100k+ parts catalog with pricing:
 1. **Get API Credentials**
    - Log in to [JLCPCB](https://jlcpcb.com/)
    - Navigate to Account > API Management
-   - Create API Key and save your `appKey` and `appSecret`
+   - Create API credentials and save your `appId`, `appKey`, and `appSecret`
 
 2. **Configure Environment Variables**
 
    Add to your shell profile (`~/.bashrc`, `~/.zshrc`, or `~/.profile`):
    ```bash
+   export JLCPCB_APP_ID="your_app_id_here"
    export JLCPCB_API_KEY="your_app_key_here"
    export JLCPCB_API_SECRET="your_app_secret_here"
    ```
 
    Or create a `.env` file in the project root:
    ```
+   JLCPCB_APP_ID=your_app_id_here
    JLCPCB_API_KEY=your_app_key_here
    JLCPCB_API_SECRET=your_app_secret_here
    ```
