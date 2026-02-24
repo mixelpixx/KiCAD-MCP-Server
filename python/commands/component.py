@@ -651,6 +651,129 @@ class ComponentCommands:
                 "errorDetails": str(e)
             }
 
+    def set_pad_net(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Set/change the net assignment of a specific pad on a component.
+
+        This is essential for correcting pad-to-net mappings, e.g. fixing
+        connector pinouts where signals were assigned to the wrong pins.
+
+        Parameters:
+            reference: Component reference designator (e.g., 'J2', 'U1')
+            padName: Pad name or number (e.g., '1', 'A5', 'SH')
+            net: Net name to assign (e.g., 'GND', 'VCC_5V'). Empty string to clear.
+        """
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first"
+                }
+
+            reference = params.get("reference")
+            pad_name = str(params.get("padName", ""))
+            net_name = params.get("net", "")
+
+            if not reference:
+                return {
+                    "success": False,
+                    "message": "Missing reference",
+                    "errorDetails": "reference parameter is required"
+                }
+            if not pad_name:
+                return {
+                    "success": False,
+                    "message": "Missing pad identifier",
+                    "errorDetails": "padName parameter is required"
+                }
+
+            # Find the component
+            module = self.board.FindFootprintByReference(reference)
+            if not module:
+                return {
+                    "success": False,
+                    "message": "Component not found",
+                    "errorDetails": f"Could not find component: {reference}"
+                }
+
+            # Find the specific pad
+            target_pad = None
+            all_pad_names = []
+            for pad in module.Pads():
+                pname = pad.GetName()
+                all_pad_names.append(pname)
+                if pname == pad_name:
+                    target_pad = pad
+                    break
+
+            if not target_pad:
+                # Try matching by number as well
+                for pad in module.Pads():
+                    if pad.GetNumber() == pad_name:
+                        target_pad = pad
+                        break
+
+            if not target_pad:
+                return {
+                    "success": False,
+                    "message": f"Pad '{pad_name}' not found on {reference}",
+                    "errorDetails": f"Available pads: {', '.join(all_pad_names)}"
+                }
+
+            # Get the old net for reporting
+            old_net_name = target_pad.GetNetname()
+            old_net_code = target_pad.GetNetCode()
+
+            # Resolve the new net
+            if net_name == "":
+                # Clear the net (set to unconnected / net 0)
+                netinfo = self.board.GetNetInfo()
+                unconnected = netinfo.GetNetItem(0)
+                if unconnected:
+                    target_pad.SetNet(unconnected)
+                else:
+                    target_pad.SetNetCode(0)
+                new_net_code = 0
+            else:
+                # Find the net by name
+                netinfo = self.board.GetNetInfo()
+                nets_map = netinfo.NetsByName()
+                if not nets_map.has_key(net_name):
+                    # Net doesn't exist - list available nets
+                    available = []
+                    for i in range(netinfo.GetNetCount()):
+                        n = netinfo.GetNetItem(i)
+                        if n and n.GetNetname():
+                            available.append(n.GetNetname())
+                    return {
+                        "success": False,
+                        "message": f"Net '{net_name}' not found",
+                        "errorDetails": f"Available nets: {', '.join(available[:20])}{'...' if len(available) > 20 else ''}"
+                    }
+
+                net = nets_map[net_name]
+                target_pad.SetNet(net)
+                new_net_code = net.GetNetCode()
+
+            return {
+                "success": True,
+                "message": f"Set {reference} pad {pad_name}: '{old_net_name}' (net {old_net_code}) → '{net_name}' (net {new_net_code})",
+                "reference": reference,
+                "padName": pad_name,
+                "oldNet": old_net_name,
+                "oldNetCode": old_net_code,
+                "newNet": net_name,
+                "newNetCode": new_net_code
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting pad net: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to set pad net",
+                "errorDetails": str(e)
+            }
+
     def get_pad_position(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get the position of a specific pad on a component"""
         try:

@@ -365,6 +365,68 @@ class RoutingCommands:
                 "errorDetails": str(e)
             }
 
+    def delete_all_traces(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Delete ALL traces and optionally all vias from the PCB.
+
+        This is a bulk operation for clearing all routing, useful when
+        routing needs to be completely redone.
+
+        Parameters:
+            includeVias: Whether to also delete all vias (default True)
+            net: Optional net name to restrict deletion to
+        """
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first"
+                }
+
+            include_vias = params.get("includeVias", True)
+            net_filter = params.get("net")
+
+            tracks_to_remove = []
+            vias_to_remove = []
+
+            for track in self.board.Tracks():
+                is_via = track.Type() == pcbnew.PCB_VIA_T
+
+                # Apply net filter if specified
+                if net_filter and track.GetNetname() != net_filter:
+                    continue
+
+                if is_via:
+                    if include_vias:
+                        vias_to_remove.append(track)
+                else:
+                    tracks_to_remove.append(track)
+
+            # Remove all collected items
+            for item in tracks_to_remove + vias_to_remove:
+                self.board.Remove(item)
+
+            msg = f"Deleted {len(tracks_to_remove)} traces"
+            if include_vias:
+                msg += f" and {len(vias_to_remove)} vias"
+            if net_filter:
+                msg += f" on net '{net_filter}'"
+
+            return {
+                "success": True,
+                "message": msg,
+                "tracesDeleted": len(tracks_to_remove),
+                "viasDeleted": len(vias_to_remove)
+            }
+
+        except Exception as e:
+            logger.error(f"Error deleting all traces: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to delete all traces",
+                "errorDetails": str(e)
+            }
+
     def get_nets_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get a list of all nets in the PCB"""
         try:
