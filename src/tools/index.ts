@@ -12,4 +12,7 @@ export { registerDesignRuleTools } from './design-rules.js';
 export { registerExportTools } from './export.js';
 export { registerSchematicTools } from './schematic.js';
 export { registerLibraryTools } from './library.js';
+export { registerSymbolLibraryTools } from './library-symbol.js';
+export { registerJLCPCBApiTools } from './jlcpcb-api.js';
 export { registerUITools } from './ui.js';
+export { registerRouterTools } from './router.js';

@@ -26,22 +26,24 @@ export interface ToolCategory {
 export const toolCategories: ToolCategory[] = [
   {
     name: "board",
-    description: "Board configuration: layers, mounting holes, zones, visualization",
+    description: "Board configuration: layers, outline, mounting holes, zones, text, visualization",
     tools: [
       "add_layer",
       "set_active_layer",
       "get_layer_list",
+      "add_board_outline",
       "add_mounting_hole",
       "add_board_text",
       "add_zone",
       "get_board_extents",
       "get_board_2d_view",
-      "launch_kicad_ui"
+      "launch_kicad_ui",
+      "check_kicad_ui"
     ]
   },
   {
     name: "component",
-    description: "Advanced component operations: edit, delete, search, group, annotate",
+    description: "Component operations: place, move, rotate, edit, delete, search, group, annotate, align, duplicate, arrays, pads",
     tools: [
       "rotate_component",
       "delete_component",
@@ -50,12 +52,19 @@ export const toolCategories: ToolCategory[] = [
       "get_component_properties",
       "add_component_annotation",
       "group_components",
-      "replace_component"
+      "replace_component",
+      "get_component_pads",
+      "get_pad_position",
+      "set_pad_net",
+      "get_component_list",
+      "align_components",
+      "duplicate_component",
+      "place_component_array"
     ]
   },
   {
     name: "export",
-    description: "File export for fabrication and documentation: Gerber, PDF, BOM, 3D models",
+    description: "File export for fabrication and documentation: Gerber, PDF, SVG, BOM, 3D, netlist, position, VRML, schematic PDF",
     tools: [
       "export_gerber",
       "export_pdf",
@@ -64,12 +73,13 @@ export const toolCategories: ToolCategory[] = [
       "export_bom",
       "export_netlist",
       "export_position_file",
-      "export_vrml"
+      "export_vrml",
+      "export_schematic_pdf"
     ]
   },
   {
     name: "drc",
-    description: "Design rule checking and electrical validation: DRC, net classes, clearances",
+    description: "Design rule checking and electrical validation: DRC, net classes, clearances, layer constraints",
     tools: [
       "set_design_rules",
       "get_design_rules",
@@ -83,9 +93,10 @@ export const toolCategories: ToolCategory[] = [
   },
   {
     name: "schematic",
-    description: "Schematic operations: create, add components, wire connections, netlists",
+    description: "Schematic operations: create, load, add components, wire connections, net labels, netlists",
     tools: [
       "create_schematic",
+      "load_schematic",
       "add_schematic_component",
       "add_wire",
       "add_schematic_connection",
@@ -97,20 +108,43 @@ export const toolCategories: ToolCategory[] = [
   },
   {
     name: "library",
-    description: "Footprint library access: search, browse, get footprint information",
+    description: "Footprint and symbol library access: search, browse, get detailed info",
     tools: [
       "list_libraries",
       "search_footprints",
       "list_library_footprints",
-      "get_footprint_info"
+      "get_footprint_info",
+      "list_symbol_libraries",
+      "search_symbols",
+      "list_library_symbols",
+      "get_symbol_info"
     ]
   },
   {
     name: "routing",
-    description: "Advanced routing operations: vias, copper pours",
+    description: "Advanced routing: traces, vias, copper pours, differential pairs, trace management, zone refill",
     tools: [
       "add_via",
-      "add_copper_pour"
+      "add_copper_pour",
+      "delete_trace",
+      "delete_all_traces",
+      "query_traces",
+      "modify_trace",
+      "get_nets_list",
+      "refill_zones",
+      "route_differential_pair",
+      "copy_routing_pattern"
+    ]
+  },
+  {
+    name: "jlcpcb",
+    description: "JLCPCB parts catalog: search parts, get pricing/stock info, find alternatives, database management",
+    tools: [
+      "download_jlcpcb_database",
+      "search_jlcpcb_parts",
+      "get_jlcpcb_part",
+      "get_jlcpcb_database_stats",
+      "suggest_jlcpcb_alternatives"
     ]
   }
 ];
@@ -132,13 +166,7 @@ export const directToolNames = [
   "add_net",
   "route_trace",
   "get_board_info",
-  "set_board_size",
-
-  // Board setup
-  "add_board_outline",
-
-  // UI management
-  "check_kicad_ui"
+  "set_board_size"
 ];
 
 // Build lookup maps at module load time

@@ -635,6 +635,101 @@ COMPONENT_TOOLS = [
             },
             "required": ["sourceReference", "newReference"]
         }
+    },
+    {
+        "name": "set_pad_net",
+        "title": "Set Pad Net",
+        "description": "Assigns a net to a specific pad on a component. Use empty string to clear net assignment.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "reference": {
+                    "type": "string",
+                    "description": "Component reference designator (e.g., J2, U1)"
+                },
+                "padName": {
+                    "type": "string",
+                    "description": "Pad name or number (e.g., '1', 'A5', 'SH')"
+                },
+                "net": {
+                    "type": "string",
+                    "description": "Net name to assign (e.g., 'GND', 'VCC_5V'). Use empty string to clear."
+                }
+            },
+            "required": ["reference", "padName", "net"]
+        }
+    },
+    {
+        "name": "add_component_annotation",
+        "title": "Add Component Annotation",
+        "description": "Adds an annotation or comment to a component on the PCB.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "reference": {
+                    "type": "string",
+                    "description": "Component reference designator (e.g., R5)"
+                },
+                "annotation": {
+                    "type": "string",
+                    "description": "Annotation or comment text to add"
+                },
+                "visible": {
+                    "type": "boolean",
+                    "description": "Whether the annotation should be visible on the PCB",
+                    "default": True
+                }
+            },
+            "required": ["reference", "annotation"]
+        }
+    },
+    {
+        "name": "group_components",
+        "title": "Group Components",
+        "description": "Creates a named group containing the specified components for organization.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "references": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Reference designators of components to group",
+                    "minItems": 2
+                },
+                "groupName": {
+                    "type": "string",
+                    "description": "Name for the component group"
+                }
+            },
+            "required": ["references", "groupName"]
+        }
+    },
+    {
+        "name": "replace_component",
+        "title": "Replace Component",
+        "description": "Replaces an existing component with a new one, optionally preserving net connections.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "reference": {
+                    "type": "string",
+                    "description": "Reference designator of the component to replace"
+                },
+                "newComponentId": {
+                    "type": "string",
+                    "description": "ID of the new component to use"
+                },
+                "newFootprint": {
+                    "type": "string",
+                    "description": "Optional new footprint"
+                },
+                "newValue": {
+                    "type": "string",
+                    "description": "Optional new component value"
+                }
+            },
+            "required": ["reference", "newComponentId"]
+        }
     }
 ]
 
@@ -879,6 +974,234 @@ ROUTING_TOOLS = [
         }
     },
     {
+        "name": "delete_trace",
+        "title": "Delete Trace",
+        "description": "Removes traces from the board. Can delete by UUID, position, or bulk-delete all traces on a net.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "uuid": {
+                    "type": "string",
+                    "description": "UUID of a specific trace to delete"
+                },
+                "position": {
+                    "type": "object",
+                    "description": "Delete trace nearest to this position",
+                    "properties": {
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "unit": {"type": "string", "enum": ["mm", "inch"]}
+                    },
+                    "required": ["x", "y"]
+                },
+                "net": {
+                    "type": "string",
+                    "description": "Delete all traces on this net (bulk delete)"
+                },
+                "layer": {
+                    "type": "string",
+                    "description": "Filter by layer when using net-based deletion"
+                },
+                "includeVias": {
+                    "type": "boolean",
+                    "description": "Include vias in deletion",
+                    "default": False
+                }
+            }
+        }
+    },
+    {
+        "name": "delete_all_traces",
+        "title": "Delete All Traces",
+        "description": "Delete ALL traces and optionally all vias from the PCB. Use with caution.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "includeVias": {
+                    "type": "boolean",
+                    "description": "Whether to also delete all vias (default true)",
+                    "default": True
+                },
+                "net": {
+                    "type": "string",
+                    "description": "Optional: only delete traces on this specific net"
+                }
+            }
+        }
+    },
+    {
+        "name": "query_traces",
+        "title": "Query Traces",
+        "description": "Queries traces on the board with optional filters by net, layer, or bounding box.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {
+                    "type": "string",
+                    "description": "Filter by net name"
+                },
+                "layer": {
+                    "type": "string",
+                    "description": "Filter by layer name"
+                },
+                "boundingBox": {
+                    "type": "object",
+                    "properties": {
+                        "x1": {"type": "number"},
+                        "y1": {"type": "number"},
+                        "x2": {"type": "number"},
+                        "y2": {"type": "number"},
+                        "unit": {"type": "string", "enum": ["mm", "inch"]}
+                    }
+                },
+                "includeVias": {
+                    "type": "boolean",
+                    "description": "Include vias in results",
+                    "default": False
+                }
+            }
+        }
+    },
+    {
+        "name": "modify_trace",
+        "title": "Modify Trace",
+        "description": "Modifies properties of an existing trace. Find by UUID or position.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "uuid": {
+                    "type": "string",
+                    "description": "UUID of the trace to modify"
+                },
+                "position": {
+                    "type": "object",
+                    "properties": {
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "unit": {"type": "string", "enum": ["mm", "inch"]}
+                    },
+                    "required": ["x", "y"]
+                },
+                "width": {
+                    "type": "number",
+                    "description": "New trace width in mm"
+                },
+                "layer": {
+                    "type": "string",
+                    "description": "New layer name"
+                },
+                "net": {
+                    "type": "string",
+                    "description": "New net name"
+                }
+            }
+        }
+    },
+    {
+        "name": "refill_zones",
+        "title": "Refill All Zones",
+        "description": "Refills all copper pour zones on the board. Equivalent to pressing 'B' in KiCAD.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "assign_net_to_class",
+        "title": "Assign Net to Class",
+        "description": "Assigns an existing net to a net class for routing rule inheritance.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {
+                    "type": "string",
+                    "description": "Name of the net"
+                },
+                "netClass": {
+                    "type": "string",
+                    "description": "Name of the net class"
+                }
+            },
+            "required": ["net", "netClass"]
+        }
+    },
+    {
+        "name": "set_layer_constraints",
+        "title": "Set Layer Constraints",
+        "description": "Sets minimum design constraints for a specific layer.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "layer": {
+                    "type": "string",
+                    "description": "Layer name (e.g., F.Cu)"
+                },
+                "minTrackWidth": {
+                    "type": "number",
+                    "description": "Minimum track width for this layer (mm)"
+                },
+                "minClearance": {
+                    "type": "number",
+                    "description": "Minimum clearance for this layer (mm)"
+                },
+                "minViaDiameter": {
+                    "type": "number",
+                    "description": "Minimum via diameter for this layer (mm)"
+                },
+                "minViaDrill": {
+                    "type": "number",
+                    "description": "Minimum via drill size for this layer (mm)"
+                }
+            },
+            "required": ["layer"]
+        }
+    },
+    {
+        "name": "check_clearance",
+        "title": "Check Clearance",
+        "description": "Checks the clearance between two items on the board.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "item1": {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string", "enum": ["track", "via", "pad", "zone", "component"]},
+                        "reference": {"type": "string"},
+                        "id": {"type": "string"},
+                        "position": {
+                            "type": "object",
+                            "properties": {
+                                "x": {"type": "number"},
+                                "y": {"type": "number"},
+                                "unit": {"type": "string", "enum": ["mm", "inch"]}
+                            }
+                        }
+                    },
+                    "required": ["type"]
+                },
+                "item2": {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string", "enum": ["track", "via", "pad", "zone", "component"]},
+                        "reference": {"type": "string"},
+                        "id": {"type": "string"},
+                        "position": {
+                            "type": "object",
+                            "properties": {
+                                "x": {"type": "number"},
+                                "y": {"type": "number"},
+                                "unit": {"type": "string", "enum": ["mm", "inch"]}
+                            }
+                        }
+                    },
+                    "required": ["type"]
+                }
+            },
+            "required": ["item1", "item2"]
+        }
+    },
+    {
         "name": "create_netclass",
         "title": "Create Net Class",
         "description": "Defines a net class with specific routing rules (trace width, clearance, etc.).",
@@ -1098,7 +1421,7 @@ DESIGN_RULE_TOOLS = [
                     "type": "number",
                     "description": "Minimum via drill diameter in millimeters"
                 },
-                "microViaD iameter": {
+                "microViaDiameter": {
                     "type": "number",
                     "description": "Minimum micro-via diameter in millimeters"
                 }
@@ -1263,6 +1586,80 @@ EXPORT_TOOLS = [
                     "type": "boolean",
                     "description": "Group components with same value together",
                     "default": True
+                }
+            },
+            "required": ["outputPath"]
+        }
+    },
+    {
+        "name": "export_netlist",
+        "title": "Export PCB Netlist",
+        "description": "Exports a netlist from the PCB board in KiCad, Spice, or other formats.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "outputPath": {
+                    "type": "string",
+                    "description": "Path to save the netlist file"
+                },
+                "format": {
+                    "type": "string",
+                    "enum": ["KiCad", "Spice", "Cadstar", "OrcadPCB2"],
+                    "description": "Netlist format (default: KiCad)"
+                }
+            },
+            "required": ["outputPath"]
+        }
+    },
+    {
+        "name": "export_position_file",
+        "title": "Export Position File",
+        "description": "Exports component placement position file (CPL) for pick-and-place assembly (e.g., JLCPCB).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "outputPath": {
+                    "type": "string",
+                    "description": "Path to save the position file"
+                },
+                "format": {
+                    "type": "string",
+                    "enum": ["CSV", "ASCII"],
+                    "description": "File format (default: CSV)"
+                },
+                "units": {
+                    "type": "string",
+                    "enum": ["mm", "inch"],
+                    "description": "Units to use (default: mm)"
+                },
+                "side": {
+                    "type": "string",
+                    "enum": ["top", "bottom", "both"],
+                    "description": "Which board side to include (default: both)"
+                }
+            },
+            "required": ["outputPath"]
+        }
+    },
+    {
+        "name": "export_vrml",
+        "title": "Export VRML 3D Model",
+        "description": "Exports the board as a VRML (.wrl) 3D model file.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "outputPath": {
+                    "type": "string",
+                    "description": "Path to save the VRML file"
+                },
+                "includeComponents": {
+                    "type": "boolean",
+                    "description": "Whether to include 3D component models",
+                    "default": True
+                },
+                "useRelativePaths": {
+                    "type": "boolean",
+                    "description": "Whether to use relative paths for 3D models"
                 }
             },
             "required": ["outputPath"]
@@ -1525,6 +1922,184 @@ SCHEMATIC_TOOLS = [
 ]
 
 # =============================================================================
+# SYMBOL LIBRARY TOOLS
+# =============================================================================
+
+SYMBOL_LIBRARY_TOOLS = [
+    {
+        "name": "list_symbol_libraries",
+        "title": "List Symbol Libraries",
+        "description": "Lists all available symbol libraries from the global sym-lib-table.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "search_symbols",
+        "title": "Search Symbols",
+        "description": "Searches for symbols in local KiCAD symbol libraries by name, LCSC ID, description, manufacturer, MPN, or category.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query (e.g., 'ESP32', 'STM32F103', 'C8734' for LCSC ID)"
+                },
+                "library": {
+                    "type": "string",
+                    "description": "Optional: filter to specific library name pattern"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of results to return",
+                    "default": 20
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "list_library_symbols",
+        "title": "List Library Symbols",
+        "description": "Lists all symbols in a specific KiCAD symbol library.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "library": {
+                    "type": "string",
+                    "description": "Library name (e.g., 'Device', 'PCM_JLCPCB-MCUs')"
+                }
+            },
+            "required": ["library"]
+        }
+    },
+    {
+        "name": "get_symbol_info",
+        "title": "Get Symbol Information",
+        "description": "Retrieves detailed information about a specific symbol including pins, description, and LCSC data.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "description": "Symbol specification (e.g., 'Device:R' or 'PCM_JLCPCB-MCUs:STM32F103C8T6')"
+                }
+            },
+            "required": ["symbol"]
+        }
+    }
+]
+
+# =============================================================================
+# JLCPCB API TOOLS
+# =============================================================================
+
+JLCPCB_TOOLS = [
+    {
+        "name": "download_jlcpcb_database",
+        "title": "Download JLCPCB Database",
+        "description": "Downloads the complete JLCPCB parts catalog to a local database for fast offline searching.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "force": {
+                    "type": "boolean",
+                    "description": "Force re-download even if database exists",
+                    "default": False
+                }
+            }
+        }
+    },
+    {
+        "name": "search_jlcpcb_parts",
+        "title": "Search JLCPCB Parts",
+        "description": "Searches the local JLCPCB parts database by specifications, with real pricing and stock info.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Free-text search (e.g., '10k resistor 0603', 'ESP32')"
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Filter by category (e.g., 'Resistors', 'Capacitors')"
+                },
+                "package": {
+                    "type": "string",
+                    "description": "Filter by package type (e.g., '0603', 'SOT-23')"
+                },
+                "manufacturer": {
+                    "type": "string",
+                    "description": "Filter by manufacturer name"
+                },
+                "library_type": {
+                    "type": "string",
+                    "enum": ["Basic", "Extended", "Preferred", "All"],
+                    "description": "Filter by library type (Basic = free assembly)",
+                    "default": "All"
+                },
+                "in_stock": {
+                    "type": "boolean",
+                    "description": "Only show parts with available stock",
+                    "default": True
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of results",
+                    "default": 20
+                }
+            }
+        }
+    },
+    {
+        "name": "get_jlcpcb_part",
+        "title": "Get JLCPCB Part Details",
+        "description": "Gets detailed information about a specific JLCPCB part by LCSC number.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "lcsc_number": {
+                    "type": "string",
+                    "description": "LCSC part number (e.g., 'C25804', 'C2286')"
+                }
+            },
+            "required": ["lcsc_number"]
+        }
+    },
+    {
+        "name": "get_jlcpcb_database_stats",
+        "title": "Get JLCPCB Database Statistics",
+        "description": "Returns statistics about the local JLCPCB parts database.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "suggest_jlcpcb_alternatives",
+        "title": "Suggest JLCPCB Alternatives",
+        "description": "Finds similar JLCPCB parts that may be cheaper, have more stock, or are Basic library type.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "lcsc_number": {
+                    "type": "string",
+                    "description": "Reference LCSC part number to find alternatives for"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of alternatives to return",
+                    "default": 5
+                }
+            },
+            "required": ["lcsc_number"]
+        }
+    }
+]
+
+# =============================================================================
 # UI/PROCESS TOOLS
 # =============================================================================
 
@@ -1568,7 +2143,7 @@ TOOL_SCHEMAS: Dict[str, Any] = {}
 # Combine all tool categories
 for tool in (PROJECT_TOOLS + BOARD_TOOLS + COMPONENT_TOOLS + ROUTING_TOOLS +
              LIBRARY_TOOLS + DESIGN_RULE_TOOLS + EXPORT_TOOLS +
-             SCHEMATIC_TOOLS + UI_TOOLS):
+             SCHEMATIC_TOOLS + SYMBOL_LIBRARY_TOOLS + JLCPCB_TOOLS + UI_TOOLS):
     TOOL_SCHEMAS[tool["name"]] = tool
 
-# Total: 46 tools with comprehensive schemas
+# Total: 76 tools with comprehensive schemas
