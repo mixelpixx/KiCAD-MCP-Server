@@ -83,23 +83,16 @@ The IPC backend is currently being implemented and tested. Some commands may not
 
 ---
 
-### 5. Schematic Support Limited
-
-**Status:** KNOWN - Partial support
-
-**Description:**
-Schematic operations use the kicad-skip library which has some limitations with KiCAD 9.0 file format changes.
-
-**Affected Commands:**
-- `create_schematic`
-- `add_schematic_component`
-- `add_schematic_wire`
-
-**Workaround:** Manual schematic creation may be more reliable for complex designs
-
 ---
 
 ## Recently Fixed
+
+### Schematic Component Corruption (Fixed 2026-02-26)
+
+**Was:** `add_schematic_component` corrupted .kicad_sch files due to sexpdata formatting issues
+**Now:** Rewritten to use text manipulation, preserves KiCAD file formatting perfectly
+**Impact:** Schematic workflow fully functional with all component types
+**Fixed in:** PR #40, commit a69d288
 
 ### DRC Violations API KiCAD 9.0 (Fixed 2026-02-26)
 
