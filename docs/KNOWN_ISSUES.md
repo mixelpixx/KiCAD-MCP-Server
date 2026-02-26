@@ -101,6 +101,12 @@ Schematic operations use the kicad-skip library which has some limitations with 
 
 ## Recently Fixed
 
+### DRC Violations API KiCAD 9.0 (Fixed 2026-02-26)
+
+**Was:** `get_drc_violations` failed with `AttributeError: 'BOARD' object has no attribute 'GetDRCMarkers'`
+**Now:** Reimplemented to use `run_drc()` internally which calls kicad-cli
+**Impact:** Maintains backward compatibility while using stable kicad-cli interface
+
 ### Component Library Integration (Fixed 2025-11-01)
 
 **Was:** Could not find footprint libraries

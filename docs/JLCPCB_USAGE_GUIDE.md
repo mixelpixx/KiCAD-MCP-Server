@@ -1,11 +1,12 @@
 # JLCPCB Integration Guide
 
-The KiCAD MCP Server provides **two complementary approaches** for working with JLCPCB parts:
+The KiCAD MCP Server provides **three complementary approaches** for working with JLCPCB parts:
 
-1. **Local Symbol Libraries** - Search JLCPCB libraries installed via KiCad PCM _(contributed by [@l3wi](https://github.com/l3wi) in [PR #25](https://github.com/mixelpixx/KiCAD-MCP-Server/pull/25))_
-2. **JLCPCB API Integration** - Access the complete 100k+ parts catalog with real-time pricing
+1. **JLCSearch Public API** - No authentication required, 2.5M+ parts with pricing (Recommended)
+2. **Local Symbol Libraries** - Search JLCPCB libraries installed via KiCad PCM _(contributed by [@l3wi](https://github.com/l3wi) in [PR #25](https://github.com/mixelpixx/KiCAD-MCP-Server/pull/25))_
+3. **Official JLCPCB API** - Requires enterprise account (Advanced)
 
-Both approaches can be used together to give you maximum flexibility.
+All approaches can be used together to give you maximum flexibility.
 
 ## Credits
 
@@ -14,7 +15,46 @@ Both approaches can be used together to give you maximum flexibility.
 
 ---
 
-## Approach 1: Local Symbol Libraries (Recommended for Getting Started)
+## Approach 1: JLCSearch Public API (Recommended)
+
+### What It Does
+- Access to 2.5M+ JLCPCB parts with pricing and stock data
+- **No authentication required** - works immediately
+- **No JLCPCB account needed**
+- Real-time pricing with quantity breaks
+- Basic vs Extended library type identification
+- Local SQLite database for fast offline searching
+- Note: Download takes 40-60 minutes due to API pagination (100 parts per request)
+
+### Setup
+
+No setup required! Just download the database:
+
+```
+download_jlcpcb_database({ force: false })
+```
+
+This downloads ~2.5M parts from JLCSearch API and creates a local SQLite database (`data/jlcpcb_parts.db`).
+
+**Expected Output:**
+```
+Downloading JLCPCB parts database...
+Downloaded 100 parts...
+Downloaded 200 parts...
+... (continues for 40-60 minutes)
+Downloaded 2,500,000 parts...
+
+Total parts: 2,500,000+
+Database size: ~1-2 GB
+```
+
+### Usage Examples
+
+See "Approach 2" usage examples below - the API is the same.
+
+---
+
+## Approach 2: Local Symbol Libraries (Good for Offline Use)
 
 ### What It Does
 - Searches symbol libraries you've installed via KiCad's Plugin and Content Manager (PCM)
@@ -94,10 +134,10 @@ Class: Extended
 
 ---
 
-## Approach 2: JLCPCB API Integration (For Complete Catalog Access)
+## Approach 3: Official JLCPCB API (Advanced - Enterprise Accounts Only)
 
 ### What It Does
-- Downloads the **complete JLCPCB parts catalog** (~100k+ parts)
+- Downloads from the **official JLCPCB API** (requires enterprise account)
 - Provides **real-time pricing and stock information**
 - Automatic **Basic vs Extended** library type identification (Basic = free assembly)
 - Smart suggestions for cheaper/in-stock alternatives

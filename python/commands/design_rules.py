@@ -385,7 +385,15 @@ class DesignRuleCommands:
         return None
 
     def get_drc_violations(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get list of DRC violations"""
+        """
+        Get list of DRC violations
+
+        Note: This command internally uses run_drc() which calls kicad-cli.
+        The old BOARD.GetDRCMarkers() API was removed in KiCAD 9.0.
+        This implementation provides backward compatibility by parsing kicad-cli output.
+        """
+        import json
+
         try:
             if not self.board:
                 return {
@@ -396,27 +404,37 @@ class DesignRuleCommands:
 
             severity = params.get("severity", "all")
 
-            # Get DRC markers
-            violations = []
-            for marker in self.board.GetDRCMarkers():
-                violation = {
-                    "type": marker.GetErrorCode(),
-                    "severity": "error",  # KiCAD DRC markers are always errors
-                    "message": marker.GetDescription(),
-                    "location": {
-                        "x": marker.GetPos().x / 1000000,
-                        "y": marker.GetPos().y / 1000000,
-                        "unit": "mm"
-                    }
+            # Run DRC using kicad-cli (this saves violations to JSON file)
+            drc_result = self.run_drc({})
+
+            if not drc_result.get("success"):
+                return drc_result  # Return the error from run_drc
+
+            # Read violations from the saved JSON file
+            violations_file = drc_result.get("violationsFile")
+            if not violations_file or not os.path.exists(violations_file):
+                return {
+                    "success": False,
+                    "message": "Violations file not found",
+                    "errorDetails": "run_drc did not create violations file"
                 }
 
-                # Filter by severity if specified
-                if severity == "all" or severity == violation["severity"]:
-                    violations.append(violation)
+            # Load violations from file
+            with open(violations_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            all_violations = data.get("violations", [])
+
+            # Filter by severity if specified
+            if severity != "all":
+                filtered_violations = [v for v in all_violations if v.get("severity") == severity]
+            else:
+                filtered_violations = all_violations
 
             return {
                 "success": True,
-                "violations": violations
+                "violations": filtered_violations,
+                "violationsFile": violations_file  # Include file path for reference
             }
 
         except Exception as e:
