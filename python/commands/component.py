@@ -81,8 +81,13 @@ class ComponentCommands:
                     "errorDetails": "Could not determine library nickname"
                 }
 
-            # Load the footprint
-            module = pcbnew.FootprintLoad(library_path, footprint_name)
+            # Load the footprint using KiCad 9.x API (3-arg form with FP_LIB_TABLE)
+            try:
+                fp_lib_table = pcbnew.GetGlobalFootprintLib()
+                module = pcbnew.FootprintLoad(fp_lib_table, library_nickname, footprint_name)
+            except Exception:
+                # Fallback: try legacy 2-arg form for older KiCad versions
+                module = pcbnew.FootprintLoad(library_path, footprint_name)
             if not module:
                 return {
                     "success": False,

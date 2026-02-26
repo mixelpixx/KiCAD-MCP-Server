@@ -270,6 +270,13 @@ class ExportCommands:
             plot_opts.SetPlotReference(include_components)
             plot_opts.SetBlackAndWhite(black_and_white)
 
+            # Open the plot file (required before PlotLayer calls)
+            plotter.OpenPlotfile(
+                os.path.splitext(os.path.basename(output_path))[0],
+                pcbnew.PLOT_FORMAT_SVG,
+                "SVG Export"
+            )
+
             # Plot specified layers or all enabled layers
             plotted_layers = []
             if layers:
@@ -286,6 +293,9 @@ class ExportCommands:
                         plotter.SetLayer(layer_id)
                         plotter.PlotLayer()
                         plotted_layers.append(layer_name)
+
+            # Finalize and flush the plot file to disk
+            plotter.ClosePlot()
 
             return {
                 "success": True,
