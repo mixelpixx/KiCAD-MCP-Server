@@ -143,14 +143,17 @@ class JLCSearchClient:
     def download_all_components(
         self,
         callback: Optional[Callable[[int, str], None]] = None,
-        batch_size: int = 1000
+        batch_size: int = 100
     ) -> List[Dict]:
         """
         Download all components from jlcsearch database
 
+        Note: tscircuit API has a hard-coded 100 result limit per request.
+        Full catalog download requires ~25,000 paginated requests (~40-60 minutes).
+
         Args:
             callback: Optional progress callback function(parts_count, status_msg)
-            batch_size: Number of parts per batch
+            batch_size: Number of parts per batch (max 100 due to API limit)
 
         Returns:
             List of all parts
@@ -168,7 +171,8 @@ class JLCSearchClient:
                     offset=offset
                 )
 
-                if not batch:
+                # Stop if no results returned (end of catalog)
+                if not batch or len(batch) == 0:
                     break
 
                 all_parts.extend(batch)
@@ -179,9 +183,8 @@ class JLCSearchClient:
                 else:
                     logger.info(f"Downloaded {len(all_parts)} parts so far...")
 
-                # If we got fewer results than requested, we've reached the end
-                if len(batch) < batch_size:
-                    break
+                # Continue pagination - API returns exactly 100 results per page until exhausted
+                # Only stop when we get 0 results (handled above)
 
                 # Rate limiting - be nice to the API
                 time.sleep(0.1)

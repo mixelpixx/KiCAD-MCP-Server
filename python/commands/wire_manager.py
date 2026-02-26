@@ -9,6 +9,7 @@ manipulate the .kicad_sch file directly.
 import uuid
 import logging
 import math
+import tempfile
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict
 import sexpdata
@@ -382,8 +383,8 @@ if __name__ == '__main__':
     print("WIRE MANAGER TEST")
     print("=" * 80)
 
-    # Create test schematic
-    test_path = Path('/tmp/test_wire_manager.kicad_sch')
+    # Create test schematic (cross-platform temp directory)
+    test_path = Path(tempfile.gettempdir()) / 'test_wire_manager.kicad_sch'
     template_path = Path('/home/chris/MCP/KiCAD-MCP-Server/python/templates/empty.kicad_sch')
 
     shutil.copy(template_path, test_path)

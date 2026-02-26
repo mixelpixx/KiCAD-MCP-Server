@@ -7,6 +7,7 @@ Uses S-expression parsing to extract pin data from symbol definitions.
 
 import logging
 import math
+import tempfile
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict
 import sexpdata
@@ -314,8 +315,8 @@ if __name__ == '__main__':
     print("PIN LOCATOR TEST")
     print("=" * 80)
 
-    # Create test schematic with components
-    test_path = Path('/tmp/test_pin_locator.kicad_sch')
+    # Create test schematic with components (cross-platform temp directory)
+    test_path = Path(tempfile.gettempdir()) / 'test_pin_locator.kicad_sch'
     template_path = Path('/home/chris/MCP/KiCAD-MCP-Server/python/templates/template_with_symbols_expanded.kicad_sch')
 
     shutil.copy(template_path, test_path)

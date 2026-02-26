@@ -15,6 +15,7 @@ Key Benefits over SWIG:
 """
 import logging
 import os
+import platform
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Callable
 
@@ -74,12 +75,16 @@ class IPCBackend(KiCADBackend):
             if socket_path:
                 socket_paths_to_try.append(socket_path)
             else:
-                # Common socket locations
-                socket_paths_to_try = [
-                    'ipc:///tmp/kicad/api.sock',  # Linux default
-                    f'ipc:///run/user/{os.getuid()}/kicad/api.sock',  # XDG runtime
-                    None  # Let kipy auto-detect
-                ]
+                # Common socket locations (Unix-like systems only)
+                # Windows uses named pipes, handled by auto-detect
+                if platform.system() != "Windows":
+                    socket_paths_to_try.append('ipc:///tmp/kicad/api.sock')  # Linux default
+                    # XDG runtime directory (requires getuid, Unix only)
+                    if hasattr(os, 'getuid'):
+                        socket_paths_to_try.append(f'ipc:///run/user/{os.getuid()}/kicad/api.sock')
+
+                # Auto-detect for all platforms (Windows uses named pipes, Unix uses sockets)
+                socket_paths_to_try.append(None)
 
             last_error = None
             for path in socket_paths_to_try:
