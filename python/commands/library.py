@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import glob
 
-logger = logging.getLogger('kicad_interface')
+logger = logging.getLogger("kicad_interface")
 
 
 class LibraryManager:
@@ -85,7 +85,7 @@ class LibraryManager:
         )
         """
         try:
-            with open(table_path, 'r') as f:
+            with open(table_path, "r") as f:
                 content = f.read()
 
             # Simple regex-based parser for lib entries
@@ -103,7 +103,9 @@ class LibraryManager:
                     self.libraries[nickname] = resolved_uri
                     logger.debug(f"  Found library: {nickname} -> {resolved_uri}")
                 else:
-                    logger.warning(f"  Could not resolve URI for library {nickname}: {uri}")
+                    logger.warning(
+                        f"  Could not resolve URI for library {nickname}: {uri}"
+                    )
 
         except Exception as e:
             logger.error(f"Error parsing fp-lib-table at {table_path}: {e}")
@@ -124,23 +126,23 @@ class LibraryManager:
 
         # Common KiCAD environment variables
         env_vars = {
-            'KICAD9_FOOTPRINT_DIR': self._find_kicad_footprint_dir(),
-            'KICAD8_FOOTPRINT_DIR': self._find_kicad_footprint_dir(),
-            'KICAD_FOOTPRINT_DIR': self._find_kicad_footprint_dir(),
-            'KISYSMOD': self._find_kicad_footprint_dir(),
-            'KICAD9_3RD_PARTY': self._find_kicad_3rdparty_dir(),
-            'KICAD8_3RD_PARTY': self._find_kicad_3rdparty_dir(),
+            "KICAD9_FOOTPRINT_DIR": self._find_kicad_footprint_dir(),
+            "KICAD8_FOOTPRINT_DIR": self._find_kicad_footprint_dir(),
+            "KICAD_FOOTPRINT_DIR": self._find_kicad_footprint_dir(),
+            "KISYSMOD": self._find_kicad_footprint_dir(),
+            "KICAD9_3RD_PARTY": self._find_kicad_3rdparty_dir(),
+            "KICAD8_3RD_PARTY": self._find_kicad_3rdparty_dir(),
         }
 
         # Project directory
         if self.project_path:
-            env_vars['KIPRJMOD'] = str(self.project_path)
+            env_vars["KIPRJMOD"] = str(self.project_path)
 
         # Replace environment variables
         for var, value in env_vars.items():
             if value:
-                resolved = resolved.replace(f'${{{var}}}', value)
-                resolved = resolved.replace(f'${var}', value)
+                resolved = resolved.replace(f"${{{var}}}", value)
+                resolved = resolved.replace(f"${var}", value)
 
         # Expand ~ to home directory
         resolved = os.path.expanduser(resolved)
@@ -167,10 +169,10 @@ class LibraryManager:
         ]
 
         # Also check environment variable
-        if 'KICAD9_FOOTPRINT_DIR' in os.environ:
-            possible_paths.insert(0, os.environ['KICAD9_FOOTPRINT_DIR'])
-        if 'KICAD8_FOOTPRINT_DIR' in os.environ:
-            possible_paths.insert(0, os.environ['KICAD8_FOOTPRINT_DIR'])
+        if "KICAD9_FOOTPRINT_DIR" in os.environ:
+            possible_paths.insert(0, os.environ["KICAD9_FOOTPRINT_DIR"])
+        if "KICAD8_FOOTPRINT_DIR" in os.environ:
+            possible_paths.insert(0, os.environ["KICAD8_FOOTPRINT_DIR"])
 
         for path in possible_paths:
             if os.path.isdir(path):
@@ -190,26 +192,36 @@ class LibraryManager:
         import json
 
         # 1. Check shell environment variable first
-        if 'KICAD9_3RD_PARTY' in os.environ:
-            path = os.environ['KICAD9_3RD_PARTY']
+        if "KICAD9_3RD_PARTY" in os.environ:
+            path = os.environ["KICAD9_3RD_PARTY"]
             if os.path.isdir(path):
                 return path
 
         # 2. Check kicad_common.json for user-defined variables
         kicad_common_paths = [
-            Path.home() / "Library" / "Preferences" / "kicad" / "9.0" / "kicad_common.json",  # macOS
+            Path.home()
+            / "Library"
+            / "Preferences"
+            / "kicad"
+            / "9.0"
+            / "kicad_common.json",  # macOS
             Path.home() / ".config" / "kicad" / "9.0" / "kicad_common.json",  # Linux
-            Path.home() / "AppData" / "Roaming" / "kicad" / "9.0" / "kicad_common.json",  # Windows
+            Path.home()
+            / "AppData"
+            / "Roaming"
+            / "kicad"
+            / "9.0"
+            / "kicad_common.json",  # Windows
         ]
 
         for config_path in kicad_common_paths:
             if config_path.exists():
                 try:
-                    with open(config_path, 'r') as f:
+                    with open(config_path, "r") as f:
                         config = json.load(f)
-                    env_vars = config.get('environment', {}).get('vars', {})
-                    if env_vars and 'KICAD9_3RD_PARTY' in env_vars:
-                        path = env_vars['KICAD9_3RD_PARTY']
+                    env_vars = config.get("environment", {}).get("vars", {})
+                    if env_vars and "KICAD9_3RD_PARTY" in env_vars:
+                        path = env_vars["KICAD9_3RD_PARTY"]
                         if os.path.isdir(path):
                             return path
                 except (json.JSONDecodeError, KeyError, TypeError):
@@ -231,10 +243,10 @@ class LibraryManager:
             Path.home() / "Documents" / "KiCad" / version / "3rdparty",
         ]
 
-        for path in possible_paths:
-            if path.exists():
-                logger.info(f"Found KiCad 3rd party directory: {path}")
-                return str(path)
+        for candidate in possible_paths:
+            if candidate.exists():
+                logger.info(f"Found KiCad 3rd party directory: {candidate}")
+                return str(candidate)
 
         logger.warning("Could not find KiCad 3rd party directory")
         return None
@@ -325,7 +337,9 @@ class LibraryManager:
             for library_nickname, library_path in self.libraries.items():
                 fp_file = Path(library_path) / f"{footprint_name}.kicad_mod"
                 if fp_file.exists():
-                    logger.info(f"Found footprint {footprint_name} in library {library_nickname}")
+                    logger.info(
+                        f"Found footprint {footprint_name} in library {library_nickname}"
+                    )
                     return (library_path, footprint_name)
 
             logger.warning(f"Footprint not found in any library: {footprint_name}")
@@ -354,18 +368,22 @@ class LibraryManager:
 
             for footprint in footprints:
                 if regex.search(footprint.lower()):
-                    results.append({
-                        'library': library_nickname,
-                        'footprint': footprint,
-                        'full_name': f"{library_nickname}:{footprint}"
-                    })
+                    results.append(
+                        {
+                            "library": library_nickname,
+                            "footprint": footprint,
+                            "full_name": f"{library_nickname}:{footprint}",
+                        }
+                    )
 
                     if len(results) >= limit:
                         return results
 
         return results
 
-    def get_footprint_info(self, library_nickname: str, footprint_name: str) -> Optional[Dict[str, str]]:
+    def get_footprint_info(
+        self, library_nickname: str, footprint_name: str
+    ) -> Optional[Dict[str, str]]:
         """
         Get information about a specific footprint
 
@@ -385,11 +403,11 @@ class LibraryManager:
             return None
 
         return {
-            'library': library_nickname,
-            'footprint': footprint_name,
-            'full_name': f"{library_nickname}:{footprint_name}",
-            'path': str(fp_file),
-            'library_path': library_path
+            "library": library_nickname,
+            "footprint": footprint_name,
+            "full_name": f"{library_nickname}:{footprint_name}",
+            "path": str(fp_file),
+            "library_path": library_path,
         }
 
 
@@ -404,39 +422,48 @@ class LibraryCommands:
         """List all available footprint libraries"""
         try:
             libraries = self.library_manager.list_libraries()
-            return {
-                "success": True,
-                "libraries": libraries,
-                "count": len(libraries)
-            }
+            return {"success": True, "libraries": libraries, "count": len(libraries)}
         except Exception as e:
             logger.error(f"Error listing libraries: {e}")
             return {
                 "success": False,
                 "message": "Failed to list libraries",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def search_footprints(self, params: Dict) -> Dict:
         """Search for footprints by pattern"""
         try:
-            pattern = params.get("pattern", "*")
+            # Support both 'pattern' and 'search_term' parameter names
+            pattern = params.get("pattern") or params.get("search_term", "*")
             limit = params.get("limit", 20)
+            library_filter = params.get("library")
 
-            results = self.library_manager.search_footprints(pattern, limit)
+            results = self.library_manager.search_footprints(
+                pattern, limit * 10 if library_filter else limit
+            )
+
+            # Filter by library if specified
+            if library_filter:
+                results = [
+                    r
+                    for r in results
+                    if r.get("library", "").lower() == library_filter.lower()
+                ]
+                results = results[:limit]
 
             return {
                 "success": True,
                 "footprints": results,
                 "count": len(results),
-                "pattern": pattern
+                "pattern": pattern,
             }
         except Exception as e:
             logger.error(f"Error searching footprints: {e}")
             return {
                 "success": False,
                 "message": "Failed to search footprints",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def list_library_footprints(self, params: Dict) -> Dict:
@@ -444,10 +471,7 @@ class LibraryCommands:
         try:
             library = params.get("library")
             if not library:
-                return {
-                    "success": False,
-                    "message": "Missing library parameter"
-                }
+                return {"success": False, "message": "Missing library parameter"}
 
             footprints = self.library_manager.list_footprints(library)
 
@@ -455,14 +479,14 @@ class LibraryCommands:
                 "success": True,
                 "library": library,
                 "footprints": footprints,
-                "count": len(footprints)
+                "count": len(footprints),
             }
         except Exception as e:
             logger.error(f"Error listing library footprints: {e}")
             return {
                 "success": False,
                 "message": "Failed to list library footprints",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def get_footprint_info(self, params: Dict) -> Dict:
@@ -470,10 +494,7 @@ class LibraryCommands:
         try:
             footprint_spec = params.get("footprint")
             if not footprint_spec:
-                return {
-                    "success": False,
-                    "message": "Missing footprint parameter"
-                }
+                return {"success": False, "message": "Missing footprint parameter"}
 
             # Try to find the footprint
             result = self.library_manager.find_footprint(footprint_spec)
@@ -491,17 +512,14 @@ class LibraryCommands:
                     "library": library_nickname,
                     "footprint": footprint_name,
                     "full_name": f"{library_nickname}:{footprint_name}",
-                    "library_path": library_path
+                    "library_path": library_path,
                 }
 
-                return {
-                    "success": True,
-                    "footprint_info": info
-                }
+                return {"success": True, "footprint_info": info}
             else:
                 return {
                     "success": False,
-                    "message": f"Footprint not found: {footprint_spec}"
+                    "message": f"Footprint not found: {footprint_spec}",
                 }
 
         except Exception as e:
@@ -509,5 +527,5 @@ class LibraryCommands:
             return {
                 "success": False,
                 "message": "Failed to get footprint info",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }

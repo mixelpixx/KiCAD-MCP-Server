@@ -7,7 +7,8 @@ import pcbnew
 import logging
 from typing import Dict, Any, Optional, List, Tuple
 
-logger = logging.getLogger('kicad_interface')
+logger = logging.getLogger("kicad_interface")
+
 
 class DesignRuleCommands:
     """Handles design rule checking and configuration"""
@@ -23,7 +24,7 @@ class DesignRuleCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             design_settings = self.board.GetDesignSettings()
@@ -57,9 +58,13 @@ class DesignRuleCommands:
 
             # Set micro via settings (use properties - methods removed in KiCAD 9.0)
             if "microViaDiameter" in params:
-                design_settings.m_MicroViasMinSize = int(params["microViaDiameter"] * scale)
+                design_settings.m_MicroViasMinSize = int(
+                    params["microViaDiameter"] * scale
+                )
             if "microViaDrill" in params:
-                design_settings.m_MicroViasMinDrill = int(params["microViaDrill"] * scale)
+                design_settings.m_MicroViasMinDrill = int(
+                    params["microViaDrill"] * scale
+                )
 
             # Set minimum values
             if "minTrackWidth" in params:
@@ -72,13 +77,19 @@ class DesignRuleCommands:
                 design_settings.m_MinThroughDrill = int(params["minViaDrill"] * scale)
 
             if "minMicroViaDiameter" in params:
-                design_settings.m_MicroViasMinSize = int(params["minMicroViaDiameter"] * scale)
+                design_settings.m_MicroViasMinSize = int(
+                    params["minMicroViaDiameter"] * scale
+                )
             if "minMicroViaDrill" in params:
-                design_settings.m_MicroViasMinDrill = int(params["minMicroViaDrill"] * scale)
+                design_settings.m_MicroViasMinDrill = int(
+                    params["minMicroViaDrill"] * scale
+                )
 
             # KiCAD 9.0: m_MinHoleDiameter removed - use m_MinThroughDrill
             if "minHoleDiameter" in params:
-                design_settings.m_MinThroughDrill = int(params["minHoleDiameter"] * scale)
+                design_settings.m_MinThroughDrill = int(
+                    params["minHoleDiameter"] * scale
+                )
 
             # KiCAD 9.0: Added hole clearance settings
             if "holeClearance" in params:
@@ -102,13 +113,13 @@ class DesignRuleCommands:
                 "minMicroViaDrill": design_settings.m_MicroViasMinDrill / scale,
                 "holeClearance": design_settings.m_HoleClearance / scale,
                 "holeToHoleMin": design_settings.m_HoleToHoleMin / scale,
-                "viasMinAnnularWidth": design_settings.m_ViasMinAnnularWidth / scale
+                "viasMinAnnularWidth": design_settings.m_ViasMinAnnularWidth / scale,
             }
 
             return {
                 "success": True,
                 "message": "Updated design rules",
-                "rules": response_rules
+                "rules": response_rules,
             }
 
         except Exception as e:
@@ -116,7 +127,7 @@ class DesignRuleCommands:
             return {
                 "success": False,
                 "message": "Failed to set design rules",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def get_design_rules(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -126,7 +137,7 @@ class DesignRuleCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             design_settings = self.board.GetDesignSettings()
@@ -138,42 +149,34 @@ class DesignRuleCommands:
                 "clearance": design_settings.m_MinClearance / scale,
                 "trackWidth": design_settings.GetCurrentTrackWidth() / scale,
                 "minTrackWidth": design_settings.m_TrackMinWidth / scale,
-
                 # Via settings (current values from methods)
                 "viaDiameter": design_settings.GetCurrentViaSize() / scale,
                 "viaDrill": design_settings.GetCurrentViaDrill() / scale,
-
                 # Via minimum values
                 "minViaDiameter": design_settings.m_ViasMinSize / scale,
                 "viasMinAnnularWidth": design_settings.m_ViasMinAnnularWidth / scale,
-
                 # Micro via settings
                 "microViaDiameter": design_settings.m_MicroViasMinSize / scale,
                 "microViaDrill": design_settings.m_MicroViasMinDrill / scale,
                 "minMicroViaDiameter": design_settings.m_MicroViasMinSize / scale,
                 "minMicroViaDrill": design_settings.m_MicroViasMinDrill / scale,
-
                 # KiCAD 9.0: Hole and drill settings (replaces removed m_ViasMinDrill and m_MinHoleDiameter)
                 "minThroughDrill": design_settings.m_MinThroughDrill / scale,
                 "holeClearance": design_settings.m_HoleClearance / scale,
                 "holeToHoleMin": design_settings.m_HoleToHoleMin / scale,
-
                 # Other constraints
                 "copperEdgeClearance": design_settings.m_CopperEdgeClearance / scale,
                 "silkClearance": design_settings.m_SilkClearance / scale,
             }
 
-            return {
-                "success": True,
-                "rules": rules
-            }
+            return {"success": True, "rules": rules}
 
         except Exception as e:
             logger.error(f"Error getting design rules: {str(e)}")
             return {
                 "success": False,
                 "message": "Failed to get design rules",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def run_drc(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -189,7 +192,7 @@ class DesignRuleCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             report_path = params.get("reportPath")
@@ -200,7 +203,7 @@ class DesignRuleCommands:
                 return {
                     "success": False,
                     "message": "Board file not found",
-                    "errorDetails": "Cannot run DRC without a saved board file"
+                    "errorDetails": "Cannot run DRC without a saved board file",
                 }
 
             # Find kicad-cli executable
@@ -209,23 +212,28 @@ class DesignRuleCommands:
                 return {
                     "success": False,
                     "message": "kicad-cli not found",
-                    "errorDetails": "KiCAD CLI tool not found in system. Install KiCAD 8.0+ or set PATH."
+                    "errorDetails": "KiCAD CLI tool not found in system. Install KiCAD 8.0+ or set PATH.",
                 }
 
             # Create temporary JSON output file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False
+            ) as tmp:
                 json_output = tmp.name
 
             try:
                 # Build command
                 cmd = [
                     kicad_cli,
-                    'pcb',
-                    'drc',
-                    '--format', 'json',
-                    '--output', json_output,
-                    '--units', 'mm',
-                    board_file
+                    "pcb",
+                    "drc",
+                    "--format",
+                    "json",
+                    "--output",
+                    json_output,
+                    "--units",
+                    "mm",
+                    board_file,
                 ]
 
                 logger.info(f"Running DRC command: {' '.join(cmd)}")
@@ -235,7 +243,7 @@ class DesignRuleCommands:
                     cmd,
                     capture_output=True,
                     text=True,
-                    timeout=600  # 10 minute timeout for large boards (21MB PCB needs time)
+                    timeout=600,  # 10 minute timeout for large boards (21MB PCB needs time)
                 )
 
                 if result.returncode != 0:
@@ -243,32 +251,34 @@ class DesignRuleCommands:
                     return {
                         "success": False,
                         "message": "DRC command failed",
-                        "errorDetails": result.stderr
+                        "errorDetails": result.stderr,
                     }
 
                 # Read JSON output
-                with open(json_output, 'r', encoding='utf-8') as f:
+                with open(json_output, "r", encoding="utf-8") as f:
                     drc_data = json.load(f)
 
                 # Parse violations from kicad-cli output
                 violations = []
-                violation_counts = {}
+                violation_counts: dict[str, int] = {}
                 severity_counts = {"error": 0, "warning": 0, "info": 0}
 
-                for violation in drc_data.get('violations', []):
+                for violation in drc_data.get("violations", []):
                     vtype = violation.get("type", "unknown")
                     vseverity = violation.get("severity", "error")
 
-                    violations.append({
-                        "type": vtype,
-                        "severity": vseverity,
-                        "message": violation.get("description", ""),
-                        "location": {
-                            "x": violation.get("x", 0),
-                            "y": violation.get("y", 0),
-                            "unit": "mm"
+                    violations.append(
+                        {
+                            "type": vtype,
+                            "severity": vseverity,
+                            "message": violation.get("description", ""),
+                            "location": {
+                                "x": violation.get("x", 0),
+                                "y": violation.get("y", 0),
+                                "unit": "mm",
+                            },
                         }
-                    })
+                    )
 
                     # Count violations by type
                     violation_counts[vtype] = violation_counts.get(vtype, 0) + 1
@@ -280,30 +290,39 @@ class DesignRuleCommands:
                 # Determine where to save the violations file
                 board_dir = os.path.dirname(board_file)
                 board_name = os.path.splitext(os.path.basename(board_file))[0]
-                violations_file = os.path.join(board_dir, f"{board_name}_drc_violations.json")
+                violations_file = os.path.join(
+                    board_dir, f"{board_name}_drc_violations.json"
+                )
 
                 # Always save violations to JSON file (for large result sets)
-                with open(violations_file, 'w', encoding='utf-8') as f:
-                    json.dump({
-                        "board": board_file,
-                        "timestamp": drc_data.get("date", "unknown"),
-                        "total_violations": len(violations),
-                        "violation_counts": violation_counts,
-                        "severity_counts": severity_counts,
-                        "violations": violations
-                    }, f, indent=2)
+                with open(violations_file, "w", encoding="utf-8") as f:
+                    json.dump(
+                        {
+                            "board": board_file,
+                            "timestamp": drc_data.get("date", "unknown"),
+                            "total_violations": len(violations),
+                            "violation_counts": violation_counts,
+                            "severity_counts": severity_counts,
+                            "violations": violations,
+                        },
+                        f,
+                        indent=2,
+                    )
 
                 # Save text report if requested
                 if report_path:
                     report_path = os.path.abspath(os.path.expanduser(report_path))
                     cmd_report = [
                         kicad_cli,
-                        'pcb',
-                        'drc',
-                        '--format', 'report',
-                        '--output', report_path,
-                        '--units', 'mm',
-                        board_file
+                        "pcb",
+                        "drc",
+                        "--format",
+                        "report",
+                        "--output",
+                        report_path,
+                        "--units",
+                        "mm",
+                        board_file,
                     ]
                     subprocess.run(cmd_report, capture_output=True, timeout=600)
 
@@ -314,10 +333,10 @@ class DesignRuleCommands:
                     "summary": {
                         "total": len(violations),
                         "by_severity": severity_counts,
-                        "by_type": violation_counts
+                        "by_type": violation_counts,
                     },
                     "violationsFile": violations_file,
-                    "reportPath": report_path if report_path else None
+                    "reportPath": report_path if report_path else None,
                 }
 
             finally:
@@ -330,14 +349,14 @@ class DesignRuleCommands:
             return {
                 "success": False,
                 "message": "DRC command timed out",
-                "errorDetails": "Command took longer than 600 seconds (10 minutes)"
+                "errorDetails": "Command took longer than 600 seconds (10 minutes)",
             }
         except Exception as e:
             logger.error(f"Error running DRC: {str(e)}")
             return {
                 "success": False,
                 "message": "Failed to run DRC",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def _find_kicad_cli(self) -> Optional[str]:
@@ -399,7 +418,7 @@ class DesignRuleCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             severity = params.get("severity", "all")
@@ -416,25 +435,27 @@ class DesignRuleCommands:
                 return {
                     "success": False,
                     "message": "Violations file not found",
-                    "errorDetails": "run_drc did not create violations file"
+                    "errorDetails": "run_drc did not create violations file",
                 }
 
             # Load violations from file
-            with open(violations_file, 'r', encoding='utf-8') as f:
+            with open(violations_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             all_violations = data.get("violations", [])
 
             # Filter by severity if specified
             if severity != "all":
-                filtered_violations = [v for v in all_violations if v.get("severity") == severity]
+                filtered_violations = [
+                    v for v in all_violations if v.get("severity") == severity
+                ]
             else:
                 filtered_violations = all_violations
 
             return {
                 "success": True,
                 "violations": filtered_violations,
-                "violationsFile": violations_file  # Include file path for reference
+                "violationsFile": violations_file,  # Include file path for reference
             }
 
         except Exception as e:
@@ -442,5 +463,5 @@ class DesignRuleCommands:
             return {
                 "success": False,
                 "message": "Failed to get DRC violations",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }

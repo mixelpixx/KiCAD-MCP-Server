@@ -2,6 +2,42 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
+## [2.2.0-alpha] - 2026-02-27
+
+### New MCP Tools (TypeScript layer – previously Python-only)
+
+**Routing tools:**
+- `delete_trace` - Delete traces by UUID, position or net name
+- `query_traces` - Query/filter traces on the board
+- `get_nets_list` - List all nets with net code and class
+- `modify_trace` - Modify trace width or layer
+- `create_netclass` - Create or update a net class
+- `route_differential_pair` - Route a differential pair between two points
+- `refill_zones` - Refill all copper zones ⚠️ SWIG segfault risk, prefer IPC/UI
+
+**Component tools:**
+- `get_component_pads` - Get all pad data for a component
+- `get_component_list` - List all components on the board
+- `get_pad_position` - Get absolute position of a specific pad
+- `place_component_array` - Place components in a grid array
+- `align_components` - Align components along an axis
+- `duplicate_component` - Duplicate a component with offset
+
+### Bug Fixes
+
+- `routing.py`: Fix SwigPyObject UUID comparison (`str()` → `m_Uuid.AsString()`)
+- `routing.py`: Fix SWIG iterator invalidation after `board.Remove()` by snapshotting `list(board.Tracks())`
+- `routing.py`: Add `board.SetModified()` + `track = None` after `Remove()` to prevent dangling SWIG pointer crashes
+- `routing.py`: Per-track `try/except` in `query_traces()` to skip invalid objects after bulk delete
+- `routing.py`: Add missing return statement (mypy)
+- `library.py`: Fix `search_footprints` parameter mapping (`search_term` → `pattern`)
+- `library.py`: Fix field access (`fp.name` → `fp.full_name`)
+- `library.py`: Accept both `pattern` and `search_term` parameter names
+- `library.py`: Fix loop variable shadowing `Path` object (mypy)
+- `design_rules.py`: Add type annotation for `violation_counts` (mypy)
+
+---
+
 ## [2.1.0-alpha] - 2026-01-10
 
 ### Phase 1: Intelligent Schematic Wiring System - Core Infrastructure
