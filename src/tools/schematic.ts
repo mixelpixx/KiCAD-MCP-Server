@@ -43,6 +43,7 @@ export function registerSchematicTools(
         ),
       reference: z.string().describe("Component reference (e.g., R1, U1)"),
       value: z.string().optional().describe("Component value"),
+      footprint: z.string().optional().describe("KiCAD footprint (e.g. Resistor_SMD:R_0603_1608Metric)"),
       position: z
         .object({
           x: z.number(),
@@ -56,6 +57,7 @@ export function registerSchematicTools(
       symbol: string;
       reference: string;
       value?: string;
+      footprint?: string;
       position?: { x: number; y: number };
     }) => {
       // Transform to what Python backend expects
@@ -70,6 +72,7 @@ export function registerSchematicTools(
           type: symbolName,
           reference: args.reference,
           value: args.value,
+          footprint: args.footprint ?? "",
           // Python expects flat x, y not nested position
           x: args.position?.x ?? 0,
           y: args.position?.y ?? 0,
@@ -135,6 +138,55 @@ To remove a footprint from a PCB, use delete_component instead.`,
           {
             type: "text",
             text: `Failed to remove component: ${result.message || "Unknown error"}`,
+          },
+        ],
+      };
+    },
+  );
+
+  // Edit component properties in schematic (footprint, value, reference)
+  server.tool(
+    "edit_schematic_component",
+    `Update properties of a placed symbol in a KiCAD schematic (.kicad_sch) in-place.
+
+Use this tool to assign or update a footprint, change the value, or rename the reference
+of an already-placed component. This is more efficient than delete + re-add because it
+preserves the component's position and UUID.
+
+Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_component.`,
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      reference: z.string().describe("Current reference designator of the component (e.g. R1, U3)"),
+      footprint: z.string().optional().describe("New KiCAD footprint string (e.g. Resistor_SMD:R_0603_1608Metric)"),
+      value: z.string().optional().describe("New value string (e.g. 10k, 100nF)"),
+      newReference: z.string().optional().describe("Rename the reference designator (e.g. R1 → R10)"),
+    },
+    async (args: {
+      schematicPath: string;
+      reference: string;
+      footprint?: string;
+      value?: string;
+      newReference?: string;
+    }) => {
+      const result = await callKicadScript("edit_schematic_component", args);
+      if (result.success) {
+        const changes = Object.entries(result.updated ?? {})
+          .map(([k, v]) => `${k}=${v}`)
+          .join(", ");
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Successfully updated ${args.reference}: ${changes}`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Failed to edit component: ${result.message || "Unknown error"}`,
           },
         ],
       };

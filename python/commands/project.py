@@ -8,7 +8,8 @@ import logging
 import shutil
 from typing import Dict, Any, Optional
 
-logger = logging.getLogger('kicad_interface')
+logger = logging.getLogger("kicad_interface")
+
 
 class ProjectCommands:
     """Handles project-related KiCAD operations"""
@@ -21,7 +22,9 @@ class ProjectCommands:
         """Create a new KiCAD project"""
         try:
             # Accept both 'name' (from MCP tool) and 'projectName' (legacy)
-            project_name = params.get("name") or params.get("projectName", "New_Project")
+            project_name = params.get("name") or params.get(
+                "projectName", "New_Project"
+            )
             path = params.get("path", os.getcwd())
             template = params.get("template")
 
@@ -35,12 +38,13 @@ class ProjectCommands:
 
             # Create a new board
             board = pcbnew.BOARD()
-            
+
             # Set project properties
             board.GetTitleBlock().SetTitle(project_name)
-            
+
             # Set current date with proper parameter
             from datetime import datetime
+
             current_date = datetime.now().strftime("%Y-%m-%d")
             board.GetTitleBlock().SetDate(current_date)
 
@@ -58,38 +62,58 @@ class ProjectCommands:
             board.SetFileName(board_path)
             pcbnew.SaveBoard(board_path, board)
 
-            # Create schematic from template (use expanded template with many component types)
+            # Create schematic from template (use expanded template with symbol definitions)
             schematic_path = project_path.replace(".kicad_pro", ".kicad_sch")
             template_sch_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
-                '..', 'templates', 'template_with_symbols_expanded.kicad_sch'
+                "..",
+                "templates",
+                "template_with_symbols_expanded.kicad_sch",
             )
 
             if os.path.exists(template_sch_path):
                 # Copy template schematic
                 shutil.copy(template_sch_path, schematic_path)
+
+                # Replace placeholder UUID with a real one
+                import uuid as uuid_module
+
+                with open(schematic_path, "r", encoding="utf-8") as f:
+                    sch_content = f.read()
+                sch_content = sch_content.replace(
+                    "00000000-0000-0000-0000-000000000000", str(uuid_module.uuid4())
+                )
+                with open(schematic_path, "w", encoding="utf-8") as f:
+                    f.write(sch_content)
+
                 logger.info(f"Created schematic from template: {schematic_path}")
             else:
                 # Fallback: create minimal schematic
-                logger.warning(f"Template not found at {template_sch_path}, creating minimal schematic")
-                with open(schematic_path, 'w') as f:
-                    f.write(f'(kicad_sch (version 20230121) (generator "KiCAD-MCP-Server")\n\n')
-                    f.write(f'  (uuid 00000000-0000-0000-0000-000000000000)\n\n')
+                logger.warning(
+                    f"Template not found at {template_sch_path}, creating minimal schematic"
+                )
+                import uuid as uuid_module
+
+                with open(schematic_path, "w") as f:
+                    f.write(
+                        f'(kicad_sch (version 20250114) (generator "KiCAD-MCP-Server")\n\n'
+                    )
+                    f.write(f"  (uuid {str(uuid_module.uuid4())})\n\n")
                     f.write(f'  (paper "A4")\n\n')
-                    f.write(f'  (lib_symbols\n  )\n\n')
+                    f.write(f"  (lib_symbols\n  )\n\n")
                     f.write(f'  (sheet_instances\n    (path "/" (page "1"))\n  )\n')
-                    f.write(f')\n')
+                    f.write(f")\n")
 
             # Create project file with schematic reference
-            with open(project_path, 'w') as f:
-                f.write('{\n')
+            with open(project_path, "w") as f:
+                f.write("{\n")
                 f.write('  "board": {\n')
                 f.write(f'    "filename": "{os.path.basename(board_path)}"\n')
-                f.write('  },\n')
+                f.write("  },\n")
                 f.write('  "sheets": [\n')
                 f.write(f'    ["root", "{os.path.basename(schematic_path)}"]\n')
-                f.write('  ]\n')
-                f.write('}\n')
+                f.write("  ]\n")
+                f.write("}\n")
 
             self.board = board
 
@@ -100,8 +124,8 @@ class ProjectCommands:
                     "name": project_name,
                     "path": project_path,
                     "boardPath": board_path,
-                    "schematicPath": schematic_path
-                }
+                    "schematicPath": schematic_path,
+                },
             }
 
         except Exception as e:
@@ -109,7 +133,7 @@ class ProjectCommands:
             return {
                 "success": False,
                 "message": "Failed to create project",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def open_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -120,7 +144,7 @@ class ProjectCommands:
                 return {
                     "success": False,
                     "message": "No filename provided",
-                    "errorDetails": "The filename parameter is required"
+                    "errorDetails": "The filename parameter is required",
                 }
 
             # Expand user path and make absolute
@@ -142,8 +166,8 @@ class ProjectCommands:
                 "project": {
                     "name": os.path.splitext(os.path.basename(board_path))[0],
                     "path": filename,
-                    "boardPath": board_path
-                }
+                    "boardPath": board_path,
+                },
             }
 
         except Exception as e:
@@ -151,7 +175,7 @@ class ProjectCommands:
             return {
                 "success": False,
                 "message": "Failed to open project",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def save_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -161,7 +185,7 @@ class ProjectCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             filename = params.get("filename")
@@ -177,9 +201,11 @@ class ProjectCommands:
                 "success": True,
                 "message": f"Saved project to: {self.board.GetFileName()}",
                 "project": {
-                    "name": os.path.splitext(os.path.basename(self.board.GetFileName()))[0],
-                    "path": self.board.GetFileName()
-                }
+                    "name": os.path.splitext(
+                        os.path.basename(self.board.GetFileName())
+                    )[0],
+                    "path": self.board.GetFileName(),
+                },
             }
 
         except Exception as e:
@@ -187,7 +213,7 @@ class ProjectCommands:
             return {
                 "success": False,
                 "message": "Failed to save project",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def get_project_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -197,12 +223,12 @@ class ProjectCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             title_block = self.board.GetTitleBlock()
             filename = self.board.GetFileName()
-            
+
             return {
                 "success": True,
                 "project": {
@@ -215,8 +241,8 @@ class ProjectCommands:
                     "comment1": title_block.GetComment(0),
                     "comment2": title_block.GetComment(1),
                     "comment3": title_block.GetComment(2),
-                    "comment4": title_block.GetComment(3)
-                }
+                    "comment4": title_block.GetComment(3),
+                },
             }
 
         except Exception as e:
@@ -224,5 +250,5 @@ class ProjectCommands:
             return {
                 "success": False,
                 "message": "Failed to get project information",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
