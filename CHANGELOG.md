@@ -2,6 +2,102 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
+## [2.2.0-alpha] - 2026-02-27
+
+### New MCP Tools (TypeScript layer – previously Python-only)
+
+**Routing tools:**
+- `delete_trace` - Delete traces by UUID, position or net name
+- `query_traces` - Query/filter traces on the board
+- `get_nets_list` - List all nets with net code and class
+- `modify_trace` - Modify trace width or layer
+- `create_netclass` - Create or update a net class
+- `route_differential_pair` - Route a differential pair between two points
+- `refill_zones` - Refill all copper zones ⚠️ SWIG segfault risk, prefer IPC/UI
+
+**Component tools:**
+- `get_component_pads` - Get all pad data for a component
+- `get_component_list` - List all components on the board
+- `get_pad_position` - Get absolute position of a specific pad
+- `place_component_array` - Place components in a grid array
+- `align_components` - Align components along an axis
+- `duplicate_component` - Duplicate a component with offset
+
+### Bug Fixes
+
+- `routing.py`: Fix SwigPyObject UUID comparison (`str()` → `m_Uuid.AsString()`)
+- `routing.py`: Fix SWIG iterator invalidation after `board.Remove()` by snapshotting `list(board.Tracks())`
+- `routing.py`: Add `board.SetModified()` + `track = None` after `Remove()` to prevent dangling SWIG pointer crashes
+- `routing.py`: Per-track `try/except` in `query_traces()` to skip invalid objects after bulk delete
+- `routing.py`: Add missing return statement (mypy)
+- `library.py`: Fix `search_footprints` parameter mapping (`search_term` → `pattern`)
+- `library.py`: Fix field access (`fp.name` → `fp.full_name`)
+- `library.py`: Accept both `pattern` and `search_term` parameter names
+- `library.py`: Fix loop variable shadowing `Path` object (mypy)
+- `design_rules.py`: Add type annotation for `violation_counts` (mypy)
+
+### Pending additions (not yet committed)
+
+**Datasheet tools:**
+- `get_datasheet_url` - Return LCSC datasheet PDF URL and product page URL for a given
+  LCSC number (e.g. `C179739` → `https://www.lcsc.com/datasheet/C179739.pdf`).
+  No API key required – URL is constructed directly from the LCSC number.
+- `enrich_datasheets` - Scan a `.kicad_sch` file and write LCSC datasheet URLs into
+  every symbol that has an `LCSC` property but an empty `Datasheet` field. After
+  enrichment the URL appears natively in KiCAD's symbol properties, footprint browser
+  and any other tool that reads the standard KiCAD `Datasheet` field.
+  Supports `dry_run=true` for preview without writing.
+  Implementation: `python/commands/datasheet_manager.py` (text-based, no `skip` writes)
+
+**Schematic tools:**
+- `delete_schematic_component` - Remove a placed symbol from a `.kicad_sch` file by
+  reference designator (e.g. `R1`, `U3`).
+
+### Bug Fixes (pending)
+
+- `schematic.ts` / `kicad_interface.py`: Fix missing `delete_schematic_component` MCP tool.
+
+  **Root cause (two separate issues):**
+  1. No MCP tool named `delete_schematic_component` existed. Claude had no way to call
+     it, so any "delete schematic component" request fell through to the PCB-only
+     `delete_component` tool, which searches `pcbnew.BOARD` and always returned
+     "Component not found" for schematic symbols.
+  2. `component_schematic.py::remove_component()` still used `skip` for writes.
+     PR #40 rewrote `DynamicSymbolLoader` (add path) to avoid `skip`-induced schematic
+     corruption, but `remove_component` (delete path) was not touched by that PR.
+
+  **Fix:**
+  - Added `delete_schematic_component` to the TypeScript tool layer (`schematic.ts`)
+    with clear docstring distinguishing it from the PCB `delete_component`.
+  - Implemented `_handle_delete_schematic_component` in `kicad_interface.py` using
+    direct text manipulation (parenthesis-depth tracking, same approach as PR #40).
+    Does not call `component_schematic.py::remove_component()` at all.
+  - Error message explicitly guides the user when the wrong tool is used:
+    *"note: this tool removes schematic symbols, use delete_component for PCB footprints"*
+
+### Pending fixes (not yet committed)
+
+- `connection_schematic.py` / `kicad_interface.py`: Fix `generate_netlist` missing
+  `schematic_path` parameter – without it `get_net_connections` always fell back to
+  proximity matching which only returns one connection per component (first wire hit,
+  then `break`). PinLocator was never invoked. Fix: added `schematic_path: Optional[Path]`
+  to `generate_netlist` signature and threaded it through to `get_net_connections`,
+  and updated `_handle_generate_netlist` in `kicad_interface.py` to pass `schematic_path`.
+- `server.ts`: Fix KiCAD bundled Python (3.11.5) not being selected on Windows – the
+  detection condition `process.env.PYTHONPATH?.includes("KiCad")` was fragile and failed
+  in some environments, causing System Python 3.12 to be used instead. Since `pcbnew.pyd`
+  is compiled for KiCAD's Python 3.11.5, this resulted in `No module named 'pcbnew'`.
+  Fix: removed the condition, KiCAD bundled Python is now always preferred on Windows
+  when it exists at `C:\Program Files\KiCad\9.0\bin\python.exe`.
+  Also added `KICAD_PYTHON` to `claude_desktop_config.json` as explicit override.
+- `pin_locator.py`: Fix `generate_netlist` timeout – `get_pin_location` and
+  `get_all_symbol_pins` called `Schematic(schematic_path)` on every single pin lookup,
+  causing O(nets × components × pins) schematic file loads (e.g. 400+ loads for a
+  medium schematic). Fix: added `_schematic_cache` dict to `PinLocator.__init__`,
+  schematic is now loaded once per path and reused.
+
+---
+
 ## [2.1.0-alpha] - 2026-01-10
 
 ### Phase 1: Intelligent Schematic Wiring System - Core Infrastructure
