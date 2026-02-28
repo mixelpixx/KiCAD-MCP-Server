@@ -2,6 +2,47 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
+## [2.2.1-alpha] - 2026-02-28
+
+### New MCP Tools
+
+- `edit_schematic_component` – Update properties of a placed symbol in-place (footprint,
+  value, reference rename). More efficient than delete + re-add: preserves position and UUID.
+
+### Bug Fixes
+
+- `add_schematic_component`: `footprint` parameter was accepted but silently ignored – the
+  value was never passed through to `DynamicSymbolLoader.add_component()` /
+  `create_component_instance()`. All newly placed symbols always had an empty Footprint
+  field. Fix: added `footprint: str = ""` to both functions and threaded it through every
+  call site including the TypeScript tool schema.
+
+- `delete_schematic_component`: only deleted the first matching instance when duplicate
+  references existed (e.g. after an aborted add attempt). Root cause: loop used `break`
+  after the first match. Fix: collect all matching blocks first, then delete them all back-
+  to-front (to preserve line indices). Response now includes `deleted_count`.
+
+- `templates/*.kicad_sch`, `project.py`, `schematic.py`: Update KiCAD schematic format
+  version from `20230121` (KiCAD 7) to `20250114` (KiCAD 9). The MCP server targets
+  KiCAD 9 exclusively (`pcbnew.pyd` compiled for KiCAD 9.0, Python 3.11.5) – generating
+  files in an outdated format caused a spurious "This file was created with an older
+  KiCAD version" warning on every newly created schematic.
+
+- `template_with_symbols_expanded.kicad_sch`: Remove 13 corrupt `_TEMPLATE_*` placed-symbol
+  blocks with `(lib_id -100)` – an integer caused by old sexpdata serializer (same bug
+  PR #40 fixed for the add path). KiCAD crashed with a null-pointer when selecting these
+  symbols. They appeared as grey `_TEMPLATE_R?`, `_TEMPLATE_U_REG?` etc. labels far
+  outside the sheet boundary (~5000mm off-sheet).
+
+  **Discovered via:** live testing on a real JLCPCB/KiCAD 9 project.
+  **Affected users:** schematics created from this template before this fix contain the
+  same corrupt blocks – remove all `(symbol (lib_id -100) ...)` blocks whose Reference
+  starts with `_TEMPLATE_`.
+
+---
+
+---
+
 ## [2.2.0-alpha] - 2026-02-27
 
 ### New MCP Tools (TypeScript layer – previously Python-only)
@@ -36,7 +77,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
 - `library.py`: Fix loop variable shadowing `Path` object (mypy)
 - `design_rules.py`: Add type annotation for `violation_counts` (mypy)
 
-### Pending additions (not yet committed)
+### New MCP Tools (cont.)
 
 **Datasheet tools:**
 - `get_datasheet_url` - Return LCSC datasheet PDF URL and product page URL for a given
@@ -53,7 +94,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
 - `delete_schematic_component` - Remove a placed symbol from a `.kicad_sch` file by
   reference designator (e.g. `R1`, `U3`).
 
-### Bug Fixes (pending)
+### Bug Fixes (cont.)
 
 - `schematic.ts` / `kicad_interface.py`: Fix missing `delete_schematic_component` MCP tool.
 
@@ -75,7 +116,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
   - Error message explicitly guides the user when the wrong tool is used:
     *"note: this tool removes schematic symbols, use delete_component for PCB footprints"*
 
-### Pending fixes (not yet committed)
+### Additional Bug Fixes
 
 - `connection_schematic.py` / `kicad_interface.py`: Fix `generate_netlist` missing
   `schematic_path` parameter – without it `get_net_connections` always fell back to

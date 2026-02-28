@@ -366,6 +366,7 @@ class KiCADInterface:
             "load_schematic": self._handle_load_schematic,
             "add_schematic_component": self._handle_add_schematic_component,
             "delete_schematic_component": self._handle_delete_schematic_component,
+            "edit_schematic_component": self._handle_edit_schematic_component,
             "add_schematic_wire": self._handle_add_schematic_wire,
             "add_schematic_connection": self._handle_add_schematic_connection,
             "add_schematic_net_label": self._handle_add_schematic_net_label,
@@ -585,6 +586,7 @@ class KiCADInterface:
             library = component.get("library", "Device")
             reference = component.get("reference", "X?")
             value = component.get("value", comp_type)
+            footprint = component.get("footprint", "")
             x = component.get("x", 0)
             y = component.get("y", 0)
 
@@ -595,6 +597,7 @@ class KiCADInterface:
                 comp_type,
                 reference=reference,
                 value=value,
+                footprint=footprint,
                 x=x,
                 y=y,
             )
@@ -646,9 +649,8 @@ class KiCADInterface:
                         lib_sym_end = i
                         break
 
-            # Find the placed symbol block matching the reference
-            block_start = None
-            block_end = None
+            # Find ALL placed symbol blocks matching the reference (handles duplicates)
+            blocks_to_delete = []
             i = 0
             while i < len(lines):
                 # Skip lib_symbols
@@ -666,38 +668,128 @@ class KiCADInterface:
                         j += 1
                     b_end = j - 1
 
-                    # Check if this block contains the target reference
                     block_text = "\n".join(lines[b_start:b_end + 1])
-                    # Match: (property "Reference" "R1" ...
                     if re.search(r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"', block_text):
-                        block_start = b_start
-                        block_end = b_end
-                        break
+                        blocks_to_delete.append((b_start, b_end))
 
                     i = b_end + 1
                     continue
 
                 i += 1
 
-            if block_start is None:
+            if not blocks_to_delete:
                 return {
                     "success": False,
                     "message": f"Component '{reference}' not found in schematic (note: this tool removes schematic symbols, use delete_component for PCB footprints)",
                 }
 
-            # Remove the block (and any trailing blank line)
-            del lines[block_start:block_end + 1]
-            if block_start < len(lines) and lines[block_start].strip() == "":
-                del lines[block_start]
+            # Delete from back to front to preserve line indices
+            for b_start, b_end in sorted(blocks_to_delete, reverse=True):
+                del lines[b_start:b_end + 1]
+                if b_start < len(lines) and lines[b_start].strip() == "":
+                    del lines[b_start]
 
             with open(sch_file, "w", encoding="utf-8") as f:
                 f.write("\n".join(lines))
 
-            logger.info(f"Deleted schematic component {reference} from {sch_file.name}")
-            return {"success": True, "reference": reference, "schematic": str(sch_file)}
+            deleted_count = len(blocks_to_delete)
+            logger.info(f"Deleted {deleted_count} instance(s) of {reference} from {sch_file.name}")
+            return {"success": True, "reference": reference, "deleted_count": deleted_count, "schematic": str(sch_file)}
 
         except Exception as e:
             logger.error(f"Error deleting schematic component: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_edit_schematic_component(self, params):
+        """Update properties of a placed symbol in a schematic (footprint, value, reference).
+        Uses text-based in-place editing – preserves position, UUID and all other fields."""
+        logger.info("Editing schematic component")
+        try:
+            from pathlib import Path
+            import re
+
+            schematic_path = params.get("schematicPath")
+            reference = params.get("reference")
+            new_footprint = params.get("footprint")
+            new_value = params.get("value")
+            new_reference = params.get("newReference")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not reference:
+                return {"success": False, "message": "reference is required"}
+            if not any([new_footprint is not None, new_value is not None, new_reference is not None]):
+                return {"success": False, "message": "At least one of footprint, value, or newReference must be provided"}
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            with open(sch_file, "r", encoding="utf-8") as f:
+                lines = f.read().split("\n")
+
+            # Find lib_symbols range to skip
+            lib_sym_start, lib_sym_end = None, None
+            depth = 0
+            for i, line in enumerate(lines):
+                if "(lib_symbols" in line and lib_sym_start is None:
+                    lib_sym_start = i
+                    depth = sum(1 for c in line if c == "(") - sum(1 for c in line if c == ")")
+                elif lib_sym_start is not None and lib_sym_end is None:
+                    depth += sum(1 for c in line if c == "(") - sum(1 for c in line if c == ")")
+                    if depth == 0:
+                        lib_sym_end = i
+                        break
+
+            # Find the placed symbol block
+            block_start = block_end = None
+            i = 0
+            while i < len(lines):
+                if lib_sym_start is not None and lib_sym_end is not None:
+                    if lib_sym_start <= i <= lib_sym_end:
+                        i += 1
+                        continue
+                if re.match(r"\s*\(symbol\s+\(lib_id\s+\"", lines[i]):
+                    b_start = i
+                    b_depth = sum(1 for c in lines[i] if c == "(") - sum(1 for c in lines[i] if c == ")")
+                    j = i + 1
+                    while j < len(lines) and b_depth > 0:
+                        b_depth += sum(1 for c in lines[j] if c == "(") - sum(1 for c in lines[j] if c == ")")
+                        j += 1
+                    b_end = j - 1
+                    block_text = "\n".join(lines[b_start:b_end + 1])
+                    if re.search(r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"', block_text):
+                        block_start, block_end = b_start, b_end
+                        break
+                    i = b_end + 1
+                    continue
+                i += 1
+
+            if block_start is None:
+                return {"success": False, "message": f"Component '{reference}' not found in schematic"}
+
+            # Apply in-place property updates within the block
+            for k in range(block_start, block_end + 1):
+                line = lines[k]
+                if new_footprint is not None and re.match(r'\s*\(property\s+"Footprint"\s+"', line):
+                    line = re.sub(r'(\(property\s+"Footprint"\s+)"[^"]*"', rf'\1"{new_footprint}"', line)
+                if new_value is not None and re.match(r'\s*\(property\s+"Value"\s+"', line):
+                    line = re.sub(r'(\(property\s+"Value"\s+)"[^"]*"', rf'\1"{new_value}"', line)
+                if new_reference is not None and re.match(r'\s*\(property\s+"Reference"\s+"', line):
+                    line = re.sub(r'(\(property\s+"Reference"\s+)"[^"]*"', rf'\1"{new_reference}"', line)
+                lines[k] = line
+
+            with open(sch_file, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+
+            changes = {k: v for k, v in {"footprint": new_footprint, "value": new_value, "reference": new_reference}.items() if v is not None}
+            logger.info(f"Edited schematic component {reference}: {changes}")
+            return {"success": True, "reference": reference, "updated": changes}
+
+        except Exception as e:
+            logger.error(f"Error editing schematic component: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
