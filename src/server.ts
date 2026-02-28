@@ -22,6 +22,8 @@ import { registerLibraryTools } from "./tools/library.js";
 import { registerSymbolLibraryTools } from "./tools/library-symbol.js";
 import { registerJLCPCBApiTools } from "./tools/jlcpcb-api.js";
 import { registerDatasheetTools } from "./tools/datasheet.js";
+import { registerFootprintTools } from "./tools/footprint.js";
+import { registerSymbolCreatorTools } from "./tools/symbol-creator.js";
 import { registerUITools } from "./tools/ui.js";
 import { registerRouterTools } from "./tools/router.js";
 
@@ -35,6 +37,7 @@ import { registerLibraryResources } from "./resources/library.js";
 import { registerComponentPrompts } from "./prompts/component.js";
 import { registerRoutingPrompts } from "./prompts/routing.js";
 import { registerDesignPrompts } from "./prompts/design.js";
+import { registerFootprintPrompts } from "./prompts/footprint.js";
 
 /**
  * Find the Python executable to use
@@ -243,6 +246,8 @@ export class KiCADMcpServer {
     registerSymbolLibraryTools(this.server, this.callKicadScript.bind(this));
     registerJLCPCBApiTools(this.server, this.callKicadScript.bind(this));
     registerDatasheetTools(this.server, this.callKicadScript.bind(this));
+    registerFootprintTools(this.server, this.callKicadScript.bind(this));
+    registerSymbolCreatorTools(this.server, this.callKicadScript.bind(this));
     registerUITools(this.server, this.callKicadScript.bind(this));
 
     // Register all resources
@@ -255,6 +260,7 @@ export class KiCADMcpServer {
     registerComponentPrompts(this.server);
     registerRoutingPrompts(this.server);
     registerDesignPrompts(this.server);
+    registerFootprintPrompts(this.server);
 
     logger.info("All KiCAD tools, resources, and prompts registered");
     logger.info(

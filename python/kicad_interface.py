@@ -224,6 +224,8 @@ try:
     from commands.jlcpcb import JLCPCBClient, test_jlcpcb_connection
     from commands.jlcpcb_parts import JLCPCBPartsManager
     from commands.datasheet_manager import DatasheetManager
+    from commands.footprint import FootprintCreator
+    from commands.symbol_creator import SymbolCreator
 
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
@@ -387,6 +389,16 @@ class KiCADInterface:
             "ipc_get_tracks": self._handle_ipc_get_tracks,
             "ipc_get_vias": self._handle_ipc_get_vias,
             "ipc_save_board": self._handle_ipc_save_board,
+            # Footprint commands
+            "create_footprint": self._handle_create_footprint,
+            "edit_footprint_pad": self._handle_edit_footprint_pad,
+            "list_footprint_libraries": self._handle_list_footprint_libraries,
+            "register_footprint_library": self._handle_register_footprint_library,
+            # Symbol creator commands
+            "create_symbol": self._handle_create_symbol,
+            "delete_symbol": self._handle_delete_symbol,
+            "list_symbols_in_library": self._handle_list_symbols_in_library,
+            "register_symbol_library": self._handle_register_symbol_library,
         }
 
         logger.info(
@@ -853,6 +865,146 @@ class KiCADInterface:
         except Exception as e:
             logger.error(f"Error listing schematic libraries: {str(e)}")
             return {"success": False, "message": str(e)}
+
+    # ------------------------------------------------------------------ #
+    #  Footprint handlers                                                  #
+    # ------------------------------------------------------------------ #
+
+    def _handle_create_footprint(self, params):
+        """Create a new .kicad_mod footprint file in a .pretty library."""
+        logger.info(f"create_footprint: {params.get('name')} in {params.get('libraryPath')}")
+        try:
+            creator = FootprintCreator()
+            return creator.create_footprint(
+                library_path=params.get("libraryPath", ""),
+                name=params.get("name", ""),
+                description=params.get("description", ""),
+                tags=params.get("tags", ""),
+                pads=params.get("pads", []),
+                courtyard=params.get("courtyard"),
+                silkscreen=params.get("silkscreen"),
+                fab_layer=params.get("fabLayer"),
+                ref_position=params.get("refPosition"),
+                value_position=params.get("valuePosition"),
+                overwrite=params.get("overwrite", False),
+            )
+        except Exception as e:
+            logger.error(f"create_footprint error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_edit_footprint_pad(self, params):
+        """Edit an existing pad in a .kicad_mod file."""
+        logger.info(f"edit_footprint_pad: pad {params.get('padNumber')} in {params.get('footprintPath')}")
+        try:
+            creator = FootprintCreator()
+            return creator.edit_footprint_pad(
+                footprint_path=params.get("footprintPath", ""),
+                pad_number=str(params.get("padNumber", "1")),
+                size=params.get("size"),
+                at=params.get("at"),
+                drill=params.get("drill"),
+                shape=params.get("shape"),
+            )
+        except Exception as e:
+            logger.error(f"edit_footprint_pad error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_list_footprint_libraries(self, params):
+        """List .pretty footprint libraries and their contents."""
+        logger.info("list_footprint_libraries")
+        try:
+            creator = FootprintCreator()
+            return creator.list_footprint_libraries(
+                search_paths=params.get("searchPaths")
+            )
+        except Exception as e:
+            logger.error(f"list_footprint_libraries error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_register_footprint_library(self, params):
+        """Register a .pretty library in KiCAD's fp-lib-table."""
+        logger.info(f"register_footprint_library: {params.get('libraryPath')}")
+        try:
+            creator = FootprintCreator()
+            return creator.register_footprint_library(
+                library_path=params.get("libraryPath", ""),
+                library_name=params.get("libraryName"),
+                description=params.get("description", ""),
+                scope=params.get("scope", "project"),
+                project_path=params.get("projectPath"),
+            )
+        except Exception as e:
+            logger.error(f"register_footprint_library error: {e}")
+            return {"success": False, "error": str(e)}
+
+    # ------------------------------------------------------------------ #
+    #  Symbol creator handlers                                             #
+    # ------------------------------------------------------------------ #
+
+    def _handle_create_symbol(self, params):
+        """Create a new symbol in a .kicad_sym library."""
+        logger.info(f"create_symbol: {params.get('name')} in {params.get('libraryPath')}")
+        try:
+            creator = SymbolCreator()
+            return creator.create_symbol(
+                library_path=params.get("libraryPath", ""),
+                name=params.get("name", ""),
+                reference_prefix=params.get("referencePrefix", "U"),
+                description=params.get("description", ""),
+                keywords=params.get("keywords", ""),
+                datasheet=params.get("datasheet", "~"),
+                footprint=params.get("footprint", ""),
+                in_bom=params.get("inBom", True),
+                on_board=params.get("onBoard", True),
+                pins=params.get("pins", []),
+                rectangles=params.get("rectangles", []),
+                polylines=params.get("polylines", []),
+                overwrite=params.get("overwrite", False),
+            )
+        except Exception as e:
+            logger.error(f"create_symbol error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_delete_symbol(self, params):
+        """Delete a symbol from a .kicad_sym library."""
+        logger.info(f"delete_symbol: {params.get('name')} from {params.get('libraryPath')}")
+        try:
+            creator = SymbolCreator()
+            return creator.delete_symbol(
+                library_path=params.get("libraryPath", ""),
+                name=params.get("name", ""),
+            )
+        except Exception as e:
+            logger.error(f"delete_symbol error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_list_symbols_in_library(self, params):
+        """List all symbols in a .kicad_sym file."""
+        logger.info(f"list_symbols_in_library: {params.get('libraryPath')}")
+        try:
+            creator = SymbolCreator()
+            return creator.list_symbols(
+                library_path=params.get("libraryPath", ""),
+            )
+        except Exception as e:
+            logger.error(f"list_symbols_in_library error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_register_symbol_library(self, params):
+        """Register a .kicad_sym library in KiCAD's sym-lib-table."""
+        logger.info(f"register_symbol_library: {params.get('libraryPath')}")
+        try:
+            creator = SymbolCreator()
+            return creator.register_symbol_library(
+                library_path=params.get("libraryPath", ""),
+                library_name=params.get("libraryName"),
+                description=params.get("description", ""),
+                scope=params.get("scope", "project"),
+                project_path=params.get("projectPath"),
+            )
+        except Exception as e:
+            logger.error(f"register_symbol_library error: {e}")
+            return {"success": False, "error": str(e)}
 
     def _handle_export_schematic_pdf(self, params):
         """Export schematic to PDF"""
