@@ -36,6 +36,27 @@ All notable changes to the KiCAD MCP Server project are documented here.
 - `library.py`: Fix loop variable shadowing `Path` object (mypy)
 - `design_rules.py`: Add type annotation for `violation_counts` (mypy)
 
+### Pending fixes (not yet committed)
+
+- `connection_schematic.py` / `kicad_interface.py`: Fix `generate_netlist` missing
+  `schematic_path` parameter – without it `get_net_connections` always fell back to
+  proximity matching which only returns one connection per component (first wire hit,
+  then `break`). PinLocator was never invoked. Fix: added `schematic_path: Optional[Path]`
+  to `generate_netlist` signature and threaded it through to `get_net_connections`,
+  and updated `_handle_generate_netlist` in `kicad_interface.py` to pass `schematic_path`.
+- `server.ts`: Fix KiCAD bundled Python (3.11.5) not being selected on Windows – the
+  detection condition `process.env.PYTHONPATH?.includes("KiCad")` was fragile and failed
+  in some environments, causing System Python 3.12 to be used instead. Since `pcbnew.pyd`
+  is compiled for KiCAD's Python 3.11.5, this resulted in `No module named 'pcbnew'`.
+  Fix: removed the condition, KiCAD bundled Python is now always preferred on Windows
+  when it exists at `C:\Program Files\KiCad\9.0\bin\python.exe`.
+  Also added `KICAD_PYTHON` to `claude_desktop_config.json` as explicit override.
+- `pin_locator.py`: Fix `generate_netlist` timeout – `get_pin_location` and
+  `get_all_symbol_pins` called `Schematic(schematic_path)` on every single pin lookup,
+  causing O(nets × components × pins) schematic file loads (e.g. 400+ loads for a
+  medium schematic). Fix: added `_schematic_cache` dict to `PinLocator.__init__`,
+  schematic is now loaded once per path and reused.
+
 ---
 
 ## [2.1.0-alpha] - 2026-01-10
