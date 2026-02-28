@@ -1,0 +1,13 @@
+(kicad_sch (version 20250114) (generator "KiCAD-MCP-Server")
+
+  (uuid 00000000-0000-0000-0000-000000000000)
+
+  (paper "A4")
+
+  (lib_symbols
+  )
+
+  (sheet_instances
+    (path "/" (page "1"))
+  )
+)
