@@ -4,7 +4,8 @@ import shutil
 import logging
 import uuid
 
-logger = logging.getLogger('kicad_interface')
+logger = logging.getLogger("kicad_interface")
+
 
 class SchematicManager:
     """Core schematic operations using kicad-skip"""
@@ -16,11 +17,13 @@ class SchematicManager:
             # Determine template path (use template_with_symbols for component cloning support)
             template_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
-                '..', 'templates', 'template_with_symbols.kicad_sch'
+                "..",
+                "templates",
+                "template_with_symbols.kicad_sch",
             )
 
             # Determine output path
-            output_path = name if name.endswith('.kicad_sch') else f"{name}.kicad_sch"
+            output_path = name if name.endswith(".kicad_sch") else f"{name}.kicad_sch"
 
             if os.path.exists(template_path):
                 # Copy template to target location
@@ -28,17 +31,21 @@ class SchematicManager:
                 logger.info(f"Created schematic from template: {output_path}")
             else:
                 # Fallback: create minimal schematic
-                logger.warning(f"Template not found at {template_path}, creating minimal schematic")
+                logger.warning(
+                    f"Template not found at {template_path}, creating minimal schematic"
+                )
                 # Generate unique UUID for this schematic
                 schematic_uuid = str(uuid.uuid4())
                 # Write with explicit UTF-8 encoding and Unix line endings for cross-platform compatibility
-                with open(output_path, 'w', encoding='utf-8', newline='\n') as f:
-                    f.write('(kicad_sch (version 20230121) (generator "KiCAD-MCP-Server")\n\n')
-                    f.write(f'  (uuid {schematic_uuid})\n\n')
+                with open(output_path, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(
+                        '(kicad_sch (version 20250114) (generator "KiCAD-MCP-Server")\n\n'
+                    )
+                    f.write(f"  (uuid {schematic_uuid})\n\n")
                     f.write('  (paper "A4")\n\n')
-                    f.write('  (lib_symbols\n  )\n\n')
+                    f.write("  (lib_symbols\n  )\n\n")
                     f.write('  (sheet_instances\n    (path "/" (page "1"))\n  )\n')
-                    f.write(')\n')
+                    f.write(")\n")
 
             # Load the schematic
             sch = Schematic(output_path)
@@ -88,7 +95,8 @@ class SchematicManager:
         logger.debug("Extracted schematic metadata")
         return metadata
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # Example Usage (for testing)
     # Create a new schematic
     new_sch = SchematicManager.create_schematic("MyTestSchematic")

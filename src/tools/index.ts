@@ -14,3 +14,5 @@ export { registerSchematicTools } from "./schematic.js";
 export { registerLibraryTools } from "./library.js";
 export { registerUITools } from "./ui.js";
 export { registerDatasheetTools } from "./datasheet.js";
+export { registerFootprintTools } from "./footprint.js";
+export { registerSymbolCreatorTools } from "./symbol-creator.js";

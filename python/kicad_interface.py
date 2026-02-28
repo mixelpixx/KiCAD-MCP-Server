@@ -224,6 +224,8 @@ try:
     from commands.jlcpcb import JLCPCBClient, test_jlcpcb_connection
     from commands.jlcpcb_parts import JLCPCBPartsManager
     from commands.datasheet_manager import DatasheetManager
+    from commands.footprint import FootprintCreator
+    from commands.symbol_creator import SymbolCreator
 
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
@@ -366,6 +368,7 @@ class KiCADInterface:
             "load_schematic": self._handle_load_schematic,
             "add_schematic_component": self._handle_add_schematic_component,
             "delete_schematic_component": self._handle_delete_schematic_component,
+            "edit_schematic_component": self._handle_edit_schematic_component,
             "add_schematic_wire": self._handle_add_schematic_wire,
             "add_schematic_connection": self._handle_add_schematic_connection,
             "add_schematic_net_label": self._handle_add_schematic_net_label,
@@ -386,6 +389,16 @@ class KiCADInterface:
             "ipc_get_tracks": self._handle_ipc_get_tracks,
             "ipc_get_vias": self._handle_ipc_get_vias,
             "ipc_save_board": self._handle_ipc_save_board,
+            # Footprint commands
+            "create_footprint": self._handle_create_footprint,
+            "edit_footprint_pad": self._handle_edit_footprint_pad,
+            "list_footprint_libraries": self._handle_list_footprint_libraries,
+            "register_footprint_library": self._handle_register_footprint_library,
+            # Symbol creator commands
+            "create_symbol": self._handle_create_symbol,
+            "delete_symbol": self._handle_delete_symbol,
+            "list_symbols_in_library": self._handle_list_symbols_in_library,
+            "register_symbol_library": self._handle_register_symbol_library,
         }
 
         logger.info(
@@ -585,6 +598,7 @@ class KiCADInterface:
             library = component.get("library", "Device")
             reference = component.get("reference", "X?")
             value = component.get("value", comp_type)
+            footprint = component.get("footprint", "")
             x = component.get("x", 0)
             y = component.get("y", 0)
 
@@ -595,6 +609,7 @@ class KiCADInterface:
                 comp_type,
                 reference=reference,
                 value=value,
+                footprint=footprint,
                 x=x,
                 y=y,
             )
@@ -646,9 +661,8 @@ class KiCADInterface:
                         lib_sym_end = i
                         break
 
-            # Find the placed symbol block matching the reference
-            block_start = None
-            block_end = None
+            # Find ALL placed symbol blocks matching the reference (handles duplicates)
+            blocks_to_delete = []
             i = 0
             while i < len(lines):
                 # Skip lib_symbols
@@ -666,38 +680,128 @@ class KiCADInterface:
                         j += 1
                     b_end = j - 1
 
-                    # Check if this block contains the target reference
                     block_text = "\n".join(lines[b_start:b_end + 1])
-                    # Match: (property "Reference" "R1" ...
                     if re.search(r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"', block_text):
-                        block_start = b_start
-                        block_end = b_end
-                        break
+                        blocks_to_delete.append((b_start, b_end))
 
                     i = b_end + 1
                     continue
 
                 i += 1
 
-            if block_start is None:
+            if not blocks_to_delete:
                 return {
                     "success": False,
                     "message": f"Component '{reference}' not found in schematic (note: this tool removes schematic symbols, use delete_component for PCB footprints)",
                 }
 
-            # Remove the block (and any trailing blank line)
-            del lines[block_start:block_end + 1]
-            if block_start < len(lines) and lines[block_start].strip() == "":
-                del lines[block_start]
+            # Delete from back to front to preserve line indices
+            for b_start, b_end in sorted(blocks_to_delete, reverse=True):
+                del lines[b_start:b_end + 1]
+                if b_start < len(lines) and lines[b_start].strip() == "":
+                    del lines[b_start]
 
             with open(sch_file, "w", encoding="utf-8") as f:
                 f.write("\n".join(lines))
 
-            logger.info(f"Deleted schematic component {reference} from {sch_file.name}")
-            return {"success": True, "reference": reference, "schematic": str(sch_file)}
+            deleted_count = len(blocks_to_delete)
+            logger.info(f"Deleted {deleted_count} instance(s) of {reference} from {sch_file.name}")
+            return {"success": True, "reference": reference, "deleted_count": deleted_count, "schematic": str(sch_file)}
 
         except Exception as e:
             logger.error(f"Error deleting schematic component: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_edit_schematic_component(self, params):
+        """Update properties of a placed symbol in a schematic (footprint, value, reference).
+        Uses text-based in-place editing – preserves position, UUID and all other fields."""
+        logger.info("Editing schematic component")
+        try:
+            from pathlib import Path
+            import re
+
+            schematic_path = params.get("schematicPath")
+            reference = params.get("reference")
+            new_footprint = params.get("footprint")
+            new_value = params.get("value")
+            new_reference = params.get("newReference")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not reference:
+                return {"success": False, "message": "reference is required"}
+            if not any([new_footprint is not None, new_value is not None, new_reference is not None]):
+                return {"success": False, "message": "At least one of footprint, value, or newReference must be provided"}
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            with open(sch_file, "r", encoding="utf-8") as f:
+                lines = f.read().split("\n")
+
+            # Find lib_symbols range to skip
+            lib_sym_start, lib_sym_end = None, None
+            depth = 0
+            for i, line in enumerate(lines):
+                if "(lib_symbols" in line and lib_sym_start is None:
+                    lib_sym_start = i
+                    depth = sum(1 for c in line if c == "(") - sum(1 for c in line if c == ")")
+                elif lib_sym_start is not None and lib_sym_end is None:
+                    depth += sum(1 for c in line if c == "(") - sum(1 for c in line if c == ")")
+                    if depth == 0:
+                        lib_sym_end = i
+                        break
+
+            # Find the placed symbol block
+            block_start = block_end = None
+            i = 0
+            while i < len(lines):
+                if lib_sym_start is not None and lib_sym_end is not None:
+                    if lib_sym_start <= i <= lib_sym_end:
+                        i += 1
+                        continue
+                if re.match(r"\s*\(symbol\s+\(lib_id\s+\"", lines[i]):
+                    b_start = i
+                    b_depth = sum(1 for c in lines[i] if c == "(") - sum(1 for c in lines[i] if c == ")")
+                    j = i + 1
+                    while j < len(lines) and b_depth > 0:
+                        b_depth += sum(1 for c in lines[j] if c == "(") - sum(1 for c in lines[j] if c == ")")
+                        j += 1
+                    b_end = j - 1
+                    block_text = "\n".join(lines[b_start:b_end + 1])
+                    if re.search(r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"', block_text):
+                        block_start, block_end = b_start, b_end
+                        break
+                    i = b_end + 1
+                    continue
+                i += 1
+
+            if block_start is None:
+                return {"success": False, "message": f"Component '{reference}' not found in schematic"}
+
+            # Apply in-place property updates within the block
+            for k in range(block_start, block_end + 1):
+                line = lines[k]
+                if new_footprint is not None and re.match(r'\s*\(property\s+"Footprint"\s+"', line):
+                    line = re.sub(r'(\(property\s+"Footprint"\s+)"[^"]*"', rf'\1"{new_footprint}"', line)
+                if new_value is not None and re.match(r'\s*\(property\s+"Value"\s+"', line):
+                    line = re.sub(r'(\(property\s+"Value"\s+)"[^"]*"', rf'\1"{new_value}"', line)
+                if new_reference is not None and re.match(r'\s*\(property\s+"Reference"\s+"', line):
+                    line = re.sub(r'(\(property\s+"Reference"\s+)"[^"]*"', rf'\1"{new_reference}"', line)
+                lines[k] = line
+
+            with open(sch_file, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+
+            changes = {k: v for k, v in {"footprint": new_footprint, "value": new_value, "reference": new_reference}.items() if v is not None}
+            logger.info(f"Edited schematic component {reference}: {changes}")
+            return {"success": True, "reference": reference, "updated": changes}
+
+        except Exception as e:
+            logger.error(f"Error editing schematic component: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
@@ -761,6 +865,146 @@ class KiCADInterface:
         except Exception as e:
             logger.error(f"Error listing schematic libraries: {str(e)}")
             return {"success": False, "message": str(e)}
+
+    # ------------------------------------------------------------------ #
+    #  Footprint handlers                                                  #
+    # ------------------------------------------------------------------ #
+
+    def _handle_create_footprint(self, params):
+        """Create a new .kicad_mod footprint file in a .pretty library."""
+        logger.info(f"create_footprint: {params.get('name')} in {params.get('libraryPath')}")
+        try:
+            creator = FootprintCreator()
+            return creator.create_footprint(
+                library_path=params.get("libraryPath", ""),
+                name=params.get("name", ""),
+                description=params.get("description", ""),
+                tags=params.get("tags", ""),
+                pads=params.get("pads", []),
+                courtyard=params.get("courtyard"),
+                silkscreen=params.get("silkscreen"),
+                fab_layer=params.get("fabLayer"),
+                ref_position=params.get("refPosition"),
+                value_position=params.get("valuePosition"),
+                overwrite=params.get("overwrite", False),
+            )
+        except Exception as e:
+            logger.error(f"create_footprint error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_edit_footprint_pad(self, params):
+        """Edit an existing pad in a .kicad_mod file."""
+        logger.info(f"edit_footprint_pad: pad {params.get('padNumber')} in {params.get('footprintPath')}")
+        try:
+            creator = FootprintCreator()
+            return creator.edit_footprint_pad(
+                footprint_path=params.get("footprintPath", ""),
+                pad_number=str(params.get("padNumber", "1")),
+                size=params.get("size"),
+                at=params.get("at"),
+                drill=params.get("drill"),
+                shape=params.get("shape"),
+            )
+        except Exception as e:
+            logger.error(f"edit_footprint_pad error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_list_footprint_libraries(self, params):
+        """List .pretty footprint libraries and their contents."""
+        logger.info("list_footprint_libraries")
+        try:
+            creator = FootprintCreator()
+            return creator.list_footprint_libraries(
+                search_paths=params.get("searchPaths")
+            )
+        except Exception as e:
+            logger.error(f"list_footprint_libraries error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_register_footprint_library(self, params):
+        """Register a .pretty library in KiCAD's fp-lib-table."""
+        logger.info(f"register_footprint_library: {params.get('libraryPath')}")
+        try:
+            creator = FootprintCreator()
+            return creator.register_footprint_library(
+                library_path=params.get("libraryPath", ""),
+                library_name=params.get("libraryName"),
+                description=params.get("description", ""),
+                scope=params.get("scope", "project"),
+                project_path=params.get("projectPath"),
+            )
+        except Exception as e:
+            logger.error(f"register_footprint_library error: {e}")
+            return {"success": False, "error": str(e)}
+
+    # ------------------------------------------------------------------ #
+    #  Symbol creator handlers                                             #
+    # ------------------------------------------------------------------ #
+
+    def _handle_create_symbol(self, params):
+        """Create a new symbol in a .kicad_sym library."""
+        logger.info(f"create_symbol: {params.get('name')} in {params.get('libraryPath')}")
+        try:
+            creator = SymbolCreator()
+            return creator.create_symbol(
+                library_path=params.get("libraryPath", ""),
+                name=params.get("name", ""),
+                reference_prefix=params.get("referencePrefix", "U"),
+                description=params.get("description", ""),
+                keywords=params.get("keywords", ""),
+                datasheet=params.get("datasheet", "~"),
+                footprint=params.get("footprint", ""),
+                in_bom=params.get("inBom", True),
+                on_board=params.get("onBoard", True),
+                pins=params.get("pins", []),
+                rectangles=params.get("rectangles", []),
+                polylines=params.get("polylines", []),
+                overwrite=params.get("overwrite", False),
+            )
+        except Exception as e:
+            logger.error(f"create_symbol error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_delete_symbol(self, params):
+        """Delete a symbol from a .kicad_sym library."""
+        logger.info(f"delete_symbol: {params.get('name')} from {params.get('libraryPath')}")
+        try:
+            creator = SymbolCreator()
+            return creator.delete_symbol(
+                library_path=params.get("libraryPath", ""),
+                name=params.get("name", ""),
+            )
+        except Exception as e:
+            logger.error(f"delete_symbol error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_list_symbols_in_library(self, params):
+        """List all symbols in a .kicad_sym file."""
+        logger.info(f"list_symbols_in_library: {params.get('libraryPath')}")
+        try:
+            creator = SymbolCreator()
+            return creator.list_symbols(
+                library_path=params.get("libraryPath", ""),
+            )
+        except Exception as e:
+            logger.error(f"list_symbols_in_library error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_register_symbol_library(self, params):
+        """Register a .kicad_sym library in KiCAD's sym-lib-table."""
+        logger.info(f"register_symbol_library: {params.get('libraryPath')}")
+        try:
+            creator = SymbolCreator()
+            return creator.register_symbol_library(
+                library_path=params.get("libraryPath", ""),
+                library_name=params.get("libraryName"),
+                description=params.get("description", ""),
+                scope=params.get("scope", "project"),
+                project_path=params.get("projectPath"),
+            )
+        except Exception as e:
+            logger.error(f"register_symbol_library error: {e}")
+            return {"success": False, "error": str(e)}
 
     def _handle_export_schematic_pdf(self, params):
         """Export schematic to PDF"""
