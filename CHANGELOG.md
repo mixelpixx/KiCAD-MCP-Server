@@ -36,6 +36,45 @@ All notable changes to the KiCAD MCP Server project are documented here.
 - `library.py`: Fix loop variable shadowing `Path` object (mypy)
 - `design_rules.py`: Add type annotation for `violation_counts` (mypy)
 
+### Pending additions (not yet committed)
+
+**Datasheet tools:**
+- `get_datasheet_url` - Return LCSC datasheet PDF URL and product page URL for a given
+  LCSC number (e.g. `C179739` → `https://www.lcsc.com/datasheet/C179739.pdf`).
+  No API key required – URL is constructed directly from the LCSC number.
+- `enrich_datasheets` - Scan a `.kicad_sch` file and write LCSC datasheet URLs into
+  every symbol that has an `LCSC` property but an empty `Datasheet` field. After
+  enrichment the URL appears natively in KiCAD's symbol properties, footprint browser
+  and any other tool that reads the standard KiCAD `Datasheet` field.
+  Supports `dry_run=true` for preview without writing.
+  Implementation: `python/commands/datasheet_manager.py` (text-based, no `skip` writes)
+
+**Schematic tools:**
+- `delete_schematic_component` - Remove a placed symbol from a `.kicad_sch` file by
+  reference designator (e.g. `R1`, `U3`).
+
+### Bug Fixes (pending)
+
+- `schematic.ts` / `kicad_interface.py`: Fix missing `delete_schematic_component` MCP tool.
+
+  **Root cause (two separate issues):**
+  1. No MCP tool named `delete_schematic_component` existed. Claude had no way to call
+     it, so any "delete schematic component" request fell through to the PCB-only
+     `delete_component` tool, which searches `pcbnew.BOARD` and always returned
+     "Component not found" for schematic symbols.
+  2. `component_schematic.py::remove_component()` still used `skip` for writes.
+     PR #40 rewrote `DynamicSymbolLoader` (add path) to avoid `skip`-induced schematic
+     corruption, but `remove_component` (delete path) was not touched by that PR.
+
+  **Fix:**
+  - Added `delete_schematic_component` to the TypeScript tool layer (`schematic.ts`)
+    with clear docstring distinguishing it from the PCB `delete_component`.
+  - Implemented `_handle_delete_schematic_component` in `kicad_interface.py` using
+    direct text manipulation (parenthesis-depth tracking, same approach as PR #40).
+    Does not call `component_schematic.py::remove_component()` at all.
+  - Error message explicitly guides the user when the wrong tool is used:
+    *"note: this tool removes schematic symbols, use delete_component for PCB footprints"*
+
 ### Pending fixes (not yet committed)
 
 - `connection_schematic.py` / `kicad_interface.py`: Fix `generate_netlist` missing

@@ -223,6 +223,7 @@ try:
     from commands.library_symbol import SymbolLibraryManager, SymbolLibraryCommands
     from commands.jlcpcb import JLCPCBClient, test_jlcpcb_connection
     from commands.jlcpcb_parts import JLCPCBPartsManager
+    from commands.datasheet_manager import DatasheetManager
 
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
@@ -357,10 +358,14 @@ class KiCADInterface:
             "get_jlcpcb_part": self._handle_get_jlcpcb_part,
             "get_jlcpcb_database_stats": self._handle_get_jlcpcb_database_stats,
             "suggest_jlcpcb_alternatives": self._handle_suggest_jlcpcb_alternatives,
+            # Datasheet commands
+            "enrich_datasheets": self._handle_enrich_datasheets,
+            "get_datasheet_url": self._handle_get_datasheet_url,
             # Schematic commands
             "create_schematic": self._handle_create_schematic,
             "load_schematic": self._handle_load_schematic,
             "add_schematic_component": self._handle_add_schematic_component,
+            "delete_schematic_component": self._handle_delete_schematic_component,
             "add_schematic_wire": self._handle_add_schematic_wire,
             "add_schematic_connection": self._handle_add_schematic_connection,
             "add_schematic_net_label": self._handle_add_schematic_net_label,
@@ -603,6 +608,97 @@ class KiCADInterface:
             logger.error(f"Error adding component to schematic: {str(e)}")
             import traceback
 
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_delete_schematic_component(self, params):
+        """Remove a placed symbol from a schematic using text-based manipulation (no skip writes)"""
+        logger.info("Deleting schematic component")
+        try:
+            from pathlib import Path
+            import re
+
+            schematic_path = params.get("schematicPath")
+            reference = params.get("reference")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not reference:
+                return {"success": False, "message": "reference is required"}
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            with open(sch_file, "r", encoding="utf-8") as f:
+                lines = f.read().split("\n")
+
+            # Find lib_symbols range to skip it
+            lib_sym_start, lib_sym_end = None, None
+            depth = 0
+            for i, line in enumerate(lines):
+                if "(lib_symbols" in line and lib_sym_start is None:
+                    lib_sym_start = i
+                    depth = sum(1 for c in line if c == "(") - sum(1 for c in line if c == ")")
+                elif lib_sym_start is not None and lib_sym_end is None:
+                    depth += sum(1 for c in line if c == "(") - sum(1 for c in line if c == ")")
+                    if depth == 0:
+                        lib_sym_end = i
+                        break
+
+            # Find the placed symbol block matching the reference
+            block_start = None
+            block_end = None
+            i = 0
+            while i < len(lines):
+                # Skip lib_symbols
+                if lib_sym_start is not None and lib_sym_end is not None:
+                    if lib_sym_start <= i <= lib_sym_end:
+                        i += 1
+                        continue
+
+                if re.match(r"\s*\(symbol\s+\(lib_id\s+\"", lines[i]):
+                    b_start = i
+                    b_depth = sum(1 for c in lines[i] if c == "(") - sum(1 for c in lines[i] if c == ")")
+                    j = i + 1
+                    while j < len(lines) and b_depth > 0:
+                        b_depth += sum(1 for c in lines[j] if c == "(") - sum(1 for c in lines[j] if c == ")")
+                        j += 1
+                    b_end = j - 1
+
+                    # Check if this block contains the target reference
+                    block_text = "\n".join(lines[b_start:b_end + 1])
+                    # Match: (property "Reference" "R1" ...
+                    if re.search(r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"', block_text):
+                        block_start = b_start
+                        block_end = b_end
+                        break
+
+                    i = b_end + 1
+                    continue
+
+                i += 1
+
+            if block_start is None:
+                return {
+                    "success": False,
+                    "message": f"Component '{reference}' not found in schematic (note: this tool removes schematic symbols, use delete_component for PCB footprints)",
+                }
+
+            # Remove the block (and any trailing blank line)
+            del lines[block_start:block_end + 1]
+            if block_start < len(lines) and lines[block_start].strip() == "":
+                del lines[block_start]
+
+            with open(sch_file, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+
+            logger.info(f"Deleted schematic component {reference} from {sch_file.name}")
+            return {"success": True, "reference": reference, "schematic": str(sch_file)}
+
+        except Exception as e:
+            logger.error(f"Error deleting schematic component: {e}")
+            import traceback
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
@@ -1829,6 +1925,43 @@ class KiCADInterface:
                 "success": False,
                 "message": f"Failed to suggest alternatives: {str(e)}",
             }
+
+    def _handle_enrich_datasheets(self, params):
+        """Enrich schematic Datasheet fields from LCSC numbers"""
+        try:
+            from pathlib import Path
+
+            schematic_path = params.get("schematic_path")
+            if not schematic_path:
+                return {"success": False, "message": "Missing schematic_path parameter"}
+            dry_run = params.get("dry_run", False)
+            manager = DatasheetManager()
+            return manager.enrich_schematic(Path(schematic_path), dry_run=dry_run)
+        except Exception as e:
+            logger.error(f"Error enriching datasheets: {e}", exc_info=True)
+            return {"success": False, "message": f"Failed to enrich datasheets: {str(e)}"}
+
+    def _handle_get_datasheet_url(self, params):
+        """Return LCSC datasheet and product URLs for a part number"""
+        try:
+            lcsc = params.get("lcsc", "")
+            if not lcsc:
+                return {"success": False, "message": "Missing lcsc parameter"}
+            manager = DatasheetManager()
+            datasheet_url = manager.get_datasheet_url(lcsc)
+            product_url = manager.get_product_url(lcsc)
+            if not datasheet_url:
+                return {"success": False, "message": f"Invalid LCSC number: {lcsc}"}
+            norm = manager._normalize_lcsc(lcsc)
+            return {
+                "success": True,
+                "lcsc": norm,
+                "datasheet_url": datasheet_url,
+                "product_url": product_url,
+            }
+        except Exception as e:
+            logger.error(f"Error getting datasheet URL: {e}", exc_info=True)
+            return {"success": False, "message": f"Failed to get datasheet URL: {str(e)}"}
 
 
 def main():
