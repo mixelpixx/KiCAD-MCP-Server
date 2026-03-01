@@ -190,9 +190,17 @@ class BoardOutlineCommands:
             diameter_nm = int(diameter * scale)
             pad_diameter_nm = int(pad_diameter * scale) if pad_diameter else diameter_nm + scale  # 1mm larger by default
 
-            # Create footprint for mounting hole
+            # Create footprint for mounting hole with unique reference
+            existing_mh = [
+                fp.GetReference() for fp in self.board.GetFootprints()
+                if fp.GetReference().startswith("MH")
+            ]
+            next_num = 1
+            while f"MH{next_num}" in existing_mh:
+                next_num += 1
+
             module = pcbnew.FOOTPRINT(self.board)
-            module.SetReference(f"MH")
+            module.SetReference(f"MH{next_num}")
             module.SetValue(f"MountingHole_{diameter}mm")
             
             # Create the pad for the hole
