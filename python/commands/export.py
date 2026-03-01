@@ -474,7 +474,7 @@ class ExportCommands:
                 component = {
                     "reference": module.GetReference(),
                     "value": module.GetValue(),
-                    "footprint": str(module.GetFPID()),
+                    "footprint": module.GetFPID().GetUniStringLibId(),
                     "layer": self.board.GetLayerName(module.GetLayer())
                 }
 
