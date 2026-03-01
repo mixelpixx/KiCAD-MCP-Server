@@ -509,7 +509,7 @@ class RoutingCommands:
                         {
                             "name": net.GetNetname(),
                             "code": net.GetNetCode(),
-                            "class": net.GetClassName(),
+                            "class": net.GetNetClassName(),
                         }
                     )
 
