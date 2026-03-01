@@ -592,7 +592,9 @@ class KiCADInterface:
                 self._current_project_path = project_path
                 local_lib = FootprintLibraryManager(project_path=project_path)
                 self.component_commands = ComponentCommands(self.board, local_lib)
-                logger.info(f"Reloaded FootprintLibraryManager with project_path={project_path}")
+                logger.info(
+                    f"Reloaded FootprintLibraryManager with project_path={project_path}"
+                )
 
         return self.component_commands.place_component(params)
 
@@ -665,7 +667,10 @@ class KiCADInterface:
 
             sch_file = Path(schematic_path)
             if not sch_file.exists():
-                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+                return {
+                    "success": False,
+                    "message": f"Schematic not found: {schematic_path}",
+                }
 
             with open(sch_file, "r", encoding="utf-8") as f:
                 lines = f.read().split("\n")
@@ -676,9 +681,13 @@ class KiCADInterface:
             for i, line in enumerate(lines):
                 if "(lib_symbols" in line and lib_sym_start is None:
                     lib_sym_start = i
-                    depth = sum(1 for c in line if c == "(") - sum(1 for c in line if c == ")")
+                    depth = sum(1 for c in line if c == "(") - sum(
+                        1 for c in line if c == ")"
+                    )
                 elif lib_sym_start is not None and lib_sym_end is None:
-                    depth += sum(1 for c in line if c == "(") - sum(1 for c in line if c == ")")
+                    depth += sum(1 for c in line if c == "(") - sum(
+                        1 for c in line if c == ")"
+                    )
                     if depth == 0:
                         lib_sym_end = i
                         break
@@ -695,15 +704,22 @@ class KiCADInterface:
 
                 if re.match(r"\s*\(symbol\s+\(lib_id\s+\"", lines[i]):
                     b_start = i
-                    b_depth = sum(1 for c in lines[i] if c == "(") - sum(1 for c in lines[i] if c == ")")
+                    b_depth = sum(1 for c in lines[i] if c == "(") - sum(
+                        1 for c in lines[i] if c == ")"
+                    )
                     j = i + 1
                     while j < len(lines) and b_depth > 0:
-                        b_depth += sum(1 for c in lines[j] if c == "(") - sum(1 for c in lines[j] if c == ")")
+                        b_depth += sum(1 for c in lines[j] if c == "(") - sum(
+                            1 for c in lines[j] if c == ")"
+                        )
                         j += 1
                     b_end = j - 1
 
-                    block_text = "\n".join(lines[b_start:b_end + 1])
-                    if re.search(r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"', block_text):
+                    block_text = "\n".join(lines[b_start : b_end + 1])
+                    if re.search(
+                        r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"',
+                        block_text,
+                    ):
                         blocks_to_delete.append((b_start, b_end))
 
                     i = b_end + 1
@@ -719,7 +735,7 @@ class KiCADInterface:
 
             # Delete from back to front to preserve line indices
             for b_start, b_end in sorted(blocks_to_delete, reverse=True):
-                del lines[b_start:b_end + 1]
+                del lines[b_start : b_end + 1]
                 if b_start < len(lines) and lines[b_start].strip() == "":
                     del lines[b_start]
 
@@ -727,18 +743,27 @@ class KiCADInterface:
                 f.write("\n".join(lines))
 
             deleted_count = len(blocks_to_delete)
-            logger.info(f"Deleted {deleted_count} instance(s) of {reference} from {sch_file.name}")
-            return {"success": True, "reference": reference, "deleted_count": deleted_count, "schematic": str(sch_file)}
+            logger.info(
+                f"Deleted {deleted_count} instance(s) of {reference} from {sch_file.name}"
+            )
+            return {
+                "success": True,
+                "reference": reference,
+                "deleted_count": deleted_count,
+                "schematic": str(sch_file),
+            }
 
         except Exception as e:
             logger.error(f"Error deleting schematic component: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
     def _handle_edit_schematic_component(self, params):
         """Update properties of a placed symbol in a schematic (footprint, value, reference).
-        Uses text-based in-place editing – preserves position, UUID and all other fields."""
+        Uses text-based in-place editing – preserves position, UUID and all other fields.
+        """
         logger.info("Editing schematic component")
         try:
             from pathlib import Path
@@ -754,12 +779,24 @@ class KiCADInterface:
                 return {"success": False, "message": "schematicPath is required"}
             if not reference:
                 return {"success": False, "message": "reference is required"}
-            if not any([new_footprint is not None, new_value is not None, new_reference is not None]):
-                return {"success": False, "message": "At least one of footprint, value, or newReference must be provided"}
+            if not any(
+                [
+                    new_footprint is not None,
+                    new_value is not None,
+                    new_reference is not None,
+                ]
+            ):
+                return {
+                    "success": False,
+                    "message": "At least one of footprint, value, or newReference must be provided",
+                }
 
             sch_file = Path(schematic_path)
             if not sch_file.exists():
-                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+                return {
+                    "success": False,
+                    "message": f"Schematic not found: {schematic_path}",
+                }
 
             with open(sch_file, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -769,9 +806,9 @@ class KiCADInterface:
                 depth = 0
                 i = start
                 while i < len(s):
-                    if s[i] == '(':
+                    if s[i] == "(":
                         depth += 1
-                    elif s[i] == ')':
+                    elif s[i] == ")":
                         depth -= 1
                         if depth == 0:
                             return i
@@ -780,7 +817,9 @@ class KiCADInterface:
 
             # Skip lib_symbols section
             lib_sym_pos = content.find("(lib_symbols")
-            lib_sym_end = find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
+            lib_sym_end = (
+                find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
+            )
 
             # Find placed symbol blocks that match the reference
             # Search for (symbol (lib_id "...") ... (property "Reference" "<ref>" ...) ...)
@@ -800,36 +839,61 @@ class KiCADInterface:
                 if end < 0:
                     search_start = pos + 1
                     continue
-                block_text = content[pos:end + 1]
-                if re.search(r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"', block_text):
+                block_text = content[pos : end + 1]
+                if re.search(
+                    r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"',
+                    block_text,
+                ):
                     block_start, block_end = pos, end
                     break
                 search_start = end + 1
 
             if block_start is None:
-                return {"success": False, "message": f"Component '{reference}' not found in schematic"}
+                return {
+                    "success": False,
+                    "message": f"Component '{reference}' not found in schematic",
+                }
 
             # Apply property replacements within the found block
-            block_text = content[block_start:block_end + 1]
+            block_text = content[block_start : block_end + 1]
             if new_footprint is not None:
-                block_text = re.sub(r'(\(property\s+"Footprint"\s+)"[^"]*"', rf'\1"{new_footprint}"', block_text)
+                block_text = re.sub(
+                    r'(\(property\s+"Footprint"\s+)"[^"]*"',
+                    rf'\1"{new_footprint}"',
+                    block_text,
+                )
             if new_value is not None:
-                block_text = re.sub(r'(\(property\s+"Value"\s+)"[^"]*"', rf'\1"{new_value}"', block_text)
+                block_text = re.sub(
+                    r'(\(property\s+"Value"\s+)"[^"]*"', rf'\1"{new_value}"', block_text
+                )
             if new_reference is not None:
-                block_text = re.sub(r'(\(property\s+"Reference"\s+)"[^"]*"', rf'\1"{new_reference}"', block_text)
+                block_text = re.sub(
+                    r'(\(property\s+"Reference"\s+)"[^"]*"',
+                    rf'\1"{new_reference}"',
+                    block_text,
+                )
 
-            content = content[:block_start] + block_text + content[block_end + 1:]
+            content = content[:block_start] + block_text + content[block_end + 1 :]
 
             with open(sch_file, "w", encoding="utf-8") as f:
                 f.write(content)
 
-            changes = {k: v for k, v in {"footprint": new_footprint, "value": new_value, "reference": new_reference}.items() if v is not None}
+            changes = {
+                k: v
+                for k, v in {
+                    "footprint": new_footprint,
+                    "value": new_value,
+                    "reference": new_reference,
+                }.items()
+                if v is not None
+            }
             logger.info(f"Edited schematic component {reference}: {changes}")
             return {"success": True, "reference": reference, "updated": changes}
 
         except Exception as e:
             logger.error(f"Error editing schematic component: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
@@ -899,7 +963,9 @@ class KiCADInterface:
 
     def _handle_create_footprint(self, params):
         """Create a new .kicad_mod footprint file in a .pretty library."""
-        logger.info(f"create_footprint: {params.get('name')} in {params.get('libraryPath')}")
+        logger.info(
+            f"create_footprint: {params.get('name')} in {params.get('libraryPath')}"
+        )
         try:
             creator = FootprintCreator()
             return creator.create_footprint(
@@ -921,7 +987,9 @@ class KiCADInterface:
 
     def _handle_edit_footprint_pad(self, params):
         """Edit an existing pad in a .kicad_mod file."""
-        logger.info(f"edit_footprint_pad: pad {params.get('padNumber')} in {params.get('footprintPath')}")
+        logger.info(
+            f"edit_footprint_pad: pad {params.get('padNumber')} in {params.get('footprintPath')}"
+        )
         try:
             creator = FootprintCreator()
             return creator.edit_footprint_pad(
@@ -970,7 +1038,9 @@ class KiCADInterface:
 
     def _handle_create_symbol(self, params):
         """Create a new symbol in a .kicad_sym library."""
-        logger.info(f"create_symbol: {params.get('name')} in {params.get('libraryPath')}")
+        logger.info(
+            f"create_symbol: {params.get('name')} in {params.get('libraryPath')}"
+        )
         try:
             creator = SymbolCreator()
             return creator.create_symbol(
@@ -994,7 +1064,9 @@ class KiCADInterface:
 
     def _handle_delete_symbol(self, params):
         """Delete a symbol from a .kicad_sym library."""
-        logger.info(f"delete_symbol: {params.get('name')} from {params.get('libraryPath')}")
+        logger.info(
+            f"delete_symbol: {params.get('name')} from {params.get('libraryPath')}"
+        )
         try:
             creator = SymbolCreator()
             return creator.delete_symbol(
@@ -2210,7 +2282,10 @@ class KiCADInterface:
             return manager.enrich_schematic(Path(schematic_path), dry_run=dry_run)
         except Exception as e:
             logger.error(f"Error enriching datasheets: {e}", exc_info=True)
-            return {"success": False, "message": f"Failed to enrich datasheets: {str(e)}"}
+            return {
+                "success": False,
+                "message": f"Failed to enrich datasheets: {str(e)}",
+            }
 
     def _handle_get_datasheet_url(self, params):
         """Return LCSC datasheet and product URLs for a part number"""
@@ -2232,7 +2307,10 @@ class KiCADInterface:
             }
         except Exception as e:
             logger.error(f"Error getting datasheet URL: {e}", exc_info=True)
-            return {"success": False, "message": f"Failed to get datasheet URL: {str(e)}"}
+            return {
+                "success": False,
+                "message": f"Failed to get datasheet URL: {str(e)}",
+            }
 
 
 def main():

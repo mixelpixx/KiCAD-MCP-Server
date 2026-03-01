@@ -145,18 +145,40 @@ class RoutingCommands:
                 net = start_pad.GetNetname() or end_pad.GetNetname() or ""
 
             # Delegate to route_trace
-            result = self.route_trace({
-                "start": {"x": start_pos.x / scale, "y": start_pos.y / scale, "unit": "mm"},
-                "end":   {"x": end_pos.x / scale,   "y": end_pos.y / scale,   "unit": "mm"},
-                "layer": layer,
-                "width": width,
-                "net": net,
-            })
+            result = self.route_trace(
+                {
+                    "start": {
+                        "x": start_pos.x / scale,
+                        "y": start_pos.y / scale,
+                        "unit": "mm",
+                    },
+                    "end": {
+                        "x": end_pos.x / scale,
+                        "y": end_pos.y / scale,
+                        "unit": "mm",
+                    },
+                    "layer": layer,
+                    "width": width,
+                    "net": net,
+                }
+            )
 
             if result.get("success"):
-                result["message"] = f"Routed {from_ref}.{from_pad} → {to_ref}.{to_pad} (net: {net or 'none'})"
-                result["fromPad"] = {"ref": from_ref, "pad": from_pad, "x": start_pos.x / scale, "y": start_pos.y / scale}
-                result["toPad"]   = {"ref": to_ref,   "pad": to_pad,   "x": end_pos.x / scale,   "y": end_pos.y / scale}
+                result["message"] = (
+                    f"Routed {from_ref}.{from_pad} → {to_ref}.{to_pad} (net: {net or 'none'})"
+                )
+                result["fromPad"] = {
+                    "ref": from_ref,
+                    "pad": from_pad,
+                    "x": start_pos.x / scale,
+                    "y": start_pos.y / scale,
+                }
+                result["toPad"] = {
+                    "ref": to_ref,
+                    "pad": to_pad,
+                    "x": end_pos.x / scale,
+                    "y": end_pos.y / scale,
+                }
 
             return result
 
@@ -886,7 +908,9 @@ class RoutingCommands:
                 else:
                     traces_to_copy.append(track)
 
-            filter_method = "net-based" if use_net_filter else "geometric (pads have no nets)"
+            filter_method = (
+                "net-based" if use_net_filter else "geometric (pads have no nets)"
+            )
             logger.info(
                 f"copy_routing_pattern: {len(traces_to_copy)} traces, "
                 f"{len(vias_to_copy)} vias selected via {filter_method}"
