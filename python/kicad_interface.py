@@ -762,61 +762,66 @@ class KiCADInterface:
                 return {"success": False, "message": f"Schematic not found: {schematic_path}"}
 
             with open(sch_file, "r", encoding="utf-8") as f:
-                lines = f.read().split("\n")
+                content = f.read()
 
-            # Find lib_symbols range to skip
-            lib_sym_start, lib_sym_end = None, None
-            depth = 0
-            for i, line in enumerate(lines):
-                if "(lib_symbols" in line and lib_sym_start is None:
-                    lib_sym_start = i
-                    depth = sum(1 for c in line if c == "(") - sum(1 for c in line if c == ")")
-                elif lib_sym_start is not None and lib_sym_end is None:
-                    depth += sum(1 for c in line if c == "(") - sum(1 for c in line if c == ")")
-                    if depth == 0:
-                        lib_sym_end = i
-                        break
+            def find_matching_paren(s, start):
+                """Find the position of the closing paren matching the opening paren at start."""
+                depth = 0
+                i = start
+                while i < len(s):
+                    if s[i] == '(':
+                        depth += 1
+                    elif s[i] == ')':
+                        depth -= 1
+                        if depth == 0:
+                            return i
+                    i += 1
+                return -1
 
-            # Find the placed symbol block
+            # Skip lib_symbols section
+            lib_sym_pos = content.find("(lib_symbols")
+            lib_sym_end = find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
+
+            # Find placed symbol blocks that match the reference
+            # Search for (symbol (lib_id "...") ... (property "Reference" "<ref>" ...) ...)
             block_start = block_end = None
-            i = 0
-            while i < len(lines):
-                if lib_sym_start is not None and lib_sym_end is not None:
-                    if lib_sym_start <= i <= lib_sym_end:
-                        i += 1
-                        continue
-                if re.match(r"\s*\(symbol\s+\(lib_id\s+\"", lines[i]):
-                    b_start = i
-                    b_depth = sum(1 for c in lines[i] if c == "(") - sum(1 for c in lines[i] if c == ")")
-                    j = i + 1
-                    while j < len(lines) and b_depth > 0:
-                        b_depth += sum(1 for c in lines[j] if c == "(") - sum(1 for c in lines[j] if c == ")")
-                        j += 1
-                    b_end = j - 1
-                    block_text = "\n".join(lines[b_start:b_end + 1])
-                    if re.search(r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"', block_text):
-                        block_start, block_end = b_start, b_end
-                        break
-                    i = b_end + 1
+            search_start = 0
+            pattern = re.compile(r'\(symbol\s+\(lib_id\s+"')
+            while True:
+                m = pattern.search(content, search_start)
+                if not m:
+                    break
+                pos = m.start()
+                # Skip if inside lib_symbols section
+                if lib_sym_pos >= 0 and lib_sym_pos <= pos <= lib_sym_end:
+                    search_start = lib_sym_end + 1
                     continue
-                i += 1
+                end = find_matching_paren(content, pos)
+                if end < 0:
+                    search_start = pos + 1
+                    continue
+                block_text = content[pos:end + 1]
+                if re.search(r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"', block_text):
+                    block_start, block_end = pos, end
+                    break
+                search_start = end + 1
 
             if block_start is None:
                 return {"success": False, "message": f"Component '{reference}' not found in schematic"}
 
-            # Apply in-place property updates within the block
-            for k in range(block_start, block_end + 1):
-                line = lines[k]
-                if new_footprint is not None and re.match(r'\s*\(property\s+"Footprint"\s+"', line):
-                    line = re.sub(r'(\(property\s+"Footprint"\s+)"[^"]*"', rf'\1"{new_footprint}"', line)
-                if new_value is not None and re.match(r'\s*\(property\s+"Value"\s+"', line):
-                    line = re.sub(r'(\(property\s+"Value"\s+)"[^"]*"', rf'\1"{new_value}"', line)
-                if new_reference is not None and re.match(r'\s*\(property\s+"Reference"\s+"', line):
-                    line = re.sub(r'(\(property\s+"Reference"\s+)"[^"]*"', rf'\1"{new_reference}"', line)
-                lines[k] = line
+            # Apply property replacements within the found block
+            block_text = content[block_start:block_end + 1]
+            if new_footprint is not None:
+                block_text = re.sub(r'(\(property\s+"Footprint"\s+)"[^"]*"', rf'\1"{new_footprint}"', block_text)
+            if new_value is not None:
+                block_text = re.sub(r'(\(property\s+"Value"\s+)"[^"]*"', rf'\1"{new_value}"', block_text)
+            if new_reference is not None:
+                block_text = re.sub(r'(\(property\s+"Reference"\s+)"[^"]*"', rf'\1"{new_reference}"', block_text)
+
+            content = content[:block_start] + block_text + content[block_end + 1:]
 
             with open(sch_file, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines))
+                f.write(content)
 
             changes = {k: v for k, v in {"footprint": new_footprint, "value": new_value, "reference": new_reference}.items() if v is not None}
             logger.info(f"Edited schematic component {reference}: {changes}")
