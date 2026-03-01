@@ -1058,16 +1058,31 @@ class RoutingCommands:
             net = params.get("net")
             clearance = params.get("clearance")
             min_width = params.get("minWidth", 0.2)
-            points = params.get("points", [])
+            points = params.get("outline", params.get("points", []))
             priority = params.get("priority", 0)
             fill_type = params.get("fillType", "solid")  # solid or hatched
 
+            # If no outline provided, use board outline
             if not points or len(points) < 3:
-                return {
-                    "success": False,
-                    "message": "Missing points",
-                    "errorDetails": "At least 3 points are required for copper pour outline",
-                }
+                board_box = self.board.GetBoardEdgesBoundingBox()
+                if board_box.GetWidth() > 0 and board_box.GetHeight() > 0:
+                    scale = 1000000  # nm to mm
+                    x1 = board_box.GetX() / scale
+                    y1 = board_box.GetY() / scale
+                    x2 = (board_box.GetX() + board_box.GetWidth()) / scale
+                    y2 = (board_box.GetY() + board_box.GetHeight()) / scale
+                    points = [
+                        {"x": x1, "y": y1},
+                        {"x": x2, "y": y1},
+                        {"x": x2, "y": y2},
+                        {"x": x1, "y": y2},
+                    ]
+                else:
+                    return {
+                        "success": False,
+                        "message": "Missing outline",
+                        "errorDetails": "Provide an outline array or add a board outline first",
+                    }
 
             # Get layer ID
             layer_id = self.board.GetLayerID(layer)
