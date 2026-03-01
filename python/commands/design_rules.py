@@ -267,14 +267,21 @@ class DesignRuleCommands:
                     vtype = violation.get("type", "unknown")
                     vseverity = violation.get("severity", "error")
 
+                    # Extract location from first item's pos (kicad-cli JSON format)
+                    items = violation.get("items", [])
+                    loc_x, loc_y = 0, 0
+                    if items and "pos" in items[0]:
+                        loc_x = items[0]["pos"].get("x", 0)
+                        loc_y = items[0]["pos"].get("y", 0)
+
                     violations.append(
                         {
                             "type": vtype,
                             "severity": vseverity,
                             "message": violation.get("description", ""),
                             "location": {
-                                "x": violation.get("x", 0),
-                                "y": violation.get("y", 0),
+                                "x": loc_x,
+                                "y": loc_y,
                                 "unit": "mm",
                             },
                         }
