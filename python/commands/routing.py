@@ -145,18 +145,40 @@ class RoutingCommands:
                 net = start_pad.GetNetname() or end_pad.GetNetname() or ""
 
             # Delegate to route_trace
-            result = self.route_trace({
-                "start": {"x": start_pos.x / scale, "y": start_pos.y / scale, "unit": "mm"},
-                "end":   {"x": end_pos.x / scale,   "y": end_pos.y / scale,   "unit": "mm"},
-                "layer": layer,
-                "width": width,
-                "net": net,
-            })
+            result = self.route_trace(
+                {
+                    "start": {
+                        "x": start_pos.x / scale,
+                        "y": start_pos.y / scale,
+                        "unit": "mm",
+                    },
+                    "end": {
+                        "x": end_pos.x / scale,
+                        "y": end_pos.y / scale,
+                        "unit": "mm",
+                    },
+                    "layer": layer,
+                    "width": width,
+                    "net": net,
+                }
+            )
 
             if result.get("success"):
-                result["message"] = f"Routed {from_ref}.{from_pad} → {to_ref}.{to_pad} (net: {net or 'none'})"
-                result["fromPad"] = {"ref": from_ref, "pad": from_pad, "x": start_pos.x / scale, "y": start_pos.y / scale}
-                result["toPad"]   = {"ref": to_ref,   "pad": to_pad,   "x": end_pos.x / scale,   "y": end_pos.y / scale}
+                result["message"] = (
+                    f"Routed {from_ref}.{from_pad} → {to_ref}.{to_pad} (net: {net or 'none'})"
+                )
+                result["fromPad"] = {
+                    "ref": from_ref,
+                    "pad": from_pad,
+                    "x": start_pos.x / scale,
+                    "y": start_pos.y / scale,
+                }
+                result["toPad"] = {
+                    "ref": to_ref,
+                    "pad": to_pad,
+                    "x": end_pos.x / scale,
+                    "y": end_pos.y / scale,
+                }
 
             return result
 
@@ -509,7 +531,7 @@ class RoutingCommands:
                         {
                             "name": net.GetNetname(),
                             "code": net.GetNetCode(),
-                            "class": net.GetClassName(),
+                            "class": net.GetNetClassName(),
                         }
                     )
 
@@ -886,7 +908,9 @@ class RoutingCommands:
                 else:
                     traces_to_copy.append(track)
 
-            filter_method = "net-based" if use_net_filter else "geometric (pads have no nets)"
+            filter_method = (
+                "net-based" if use_net_filter else "geometric (pads have no nets)"
+            )
             logger.info(
                 f"copy_routing_pattern: {len(traces_to_copy)} traces, "
                 f"{len(vias_to_copy)} vias selected via {filter_method}"
@@ -1058,16 +1082,31 @@ class RoutingCommands:
             net = params.get("net")
             clearance = params.get("clearance")
             min_width = params.get("minWidth", 0.2)
-            points = params.get("points", [])
+            points = params.get("outline", params.get("points", []))
             priority = params.get("priority", 0)
             fill_type = params.get("fillType", "solid")  # solid or hatched
 
+            # If no outline provided, use board outline
             if not points or len(points) < 3:
-                return {
-                    "success": False,
-                    "message": "Missing points",
-                    "errorDetails": "At least 3 points are required for copper pour outline",
-                }
+                board_box = self.board.GetBoardEdgesBoundingBox()
+                if board_box.GetWidth() > 0 and board_box.GetHeight() > 0:
+                    scale = 1000000  # nm to mm
+                    x1 = board_box.GetX() / scale
+                    y1 = board_box.GetY() / scale
+                    x2 = (board_box.GetX() + board_box.GetWidth()) / scale
+                    y2 = (board_box.GetY() + board_box.GetHeight()) / scale
+                    points = [
+                        {"x": x1, "y": y1},
+                        {"x": x2, "y": y1},
+                        {"x": x2, "y": y2},
+                        {"x": x1, "y": y2},
+                    ]
+                else:
+                    return {
+                        "success": False,
+                        "message": "Missing outline",
+                        "errorDetails": "Provide an outline array or add a board outline first",
+                    }
 
             # Get layer ID
             layer_id = self.board.GetLayerID(layer)

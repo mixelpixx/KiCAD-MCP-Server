@@ -105,6 +105,12 @@ export function registerRoutingTools(
       layer: z.string().describe("PCB layer"),
       net: z.string().describe("Net name"),
       clearance: z.number().optional().describe("Clearance in mm"),
+      outline: z
+        .array(z.object({ x: z.number(), y: z.number() }))
+        .optional()
+        .describe(
+          "Array of {x, y} points defining the pour boundary. If omitted, the board outline is used.",
+        ),
     },
     async (args: any) => {
       const result = await callKicadScript("add_copper_pour", args);
