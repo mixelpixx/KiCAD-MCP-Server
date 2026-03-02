@@ -5,7 +5,6 @@
   (paper "A4")
 
   (lib_symbols
-    ;; PASSIVES
     (symbol "Device:R" (pin_numbers hide) (pin_names (offset 0)) (in_bom yes) (on_board yes)
       (property "Reference" "R" (at 2.032 0 90)
         (effects (font (size 1.27 1.27)))
@@ -182,7 +181,6 @@
         )
       )
     )
-    ;; SEMICONDUCTORS
     (symbol "Device:D" (pin_numbers hide) (pin_names (offset 1.016) hide) (in_bom yes) (on_board yes)
       (property "Reference" "D" (at 0 2.54 0)
         (effects (font (size 1.27 1.27)))
@@ -497,7 +495,6 @@
         )
       )
     )
-    ;; INTEGRATED CIRCUITS
     (symbol "Amplifier_Operational:LM358" (pin_names (offset 0.127)) (in_bom yes) (on_board yes)
       (property "Reference" "U" (at 0 5.08 0)
         (effects (font (size 1.27 1.27)) (justify left))
@@ -546,7 +543,6 @@
         )
       )
     )
-    ;; CONNECTORS
     (symbol "Connector_Generic:Conn_01x02" (pin_names (offset 1.016) hide) (in_bom yes) (on_board yes)
       (property "Reference" "J" (at 0 2.54 0)
         (effects (font (size 1.27 1.27)))
@@ -635,7 +631,6 @@
         )
       )
     )
-    ;; POWER/REGULATORS
     (symbol "Regulator_Linear:AMS1117-3.3" (pin_names (offset 0.254)) (in_bom yes) (on_board yes)
       (property "Reference" "U" (at -3.81 3.175 0)
         (effects (font (size 1.27 1.27)))
@@ -670,7 +665,6 @@
         )
       )
     )
-    ;; MISC
     (symbol "Switch:SW_Push" (pin_numbers hide) (pin_names (offset 1.016) hide) (in_bom yes) (on_board yes)
       (property "Reference" "SW" (at 1.27 2.54 0)
         (effects (font (size 1.27 1.27)) (justify left))
@@ -721,7 +715,6 @@
     )
   )
 
-  ;; TEMPLATE INSTANCES (placed offscreen at -100, -110, etc.)
   (symbol (lib_id "Device:R") (at -100 -100 0) (unit 1)
     (in_bom no) (on_board no) (dnp yes)
     (uuid 00000000-0000-0000-0000-000000000001)

@@ -2,6 +2,61 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
+## [2.2.2-alpha] - 2026-03-01
+
+### New MCP Tools
+
+- `route_pad_to_pad` – Convenience wrapper around `route_trace` that looks up pad positions
+  automatically. Accepts `fromRef`/`fromPad`/`toRef`/`toPad` instead of raw XY coordinates.
+  Auto-detects net from pad assignment (overridable via `net` param). Saves ~2 tool calls per
+  connection (~64 calls for a full TMC2209 board compared to the 3-step get_pad_position flow).
+  Live tested: ESP32 ↔ TMC2209 STEP/DIR traces routed without prior coordinate lookup. ✅
+
+- `copy_routing_pattern` – Now registered as MCP tool in TypeScript layer (`routing.ts`).
+  Was previously implemented in Python but missing from the MCP tool registry.
+  Parameters: `sourceRefs`, `targetRefs`, `includeVias?`, `traceWidth?`.
+
+### Bug Fixes
+
+- `add_schematic_component` / `DynamicSymbolLoader`: ignored project-local `sym-lib-table`.
+  `find_library_file()` only searched global KiCAD install directories, causing "library not
+  found" errors for any symbol in a project-local `.kicad_sym` file. Fix: added `project_path`
+  parameter; reads project `sym-lib-table` first via new `_resolve_library_from_table()` helper
+  before falling back to global dirs. `project_path` is auto-derived from the schematic path.
+
+- `place_component`: ignored project-local `fp-lib-table`. `FootprintLibraryManager` was
+  initialised once at server start without a project path, so self-created `.kicad_mod`
+  footprints were never found. Fix: new `boardPath` parameter in TypeScript + Python;
+  `_handle_place_component` wrapper recreates `FootprintLibraryManager(project_path=…)` whenever
+  the active project changes (cached to avoid redundant recreation).
+
+- `copy_routing_pattern`: copied 0 traces when pads had no net assignments. The filter
+  `track.GetNetname() in source_nets` always returned empty when pads were placed without net
+  assignment. Fix: geometric fallback using bounding box of source footprint pads ±5mm
+  tolerance. Response includes `filterMethod` field indicating which mode was used
+  (`"net-based"` or `"geometric (pads have no nets)"`).
+
+- `template_with_symbols.kicad_sch`, `template_with_symbols_expanded.kicad_sch`: restored
+  format version `20250114` (KiCAD 9) after upstream commit `2b38796` accidentally downgraded
+  both files to `20240101`. KiCAD 9 rejects schematics with outdated version numbers.
+
+- **CRITICAL: `template_with_symbols_expanded.kicad_sch`**: removed 7 invalid `;;` comment
+  lines introduced by upstream commit `b98c94b`. KiCAD's S-expression parser does not support
+  any comment syntax — it expects every non-empty, non-whitespace line to start with `(`.
+  The comments (`;; PASSIVES`, `;; SEMICONDUCTORS`, `;; INTEGRATED CIRCUITS`, `;; CONNECTORS`,
+  `;; POWER/REGULATORS`, `;; MISC`, `;; TEMPLATE INSTANCES (...)`) caused KiCAD 9 to reject
+  every schematic created from this template with a hard parse error:
+  > `Expecting '(' in <file>.kicad_sch, line 8, offset 5`
+  **Action required for existing projects:** delete every line beginning with `;;` from any
+  `.kicad_sch` file created between upstream commit `b98c94b` and this fix.
+
+### Maintenance
+
+- `.gitignore`: added `*.kicad_pcb.bak`, `*.kicad_pro.bak` alongside existing `-bak` variants;
+  consolidated personal/local files under `myContribution/`.
+
+---
+
 ## [2.2.1-alpha] - 2026-02-28
 
 ### New MCP Tools
