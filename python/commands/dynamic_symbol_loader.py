@@ -157,6 +157,129 @@ class DynamicSymbolLoader:
 
         return "\n".join(lines[start : end + 1])
 
+    def _iter_top_level_items(self, symbol_block: str) -> list:
+        """
+        Extract each top-level s-expression item from inside a symbol block.
+        Starts after the first line (symbol header) and stops before the final
+        closing parenthesis.  Returns a list of raw text strings.
+        """
+        lines = symbol_block.split("\n")
+        items = []
+        i = 1  # skip first line: (symbol "Name" ...)
+        n = len(lines)
+
+        while i < n:
+            line = lines[i]
+            stripped = line.strip()
+
+            if not stripped:
+                i += 1
+                continue
+
+            # The final closing paren of the symbol itself
+            if stripped == ")" and i == n - 1:
+                break
+
+            if not stripped.startswith("("):
+                i += 1
+                continue
+
+            # Collect a balanced s-expression starting here
+            depth = 0
+            item_start = i
+            while i < n:
+                for ch in lines[i]:
+                    if ch == "(":
+                        depth += 1
+                    elif ch == ")":
+                        depth -= 1
+                i += 1
+                if depth == 0:
+                    break
+
+            items.append("\n".join(lines[item_start:i]))
+
+        return items
+
+    def _inline_extends_symbol(
+        self, lib_content: str, symbol_name: str, child_block: str
+    ) -> str:
+        """
+        Fully inline a child symbol that uses (extends "ParentName") by merging
+        the parent's pins / graphics into the child definition.
+
+        KiCad 9 does NOT support (extends ...) inside a schematic's lib_symbols
+        section.  This method produces a self-contained, fully-resolved symbol
+        block – exactly what KiCad itself writes when saving a schematic.
+
+        Algorithm:
+          1. Extract the parent block from the library text.
+          2. Take every top-level item from the parent (pin_names, properties,
+             sub-symbols, …).
+          3. For each property, use the child's override if one exists; otherwise
+             keep the parent's value.
+          4. Rename parent sub-symbols (ParentName_0_1 → ChildName_0_1).
+          5. Append any child-only properties that do not exist in the parent.
+          6. Return the merged block named after the child – no (extends …) left.
+        """
+        extends_match = re.search(r'\(extends "([^"]+)"\)', child_block)
+        if not extends_match:
+            return child_block
+
+        parent_name = extends_match.group(1)
+        parent_block = self._extract_symbol_block(lib_content, parent_name)
+        if not parent_block:
+            logger.warning(
+                f"Cannot resolve parent '{parent_name}' for '{symbol_name}' "
+                "- stripping extends clause (symbol may be incomplete)"
+            )
+            return re.sub(r"\s*\(extends \"[^\"]+\"\)\n?", "", child_block)
+
+        # Collect child property overrides: prop_name -> raw block text
+        child_props: dict = {}
+        for item in self._iter_top_level_items(child_block):
+            m = re.match(r'[\s\t]*\(property "([^"]+)"', item)
+            if m:
+                child_props[m.group(1)] = item
+
+        # Walk parent items, applying child overrides
+        body_lines = []
+        parent_prop_names: set = set()
+
+        for item in self._iter_top_level_items(parent_block):
+            prop_match = re.match(r'[\s\t]*\(property "([^"]+)"', item)
+            sub_match = re.search(
+                r'\(symbol "' + re.escape(parent_name) + r'_\d+_\d+"', item
+            )
+
+            if prop_match:
+                pname = prop_match.group(1)
+                parent_prop_names.add(pname)
+                body_lines.append(
+                    child_props[pname] if pname in child_props else item
+                )
+            elif sub_match:
+                # Rename ParentName_0_1 → ChildName_0_1
+                body_lines.append(
+                    item.replace(f'"{parent_name}_', f'"{symbol_name}_')
+                )
+            elif re.match(r'[\s\t]*\(extends ', item):
+                pass  # drop extends clause
+            else:
+                body_lines.append(item)  # pin_names, in_bom, on_board …
+
+        # Append child-only properties absent from parent
+        for pname, pblock in child_props.items():
+            if pname not in parent_prop_names:
+                body_lines.append(pblock)
+
+        first_line = parent_block.split("\n")[0].replace(
+            f'"{parent_name}"', f'"{symbol_name}"'
+        )
+        last_line = parent_block.split("\n")[-1]
+
+        return first_line + "\n" + "\n".join(body_lines) + "\n" + last_line
+
     def extract_symbol_from_library(
         self, library_name: str, symbol_name: str
     ) -> Optional[str]:
@@ -186,22 +309,16 @@ class DynamicSymbolLoader:
             )
             return None
 
-        # Check if this symbol uses (extends "ParentName")
-        extends_match = re.search(r'\(extends "([^"]+)"\)', block)
-        parent_block = None
-        if extends_match:
-            parent_name = extends_match.group(1)
+        # If the symbol uses (extends "ParentName"), inline the parent content
+        # so that the result is a fully self-contained definition.
+        # (extends ...) is only valid in .kicad_sym files; KiCad 9 refuses to
+        # load a schematic whose lib_symbols section contains it.
+        if re.search(r'\(extends "([^"]+)"\)', block):
+            parent_name = re.search(r'\(extends "([^"]+)"\)', block).group(1)
             logger.info(
-                f"Symbol {symbol_name} extends {parent_name}, extracting parent too"
+                f"Symbol {symbol_name} extends {parent_name}, inlining parent content"
             )
-            parent_block = self._extract_symbol_block(lib_content, parent_name)
-            if parent_block:
-                # Prefix parent top-level name with library
-                parent_block = parent_block.replace(
-                    f'(symbol "{parent_name}"',
-                    f'(symbol "{library_name}:{parent_name}"',
-                    1,  # Only first occurrence (top-level)
-                )
+            block = self._inline_extends_symbol(lib_content, symbol_name, block)
 
         # Prefix top-level symbol name with library
         full_name = f"{library_name}:{symbol_name}"
@@ -212,11 +329,7 @@ class DynamicSymbolLoader:
         )
         # Sub-symbols like "Name_0_1" keep their short names (already correct from library)
 
-        # Combine parent + child if extends is used
-        if parent_block:
-            result = parent_block + "\n" + block
-        else:
-            result = block
+        result = block
 
         self.symbol_cache[cache_key] = result
         logger.info(f"Extracted symbol {full_name} ({len(result)} chars)")
