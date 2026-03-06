@@ -26,7 +26,7 @@ log_file = os.path.join(log_dir, "kicad_interface.log")
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.FileHandler(log_file), logging.StreamHandler(sys.stderr)],
+    handlers=[logging.FileHandler(log_file), logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("kicad_interface")
 
