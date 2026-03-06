@@ -226,7 +226,14 @@ class PinLocator:
 
             pins = self.get_symbol_pins(schematic_path, lib_id)
             if pin_number not in pins:
-                return None
+                matched_num = next(
+                    (num for num, data in pins.items() if data.get("name") == pin_number),
+                    None,
+                )
+                if matched_num:
+                    pin_number = matched_num
+                else:
+                    return None
 
             # Pin definition angle + symbol rotation = absolute outward direction
             pin_def_angle = pins[pin_number].get("angle", 0)
@@ -294,12 +301,22 @@ class PinLocator:
                 logger.error(f"No pin definitions found for {lib_id}")
                 return None
 
-            # Find the requested pin
+            # Find the requested pin — match by number first, then by name
             if pin_number not in pins:
-                logger.error(
-                    f"Pin {pin_number} not found on {symbol_reference}. Available pins: {list(pins.keys())}"
+                # Try matching by pin name (e.g. "VCC1", "SDA", "GND")
+                matched_num = next(
+                    (num for num, data in pins.items() if data.get("name") == pin_number),
+                    None,
                 )
-                return None
+                if matched_num:
+                    logger.debug(f"Resolved pin name '{pin_number}' to pin number '{matched_num}' on {symbol_reference}")
+                    pin_number = matched_num
+                else:
+                    logger.error(
+                        f"Pin {pin_number} not found on {symbol_reference}. Available pins: {list(pins.keys())} "
+                        f"(names: {[d.get('name','') for d in pins.values()]})"
+                    )
+                    return None
 
             pin_data = pins[pin_number]
 
