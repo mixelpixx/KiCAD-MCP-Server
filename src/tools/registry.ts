@@ -92,7 +92,8 @@ export const toolCategories: ToolCategory[] = [
       "add_schematic_net_label",
       "connect_to_net",
       "get_net_connections",
-      "generate_netlist"
+      "generate_netlist",
+      "sync_schematic_to_board"
     ]
   },
   {
@@ -142,6 +143,9 @@ export const directToolNames = [
   "connect_passthrough",
   "connect_to_net",
   "add_schematic_net_label",
+
+  // Schematic <-> PCB sync (F8 equivalent)
+  "sync_schematic_to_board",
 
   // UI management
   "check_kicad_ui"

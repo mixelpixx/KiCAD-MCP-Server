@@ -380,6 +380,7 @@ class KiCADInterface:
             "get_net_connections": self._handle_get_net_connections,
             "run_erc": self._handle_run_erc,
             "generate_netlist": self._handle_generate_netlist,
+            "sync_schematic_to_board": self._handle_sync_schematic_to_board,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
             "export_schematic_pdf": self._handle_export_schematic_pdf,
             "import_svg_logo": self._handle_import_svg_logo,
@@ -1472,6 +1473,114 @@ class KiCADInterface:
             logger.error(f"Error generating netlist: {str(e)}")
             return {"success": False, "message": str(e)}
 
+    def _handle_sync_schematic_to_board(self, params):
+        """Sync schematic netlist to PCB board (equivalent to KiCAD F8 'Update PCB from Schematic').
+        Reads net connections from the schematic and assigns them to the matching pads in the PCB."""
+        logger.info("Syncing schematic to board")
+        try:
+            from pathlib import Path
+            schematic_path = params.get("schematicPath")
+            board_path = params.get("boardPath")
+
+            # Determine board to work with
+            board = None
+            if board_path:
+                board = pcbnew.LoadBoard(board_path)
+            elif self.board:
+                board = self.board
+                board_path = board.GetFileName() if not board_path else board_path
+            else:
+                return {"success": False, "message": "No board loaded. Use open_project first or provide boardPath."}
+
+            if not board_path:
+                board_path = board.GetFileName()
+
+            # Determine schematic path if not provided
+            if not schematic_path:
+                sch = Path(board_path).with_suffix(".kicad_sch")
+                if sch.exists():
+                    schematic_path = str(sch)
+                else:
+                    project_dir = Path(board_path).parent
+                    sch_files = list(project_dir.glob("*.kicad_sch"))
+                    if sch_files:
+                        schematic_path = str(sch_files[0])
+
+            if not schematic_path or not Path(schematic_path).exists():
+                return {"success": False, "message": f"Schematic not found. Provide schematicPath. Tried: {schematic_path}"}
+
+            # Generate netlist from schematic
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            netlist = ConnectionManager.generate_netlist(schematic, schematic_path=schematic_path)
+
+            # Build (reference, pad_number) -> net_name map
+            pad_net_map = {}  # {(ref, pin_str): net_name}
+            net_names = set()
+            for net_entry in netlist.get("nets", []):
+                net_name = net_entry["name"]
+                net_names.add(net_name)
+                for conn in net_entry.get("connections", []):
+                    ref = conn.get("component", "")
+                    pin = str(conn.get("pin", ""))
+                    if ref and pin and pin != "unknown":
+                        pad_net_map[(ref, pin)] = net_name
+
+            # Add all nets to board
+            netinfo = board.GetNetInfo()
+            nets_by_name = netinfo.NetsByName()
+            added_nets = []
+            for net_name in net_names:
+                if not nets_by_name.has_key(net_name):
+                    net_item = pcbnew.NETINFO_ITEM(board, net_name)
+                    board.Add(net_item)
+                    added_nets.append(net_name)
+
+            # Refresh nets map after additions
+            netinfo = board.GetNetInfo()
+            nets_by_name = netinfo.NetsByName()
+
+            # Assign nets to pads
+            assigned_pads = 0
+            unmatched = []
+            for fp in board.GetFootprints():
+                ref = fp.GetReference()
+                for pad in fp.Pads():
+                    pad_num = pad.GetNumber()
+                    key = (ref, str(pad_num))
+                    if key in pad_net_map:
+                        net_name = pad_net_map[key]
+                        if nets_by_name.has_key(net_name):
+                            pad.SetNet(nets_by_name[net_name])
+                            assigned_pads += 1
+                    else:
+                        unmatched.append(f"{ref}/{pad_num}")
+
+            board.Save(board_path)
+
+            # If board was loaded fresh, update internal reference
+            if params.get("boardPath"):
+                self.board = board
+                self._update_command_handlers()
+
+            logger.info(f"sync_schematic_to_board: {len(added_nets)} nets added, {assigned_pads} pads assigned")
+            return {
+                "success": True,
+                "message": f"PCB nets synced from schematic: {len(added_nets)} nets added, {assigned_pads} pads assigned",
+                "nets_added": added_nets,
+                "nets_total": len(net_names),
+                "pads_assigned": assigned_pads,
+                "unmatched_pads_sample": unmatched[:10],
+            }
+
+        except Exception as e:
+            logger.error(f"Error in sync_schematic_to_board: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
     def _handle_import_svg_logo(self, params):
         """Import an SVG file as PCB graphic polygons on the silkscreen"""
         logger.info("Importing SVG logo into PCB")
@@ -1536,8 +1645,16 @@ class KiCADInterface:
             return {"success": False, "message": str(e)}
 
     def _handle_refill_zones(self, params):
-        """Refill all copper pour zones on the board"""
-        logger.info("Refilling zones")
+        """Refill all copper pour zones on the board.
+
+        pcbnew.ZONE_FILLER.Fill() can cause a C++ access violation (0xC0000005)
+        that crashes the entire Python process when called from SWIG outside KiCAD UI.
+        To avoid killing the main process we run the fill in an isolated subprocess.
+        If the subprocess crashes or times out, we return a non-fatal warning so the
+        caller can continue — KiCAD Pcbnew will refill zones automatically when the
+        board is opened (press B).
+        """
+        logger.info("Refilling zones (subprocess isolation)")
         try:
             if not self.board:
                 return {
@@ -1546,18 +1663,55 @@ class KiCADInterface:
                     "errorDetails": "Load or create a board first",
                 }
 
-            # Use pcbnew's zone filler for SWIG backend
-            filler = pcbnew.ZONE_FILLER(self.board)
-            zones = self.board.Zones()
-            filler.Fill(zones)
+            # First save the board so the subprocess can load it fresh
+            board_path = self.board.GetFileName()
+            if not board_path:
+                return {"success": False, "message": "Board has no file path — save first"}
+            self.board.Save(board_path)
 
-            return {
-                "success": True,
-                "message": "Zones refilled successfully",
-                "zoneCount": (
-                    zones.size() if hasattr(zones, "size") else len(list(zones))
-                ),
-            }
+            zone_count = self.board.GetAreaCount() if hasattr(self.board, "GetAreaCount") else 0
+
+            # Run pcbnew zone fill in an isolated subprocess to prevent crashes
+            import subprocess, sys, textwrap
+            script = textwrap.dedent(f"""
+import pcbnew, sys
+board = pcbnew.LoadBoard({repr(board_path)})
+filler = pcbnew.ZONE_FILLER(board)
+filler.Fill(board.Zones())
+board.Save({repr(board_path)})
+print("ok")
+""")
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-c", script],
+                    capture_output=True, text=True, timeout=60
+                )
+                if result.returncode == 0 and "ok" in result.stdout:
+                    # Reload board after subprocess modified it
+                    self.board = pcbnew.LoadBoard(board_path)
+                    self._update_command_handlers()
+                    logger.info("Zone fill subprocess succeeded")
+                    return {
+                        "success": True,
+                        "message": f"Zones refilled successfully ({zone_count} zones)",
+                        "zoneCount": zone_count,
+                    }
+                else:
+                    logger.warning(f"Zone fill subprocess failed: rc={result.returncode} stderr={result.stderr[:200]}")
+                    return {
+                        "success": False,
+                        "message": "Zone fill failed in subprocess — zones are defined and will fill when opened in KiCAD (press B). Continuing is safe.",
+                        "zoneCount": zone_count,
+                        "details": result.stderr[:300] if result.stderr else result.stdout[:300],
+                    }
+            except subprocess.TimeoutExpired:
+                logger.warning("Zone fill subprocess timed out after 60s")
+                return {
+                    "success": False,
+                    "message": "Zone fill timed out — zones are defined and will fill when opened in KiCAD (press B). Continuing is safe.",
+                    "zoneCount": zone_count,
+                }
+
         except Exception as e:
             logger.error(f"Error refilling zones: {str(e)}")
             return {"success": False, "message": str(e)}

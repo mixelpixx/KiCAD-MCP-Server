@@ -1576,6 +1576,24 @@ SCHEMATIC_TOOLS = [
         }
     },
     {
+        "name": "sync_schematic_to_board",
+        "title": "Sync Schematic to PCB (F8)",
+        "description": "Reads net connections from the schematic and assigns them to matching component pads in the PCB board file. Equivalent to KiCAD Pcbnew F8 'Update PCB from Schematic'. Must be called after placing components and before routing traces, so that pad-to-net assignments are correct.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to .kicad_sch file. If omitted, auto-detected from current board path."
+                },
+                "boardPath": {
+                    "type": "string",
+                    "description": "Path to .kicad_pcb file. If omitted, uses currently loaded board."
+                }
+            }
+        }
+    },
+    {
         "name": "generate_netlist",
         "title": "Generate Netlist",
         "description": "Generates a netlist from the schematic showing all components and their net connections.",
