@@ -50,6 +50,21 @@ All notable changes to the KiCAD MCP Server project are documented here.
   **Action required for existing projects:** delete every line beginning with `;;` from any
   `.kicad_sch` file created between upstream commit `b98c94b` and this fix.
 
+- `add_schematic_component` / `inject_symbol_into_schematic`: symbol definition in
+  `lib_symbols` was never refreshed after editing via `create_symbol` / `edit_symbol`.
+  If the symbol was already present in the schematic's embedded `lib_symbols` section,
+  the function returned immediately — `delete + re-add` still pulled in the stale cached
+  definition. Fix: always read the current definition from the `.kicad_sym` file; if a
+  stale entry exists in `lib_symbols`, remove it first, then inject the fresh one.
+  Verified live. ✅
+
+- `template_with_symbols_expanded.kicad_sch`: removed 13 legacy `_TEMPLATE_*` offscreen
+  instances (`_TEMPLATE_R`, `_TEMPLATE_C`, `_TEMPLATE_U`, etc.) that were placed at
+  `x=-100` as clone-sources for the old `ComponentManager` approach. `DynamicSymbolLoader`
+  (the current implementation) injects symbols directly and never needs these placeholders.
+  They appeared as dangling reference designators in KiCAD's component navigator and in
+  the schematic canvas when zoomed far out.
+
 ### Maintenance
 
 - `.gitignore`: added `*.kicad_pcb.bak`, `*.kicad_pro.bak` alongside existing `-bak` variants;
