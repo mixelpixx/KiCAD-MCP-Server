@@ -1599,7 +1599,25 @@ class KiCADInterface:
             if not pcb_path or not svg_path:
                 return {"success": False, "message": "Missing required parameters: pcbPath, svgPath"}
 
-            return import_svg_to_pcb(pcb_path, svg_path, x, y, width, layer, stroke_width, filled)
+            result = import_svg_to_pcb(pcb_path, svg_path, x, y, width, layer, stroke_width, filled)
+
+            # import_svg_to_pcb writes gr_poly entries directly to the .kicad_pcb file,
+            # bypassing the pcbnew in-memory board object.  Any subsequent board.Save()
+            # call would overwrite the file with the stale in-memory state, erasing the
+            # logo.  Reload the board from disk so pcbnew's memory matches the file.
+            if result.get("success") and self.board:
+                try:
+                    self.board = pcbnew.LoadBoard(pcb_path)
+                    # Propagate to sub-command objects that hold a board reference
+                    for attr in ("board_commands", "routing_commands", "component_commands"):
+                        obj = getattr(self, attr, None)
+                        if obj is not None:
+                            obj.board = self.board
+                    logger.info("Reloaded board into pcbnew after SVG logo import")
+                except Exception as reload_err:
+                    logger.warning(f"Board reload after SVG import failed (non-fatal): {reload_err}")
+
+            return result
 
         except Exception as e:
             logger.error(f"Error importing SVG logo: {str(e)}")
