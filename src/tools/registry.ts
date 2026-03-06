@@ -137,6 +137,12 @@ export const directToolNames = [
   // Board setup
   "add_board_outline",
 
+  // Schematic essentials (always visible so AI uses them correctly)
+  "add_schematic_component",
+  "connect_passthrough",
+  "connect_to_net",
+  "add_schematic_net_label",
+
   // UI management
   "check_kicad_ui"
 ];
