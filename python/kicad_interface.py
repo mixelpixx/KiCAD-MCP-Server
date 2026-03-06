@@ -382,6 +382,7 @@ class KiCADInterface:
             "generate_netlist": self._handle_generate_netlist,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
             "export_schematic_pdf": self._handle_export_schematic_pdf,
+            "import_svg_logo": self._handle_import_svg_logo,
             # UI/Process management commands
             "check_kicad_ui": self._handle_check_kicad_ui,
             "launch_kicad_ui": self._handle_launch_kicad_ui,
@@ -1469,6 +1470,32 @@ class KiCADInterface:
             return {"success": True, "netlist": netlist}
         except Exception as e:
             logger.error(f"Error generating netlist: {str(e)}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_import_svg_logo(self, params):
+        """Import an SVG file as PCB graphic polygons on the silkscreen"""
+        logger.info("Importing SVG logo into PCB")
+        try:
+            from commands.svg_import import import_svg_to_pcb
+
+            pcb_path = params.get("pcbPath")
+            svg_path = params.get("svgPath")
+            x = float(params.get("x", 0))
+            y = float(params.get("y", 0))
+            width = float(params.get("width", 10))
+            layer = params.get("layer", "F.SilkS")
+            stroke_width = float(params.get("strokeWidth", 0))
+            filled = bool(params.get("filled", True))
+
+            if not pcb_path or not svg_path:
+                return {"success": False, "message": "Missing required parameters: pcbPath, svgPath"}
+
+            return import_svg_to_pcb(pcb_path, svg_path, x, y, width, layer, stroke_width, filled)
+
+        except Exception as e:
+            logger.error(f"Error importing SVG logo: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
     def _handle_check_kicad_ui(self, params):

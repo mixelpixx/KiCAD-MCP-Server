@@ -265,6 +265,53 @@ BOARD_TOOLS = [
         }
     },
     {
+        "name": "import_svg_logo",
+        "title": "Import SVG Logo to PCB",
+        "description": "Imports an SVG file as filled graphic polygons onto a KiCAD PCB layer (default F.SilkS). Curves are linearised automatically. Supports path, rect, circle, ellipse, polygon and group transforms.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pcbPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_pcb file"
+                },
+                "svgPath": {
+                    "type": "string",
+                    "description": "Path to the SVG logo file"
+                },
+                "x": {
+                    "type": "number",
+                    "description": "X position of the logo top-left corner in mm"
+                },
+                "y": {
+                    "type": "number",
+                    "description": "Y position of the logo top-left corner in mm"
+                },
+                "width": {
+                    "type": "number",
+                    "description": "Target width of the logo in mm (height scaled to preserve aspect ratio)",
+                    "minimum": 0.1
+                },
+                "layer": {
+                    "type": "string",
+                    "description": "PCB layer name, e.g. F.SilkS or B.SilkS (default: F.SilkS)",
+                    "default": "F.SilkS"
+                },
+                "strokeWidth": {
+                    "type": "number",
+                    "description": "Outline stroke width in mm (0 = no outline, default 0)",
+                    "default": 0
+                },
+                "filled": {
+                    "type": "boolean",
+                    "description": "Fill polygons with solid layer colour (default true)",
+                    "default": true
+                }
+            },
+            "required": ["pcbPath", "svgPath", "x", "y", "width"]
+        }
+    },
+    {
         "name": "add_board_text",
         "title": "Add Text to Board",
         "description": "Adds text annotation to the board on a specified layer (e.g., F.SilkS for top silkscreen).",
