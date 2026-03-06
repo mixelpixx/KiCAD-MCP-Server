@@ -445,6 +445,41 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
+  // Run Electrical Rules Check (ERC)
+  server.tool(
+    "run_erc",
+    "Runs the KiCAD Electrical Rules Check (ERC) on a schematic and returns all violations. Use after wiring to verify the schematic before generating a netlist.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+    },
+    async (args: { schematicPath: string }) => {
+      const result = await callKicadScript("run_erc", args);
+      if (result.success) {
+        const violations: any[] = result.violations || [];
+        const lines: string[] = [`ERC result: ${violations.length} violation(s)`];
+        if (result.summary?.by_severity) {
+          const s = result.summary.by_severity;
+          lines.push(`  Errors: ${s.error ?? 0}  Warnings: ${s.warning ?? 0}  Info: ${s.info ?? 0}`);
+        }
+        if (violations.length > 0) {
+          lines.push("");
+          violations.slice(0, 30).forEach((v: any, i: number) => {
+            const loc = v.location && (v.location.x !== undefined) ? ` @ (${v.location.x}, ${v.location.y})` : "";
+            lines.push(`${i + 1}. [${v.severity}] ${v.message}${loc}`);
+          });
+          if (violations.length > 30) {
+            lines.push(`... and ${violations.length - 30} more`);
+          }
+        }
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } else {
+        return {
+          content: [{ type: "text", text: `ERC failed: ${result.message || "Unknown error"}${result.errorDetails ? "\n" + result.errorDetails : ""}` }],
+        };
+      }
+    },
+  );
+
   // Generate netlist
   server.tool(
     "generate_netlist",

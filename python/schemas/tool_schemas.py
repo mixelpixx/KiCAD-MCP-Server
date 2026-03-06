@@ -1514,6 +1514,21 @@ SCHEMATIC_TOOLS = [
         }
     },
     {
+        "name": "run_erc",
+        "title": "Run Electrical Rules Check (ERC)",
+        "description": "Runs the KiCAD Electrical Rules Check (ERC) on a schematic via kicad-cli and returns all violations with type, severity, and location. Use this to verify the schematic is electrically correct before generating a netlist or exporting.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file"
+                }
+            },
+            "required": ["schematicPath"]
+        }
+    },
+    {
         "name": "generate_netlist",,
         "title": "Generate Netlist",
         "description": "Generates a netlist from the schematic showing all components and their net connections.",

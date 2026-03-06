@@ -378,6 +378,7 @@ class KiCADInterface:
             "connect_passthrough": self._handle_connect_passthrough,
             "get_schematic_pin_locations": self._handle_get_schematic_pin_locations,
             "get_net_connections": self._handle_get_net_connections,
+            "run_erc": self._handle_run_erc,
             "generate_netlist": self._handle_generate_netlist,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
             "export_schematic_pdf": self._handle_export_schematic_pdf,
@@ -1365,6 +1366,88 @@ class KiCADInterface:
             return {"success": True, "connections": connections}
         except Exception as e:
             logger.error(f"Error getting net connections: {str(e)}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_run_erc(self, params):
+        """Run Electrical Rules Check on a schematic via kicad-cli"""
+        logger.info("Running ERC on schematic")
+        import subprocess
+        import tempfile
+        import os
+
+        try:
+            schematic_path = params.get("schematicPath")
+            if not schematic_path or not os.path.exists(schematic_path):
+                return {
+                    "success": False,
+                    "message": "Schematic file not found",
+                    "errorDetails": f"Path does not exist: {schematic_path}",
+                }
+
+            kicad_cli = self.design_rule_commands._find_kicad_cli()
+            if not kicad_cli:
+                return {
+                    "success": False,
+                    "message": "kicad-cli not found",
+                    "errorDetails": "Install KiCAD 8.0+ or add kicad-cli to PATH.",
+                }
+
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+                json_output = tmp.name
+
+            try:
+                cmd = [kicad_cli, "sch", "erc", "--format", "json", "--output", json_output, schematic_path]
+                logger.info(f"Running ERC command: {' '.join(cmd)}")
+
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+                if result.returncode != 0:
+                    logger.error(f"ERC command failed: {result.stderr}")
+                    return {
+                        "success": False,
+                        "message": "ERC command failed",
+                        "errorDetails": result.stderr,
+                    }
+
+                with open(json_output, "r", encoding="utf-8") as f:
+                    erc_data = json.load(f)
+
+                violations = []
+                severity_counts = {"error": 0, "warning": 0, "info": 0}
+
+                for v in erc_data.get("violations", []):
+                    vseverity = v.get("severity", "error")
+                    items = v.get("items", [])
+                    loc = {}
+                    if items and "pos" in items[0]:
+                        loc = {"x": items[0]["pos"].get("x", 0), "y": items[0]["pos"].get("y", 0)}
+                    violations.append({
+                        "type": v.get("type", "unknown"),
+                        "severity": vseverity,
+                        "message": v.get("description", ""),
+                        "location": loc,
+                    })
+                    if vseverity in severity_counts:
+                        severity_counts[vseverity] += 1
+
+                return {
+                    "success": True,
+                    "message": f"ERC complete: {len(violations)} violation(s)",
+                    "summary": {
+                        "total": len(violations),
+                        "by_severity": severity_counts,
+                    },
+                    "violations": violations,
+                }
+
+            finally:
+                if os.path.exists(json_output):
+                    os.unlink(json_output)
+
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "ERC timed out after 120 seconds"}
+        except Exception as e:
+            logger.error(f"Error running ERC: {str(e)}")
             return {"success": False, "message": str(e)}
 
     def _handle_generate_netlist(self, params):
