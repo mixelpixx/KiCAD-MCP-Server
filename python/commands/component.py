@@ -125,10 +125,15 @@ class ComponentCommands:
             angle = pcbnew.EDA_ANGLE(rotation, pcbnew.DEGREES_T)
             module.SetOrientation(angle)
 
-            # Set layer
-            layer_id = self.board.GetLayerID(layer)
-            if layer_id >= 0:
-                module.SetLayer(layer_id)
+            # Set layer — for B.Cu the footprint must be flipped (mirrored),
+            # not just layer-assigned.  Flip() handles layer + mirror in one step.
+            if layer == "B.Cu":
+                if not module.IsFlipped():
+                    module.Flip(module.GetPosition(), False)
+            else:
+                layer_id = self.board.GetLayerID(layer)
+                if layer_id >= 0:
+                    module.SetLayer(layer_id)
 
             # Add to board
             self.board.Add(module)
