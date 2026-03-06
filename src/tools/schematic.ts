@@ -417,6 +417,34 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
+  // Connect all pins of source connector to matching pins of target connector (passthrough)
+  server.tool(
+    "connect_passthrough",
+    "Connects all pins of a source connector (e.g. J1) to matching pins of a target connector (e.g. J2) via shared net labels — pin N gets net '{netPrefix}_{N}'. Use this for FFC/ribbon cable passthrough adapters instead of calling connect_to_net for every pin.",
+    {
+      schematicPath: z.string().describe("Path to the schematic file"),
+      sourceRef: z.string().describe("Source connector reference (e.g. J1)"),
+      targetRef: z.string().describe("Target connector reference (e.g. J2)"),
+      netPrefix: z.string().optional().describe("Net name prefix, e.g. 'CSI' → CSI_1, CSI_2 (default: PIN)"),
+      pinOffset: z.number().optional().describe("Add to pin number when building net name (default: 0)"),
+    },
+    async (args: { schematicPath: string; sourceRef: string; targetRef: string; netPrefix?: string; pinOffset?: number }) => {
+      const result = await callKicadScript("connect_passthrough", args);
+      if (result.success !== false || (result.connected && result.connected.length > 0)) {
+        const lines: string[] = [];
+        if (result.connected?.length) lines.push(`Connected (${result.connected.length}): ${result.connected.slice(0, 5).join(", ")}${result.connected.length > 5 ? " ..." : ""}`);
+        if (result.failed?.length) lines.push(`Failed (${result.failed.length}): ${result.failed.join(", ")}`);
+        return {
+          content: [{ type: "text", text: result.message + "\n" + lines.join("\n") }],
+        };
+      } else {
+        return {
+          content: [{ type: "text", text: `Passthrough failed: ${result.message || "Unknown error"}` }],
+        };
+      }
+    },
+  );
+
   // Generate netlist
   server.tool(
     "generate_netlist",

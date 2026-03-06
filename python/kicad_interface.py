@@ -375,6 +375,7 @@ class KiCADInterface:
             "add_schematic_connection": self._handle_add_schematic_connection,
             "add_schematic_net_label": self._handle_add_schematic_net_label,
             "connect_to_net": self._handle_connect_to_net,
+            "connect_passthrough": self._handle_connect_passthrough,
             "get_schematic_pin_locations": self._handle_get_schematic_pin_locations,
             "get_net_connections": self._handle_get_net_connections,
             "generate_netlist": self._handle_generate_netlist,
@@ -1271,6 +1272,39 @@ class KiCADInterface:
                 "message": str(e),
                 "errorDetails": traceback.format_exc(),
             }
+
+    def _handle_connect_passthrough(self, params):
+        """Connect all pins of source connector to matching pins of target connector"""
+        logger.info("Connecting passthrough between two connectors")
+        try:
+            from pathlib import Path
+
+            schematic_path = params.get("schematicPath")
+            source_ref = params.get("sourceRef")
+            target_ref = params.get("targetRef")
+            net_prefix = params.get("netPrefix", "PIN")
+            pin_offset = int(params.get("pinOffset", 0))
+
+            if not all([schematic_path, source_ref, target_ref]):
+                return {"success": False, "message": "Missing required parameters: schematicPath, sourceRef, targetRef"}
+
+            result = ConnectionManager.connect_passthrough(
+                Path(schematic_path), source_ref, target_ref, net_prefix, pin_offset
+            )
+
+            n_ok = len(result["connected"])
+            n_fail = len(result["failed"])
+            return {
+                "success": n_fail == 0,
+                "message": f"Passthrough complete: {n_ok} connected, {n_fail} failed",
+                "connected": result["connected"],
+                "failed": result["failed"],
+            }
+        except Exception as e:
+            logger.error(f"Error in connect_passthrough: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
 
     def _handle_get_schematic_pin_locations(self, params):
         """Return exact pin endpoint coordinates for a schematic component"""

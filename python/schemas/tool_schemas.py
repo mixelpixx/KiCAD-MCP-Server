@@ -1483,7 +1483,38 @@ SCHEMATIC_TOOLS = [
         }
     },
     {
-        "name": "generate_netlist",
+        "name": "connect_passthrough",
+        "title": "Connect Passthrough (Pin-to-Pin)",
+        "description": "Connects all pins of a source connector to the matching pins of a target connector using shared net labels. Ideal for passthrough adapters where J1 pin N connects directly to J2 pin N. Each pair gets a net label '{netPrefix}_{pinNumber}'. Use this instead of calling connect_to_net 15 times for FFC/ribbon cable passthroughs.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the schematic file"
+                },
+                "sourceRef": {
+                    "type": "string",
+                    "description": "Reference of the source connector (e.g., J1)"
+                },
+                "targetRef": {
+                    "type": "string",
+                    "description": "Reference of the target connector (e.g., J2)"
+                },
+                "netPrefix": {
+                    "type": "string",
+                    "description": "Prefix for generated net names, e.g. 'CSI' produces CSI_1, CSI_2, ... (default: PIN)"
+                },
+                "pinOffset": {
+                    "type": "integer",
+                    "description": "Add this value to the pin number when building net names (default: 0)"
+                }
+            },
+            "required": ["schematicPath", "sourceRef", "targetRef"]
+        }
+    },
+    {
+        "name": "generate_netlist",,
         "title": "Generate Netlist",
         "description": "Generates a netlist from the schematic showing all components and their net connections.",
         "inputSchema": {
