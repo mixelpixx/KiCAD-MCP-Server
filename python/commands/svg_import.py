@@ -40,8 +40,13 @@ _TOKEN_RE = re.compile(
 
 
 def _tokenize_path(d: str) -> List[str]:
-    return [tok for tok, _ in _TOKEN_RE.findall(d) if tok] + \
-           [num for _, num in _TOKEN_RE.findall(d) if num]
+    tokens = []
+    for tok, num in _TOKEN_RE.findall(d):
+        if tok:
+            tokens.append(tok)
+        elif num:
+            tokens.append(num)
+    return tokens
 
 
 def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
