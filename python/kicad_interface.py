@@ -2131,7 +2131,17 @@ print("ok")
             return {"success": False, "message": str(e)}
 
     def _ipc_add_board_outline(self, params):
-        """IPC handler for add_board_outline - adds board edge with real-time UI update"""
+        """IPC handler for add_board_outline - adds board edge with real-time UI update.
+        Rounded rectangles are delegated to the SWIG path because the IPC BoardSegment
+        type cannot represent arcs; the SWIG path writes directly to the .kicad_pcb file
+        and correctly generates PCB_SHAPE arcs for rounded corners.
+        """
+        shape = params.get("shape", "rectangle")
+        if shape == "rounded_rectangle":
+            # IPC path only supports straight segments — fall back to SWIG for arcs
+            logger.info("_ipc_add_board_outline: delegating rounded_rectangle to SWIG path for arc support")
+            return self.board_commands.add_board_outline(params)
+
         try:
             from kipy.board_types import BoardSegment
             from kipy.geometry import Vector2

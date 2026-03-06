@@ -110,7 +110,7 @@ BOARD_TOOLS = [
     {
         "name": "add_board_outline",
         "title": "Add Board Outline",
-        "description": "Adds a board outline shape (rectangle, rounded rectangle, circle, or polygon) on the Edge.Cuts layer.",
+        "description": "Adds a board outline shape (rectangle, rounded_rectangle, circle, or polygon) on the Edge.Cuts layer. By default the board top-left corner is placed at (0, 0) so all coordinates are positive. Use x/y to set a different top-left corner position.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -129,19 +129,26 @@ BOARD_TOOLS = [
                     "description": "Height in mm (for rectangle/rounded_rectangle)",
                     "minimum": 1
                 },
+                "x": {
+                    "type": "number",
+                    "description": "X coordinate of the top-left corner in mm (default: 0). Board extends from x to x+width."
+                },
+                "y": {
+                    "type": "number",
+                    "description": "Y coordinate of the top-left corner in mm (default: 0). Board extends from y to y+height."
+                },
                 "radius": {
                     "type": "number",
-                    "description": "Radius in mm (for circle) or corner radius (for rounded_rectangle)",
+                    "description": "Corner radius in mm for rounded_rectangle, or radius for circle",
                     "minimum": 0
                 },
                 "points": {
                     "type": "array",
-                    "description": "Array of [x, y] coordinates in mm (for polygon)",
+                    "description": "Array of {x, y} point objects in mm (for polygon shape only)",
                     "items": {
-                        "type": "array",
-                        "items": {"type": "number"},
-                        "minItems": 2,
-                        "maxItems": 2
+                        "type": "object",
+                        "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
+                        "required": ["x", "y"]
                     },
                     "minItems": 3
                 }
