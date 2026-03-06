@@ -450,29 +450,17 @@ class DynamicSymbolLoader:
         with open(schematic_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # Insert before (sheet_instances or at end before final )
-        lines = content.split("\n")
-        insert_pos = None
-
-        for i, line in enumerate(lines):
-            if "(sheet_instances" in line:
-                insert_pos = i
-                break
-
-        if insert_pos is None:
-            # Insert before the last closing parenthesis
-            for i in range(len(lines) - 1, -1, -1):
-                if lines[i].strip() == ")":
-                    insert_pos = i
-                    break
-
-        if insert_pos is None:
+        # Insert before (sheet_instances using direct string search.
+        # This works for both pretty-printed and sexpdata-compacted single-line files.
+        insert_marker = "(sheet_instances"
+        insert_at = content.rfind(insert_marker)
+        if insert_at == -1:
             raise ValueError("Could not find insertion point in schematic")
 
-        lines.insert(insert_pos, instance_block)
+        content = content[:insert_at] + instance_block + "\n  " + content[insert_at:]
 
         with open(schematic_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
+            f.write(content)
 
         logger.info(
             f"Added component instance {reference} ({full_lib_id}) at ({x}, {y})"
