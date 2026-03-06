@@ -294,6 +294,7 @@ class KiCADInterface:
             "create_project": self.project_commands.create_project,
             "open_project": self.project_commands.open_project,
             "save_project": self.project_commands.save_project,
+            "snapshot_project": self._handle_snapshot_project,
             "get_project_info": self.project_commands.get_project_info,
             # Board commands
             "set_board_size": self.board_commands.set_board_size,
@@ -1623,6 +1624,42 @@ class KiCADInterface:
             logger.error(f"Error importing SVG logo: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_snapshot_project(self, params):
+        """Copy the entire project folder to a snapshot directory for checkpoint/resume."""
+        import shutil
+        from datetime import datetime
+        try:
+            step   = params.get("step", "")
+            label  = params.get("label", "")
+            # Determine project directory from loaded board or explicit path
+            project_dir = None
+            if self.board:
+                board_file = self.board.GetFileName()
+                if board_file:
+                    project_dir = str(Path(board_file).parent)
+            if not project_dir:
+                project_dir = params.get("projectPath")
+            if not project_dir or not os.path.isdir(project_dir):
+                return {"success": False, "message": "Could not determine project directory for snapshot"}
+
+            base_name = Path(project_dir).name
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            suffix_parts = [p for p in [f"step{step}" if step else "", label, ts] if p]
+            snapshot_name = base_name + "_snapshot_" + "_".join(suffix_parts)
+            snapshot_dir = str(Path(project_dir).parent / snapshot_name)
+
+            shutil.copytree(project_dir, snapshot_dir)
+            logger.info(f"Project snapshot saved: {snapshot_dir}")
+            return {
+                "success": True,
+                "message": f"Snapshot saved: {snapshot_name}",
+                "snapshotPath": snapshot_dir,
+                "sourceDir": project_dir,
+            }
+        except Exception as e:
+            logger.error(f"snapshot_project error: {e}")
             return {"success": False, "message": str(e)}
 
     def _handle_check_kicad_ui(self, params):

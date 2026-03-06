@@ -125,6 +125,7 @@ export const directToolNames = [
   "create_project",
   "open_project",
   "save_project",
+  "snapshot_project",
   "get_project_info",
 
   // Core PCB operations

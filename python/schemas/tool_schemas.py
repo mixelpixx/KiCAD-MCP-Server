@@ -71,6 +71,28 @@ PROJECT_TOOLS = [
         }
     },
     {
+        "name": "snapshot_project",
+        "title": "Snapshot Project (Checkpoint)",
+        "description": "Copies the entire project folder to a new timestamped snapshot directory so you can resume from this checkpoint later without redoing earlier steps. Call this after every successfully completed design step (e.g. after Step 1 schematic, after Step 2 PCB layout) before asking for user confirmation to proceed.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "step": {
+                    "type": "string",
+                    "description": "Step number or name to include in snapshot folder name, e.g. '1' or '2'"
+                },
+                "label": {
+                    "type": "string",
+                    "description": "Optional short label, e.g. 'schematic_ok' or 'layout_ok'"
+                },
+                "projectPath": {
+                    "type": "string",
+                    "description": "Project directory path. Auto-detected from loaded board if omitted."
+                }
+            }
+        }
+    },
+    {
         "name": "get_project_info",
         "title": "Get Project Information",
         "description": "Retrieves metadata and properties of the currently open project including name, paths, and board status.",
