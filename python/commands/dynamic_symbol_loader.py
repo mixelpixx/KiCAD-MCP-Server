@@ -366,42 +366,30 @@ class DynamicSymbolLoader:
             indented_lines.append("    " + line if line.strip() else line)
         indented_block = "\n".join(indented_lines)
 
-        # Find the end of lib_symbols section to insert before closing )
-        lines = content.split("\n")
-        lib_sym_start = None
-        lib_sym_end = None
+        # Find the end of lib_symbols section using string search (format-independent,
+        # works even when sexpdata.dumps() has compacted the file to a single line)
+        lib_sym_start = content.find("(lib_symbols")
+        if lib_sym_start == -1:
+            raise ValueError("No lib_symbols section found in schematic")
+
         depth = 0
-
-        for i, line in enumerate(lines):
-            if "(lib_symbols" in line and lib_sym_start is None:
-                lib_sym_start = i
-                depth = 0
-                for ch in line:
-                    if ch == "(":
-                        depth += 1
-                    elif ch == ")":
-                        depth -= 1
-                continue
-            if lib_sym_start is not None and lib_sym_end is None:
-                for ch in line:
-                    if ch == "(":
-                        depth += 1
-                    elif ch == ")":
-                        depth -= 1
-                        if depth == 0:
-                            lib_sym_end = i
-                            break
-                if lib_sym_end is not None:
+        lib_sym_end = lib_sym_start
+        for i in range(lib_sym_start, len(content)):
+            if content[i] == "(":
+                depth += 1
+            elif content[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    lib_sym_end = i
                     break
-
-        if lib_sym_end is None:
+        else:
             raise ValueError("No lib_symbols section found in schematic")
 
         # Insert the symbol block just before the closing ) of lib_symbols
-        lines.insert(lib_sym_end, indented_block)
+        content = content[:lib_sym_end] + "\n    " + indented_block + "\n  " + content[lib_sym_end:]
 
         with open(schematic_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
+            f.write(content)
 
         # Handle both Path objects and strings
         sch_name = (
