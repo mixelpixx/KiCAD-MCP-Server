@@ -1576,7 +1576,7 @@ SCHEMATIC_TOOLS = [
         }
     },
     {
-        "name": "generate_netlist",,
+        "name": "generate_netlist",
         "title": "Generate Netlist",
         "description": "Generates a netlist from the schematic showing all components and their net connections.",
         "inputSchema": {
