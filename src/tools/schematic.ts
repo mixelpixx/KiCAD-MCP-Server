@@ -385,6 +385,38 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
+  // Get pin locations for a schematic component
+  server.tool(
+    "get_schematic_pin_locations",
+    "Returns the exact x/y coordinates of every pin on a schematic component. Use this before add_schematic_net_label to place labels correctly on pin endpoints.",
+    {
+      schematicPath: z.string().describe("Path to the schematic file"),
+      reference: z.string().describe("Component reference designator (e.g. U1, R1, J2)"),
+    },
+    async (args: { schematicPath: string; reference: string }) => {
+      const result = await callKicadScript("get_schematic_pin_locations", args);
+      if (result.success && result.pins) {
+        const lines = Object.entries(result.pins as Record<string, any>).map(
+          ([pinNum, data]: [string, any]) =>
+            `  Pin ${pinNum} (${data.name || pinNum}): x=${data.x}, y=${data.y}, angle=${data.angle ?? 0}°`
+        );
+        return {
+          content: [{
+            type: "text",
+            text: `Pin locations for ${args.reference}:\n${lines.join("\n")}`,
+          }],
+        };
+      } else {
+        return {
+          content: [{
+            type: "text",
+            text: `Failed to get pin locations: ${result.message || "Unknown error"}`,
+          }],
+        };
+      }
+    },
+  );
+
   // Generate netlist
   server.tool(
     "generate_netlist",

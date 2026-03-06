@@ -375,6 +375,7 @@ class KiCADInterface:
             "add_schematic_connection": self._handle_add_schematic_connection,
             "add_schematic_net_label": self._handle_add_schematic_net_label,
             "connect_to_net": self._handle_connect_to_net,
+            "get_schematic_pin_locations": self._handle_get_schematic_pin_locations,
             "get_net_connections": self._handle_get_net_connections,
             "generate_netlist": self._handle_generate_netlist,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
@@ -1270,6 +1271,47 @@ class KiCADInterface:
                 "message": str(e),
                 "errorDetails": traceback.format_exc(),
             }
+
+    def _handle_get_schematic_pin_locations(self, params):
+        """Return exact pin endpoint coordinates for a schematic component"""
+        logger.info("Getting schematic pin locations")
+        try:
+            from pathlib import Path
+            from commands.pin_locator import PinLocator
+
+            schematic_path = params.get("schematicPath")
+            reference = params.get("reference")
+
+            if not all([schematic_path, reference]):
+                return {"success": False, "message": "Missing required parameters: schematicPath, reference"}
+
+            locator = PinLocator()
+            all_pins = locator.get_all_symbol_pins(Path(schematic_path), reference)
+
+            if not all_pins:
+                return {"success": False, "message": f"No pins found for {reference} — check reference and schematic path"}
+
+            # Enrich with pin names and angles from the symbol definition
+            pins_def = locator.get_symbol_pins(
+                Path(schematic_path),
+                locator._get_lib_id(Path(schematic_path), reference),
+            ) if hasattr(locator, "_get_lib_id") else {}
+
+            result = {}
+            for pin_num, coords in all_pins.items():
+                entry = {"x": coords[0], "y": coords[1]}
+                if pin_num in pins_def:
+                    entry["name"] = pins_def[pin_num].get("name", pin_num)
+                    entry["angle"] = locator.get_pin_angle(Path(schematic_path), reference, pin_num) or 0
+                result[pin_num] = entry
+
+            return {"success": True, "reference": reference, "pins": result}
+
+        except Exception as e:
+            logger.error(f"Error getting pin locations: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
 
     def _handle_get_net_connections(self, params):
         """Get all connections for a named net"""

@@ -256,7 +256,16 @@ class ConnectionManager:
                 return False
 
             # Add a small wire stub from the pin (2.54mm = 0.1 inch, standard grid spacing)
-            stub_end = [pin_loc[0] + 2.54, pin_loc[1]]
+            # Stub direction follows the pin's outward angle from the PinLocator
+            pin_angle_deg = getattr(locator, '_last_pin_angle', 0)
+            try:
+                pin_angle_deg = locator.get_pin_angle(schematic_path, component_ref, pin_name) or 0
+            except Exception:
+                pin_angle_deg = 0
+            import math as _math
+            angle_rad = _math.radians(pin_angle_deg)
+            stub_end = [round(pin_loc[0] + 2.54 * _math.cos(angle_rad), 4),
+                        round(pin_loc[1] - 2.54 * _math.sin(angle_rad), 4)]
 
             # Create wire stub using WireManager
             wire_success = WireManager.add_wire(schematic_path, pin_loc, stub_end)

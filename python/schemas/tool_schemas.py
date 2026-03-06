@@ -1388,7 +1388,7 @@ SCHEMATIC_TOOLS = [
     {
         "name": "add_schematic_net_label",
         "title": "Add Net Label",
-        "description": "Adds a net label to assign a name to a wire/net on the schematic.",
+        "description": "Adds a net label at exact coordinates on a schematic wire or pin endpoint. WARNING: x/y must match an existing wire endpoint or pin endpoint exactly — placing the label even 0.01mm away from a pin will result in an unconnected pin ERC error. To connect a component pin to a net by reference and pin number (recommended), use connect_to_net instead.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1461,6 +1461,25 @@ SCHEMATIC_TOOLS = [
                 }
             },
             "required": ["schematicPath", "netName"]
+        }
+    },
+    {
+        "name": "get_schematic_pin_locations",
+        "title": "Get Schematic Pin Locations",
+        "description": "Returns the exact absolute coordinates of all pins on a schematic component. Use this BEFORE placing net labels with add_schematic_net_label to get the correct x/y position for each pin endpoint.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the schematic file"
+                },
+                "reference": {
+                    "type": "string",
+                    "description": "Component reference designator (e.g., U1, R1, J2)"
+                }
+            },
+            "required": ["schematicPath", "reference"]
         }
     },
     {
