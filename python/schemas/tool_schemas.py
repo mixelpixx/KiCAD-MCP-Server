@@ -305,7 +305,7 @@ BOARD_TOOLS = [
                 "filled": {
                     "type": "boolean",
                     "description": "Fill polygons with solid layer colour (default true)",
-                    "default": true
+                    "default": True
                 }
             },
             "required": ["pcbPath", "svgPath", "x", "y", "width"]
