@@ -2192,9 +2192,11 @@ print("ok")
         and correctly generates PCB_SHAPE arcs for rounded corners.
         """
         shape = params.get("shape", "rectangle")
-        if shape == "rounded_rectangle":
-            # IPC path only supports straight segments — fall back to SWIG for arcs
-            logger.info("_ipc_add_board_outline: delegating rounded_rectangle to SWIG path for arc support")
+        if shape in ("rounded_rectangle", "rectangle"):
+            # IPC path only supports straight segments from a points list,
+            # but Claude sends rectangle/rounded_rectangle as shape+width+height.
+            # Fall back to the SWIG path which correctly handles both shapes.
+            logger.info(f"_ipc_add_board_outline: delegating {shape} to SWIG path")
             return self.board_commands.add_board_outline(params)
 
         try:
@@ -2205,8 +2207,10 @@ print("ok")
 
             board = self.ipc_board_api._get_board()
 
-            points = params.get("points", [])
-            width = params.get("width", 0.1)
+            # Unwrap nested params (Claude sends {"shape":..., "params":{...}})
+            inner = params.get("params", params)
+            points = inner.get("points", params.get("points", []))
+            width = inner.get("width", params.get("width", 0.1))
 
             if len(points) < 2:
                 return {

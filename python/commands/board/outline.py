@@ -27,28 +27,33 @@ class BoardOutlineCommands:
                     "errorDetails": "Load or create a board first",
                 }
 
+            # Claude sends dimensions nested inside a "params" key:
+            # {"shape": "rectangle", "params": {"x": 0, "y": 0, "width": 38, ...}}
+            # Unwrap the inner dict if present so we read dimensions from the right level.
+            inner = params.get("params", params)
+
             shape = params.get("shape", "rectangle")
-            width = params.get("width")
-            height = params.get("height")
-            radius = params.get("radius")
+            width = inner.get("width")
+            height = inner.get("height")
+            radius = inner.get("radius")
             # Accept both "cornerRadius" and "radius" (schema uses "radius" for rounded_rectangle)
-            corner_radius = params.get("cornerRadius", params.get("radius", 0) if shape == "rounded_rectangle" else 0)
-            points = params.get("points", [])
-            unit = params.get("unit", "mm")
+            corner_radius = inner.get("cornerRadius", inner.get("radius", 0) if shape == "rounded_rectangle" else 0)
+            points = inner.get("points", [])
+            unit = inner.get("unit", "mm")
 
             # Position: accept top-left corner (x/y) or center (centerX/centerY).
             # Default: top-left at (0,0) so the board occupies positive coordinate space
             # and is consistent with component placement coordinates.
-            x = params.get("x")
-            y = params.get("y")
+            x = inner.get("x")
+            y = inner.get("y")
             if x is not None or y is not None:
                 ox = x if x is not None else 0.0
                 oy = y if y is not None else 0.0
                 center_x = ox + (width or 0) / 2.0
                 center_y = oy + (height or 0) / 2.0
             else:
-                raw_cx = params.get("centerX")
-                raw_cy = params.get("centerY")
+                raw_cx = inner.get("centerX")
+                raw_cy = inner.get("centerY")
                 if raw_cx is not None or raw_cy is not None:
                     center_x = raw_cx if raw_cx is not None else 0.0
                     center_y = raw_cy if raw_cy is not None else 0.0
