@@ -36,8 +36,11 @@ class BoardOutlineCommands:
             width = inner.get("width")
             height = inner.get("height")
             radius = inner.get("radius")
-            # Accept both "cornerRadius" and "radius" (schema uses "radius" for rounded_rectangle)
-            corner_radius = inner.get("cornerRadius", inner.get("radius", 0) if shape == "rounded_rectangle" else 0)
+            # Accept both "cornerRadius" and "radius" regardless of shape name.
+            # The AI often sends shape="rectangle" with radius=2.5 — we treat that as rounded_rectangle.
+            corner_radius = inner.get("cornerRadius", inner.get("radius", 0))
+            if shape == "rectangle" and corner_radius > 0:
+                shape = "rounded_rectangle"
             points = inner.get("points", [])
             unit = inner.get("unit", "mm")
 

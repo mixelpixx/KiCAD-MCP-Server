@@ -145,11 +145,12 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   server.tool(
     "add_board_outline",
     {
-      shape: z.enum(["rectangle", "circle", "polygon"]).describe("Shape of the outline"),
+      shape: z.enum(["rectangle", "circle", "polygon", "rounded_rectangle"]).describe("Shape of the outline"),
       params: z.object({
-        // For rectangle
+        // For rectangle / rounded_rectangle
         width: z.number().optional().describe("Width of rectangle"),
         height: z.number().optional().describe("Height of rectangle"),
+        cornerRadius: z.number().optional().describe("Corner radius for rounded_rectangle (mm)"),
         // For circle
         radius: z.number().optional().describe("Radius of circle"),
         // For polygon
@@ -159,21 +160,19 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
             y: z.number().describe("Y coordinate")
           })
         ).optional().describe("Points of polygon"),
-        // Common parameters
-        x: z.number().describe("X coordinate of center/origin"),
-        y: z.number().describe("Y coordinate of center/origin"),
+        // Position: top-left corner for rectangles/rounded_rectangle, center for circle
+        x: z.number().describe("X coordinate of top-left corner for rectangles (default: 0)"),
+        y: z.number().describe("Y coordinate of top-left corner for rectangles (default: 0)"),
         unit: z.enum(["mm", "inch"]).describe("Unit of measurement")
       }).describe("Parameters for the outline shape")
     },
     async ({ shape, params }) => {
       logger.debug(`Adding ${shape} board outline`);
-      // Flatten params and rename x/y to centerX/centerY for Python compatibility
-      const { x, y, ...otherParams } = params;
+      // Pass x/y as-is to Python; outline.py treats them as top-left corner
+      // and computes the center internally (center = x + width/2, y + height/2).
       const result = await callKicadScript("add_board_outline", {
         shape,
-        centerX: x,
-        centerY: y,
-        ...otherParams
+        ...params
       });
 
       return {
