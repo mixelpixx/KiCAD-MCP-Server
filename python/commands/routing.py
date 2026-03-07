@@ -1095,11 +1095,25 @@ class RoutingCommands:
                     y1 = board_box.GetY() / scale
                     x2 = (board_box.GetX() + board_box.GetWidth()) / scale
                     y2 = (board_box.GetY() + board_box.GetHeight()) / scale
+
+                    # Detect corner radius from Edge.Cuts arcs so the zone rectangle
+                    # stays inside the rounded board corners (avoids zone visually
+                    # extending outside Edge.Cuts before refill)
+                    corner_radius = 0.0
+                    edge_layer_id = self.board.GetLayerID("Edge.Cuts")
+                    for item in self.board.GetDrawings():
+                        if item.GetLayer() == edge_layer_id and item.GetClass() == "PCB_ARC":
+                            r = item.GetRadius() / scale
+                            if r > corner_radius:
+                                corner_radius = r
+                    # Inset the zone rectangle by the corner radius so its corners
+                    # lie on the straight portions of the board edge.
+                    inset = corner_radius
                     points = [
-                        {"x": x1, "y": y1},
-                        {"x": x2, "y": y1},
-                        {"x": x2, "y": y2},
-                        {"x": x1, "y": y2},
+                        {"x": x1 + inset, "y": y1 + inset},
+                        {"x": x2 - inset, "y": y1 + inset},
+                        {"x": x2 - inset, "y": y2 - inset},
+                        {"x": x1 + inset, "y": y2 - inset},
                     ]
                 else:
                     return {
