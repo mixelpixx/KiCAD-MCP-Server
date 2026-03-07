@@ -33,7 +33,7 @@ export function registerRoutingTools(
   // Route trace tool
   server.tool(
     "route_trace",
-    "Route a trace between two points",
+    "Route a trace segment between two XY points on a fixed layer. WARNING: Does NOT handle layer changes — if start and end are on different copper layers, use route_pad_to_pad instead, which automatically inserts a via.",
     {
       start: z
         .object({
@@ -331,7 +331,7 @@ export function registerRoutingTools(
   // Route pad to pad tool
   server.tool(
     "route_pad_to_pad",
-    "Route a trace directly from one component pad to another without needing separate get_pad_position calls. Automatically looks up pad coordinates and uses the pad's net. Saves token usage compared to the 3-step get_pad_position + get_pad_position + route_trace sequence.",
+    "PREFERRED tool for pad-to-pad routing. Looks up pad positions automatically, detects the net from the pad, and — critically — if the two pads are on different copper layers (e.g. J1 on F.Cu and J2 on B.Cu) automatically inserts a via at the midpoint so the connection is complete. Always use this instead of route_trace when routing between named component pads.",
     {
       fromRef: z.string().describe("Reference of the source component (e.g. 'U2')"),
       fromPad: z.union([z.string(), z.number()]).describe("Pad number on the source component (e.g. '6' or 6)"),
