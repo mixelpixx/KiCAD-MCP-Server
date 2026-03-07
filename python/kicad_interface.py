@@ -1609,11 +1609,8 @@ class KiCADInterface:
             if result.get("success") and self.board:
                 try:
                     self.board = pcbnew.LoadBoard(pcb_path)
-                    # Propagate to sub-command objects that hold a board reference
-                    for attr in ("board_commands", "routing_commands", "component_commands"):
-                        obj = getattr(self, attr, None)
-                        if obj is not None:
-                            obj.board = self.board
+                    # Propagate updated board reference to all command handlers
+                    self._update_command_handlers()
                     logger.info("Reloaded board into pcbnew after SVG logo import")
                 except Exception as reload_err:
                     logger.warning(f"Board reload after SVG import failed (non-fatal): {reload_err}")
