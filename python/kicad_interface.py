@@ -496,6 +496,11 @@ class KiCADInterface:
                         # Get board from the project commands handler
                         self.board = self.project_commands.board
                         self._update_command_handlers()
+                    elif command in self._BOARD_MUTATING_COMMANDS:
+                        # Auto-save after every board mutation via SWIG.
+                        # Prevents data loss if Claude hits context limit before
+                        # an explicit save_project call.
+                        self._auto_save_board()
 
                 return result
             else:
@@ -515,6 +520,29 @@ class KiCADInterface:
                 "message": f"Error handling command: {command}",
                 "errorDetails": f"{str(e)}\n{traceback_str}",
             }
+
+    # Board-mutating commands that trigger auto-save on SWIG path
+    _BOARD_MUTATING_COMMANDS = {
+        "place_component", "move_component", "rotate_component", "delete_component",
+        "route_trace", "route_pad_to_pad", "add_via", "delete_trace", "add_net",
+        "add_board_outline", "add_mounting_hole", "add_text", "add_board_text",
+        "add_copper_pour", "refill_zones", "import_svg_logo",
+        "sync_schematic_to_board", "connect_passthrough",
+    }
+
+    def _auto_save_board(self):
+        """Save board to disk after SWIG mutations.
+        Called automatically after every board-mutating SWIG command so that
+        data is not lost if Claude hits the context limit before save_project.
+        """
+        try:
+            if self.board:
+                board_path = self.board.GetFileName()
+                if board_path:
+                    pcbnew.SaveBoard(board_path, self.board)
+                    logger.debug(f"Auto-saved board to: {board_path}")
+        except Exception as e:
+            logger.warning(f"Auto-save failed: {e}")
 
     def _update_command_handlers(self):
         """Update board reference in all command handlers"""
@@ -588,11 +616,35 @@ class KiCADInterface:
             return {"success": False, "message": str(e)}
 
     def _handle_place_component(self, params):
-        """Place a component on the PCB, with project-local fp-lib-table support."""
+        """Place a component on the PCB, with project-local fp-lib-table support.
+        If boardPath is given and differs from the currently loaded board, the
+        board is reloaded from boardPath before placing — prevents silent failures
+        when Claude provides a boardPath that was not yet loaded.
+        """
         from pathlib import Path
 
         board_path = params.get("boardPath")
         if board_path:
+            board_path_norm = str(Path(board_path).resolve())
+            current_board_file = (
+                str(Path(self.board.GetFileName()).resolve()) if self.board else ""
+            )
+            if board_path_norm != current_board_file:
+                logger.info(
+                    f"boardPath differs from current board — reloading: {board_path}"
+                )
+                try:
+                    self.board = pcbnew.LoadBoard(board_path)
+                    self._update_command_handlers()
+                    logger.info("Board reloaded from boardPath")
+                except Exception as e:
+                    logger.error(f"Failed to reload board from boardPath: {e}")
+                    return {
+                        "success": False,
+                        "message": f"Could not load board from boardPath: {board_path}",
+                        "errorDetails": str(e),
+                    }
+
             project_path = Path(board_path).parent
             if project_path != getattr(self, "_current_project_path", None):
                 self._current_project_path = project_path

@@ -367,7 +367,7 @@ class RoutingCommands:
                         "y": position["y"],
                         "unit": position["unit"],
                     },
-                    "size": via.GetWidth() / 1000000,
+                    "size": via.GetWidth(pcbnew.F_Cu) / 1000000,
                     "drill": via.GetDrill() / 1000000,
                     "from_layer": from_layer,
                     "to_layer": to_layer,
@@ -950,7 +950,7 @@ class RoutingCommands:
                 # Create new via
                 new_via = pcbnew.PCB_VIA(self.board)
                 new_via.SetPosition(pcbnew.VECTOR2I(pos.x + offset_x, pos.y + offset_y))
-                new_via.SetWidth(via.GetWidth())
+                new_via.SetWidth(via.GetWidth(pcbnew.F_Cu))
                 new_via.SetDrill(via.GetDrillValue())
                 new_via.SetViaType(via.GetViaType())
 
