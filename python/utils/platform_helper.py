@@ -188,7 +188,10 @@ class PlatformHelper:
             # Use XDG Base Directory specification
             xdg_config = os.environ.get("XDG_CONFIG_HOME")
             if xdg_config:
-                return Path(xdg_config) / "kicad-mcp"
+                xdg_config_path = Path(xdg_config).expanduser()
+                if xdg_config_path.is_absolute():
+                    return xdg_config_path / "kicad-mcp"
+                logger.warning("Ignoring relative XDG_CONFIG_HOME: %s", xdg_config)
             return Path.home() / ".config" / "kicad-mcp"
         elif PlatformHelper.is_macos():
             return Path.home() / "Library" / "Application Support" / "kicad-mcp"
@@ -225,7 +228,10 @@ class PlatformHelper:
         elif PlatformHelper.is_linux():
             xdg_cache = os.environ.get("XDG_CACHE_HOME")
             if xdg_cache:
-                return Path(xdg_cache) / "kicad-mcp"
+                xdg_cache_path = Path(xdg_cache).expanduser()
+                if xdg_cache_path.is_absolute():
+                    return xdg_cache_path / "kicad-mcp"
+                logger.warning("Ignoring relative XDG_CACHE_HOME: %s", xdg_cache)
             return Path.home() / ".cache" / "kicad-mcp"
         elif PlatformHelper.is_macos():
             return Path.home() / "Library" / "Caches" / "kicad-mcp"

@@ -89,6 +89,24 @@ class TestPathGeneration:
             expected = Path.home() / "Library" / "Application Support" / "kicad-mcp"
             assert config_dir == expected
 
+    def test_config_dir_ignores_relative_xdg_config_home(self, monkeypatch):
+        """Relative XDG_CONFIG_HOME should be ignored on Linux."""
+        monkeypatch.setattr(PlatformHelper, "is_linux", staticmethod(lambda: True))
+        monkeypatch.setattr(PlatformHelper, "is_windows", staticmethod(lambda: False))
+        monkeypatch.setattr(PlatformHelper, "is_macos", staticmethod(lambda: False))
+        monkeypatch.setenv("XDG_CONFIG_HOME", "relative/path")
+
+        assert PlatformHelper.get_config_dir() == Path.home() / ".config" / "kicad-mcp"
+
+    def test_cache_dir_ignores_relative_xdg_cache_home(self, monkeypatch):
+        """Relative XDG_CACHE_HOME should be ignored on Linux."""
+        monkeypatch.setattr(PlatformHelper, "is_linux", staticmethod(lambda: True))
+        monkeypatch.setattr(PlatformHelper, "is_windows", staticmethod(lambda: False))
+        monkeypatch.setattr(PlatformHelper, "is_macos", staticmethod(lambda: False))
+        monkeypatch.setenv("XDG_CACHE_HOME", "relative/cache")
+
+        assert PlatformHelper.get_cache_dir() == Path.home() / ".cache" / "kicad-mcp"
+
     def test_python_executable_is_valid(self):
         """Test that Python executable path is valid"""
         exe = PlatformHelper.get_python_executable()
