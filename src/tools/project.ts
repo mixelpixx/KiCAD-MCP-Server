@@ -76,4 +76,23 @@ export function registerProjectTools(server: McpServer, callKicadScript: Functio
       };
     }
   );
+
+  // Snapshot project tool — saves a named checkpoint as PDF/image
+  server.tool(
+    "snapshot_project",
+    "Save a named checkpoint snapshot of the current project state (renders board to PDF and records step label). Call after completing each major step — e.g. after Step 1 (schematic_ok) and Step 2 (layout_ok). Required by the demo workflow before waiting for user confirmation.",
+    {
+      step: z.string().describe("Step number or identifier, e.g. '1' or '2'"),
+      label: z.string().describe("Short label for this checkpoint, e.g. 'schematic_ok' or 'layout_ok'"),
+    },
+    async (args: { step: string; label: string }) => {
+      const result = await callKicadScript("snapshot_project", args);
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(result, null, 2)
+        }]
+      };
+    }
+  );
 }

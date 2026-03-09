@@ -125,13 +125,19 @@ class ComponentCommands:
             angle = pcbnew.EDA_ANGLE(rotation, pcbnew.DEGREES_T)
             module.SetOrientation(angle)
 
-            # Set layer
-            layer_id = self.board.GetLayerID(layer)
-            if layer_id >= 0:
-                module.SetLayer(layer_id)
+            # Set layer for F.Cu (or non-B.Cu) before adding to board
+            if layer != "B.Cu":
+                layer_id = self.board.GetLayerID(layer)
+                if layer_id >= 0:
+                    module.SetLayer(layer_id)
 
-            # Add to board
+            # Add to board first — Flip() requires board context in KiCAD 9
             self.board.Add(module)
+
+            # Flip to B.Cu after add (board context needed, otherwise hangs 30s)
+            if layer == "B.Cu":
+                if not module.IsFlipped():
+                    module.Flip(module.GetPosition(), False)
 
             return {
                 "success": True,

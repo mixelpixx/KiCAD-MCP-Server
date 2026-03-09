@@ -84,7 +84,10 @@ class Logger {
    * @param message Message to log
    */
   private log(level: LogLevel, message: string): void {
-    const timestamp = new Date().toISOString();
+    const now = new Date();
+    const pad = (n: number, w = 2) => String(n).padStart(w, '0');
+    const timestamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ` +
+      `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())},${pad(now.getMilliseconds(), 3)}`;
     const formattedMessage = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
 
     // Log to console.error (stderr) only - stdout is reserved for MCP protocol

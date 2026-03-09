@@ -26,7 +26,7 @@ log_file = os.path.join(log_dir, "kicad_interface.log")
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.FileHandler(log_file), logging.StreamHandler(sys.stderr)],
+    handlers=[logging.FileHandler(log_file)],
 )
 logger = logging.getLogger("kicad_interface")
 
@@ -294,6 +294,7 @@ class KiCADInterface:
             "create_project": self.project_commands.create_project,
             "open_project": self.project_commands.open_project,
             "save_project": self.project_commands.save_project,
+            "snapshot_project": self._handle_snapshot_project,
             "get_project_info": self.project_commands.get_project_info,
             # Board commands
             "set_board_size": self.board_commands.set_board_size,
@@ -375,10 +376,15 @@ class KiCADInterface:
             "add_schematic_connection": self._handle_add_schematic_connection,
             "add_schematic_net_label": self._handle_add_schematic_net_label,
             "connect_to_net": self._handle_connect_to_net,
+            "connect_passthrough": self._handle_connect_passthrough,
+            "get_schematic_pin_locations": self._handle_get_schematic_pin_locations,
             "get_net_connections": self._handle_get_net_connections,
+            "run_erc": self._handle_run_erc,
             "generate_netlist": self._handle_generate_netlist,
+            "sync_schematic_to_board": self._handle_sync_schematic_to_board,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
             "export_schematic_pdf": self._handle_export_schematic_pdf,
+            "import_svg_logo": self._handle_import_svg_logo,
             # UI/Process management commands
             "check_kicad_ui": self._handle_check_kicad_ui,
             "launch_kicad_ui": self._handle_launch_kicad_ui,
@@ -490,6 +496,11 @@ class KiCADInterface:
                         # Get board from the project commands handler
                         self.board = self.project_commands.board
                         self._update_command_handlers()
+                    elif command in self._BOARD_MUTATING_COMMANDS:
+                        # Auto-save after every board mutation via SWIG.
+                        # Prevents data loss if Claude hits context limit before
+                        # an explicit save_project call.
+                        self._auto_save_board()
 
                 return result
             else:
@@ -509,6 +520,29 @@ class KiCADInterface:
                 "message": f"Error handling command: {command}",
                 "errorDetails": f"{str(e)}\n{traceback_str}",
             }
+
+    # Board-mutating commands that trigger auto-save on SWIG path
+    _BOARD_MUTATING_COMMANDS = {
+        "place_component", "move_component", "rotate_component", "delete_component",
+        "route_trace", "route_pad_to_pad", "add_via", "delete_trace", "add_net",
+        "add_board_outline", "add_mounting_hole", "add_text", "add_board_text",
+        "add_copper_pour", "refill_zones", "import_svg_logo",
+        "sync_schematic_to_board", "connect_passthrough",
+    }
+
+    def _auto_save_board(self):
+        """Save board to disk after SWIG mutations.
+        Called automatically after every board-mutating SWIG command so that
+        data is not lost if Claude hits the context limit before save_project.
+        """
+        try:
+            if self.board:
+                board_path = self.board.GetFileName()
+                if board_path:
+                    pcbnew.SaveBoard(board_path, self.board)
+                    logger.debug(f"Auto-saved board to: {board_path}")
+        except Exception as e:
+            logger.warning(f"Auto-save failed: {e}")
 
     def _update_command_handlers(self):
         """Update board reference in all command handlers"""
@@ -582,11 +616,35 @@ class KiCADInterface:
             return {"success": False, "message": str(e)}
 
     def _handle_place_component(self, params):
-        """Place a component on the PCB, with project-local fp-lib-table support."""
+        """Place a component on the PCB, with project-local fp-lib-table support.
+        If boardPath is given and differs from the currently loaded board, the
+        board is reloaded from boardPath before placing — prevents silent failures
+        when Claude provides a boardPath that was not yet loaded.
+        """
         from pathlib import Path
 
         board_path = params.get("boardPath")
         if board_path:
+            board_path_norm = str(Path(board_path).resolve())
+            current_board_file = (
+                str(Path(self.board.GetFileName()).resolve()) if self.board else ""
+            )
+            if board_path_norm != current_board_file:
+                logger.info(
+                    f"boardPath differs from current board — reloading: {board_path}"
+                )
+                try:
+                    self.board = pcbnew.LoadBoard(board_path)
+                    self._update_command_handlers()
+                    logger.info("Board reloaded from boardPath")
+                except Exception as e:
+                    logger.error(f"Failed to reload board from boardPath: {e}")
+                    return {
+                        "success": False,
+                        "message": f"Could not load board from boardPath: {board_path}",
+                        "errorDetails": str(e),
+                    }
+
             project_path = Path(board_path).parent
             if project_path != getattr(self, "_current_project_path", None):
                 self._current_project_path = project_path
@@ -1271,6 +1329,80 @@ class KiCADInterface:
                 "errorDetails": traceback.format_exc(),
             }
 
+    def _handle_connect_passthrough(self, params):
+        """Connect all pins of source connector to matching pins of target connector"""
+        logger.info("Connecting passthrough between two connectors")
+        try:
+            from pathlib import Path
+
+            schematic_path = params.get("schematicPath")
+            source_ref = params.get("sourceRef")
+            target_ref = params.get("targetRef")
+            net_prefix = params.get("netPrefix", "PIN")
+            pin_offset = int(params.get("pinOffset", 0))
+
+            if not all([schematic_path, source_ref, target_ref]):
+                return {"success": False, "message": "Missing required parameters: schematicPath, sourceRef, targetRef"}
+
+            result = ConnectionManager.connect_passthrough(
+                Path(schematic_path), source_ref, target_ref, net_prefix, pin_offset
+            )
+
+            n_ok = len(result["connected"])
+            n_fail = len(result["failed"])
+            return {
+                "success": n_fail == 0,
+                "message": f"Passthrough complete: {n_ok} connected, {n_fail} failed",
+                "connected": result["connected"],
+                "failed": result["failed"],
+            }
+        except Exception as e:
+            logger.error(f"Error in connect_passthrough: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_get_schematic_pin_locations(self, params):
+        """Return exact pin endpoint coordinates for a schematic component"""
+        logger.info("Getting schematic pin locations")
+        try:
+            from pathlib import Path
+            from commands.pin_locator import PinLocator
+
+            schematic_path = params.get("schematicPath")
+            reference = params.get("reference")
+
+            if not all([schematic_path, reference]):
+                return {"success": False, "message": "Missing required parameters: schematicPath, reference"}
+
+            locator = PinLocator()
+            all_pins = locator.get_all_symbol_pins(Path(schematic_path), reference)
+
+            if not all_pins:
+                return {"success": False, "message": f"No pins found for {reference} — check reference and schematic path"}
+
+            # Enrich with pin names and angles from the symbol definition
+            pins_def = locator.get_symbol_pins(
+                Path(schematic_path),
+                locator._get_lib_id(Path(schematic_path), reference),
+            ) if hasattr(locator, "_get_lib_id") else {}
+
+            result = {}
+            for pin_num, coords in all_pins.items():
+                entry = {"x": coords[0], "y": coords[1]}
+                if pin_num in pins_def:
+                    entry["name"] = pins_def[pin_num].get("name", pin_num)
+                    entry["angle"] = locator.get_pin_angle(Path(schematic_path), reference, pin_num) or 0
+                result[pin_num] = entry
+
+            return {"success": True, "reference": reference, "pins": result}
+
+        except Exception as e:
+            logger.error(f"Error getting pin locations: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
     def _handle_get_net_connections(self, params):
         """Get all connections for a named net"""
         logger.info("Getting net connections")
@@ -1289,6 +1421,88 @@ class KiCADInterface:
             return {"success": True, "connections": connections}
         except Exception as e:
             logger.error(f"Error getting net connections: {str(e)}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_run_erc(self, params):
+        """Run Electrical Rules Check on a schematic via kicad-cli"""
+        logger.info("Running ERC on schematic")
+        import subprocess
+        import tempfile
+        import os
+
+        try:
+            schematic_path = params.get("schematicPath")
+            if not schematic_path or not os.path.exists(schematic_path):
+                return {
+                    "success": False,
+                    "message": "Schematic file not found",
+                    "errorDetails": f"Path does not exist: {schematic_path}",
+                }
+
+            kicad_cli = self.design_rule_commands._find_kicad_cli()
+            if not kicad_cli:
+                return {
+                    "success": False,
+                    "message": "kicad-cli not found",
+                    "errorDetails": "Install KiCAD 8.0+ or add kicad-cli to PATH.",
+                }
+
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+                json_output = tmp.name
+
+            try:
+                cmd = [kicad_cli, "sch", "erc", "--format", "json", "--output", json_output, schematic_path]
+                logger.info(f"Running ERC command: {' '.join(cmd)}")
+
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+                if result.returncode != 0:
+                    logger.error(f"ERC command failed: {result.stderr}")
+                    return {
+                        "success": False,
+                        "message": "ERC command failed",
+                        "errorDetails": result.stderr,
+                    }
+
+                with open(json_output, "r", encoding="utf-8") as f:
+                    erc_data = json.load(f)
+
+                violations = []
+                severity_counts = {"error": 0, "warning": 0, "info": 0}
+
+                for v in erc_data.get("violations", []):
+                    vseverity = v.get("severity", "error")
+                    items = v.get("items", [])
+                    loc = {}
+                    if items and "pos" in items[0]:
+                        loc = {"x": items[0]["pos"].get("x", 0), "y": items[0]["pos"].get("y", 0)}
+                    violations.append({
+                        "type": v.get("type", "unknown"),
+                        "severity": vseverity,
+                        "message": v.get("description", ""),
+                        "location": loc,
+                    })
+                    if vseverity in severity_counts:
+                        severity_counts[vseverity] += 1
+
+                return {
+                    "success": True,
+                    "message": f"ERC complete: {len(violations)} violation(s)",
+                    "summary": {
+                        "total": len(violations),
+                        "by_severity": severity_counts,
+                    },
+                    "violations": violations,
+                }
+
+            finally:
+                if os.path.exists(json_output):
+                    os.unlink(json_output)
+
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "ERC timed out after 120 seconds"}
+        except Exception as e:
+            logger.error(f"Error running ERC: {str(e)}")
             return {"success": False, "message": str(e)}
 
     def _handle_generate_netlist(self, params):
@@ -1310,6 +1524,191 @@ class KiCADInterface:
             return {"success": True, "netlist": netlist}
         except Exception as e:
             logger.error(f"Error generating netlist: {str(e)}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_sync_schematic_to_board(self, params):
+        """Sync schematic netlist to PCB board (equivalent to KiCAD F8 'Update PCB from Schematic').
+        Reads net connections from the schematic and assigns them to the matching pads in the PCB."""
+        logger.info("Syncing schematic to board")
+        try:
+            from pathlib import Path
+            schematic_path = params.get("schematicPath")
+            board_path = params.get("boardPath")
+
+            # Determine board to work with
+            board = None
+            if board_path:
+                board = pcbnew.LoadBoard(board_path)
+            elif self.board:
+                board = self.board
+                board_path = board.GetFileName() if not board_path else board_path
+            else:
+                return {"success": False, "message": "No board loaded. Use open_project first or provide boardPath."}
+
+            if not board_path:
+                board_path = board.GetFileName()
+
+            # Determine schematic path if not provided
+            if not schematic_path:
+                sch = Path(board_path).with_suffix(".kicad_sch")
+                if sch.exists():
+                    schematic_path = str(sch)
+                else:
+                    project_dir = Path(board_path).parent
+                    sch_files = list(project_dir.glob("*.kicad_sch"))
+                    if sch_files:
+                        schematic_path = str(sch_files[0])
+
+            if not schematic_path or not Path(schematic_path).exists():
+                return {"success": False, "message": f"Schematic not found. Provide schematicPath. Tried: {schematic_path}"}
+
+            # Generate netlist from schematic
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            netlist = ConnectionManager.generate_netlist(schematic, schematic_path=schematic_path)
+
+            # Build (reference, pad_number) -> net_name map
+            pad_net_map = {}  # {(ref, pin_str): net_name}
+            net_names = set()
+            for net_entry in netlist.get("nets", []):
+                net_name = net_entry["name"]
+                net_names.add(net_name)
+                for conn in net_entry.get("connections", []):
+                    ref = conn.get("component", "")
+                    pin = str(conn.get("pin", ""))
+                    if ref and pin and pin != "unknown":
+                        pad_net_map[(ref, pin)] = net_name
+
+            # Add all nets to board
+            netinfo = board.GetNetInfo()
+            nets_by_name = netinfo.NetsByName()
+            added_nets = []
+            for net_name in net_names:
+                if not nets_by_name.has_key(net_name):
+                    net_item = pcbnew.NETINFO_ITEM(board, net_name)
+                    board.Add(net_item)
+                    added_nets.append(net_name)
+
+            # Refresh nets map after additions
+            netinfo = board.GetNetInfo()
+            nets_by_name = netinfo.NetsByName()
+
+            # Assign nets to pads
+            assigned_pads = 0
+            unmatched = []
+            for fp in board.GetFootprints():
+                ref = fp.GetReference()
+                for pad in fp.Pads():
+                    pad_num = pad.GetNumber()
+                    key = (ref, str(pad_num))
+                    if key in pad_net_map:
+                        net_name = pad_net_map[key]
+                        if nets_by_name.has_key(net_name):
+                            pad.SetNet(nets_by_name[net_name])
+                            assigned_pads += 1
+                    else:
+                        unmatched.append(f"{ref}/{pad_num}")
+
+            board.Save(board_path)
+
+            # If board was loaded fresh, update internal reference
+            if params.get("boardPath"):
+                self.board = board
+                self._update_command_handlers()
+
+            logger.info(f"sync_schematic_to_board: {len(added_nets)} nets added, {assigned_pads} pads assigned")
+            return {
+                "success": True,
+                "message": f"PCB nets synced from schematic: {len(added_nets)} nets added, {assigned_pads} pads assigned",
+                "nets_added": added_nets,
+                "nets_total": len(net_names),
+                "pads_assigned": assigned_pads,
+                "unmatched_pads_sample": unmatched[:10],
+            }
+
+        except Exception as e:
+            logger.error(f"Error in sync_schematic_to_board: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_import_svg_logo(self, params):
+        """Import an SVG file as PCB graphic polygons on the silkscreen"""
+        logger.info("Importing SVG logo into PCB")
+        try:
+            from commands.svg_import import import_svg_to_pcb
+
+            pcb_path = params.get("pcbPath")
+            svg_path = params.get("svgPath")
+            x = float(params.get("x", 0))
+            y = float(params.get("y", 0))
+            width = float(params.get("width", 10))
+            layer = params.get("layer", "F.SilkS")
+            stroke_width = float(params.get("strokeWidth", 0))
+            filled = bool(params.get("filled", True))
+
+            if not pcb_path or not svg_path:
+                return {"success": False, "message": "Missing required parameters: pcbPath, svgPath"}
+
+            result = import_svg_to_pcb(pcb_path, svg_path, x, y, width, layer, stroke_width, filled)
+
+            # import_svg_to_pcb writes gr_poly entries directly to the .kicad_pcb file,
+            # bypassing the pcbnew in-memory board object.  Any subsequent board.Save()
+            # call would overwrite the file with the stale in-memory state, erasing the
+            # logo.  Reload the board from disk so pcbnew's memory matches the file.
+            if result.get("success") and self.board:
+                try:
+                    self.board = pcbnew.LoadBoard(pcb_path)
+                    # Propagate updated board reference to all command handlers
+                    self._update_command_handlers()
+                    logger.info("Reloaded board into pcbnew after SVG logo import")
+                except Exception as reload_err:
+                    logger.warning(f"Board reload after SVG import failed (non-fatal): {reload_err}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error importing SVG logo: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_snapshot_project(self, params):
+        """Copy the entire project folder to a snapshot directory for checkpoint/resume."""
+        import shutil
+        from datetime import datetime
+        try:
+            step   = params.get("step", "")
+            label  = params.get("label", "")
+            # Determine project directory from loaded board or explicit path
+            project_dir = None
+            if self.board:
+                board_file = self.board.GetFileName()
+                if board_file:
+                    project_dir = str(Path(board_file).parent)
+            if not project_dir:
+                project_dir = params.get("projectPath")
+            if not project_dir or not os.path.isdir(project_dir):
+                return {"success": False, "message": "Could not determine project directory for snapshot"}
+
+            base_name = Path(project_dir).name
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            suffix_parts = [p for p in [f"step{step}" if step else "", label, ts] if p]
+            snapshot_name = base_name + "_snapshot_" + "_".join(suffix_parts)
+            snapshot_dir = str(Path(project_dir).parent / snapshot_name)
+
+            shutil.copytree(project_dir, snapshot_dir)
+            logger.info(f"Project snapshot saved: {snapshot_dir}")
+            return {
+                "success": True,
+                "message": f"Snapshot saved: {snapshot_name}",
+                "snapshotPath": snapshot_dir,
+                "sourceDir": project_dir,
+            }
+        except Exception as e:
+            logger.error(f"snapshot_project error: {e}")
             return {"success": False, "message": str(e)}
 
     def _handle_check_kicad_ui(self, params):
@@ -1350,8 +1749,16 @@ class KiCADInterface:
             return {"success": False, "message": str(e)}
 
     def _handle_refill_zones(self, params):
-        """Refill all copper pour zones on the board"""
-        logger.info("Refilling zones")
+        """Refill all copper pour zones on the board.
+
+        pcbnew.ZONE_FILLER.Fill() can cause a C++ access violation (0xC0000005)
+        that crashes the entire Python process when called from SWIG outside KiCAD UI.
+        To avoid killing the main process we run the fill in an isolated subprocess.
+        If the subprocess crashes or times out, we return a non-fatal warning so the
+        caller can continue — KiCAD Pcbnew will refill zones automatically when the
+        board is opened (press B).
+        """
+        logger.info("Refilling zones (subprocess isolation)")
         try:
             if not self.board:
                 return {
@@ -1360,18 +1767,55 @@ class KiCADInterface:
                     "errorDetails": "Load or create a board first",
                 }
 
-            # Use pcbnew's zone filler for SWIG backend
-            filler = pcbnew.ZONE_FILLER(self.board)
-            zones = self.board.Zones()
-            filler.Fill(zones)
+            # First save the board so the subprocess can load it fresh
+            board_path = self.board.GetFileName()
+            if not board_path:
+                return {"success": False, "message": "Board has no file path — save first"}
+            self.board.Save(board_path)
 
-            return {
-                "success": True,
-                "message": "Zones refilled successfully",
-                "zoneCount": (
-                    zones.size() if hasattr(zones, "size") else len(list(zones))
-                ),
-            }
+            zone_count = self.board.GetAreaCount() if hasattr(self.board, "GetAreaCount") else 0
+
+            # Run pcbnew zone fill in an isolated subprocess to prevent crashes
+            import subprocess, sys, textwrap
+            script = textwrap.dedent(f"""
+import pcbnew, sys
+board = pcbnew.LoadBoard({repr(board_path)})
+filler = pcbnew.ZONE_FILLER(board)
+filler.Fill(board.Zones())
+board.Save({repr(board_path)})
+print("ok")
+""")
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-c", script],
+                    capture_output=True, text=True, timeout=60
+                )
+                if result.returncode == 0 and "ok" in result.stdout:
+                    # Reload board after subprocess modified it
+                    self.board = pcbnew.LoadBoard(board_path)
+                    self._update_command_handlers()
+                    logger.info("Zone fill subprocess succeeded")
+                    return {
+                        "success": True,
+                        "message": f"Zones refilled successfully ({zone_count} zones)",
+                        "zoneCount": zone_count,
+                    }
+                else:
+                    logger.warning(f"Zone fill subprocess failed: rc={result.returncode} stderr={result.stderr[:200]}")
+                    return {
+                        "success": False,
+                        "message": "Zone fill failed in subprocess — zones are defined and will fill when opened in KiCAD (press B). Continuing is safe.",
+                        "zoneCount": zone_count,
+                        "details": result.stderr[:300] if result.stderr else result.stdout[:300],
+                    }
+            except subprocess.TimeoutExpired:
+                logger.warning("Zone fill subprocess timed out after 60s")
+                return {
+                    "success": False,
+                    "message": "Zone fill timed out — zones are defined and will fill when opened in KiCAD (press B). Continuing is safe.",
+                    "zoneCount": zone_count,
+                }
+
         except Exception as e:
             logger.error(f"Error refilling zones: {str(e)}")
             return {"success": False, "message": str(e)}
@@ -1791,7 +2235,19 @@ class KiCADInterface:
             return {"success": False, "message": str(e)}
 
     def _ipc_add_board_outline(self, params):
-        """IPC handler for add_board_outline - adds board edge with real-time UI update"""
+        """IPC handler for add_board_outline - adds board edge with real-time UI update.
+        Rounded rectangles are delegated to the SWIG path because the IPC BoardSegment
+        type cannot represent arcs; the SWIG path writes directly to the .kicad_pcb file
+        and correctly generates PCB_SHAPE arcs for rounded corners.
+        """
+        shape = params.get("shape", "rectangle")
+        if shape in ("rounded_rectangle", "rectangle"):
+            # IPC path only supports straight segments from a points list,
+            # but Claude sends rectangle/rounded_rectangle as shape+width+height.
+            # Fall back to the SWIG path which correctly handles both shapes.
+            logger.info(f"_ipc_add_board_outline: delegating {shape} to SWIG path")
+            return self.board_commands.add_board_outline(params)
+
         try:
             from kipy.board_types import BoardSegment
             from kipy.geometry import Vector2
@@ -1800,8 +2256,10 @@ class KiCADInterface:
 
             board = self.ipc_board_api._get_board()
 
-            points = params.get("points", [])
-            width = params.get("width", 0.1)
+            # Unwrap nested params (Claude sends {"shape":..., "params":{...}})
+            inner = params.get("params", params)
+            points = inner.get("points", params.get("points", []))
+            width = inner.get("width", params.get("width", 0.1))
 
             if len(points) < 2:
                 return {

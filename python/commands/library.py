@@ -469,7 +469,7 @@ class LibraryCommands:
     def list_library_footprints(self, params: Dict) -> Dict:
         """List all footprints in a specific library"""
         try:
-            library = params.get("library")
+            library = params.get("library") or params.get("library_name")
             if not library:
                 return {"success": False, "message": "Missing library parameter"}
 

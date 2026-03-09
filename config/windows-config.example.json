@@ -7,7 +7,8 @@
         "NODE_ENV": "production",
         "PYTHONPATH": "C:\\Program Files\\KiCad\\9.0\\bin\\Lib\\site-packages",
         "LOG_LEVEL": "info",
-        "KICAD_AUTO_LAUNCH": "false"
+        "KICAD_AUTO_LAUNCH": "false",
+        "KICAD_MCP_DEV": "0"
       },
       "description": "KiCAD PCB Design Assistant - Note: PYTHONPATH auto-detected if venv exists"
     }

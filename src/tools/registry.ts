@@ -92,7 +92,8 @@ export const toolCategories: ToolCategory[] = [
       "add_schematic_net_label",
       "connect_to_net",
       "get_net_connections",
-      "generate_netlist"
+      "generate_netlist",
+      "sync_schematic_to_board"
     ]
   },
   {
@@ -124,6 +125,7 @@ export const directToolNames = [
   "create_project",
   "open_project",
   "save_project",
+  "snapshot_project",
   "get_project_info",
 
   // Core PCB operations
@@ -136,6 +138,15 @@ export const directToolNames = [
 
   // Board setup
   "add_board_outline",
+
+  // Schematic essentials (always visible so AI uses them correctly)
+  "add_schematic_component",
+  "connect_passthrough",
+  "connect_to_net",
+  "add_schematic_net_label",
+
+  // Schematic <-> PCB sync (F8 equivalent)
+  "sync_schematic_to_board",
 
   // UI management
   "check_kicad_ui"
@@ -217,16 +228,24 @@ export function searchTools(query: string): SearchResult[] {
   const q = query.toLowerCase();
   const matches: SearchResult[] = [];
 
-  // This is a placeholder - we'll populate descriptions from actual tool definitions
-  // For now, we'll search by name and category
+  // Search direct tools first
+  for (const toolName of directToolNames) {
+    if (toolName.toLowerCase().includes(q)) {
+      matches.push({
+        category: "direct",
+        tool: toolName,
+        description: `${toolName} (direct tool — call directly, no execute_tool needed)`
+      });
+    }
+  }
+
+  // Search routed tools by name and category
   for (const category of toolCategories) {
-    // Check if category name or description matches
     const categoryMatch =
       category.name.toLowerCase().includes(q) ||
       category.description.toLowerCase().includes(q);
 
     for (const toolName of category.tools) {
-      // Check if tool name matches or category matches
       if (toolName.toLowerCase().includes(q) || categoryMatch) {
         matches.push({
           category: category.name,

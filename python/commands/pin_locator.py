@@ -179,6 +179,70 @@ class PinLocator:
 
         return (rotated_x, rotated_y)
 
+    def _get_lib_id(self, schematic_path: Path, symbol_reference: str) -> Optional[str]:
+        """Helper: return the lib_id string for a placed symbol"""
+        try:
+            sch_key = str(schematic_path)
+            if sch_key not in self._schematic_cache:
+                self._schematic_cache[sch_key] = Schematic(sch_key)
+            sch = self._schematic_cache[sch_key]
+            for symbol in sch.symbol:
+                if symbol.property.Reference.value == symbol_reference:
+                    return symbol.lib_id.value if hasattr(symbol, "lib_id") else None
+        except Exception:
+            pass
+        return None
+
+    def get_pin_angle(
+        self, schematic_path: Path, symbol_reference: str, pin_number: str
+    ) -> Optional[float]:
+        """
+        Get the outward angle of a pin endpoint in degrees (0=right, 90=up, 180=left, 270=down).
+        This is the direction a wire stub must extend to stay connected to the pin.
+
+        Returns angle in degrees, or None if pin not found.
+        """
+        try:
+            sch_key = str(schematic_path)
+            if sch_key not in self._schematic_cache:
+                self._schematic_cache[sch_key] = Schematic(sch_key)
+            sch = self._schematic_cache[sch_key]
+
+            target_symbol = None
+            for symbol in sch.symbol:
+                if symbol.property.Reference.value == symbol_reference:
+                    target_symbol = symbol
+                    break
+
+            if not target_symbol:
+                return None
+
+            symbol_at = target_symbol.at.value
+            symbol_rotation = float(symbol_at[2]) if len(symbol_at) > 2 else 0.0
+
+            lib_id = target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
+            if not lib_id:
+                return None
+
+            pins = self.get_symbol_pins(schematic_path, lib_id)
+            if pin_number not in pins:
+                matched_num = next(
+                    (num for num, data in pins.items() if data.get("name") == pin_number),
+                    None,
+                )
+                if matched_num:
+                    pin_number = matched_num
+                else:
+                    return None
+
+            # Pin definition angle + symbol rotation = absolute outward direction
+            pin_def_angle = pins[pin_number].get("angle", 0)
+            absolute_angle = (pin_def_angle + symbol_rotation) % 360
+            return absolute_angle
+
+        except Exception:
+            return None
+
     def get_pin_location(
         self, schematic_path: Path, symbol_reference: str, pin_number: str
     ) -> Optional[List[float]]:
@@ -237,12 +301,22 @@ class PinLocator:
                 logger.error(f"No pin definitions found for {lib_id}")
                 return None
 
-            # Find the requested pin
+            # Find the requested pin — match by number first, then by name
             if pin_number not in pins:
-                logger.error(
-                    f"Pin {pin_number} not found on {symbol_reference}. Available pins: {list(pins.keys())}"
+                # Try matching by pin name (e.g. "VCC1", "SDA", "GND")
+                matched_num = next(
+                    (num for num, data in pins.items() if data.get("name") == pin_number),
+                    None,
                 )
-                return None
+                if matched_num:
+                    logger.debug(f"Resolved pin name '{pin_number}' to pin number '{matched_num}' on {symbol_reference}")
+                    pin_number = matched_num
+                else:
+                    logger.error(
+                        f"Pin {pin_number} not found on {symbol_reference}. Available pins: {list(pins.keys())} "
+                        f"(names: {[d.get('name','') for d in pins.values()]})"
+                    )
+                    return None
 
             pin_data = pins[pin_number]
 

@@ -144,40 +144,64 @@ class RoutingCommands:
             if not net:
                 net = start_pad.GetNetname() or end_pad.GetNetname() or ""
 
-            # Delegate to route_trace
-            result = self.route_trace(
-                {
-                    "start": {
-                        "x": start_pos.x / scale,
-                        "y": start_pos.y / scale,
-                        "unit": "mm",
-                    },
-                    "end": {
-                        "x": end_pos.x / scale,
-                        "y": end_pos.y / scale,
-                        "unit": "mm",
-                    },
-                    "layer": layer,
-                    "width": width,
-                    "net": net,
-                }
+            # Detect if pads are on different copper layers → need via
+            start_layer = start_pad.GetLayerName()
+            end_layer = end_pad.GetLayerName()
+            copper_layers = {"F.Cu", "B.Cu"}
+            needs_via = (
+                start_layer in copper_layers
+                and end_layer in copper_layers
+                and start_layer != end_layer
             )
 
+            if needs_via:
+                # Place via at midpoint between the two pads
+                via_x = (start_pos.x + end_pos.x) / 2 / scale
+                via_y = (start_pos.y + end_pos.y) / 2 / scale
+
+                # Trace on start layer: start_pad → via
+                r1 = self.route_trace({
+                    "start": {"x": start_pos.x / scale, "y": start_pos.y / scale, "unit": "mm"},
+                    "end":   {"x": via_x, "y": via_y, "unit": "mm"},
+                    "layer": start_layer, "width": width, "net": net,
+                })
+                # Via connecting both layers
+                self.add_via({
+                    "position": {"x": via_x, "y": via_y, "unit": "mm"},
+                    "net": net,
+                    "from_layer": start_layer,
+                    "to_layer": end_layer,
+                })
+                # Trace on end layer: via → end_pad
+                r2 = self.route_trace({
+                    "start": {"x": via_x, "y": via_y, "unit": "mm"},
+                    "end":   {"x": end_pos.x / scale, "y": end_pos.y / scale, "unit": "mm"},
+                    "layer": end_layer, "width": width, "net": net,
+                })
+                success = r1.get("success") and r2.get("success")
+                result = {
+                    "success": success,
+                    "message": f"Routed {from_ref}.{from_pad} → via → {to_ref}.{to_pad} (net: {net}, via at {via_x:.2f},{via_y:.2f})",
+                    "via_added": True,
+                    "via_position": {"x": via_x, "y": via_y},
+                }
+            else:
+                # Same layer — direct trace
+                result = self.route_trace({
+                    "start": {"x": start_pos.x / scale, "y": start_pos.y / scale, "unit": "mm"},
+                    "end":   {"x": end_pos.x / scale, "y": end_pos.y / scale, "unit": "mm"},
+                    "layer": layer if layer else start_layer,
+                    "width": width, "net": net,
+                })
+
             if result.get("success"):
-                result["message"] = (
-                    f"Routed {from_ref}.{from_pad} → {to_ref}.{to_pad} (net: {net or 'none'})"
-                )
                 result["fromPad"] = {
-                    "ref": from_ref,
-                    "pad": from_pad,
-                    "x": start_pos.x / scale,
-                    "y": start_pos.y / scale,
+                    "ref": from_ref, "pad": from_pad,
+                    "x": start_pos.x / scale, "y": start_pos.y / scale,
                 }
                 result["toPad"] = {
-                    "ref": to_ref,
-                    "pad": to_pad,
-                    "x": end_pos.x / scale,
-                    "y": end_pos.y / scale,
+                    "ref": to_ref, "pad": to_pad,
+                    "x": end_pos.x / scale, "y": end_pos.y / scale,
                 }
 
             return result
@@ -367,7 +391,7 @@ class RoutingCommands:
                         "y": position["y"],
                         "unit": position["unit"],
                     },
-                    "size": via.GetWidth() / 1000000,
+                    "size": via.GetWidth(pcbnew.F_Cu) / 1000000,
                     "drill": via.GetDrill() / 1000000,
                     "from_layer": from_layer,
                     "to_layer": to_layer,
@@ -950,7 +974,7 @@ class RoutingCommands:
                 # Create new via
                 new_via = pcbnew.PCB_VIA(self.board)
                 new_via.SetPosition(pcbnew.VECTOR2I(pos.x + offset_x, pos.y + offset_y))
-                new_via.SetWidth(via.GetWidth())
+                new_via.SetWidth(via.GetWidth(pcbnew.F_Cu))
                 new_via.SetDrill(via.GetDrillValue())
                 new_via.SetViaType(via.GetViaType())
 
@@ -1095,11 +1119,25 @@ class RoutingCommands:
                     y1 = board_box.GetY() / scale
                     x2 = (board_box.GetX() + board_box.GetWidth()) / scale
                     y2 = (board_box.GetY() + board_box.GetHeight()) / scale
+
+                    # Detect corner radius from Edge.Cuts arcs so the zone rectangle
+                    # stays inside the rounded board corners (avoids zone visually
+                    # extending outside Edge.Cuts before refill)
+                    corner_radius = 0.0
+                    edge_layer_id = self.board.GetLayerID("Edge.Cuts")
+                    for item in self.board.GetDrawings():
+                        if item.GetLayer() == edge_layer_id and item.GetClass() == "PCB_ARC":
+                            r = item.GetRadius() / scale
+                            if r > corner_radius:
+                                corner_radius = r
+                    # Inset the zone rectangle by the corner radius so its corners
+                    # lie on the straight portions of the board edge.
+                    inset = corner_radius
                     points = [
-                        {"x": x1, "y": y1},
-                        {"x": x2, "y": y1},
-                        {"x": x2, "y": y2},
-                        {"x": x1, "y": y2},
+                        {"x": x1 + inset, "y": y1 + inset},
+                        {"x": x2 - inset, "y": y1 + inset},
+                        {"x": x2 - inset, "y": y2 - inset},
+                        {"x": x1 + inset, "y": y2 - inset},
                     ]
                 else:
                     return {

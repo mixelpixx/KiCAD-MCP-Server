@@ -227,7 +227,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
   // Add pin-to-pin connection
   server.tool(
     "add_schematic_connection",
-    "Connect two component pins with a wire",
+    "Connect two component pins with a wire. Use this for individual connections between components with different pin roles (e.g. U1.SDA → J3.2). WARNING: Do NOT use this in a loop to wire N passthrough pins — use connect_passthrough instead (single call, cleaner layout, far fewer tokens).",
     {
       schematicPath: z.string().describe("Path to the schematic file"),
       sourceRef: z.string().describe("Source component reference (e.g., R1)"),
@@ -385,6 +385,101 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
+  // Get pin locations for a schematic component
+  server.tool(
+    "get_schematic_pin_locations",
+    "Returns the exact x/y coordinates of every pin on a schematic component. Use this before add_schematic_net_label to place labels correctly on pin endpoints.",
+    {
+      schematicPath: z.string().describe("Path to the schematic file"),
+      reference: z.string().describe("Component reference designator (e.g. U1, R1, J2)"),
+    },
+    async (args: { schematicPath: string; reference: string }) => {
+      const result = await callKicadScript("get_schematic_pin_locations", args);
+      if (result.success && result.pins) {
+        const lines = Object.entries(result.pins as Record<string, any>).map(
+          ([pinNum, data]: [string, any]) =>
+            `  Pin ${pinNum} (${data.name || pinNum}): x=${data.x}, y=${data.y}, angle=${data.angle ?? 0}°`
+        );
+        return {
+          content: [{
+            type: "text",
+            text: `Pin locations for ${args.reference}:\n${lines.join("\n")}`,
+          }],
+        };
+      } else {
+        return {
+          content: [{
+            type: "text",
+            text: `Failed to get pin locations: ${result.message || "Unknown error"}`,
+          }],
+        };
+      }
+    },
+  );
+
+  // Connect all pins of source connector to matching pins of target connector (passthrough)
+  server.tool(
+    "connect_passthrough",
+    "Connects all pins of a source connector (e.g. J1) to matching pins of a target connector (e.g. J2) via shared net labels — pin N gets net '{netPrefix}_{N}'. Use this for FFC/ribbon cable passthrough adapters instead of calling connect_to_net for every pin.",
+    {
+      schematicPath: z.string().describe("Path to the schematic file"),
+      sourceRef: z.string().describe("Source connector reference (e.g. J1)"),
+      targetRef: z.string().describe("Target connector reference (e.g. J2)"),
+      netPrefix: z.string().optional().describe("Net name prefix, e.g. 'CSI' → CSI_1, CSI_2 (default: PIN)"),
+      pinOffset: z.number().optional().describe("Add to pin number when building net name (default: 0)"),
+    },
+    async (args: { schematicPath: string; sourceRef: string; targetRef: string; netPrefix?: string; pinOffset?: number }) => {
+      const result = await callKicadScript("connect_passthrough", args);
+      if (result.success !== false || (result.connected && result.connected.length > 0)) {
+        const lines: string[] = [];
+        if (result.connected?.length) lines.push(`Connected (${result.connected.length}): ${result.connected.slice(0, 5).join(", ")}${result.connected.length > 5 ? " ..." : ""}`);
+        if (result.failed?.length) lines.push(`Failed (${result.failed.length}): ${result.failed.join(", ")}`);
+        return {
+          content: [{ type: "text", text: result.message + "\n" + lines.join("\n") }],
+        };
+      } else {
+        return {
+          content: [{ type: "text", text: `Passthrough failed: ${result.message || "Unknown error"}` }],
+        };
+      }
+    },
+  );
+
+  // Run Electrical Rules Check (ERC)
+  server.tool(
+    "run_erc",
+    "Runs the KiCAD Electrical Rules Check (ERC) on a schematic and returns all violations. Use after wiring to verify the schematic before generating a netlist.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+    },
+    async (args: { schematicPath: string }) => {
+      const result = await callKicadScript("run_erc", args);
+      if (result.success) {
+        const violations: any[] = result.violations || [];
+        const lines: string[] = [`ERC result: ${violations.length} violation(s)`];
+        if (result.summary?.by_severity) {
+          const s = result.summary.by_severity;
+          lines.push(`  Errors: ${s.error ?? 0}  Warnings: ${s.warning ?? 0}  Info: ${s.info ?? 0}`);
+        }
+        if (violations.length > 0) {
+          lines.push("");
+          violations.slice(0, 30).forEach((v: any, i: number) => {
+            const loc = v.location && (v.location.x !== undefined) ? ` @ (${v.location.x}, ${v.location.y})` : "";
+            lines.push(`${i + 1}. [${v.severity}] ${v.message}${loc}`);
+          });
+          if (violations.length > 30) {
+            lines.push(`... and ${violations.length - 30} more`);
+          }
+        }
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      } else {
+        return {
+          content: [{ type: "text", text: `ERC failed: ${result.message || "Unknown error"}${result.errorDetails ? "\n" + result.errorDetails : ""}` }],
+        };
+      }
+    },
+  );
+
   // Generate netlist
   server.tool(
     "generate_netlist",
@@ -430,6 +525,22 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           ],
         };
       }
+    },
+  );
+
+  // Sync schematic to PCB board (equivalent to KiCAD F8 / "Update PCB from Schematic")
+  server.tool(
+    "sync_schematic_to_board",
+    "Import the schematic netlist into the PCB board — equivalent to pressing F8 in KiCAD (Tools → Update PCB from Schematic). MUST be called after the schematic is complete and before placing or routing components on the PCB. Without this step, the board has no footprints and no net assignments — place_component and route_pad_to_pad will produce an empty, unroutable board.",
+    {
+      schematicPath: z.string().describe("Absolute path to the .kicad_sch schematic file"),
+      boardPath: z.string().describe("Absolute path to the .kicad_pcb board file"),
+    },
+    async (args: { schematicPath: string; boardPath: string }) => {
+      const result = await callKicadScript("sync_schematic_to_board", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
     },
   );
 }

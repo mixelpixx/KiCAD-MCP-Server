@@ -145,11 +145,12 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   server.tool(
     "add_board_outline",
     {
-      shape: z.enum(["rectangle", "circle", "polygon"]).describe("Shape of the outline"),
+      shape: z.enum(["rectangle", "circle", "polygon", "rounded_rectangle"]).describe("Shape of the outline"),
       params: z.object({
-        // For rectangle
+        // For rectangle / rounded_rectangle
         width: z.number().optional().describe("Width of rectangle"),
         height: z.number().optional().describe("Height of rectangle"),
+        cornerRadius: z.number().optional().describe("Corner radius for rounded_rectangle (mm)"),
         // For circle
         radius: z.number().optional().describe("Radius of circle"),
         // For polygon
@@ -159,21 +160,19 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
             y: z.number().describe("Y coordinate")
           })
         ).optional().describe("Points of polygon"),
-        // Common parameters
-        x: z.number().describe("X coordinate of center/origin"),
-        y: z.number().describe("Y coordinate of center/origin"),
+        // Position: top-left corner for rectangles/rounded_rectangle, center for circle
+        x: z.number().describe("X coordinate of top-left corner for rectangles (default: 0)"),
+        y: z.number().describe("Y coordinate of top-left corner for rectangles (default: 0)"),
         unit: z.enum(["mm", "inch"]).describe("Unit of measurement")
       }).describe("Parameters for the outline shape")
     },
     async ({ shape, params }) => {
       logger.debug(`Adding ${shape} board outline`);
-      // Flatten params and rename x/y to centerX/centerY for Python compatibility
-      const { x, y, ...otherParams } = params;
+      // Pass x/y as-is to Python; outline.py treats them as top-left corner
+      // and computes the center internally (center = x + width/2, y + height/2).
       const result = await callKicadScript("add_board_outline", {
         shape,
-        centerX: x,
-        centerY: y,
-        ...otherParams
+        ...params
       });
 
       return {
@@ -346,4 +345,41 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   );
 
   logger.info('Board management tools registered');
+
+  // Import SVG logo onto PCB layer (silkscreen)
+  server.tool(
+    "import_svg_logo",
+    "Imports an SVG file as filled graphic polygons onto a KiCAD PCB layer (default F.SilkS / front silkscreen). Curves are linearised automatically. Ideal for placing a company or project logo on the board.",
+    {
+      pcbPath: z.string().describe("Path to the .kicad_pcb file"),
+      svgPath: z.string().describe("Path to the SVG logo file"),
+      x: z.number().describe("X position of the logo top-left corner in mm"),
+      y: z.number().describe("Y position of the logo top-left corner in mm"),
+      width: z.number().describe("Target width of the logo in mm (height is scaled to preserve aspect ratio)"),
+      layer: z.string().optional().describe("PCB layer name, e.g. F.SilkS or B.SilkS (default: F.SilkS)"),
+      strokeWidth: z.number().optional().describe("Outline stroke width in mm (0 = no outline, default 0)"),
+      filled: z.boolean().optional().describe("Fill polygons with solid colour (default true)"),
+    },
+    async (args: { pcbPath: string; svgPath: string; x: number; y: number; width: number; layer?: string; strokeWidth?: number; filled?: boolean }) => {
+      const result = await callKicadScript("import_svg_logo", args);
+      if (result.success) {
+        return {
+          content: [{
+            type: "text",
+            text: [
+              result.message,
+              `Polygons: ${result.polygon_count}`,
+              `Size: ${result.logo_width_mm?.toFixed(2)} × ${result.logo_height_mm?.toFixed(2)} mm`,
+              `Layer: ${result.layer}`,
+            ].join("\n"),
+          }],
+        };
+      } else {
+        return {
+          content: [{ type: "text", text: `SVG import failed: ${result.message || "Unknown error"}` }],
+        };
+      }
+    },
+  );
 }
+

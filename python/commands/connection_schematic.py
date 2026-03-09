@@ -256,7 +256,16 @@ class ConnectionManager:
                 return False
 
             # Add a small wire stub from the pin (2.54mm = 0.1 inch, standard grid spacing)
-            stub_end = [pin_loc[0] + 2.54, pin_loc[1]]
+            # Stub direction follows the pin's outward angle from the PinLocator
+            pin_angle_deg = getattr(locator, '_last_pin_angle', 0)
+            try:
+                pin_angle_deg = locator.get_pin_angle(schematic_path, component_ref, pin_name) or 0
+            except Exception:
+                pin_angle_deg = 0
+            import math as _math
+            angle_rad = _math.radians(pin_angle_deg)
+            stub_end = [round(pin_loc[0] + 2.54 * _math.cos(angle_rad), 4),
+                        round(pin_loc[1] - 2.54 * _math.sin(angle_rad), 4)]
 
             # Create wire stub using WireManager
             wire_success = WireManager.add_wire(schematic_path, pin_loc, stub_end)
@@ -281,6 +290,77 @@ class ConnectionManager:
 
             logger.error(traceback.format_exc())
             return False
+
+    @staticmethod
+    def connect_passthrough(
+        schematic_path: Path,
+        source_ref: str,
+        target_ref: str,
+        net_prefix: str = "PIN",
+        pin_offset: int = 0,
+    ):
+        """
+        Connect all pins of source_ref to matching pins of target_ref via shared net labels.
+        Useful for passthrough adapters: J1 pin N <-> J2 pin N on net {net_prefix}_{N}.
+
+        Args:
+            schematic_path: Path to .kicad_sch file
+            source_ref: Reference of the first connector (e.g., "J1")
+            target_ref: Reference of the second connector (e.g., "J2")
+            net_prefix: Prefix for generated net names (default: "PIN" -> PIN_1, PIN_2, ...)
+            pin_offset: Add this value to the pin number when building the net name (default 0)
+
+        Returns:
+            dict with 'connected' list and 'failed' list
+        """
+        if not WIRE_MANAGER_AVAILABLE:
+            logger.error("WireManager/PinLocator not available")
+            return {"connected": [], "failed": ["WireManager unavailable"]}
+
+        locator = ConnectionManager.get_pin_locator()
+        if not locator:
+            return {"connected": [], "failed": ["PinLocator unavailable"]}
+
+        # Get all pins of source and target
+        src_pins = locator.get_all_symbol_pins(schematic_path, source_ref) or {}
+        tgt_pins = locator.get_all_symbol_pins(schematic_path, target_ref) or {}
+
+        if not src_pins:
+            return {"connected": [], "failed": [f"No pins found on {source_ref}"]}
+        if not tgt_pins:
+            return {"connected": [], "failed": [f"No pins found on {target_ref}"]}
+
+        connected = []
+        failed = []
+
+        for pin_num in sorted(src_pins.keys(), key=lambda x: int(x) if x.isdigit() else 0):
+            try:
+                net_name = f"{net_prefix}_{int(pin_num) + pin_offset}" if pin_num.isdigit() else f"{net_prefix}_{pin_num}"
+
+                ok_src = ConnectionManager.connect_to_net(
+                    schematic_path, source_ref, pin_num, net_name
+                )
+                if not ok_src:
+                    failed.append(f"{source_ref}/{pin_num}")
+                    continue
+
+                if pin_num in tgt_pins:
+                    ok_tgt = ConnectionManager.connect_to_net(
+                        schematic_path, target_ref, pin_num, net_name
+                    )
+                    if not ok_tgt:
+                        failed.append(f"{target_ref}/{pin_num}")
+                        continue
+                else:
+                    failed.append(f"{target_ref}/{pin_num} (pin not found)")
+                    continue
+
+                connected.append(f"{source_ref}/{pin_num} <-> {target_ref}/{pin_num} [{net_name}]")
+            except Exception as e:
+                failed.append(f"{source_ref}/{pin_num}: {e}")
+
+        logger.info(f"connect_passthrough: {len(connected)} connected, {len(failed)} failed")
+        return {"connected": connected, "failed": failed}
 
     @staticmethod
     def get_net_connections(

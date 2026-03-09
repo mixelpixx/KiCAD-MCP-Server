@@ -366,42 +366,30 @@ class DynamicSymbolLoader:
             indented_lines.append("    " + line if line.strip() else line)
         indented_block = "\n".join(indented_lines)
 
-        # Find the end of lib_symbols section to insert before closing )
-        lines = content.split("\n")
-        lib_sym_start = None
-        lib_sym_end = None
+        # Find the end of lib_symbols section using string search (format-independent,
+        # works even when sexpdata.dumps() has compacted the file to a single line)
+        lib_sym_start = content.find("(lib_symbols")
+        if lib_sym_start == -1:
+            raise ValueError("No lib_symbols section found in schematic")
+
         depth = 0
-
-        for i, line in enumerate(lines):
-            if "(lib_symbols" in line and lib_sym_start is None:
-                lib_sym_start = i
-                depth = 0
-                for ch in line:
-                    if ch == "(":
-                        depth += 1
-                    elif ch == ")":
-                        depth -= 1
-                continue
-            if lib_sym_start is not None and lib_sym_end is None:
-                for ch in line:
-                    if ch == "(":
-                        depth += 1
-                    elif ch == ")":
-                        depth -= 1
-                        if depth == 0:
-                            lib_sym_end = i
-                            break
-                if lib_sym_end is not None:
+        lib_sym_end = lib_sym_start
+        for i in range(lib_sym_start, len(content)):
+            if content[i] == "(":
+                depth += 1
+            elif content[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    lib_sym_end = i
                     break
-
-        if lib_sym_end is None:
+        else:
             raise ValueError("No lib_symbols section found in schematic")
 
         # Insert the symbol block just before the closing ) of lib_symbols
-        lines.insert(lib_sym_end, indented_block)
+        content = content[:lib_sym_end] + "\n    " + indented_block + "\n  " + content[lib_sym_end:]
 
         with open(schematic_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
+            f.write(content)
 
         # Handle both Path objects and strings
         sch_name = (
@@ -450,29 +438,17 @@ class DynamicSymbolLoader:
         with open(schematic_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # Insert before (sheet_instances or at end before final )
-        lines = content.split("\n")
-        insert_pos = None
-
-        for i, line in enumerate(lines):
-            if "(sheet_instances" in line:
-                insert_pos = i
-                break
-
-        if insert_pos is None:
-            # Insert before the last closing parenthesis
-            for i in range(len(lines) - 1, -1, -1):
-                if lines[i].strip() == ")":
-                    insert_pos = i
-                    break
-
-        if insert_pos is None:
+        # Insert before (sheet_instances using direct string search.
+        # This works for both pretty-printed and sexpdata-compacted single-line files.
+        insert_marker = "(sheet_instances"
+        insert_at = content.rfind(insert_marker)
+        if insert_at == -1:
             raise ValueError("Could not find insertion point in schematic")
 
-        lines.insert(insert_pos, instance_block)
+        content = content[:insert_at] + instance_block + "\n  " + content[insert_at:]
 
         with open(schematic_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
+            f.write(content)
 
         logger.info(
             f"Added component instance {reference} ({full_lib_id}) at ({x}, {y})"

@@ -71,6 +71,28 @@ PROJECT_TOOLS = [
         }
     },
     {
+        "name": "snapshot_project",
+        "title": "Snapshot Project (Checkpoint)",
+        "description": "Copies the entire project folder to a new timestamped snapshot directory so you can resume from this checkpoint later without redoing earlier steps. Call this after every successfully completed design step (e.g. after Step 1 schematic, after Step 2 PCB layout) before asking for user confirmation to proceed.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "step": {
+                    "type": "string",
+                    "description": "Step number or name to include in snapshot folder name, e.g. '1' or '2'"
+                },
+                "label": {
+                    "type": "string",
+                    "description": "Optional short label, e.g. 'schematic_ok' or 'layout_ok'"
+                },
+                "projectPath": {
+                    "type": "string",
+                    "description": "Project directory path. Auto-detected from loaded board if omitted."
+                }
+            }
+        }
+    },
+    {
         "name": "get_project_info",
         "title": "Get Project Information",
         "description": "Retrieves metadata and properties of the currently open project including name, paths, and board status.",
@@ -110,7 +132,7 @@ BOARD_TOOLS = [
     {
         "name": "add_board_outline",
         "title": "Add Board Outline",
-        "description": "Adds a board outline shape (rectangle, rounded rectangle, circle, or polygon) on the Edge.Cuts layer.",
+        "description": "Adds a board outline shape (rectangle, rounded_rectangle, circle, or polygon) on the Edge.Cuts layer. By default the board top-left corner is placed at (0, 0) so all coordinates are positive. Use x/y to set a different top-left corner position.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -129,19 +151,26 @@ BOARD_TOOLS = [
                     "description": "Height in mm (for rectangle/rounded_rectangle)",
                     "minimum": 1
                 },
+                "x": {
+                    "type": "number",
+                    "description": "X coordinate of the top-left corner in mm (default: 0). Board extends from x to x+width."
+                },
+                "y": {
+                    "type": "number",
+                    "description": "Y coordinate of the top-left corner in mm (default: 0). Board extends from y to y+height."
+                },
                 "radius": {
                     "type": "number",
-                    "description": "Radius in mm (for circle) or corner radius (for rounded_rectangle)",
+                    "description": "Corner radius in mm for rounded_rectangle, or radius for circle",
                     "minimum": 0
                 },
                 "points": {
                     "type": "array",
-                    "description": "Array of [x, y] coordinates in mm (for polygon)",
+                    "description": "Array of {x, y} point objects in mm (for polygon shape only)",
                     "items": {
-                        "type": "array",
-                        "items": {"type": "number"},
-                        "minItems": 2,
-                        "maxItems": 2
+                        "type": "object",
+                        "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
+                        "required": ["x", "y"]
                     },
                     "minItems": 3
                 }
@@ -262,6 +291,53 @@ BOARD_TOOLS = [
                 }
             },
             "required": ["x", "y", "diameter"]
+        }
+    },
+    {
+        "name": "import_svg_logo",
+        "title": "Import SVG Logo to PCB",
+        "description": "Imports an SVG file as filled graphic polygons onto a KiCAD PCB layer (default F.SilkS). Curves are linearised automatically. Supports path, rect, circle, ellipse, polygon and group transforms.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pcbPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_pcb file"
+                },
+                "svgPath": {
+                    "type": "string",
+                    "description": "Path to the SVG logo file"
+                },
+                "x": {
+                    "type": "number",
+                    "description": "X position of the logo top-left corner in mm"
+                },
+                "y": {
+                    "type": "number",
+                    "description": "Y position of the logo top-left corner in mm"
+                },
+                "width": {
+                    "type": "number",
+                    "description": "Target width of the logo in mm (height scaled to preserve aspect ratio)",
+                    "minimum": 0.1
+                },
+                "layer": {
+                    "type": "string",
+                    "description": "PCB layer name, e.g. F.SilkS or B.SilkS (default: F.SilkS)",
+                    "default": "F.SilkS"
+                },
+                "strokeWidth": {
+                    "type": "number",
+                    "description": "Outline stroke width in mm (0 = no outline, default 0)",
+                    "default": 0
+                },
+                "filled": {
+                    "type": "boolean",
+                    "description": "Fill polygons with solid layer colour (default true)",
+                    "default": True
+                }
+            },
+            "required": ["pcbPath", "svgPath", "x", "y", "width"]
         }
     },
     {
@@ -1388,7 +1464,7 @@ SCHEMATIC_TOOLS = [
     {
         "name": "add_schematic_net_label",
         "title": "Add Net Label",
-        "description": "Adds a net label to assign a name to a wire/net on the schematic.",
+        "description": "Adds a net label at exact coordinates on a schematic wire or pin endpoint. WARNING: x/y must match an existing wire endpoint or pin endpoint exactly — placing the label even 0.01mm away from a pin will result in an unconnected pin ERC error. To connect a component pin to a net by reference and pin number (recommended), use connect_to_net instead.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1461,6 +1537,89 @@ SCHEMATIC_TOOLS = [
                 }
             },
             "required": ["schematicPath", "netName"]
+        }
+    },
+    {
+        "name": "get_schematic_pin_locations",
+        "title": "Get Schematic Pin Locations",
+        "description": "Returns the exact absolute coordinates of all pins on a schematic component. Use this BEFORE placing net labels with add_schematic_net_label to get the correct x/y position for each pin endpoint.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the schematic file"
+                },
+                "reference": {
+                    "type": "string",
+                    "description": "Component reference designator (e.g., U1, R1, J2)"
+                }
+            },
+            "required": ["schematicPath", "reference"]
+        }
+    },
+    {
+        "name": "connect_passthrough",
+        "title": "Connect Passthrough (Pin-to-Pin)",
+        "description": "Connects all pins of a source connector to the matching pins of a target connector using shared net labels. Ideal for passthrough adapters where J1 pin N connects directly to J2 pin N. Each pair gets a net label '{netPrefix}_{pinNumber}'. Use this instead of calling connect_to_net 15 times for FFC/ribbon cable passthroughs. NOTE: KiCAD Connector_Generic symbols always have pin 1 at the TOP of the symbol and pin N at the BOTTOM. When assigning named nets (e.g. GND, CAM_SCL) to specific pin numbers, always use the physical pin number as shown in the connector datasheet — pin 1 = top of symbol.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the schematic file"
+                },
+                "sourceRef": {
+                    "type": "string",
+                    "description": "Reference of the source connector (e.g., J1)"
+                },
+                "targetRef": {
+                    "type": "string",
+                    "description": "Reference of the target connector (e.g., J2)"
+                },
+                "netPrefix": {
+                    "type": "string",
+                    "description": "Prefix for generated net names, e.g. 'CSI' produces CSI_1, CSI_2, ... (default: PIN)"
+                },
+                "pinOffset": {
+                    "type": "integer",
+                    "description": "Add this value to the pin number when building net names (default: 0)"
+                }
+            },
+            "required": ["schematicPath", "sourceRef", "targetRef"]
+        }
+    },
+    {
+        "name": "run_erc",
+        "title": "Run Electrical Rules Check (ERC)",
+        "description": "Runs the KiCAD Electrical Rules Check (ERC) on a schematic via kicad-cli and returns all violations with type, severity, and location. Use this to verify the schematic is electrically correct before generating a netlist or exporting.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file"
+                }
+            },
+            "required": ["schematicPath"]
+        }
+    },
+    {
+        "name": "sync_schematic_to_board",
+        "title": "Sync Schematic to PCB (F8)",
+        "description": "Reads net connections from the schematic and assigns them to matching component pads in the PCB board file. Equivalent to KiCAD Pcbnew F8 'Update PCB from Schematic'. Must be called after placing components and before routing traces, so that pad-to-net assignments are correct.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to .kicad_sch file. If omitted, auto-detected from current board path."
+                },
+                "boardPath": {
+                    "type": "string",
+                    "description": "Path to .kicad_pcb file. If omitted, uses currently loaded board."
+                }
+            }
         }
     },
     {
