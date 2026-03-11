@@ -144,9 +144,14 @@ class RoutingCommands:
             if not net:
                 net = start_pad.GetNetname() or end_pad.GetNetname() or ""
 
-            # Detect if pads are on different copper layers → need via
-            start_layer = start_pad.GetLayerName()
-            end_layer = end_pad.GetLayerName()
+            # Detect if pads are on different copper layers → need via.
+            # SMD pad.GetLayer() reports F.Cu even on flipped B.Cu footprints in
+            # KiCAD 9 SWIG. Use footprint.GetLayer() instead — it always reflects
+            # the actual placed layer after Flip().
+            fp_start = footprints[from_ref]
+            fp_end   = footprints[to_ref]
+            start_layer = self.board.GetLayerName(fp_start.GetLayer())
+            end_layer   = self.board.GetLayerName(fp_end.GetLayer())
             copper_layers = {"F.Cu", "B.Cu"}
             needs_via = (
                 start_layer in copper_layers
@@ -155,8 +160,11 @@ class RoutingCommands:
             )
 
             if needs_via:
-                # Place via at midpoint between the two pads
-                via_x = (start_pos.x + end_pos.x) / 2 / scale
+                # Place via directly below the start pad (same X).
+                # Using the geometric midpoint X causes all vias to stack at
+                # the same X when pads are back-to-back mirrored (e.g. J1/J2
+                # on F.Cu/B.Cu): midpoint is always the board center.
+                via_x = start_pos.x / scale
                 via_y = (start_pos.y + end_pos.y) / 2 / scale
 
                 # Trace on start layer: start_pad → via

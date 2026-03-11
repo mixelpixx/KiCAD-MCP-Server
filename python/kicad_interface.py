@@ -1679,9 +1679,11 @@ class KiCADInterface:
         """Copy the entire project folder to a snapshot directory for checkpoint/resume."""
         import shutil
         from datetime import datetime
+        from pathlib import Path
         try:
             step   = params.get("step", "")
             label  = params.get("label", "")
+            prompt_text = params.get("prompt", "")
             # Determine project directory from loaded board or explicit path
             project_dir = None
             if self.board:
@@ -1693,19 +1695,60 @@ class KiCADInterface:
             if not project_dir or not os.path.isdir(project_dir):
                 return {"success": False, "message": "Could not determine project directory for snapshot"}
 
-            base_name = Path(project_dir).name
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            # Save prompt + log into logs/ subdirectory before snapshotting
+            logs_dir = Path(project_dir) / "logs"
+            logs_dir.mkdir(exist_ok=True)
+
+            prompt_file = None
+            if prompt_text:
+                prompt_filename = f"PROMPT_step{step}_{ts}.md" if step else f"PROMPT_{ts}.md"
+                prompt_file = logs_dir / prompt_filename
+                prompt_file.write_text(prompt_text, encoding="utf-8")
+                logger.info(f"Prompt saved: {prompt_file}")
+
+            # Copy current MCP session log into logs/ before snapshotting
+            import platform
+            system = platform.system()
+            if system == "Windows":
+                mcp_log_dir = os.path.join(os.environ.get("APPDATA", ""), "Claude", "logs")
+            elif system == "Darwin":
+                mcp_log_dir = os.path.expanduser("~/Library/Logs/Claude")
+            else:
+                mcp_log_dir = os.path.expanduser("~/.config/Claude/logs")
+            mcp_log_src = os.path.join(mcp_log_dir, "mcp-server-kicad.log")
+            mcp_log_dest = None
+            if os.path.exists(mcp_log_src):
+                with open(mcp_log_src, "r", encoding="utf-8", errors="replace") as f:
+                    all_lines = f.readlines()
+                session_start = 0
+                for i, line in enumerate(all_lines):
+                    if "Initializing server" in line:
+                        session_start = i
+                session_lines = all_lines[session_start:]
+                log_filename = f"mcp_log_step{step}_{ts}.txt" if step else f"mcp_log_{ts}.txt"
+                mcp_log_dest = logs_dir / log_filename
+                with open(mcp_log_dest, "w", encoding="utf-8") as f:
+                    f.writelines(session_lines)
+                logger.info(f"MCP session log saved: {mcp_log_dest} ({len(session_lines)} lines)")
+
+            base_name = Path(project_dir).name
             suffix_parts = [p for p in [f"step{step}" if step else "", label, ts] if p]
             snapshot_name = base_name + "_snapshot_" + "_".join(suffix_parts)
-            snapshot_dir = str(Path(project_dir).parent / snapshot_name)
+            snapshots_base = Path(project_dir) / "snapshots"
+            snapshots_base.mkdir(exist_ok=True)
+            snapshot_dir = str(snapshots_base / snapshot_name)
 
-            shutil.copytree(project_dir, snapshot_dir)
+            shutil.copytree(project_dir, snapshot_dir, ignore=shutil.ignore_patterns("snapshots"))
             logger.info(f"Project snapshot saved: {snapshot_dir}")
             return {
                 "success": True,
                 "message": f"Snapshot saved: {snapshot_name}",
                 "snapshotPath": snapshot_dir,
                 "sourceDir": project_dir,
+                "promptSaved": str(prompt_file) if prompt_file else None,
+                "mcpLogSaved": str(mcp_log_dest) if mcp_log_dest else None,
             }
         except Exception as e:
             logger.error(f"snapshot_project error: {e}")

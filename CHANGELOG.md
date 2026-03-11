@@ -2,6 +2,102 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
+## [2.2.3] - 2026-03-11
+
+### Merged: PR #57 (Kletternaut/demo/rpiCSI-videotest → main)
+
+This release incorporates 28 commits developed and live-tested during a full
+Raspberry Pi CSI adapter PCB design session. All tools listed below were validated
+end-to-end using Claude Desktop + KiCAD 9 on Windows.
+
+### New MCP Tools
+
+- `connect_passthrough` — Schematic-only tool that wires all pins of one connector
+  directly to the matching pins of another (e.g. J1 pin N → J2 pin N). Creates nets
+  named with a configurable prefix (`netPrefix`). Designed for FFC/ribbon cable
+  passthrough adapters. **Schematic only — do not call for PCB routing.**
+
+- `sync_schematic_to_board` — Imports all net/pad assignments from the schematic
+  into the open PCB file. Required after `connect_passthrough` before routing can
+  start. Returns `pads_assigned` count for verification.
+
+- `snapshot_project` — Saves a named checkpoint of the entire project folder into a
+  `snapshots/` subdirectory inside the project. Allows resuming from a known-good
+  state without redoing earlier steps. Accepts `step`, `label`, and optional `prompt`
+  parameters.
+
+- `run_erc` — Runs KiCAD's Electrical Rules Check on the schematic and returns
+  violations as structured JSON.
+
+- `import_svg_logo` — Converts an SVG file to PCB silkscreen polygons and places
+  them on a specified layer.
+
+### Bug Fixes
+
+- `route_pad_to_pad`: **Critical fix for B.Cu footprints in KiCAD 9.** `pad.GetLayerName()`
+  always returned `F.Cu` for SMD pads on flipped footprints (KiCAD 9 SWIG bug).
+  Fix: use `footprint.GetLayer()` instead, which correctly reflects the placed layer
+  after `Flip()`. Without this fix, no vias were inserted for back-to-back connectors.
+
+- `route_pad_to_pad`: Via was placed at the geometric midpoint between the two pads.
+  For back-to-back mirrored connectors (J1 F.Cu / J2 B.Cu) this caused all 15 vias
+  to stack at the same X coordinate (board center). Fix: via is now placed at the
+  X coordinate of the start pad (`via_x = start_pos.x`), producing 15 parallel
+  vertical traces.
+
+- `place_component` (B.Cu footprints): `Flip()` was called before `board.Add()`,
+  causing KiCAD 9 to hang for ~30 seconds. Fix: `board.Add()` first, then `Flip()`.
+
+- `add_board_outline`: Three separate bugs fixed — incorrect cornerRadius fallback,
+  wrong top-left origin default, and broken arc delegation for IPC rounded rectangles.
+
+- `snapshot_project`: Snapshots were saved one level above the project directory,
+  cluttering the parent folder. Fix: snapshots now go into `<project>/snapshots/`.
+
+- MCP server log timestamp was always UTC/ISO. Fix: now uses local system time.
+
+- `search_tools` (router pattern): direct tools like `snapshot_project` were invisible
+  to the router. Fix: direct tool names added to the router's known-tool list.
+
+### Developer Mode (`KICAD_MCP_DEV=1`)
+
+Set the environment variable `KICAD_MCP_DEV=1` in your Claude Desktop config to
+enable developer features:
+
+```json
+"env": {
+  "KICAD_MCP_DEV": "1"
+}
+```
+
+**What it does:**
+- `export_gerber` automatically copies the current MCP session log into the project's
+  `logs/` subdirectory as `mcp_log_<timestamp>.txt`.
+- `snapshot_project` copies the MCP session log into `logs/` at every checkpoint as
+  `mcp_log_step<N>_<timestamp>.txt`.
+- If a `prompt` parameter is passed to `snapshot_project`, it is saved as
+  `PROMPT_step<N>_<timestamp>.md` alongside the log.
+
+**Purpose:** Makes it easy to include the full tool call history when filing a bug
+report or GitHub issue — just attach the log file from the project's `logs/` folder.
+
+> ⚠️ **Privacy warning:** The MCP session log contains the **complete conversation
+> history** between Claude and the MCP server, including all tool parameters and
+> responses. When sharing a project directory (e.g. as a ZIP attachment in a GitHub
+> issue), **review or delete the `logs/` folder first** to avoid accidentally
+> disclosing sensitive file paths, component names, or design details.
+
+### Snapshot Logging (always active)
+
+Regardless of dev mode, `snapshot_project` now always saves a copy of the current
+MCP session log into `<project>/logs/` at each checkpoint. This means every project
+automatically retains a traceable record of which tools were called and in what order.
+
+> ⚠️ **Same privacy note applies:** the `logs/` directory inside your project folder
+> contains tool call history. Do not share it publicly without reviewing its contents.
+
+---
+
 ## [2.2.2-alpha] - 2026-03-01
 
 ### New MCP Tools

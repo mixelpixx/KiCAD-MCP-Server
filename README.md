@@ -26,6 +26,50 @@ https://github.com/mixelpixx/arduino-ide
 
 
 
+## What's New in v2.2.3
+
+### New Tools: FFC/Ribbon Cable Passthrough Workflow
+
+A complete workflow for designing passthrough adapter boards (e.g. Raspberry Pi CSI
+cable adapters) is now supported:
+
+1. `connect_passthrough` — wires all pins of one connector to the matching pins of
+   another in the schematic (J1 pin N → J2 pin N, auto-named nets).
+2. `sync_schematic_to_board` — imports the net assignments into the PCB.
+3. `route_pad_to_pad` — routes each connection with automatic via insertion when
+   pads are on opposite copper layers.
+4. `snapshot_project` — saves a named checkpoint into `<project>/snapshots/`.
+
+### Bug Fixes (KiCAD 9 / Windows)
+
+- **Via insertion for B.Cu footprints** — `route_pad_to_pad` now correctly detects
+  when a footprint is on B.Cu and inserts the required via. (KiCAD 9 SWIG returned
+  `F.Cu` for all SMD pads regardless of layer — fixed.)
+- **Board outline rounded corners** — `add_board_outline` now correctly applies
+  `cornerRadius` when `shape="rounded_rectangle"`.
+- **B.Cu placement hang** — placing a footprint on B.Cu no longer causes a ~30s
+  freeze in KiCAD 9.
+
+### Developer Mode
+
+Set `KICAD_MCP_DEV=1` in your Claude Desktop MCP environment to automatically save
+the MCP session log into the project's `logs/` folder on every `export_gerber` and
+`snapshot_project` call. Useful for debugging and for attaching to GitHub issues.
+
+```json
+"env": {
+  "KICAD_MCP_DEV": "1"
+}
+```
+
+> ⚠️ **Privacy warning:** The session log contains your full tool call history
+> (including file paths and design details). **Review or delete `logs/` before
+> sharing a project directory publicly.**
+
+See [CHANGELOG](CHANGELOG.md) for the full list of changes in this release.
+
+---
+
 ## What's New in v2.1.0
 
 ### Critical Schematic Workflow Fix + Complete Wiring System (Issue #26)
