@@ -232,7 +232,9 @@ export class KiCADMcpServer {
     logger.info("Registering KiCAD tools, resources, and prompts...");
 
     // Register router tools FIRST (for tool discovery and execution)
-    registerRouterTools(this.server, this.callKicadScript.bind(this));
+    // NOTE: Router disabled — causes Claude to hallucinate tool schemas via search_tools/execute_tool.
+    // All tools are registered directly below and are immediately visible to Claude.
+    // registerRouterTools(this.server, this.callKicadScript.bind(this));
 
     // Register all tools
     registerProjectTools(this.server, this.callKicadScript.bind(this));

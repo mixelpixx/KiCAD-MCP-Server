@@ -84,8 +84,9 @@ export function registerProjectTools(server: McpServer, callKicadScript: Functio
     {
       step: z.string().describe("Step number or identifier, e.g. '1' or '2'"),
       label: z.string().describe("Short label for this checkpoint, e.g. 'schematic_ok' or 'layout_ok'"),
+      prompt: z.string().optional().describe("Full prompt text to save as PROMPT_step{step}_{timestamp}.md alongside the snapshot"),
     },
-    async (args: { step: string; label: string }) => {
+    async (args: { step: string; label: string; prompt?: string }) => {
       const result = await callKicadScript("snapshot_project", args);
       return {
         content: [{

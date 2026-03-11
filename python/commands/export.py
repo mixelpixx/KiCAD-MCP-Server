@@ -695,7 +695,10 @@ class ExportCommands:
         session_lines = all_lines[session_start:]
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        dest = os.path.join(project_dir, f"mcp_log_{timestamp}.txt")
+        from pathlib import Path
+        logs_dir = Path(project_dir) / "logs"
+        logs_dir.mkdir(exist_ok=True)
+        dest = str(logs_dir / f"mcp_log_{timestamp}.txt")
         with open(dest, "w", encoding="utf-8") as f:
             f.writelines(session_lines)
 
