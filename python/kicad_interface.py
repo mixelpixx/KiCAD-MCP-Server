@@ -4816,9 +4816,15 @@ print("ok")
             position = params.get("position", {})
             x = position.get("x", 0) if isinstance(position, dict) else params.get("x", 0)
             y = position.get("y", 0) if isinstance(position, dict) else params.get("y", 0)
+            unit = position.get("unit", "mm") if isinstance(position, dict) else "mm"
             rotation = params.get("rotation", 0)
             layer = params.get("layer", "F.Cu")
             value = params.get("value", "")
+
+            # Convert inches to mm since ipc_backend expects mm
+            if unit == "inch":
+                x = x * 25.4
+                y = y * 25.4
 
             success = self.ipc_board_api.place_component(
                 reference=reference,
@@ -4856,7 +4862,13 @@ print("ok")
             position = params.get("position", {})
             x = position.get("x", 0) if isinstance(position, dict) else params.get("x", 0)
             y = position.get("y", 0) if isinstance(position, dict) else params.get("y", 0)
+            unit = position.get("unit", "mm") if isinstance(position, dict) else "mm"
             rotation = params.get("rotation")
+
+            # Convert inches to mm since ipc_backend.move_component expects mm
+            if unit == "inch":
+                x = x * 25.4
+                y = y * 25.4
 
             success = self.ipc_board_api.move_component(
                 reference=reference, x=x, y=y, rotation=rotation
