@@ -186,7 +186,9 @@ class BoardViewCommands:
 
             # Get unit preference (default to mm)
             unit = params.get("unit", "mm")
-            scale = 1000000 if unit == "mm" else 25400000  # nm to mm or inch
+            scale = (
+                1000000 if unit == "mm" else (25400 if unit == "mil" else 25400000)
+            )  # mm, mil, or inch to nm
 
             # Get board bounding box
             board_box = self.board.GetBoardEdgesBoundingBox()
