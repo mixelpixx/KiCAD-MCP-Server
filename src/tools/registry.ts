@@ -103,6 +103,7 @@ export const toolCategories: ToolCategory[] = [
       "list_schematic_labels",
       "generate_netlist",
       "sync_schematic_to_board",
+      "get_schematic_view",
       "export_schematic_svg",
       "export_schematic_pdf"
     ]

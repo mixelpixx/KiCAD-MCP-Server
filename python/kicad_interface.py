@@ -383,6 +383,7 @@ class KiCADInterface:
             "generate_netlist": self._handle_generate_netlist,
             "sync_schematic_to_board": self._handle_sync_schematic_to_board,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
+            "get_schematic_view": self._handle_get_schematic_view,
             "list_schematic_components": self._handle_list_schematic_components,
             "list_schematic_nets": self._handle_list_schematic_nets,
             "list_schematic_wires": self._handle_list_schematic_wires,
@@ -1416,6 +1417,77 @@ class KiCADInterface:
 
         except Exception as e:
             logger.error(f"Error getting pin locations: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_get_schematic_view(self, params):
+        """Get a rasterised image of the schematic (SVG export → optional PNG conversion)"""
+        logger.info("Getting schematic view")
+        import subprocess
+        import tempfile
+        import base64
+
+        try:
+            schematic_path = params.get("schematicPath")
+            if not schematic_path or not os.path.exists(schematic_path):
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            fmt = params.get("format", "png")
+            width = params.get("width", 1200)
+            height = params.get("height", 900)
+
+            # Step 1: Export schematic to SVG via kicad-cli
+            with tempfile.TemporaryDirectory() as tmpdir:
+                svg_path = os.path.join(tmpdir, "schematic.svg")
+                cmd = ["kicad-cli", "sch", "export", "svg",
+                       "--output", tmpdir, "--no-background-color",
+                       schematic_path]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+                if result.returncode != 0:
+                    return {"success": False, "message": f"kicad-cli SVG export failed: {result.stderr}"}
+
+                # kicad-cli may name the file after the schematic, find it
+                import glob
+                svg_files = glob.glob(os.path.join(tmpdir, "*.svg"))
+                if not svg_files:
+                    return {"success": False, "message": "No SVG file produced by kicad-cli"}
+                svg_path = svg_files[0]
+
+                if fmt == "svg":
+                    with open(svg_path, "r", encoding="utf-8") as f:
+                        svg_data = f.read()
+                    return {"success": True, "imageData": svg_data, "format": "svg"}
+
+                # Step 2: Convert SVG to PNG using cairosvg
+                try:
+                    from cairosvg import svg2png
+                except ImportError:
+                    # Fallback: return SVG data with a note
+                    with open(svg_path, "r", encoding="utf-8") as f:
+                        svg_data = f.read()
+                    return {
+                        "success": True,
+                        "imageData": svg_data,
+                        "format": "svg",
+                        "message": "cairosvg not installed — returning SVG instead of PNG. Install with: pip install cairosvg",
+                    }
+
+                png_data = svg2png(url=svg_path, output_width=width, output_height=height)
+
+                return {
+                    "success": True,
+                    "imageData": base64.b64encode(png_data).decode("utf-8"),
+                    "format": "png",
+                    "width": width,
+                    "height": height,
+                }
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except Exception as e:
+            logger.error(f"Error getting schematic view: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}

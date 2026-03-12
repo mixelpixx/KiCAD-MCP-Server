@@ -888,6 +888,61 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
+  // Get schematic view (rasterized image)
+  server.tool(
+    "get_schematic_view",
+    "Return a rasterized image of the schematic (PNG by default, or SVG). Uses kicad-cli to export SVG, then converts to PNG via cairosvg. Use this for visual feedback after placing or wiring components.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      format: z
+        .enum(["png", "svg"])
+        .optional()
+        .describe("Output format (default: png)"),
+      width: z.number().optional().describe("Image width in pixels (default: 1200)"),
+      height: z.number().optional().describe("Image height in pixels (default: 900)"),
+    },
+    async (args: {
+      schematicPath: string;
+      format?: "png" | "svg";
+      width?: number;
+      height?: number;
+    }) => {
+      const result = await callKicadScript("get_schematic_view", args);
+      if (result.success) {
+        if (result.format === "svg") {
+          return {
+            content: [
+              {
+                type: "text",
+                text: result.message
+                  ? `SVG data returned (${result.message})`
+                  : `SVG schematic view (${result.imageData?.length || 0} chars)`,
+              },
+            ],
+          };
+        }
+        // PNG — return as base64 image
+        return {
+          content: [
+            {
+              type: "image" as const,
+              data: result.imageData,
+              mimeType: "image/png",
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Failed to get schematic view: ${result.message || "Unknown error"}`,
+          },
+        ],
+      };
+    },
+  );
+
   // Run Electrical Rules Check (ERC)
   server.tool(
     "run_erc",
