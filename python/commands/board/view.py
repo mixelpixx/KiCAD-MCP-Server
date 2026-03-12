@@ -124,36 +124,44 @@ class BoardViewCommands:
 
             plotter.ClosePlot()
 
+            # Determine output path next to the PCB file
+            board_dir = os.path.dirname(self.board.GetFileName())
+            board_name = os.path.splitext(os.path.basename(self.board.GetFileName()))[0]
+
             # Convert SVG to requested format
             if format == "svg":
-                with open(temp_svg, "r") as f:
-                    svg_data = f.read()
-                os.remove(temp_svg)
-                return {"success": True, "imageData": svg_data, "format": "svg"}
+                output_path = os.path.join(board_dir, f"{board_name}_2d_view.svg")
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+                os.rename(temp_svg, output_path)
+                return {
+                    "success": True,
+                    "format": "svg",
+                    "filePath": output_path,
+                    "message": f"2D view saved to {output_path}",
+                }
             else:
-                # Use PIL to convert SVG to PNG/JPG
+                # Use cairosvg to convert SVG to PNG
                 from cairosvg import svg2png
 
                 png_data = svg2png(url=temp_svg, output_width=width, output_height=height)
                 os.remove(temp_svg)
 
                 if format == "jpg":
-                    # Convert PNG to JPG
+                    output_path = os.path.join(board_dir, f"{board_name}_2d_view.jpg")
                     img = Image.open(io.BytesIO(png_data))
-                    jpg_buffer = io.BytesIO()
-                    img.convert("RGB").save(jpg_buffer, format="JPEG")
-                    jpg_data = jpg_buffer.getvalue()
-                    return {
-                        "success": True,
-                        "imageData": base64.b64encode(jpg_data).decode("utf-8"),
-                        "format": "jpg",
-                    }
+                    img.convert("RGB").save(output_path, format="JPEG")
                 else:
-                    return {
-                        "success": True,
-                        "imageData": base64.b64encode(png_data).decode("utf-8"),
-                        "format": "png",
-                    }
+                    output_path = os.path.join(board_dir, f"{board_name}_2d_view.png")
+                    with open(output_path, "wb") as f:
+                        f.write(png_data)
+
+                return {
+                    "success": True,
+                    "format": format,
+                    "filePath": output_path,
+                    "message": f"2D view saved to {output_path}",
+                }
 
         except Exception as e:
             logger.error(f"Error getting board 2D view: {str(e)}")
