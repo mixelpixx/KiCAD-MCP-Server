@@ -32,7 +32,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
         .object({
           x: z.number().describe("X coordinate"),
           y: z.number().describe("Y coordinate"),
-          unit: z.enum(["mm", "inch"]).describe("Unit of measurement"),
+          unit: z.enum(["mm", "inch", "mil"]).describe("Unit of measurement"),
         })
         .describe("Position coordinates and unit"),
       reference: z.string().optional().describe("Optional desired reference (e.g., 'R5')"),
@@ -44,7 +44,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
         .string()
         .optional()
         .describe(
-          "Path to the .kicad_pcb file – required when using project-local footprint libraries",
+          "Path to the .kicad_pcb file â€“ required when using project-local footprint libraries",
         ),
     },
     async ({ componentId, position, reference, value, footprint, rotation, layer, boardPath }) => {
@@ -85,7 +85,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
         .object({
           x: z.number().describe("X coordinate"),
           y: z.number().describe("Y coordinate"),
-          unit: z.enum(["mm", "inch"]).describe("Unit of measurement"),
+          unit: z.enum(["mm", "inch", "mil"]).describe("Unit of measurement"),
         })
         .describe("New position coordinates and unit"),
       rotation: z.number().optional().describe("Optional new rotation in degrees"),
@@ -359,7 +359,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
     "Return all pads of a PCB component with their positions, net assignments and sizes.",
     {
       reference: z.string().describe("Reference designator of the component (e.g., 'U1')"),
-      unit: z.enum(["mm", "inch"]).optional().describe("Unit for coordinates (default: mm)"),
+      unit: z.enum(["mm", "mil", "inch"]).optional().describe("Unit for coordinates (default: mm)"),
     },
     async ({ reference, unit }) => {
       logger.debug(`Getting pads for component: ${reference}`);
@@ -393,11 +393,11 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
           y1: z.number(),
           x2: z.number(),
           y2: z.number(),
-          unit: z.enum(["mm", "inch"]).optional(),
+          unit: z.enum(["mm", "inch", "mil"]).optional(),
         })
         .optional()
         .describe("Filter by bounding box region"),
-      unit: z.enum(["mm", "inch"]).optional().describe("Unit for coordinates (default: mm)"),
+      unit: z.enum(["mm", "mil", "inch"]).optional().describe("Unit for coordinates (default: mm)"),
     },
     async ({ layer, boundingBox, unit }) => {
       logger.debug("Getting component list");
@@ -427,7 +427,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
     {
       reference: z.string().describe("Component reference designator (e.g., 'U1')"),
       pad: z.string().describe("Pad number or name (e.g., '1', 'A1')"),
-      unit: z.enum(["mm", "inch"]).optional().describe("Unit for coordinates (default: mm)"),
+      unit: z.enum(["mm", "mil", "inch"]).optional().describe("Unit for coordinates (default: mm)"),
     },
     async ({ reference, pad, unit }) => {
       logger.debug(`Getting pad position for ${reference} pad ${pad}`);
@@ -460,7 +460,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
         .object({
           x: z.number(),
           y: z.number(),
-          unit: z.enum(["mm", "inch"]),
+          unit: z.enum(["mm", "inch", "mil"]),
         })
         .describe("Starting position"),
       rows: z.number().describe("Number of rows"),
@@ -553,7 +553,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
         .object({
           x: z.number(),
           y: z.number(),
-          unit: z.enum(["mm", "inch"]).optional(),
+          unit: z.enum(["mm", "inch", "mil"]).optional(),
         })
         .describe("Offset from original position"),
       newReference: z.string().optional().describe("New reference designator"),
