@@ -383,7 +383,17 @@ class KiCADInterface:
             "generate_netlist": self._handle_generate_netlist,
             "sync_schematic_to_board": self._handle_sync_schematic_to_board,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
+            "list_schematic_components": self._handle_list_schematic_components,
+            "list_schematic_nets": self._handle_list_schematic_nets,
+            "list_schematic_wires": self._handle_list_schematic_wires,
+            "list_schematic_labels": self._handle_list_schematic_labels,
+            "move_schematic_component": self._handle_move_schematic_component,
+            "rotate_schematic_component": self._handle_rotate_schematic_component,
+            "annotate_schematic": self._handle_annotate_schematic,
+            "delete_schematic_wire": self._handle_delete_schematic_wire,
+            "delete_schematic_net_label": self._handle_delete_schematic_net_label,
             "export_schematic_pdf": self._handle_export_schematic_pdf,
+            "export_schematic_svg": self._handle_export_schematic_svg,
             "import_svg_logo": self._handle_import_svg_logo,
             # UI/Process management commands
             "check_kicad_ui": self._handle_check_kicad_ui,
@@ -1175,26 +1185,33 @@ class KiCADInterface:
             if not output_path:
                 return {"success": False, "message": "Output path is required"}
 
+            if not os.path.exists(schematic_path):
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
             import subprocess
 
-            result = subprocess.run(
-                [
-                    "kicad-cli",
-                    "sch",
-                    "export",
-                    "pdf",
-                    "--output",
-                    output_path,
-                    schematic_path,
-                ],
-                capture_output=True,
-                text=True,
-            )
+            cmd = [
+                "kicad-cli",
+                "sch",
+                "export",
+                "pdf",
+                "--output",
+                output_path,
+                schematic_path,
+            ]
 
-            success = result.returncode == 0
-            message = result.stderr if not success else ""
+            if params.get("blackAndWhite"):
+                cmd.insert(-1, "--black-and-white")
 
-            return {"success": success, "message": message}
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+            if result.returncode == 0:
+                return {"success": True, "file": {"path": output_path}}
+            else:
+                return {"success": False, "message": f"kicad-cli failed: {result.stderr}"}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
         except Exception as e:
             logger.error(f"Error exporting schematic to PDF: {str(e)}")
             return {"success": False, "message": str(e)}
@@ -1401,6 +1418,533 @@ class KiCADInterface:
             logger.error(f"Error getting pin locations: {e}")
             import traceback
             logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_list_schematic_components(self, params):
+        """List all components in a schematic"""
+        logger.info("Listing schematic components")
+        try:
+            from pathlib import Path
+            from commands.pin_locator import PinLocator
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            # Optional filters
+            filter_params = params.get("filter", {})
+            lib_id_filter = filter_params.get("libId", "")
+            ref_prefix_filter = filter_params.get("referencePrefix", "")
+
+            locator = PinLocator()
+            components = []
+
+            for symbol in schematic.symbol:
+                if not hasattr(symbol.property, "Reference"):
+                    continue
+                ref = symbol.property.Reference.value
+                # Skip template symbols
+                if ref.startswith("_TEMPLATE"):
+                    continue
+
+                lib_id = symbol.lib_id.value if hasattr(symbol, "lib_id") else ""
+
+                # Apply filters
+                if lib_id_filter and lib_id_filter not in lib_id:
+                    continue
+                if ref_prefix_filter and not ref.startswith(ref_prefix_filter):
+                    continue
+
+                value = symbol.property.Value.value if hasattr(symbol.property, "Value") else ""
+                footprint = symbol.property.Footprint.value if hasattr(symbol.property, "Footprint") else ""
+                position = symbol.at.value if hasattr(symbol, "at") else [0, 0, 0]
+                uuid_val = symbol.uuid.value if hasattr(symbol, "uuid") else ""
+
+                comp = {
+                    "reference": ref,
+                    "libId": lib_id,
+                    "value": value,
+                    "footprint": footprint,
+                    "position": {"x": float(position[0]), "y": float(position[1])},
+                    "rotation": float(position[2]) if len(position) > 2 else 0,
+                    "uuid": str(uuid_val),
+                }
+
+                # Get pins if available
+                try:
+                    all_pins = locator.get_all_symbol_pins(sch_file, ref)
+                    if all_pins:
+                        pins_def = locator.get_symbol_pins(sch_file, lib_id) or {}
+                        pin_list = []
+                        for pin_num, coords in all_pins.items():
+                            pin_info = {
+                                "number": pin_num,
+                                "position": {"x": coords[0], "y": coords[1]},
+                            }
+                            if pin_num in pins_def:
+                                pin_info["name"] = pins_def[pin_num].get("name", pin_num)
+                            pin_list.append(pin_info)
+                        comp["pins"] = pin_list
+                except Exception:
+                    pass  # Pin lookup is best-effort
+
+                components.append(comp)
+
+            return {"success": True, "components": components, "count": len(components)}
+
+        except Exception as e:
+            logger.error(f"Error listing schematic components: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_list_schematic_nets(self, params):
+        """List all nets in a schematic with their connections"""
+        logger.info("Listing schematic nets")
+        try:
+            from pathlib import Path
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            # Get all net names from labels
+            net_names = set()
+            if hasattr(schematic, "label"):
+                for label in schematic.label:
+                    if hasattr(label, "value"):
+                        net_names.add(label.value)
+
+            nets = []
+            for net_name in sorted(net_names):
+                connections = ConnectionManager.get_net_connections(
+                    schematic, net_name, Path(schematic_path)
+                )
+                nets.append({
+                    "name": net_name,
+                    "connections": connections,
+                })
+
+            return {"success": True, "nets": nets, "count": len(nets)}
+
+        except Exception as e:
+            logger.error(f"Error listing schematic nets: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_list_schematic_wires(self, params):
+        """List all wires in a schematic"""
+        logger.info("Listing schematic wires")
+        try:
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            wires = []
+            if hasattr(schematic, "wire"):
+                for wire in schematic.wire:
+                    if hasattr(wire, "pts") and hasattr(wire.pts, "xy"):
+                        points = []
+                        for point in wire.pts.xy:
+                            if hasattr(point, "value"):
+                                points.append({
+                                    "x": float(point.value[0]),
+                                    "y": float(point.value[1]),
+                                })
+
+                        if len(points) >= 2:
+                            wires.append({
+                                "start": points[0],
+                                "end": points[-1],
+                            })
+
+            return {"success": True, "wires": wires, "count": len(wires)}
+
+        except Exception as e:
+            logger.error(f"Error listing schematic wires: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_list_schematic_labels(self, params):
+        """List all net labels and power flags in a schematic"""
+        logger.info("Listing schematic labels")
+        try:
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            labels = []
+
+            # Regular labels
+            if hasattr(schematic, "label"):
+                for label in schematic.label:
+                    if hasattr(label, "value"):
+                        pos = label.at.value if hasattr(label, "at") and hasattr(label.at, "value") else [0, 0]
+                        labels.append({
+                            "name": label.value,
+                            "type": "net",
+                            "position": {"x": float(pos[0]), "y": float(pos[1])},
+                        })
+
+            # Global labels
+            if hasattr(schematic, "global_label"):
+                for label in schematic.global_label:
+                    if hasattr(label, "value"):
+                        pos = label.at.value if hasattr(label, "at") and hasattr(label.at, "value") else [0, 0]
+                        labels.append({
+                            "name": label.value,
+                            "type": "global",
+                            "position": {"x": float(pos[0]), "y": float(pos[1])},
+                        })
+
+            # Power symbols (components with power flag)
+            if hasattr(schematic, "symbol"):
+                for symbol in schematic.symbol:
+                    if not hasattr(symbol.property, "Reference"):
+                        continue
+                    ref = symbol.property.Reference.value
+                    if ref.startswith("#PWR") or ref.startswith("_TEMPLATE"):
+                        if ref.startswith("_TEMPLATE"):
+                            continue
+                        value = symbol.property.Value.value if hasattr(symbol.property, "Value") else ref
+                        pos = symbol.at.value if hasattr(symbol, "at") else [0, 0, 0]
+                        labels.append({
+                            "name": value,
+                            "type": "power",
+                            "position": {"x": float(pos[0]), "y": float(pos[1])},
+                        })
+
+            return {"success": True, "labels": labels, "count": len(labels)}
+
+        except Exception as e:
+            logger.error(f"Error listing schematic labels: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_move_schematic_component(self, params):
+        """Move a schematic component to a new position"""
+        logger.info("Moving schematic component")
+        try:
+            from pathlib import Path
+            import re
+
+            schematic_path = params.get("schematicPath")
+            reference = params.get("reference")
+            position = params.get("position", {})
+            new_x = position.get("x")
+            new_y = position.get("y")
+
+            if not schematic_path or not reference:
+                return {"success": False, "message": "schematicPath and reference are required"}
+            if new_x is None or new_y is None:
+                return {"success": False, "message": "position with x and y is required"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            # Find the symbol
+            for symbol in schematic.symbol:
+                if not hasattr(symbol.property, "Reference"):
+                    continue
+                if symbol.property.Reference.value == reference:
+                    old_pos = list(symbol.at.value)
+                    old_position = {"x": float(old_pos[0]), "y": float(old_pos[1])}
+
+                    # Preserve rotation (third element)
+                    rotation = float(old_pos[2]) if len(old_pos) > 2 else 0
+                    symbol.at.value = [new_x, new_y, rotation]
+
+                    SchematicManager.save_schematic(schematic, schematic_path)
+                    return {
+                        "success": True,
+                        "oldPosition": old_position,
+                        "newPosition": {"x": new_x, "y": new_y},
+                    }
+
+            return {"success": False, "message": f"Component {reference} not found"}
+
+        except Exception as e:
+            logger.error(f"Error moving schematic component: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_rotate_schematic_component(self, params):
+        """Rotate a schematic component"""
+        logger.info("Rotating schematic component")
+        try:
+            schematic_path = params.get("schematicPath")
+            reference = params.get("reference")
+            angle = params.get("angle", 0)
+            mirror = params.get("mirror")
+
+            if not schematic_path or not reference:
+                return {"success": False, "message": "schematicPath and reference are required"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            for symbol in schematic.symbol:
+                if not hasattr(symbol.property, "Reference"):
+                    continue
+                if symbol.property.Reference.value == reference:
+                    pos = list(symbol.at.value)
+                    pos[2] = angle if len(pos) > 2 else angle
+                    while len(pos) < 3:
+                        pos.append(0)
+                    pos[2] = angle
+                    symbol.at.value = pos
+
+                    # Handle mirror if specified
+                    if mirror and hasattr(symbol, "mirror"):
+                        symbol.mirror.value = mirror
+
+                    SchematicManager.save_schematic(schematic, schematic_path)
+                    return {"success": True, "reference": reference, "angle": angle}
+
+            return {"success": False, "message": f"Component {reference} not found"}
+
+        except Exception as e:
+            logger.error(f"Error rotating schematic component: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_annotate_schematic(self, params):
+        """Annotate unannotated components in schematic (R? -> R1, R2, ...)"""
+        logger.info("Annotating schematic")
+        try:
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            # Collect existing references by prefix
+            existing_refs = {}  # prefix -> set of numbers
+            unannotated = []  # (symbol, prefix)
+
+            for symbol in schematic.symbol:
+                if not hasattr(symbol.property, "Reference"):
+                    continue
+                ref = symbol.property.Reference.value
+                if ref.startswith("_TEMPLATE"):
+                    continue
+
+                # Split reference into prefix and number
+                import re
+                match = re.match(r'^([A-Za-z_]+)(\d+)$', ref)
+                if match:
+                    prefix = match.group(1)
+                    num = int(match.group(2))
+                    if prefix not in existing_refs:
+                        existing_refs[prefix] = set()
+                    existing_refs[prefix].add(num)
+                elif ref.endswith("?"):
+                    prefix = ref[:-1]
+                    unannotated.append((symbol, prefix))
+
+            if not unannotated:
+                return {"success": True, "annotated": [], "message": "All components already annotated"}
+
+            annotated = []
+            for symbol, prefix in unannotated:
+                if prefix not in existing_refs:
+                    existing_refs[prefix] = set()
+
+                # Find next available number
+                next_num = 1
+                while next_num in existing_refs[prefix]:
+                    next_num += 1
+
+                old_ref = symbol.property.Reference.value
+                new_ref = f"{prefix}{next_num}"
+                symbol.property.Reference.value = new_ref
+                existing_refs[prefix].add(next_num)
+
+                uuid_val = str(symbol.uuid.value) if hasattr(symbol, "uuid") else ""
+                annotated.append({
+                    "uuid": uuid_val,
+                    "oldReference": old_ref,
+                    "newReference": new_ref,
+                })
+
+            SchematicManager.save_schematic(schematic, schematic_path)
+            return {"success": True, "annotated": annotated}
+
+        except Exception as e:
+            logger.error(f"Error annotating schematic: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_delete_schematic_wire(self, params):
+        """Delete a wire from the schematic matching start/end points"""
+        logger.info("Deleting schematic wire")
+        try:
+            schematic_path = params.get("schematicPath")
+            start = params.get("start", {})
+            end = params.get("end", {})
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            if not hasattr(schematic, "wire"):
+                return {"success": False, "message": "Schematic has no wires"}
+
+            tolerance = 0.5
+            wire_to_remove = None
+
+            for wire in schematic.wire:
+                if not hasattr(wire, "pts") or not hasattr(wire.pts, "xy"):
+                    continue
+                points = []
+                for point in wire.pts.xy:
+                    if hasattr(point, "value"):
+                        points.append([float(point.value[0]), float(point.value[1])])
+
+                if len(points) < 2:
+                    continue
+
+                sx, sy = start.get("x", 0), start.get("y", 0)
+                ex, ey = end.get("x", 0), end.get("y", 0)
+
+                # Check both directions
+                match_fwd = (abs(points[0][0] - sx) < tolerance and abs(points[0][1] - sy) < tolerance and
+                            abs(points[-1][0] - ex) < tolerance and abs(points[-1][1] - ey) < tolerance)
+                match_rev = (abs(points[0][0] - ex) < tolerance and abs(points[0][1] - ey) < tolerance and
+                            abs(points[-1][0] - sx) < tolerance and abs(points[-1][1] - sy) < tolerance)
+
+                if match_fwd or match_rev:
+                    wire_to_remove = wire
+                    break
+
+            if wire_to_remove:
+                schematic.wire.remove(wire_to_remove)
+                SchematicManager.save_schematic(schematic, schematic_path)
+                return {"success": True}
+            else:
+                return {"success": False, "message": "No matching wire found"}
+
+        except Exception as e:
+            logger.error(f"Error deleting schematic wire: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_delete_schematic_net_label(self, params):
+        """Delete a net label from the schematic"""
+        logger.info("Deleting schematic net label")
+        try:
+            schematic_path = params.get("schematicPath")
+            net_name = params.get("netName")
+            position = params.get("position")
+
+            if not schematic_path or not net_name:
+                return {"success": False, "message": "schematicPath and netName are required"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            if not hasattr(schematic, "label"):
+                return {"success": False, "message": "Schematic has no labels"}
+
+            tolerance = 0.5
+            label_to_remove = None
+
+            for label in schematic.label:
+                if not hasattr(label, "value") or label.value != net_name:
+                    continue
+
+                if position:
+                    # Match by position too
+                    pos = label.at.value if hasattr(label, "at") and hasattr(label.at, "value") else None
+                    if pos:
+                        px, py = position.get("x", 0), position.get("y", 0)
+                        if abs(float(pos[0]) - px) < tolerance and abs(float(pos[1]) - py) < tolerance:
+                            label_to_remove = label
+                            break
+                else:
+                    # First match
+                    label_to_remove = label
+                    break
+
+            if label_to_remove:
+                schematic.label.remove(label_to_remove)
+                SchematicManager.save_schematic(schematic, schematic_path)
+                return {"success": True}
+            else:
+                return {"success": False, "message": f"Label '{net_name}' not found"}
+
+        except Exception as e:
+            logger.error(f"Error deleting schematic net label: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_schematic_svg(self, params):
+        """Export schematic to SVG using kicad-cli"""
+        logger.info("Exporting schematic SVG")
+        import subprocess
+
+        try:
+            schematic_path = params.get("schematicPath")
+            output_path = params.get("outputPath")
+
+            if not schematic_path or not output_path:
+                return {"success": False, "message": "schematicPath and outputPath are required"}
+
+            if not os.path.exists(schematic_path):
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            cmd = ["kicad-cli", "sch", "export", "svg", schematic_path, "-o", output_path]
+
+            if params.get("blackAndWhite"):
+                cmd.append("--black-and-white")
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+            if result.returncode == 0:
+                return {"success": True, "file": {"path": output_path}}
+            else:
+                return {"success": False, "message": f"kicad-cli failed: {result.stderr}"}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except Exception as e:
+            logger.error(f"Error exporting schematic SVG: {e}")
             return {"success": False, "message": str(e)}
 
     def _handle_get_net_connections(self, params):
