@@ -375,6 +375,7 @@ class KiCADInterface:
             "add_schematic_wire": self._handle_add_schematic_wire,
             "add_schematic_connection": self._handle_add_schematic_connection,
             "add_schematic_net_label": self._handle_add_schematic_net_label,
+            "add_schematic_junction": self._handle_add_schematic_junction,
             "connect_to_net": self._handle_connect_to_net,
             "connect_passthrough": self._handle_connect_passthrough,
             "get_schematic_pin_locations": self._handle_get_schematic_pin_locations,
@@ -1001,6 +1002,38 @@ class KiCADInterface:
                 return {"success": False, "message": "Failed to add wire"}
         except Exception as e:
             logger.error(f"Error adding wire to schematic: {str(e)}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {
+                "success": False,
+                "message": str(e),
+                "errorDetails": traceback.format_exc(),
+            }
+
+    def _handle_add_schematic_junction(self, params):
+        """Add a junction (connection dot) to a schematic using WireManager"""
+        logger.info("Adding junction to schematic")
+        try:
+            from pathlib import Path
+            from commands.wire_manager import WireManager
+
+            schematic_path = params.get("schematicPath")
+            position = params.get("position")
+
+            if not schematic_path:
+                return {"success": False, "message": "Schematic path is required"}
+            if not position:
+                return {"success": False, "message": "Position is required"}
+
+            success = WireManager.add_junction(Path(schematic_path), position)
+
+            if success:
+                return {"success": True, "message": "Junction added successfully"}
+            else:
+                return {"success": False, "message": "Failed to add junction"}
+        except Exception as e:
+            logger.error(f"Error adding junction to schematic: {str(e)}")
             import traceback
 
             logger.error(traceback.format_exc())
