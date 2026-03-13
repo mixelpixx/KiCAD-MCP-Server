@@ -1418,8 +1418,8 @@ SCHEMATIC_TOOLS = [
     },
     {
         "name": "add_schematic_wire",
-        "title": "Draw Wire Segment at Coordinates",
-        "description": "Draws a wire segment between explicit XY coordinate points on the schematic. Supports 2-point (single segment) and multi-point (polyline) wire paths. When snapToPins is enabled, the first and last endpoints are automatically snapped to the nearest schematic pin within snapTolerance mm, ensuring exact coordinate alignment without needing to call get_schematic_pin_locations first.",
+        "title": "Draw Wire Between Pins",
+        "description": "Draws a wire on the schematic between two or more coordinate points. Always call get_schematic_pin_locations first to get the approximate pin coordinates, then pass them as the first and last waypoints. snapToPins (on by default) will correct any float imprecision by snapping endpoints to the exact nearest pin coordinate. To route around components, add intermediate waypoints between the start and end: e.g. [[x1,y1], [xMid,y1], [xMid,y2], [x2,y2]] routes horizontally then vertically. Intermediate waypoints are never snapped.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1427,9 +1427,9 @@ SCHEMATIC_TOOLS = [
                     "type": "string",
                     "description": "Path to schematic file"
                 },
-                "points": {
+                "waypoints": {
                     "type": "array",
-                    "description": "Array of [x, y] waypoints for the wire path. With 2 points draws a single segment; with 3+ points draws a multi-segment polyline wire.",
+                    "description": "Array of [x, y] coordinates defining the wire path. First and last points are the pin locations (from get_schematic_pin_locations). Add intermediate points to route around obstacles.",
                     "items": {
                         "type": "array",
                         "items": {"type": "number"},
@@ -1440,8 +1440,8 @@ SCHEMATIC_TOOLS = [
                 },
                 "snapToPins": {
                     "type": "boolean",
-                    "description": "When true, the first and last points are snapped to the nearest schematic pin within snapTolerance mm. Intermediate waypoints are left unchanged.",
-                    "default": false
+                    "description": "When true, the first and last waypoints are snapped to the nearest schematic pin within snapTolerance mm. Intermediate waypoints are left unchanged. Enabled by default to correct float coordinate imprecision.",
+                    "default": true
                 },
                 "snapTolerance": {
                     "type": "number",
@@ -1449,7 +1449,7 @@ SCHEMATIC_TOOLS = [
                     "default": 1.0
                 }
             },
-            "required": ["schematicPath", "points"]
+            "required": ["schematicPath", "waypoints"]
         }
     },
     {

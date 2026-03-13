@@ -963,9 +963,9 @@ class KiCADInterface:
             from commands.wire_manager import WireManager
 
             schematic_path = params.get("schematicPath")
-            points = params.get("points")
+            points = params.get("waypoints") or params.get("points")
             properties = params.get("properties", {})
-            snap_to_pins = params.get("snapToPins", False)
+            snap_to_pins = params.get("snapToPins", True)
             snap_tolerance = params.get("snapTolerance", 1.0)
 
             if not schematic_path:
@@ -973,7 +973,7 @@ class KiCADInterface:
             if not points or len(points) < 2:
                 return {
                     "success": False,
-                    "message": "At least 2 points are required",
+                    "message": "At least 2 waypoints are required",
                 }
 
             # Make a mutable copy of points
