@@ -1471,9 +1471,19 @@ SCHEMATIC_TOOLS = [
                 },
                 "routing": {
                     "type": "string",
-                    "description": "Routing mode for the wire path",
+                    "description": "Routing mode for the wire path. Ignored when waypoints are provided.",
                     "enum": ["direct", "orthogonal_h", "orthogonal_v"],
                     "default": "direct"
+                },
+                "waypoints": {
+                    "type": "array",
+                    "description": "Optional array of [x, y] intermediate points for custom wire routing. When provided, the wire path is built as: source pin -> waypoints -> target pin, overriding the routing mode.",
+                    "items": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 2,
+                        "maxItems": 2
+                    }
                 }
             },
             "required": ["schematicPath", "sourceRef", "sourcePin", "targetRef", "targetPin"]

@@ -1220,6 +1220,7 @@ class KiCADInterface:
             routing = params.get(
                 "routing", "direct"
             )  # 'direct', 'orthogonal_h', 'orthogonal_v'
+            waypoints = params.get("waypoints")
 
             if not all(
                 [schematic_path, source_ref, source_pin, target_ref, target_pin]
@@ -1234,6 +1235,7 @@ class KiCADInterface:
                 target_ref,
                 target_pin,
                 routing=routing,
+                waypoints=waypoints,
             )
 
             if success:

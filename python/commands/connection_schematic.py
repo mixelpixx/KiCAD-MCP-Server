@@ -124,6 +124,7 @@ class ConnectionManager:
         target_ref: str,
         target_pin: str,
         routing: str = "direct",
+        waypoints: list = None,
     ):
         """
         Add a wire connection between two component pins
@@ -135,6 +136,7 @@ class ConnectionManager:
             target_ref: Reference designator of target component (e.g., "C1", "C1_")
             target_pin: Pin name/number on target component
             routing: Routing style ('direct', 'orthogonal_h', 'orthogonal_v')
+            waypoints: Optional list of [x, y] intermediate points for custom routing
 
         Returns:
             True if connection was successful, False otherwise
@@ -161,8 +163,12 @@ class ConnectionManager:
                 logger.error("Could not determine pin locations")
                 return False
 
+            # If waypoints are provided, build custom path
+            if waypoints:
+                path = [source_loc] + waypoints + [target_loc]
+                success = WireManager.add_polyline_wire(schematic_path, path)
             # Create wire based on routing style
-            if routing == "direct":
+            elif routing == "direct":
                 # Simple direct wire
                 success = WireManager.add_wire(schematic_path, source_loc, target_loc)
             elif routing == "orthogonal_h":
