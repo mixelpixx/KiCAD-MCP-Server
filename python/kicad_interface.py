@@ -1933,7 +1933,7 @@ class KiCADInterface:
                     break
 
             if wire_to_remove:
-                schematic.wire.remove(wire_to_remove)
+                schematic.wire._elements.remove(wire_to_remove)
                 SchematicManager.save_schematic(schematic, schematic_path)
                 return {"success": True}
             else:
@@ -1984,7 +1984,7 @@ class KiCADInterface:
                     break
 
             if label_to_remove:
-                schematic.label.remove(label_to_remove)
+                schematic.label._elements.remove(label_to_remove)
                 SchematicManager.save_schematic(schematic, schematic_path)
                 return {"success": True}
             else:
