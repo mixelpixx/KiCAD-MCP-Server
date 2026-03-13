@@ -414,6 +414,38 @@ class ComponentCommands:
             x_mm = pos.x / 1000000
             y_mm = pos.y / 1000000
 
+            # Get bounding box
+            bbox = module.GetBoundingBox()
+            bbox_data = {
+                "min_x": bbox.GetLeft() / 1000000,
+                "min_y": bbox.GetTop() / 1000000,
+                "max_x": bbox.GetRight() / 1000000,
+                "max_y": bbox.GetBottom() / 1000000,
+                "width": (bbox.GetRight() - bbox.GetLeft()) / 1000000,
+                "height": (bbox.GetBottom() - bbox.GetTop()) / 1000000,
+                "unit": "mm",
+            }
+
+            # Try to get courtyard bounds (preferred for placement clearance)
+            courtyard_data = None
+            try:
+                for layer_id in [pcbnew.F_CrtYd, pcbnew.B_CrtYd]:
+                    courtyard = module.GetCourtyard(layer_id)
+                    if courtyard and courtyard.OutlineCount() > 0:
+                        cbox = courtyard.BBox()
+                        courtyard_data = {
+                            "min_x": cbox.GetLeft() / 1000000,
+                            "min_y": cbox.GetTop() / 1000000,
+                            "max_x": cbox.GetRight() / 1000000,
+                            "max_y": cbox.GetBottom() / 1000000,
+                            "width": (cbox.GetRight() - cbox.GetLeft()) / 1000000,
+                            "height": (cbox.GetBottom() - cbox.GetTop()) / 1000000,
+                            "unit": "mm",
+                        }
+                        break
+            except Exception:
+                pass  # Courtyard may not exist or API may differ
+
             return {
                 "success": True,
                 "component": {
@@ -428,6 +460,8 @@ class ComponentCommands:
                         "through_hole": module.GetAttributes() & pcbnew.FP_THROUGH_HOLE,
                         "board_only": module.GetAttributes() & pcbnew.FP_BOARD_ONLY,
                     },
+                    "boundingBox": bbox_data,
+                    "courtyard": courtyard_data,
                 },
             }
 
@@ -455,6 +489,17 @@ class ComponentCommands:
                 x_mm = pos.x / 1000000
                 y_mm = pos.y / 1000000
 
+                bbox = module.GetBoundingBox()
+                bbox_data = {
+                    "min_x": bbox.GetLeft() / 1000000,
+                    "min_y": bbox.GetTop() / 1000000,
+                    "max_x": bbox.GetRight() / 1000000,
+                    "max_y": bbox.GetBottom() / 1000000,
+                    "width": (bbox.GetRight() - bbox.GetLeft()) / 1000000,
+                    "height": (bbox.GetBottom() - bbox.GetTop()) / 1000000,
+                    "unit": "mm",
+                }
+
                 components.append(
                     {
                         "reference": module.GetReference(),
@@ -463,6 +508,7 @@ class ComponentCommands:
                         "position": {"x": x_mm, "y": y_mm, "unit": "mm"},
                         "rotation": module.GetOrientation().AsDegrees(),
                         "layer": self.board.GetLayerName(module.GetLayer()),
+                        "boundingBox": bbox_data,
                     }
                 )
 

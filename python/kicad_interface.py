@@ -4898,6 +4898,19 @@ print("ok")
         try:
             components = self.ipc_board_api.list_components()
 
+            # If IPC didn't provide bounding boxes, enrich from SWIG backend
+            if self.board and components and not components[0].get("boundingBox"):
+                try:
+                    swig_result = self.component_commands.get_component_list(params)
+                    if swig_result.get("success"):
+                        swig_map = {c["reference"]: c for c in swig_result.get("components", [])}
+                        for comp in components:
+                            swig_comp = swig_map.get(comp.get("reference"))
+                            if swig_comp and swig_comp.get("boundingBox"):
+                                comp["boundingBox"] = swig_comp["boundingBox"]
+                except Exception:
+                    pass
+
             return {"success": True, "components": components, "count": len(components)}
         except Exception as e:
             logger.error(f"IPC get_component_list error: {e}")
@@ -5097,6 +5110,17 @@ print("ok")
 
             if not target:
                 return {"success": False, "message": f"Component {reference} not found"}
+
+            # If IPC didn't provide bounding box, try SWIG backend as fallback
+            if not target.get("boundingBox") and self.board:
+                try:
+                    swig_result = self.component_commands.get_component_properties(params)
+                    if swig_result.get("success"):
+                        swig_comp = swig_result.get("component", {})
+                        target["boundingBox"] = swig_comp.get("boundingBox")
+                        target["courtyard"] = swig_comp.get("courtyard")
+                except Exception:
+                    pass
 
             return {"success": True, "component": target}
         except Exception as e:
