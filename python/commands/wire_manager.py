@@ -407,6 +407,66 @@ class WireManager:
             return False
 
     @staticmethod
+    def delete_label(schematic_path: Path, net_name: str,
+                     position: Optional[List[float]] = None,
+                     tolerance: float = 0.5) -> bool:
+        """
+        Delete a net label from the schematic by name (and optionally position).
+
+        Args:
+            schematic_path: Path to .kicad_sch file
+            net_name: Net label text to match
+            position: Optional [x, y] to disambiguate when multiple labels share a name
+            tolerance: Maximum coordinate difference to consider a match (mm)
+
+        Returns:
+            True if a label was found and removed, False otherwise
+        """
+        try:
+            with open(schematic_path, 'r', encoding='utf-8') as f:
+                sch_content = f.read()
+
+            sch_data = sexpdata.loads(sch_content)
+
+            for i, item in enumerate(sch_data):
+                if not (isinstance(item, list) and len(item) > 0
+                        and item[0] == Symbol('label')):
+                    continue
+
+                # Second element is the label text
+                if len(item) < 2 or item[1] != net_name:
+                    continue
+
+                if position is not None:
+                    # Find (at x y ...) sub-expression and check coordinates
+                    at_entry = next(
+                        (p for p in item[1:] if isinstance(p, list)
+                         and len(p) >= 3 and p[0] == Symbol('at')),
+                        None,
+                    )
+                    if at_entry is None:
+                        continue
+                    lx, ly = float(at_entry[1]), float(at_entry[2])
+                    if not (abs(lx - position[0]) < tolerance
+                            and abs(ly - position[1]) < tolerance):
+                        continue
+
+                del sch_data[i]
+                with open(schematic_path, 'w', encoding='utf-8') as f:
+                    f.write(sexpdata.dumps(sch_data))
+                logger.info(f"Deleted label '{net_name}'")
+                return True
+
+            logger.warning(f"No matching label found for '{net_name}'")
+            return False
+
+        except Exception as e:
+            logger.error(f"Error deleting label: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+
+    @staticmethod
     def create_orthogonal_path(start: List[float], end: List[float],
                               prefer_horizontal_first: bool = True) -> List[List[float]]:
         """

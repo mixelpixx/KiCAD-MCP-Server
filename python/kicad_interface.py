@@ -1926,36 +1926,15 @@ class KiCADInterface:
             if not schematic_path or not net_name:
                 return {"success": False, "message": "schematicPath and netName are required"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            from pathlib import Path
+            from commands.wire_manager import WireManager
 
-            if not hasattr(schematic, "label"):
-                return {"success": False, "message": "Schematic has no labels"}
+            pos_list = None
+            if position:
+                pos_list = [position.get("x", 0), position.get("y", 0)]
 
-            tolerance = 0.5
-            label_to_remove = None
-
-            for label in schematic.label:
-                if not hasattr(label, "value") or label.value != net_name:
-                    continue
-
-                if position:
-                    # Match by position too
-                    pos = label.at.value if hasattr(label, "at") and hasattr(label.at, "value") else None
-                    if pos:
-                        px, py = position.get("x", 0), position.get("y", 0)
-                        if abs(float(pos[0]) - px) < tolerance and abs(float(pos[1]) - py) < tolerance:
-                            label_to_remove = label
-                            break
-                else:
-                    # First match
-                    label_to_remove = label
-                    break
-
-            if label_to_remove:
-                schematic.label._elements.remove(label_to_remove)
-                SchematicManager.save_schematic(schematic, schematic_path)
+            deleted = WireManager.delete_label(Path(schematic_path), net_name, pos_list)
+            if deleted:
                 return {"success": True}
             else:
                 return {"success": False, "message": f"Label '{net_name}' not found"}
