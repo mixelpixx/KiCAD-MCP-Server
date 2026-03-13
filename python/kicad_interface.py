@@ -1592,10 +1592,14 @@ class KiCADInterface:
             if not schematic:
                 return {"success": False, "message": "Failed to load schematic"}
 
-            # Get all net names from labels
+            # Get all net names from labels and global labels
             net_names = set()
             if hasattr(schematic, "label"):
                 for label in schematic.label:
+                    if hasattr(label, "value"):
+                        net_names.add(label.value)
+            if hasattr(schematic, "global_label"):
+                for label in schematic.global_label:
                     if hasattr(label, "value"):
                         net_names.add(label.value)
 
@@ -1697,16 +1701,17 @@ class KiCADInterface:
                     if not hasattr(symbol.property, "Reference"):
                         continue
                     ref = symbol.property.Reference.value
-                    if ref.startswith("#PWR") or ref.startswith("_TEMPLATE"):
-                        if ref.startswith("_TEMPLATE"):
-                            continue
-                        value = symbol.property.Value.value if hasattr(symbol.property, "Value") else ref
-                        pos = symbol.at.value if hasattr(symbol, "at") else [0, 0, 0]
-                        labels.append({
-                            "name": value,
-                            "type": "power",
-                            "position": {"x": float(pos[0]), "y": float(pos[1])},
-                        })
+                    if ref.startswith("_TEMPLATE"):
+                        continue
+                    if not ref.startswith("#PWR"):
+                        continue
+                    value = symbol.property.Value.value if hasattr(symbol.property, "Value") else ref
+                    pos = symbol.at.value if hasattr(symbol, "at") else [0, 0, 0]
+                    labels.append({
+                        "name": value,
+                        "type": "power",
+                        "position": {"x": float(pos[0]), "y": float(pos[1])},
+                    })
 
             return {"success": True, "labels": labels, "count": len(labels)}
 
@@ -1720,9 +1725,6 @@ class KiCADInterface:
         """Move a schematic component to a new position"""
         logger.info("Moving schematic component")
         try:
-            from pathlib import Path
-            import re
-
             schematic_path = params.get("schematicPath")
             reference = params.get("reference")
             position = params.get("position", {})
@@ -1793,8 +1795,15 @@ class KiCADInterface:
                     symbol.at.value = pos
 
                     # Handle mirror if specified
-                    if mirror and hasattr(symbol, "mirror"):
-                        symbol.mirror.value = mirror
+                    if mirror:
+                        if hasattr(symbol, "mirror"):
+                            symbol.mirror.value = mirror
+                        else:
+                            logger.warning(
+                                f"Mirror '{mirror}' requested for {reference}, "
+                                f"but symbol does not have a 'mirror' attribute; "
+                                f"mirror not applied"
+                            )
 
                     SchematicManager.save_schematic(schematic, schematic_path)
                     return {"success": True, "reference": reference, "angle": angle}
@@ -1811,6 +1820,8 @@ class KiCADInterface:
         """Annotate unannotated components in schematic (R? -> R1, R2, ...)"""
         logger.info("Annotating schematic")
         try:
+            import re
+
             schematic_path = params.get("schematicPath")
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
@@ -1831,7 +1842,6 @@ class KiCADInterface:
                     continue
 
                 # Split reference into prefix and number
-                import re
                 match = re.match(r'^([A-Za-z_]+)(\d+)$', ref)
                 if match:
                     prefix = match.group(1)
@@ -1990,6 +2000,8 @@ class KiCADInterface:
         """Export schematic to SVG using kicad-cli"""
         logger.info("Exporting schematic SVG")
         import subprocess
+        import glob
+        import shutil
 
         try:
             schematic_path = params.get("schematicPath")
@@ -2001,17 +2013,36 @@ class KiCADInterface:
             if not os.path.exists(schematic_path):
                 return {"success": False, "message": f"Schematic not found: {schematic_path}"}
 
-            cmd = ["kicad-cli", "sch", "export", "svg", schematic_path, "-o", output_path]
+            # kicad-cli's --output flag for SVG export expects a directory, not a file path.
+            # The output file is auto-named based on the schematic name.
+            output_dir = os.path.dirname(output_path)
+            if not output_dir:
+                output_dir = "."
+
+            os.makedirs(output_dir, exist_ok=True)
+
+            cmd = ["kicad-cli", "sch", "export", "svg", schematic_path, "-o", output_dir]
 
             if params.get("blackAndWhite"):
                 cmd.append("--black-and-white")
 
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
-            if result.returncode == 0:
-                return {"success": True, "file": {"path": output_path}}
-            else:
+            if result.returncode != 0:
                 return {"success": False, "message": f"kicad-cli failed: {result.stderr}"}
+
+            # kicad-cli names the file after the schematic, so find the generated SVG
+            svg_files = glob.glob(os.path.join(output_dir, "*.svg"))
+            if not svg_files:
+                return {"success": False, "message": "No SVG file produced by kicad-cli"}
+
+            generated_svg = svg_files[0]
+
+            # Move/rename to the user-specified output path if it differs
+            if os.path.abspath(generated_svg) != os.path.abspath(output_path):
+                shutil.move(generated_svg, output_path)
+
+            return {"success": True, "file": {"path": output_path}}
 
         except FileNotFoundError:
             return {"success": False, "message": "kicad-cli not found in PATH"}

@@ -491,6 +491,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
             text: `Failed to list components: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -530,6 +531,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         content: [
           { type: "text", text: `Failed to list nets: ${result.message || "Unknown error"}` },
         ],
+        isError: true,
       };
     },
   );
@@ -567,6 +569,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         content: [
           { type: "text", text: `Failed to list wires: ${result.message || "Unknown error"}` },
         ],
+        isError: true,
       };
     },
   );
@@ -604,6 +607,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         content: [
           { type: "text", text: `Failed to list labels: ${result.message || "Unknown error"}` },
         ],
+        isError: true,
       };
     },
   );
@@ -645,6 +649,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
             text: `Failed to move component: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -686,6 +691,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
             text: `Failed to rotate component: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -727,6 +733,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
             text: `Failed to annotate: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -767,6 +774,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
             text: `Failed to delete wire: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -806,6 +814,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
             text: `Failed to delete label: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -845,6 +854,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
             text: `Failed to export SVG: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -884,6 +894,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
             text: `Failed to export PDF: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -910,16 +921,15 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       const result = await callKicadScript("get_schematic_view", args);
       if (result.success) {
         if (result.format === "svg") {
-          return {
-            content: [
-              {
-                type: "text",
-                text: result.message
-                  ? `SVG data returned (${result.message})`
-                  : `SVG schematic view (${result.imageData?.length || 0} chars)`,
-              },
-            ],
-          };
+          const parts: { type: "text"; text: string }[] = [];
+          if (result.message) {
+            parts.push({ type: "text", text: result.message });
+          }
+          parts.push({
+            type: "text",
+            text: result.imageData || "",
+          });
+          return { content: parts };
         }
         // PNG — return as base64 image
         return {
@@ -939,6 +949,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
             text: `Failed to get schematic view: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
