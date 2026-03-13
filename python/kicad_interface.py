@@ -1898,43 +1898,13 @@ class KiCADInterface:
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            from pathlib import Path
+            from commands.wire_manager import WireManager
+            start_point = [start.get("x", 0), start.get("y", 0)]
+            end_point = [end.get("x", 0), end.get("y", 0)]
 
-            if not hasattr(schematic, "wire"):
-                return {"success": False, "message": "Schematic has no wires"}
-
-            tolerance = 0.5
-            wire_to_remove = None
-
-            for wire in schematic.wire:
-                if not hasattr(wire, "pts") or not hasattr(wire.pts, "xy"):
-                    continue
-                points = []
-                for point in wire.pts.xy:
-                    if hasattr(point, "value"):
-                        points.append([float(point.value[0]), float(point.value[1])])
-
-                if len(points) < 2:
-                    continue
-
-                sx, sy = start.get("x", 0), start.get("y", 0)
-                ex, ey = end.get("x", 0), end.get("y", 0)
-
-                # Check both directions
-                match_fwd = (abs(points[0][0] - sx) < tolerance and abs(points[0][1] - sy) < tolerance and
-                            abs(points[-1][0] - ex) < tolerance and abs(points[-1][1] - ey) < tolerance)
-                match_rev = (abs(points[0][0] - ex) < tolerance and abs(points[0][1] - ey) < tolerance and
-                            abs(points[-1][0] - sx) < tolerance and abs(points[-1][1] - sy) < tolerance)
-
-                if match_fwd or match_rev:
-                    wire_to_remove = wire
-                    break
-
-            if wire_to_remove:
-                schematic.wire._elements.remove(wire_to_remove)
-                SchematicManager.save_schematic(schematic, schematic_path)
+            deleted = WireManager.delete_wire(Path(schematic_path), start_point, end_point)
+            if deleted:
                 return {"success": True}
             else:
                 return {"success": False, "message": "No matching wire found"}

@@ -341,6 +341,72 @@ class WireManager:
             return False
 
     @staticmethod
+    def delete_wire(schematic_path: Path, start_point: List[float], end_point: List[float],
+                    tolerance: float = 0.5) -> bool:
+        """
+        Delete a wire from the schematic matching given start/end coordinates.
+
+        Args:
+            schematic_path: Path to .kicad_sch file
+            start_point: [x, y] coordinates for wire start
+            end_point: [x, y] coordinates for wire end
+            tolerance: Maximum coordinate difference to consider a match (mm)
+
+        Returns:
+            True if a wire was found and removed, False otherwise
+        """
+        try:
+            with open(schematic_path, 'r', encoding='utf-8') as f:
+                sch_content = f.read()
+
+            sch_data = sexpdata.loads(sch_content)
+
+            sx, sy = start_point
+            ex, ey = end_point
+
+            for i, item in enumerate(sch_data):
+                if not (isinstance(item, list) and len(item) > 0 and item[0] == Symbol('wire')):
+                    continue
+
+                # Extract pts from the wire s-expression
+                pts_list = None
+                for part in item[1:]:
+                    if isinstance(part, list) and len(part) > 0 and part[0] == Symbol('pts'):
+                        pts_list = part
+                        break
+
+                if pts_list is None:
+                    continue
+
+                xy_points = [p for p in pts_list[1:] if isinstance(p, list) and len(p) >= 3 and p[0] == Symbol('xy')]
+                if len(xy_points) < 2:
+                    continue
+
+                x1, y1 = float(xy_points[0][1]), float(xy_points[0][2])
+                x2, y2 = float(xy_points[-1][1]), float(xy_points[-1][2])
+
+                match_fwd = (abs(x1 - sx) < tolerance and abs(y1 - sy) < tolerance and
+                             abs(x2 - ex) < tolerance and abs(y2 - ey) < tolerance)
+                match_rev = (abs(x1 - ex) < tolerance and abs(y1 - ey) < tolerance and
+                             abs(x2 - sx) < tolerance and abs(y2 - sy) < tolerance)
+
+                if match_fwd or match_rev:
+                    del sch_data[i]
+                    with open(schematic_path, 'w', encoding='utf-8') as f:
+                        f.write(sexpdata.dumps(sch_data))
+                    logger.info(f"Deleted wire from {start_point} to {end_point}")
+                    return True
+
+            logger.warning(f"No matching wire found for {start_point} to {end_point}")
+            return False
+
+        except Exception as e:
+            logger.error(f"Error deleting wire: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+
+    @staticmethod
     def create_orthogonal_path(start: List[float], end: List[float],
                               prefer_horizontal_first: bool = True) -> List[List[float]]:
         """
