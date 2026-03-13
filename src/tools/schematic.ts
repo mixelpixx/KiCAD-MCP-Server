@@ -193,10 +193,10 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
-  // Draw wire between waypoints with optional pin snapping
+  // Draw wire between coordinate waypoints with optional pin snapping
   server.tool(
     "add_schematic_wire",
-    "Draw a wire (or multi-segment polyline) between two or more waypoints in a schematic. For 2 waypoints a single wire segment is added; for 3+ waypoints the segments are chained. When snapToPins is true (default), the first and last endpoints are snapped to the nearest pin within snapTolerance mm.",
+    "Draws a wire on the schematic between two or more coordinate points. Always call get_schematic_pin_locations first to get the approximate pin coordinates, then pass them as the first and last waypoints. snapToPins (on by default) will correct any float imprecision by snapping endpoints to the exact nearest pin coordinate. To route around components, add intermediate waypoints between the start and end: e.g. [[x1,y1], [xMid,y1], [xMid,y2], [x2,y2]] routes horizontally then vertically. Intermediate waypoints are never snapped.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       waypoints: z
