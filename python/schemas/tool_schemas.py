@@ -1419,7 +1419,7 @@ SCHEMATIC_TOOLS = [
     {
         "name": "add_schematic_wire",
         "title": "Draw Wire Segment at Coordinates",
-        "description": "Draws a raw wire segment between explicit XY coordinate points on the schematic. Supports 2-point (single segment) and multi-point (polyline) wire paths. Use this when you know the exact coordinates for the wire path. Does NOT perform any pin or component lookup. For connecting components by reference designator and pin name, use add_schematic_connection instead.",
+        "description": "Draws a wire segment between explicit XY coordinate points on the schematic. Supports 2-point (single segment) and multi-point (polyline) wire paths. When snapToPins is enabled, the first and last endpoints are automatically snapped to the nearest schematic pin within snapTolerance mm, ensuring exact coordinate alignment without needing to call get_schematic_pin_locations first.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1437,56 +1437,19 @@ SCHEMATIC_TOOLS = [
                         "maxItems": 2
                     },
                     "minItems": 2
+                },
+                "snapToPins": {
+                    "type": "boolean",
+                    "description": "When true, the first and last points are snapped to the nearest schematic pin within snapTolerance mm. Intermediate waypoints are left unchanged.",
+                    "default": false
+                },
+                "snapTolerance": {
+                    "type": "number",
+                    "description": "Maximum distance in mm to search for a nearby pin when snapToPins is enabled.",
+                    "default": 1.0
                 }
             },
             "required": ["schematicPath", "points"]
-        }
-    },
-    {
-        "name": "add_schematic_connection",
-        "title": "Route Wire Between Component Pins",
-        "description": "Routes a wire between two component pins by reference designator and pin name. Automatically looks up pin coordinates and draws the connecting wire. Supports direct, orthogonal_h (horizontal-first), and orthogonal_v (vertical-first) routing modes. Use this when you know the component references and pin names. For drawing a wire at explicit XY coordinates, use add_schematic_wire instead.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "schematicPath": {
-                    "type": "string",
-                    "description": "Path to schematic file"
-                },
-                "sourceRef": {
-                    "type": "string",
-                    "description": "Reference designator of the source component (e.g., R1, U2, C3)"
-                },
-                "sourcePin": {
-                    "type": "string",
-                    "description": "Pin name on the source component (e.g., 1, 2, VCC, GND)"
-                },
-                "targetRef": {
-                    "type": "string",
-                    "description": "Reference designator of the target component (e.g., R2, U1, C1)"
-                },
-                "targetPin": {
-                    "type": "string",
-                    "description": "Pin name on the target component (e.g., 1, 2, VCC, GND)"
-                },
-                "routing": {
-                    "type": "string",
-                    "description": "Routing mode for the wire path. Ignored when waypoints are provided.",
-                    "enum": ["direct", "orthogonal_h", "orthogonal_v"],
-                    "default": "direct"
-                },
-                "waypoints": {
-                    "type": "array",
-                    "description": "Optional array of [x, y] intermediate points for custom wire routing. When provided, the wire path is built as: source pin -> waypoints -> target pin, overriding the routing mode.",
-                    "items": {
-                        "type": "array",
-                        "items": {"type": "number"},
-                        "minItems": 2,
-                        "maxItems": 2
-                    }
-                }
-            },
-            "required": ["schematicPath", "sourceRef", "sourcePin", "targetRef", "targetPin"]
         }
     },
     {
