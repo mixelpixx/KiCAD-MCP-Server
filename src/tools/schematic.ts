@@ -193,77 +193,64 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
-  // Connect components with wire
+  // Draw wire between waypoints with optional pin snapping
   server.tool(
-    "add_wire",
-    "Add a wire connection in the schematic",
+    "add_schematic_wire",
+    "Draw a wire (or multi-segment polyline) between two or more waypoints in a schematic. For 2 waypoints a single wire segment is added; for 3+ waypoints the segments are chained. When snapToPins is true (default), the first and last endpoints are snapped to the nearest pin within snapTolerance mm.",
     {
-      start: z
-        .object({
-          x: z.number(),
-          y: z.number(),
-        })
-        .describe("Start position"),
-      end: z
-        .object({
-          x: z.number(),
-          y: z.number(),
-        })
-        .describe("End position"),
-    },
-    async (args: any) => {
-      const result = await callKicadScript("add_wire", args);
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2),
-          },
-        ],
-      };
-    },
-  );
-
-  // Add pin-to-pin connection
-  server.tool(
-    "add_schematic_connection",
-    "Connect two component pins with a wire. Use this for individual connections between components with different pin roles (e.g. U1.SDA → J3.2). WARNING: Do NOT use this in a loop to wire N passthrough pins — use connect_passthrough instead (single call, cleaner layout, far fewer tokens).",
-    {
-      schematicPath: z.string().describe("Path to the schematic file"),
-      sourceRef: z.string().describe("Source component reference (e.g., R1)"),
-      sourcePin: z
-        .string()
-        .describe("Source pin name/number (e.g., 1, 2, GND)"),
-      targetRef: z.string().describe("Target component reference (e.g., C1)"),
-      targetPin: z
-        .string()
-        .describe("Target pin name/number (e.g., 1, 2, VCC)"),
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      waypoints: z
+        .array(z.array(z.number()).length(2))
+        .min(2)
+        .describe("Ordered list of [x, y] coordinates. Minimum 2 points."),
+      snapToPins: z
+        .boolean()
+        .optional()
+        .describe("Snap the first and last waypoints to the nearest pin (default: true)"),
+      snapTolerance: z
+        .number()
+        .optional()
+        .describe("Maximum snap distance in mm (default: 1.0)"),
     },
     async (args: {
       schematicPath: string;
-      sourceRef: string;
-      sourcePin: string;
-      targetRef: string;
-      targetPin: string;
+      waypoints: number[][];
+      snapToPins?: boolean;
+      snapTolerance?: number;
     }) => {
-      const result = await callKicadScript("add_schematic_connection", args);
+      const result = await callKicadScript("add_schematic_wire", args);
       if (result.success) {
         return {
-          content: [
-            {
-              type: "text",
-              text: `Successfully connected ${args.sourceRef}/${args.sourcePin} to ${args.targetRef}/${args.targetPin}`,
-            },
-          ],
+          content: [{ type: "text" as const, text: result.message || "Wire added successfully" }],
         };
       } else {
         return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to add connection: ${result.message || "Unknown error"}`,
-            },
-          ],
+          content: [{ type: "text" as const, text: `Failed to add wire: ${result.message || "Unknown error"}` }],
+        };
+      }
+    },
+  );
+
+  // Add junction dot at a T/X intersection
+  server.tool(
+    "add_schematic_junction",
+    "Place a junction dot at a wire intersection in the schematic. Required at T-branch and X-cross points so KiCAD recognises the electrical connection.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      position: z
+        .array(z.number())
+        .length(2)
+        .describe("Junction position [x, y] in mm"),
+    },
+    async (args: { schematicPath: string; position: number[] }) => {
+      const result = await callKicadScript("add_schematic_junction", args);
+      if (result.success) {
+        return {
+          content: [{ type: "text" as const, text: result.message || "Junction added successfully" }],
+        };
+      } else {
+        return {
+          content: [{ type: "text" as const, text: `Failed to add junction: ${result.message || "Unknown error"}` }],
         };
       }
     },

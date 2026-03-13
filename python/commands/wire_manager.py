@@ -114,21 +114,24 @@ class WireManager:
 
             sch_data = sexpdata.loads(sch_content)
 
-            # Create pts list
-            pts_list = [Symbol('pts')]
-            for point in points:
-                pts_list.append([Symbol('xy'), point[0], point[1]])
-
-            # Create wire S-expression with multiple points
-            wire_sexp = [
-                Symbol('wire'),
-                pts_list,
-                [Symbol('stroke'),
-                    [Symbol('width'), stroke_width],
-                    [Symbol('type'), Symbol(stroke_type)]
-                ],
-                [Symbol('uuid'), str(uuid.uuid4())]
-            ]
+            # KiCAD wire elements only support exactly 2 pts each.
+            # Split N waypoints into N-1 individual wire segments.
+            wire_sexps = []
+            for i in range(len(points) - 1):
+                pts_list = [
+                    Symbol('pts'),
+                    [Symbol('xy'), points[i][0], points[i][1]],
+                    [Symbol('xy'), points[i + 1][0], points[i + 1][1]],
+                ]
+                wire_sexps.append([
+                    Symbol('wire'),
+                    pts_list,
+                    [Symbol('stroke'),
+                        [Symbol('width'), stroke_width],
+                        [Symbol('type'), Symbol(stroke_type)]
+                    ],
+                    [Symbol('uuid'), str(uuid.uuid4())]
+                ])
 
             # Find insertion point
             sheet_instances_index = None
@@ -141,9 +144,10 @@ class WireManager:
                 logger.error("No sheet_instances section found in schematic")
                 return False
 
-            # Insert wire
-            sch_data.insert(sheet_instances_index, wire_sexp)
-            logger.info(f"Injected polyline wire with {len(points)} points")
+            # Insert all segments (in reverse so order is preserved after inserts)
+            for wire_sexp in reversed(wire_sexps):
+                sch_data.insert(sheet_instances_index, wire_sexp)
+            logger.info(f"Injected {len(wire_sexps)} wire segments for {len(points)}-point polyline")
 
             # Write back
             with open(schematic_path, 'w', encoding='utf-8') as f:
