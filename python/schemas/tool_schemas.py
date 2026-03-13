@@ -1441,7 +1441,7 @@ SCHEMATIC_TOOLS = [
                 "snapToPins": {
                     "type": "boolean",
                     "description": "When true, the first and last waypoints are snapped to the nearest schematic pin within snapTolerance mm. Intermediate waypoints are left unchanged. Enabled by default to correct float coordinate imprecision.",
-                    "default": true
+                    "default": True
                 },
                 "snapTolerance": {
                     "type": "number",
