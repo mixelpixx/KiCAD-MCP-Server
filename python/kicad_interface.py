@@ -963,16 +963,15 @@ class KiCADInterface:
             from commands.wire_manager import WireManager
 
             schematic_path = params.get("schematicPath")
-            start_point = params.get("startPoint")
-            end_point = params.get("endPoint")
+            points = params.get("points")
             properties = params.get("properties", {})
 
             if not schematic_path:
                 return {"success": False, "message": "Schematic path is required"}
-            if not start_point or not end_point:
+            if not points or len(points) < 2:
                 return {
                     "success": False,
-                    "message": "Start and end points are required",
+                    "message": "At least 2 points are required",
                 }
 
             # Extract wire properties
@@ -980,13 +979,21 @@ class KiCADInterface:
             stroke_type = properties.get("stroke_type", "default")
 
             # Use WireManager for S-expression manipulation
-            success = WireManager.add_wire(
-                Path(schematic_path),
-                start_point,
-                end_point,
-                stroke_width=stroke_width,
-                stroke_type=stroke_type,
-            )
+            if len(points) == 2:
+                success = WireManager.add_wire(
+                    Path(schematic_path),
+                    points[0],
+                    points[1],
+                    stroke_width=stroke_width,
+                    stroke_type=stroke_type,
+                )
+            else:
+                success = WireManager.add_polyline_wire(
+                    Path(schematic_path),
+                    points,
+                    stroke_width=stroke_width,
+                    stroke_type=stroke_type,
+                )
 
             if success:
                 return {"success": True, "message": "Wire added successfully"}

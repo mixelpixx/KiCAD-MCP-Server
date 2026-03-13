@@ -1419,13 +1419,17 @@ SCHEMATIC_TOOLS = [
     {
         "name": "add_schematic_wire",
         "title": "Draw Wire Segment at Coordinates",
-        "description": "Draws a raw wire segment between explicit XY coordinate points on the schematic. Use this when you know the exact coordinates for the wire path. Does NOT perform any pin or component lookup. For connecting components by reference designator and pin name, use add_schematic_connection instead.",
+        "description": "Draws a raw wire segment between explicit XY coordinate points on the schematic. Supports 2-point (single segment) and multi-point (polyline) wire paths. Use this when you know the exact coordinates for the wire path. Does NOT perform any pin or component lookup. For connecting components by reference designator and pin name, use add_schematic_connection instead.",
         "inputSchema": {
             "type": "object",
             "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to schematic file"
+                },
                 "points": {
                     "type": "array",
-                    "description": "Array of [x, y] waypoints for the wire",
+                    "description": "Array of [x, y] waypoints for the wire path. With 2 points draws a single segment; with 3+ points draws a multi-segment polyline wire.",
                     "items": {
                         "type": "array",
                         "items": {"type": "number"},
@@ -1435,7 +1439,7 @@ SCHEMATIC_TOOLS = [
                     "minItems": 2
                 }
             },
-            "required": ["points"]
+            "required": ["schematicPath", "points"]
         }
     },
     {
