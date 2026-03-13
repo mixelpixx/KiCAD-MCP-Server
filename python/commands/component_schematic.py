@@ -253,7 +253,7 @@ class ComponentManager:
                     break
 
             if symbol_to_remove:
-                schematic.symbol.remove(symbol_to_remove)
+                schematic.symbol._elements.remove(symbol_to_remove)
                 print(f"Removed component {component_ref} from schematic.")
                 return True
             else:
