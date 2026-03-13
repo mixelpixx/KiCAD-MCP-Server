@@ -1418,8 +1418,8 @@ SCHEMATIC_TOOLS = [
     },
     {
         "name": "add_schematic_wire",
-        "title": "Connect Components",
-        "description": "Draws a wire connection between component pins on the schematic.",
+        "title": "Draw Wire Segment at Coordinates",
+        "description": "Draws a raw wire segment between explicit XY coordinate points on the schematic. Use this when you know the exact coordinates for the wire path. Does NOT perform any pin or component lookup. For connecting components by reference designator and pin name, use add_schematic_connection instead.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1440,8 +1440,8 @@ SCHEMATIC_TOOLS = [
     },
     {
         "name": "add_schematic_connection",
-        "title": "Add Junction/Connection Point",
-        "description": "Adds a junction (connection point) at the specified location on the schematic where wires cross and should connect.",
+        "title": "Route Wire Between Component Pins",
+        "description": "Routes a wire between two component pins by reference designator and pin name. Automatically looks up pin coordinates and draws the connecting wire. Supports direct, orthogonal_h (horizontal-first), and orthogonal_v (vertical-first) routing modes. Use this when you know the component references and pin names. For drawing a wire at explicit XY coordinates, use add_schematic_wire instead.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1449,16 +1449,30 @@ SCHEMATIC_TOOLS = [
                     "type": "string",
                     "description": "Path to schematic file"
                 },
-                "x": {
-                    "type": "number",
-                    "description": "X coordinate on schematic"
+                "sourceRef": {
+                    "type": "string",
+                    "description": "Reference designator of the source component (e.g., R1, U2, C3)"
                 },
-                "y": {
-                    "type": "number",
-                    "description": "Y coordinate on schematic"
+                "sourcePin": {
+                    "type": "string",
+                    "description": "Pin name on the source component (e.g., 1, 2, VCC, GND)"
+                },
+                "targetRef": {
+                    "type": "string",
+                    "description": "Reference designator of the target component (e.g., R2, U1, C1)"
+                },
+                "targetPin": {
+                    "type": "string",
+                    "description": "Pin name on the target component (e.g., 1, 2, VCC, GND)"
+                },
+                "routing": {
+                    "type": "string",
+                    "description": "Routing mode for the wire path",
+                    "enum": ["direct", "orthogonal_h", "orthogonal_v"],
+                    "default": "direct"
                 }
             },
-            "required": ["schematicPath", "x", "y"]
+            "required": ["schematicPath", "sourceRef", "sourcePin", "targetRef", "targetPin"]
         }
     },
     {
