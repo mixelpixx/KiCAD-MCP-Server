@@ -963,7 +963,7 @@ class KiCADInterface:
             from commands.wire_manager import WireManager
 
             schematic_path = params.get("schematicPath")
-            points = params.get("waypoints") or params.get("points")
+            points = params.get("waypoints")
             properties = params.get("properties", {})
             snap_to_pins = params.get("snapToPins", True)
             snap_tolerance = params.get("snapTolerance", 1.0)
