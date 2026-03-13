@@ -87,8 +87,8 @@ export const toolCategories: ToolCategory[] = [
     tools: [
       "create_schematic",
       "add_schematic_component",
-      "add_wire",
-      "add_schematic_connection",
+      "add_schematic_wire",
+      "add_schematic_junction",
       "add_schematic_net_label",
       "connect_to_net",
       "get_net_connections",
