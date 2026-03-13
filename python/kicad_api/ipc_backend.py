@@ -412,6 +412,64 @@ class IPCBoardAPI(BoardAPI):
             for fp in footprints:
                 try:
                     pos = fp.position
+
+                    # Try to get bounding box
+                    bbox_data = None
+                    try:
+                        bbox = board.get_item_bounding_box(fp)
+                        if bbox:
+                            bbox_data = {
+                                "min_x": to_mm(bbox.min.x),
+                                "min_y": to_mm(bbox.min.y),
+                                "max_x": to_mm(bbox.max.x),
+                                "max_y": to_mm(bbox.max.y),
+                                "width": to_mm(bbox.max.x - bbox.min.x),
+                                "height": to_mm(bbox.max.y - bbox.min.y),
+                                "unit": "mm",
+                            }
+                    except Exception:
+                        pass  # Bounding box may not be available via IPC
+
+                    # Fallback: compute bounding box from pad positions + sizes
+                    if not bbox_data:
+                        try:
+                            pads = fp.pads if hasattr(fp, "pads") else []
+                            pad_list = list(pads)
+                            if pad_list:
+                                min_x = float("inf")
+                                min_y = float("inf")
+                                max_x = float("-inf")
+                                max_y = float("-inf")
+                                for pad in pad_list:
+                                    px = to_mm(pad.position.x) if pad.position else 0
+                                    py = to_mm(pad.position.y) if pad.position else 0
+                                    pw = (
+                                        to_mm(pad.size.x) / 2
+                                        if hasattr(pad, "size") and pad.size
+                                        else 0.5
+                                    )
+                                    ph = (
+                                        to_mm(pad.size.y) / 2
+                                        if hasattr(pad, "size") and pad.size
+                                        else 0.5
+                                    )
+                                    min_x = min(min_x, px - pw)
+                                    min_y = min(min_y, py - ph)
+                                    max_x = max(max_x, px + pw)
+                                    max_y = max(max_y, py + ph)
+                                margin = 0.25  # mm — small margin for component body beyond pads
+                                bbox_data = {
+                                    "min_x": min_x - margin,
+                                    "min_y": min_y - margin,
+                                    "max_x": max_x + margin,
+                                    "max_y": max_y + margin,
+                                    "width": (max_x - min_x) + 2 * margin,
+                                    "height": (max_y - min_y) + 2 * margin,
+                                    "unit": "mm",
+                                }
+                        except Exception as e:
+                            logger.debug(f"Could not compute bbox from pads: {e}")
+
                     components.append(
                         {
                             "reference": (
@@ -435,6 +493,7 @@ class IPCBoardAPI(BoardAPI):
                             "rotation": fp.orientation.degrees if fp.orientation else 0,
                             "layer": str(fp.layer) if hasattr(fp, "layer") else "F.Cu",
                             "id": str(fp.id) if hasattr(fp, "id") else "",
+                            "boundingBox": bbox_data,
                         }
                     )
                 except Exception as e:

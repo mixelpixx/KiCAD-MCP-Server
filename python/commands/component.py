@@ -414,6 +414,38 @@ class ComponentCommands:
             x_mm = pos.x / 1000000
             y_mm = pos.y / 1000000
 
+            # Get bounding box
+            bbox = module.GetBoundingBox()
+            bbox_data = {
+                "min_x": bbox.GetLeft() / 1000000,
+                "min_y": bbox.GetTop() / 1000000,
+                "max_x": bbox.GetRight() / 1000000,
+                "max_y": bbox.GetBottom() / 1000000,
+                "width": (bbox.GetRight() - bbox.GetLeft()) / 1000000,
+                "height": (bbox.GetBottom() - bbox.GetTop()) / 1000000,
+                "unit": "mm",
+            }
+
+            # Try to get courtyard bounds (preferred for placement clearance)
+            courtyard_data = None
+            try:
+                for layer_id in [pcbnew.F_CrtYd, pcbnew.B_CrtYd]:
+                    courtyard = module.GetCourtyard(layer_id)
+                    if courtyard and courtyard.OutlineCount() > 0:
+                        cbox = courtyard.BBox()
+                        courtyard_data = {
+                            "min_x": cbox.GetLeft() / 1000000,
+                            "min_y": cbox.GetTop() / 1000000,
+                            "max_x": cbox.GetRight() / 1000000,
+                            "max_y": cbox.GetBottom() / 1000000,
+                            "width": (cbox.GetRight() - cbox.GetLeft()) / 1000000,
+                            "height": (cbox.GetBottom() - cbox.GetTop()) / 1000000,
+                            "unit": "mm",
+                        }
+                        break
+            except Exception:
+                pass  # Courtyard may not exist or API may differ
+
             return {
                 "success": True,
                 "component": {
@@ -428,6 +460,8 @@ class ComponentCommands:
                         "through_hole": module.GetAttributes() & pcbnew.FP_THROUGH_HOLE,
                         "board_only": module.GetAttributes() & pcbnew.FP_BOARD_ONLY,
                     },
+                    "boundingBox": bbox_data,
+                    "courtyard": courtyard_data,
                 },
             }
 
@@ -455,6 +489,17 @@ class ComponentCommands:
                 x_mm = pos.x / 1000000
                 y_mm = pos.y / 1000000
 
+                bbox = module.GetBoundingBox()
+                bbox_data = {
+                    "min_x": bbox.GetLeft() / 1000000,
+                    "min_y": bbox.GetTop() / 1000000,
+                    "max_x": bbox.GetRight() / 1000000,
+                    "max_y": bbox.GetBottom() / 1000000,
+                    "width": (bbox.GetRight() - bbox.GetLeft()) / 1000000,
+                    "height": (bbox.GetBottom() - bbox.GetTop()) / 1000000,
+                    "unit": "mm",
+                }
+
                 components.append(
                     {
                         "reference": module.GetReference(),
@@ -463,6 +508,7 @@ class ComponentCommands:
                         "position": {"x": x_mm, "y": y_mm, "unit": "mm"},
                         "rotation": module.GetOrientation().AsDegrees(),
                         "layer": self.board.GetLayerName(module.GetLayer()),
+                        "boundingBox": bbox_data,
                     }
                 )
 
@@ -1275,7 +1321,7 @@ class ComponentCommands:
                         "success": False,
                         "message": "Bad position spec",
                         "errorDetails": f"positions['{ref}'] must be [x, y] or [x, y, rot]; "
-                                        f"got {spec!r}",
+                        f"got {spec!r}",
                     }
                 virtual[ref] = spec
 
@@ -1308,20 +1354,22 @@ class ComponentCommands:
                     if a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]:
                         ox = min(a[2], b[2]) - max(a[0], b[0])
                         oy = min(a[3], b[3]) - max(a[1], b[1])
-                        overlaps.append({
-                            "a": a_ref,
-                            "b": b_ref,
-                            "overlap_x_mm": round(ox, 3),
-                            "overlap_y_mm": round(oy, 3),
-                            "overlap_area_mm2": round(ox * oy, 4),
-                            "bbox": {
-                                "x1": round(max(a[0], b[0]), 3),
-                                "y1": round(max(a[1], b[1]), 3),
-                                "x2": round(min(a[2], b[2]), 3),
-                                "y2": round(min(a[3], b[3]), 3),
-                                "unit": "mm",
-                            },
-                        })
+                        overlaps.append(
+                            {
+                                "a": a_ref,
+                                "b": b_ref,
+                                "overlap_x_mm": round(ox, 3),
+                                "overlap_y_mm": round(oy, 3),
+                                "overlap_area_mm2": round(ox * oy, 4),
+                                "bbox": {
+                                    "x1": round(max(a[0], b[0]), 3),
+                                    "y1": round(max(a[1], b[1]), 3),
+                                    "x2": round(min(a[2], b[2]), 3),
+                                    "y2": round(min(a[3], b[3]), 3),
+                                    "unit": "mm",
+                                },
+                            }
+                        )
 
             # Boundary violations
             boundary_violations = []
@@ -1339,15 +1387,19 @@ class ComponentCommands:
                     if y2 > oy2 + 1e-6:
                         exceeds["bottom"] = round(y2 - oy2, 3)
                     if exceeds:
-                        boundary_violations.append({
-                            "ref": ref,
-                            "bbox": {
-                                "x1": round(x1, 3), "y1": round(y1, 3),
-                                "x2": round(x2, 3), "y2": round(y2, 3),
-                                "unit": "mm",
-                            },
-                            "exceeds": exceeds,
-                        })
+                        boundary_violations.append(
+                            {
+                                "ref": ref,
+                                "bbox": {
+                                    "x1": round(x1, 3),
+                                    "y1": round(y1, 3),
+                                    "x2": round(x2, 3),
+                                    "y2": round(y2, 3),
+                                    "unit": "mm",
+                                },
+                                "exceeds": exceeds,
+                            }
+                        )
 
             return {
                 "success": True,
@@ -1360,7 +1412,8 @@ class ComponentCommands:
                     "margin_mm": margin_mm,
                     "virtual_placements": len(virtual),
                     "board_outline_mm": (
-                        None if outline_bbox is None
+                        None
+                        if outline_bbox is None
                         else {
                             "x1": round(outline_bbox[0], 3),
                             "y1": round(outline_bbox[1], 3),
@@ -1475,6 +1528,7 @@ class ComponentCommands:
         """Rotate the four AABB corners around origin and return the new
         axis-aligned bounding box. KiCad uses Y-down screen coords."""
         import math
+
         rad = math.radians(angle_deg)
         c, s = math.cos(rad), math.sin(rad)
         # Note: screen Y-down means rotation CCW visually requires the
