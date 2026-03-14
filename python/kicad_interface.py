@@ -2592,48 +2592,45 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found"}
 
-            with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as tmp:
-                svg_output = tmp.name
+            tmp_dir = tempfile.mkdtemp()
+            svg_output = None
 
             try:
-                cmd = [kicad_cli, "sch", "export", "svg", "--output", svg_output, schematic_path]
+                cmd = [kicad_cli, "sch", "export", "svg", "--output", tmp_dir, schematic_path]
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
                 if result.returncode != 0:
                     return {"success": False, "message": f"SVG export failed: {result.stderr}"}
 
+                # kicad-cli names the file after the schematic
+                svg_files = [f for f in os.listdir(tmp_dir) if f.endswith(".svg")]
+                if not svg_files:
+                    return {"success": False, "message": "kicad-cli produced no SVG output"}
+                svg_output = os.path.join(tmp_dir, svg_files[0])
+
                 import xml.etree.ElementTree as ET
                 tree = ET.parse(svg_output)
                 root = tree.getroot()
 
-                # Read original viewBox to determine SVG coordinate mapping
-                ns = {"svg": "http://www.w3.org/2000/svg"}
+                # KiCad schematic SVGs use mm as viewBox units directly
                 vb = root.get("viewBox", "")
                 if vb:
                     parts = vb.split()
                     if len(parts) == 4:
-                        # KiCad SVG viewBox is in mils (1 mil = 0.0254 mm)
-                        # or internal units. Detect scale from original viewBox.
                         orig_vb_x = float(parts[0])
                         orig_vb_y = float(parts[1])
-                        orig_vb_w = float(parts[2])
-                        orig_vb_h = float(parts[3])
 
-                        # KiCad schematic SVGs use mils (1/1000 inch) as user units
-                        # 1 mm = 39.3701 mils
-                        mils_per_mm = 39.3701
-
-                        new_x = orig_vb_x + x1 * mils_per_mm
-                        new_y = orig_vb_y + y1 * mils_per_mm
-                        new_w = (x2 - x1) * mils_per_mm
-                        new_h = (y2 - y1) * mils_per_mm
+                        new_x = orig_vb_x + x1
+                        new_y = orig_vb_y + y1
+                        new_w = x2 - x1
+                        new_h = y2 - y1
 
                         root.set("viewBox", f"{new_x} {new_y} {new_w} {new_h}")
                         root.set("width", str(width))
                         root.set("height", str(height))
 
                 # Write modified SVG
-                cropped_svg_path = svg_output + ".cropped.svg"
+                cropped_svg_path = os.path.join(tmp_dir, "cropped.svg")
                 tree.write(cropped_svg_path, xml_declaration=True, encoding="utf-8")
 
                 if out_format == "svg":
@@ -2652,9 +2649,8 @@ class KiCADInterface:
                         "format": "png",
                     }
             finally:
-                for f in [svg_output, svg_output + ".cropped.svg"]:
-                    if os.path.exists(f):
-                        os.unlink(f)
+                import shutil
+                shutil.rmtree(tmp_dir, ignore_errors=True)
 
         except Exception as e:
             logger.error(f"Error in get_schematic_view_region: {e}")
