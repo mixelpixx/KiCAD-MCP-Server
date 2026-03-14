@@ -92,6 +92,7 @@ export const toolCategories: ToolCategory[] = [
       "add_schematic_net_label",
       "connect_to_net",
       "get_net_connections",
+      "get_wire_connections",
       "generate_netlist",
       "sync_schematic_to_board"
     ]
