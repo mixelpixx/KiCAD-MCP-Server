@@ -11,11 +11,21 @@ import logging
 import math
 import tempfile
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional
 import sexpdata
 from sexpdata import Symbol
 
 logger = logging.getLogger('kicad_interface')
+
+# Module-level Symbol constants — avoids repeated allocation on every call
+_SYM_WIRE = Symbol('wire')
+_SYM_PTS = Symbol('pts')
+_SYM_XY = Symbol('xy')
+_SYM_STROKE = Symbol('stroke')
+_SYM_WIDTH = Symbol('width')
+_SYM_TYPE = Symbol('type')
+_SYM_UUID = Symbol('uuid')
+_SYM_SHEET_INSTANCES = Symbol('sheet_instances')
 
 
 class WireManager:
@@ -44,25 +54,20 @@ class WireManager:
 
             sch_data = sexpdata.loads(sch_content)
 
+            # Break any existing wire that passes through a new endpoint (T-junction support)
+            for pt in (start_point, end_point):
+                splits = WireManager._break_wires_at_point(sch_data, pt)
+                if splits:
+                    logger.info(f"Broke {splits} wire(s) at new wire endpoint {pt}")
+
             # Create wire S-expression
             # Format: (wire (pts (xy x1 y1) (xy x2 y2)) (stroke (width N) (type default)) (uuid ...))
-            wire_sexp = [
-                Symbol('wire'),
-                [Symbol('pts'),
-                    [Symbol('xy'), start_point[0], start_point[1]],
-                    [Symbol('xy'), end_point[0], end_point[1]]
-                ],
-                [Symbol('stroke'),
-                    [Symbol('width'), stroke_width],
-                    [Symbol('type'), Symbol(stroke_type)]
-                ],
-                [Symbol('uuid'), str(uuid.uuid4())]
-            ]
+            wire_sexp = WireManager._make_wire_sexp(start_point, end_point, stroke_width, stroke_type)
 
             # Find insertion point (before sheet_instances)
             sheet_instances_index = None
             for i, item in enumerate(sch_data):
-                if isinstance(item, list) and len(item) > 0 and item[0] == Symbol('sheet_instances'):
+                if isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SHEET_INSTANCES:
                     sheet_instances_index = i
                     break
 
@@ -114,29 +119,23 @@ class WireManager:
 
             sch_data = sexpdata.loads(sch_content)
 
+            # Break any existing wire at the outer endpoints of the new path
+            for pt in (points[0], points[-1]):
+                splits = WireManager._break_wires_at_point(sch_data, pt)
+                if splits:
+                    logger.info(f"Broke {splits} wire(s) at new polyline endpoint {pt}")
+
             # KiCAD wire elements only support exactly 2 pts each.
             # Split N waypoints into N-1 individual wire segments.
-            wire_sexps = []
-            for i in range(len(points) - 1):
-                pts_list = [
-                    Symbol('pts'),
-                    [Symbol('xy'), points[i][0], points[i][1]],
-                    [Symbol('xy'), points[i + 1][0], points[i + 1][1]],
-                ]
-                wire_sexps.append([
-                    Symbol('wire'),
-                    pts_list,
-                    [Symbol('stroke'),
-                        [Symbol('width'), stroke_width],
-                        [Symbol('type'), Symbol(stroke_type)]
-                    ],
-                    [Symbol('uuid'), str(uuid.uuid4())]
-                ])
+            wire_sexps = [
+                WireManager._make_wire_sexp(points[i], points[i + 1], stroke_width, stroke_type)
+                for i in range(len(points) - 1)
+            ]
 
             # Find insertion point
             sheet_instances_index = None
             for i, item in enumerate(sch_data):
-                if isinstance(item, list) and len(item) > 0 and item[0] == Symbol('sheet_instances'):
+                if isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SHEET_INSTANCES:
                     sheet_instances_index = i
                     break
 
@@ -203,7 +202,7 @@ class WireManager:
             # Find insertion point
             sheet_instances_index = None
             for i, item in enumerate(sch_data):
-                if isinstance(item, list) and len(item) > 0 and item[0] == Symbol('sheet_instances'):
+                if isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SHEET_INSTANCES:
                     sheet_instances_index = i
                     break
 
@@ -230,9 +229,111 @@ class WireManager:
             return False
 
     @staticmethod
+    def _parse_wire(wire_item) -> Optional[Tuple[Tuple[float, float], Tuple[float, float], float, str]]:
+        """
+        Parse a wire S-expression item in a single pass.
+        Returns ((x1,y1), (x2,y2), stroke_width, stroke_type), or None if not a valid wire.
+        """
+        if not (isinstance(wire_item, list) and len(wire_item) >= 2
+                and wire_item[0] == _SYM_WIRE):
+            return None
+        start = end = None
+        stroke_width: float = 0
+        stroke_type: str = 'default'
+        for part in wire_item[1:]:
+            if not isinstance(part, list) or not part:
+                continue
+            tag = part[0]
+            if tag == _SYM_PTS:
+                found: List[Tuple[float, float]] = []
+                for p in part[1:]:
+                    if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_XY:
+                        found.append((float(p[1]), float(p[2])))
+                        if len(found) == 2:
+                            break
+                if len(found) == 2:
+                    start, end = found[0], found[1]
+            elif tag == _SYM_STROKE:
+                for sp in part[1:]:
+                    if isinstance(sp, list) and len(sp) >= 2:
+                        if sp[0] == _SYM_WIDTH:
+                            stroke_width = sp[1]
+                        elif sp[0] == _SYM_TYPE:
+                            stroke_type = str(sp[1])
+        if start is not None and end is not None:
+            return start, end, stroke_width, stroke_type
+        return None
+
+    @staticmethod
+    def _point_strictly_on_wire(px: float, py: float,
+                                x1: float, y1: float,
+                                x2: float, y2: float,
+                                eps: float = 1e-6) -> bool:
+        """
+        Return True if (px, py) lies strictly between (x1,y1) and (x2,y2)
+        on a horizontal or vertical wire segment (not at either endpoint).
+        """
+        if abs(y1 - y2) < eps:  # horizontal wire
+            if abs(py - y1) > eps:
+                return False
+            lo, hi = min(x1, x2), max(x1, x2)
+            return lo + eps < px < hi - eps
+        if abs(x1 - x2) < eps:  # vertical wire
+            if abs(px - x1) > eps:
+                return False
+            lo, hi = min(y1, y2), max(y1, y2)
+            return lo + eps < py < hi - eps
+        return False
+
+    @staticmethod
+    def _make_wire_sexp(start: List[float], end: List[float],
+                        stroke_width: float = 0, stroke_type: str = 'default') -> list:
+        return [
+            _SYM_WIRE,
+            [_SYM_PTS,
+                [_SYM_XY, start[0], start[1]],
+                [_SYM_XY, end[0], end[1]]],
+            [_SYM_STROKE,
+                [_SYM_WIDTH, stroke_width],
+                [_SYM_TYPE, Symbol(stroke_type)]],
+            [_SYM_UUID, str(uuid.uuid4())]
+        ]
+
+    @staticmethod
+    def _break_wires_at_point(sch_data: list, position: List[float]) -> int:
+        """
+        Split any wire segment that passes through *position* as a strict
+        midpoint (i.e. position is not an existing endpoint).  Mirrors
+        KiCAD's SCH_LINE_WIRE_BUS_TOOL::BreakSegments behaviour.
+
+        Returns the number of wires split.
+        """
+        px, py = float(position[0]), float(position[1])
+        splits = 0
+        i = 0
+        while i < len(sch_data):
+            parsed = WireManager._parse_wire(sch_data[i])
+            if parsed is not None:
+                (x1, y1), (x2, y2), stroke_width, stroke_type = parsed
+                if WireManager._point_strictly_on_wire(px, py, x1, y1, x2, y2):
+                    seg_a = WireManager._make_wire_sexp([x1, y1], [px, py], stroke_width, stroke_type)
+                    seg_b = WireManager._make_wire_sexp([px, py], [x2, y2], stroke_width, stroke_type)
+                    sch_data[i:i + 1] = [seg_a, seg_b]
+                    logger.info(f"Split wire ({x1},{y1})->({x2},{y2}) at ({px},{py})")
+                    splits += 1
+                    i += 2  # skip the two new segments
+                    continue
+            i += 1
+        return splits
+
+    @staticmethod
     def add_junction(schematic_path: Path, position: List[float], diameter: float = 0) -> bool:
         """
-        Add a junction (connection dot) to the schematic
+        Add a junction (connection dot) to the schematic.
+
+        Mirrors KiCAD's AddJunction behaviour: any wire whose interior passes
+        through *position* is split into two segments at that point so that
+        the BFS-based get_wire_connections tool can traverse the T/X branch.
 
         Args:
             schematic_path: Path to .kicad_sch file
@@ -249,6 +350,11 @@ class WireManager:
 
             sch_data = sexpdata.loads(sch_content)
 
+            # Split any wire that passes through the junction as a midpoint
+            splits = WireManager._break_wires_at_point(sch_data, position)
+            if splits:
+                logger.info(f"Broke {splits} wire(s) at junction position {position}")
+
             # Create junction S-expression
             # Format: (junction (at x y) (diameter 0) (color 0 0 0 0) (uuid ...))
             junction_sexp = [
@@ -262,7 +368,7 @@ class WireManager:
             # Find insertion point
             sheet_instances_index = None
             for i, item in enumerate(sch_data):
-                if isinstance(item, list) and len(item) > 0 and item[0] == Symbol('sheet_instances'):
+                if isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SHEET_INSTANCES:
                     sheet_instances_index = i
                     break
 
@@ -318,7 +424,7 @@ class WireManager:
             # Find insertion point
             sheet_instances_index = None
             for i, item in enumerate(sch_data):
-                if isinstance(item, list) and len(item) > 0 and item[0] == Symbol('sheet_instances'):
+                if isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SHEET_INSTANCES:
                     sheet_instances_index = i
                     break
 
