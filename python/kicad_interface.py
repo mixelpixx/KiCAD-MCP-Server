@@ -1438,7 +1438,10 @@ class KiCADInterface:
             if not all([schematic_path, x is not None, y is not None]):
                 return {"success": False, "message": "Missing required parameters: schematicPath, x, y"}
 
-            x, y = float(x), float(y)
+            try:
+                x, y = float(x), float(y)
+            except (TypeError, ValueError):
+                return {"success": False, "message": "Parameters x and y must be numeric"}
             tolerance = 0.5
 
             def points_coincide(p1, p2):
@@ -1482,7 +1485,7 @@ class KiCADInterface:
             # Spatial index: grid-snapped dict for O(1) proximity lookup
             import math
             GRID = 0.05  # mm, matches KiCAD schematic grid
-            grid_radius = math.ceil(tolerance / GRID)  # cells to check per axis
+            grid_radius = math.ceil(tolerance / GRID) + 1  # cells to check per axis (+1 safety margin for banker's rounding)
 
             def _grid_key(x_coord, y_coord):
                 return (round(x_coord / GRID), round(y_coord / GRID))
@@ -1551,28 +1554,25 @@ class KiCADInterface:
             processed_refs = set()
 
             for symbol in schematic.symbol:
-                if not hasattr(symbol.property, "Reference"):
-                    continue
-                ref = symbol.property.Reference.value
-                if ref.startswith("_TEMPLATE"):
-                    continue
-                if ref in processed_refs:
-                    continue
-                processed_refs.add(ref)
-
                 try:
+                    if not hasattr(symbol, 'property') or not hasattr(symbol.property, "Reference"):
+                        continue
+                    ref = symbol.property.Reference.value
+                    if ref.startswith("_TEMPLATE"):
+                        continue
+                    if ref in processed_refs:
+                        continue
+                    processed_refs.add(ref)
                     all_pins = locator.get_all_symbol_pins(Path(schematic_path), ref)
                     if not all_pins:
                         continue
                     for pin_num, pin_data in all_pins.items():
                         pin_loc = [pin_data[0], pin_data[1]]
-                        for cp in connected_points:
-                            if points_coincide(pin_loc, list(cp)):
-                                key = (ref, pin_num)
-                                if key not in seen:
-                                    seen.add(key)
-                                    pins.append({"component": ref, "pin": pin_num})
-                                break
+                        if _frontier_has_neighbour(pin_loc[0], pin_loc[1]):
+                            key = (ref, pin_num)
+                            if key not in seen:
+                                seen.add(key)
+                                pins.append({"component": ref, "pin": pin_num})
                 except Exception as e:
                     logger.warning(f"Error checking pins for {ref}: {e}")
 
