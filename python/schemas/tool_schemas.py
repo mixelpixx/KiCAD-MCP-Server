@@ -1472,6 +1472,29 @@ SCHEMATIC_TOOLS = [
         },
     },
     {
+        "name": "get_wire_connections",
+        "title": "Get Wire Connections",
+        "description": "Returns all wires and component pins connected to the wire at a given point, by flood-filling through touching wires.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to schematic file"
+                },
+                "x": {
+                    "type": "number",
+                    "description": "X coordinate of the point on the wire"
+                },
+                "y": {
+                    "type": "number",
+                    "description": "Y coordinate of the point on the wire"
+                }
+            },
+            "required": ["schematicPath", "x", "y"]
+        }
+    },
+    {
         "name": "get_schematic_pin_locations",
         "title": "Get Schematic Pin Locations",
         "description": "Returns the exact absolute coordinates of all pins on a schematic component. Use this BEFORE placing net labels with add_schematic_net_label to get the correct x/y position for each pin endpoint.",
