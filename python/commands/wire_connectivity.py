@@ -36,29 +36,13 @@ def _parse_wires(schematic) -> List[List[Tuple[int, int]]]:
     return all_wires
 
 
-def _parse_junctions(schematic) -> List[Tuple[int, int]]:
-    """Extract junction points from a schematic object as IU tuples.
-
-    Junctions may be exposed via schematic.junction (kicad-skip attribute) or
-    might not exist. Handle both cases gracefully.
-    """
-    junctions = []
-    if not hasattr(schematic, 'junction'):
-        return junctions
-    for junc in schematic.junction:
-        try:
-            if hasattr(junc, 'at') and hasattr(junc.at, 'value'):
-                junctions.append(_to_iu(float(junc.at.value[0]), float(junc.at.value[1])))
-        except (IndexError, TypeError, ValueError):
-            continue
-    return junctions
-
-
 def _build_adjacency(
     all_wires: List[List[Tuple[int, int]]],
-    junctions: List[Tuple[int, int]],
 ) -> Tuple[List[Set[int]], Dict[Tuple[int, int], Set[int]]]:
     """Build wire adjacency using exact IU coordinate matching.
+
+    Wires that share an endpoint are adjacent — this naturally handles
+    junctions since all wires meeting at the same point get connected.
 
     Returns a tuple of:
       - adjacency: list of sets, one per wire, containing adjacent wire indices
@@ -74,15 +58,6 @@ def _build_adjacency(
     # Wires that share an IU endpoint are adjacent
     adjacency: List[Set[int]] = [set() for _ in range(len(all_wires))]
     for wire_set in iu_to_wires.values():
-        wire_list = list(wire_set)
-        for a in wire_list:
-            for b in wire_list:
-                if a != b:
-                    adjacency[a].add(b)
-
-    # Junctions: connect all wires that have an endpoint at the junction IU point
-    for junc_iu in junctions:
-        wire_set = iu_to_wires.get(junc_iu, set())
         wire_list = list(wire_set)
         for a in wire_list:
             for b in wire_list:
@@ -194,8 +169,7 @@ def get_wire_connections(schematic, schematic_path: str, x_mm: float, y_mm: floa
     if not all_wires:
         return {"pins": [], "wires": []}
 
-    junctions = _parse_junctions(schematic)
-    adjacency, iu_to_wires = _build_adjacency(all_wires, junctions)
+    adjacency, iu_to_wires = _build_adjacency(all_wires)
 
     visited, net_points = _find_connected_wires(x_mm, y_mm, all_wires, iu_to_wires, adjacency)
     if visited is None:
