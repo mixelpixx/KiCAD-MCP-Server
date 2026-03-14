@@ -2325,6 +2325,7 @@ class KiCADInterface:
         """Find all component pins reachable from a point via connected wires"""
         logger.info("Getting wire connections")
         try:
+            import math
             from pathlib import Path
             from commands.pin_locator import PinLocator
 
@@ -2332,14 +2333,20 @@ class KiCADInterface:
             x = params.get("x")
             y = params.get("y")
 
-            if not all([schematic_path, x is not None, y is not None]):
+            if not (schematic_path and x is not None and y is not None):
                 return {"success": False, "message": "Missing required parameters: schematicPath, x, y"}
 
             try:
                 x, y = float(x), float(y)
             except (TypeError, ValueError):
                 return {"success": False, "message": "Parameters x and y must be numeric"}
+
             tolerance = 0.5
+            GRID = 0.05  # mm, matches KiCAD schematic grid
+            grid_radius = math.ceil(tolerance / GRID) + 1  # +1 safety margin for banker's rounding
+
+            def _grid_key(x_coord, y_coord):
+                return (round(x_coord / GRID), round(y_coord / GRID))
 
             def points_coincide(p1, p2):
                 return abs(p1[0] - p2[0]) < tolerance and abs(p1[1] - p2[1]) < tolerance
@@ -2351,93 +2358,88 @@ class KiCADInterface:
             if not hasattr(schematic, "wire"):
                 return {"success": False, "message": "Schematic has no wires"}
 
-            # Collect all wires as list of point sequences
+            # Collect all wires as list of endpoint tuples
             all_wires = []
             for wire in schematic.wire:
                 if hasattr(wire, "pts") and hasattr(wire.pts, "xy"):
                     pts = []
                     for point in wire.pts.xy:
                         if hasattr(point, "value"):
-                            pts.append([float(point.value[0]), float(point.value[1])])
+                            pts.append((float(point.value[0]), float(point.value[1])))
                     if len(pts) >= 2:
                         all_wires.append(pts)
 
-            # Step 1: Find all seed wires that touch the given point (start or end)
-            query_point = [x, y]
-            seed_indices = set(
-                i for i, pts in enumerate(all_wires)
-                if any(points_coincide(pt, query_point) for pt in pts)
-            )
+            # Build spatial index: grid_cell -> list of (wire_index, endpoint) pairs
+            endpoint_index = {}
+            for i, pts in enumerate(all_wires):
+                for pt in pts:
+                    endpoint_index.setdefault(_grid_key(pt[0], pt[1]), []).append((i, pt))
 
+            # Pre-compile adjacency list: wire_index -> set of connected wire indices.
+            # Two wires are adjacent when any of their endpoints coincide.
+            adjacency = [set() for _ in range(len(all_wires))]
+            for i, pts in enumerate(all_wires):
+                for pt in pts:
+                    cx, cy = _grid_key(pt[0], pt[1])
+                    for dx in range(-grid_radius, grid_radius + 1):
+                        for dy in range(-grid_radius, grid_radius + 1):
+                            for j, ept in endpoint_index.get((cx + dx, cy + dy), ()):
+                                if j != i and points_coincide(pt, ept):
+                                    adjacency[i].add(j)
+
+            # Also build a quick lookup from grid cell to wire indices for the seed query
+            def _wires_near_point(px, py):
+                """Return indices of wires with an endpoint within tolerance of (px, py)."""
+                cx, cy = _grid_key(px, py)
+                result = set()
+                for dx in range(-grid_radius, grid_radius + 1):
+                    for dy in range(-grid_radius, grid_radius + 1):
+                        for j, ept in endpoint_index.get((cx + dx, cy + dy), ()):
+                            if points_coincide((px, py), ept):
+                                result.add(j)
+                return result
+
+            # Step 1: Seed — find wires touching the query point
+            seed_indices = _wires_near_point(x, y)
             if not seed_indices:
                 return {
                     "success": False,
                     "message": f"No wire found at ({x},{y}) within {tolerance}mm tolerance",
                 }
 
-            # Step 2: Flood-fill through connected wires
-            connected_indices = set(seed_indices)
-            frontier = set((pt[0], pt[1]) for i in seed_indices for pt in all_wires[i])
+            # Step 2: BFS flood-fill using pre-compiled adjacency (O(1) per edge)
+            visited = set(seed_indices)
+            queue = list(seed_indices)
+            net_points = set()
+            for i in seed_indices:
+                net_points.update(all_wires[i])
 
-            # Spatial index: grid-snapped dict for O(1) proximity lookup
-            import math
-            GRID = 0.05  # mm, matches KiCAD schematic grid
-            grid_radius = math.ceil(tolerance / GRID) + 1  # cells to check per axis (+1 safety margin for banker's rounding)
+            while queue:
+                wire_idx = queue.pop()
+                for neighbor_idx in adjacency[wire_idx]:
+                    if neighbor_idx not in visited:
+                        visited.add(neighbor_idx)
+                        queue.append(neighbor_idx)
+                        net_points.update(all_wires[neighbor_idx])
 
-            def _grid_key(x_coord, y_coord):
-                return (round(x_coord / GRID), round(y_coord / GRID))
+            connected_wires = [all_wires[i] for i in visited]
 
-            # frontier_grid maps grid cell -> list of (x, y) frontier points in that cell
-            frontier_grid = {}
-            for fp in frontier:
-                key = _grid_key(fp[0], fp[1])
-                frontier_grid.setdefault(key, []).append(fp)
+            # Build a grid over net_points for fast pin proximity checks
+            net_grid = {}
+            for pt in net_points:
+                net_grid.setdefault(_grid_key(pt[0], pt[1]), []).append(pt)
 
-            def _frontier_has_neighbour(px, py):
-                """Check if any frontier point is within tolerance of (px, py)."""
+            def _on_net(px, py):
+                """Return True if (px, py) is within tolerance of any net point."""
                 cx, cy = _grid_key(px, py)
                 for dx in range(-grid_radius, grid_radius + 1):
                     for dy in range(-grid_radius, grid_radius + 1):
-                        cell = (cx + dx, cy + dy)
-                        cell_points = frontier_grid.get(cell)
-                        if cell_points:
-                            for fp in cell_points:
-                                if abs(px - fp[0]) < tolerance and abs(py - fp[1]) < tolerance:
-                                    return True
+                        for npt in net_grid.get((cx + dx, cy + dy), ()):
+                            if points_coincide((px, py), npt):
+                                return True
                 return False
 
-            def _add_to_frontier_grid(pt):
-                key = _grid_key(pt[0], pt[1])
-                frontier_grid.setdefault(key, []).append(pt)
-
-            remaining_indices = [i for i in range(len(all_wires)) if i not in seed_indices]
-            changed = True
-            while changed:
-                changed = False
-                still_remaining = []
-                for i in remaining_indices:
-                    pts = all_wires[i]
-                    wire_points = [(pt[0], pt[1]) for pt in pts]
-                    if any(_frontier_has_neighbour(wp[0], wp[1]) for wp in wire_points):
-                        connected_indices.add(i)
-                        for pt in pts:
-                            p = (pt[0], pt[1])
-                            frontier.add(p)
-                            _add_to_frontier_grid(p)
-                        changed = True
-                    else:
-                        still_remaining.append(i)
-                remaining_indices = still_remaining
-
-            connected_wires = [all_wires[i] for i in connected_indices]
-
-            # Step 3: Collect all points from connected wires
-            connected_points = set()
-            for pts in connected_wires:
-                for pt in pts:
-                    connected_points.add((pt[0], pt[1]))
-
-            # Step 4: Find component pins at connected points
+            # Step 3: Output wires
             wires_out = [
                 {"start": {"x": pts[0][0], "y": pts[0][1]}, "end": {"x": pts[-1][0], "y": pts[-1][1]}}
                 for pts in connected_wires
@@ -2445,12 +2447,15 @@ class KiCADInterface:
             if not hasattr(schematic, "symbol"):
                 return {"success": True, "pins": [], "wires": wires_out}
 
+            # Step 4: Find component pins that land on the net
             locator = PinLocator()
             pins = []
             seen = set()
             processed_refs = set()
 
+            ref: str | None = None
             for symbol in schematic.symbol:
+                ref = None
                 try:
                     if not hasattr(symbol, 'property') or not hasattr(symbol.property, "Reference"):
                         continue
@@ -2464,14 +2469,13 @@ class KiCADInterface:
                     if not all_pins:
                         continue
                     for pin_num, pin_data in all_pins.items():
-                        pin_loc = [pin_data[0], pin_data[1]]
-                        if _frontier_has_neighbour(pin_loc[0], pin_loc[1]):
+                        if _on_net(pin_data[0], pin_data[1]):
                             key = (ref, pin_num)
                             if key not in seen:
                                 seen.add(key)
                                 pins.append({"component": ref, "pin": pin_num})
                 except Exception as e:
-                    logger.warning(f"Error checking pins for {ref}: {e}")
+                    logger.warning(f"Error checking pins for {ref if ref is not None else '<unknown>'}: {e}")
 
             return {"success": True, "pins": pins, "wires": wires_out}
 
