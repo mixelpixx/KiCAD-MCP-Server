@@ -1680,6 +1680,131 @@ SCHEMATIC_TOOLS = [
             },
             "required": ["schematicPath", "outputPath"]
         }
+    },
+    # --- Schematic Analysis Tools (read-only) ---
+    {
+        "name": "get_schematic_view_region",
+        "title": "Get Schematic View Region",
+        "description": "Exports a cropped region of the schematic as an image (PNG or SVG). Specify a bounding box in schematic mm coordinates to zoom into a specific area.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file"
+                },
+                "x1": {
+                    "type": "number",
+                    "description": "Left X coordinate of the region in mm"
+                },
+                "y1": {
+                    "type": "number",
+                    "description": "Top Y coordinate of the region in mm"
+                },
+                "x2": {
+                    "type": "number",
+                    "description": "Right X coordinate of the region in mm"
+                },
+                "y2": {
+                    "type": "number",
+                    "description": "Bottom Y coordinate of the region in mm"
+                },
+                "format": {
+                    "type": "string",
+                    "enum": ["png", "svg"],
+                    "description": "Output image format (default: png)"
+                },
+                "width": {
+                    "type": "integer",
+                    "description": "Output image width in pixels (default: 800)"
+                },
+                "height": {
+                    "type": "integer",
+                    "description": "Output image height in pixels (default: 600)"
+                }
+            },
+            "required": ["schematicPath", "x1", "y1", "x2", "y2"]
+        }
+    },
+    {
+        "name": "find_unconnected_pins",
+        "title": "Find Unconnected Pins",
+        "description": "Lists all component pins in the schematic that have no wire, label, or power symbol touching them. Useful for checking connectivity before running ERC. Skips power symbols, template symbols, and pins with no_connect flags.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file"
+                }
+            },
+            "required": ["schematicPath"]
+        }
+    },
+    {
+        "name": "find_overlapping_elements",
+        "title": "Find Overlapping Elements",
+        "description": "Detects spatially overlapping symbols, wires, and labels in the schematic. Finds: duplicate power symbols at the same position, collinear overlapping wire segments, and labels stacked on top of each other.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file"
+                },
+                "tolerance": {
+                    "type": "number",
+                    "description": "Distance in mm below which elements are considered overlapping (default: 0.5)"
+                }
+            },
+            "required": ["schematicPath"]
+        }
+    },
+    {
+        "name": "get_elements_in_region",
+        "title": "Get Elements in Region",
+        "description": "Lists all symbols, wires, and labels within a rectangular region of the schematic. Useful for understanding what is in a specific area before modifying it.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file"
+                },
+                "x1": {
+                    "type": "number",
+                    "description": "Left X coordinate of the region in mm"
+                },
+                "y1": {
+                    "type": "number",
+                    "description": "Top Y coordinate of the region in mm"
+                },
+                "x2": {
+                    "type": "number",
+                    "description": "Right X coordinate of the region in mm"
+                },
+                "y2": {
+                    "type": "number",
+                    "description": "Bottom Y coordinate of the region in mm"
+                }
+            },
+            "required": ["schematicPath", "x1", "y1", "x2", "y2"]
+        }
+    },
+    {
+        "name": "check_wire_collisions",
+        "title": "Check Wire Collisions",
+        "description": "Detects wires that pass through component bodies without connecting to their pins. These are usually routing mistakes where a wire crosses over a symbol instead of connecting to it. Uses pin-based bounding boxes (approximate but effective for 80/20 detection).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file"
+                }
+            },
+            "required": ["schematicPath"]
+        }
     }
 ]
 

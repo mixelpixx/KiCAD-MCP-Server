@@ -398,6 +398,12 @@ class KiCADInterface:
             "delete_schematic_net_label": self._handle_delete_schematic_net_label,
             "export_schematic_pdf": self._handle_export_schematic_pdf,
             "export_schematic_svg": self._handle_export_schematic_svg,
+            # Schematic analysis tools (read-only)
+            "get_schematic_view_region": self._handle_get_schematic_view_region,
+            "find_unconnected_pins": self._handle_find_unconnected_pins,
+            "find_overlapping_elements": self._handle_find_overlapping_elements,
+            "get_elements_in_region": self._handle_get_elements_in_region,
+            "check_wire_collisions": self._handle_check_wire_collisions,
             "import_svg_logo": self._handle_import_svg_logo,
             # UI/Process management commands
             "check_kicad_ui": self._handle_check_kicad_ui,
@@ -2554,6 +2560,205 @@ class KiCADInterface:
             logger.error(f"Error in sync_schematic_to_board: {e}")
             import traceback
 
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    # ===================================================================
+    # Schematic analysis tools (read-only)
+    # ===================================================================
+
+    def _handle_get_schematic_view_region(self, params):
+        """Export a cropped region of the schematic as an image"""
+        logger.info("Exporting schematic view region")
+        import subprocess
+        import tempfile
+        import os
+        import base64
+
+        try:
+            schematic_path = params.get("schematicPath")
+            if not schematic_path or not os.path.exists(schematic_path):
+                return {"success": False, "message": "Schematic file not found"}
+
+            x1 = float(params.get("x1", 0))
+            y1 = float(params.get("y1", 0))
+            x2 = float(params.get("x2", 297))
+            y2 = float(params.get("y2", 210))
+            out_format = params.get("format", "png")
+            width = int(params.get("width", 800))
+            height = int(params.get("height", 600))
+
+            kicad_cli = self.design_rule_commands._find_kicad_cli()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found"}
+
+            with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as tmp:
+                svg_output = tmp.name
+
+            try:
+                cmd = [kicad_cli, "sch", "export", "svg", "--output", svg_output, schematic_path]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+                if result.returncode != 0:
+                    return {"success": False, "message": f"SVG export failed: {result.stderr}"}
+
+                import xml.etree.ElementTree as ET
+                tree = ET.parse(svg_output)
+                root = tree.getroot()
+
+                # Read original viewBox to determine SVG coordinate mapping
+                ns = {"svg": "http://www.w3.org/2000/svg"}
+                vb = root.get("viewBox", "")
+                if vb:
+                    parts = vb.split()
+                    if len(parts) == 4:
+                        # KiCad SVG viewBox is in mils (1 mil = 0.0254 mm)
+                        # or internal units. Detect scale from original viewBox.
+                        orig_vb_x = float(parts[0])
+                        orig_vb_y = float(parts[1])
+                        orig_vb_w = float(parts[2])
+                        orig_vb_h = float(parts[3])
+
+                        # KiCad schematic SVGs use mils (1/1000 inch) as user units
+                        # 1 mm = 39.3701 mils
+                        mils_per_mm = 39.3701
+
+                        new_x = orig_vb_x + x1 * mils_per_mm
+                        new_y = orig_vb_y + y1 * mils_per_mm
+                        new_w = (x2 - x1) * mils_per_mm
+                        new_h = (y2 - y1) * mils_per_mm
+
+                        root.set("viewBox", f"{new_x} {new_y} {new_w} {new_h}")
+                        root.set("width", str(width))
+                        root.set("height", str(height))
+
+                # Write modified SVG
+                cropped_svg_path = svg_output + ".cropped.svg"
+                tree.write(cropped_svg_path, xml_declaration=True, encoding="utf-8")
+
+                if out_format == "svg":
+                    with open(cropped_svg_path, "r", encoding="utf-8") as f:
+                        svg_data = f.read()
+                    return {"success": True, "imageData": svg_data, "format": "svg"}
+                else:
+                    try:
+                        from cairosvg import svg2png
+                    except ImportError:
+                        return {"success": False, "message": "PNG export requires the 'cairosvg' package. Install it with: pip install cairosvg"}
+                    png_data = svg2png(url=cropped_svg_path, output_width=width, output_height=height)
+                    return {
+                        "success": True,
+                        "imageData": base64.b64encode(png_data).decode("utf-8"),
+                        "format": "png",
+                    }
+            finally:
+                for f in [svg_output, svg_output + ".cropped.svg"]:
+                    if os.path.exists(f):
+                        os.unlink(f)
+
+        except Exception as e:
+            logger.error(f"Error in get_schematic_view_region: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_find_unconnected_pins(self, params):
+        """Find all component pins with no wire, label, or power symbol touching them"""
+        logger.info("Finding unconnected pins in schematic")
+        try:
+            from pathlib import Path
+            from commands.schematic_analysis import find_unconnected_pins
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            result = find_unconnected_pins(Path(schematic_path))
+            return {
+                "success": True,
+                "unconnectedPins": result,
+                "count": len(result),
+                "message": f"Found {len(result)} unconnected pin(s)",
+            }
+        except Exception as e:
+            logger.error(f"Error finding unconnected pins: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_find_overlapping_elements(self, params):
+        """Detect spatially overlapping symbols, wires, and labels"""
+        logger.info("Finding overlapping elements in schematic")
+        try:
+            from pathlib import Path
+            from commands.schematic_analysis import find_overlapping_elements
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            tolerance = float(params.get("tolerance", 0.5))
+            result = find_overlapping_elements(Path(schematic_path), tolerance)
+            return {
+                "success": True,
+                **result,
+                "message": f"Found {result['totalOverlaps']} overlap(s)",
+            }
+        except Exception as e:
+            logger.error(f"Error finding overlapping elements: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_get_elements_in_region(self, params):
+        """List all wires, labels, and symbols within a rectangular region"""
+        logger.info("Getting elements in schematic region")
+        try:
+            from pathlib import Path
+            from commands.schematic_analysis import get_elements_in_region
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            x1 = float(params.get("x1", 0))
+            y1 = float(params.get("y1", 0))
+            x2 = float(params.get("x2", 0))
+            y2 = float(params.get("y2", 0))
+
+            result = get_elements_in_region(Path(schematic_path), x1, y1, x2, y2)
+            return {
+                "success": True,
+                **result,
+                "message": f"Found {result['counts']['symbols']} symbols, {result['counts']['wires']} wires, {result['counts']['labels']} labels in region",
+            }
+        except Exception as e:
+            logger.error(f"Error getting elements in region: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_check_wire_collisions(self, params):
+        """Detect wires passing through component bodies without connecting to their pins"""
+        logger.info("Checking wire collisions in schematic")
+        try:
+            from pathlib import Path
+            from commands.schematic_analysis import check_wire_collisions
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            result = check_wire_collisions(Path(schematic_path))
+            return {
+                "success": True,
+                "collisions": result,
+                "count": len(result),
+                "message": f"Found {len(result)} wire collision(s)",
+            }
+        except Exception as e:
+            logger.error(f"Error checking wire collisions: {e}")
+            import traceback
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
