@@ -160,10 +160,14 @@ def _find_pins_on_net(
 def get_wire_connections(schematic, schematic_path: str, x_mm: float, y_mm: float) -> Optional[Dict]:
     """Find all component pins reachable from a point via connected wires.
 
+    The query point (x_mm, y_mm) must be within _QUERY_TOLERANCE_IU (0.5 mm) of
+    a wire endpoint or junction. Interior (mid-segment) points are not matched —
+    use wire endpoint coordinates obtained from the schematic data.
+
     Returns dict with keys:
       - "pins": list of {"component": str, "pin": str}
       - "wires": list of {"start": {"x", "y"}, "end": {"x", "y"}} in mm
-    Or None if no wire found at the query point.
+    Or None if no wire endpoint found within tolerance of the query point.
     """
     all_wires = _parse_wires(schematic)
     if not all_wires:

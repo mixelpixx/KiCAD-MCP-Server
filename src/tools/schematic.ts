@@ -428,11 +428,11 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
   // Get wire connections
   server.tool(
     "get_wire_connections",
-    "Find all component pins reachable from a schematic point via connected wires. Provide any point on a wire (start, end, or junction) to get all pins on that net.",
+    "Find all component pins reachable from a schematic point via connected wires. The query point must be at a wire endpoint or junction — midpoints of wire segments are not matched. Use get_schematic_pin_locations or list_schematic_wires to obtain exact endpoint coordinates first.",
     {
       schematicPath: z.string().describe("Path to the schematic file"),
-      x: z.number().describe("X coordinate of the point on the wire"),
-      y: z.number().describe("Y coordinate of the point on the wire"),
+      x: z.number().describe("X coordinate of a wire endpoint or junction"),
+      y: z.number().describe("Y coordinate of a wire endpoint or junction"),
     },
     async (args: { schematicPath: string; x: number; y: number }) => {
       const result = await callKicadScript("get_wire_connections", args);
