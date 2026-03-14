@@ -1418,30 +1418,8 @@ SCHEMATIC_TOOLS = [
     },
     {
         "name": "add_schematic_wire",
-        "title": "Connect Components",
-        "description": "Draws a wire connection between component pins on the schematic.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "points": {
-                    "type": "array",
-                    "description": "Array of [x, y] waypoints for the wire",
-                    "items": {
-                        "type": "array",
-                        "items": {"type": "number"},
-                        "minItems": 2,
-                        "maxItems": 2
-                    },
-                    "minItems": 2
-                }
-            },
-            "required": ["points"]
-        }
-    },
-    {
-        "name": "add_schematic_connection",
-        "title": "Add Junction/Connection Point",
-        "description": "Adds a junction (connection point) at the specified location on the schematic where wires cross and should connect.",
+        "title": "Draw Wire Between Pins",
+        "description": "Draws a wire on the schematic between two or more coordinate points. Always call get_schematic_pin_locations first to get the approximate pin coordinates, then pass them as the first and last waypoints. snapToPins (on by default) will correct any float imprecision by snapping endpoints to the exact nearest pin coordinate. To route around components, add intermediate waypoints between the start and end: e.g. [[x1,y1], [xMid,y1], [xMid,y2], [x2,y2]] routes horizontally then vertically. Intermediate waypoints are never snapped.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1449,16 +1427,29 @@ SCHEMATIC_TOOLS = [
                     "type": "string",
                     "description": "Path to schematic file"
                 },
-                "x": {
-                    "type": "number",
-                    "description": "X coordinate on schematic"
+                "waypoints": {
+                    "type": "array",
+                    "description": "Array of [x, y] coordinates defining the wire path. First and last points are the pin locations (from get_schematic_pin_locations). Add intermediate points to route around obstacles.",
+                    "items": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 2,
+                        "maxItems": 2
+                    },
+                    "minItems": 2
                 },
-                "y": {
+                "snapToPins": {
+                    "type": "boolean",
+                    "description": "When true, the first and last waypoints are snapped to the nearest schematic pin within snapTolerance mm. Intermediate waypoints are left unchanged. Enabled by default to correct float coordinate imprecision.",
+                    "default": True
+                },
+                "snapTolerance": {
                     "type": "number",
-                    "description": "Y coordinate on schematic"
+                    "description": "Maximum distance in mm to search for a nearby pin when snapToPins is enabled.",
+                    "default": 1.0
                 }
             },
-            "required": ["schematicPath", "x", "y"]
+            "required": ["schematicPath", "waypoints"]
         }
     },
     {
@@ -1679,6 +1670,28 @@ SCHEMATIC_TOOLS = [
                 }
             },
             "required": ["schematicPath", "outputPath"]
+        }
+    },
+    {
+        "name": "add_schematic_junction",
+        "title": "Add Junction to Schematic",
+        "description": "Adds a junction (connection dot) at the specified coordinates on the schematic. Junctions are required in KiCAD to mark intentional connections where wires cross or where a wire branches off another wire. Without a junction, crossing wires are not electrically connected.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to schematic file"
+                },
+                "position": {
+                    "type": "array",
+                    "description": "The [x, y] coordinates where the junction should be placed. Must be on an existing wire intersection or branch point.",
+                    "items": {"type": "number"},
+                    "minItems": 2,
+                    "maxItems": 2
+                }
+            },
+            "required": ["schematicPath", "position"]
         }
     }
 ]

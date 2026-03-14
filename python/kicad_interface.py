@@ -373,8 +373,8 @@ class KiCADInterface:
             "delete_schematic_component": self._handle_delete_schematic_component,
             "edit_schematic_component": self._handle_edit_schematic_component,
             "add_schematic_wire": self._handle_add_schematic_wire,
-            "add_schematic_connection": self._handle_add_schematic_connection,
             "add_schematic_net_label": self._handle_add_schematic_net_label,
+            "add_schematic_junction": self._handle_add_schematic_junction,
             "connect_to_net": self._handle_connect_to_net,
             "connect_passthrough": self._handle_connect_passthrough,
             "get_schematic_pin_locations": self._handle_get_schematic_pin_locations,
@@ -956,44 +956,144 @@ class KiCADInterface:
             return {"success": False, "message": str(e)}
 
     def _handle_add_schematic_wire(self, params):
-        """Add a wire to a schematic using WireManager"""
+        """Add a wire to a schematic using WireManager, with optional pin snapping"""
         logger.info("Adding wire to schematic")
         try:
             from pathlib import Path
             from commands.wire_manager import WireManager
 
             schematic_path = params.get("schematicPath")
-            start_point = params.get("startPoint")
-            end_point = params.get("endPoint")
+            points = params.get("waypoints")
             properties = params.get("properties", {})
+            snap_to_pins = params.get("snapToPins", True)
+            snap_tolerance = params.get("snapTolerance", 1.0)
 
             if not schematic_path:
                 return {"success": False, "message": "Schematic path is required"}
-            if not start_point or not end_point:
+            if not points or len(points) < 2:
                 return {
                     "success": False,
-                    "message": "Start and end points are required",
+                    "message": "At least 2 waypoints are required",
                 }
+
+            # Make a mutable copy of points
+            points = [list(p) for p in points]
+
+            # Pin snapping: adjust first and last endpoints to nearest pin
+            snapped_info = []
+            if snap_to_pins:
+                from commands.pin_locator import PinLocator
+
+                locator = PinLocator()
+                sch_path = Path(schematic_path)
+
+                # Load schematic to iterate all symbols
+                from skip import Schematic as SkipSchematic
+                sch = SkipSchematic(str(sch_path))
+
+                # Collect all pin locations: list of (ref, pin_num, [x, y])
+                all_pins = []
+                for symbol in sch.symbol:
+                    if not hasattr(symbol.property, "Reference"):
+                        continue
+                    ref = symbol.property.Reference.value
+                    if ref.startswith("_TEMPLATE"):
+                        continue
+                    pin_locs = locator.get_all_symbol_pins(sch_path, ref)
+                    for pin_num, coords in pin_locs.items():
+                        all_pins.append((ref, pin_num, coords))
+
+                def find_nearest_pin(point, tolerance):
+                    """Find the nearest pin within tolerance of a point."""
+                    best = None
+                    best_dist = tolerance
+                    for ref, pin_num, coords in all_pins:
+                        dx = point[0] - coords[0]
+                        dy = point[1] - coords[1]
+                        dist = (dx * dx + dy * dy) ** 0.5
+                        if dist <= best_dist:
+                            best_dist = dist
+                            best = (ref, pin_num, coords)
+                    return best
+
+                # Snap first endpoint
+                match = find_nearest_pin(points[0], snap_tolerance)
+                if match:
+                    ref, pin_num, coords = match
+                    logger.info(f"Snapped start point {points[0]} -> {coords} (pin {ref}/{pin_num})")
+                    snapped_info.append(f"start snapped to {ref}/{pin_num} at [{coords[0]}, {coords[1]}]")
+                    points[0] = list(coords)
+
+                # Snap last endpoint
+                match = find_nearest_pin(points[-1], snap_tolerance)
+                if match:
+                    ref, pin_num, coords = match
+                    logger.info(f"Snapped end point {points[-1]} -> {coords} (pin {ref}/{pin_num})")
+                    snapped_info.append(f"end snapped to {ref}/{pin_num} at [{coords[0]}, {coords[1]}]")
+                    points[-1] = list(coords)
 
             # Extract wire properties
             stroke_width = properties.get("stroke_width", 0)
             stroke_type = properties.get("stroke_type", "default")
 
             # Use WireManager for S-expression manipulation
-            success = WireManager.add_wire(
-                Path(schematic_path),
-                start_point,
-                end_point,
-                stroke_width=stroke_width,
-                stroke_type=stroke_type,
-            )
+            if len(points) == 2:
+                success = WireManager.add_wire(
+                    Path(schematic_path),
+                    points[0],
+                    points[1],
+                    stroke_width=stroke_width,
+                    stroke_type=stroke_type,
+                )
+            else:
+                success = WireManager.add_polyline_wire(
+                    Path(schematic_path),
+                    points,
+                    stroke_width=stroke_width,
+                    stroke_type=stroke_type,
+                )
 
             if success:
-                return {"success": True, "message": "Wire added successfully"}
+                message = "Wire added successfully"
+                if snapped_info:
+                    message += "; " + "; ".join(snapped_info)
+                return {"success": True, "message": message}
             else:
                 return {"success": False, "message": "Failed to add wire"}
         except Exception as e:
             logger.error(f"Error adding wire to schematic: {str(e)}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {
+                "success": False,
+                "message": str(e),
+                "errorDetails": traceback.format_exc(),
+            }
+
+    def _handle_add_schematic_junction(self, params):
+        """Add a junction (connection dot) to a schematic using WireManager"""
+        logger.info("Adding junction to schematic")
+        try:
+            from pathlib import Path
+            from commands.wire_manager import WireManager
+
+            schematic_path = params.get("schematicPath")
+            position = params.get("position")
+
+            if not schematic_path:
+                return {"success": False, "message": "Schematic path is required"}
+            if not position:
+                return {"success": False, "message": "Position is required"}
+
+            success = WireManager.add_junction(Path(schematic_path), position)
+
+            if success:
+                return {"success": True, "message": "Junction added successfully"}
+            else:
+                return {"success": False, "message": "Failed to add junction"}
+        except Exception as e:
+            logger.error(f"Error adding junction to schematic: {str(e)}")
             import traceback
 
             logger.error(traceback.format_exc())
@@ -1198,54 +1298,6 @@ class KiCADInterface:
         except Exception as e:
             logger.error(f"Error exporting schematic to PDF: {str(e)}")
             return {"success": False, "message": str(e)}
-
-    def _handle_add_schematic_connection(self, params):
-        """Add a pin-to-pin connection in schematic with automatic pin discovery and routing"""
-        logger.info("Adding pin-to-pin connection in schematic")
-        try:
-            from pathlib import Path
-
-            schematic_path = params.get("schematicPath")
-            source_ref = params.get("sourceRef")
-            source_pin = params.get("sourcePin")
-            target_ref = params.get("targetRef")
-            target_pin = params.get("targetPin")
-            routing = params.get(
-                "routing", "direct"
-            )  # 'direct', 'orthogonal_h', 'orthogonal_v'
-
-            if not all(
-                [schematic_path, source_ref, source_pin, target_ref, target_pin]
-            ):
-                return {"success": False, "message": "Missing required parameters"}
-
-            # Use ConnectionManager with new PinLocator and WireManager integration
-            success = ConnectionManager.add_connection(
-                Path(schematic_path),
-                source_ref,
-                source_pin,
-                target_ref,
-                target_pin,
-                routing=routing,
-            )
-
-            if success:
-                return {
-                    "success": True,
-                    "message": f"Connected {source_ref}/{source_pin} to {target_ref}/{target_pin} (routing: {routing})",
-                }
-            else:
-                return {"success": False, "message": "Failed to add connection"}
-        except Exception as e:
-            logger.error(f"Error adding schematic connection: {str(e)}")
-            import traceback
-
-            logger.error(traceback.format_exc())
-            return {
-                "success": False,
-                "message": str(e),
-                "errorDetails": traceback.format_exc(),
-            }
 
     def _handle_add_schematic_net_label(self, params):
         """Add a net label to schematic using WireManager"""
