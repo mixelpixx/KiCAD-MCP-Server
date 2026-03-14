@@ -14,7 +14,6 @@ from commands.pin_locator import PinLocator
 logger = logging.getLogger('kicad_interface')
 
 _IU_PER_MM = 10000  # KiCad schematic internal units per millimeter
-_QUERY_TOLERANCE_IU = 5000  # 0.5 mm in IU — for user-supplied query points
 
 
 def _to_iu(x_mm: float, y_mm: float) -> Tuple[int, int]:
@@ -67,29 +66,78 @@ def _build_adjacency(
     return adjacency, iu_to_wires
 
 
+def _parse_virtual_connections(schematic, schematic_path):
+    """Return virtual connectivity from net labels and power symbols.
+
+    Returns a tuple of:
+      - point_to_label: Dict[Tuple[int,int], str] — IU position → label name
+      - label_to_points: Dict[str, List[Tuple[int,int]]] — label name → list of IU positions
+    """
+    point_to_label: Dict[Tuple[int, int], str] = {}
+    label_to_points: Dict[str, List[Tuple[int, int]]] = {}
+
+    if hasattr(schematic, "label"):
+        for label in schematic.label:
+            try:
+                if not hasattr(label, "value"):
+                    continue
+                name = label.value
+                if not hasattr(label, "at") or not hasattr(label.at, "value"):
+                    continue
+                coords = label.at.value
+                pt = _to_iu(float(coords[0]), float(coords[1]))
+                point_to_label[pt] = name
+                label_to_points.setdefault(name, []).append(pt)
+            except Exception as e:
+                logger.warning(f"Error parsing net label: {e}")
+
+    if hasattr(schematic, "symbol"):
+        locator = PinLocator()
+        for symbol in schematic.symbol:
+            try:
+                if not hasattr(symbol, "property") or not hasattr(symbol.property, "Reference"):
+                    continue
+                ref = symbol.property.Reference.value
+                if not ref.startswith("#PWR"):
+                    continue
+                if ref.startswith("_TEMPLATE"):
+                    continue
+                if not hasattr(symbol.property, "Value"):
+                    continue
+                name = symbol.property.Value.value
+                all_pins = locator.get_all_symbol_pins(Path(schematic_path), ref)
+                if not all_pins or "1" not in all_pins:
+                    continue
+                pin_data = all_pins["1"]
+                pt = _to_iu(float(pin_data[0]), float(pin_data[1]))
+                point_to_label[pt] = name
+                label_to_points.setdefault(name, []).append(pt)
+            except Exception as e:
+                logger.warning(f"Error parsing power symbol: {e}")
+
+    return point_to_label, label_to_points
+
+
 def _find_connected_wires(
     x_mm: float,
     y_mm: float,
     all_wires: List[List[Tuple[int, int]]],
     iu_to_wires: Dict[Tuple[int, int], Set[int]],
     adjacency: List[Set[int]],
+    point_to_label: Optional[Dict[Tuple[int, int], str]] = None,
+    label_to_points: Optional[Dict[str, List[Tuple[int, int]]]] = None,
 ) -> Tuple:
     """BFS from query point. Returns (visited wire indices, net IU points) or (None, None).
 
-    Uses _QUERY_TOLERANCE_IU for the seed step because user-supplied coordinates
-    may be imprecise. Wire-to-wire matching inside _build_adjacency is exact.
+    Requires query point (x_mm, y_mm) to be exactly on a wire endpoint (exact IU match).
     """
     query_iu = _to_iu(x_mm, y_mm)
 
-    # Find seed wires: any wire whose endpoint is within _QUERY_TOLERANCE_IU of the query
-    seed_indices: Set[int] = set()
-    for iu_pt, wire_indices in iu_to_wires.items():
-        if (abs(iu_pt[0] - query_iu[0]) <= _QUERY_TOLERANCE_IU and
-                abs(iu_pt[1] - query_iu[1]) <= _QUERY_TOLERANCE_IU):
-            seed_indices.update(wire_indices)
-
-    if not seed_indices:
+    # Find seed wires: exact IU match on the query endpoint
+    seed_set = iu_to_wires.get(query_iu)
+    if not seed_set:
         return (None, None)
+    seed_indices: Set[int] = set(seed_set)
 
     # BFS flood-fill using pre-compiled adjacency
     visited: Set[int] = set(seed_indices)
@@ -98,6 +146,7 @@ def _find_connected_wires(
     for i in seed_indices:
         net_points.update(all_wires[i])
 
+    seen_labels: Set[str] = set()
     while queue:
         wire_idx = queue.pop()
         for neighbor_idx in adjacency[wire_idx]:
@@ -105,6 +154,20 @@ def _find_connected_wires(
                 visited.add(neighbor_idx)
                 queue.append(neighbor_idx)
                 net_points.update(all_wires[neighbor_idx])
+
+        if point_to_label and label_to_points:
+            for pt in all_wires[wire_idx]:
+                label_name = point_to_label.get(pt)
+                if label_name and label_name not in seen_labels:
+                    seen_labels.add(label_name)
+                    for other_pt in label_to_points.get(label_name, []):
+                        if other_pt == pt:
+                            continue
+                        for idx in iu_to_wires.get(other_pt, set()):
+                            if idx not in visited:
+                                visited.add(idx)
+                                queue.append(idx)
+                                net_points.update(all_wires[idx])
 
     return (visited, net_points)
 
@@ -114,21 +177,13 @@ def _find_pins_on_net(
     schematic_path,
     schematic,
 ) -> List[Dict]:
-    """Find component pins that land on net points.
-
-    Uses exact IU matching with a ±_PIN_TOLERANCE_IU neighbourhood to guard
-    against floating-point round-trip differences between wire and pin coordinates.
+    """Find component pins that land on net points using exact IU matching.
 
     Returns a list of {"component": ref, "pin": pin_num} dicts.
     """
 
     def _on_net(px_mm: float, py_mm: float) -> bool:
-        pin_iu = _to_iu(px_mm, py_mm)
-        if pin_iu in net_points:
-            return True
-        x, y = pin_iu
-        return ((x+1, y) in net_points or (x-1, y) in net_points or
-                (x, y+1) in net_points or (x, y-1) in net_points)
+        return _to_iu(px_mm, py_mm) in net_points
 
     locator = PinLocator()
     pins = []
@@ -158,11 +213,14 @@ def _find_pins_on_net(
 
 
 def get_wire_connections(schematic, schematic_path: str, x_mm: float, y_mm: float) -> Optional[Dict]:
-    """Find all component pins reachable from a point via connected wires.
+    """Find all component pins reachable from a point via connected wires, net labels, and power symbols.
 
-    The query point (x_mm, y_mm) must be within _QUERY_TOLERANCE_IU (0.5 mm) of
-    a wire endpoint or junction. Interior (mid-segment) points are not matched —
+    The query point (x_mm, y_mm) must be exactly on a wire endpoint or junction (exact IU match).
+    Interior (mid-segment) points are not matched —
     use wire endpoint coordinates obtained from the schematic data.
+
+    Net labels and power symbols are traversed: wires on the same named net are
+    treated as connected even when they are not geometrically adjacent.
 
     Returns dict with keys:
       - "pins": list of {"component": str, "pin": str}
@@ -175,7 +233,13 @@ def get_wire_connections(schematic, schematic_path: str, x_mm: float, y_mm: floa
 
     adjacency, iu_to_wires = _build_adjacency(all_wires)
 
-    visited, net_points = _find_connected_wires(x_mm, y_mm, all_wires, iu_to_wires, adjacency)
+    point_to_label, label_to_points = _parse_virtual_connections(schematic, schematic_path)
+
+    visited, net_points = _find_connected_wires(
+        x_mm, y_mm, all_wires, iu_to_wires, adjacency,
+        point_to_label=point_to_label,
+        label_to_points=label_to_points,
+    )
     if visited is None:
         return None
 
