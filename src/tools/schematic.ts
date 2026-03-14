@@ -425,6 +425,45 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
+  // Get wire connections
+  server.tool(
+    "get_wire_connections",
+    "Find all component pins reachable from a schematic point via connected wires. Provide any point on a wire (start, end, or junction) to get all pins on that net.",
+    {
+      schematicPath: z.string().describe("Path to the schematic file"),
+      x: z.number().describe("X coordinate of the point on the wire"),
+      y: z.number().describe("Y coordinate of the point on the wire"),
+    },
+    async (args: { schematicPath: string; x: number; y: number }) => {
+      const result = await callKicadScript("get_wire_connections", args);
+      if (result.success && result.pins) {
+        const pinList = result.pins
+          .map((p: any) => `  - ${p.component}/${p.pin}`)
+          .join("\n");
+        const wireList = (result.wires ?? [])
+          .map((w: any) => `  - (${w.start.x},${w.start.y}) → (${w.end.x},${w.end.y})`)
+          .join("\n");
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Pins connected at (${args.x},${args.y}):\n${pinList || "  (none found)"}\n\nWire segments:\n${wireList || "  (none)"}`,
+            },
+          ],
+        };
+      } else {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Failed to get wire connections: ${result.message || "Unknown error"}`,
+            },
+          ],
+        };
+      }
+    },
+  );
+
   // Get pin locations for a schematic component
   server.tool(
     "get_schematic_pin_locations",

@@ -382,6 +382,7 @@ class KiCADInterface:
             "connect_passthrough": self._handle_connect_passthrough,
             "get_schematic_pin_locations": self._handle_get_schematic_pin_locations,
             "get_net_connections": self._handle_get_net_connections,
+            "get_wire_connections": self._handle_get_wire_connections,
             "run_erc": self._handle_run_erc,
             "generate_netlist": self._handle_generate_netlist,
             "sync_schematic_to_board": self._handle_sync_schematic_to_board,
@@ -2318,6 +2319,129 @@ class KiCADInterface:
             return {"success": True, "connections": connections}
         except Exception as e:
             logger.error(f"Error getting net connections: {str(e)}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_get_wire_connections(self, params):
+        """Find all component pins reachable from a point via connected wires"""
+        logger.info("Getting wire connections")
+        try:
+            from pathlib import Path
+            from commands.pin_locator import PinLocator
+
+            schematic_path = params.get("schematicPath")
+            x = params.get("x")
+            y = params.get("y")
+
+            if not all([schematic_path, x is not None, y is not None]):
+                return {"success": False, "message": "Missing required parameters: schematicPath, x, y"}
+
+            x, y = float(x), float(y)
+            tolerance = 0.5
+
+            def points_coincide(p1, p2):
+                return abs(p1[0] - p2[0]) < tolerance and abs(p1[1] - p2[1]) < tolerance
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            if not hasattr(schematic, "wire"):
+                return {"success": False, "message": "Schematic has no wires"}
+
+            # Collect all wires as list of point sequences
+            all_wires = []
+            for wire in schematic.wire:
+                if hasattr(wire, "pts") and hasattr(wire.pts, "xy"):
+                    pts = []
+                    for point in wire.pts.xy:
+                        if hasattr(point, "value"):
+                            pts.append([float(point.value[0]), float(point.value[1])])
+                    if len(pts) >= 2:
+                        all_wires.append(pts)
+
+            # Step 1: Find all seed wires that touch the given point (start or end)
+            query_point = [x, y]
+            seed_wires = [
+                pts for pts in all_wires
+                if points_coincide(pts[0], query_point) or points_coincide(pts[-1], query_point)
+            ]
+
+            if not seed_wires:
+                return {
+                    "success": False,
+                    "message": f"No wire found at ({x},{y}) within {tolerance}mm tolerance",
+                }
+
+            # Step 2: Flood-fill through connected wires
+            connected_wires = list(seed_wires)
+            frontier = set((pt[0], pt[1]) for pts in seed_wires for pt in pts)
+            remaining = [w for w in all_wires if w not in seed_wires]
+            changed = True
+            while changed:
+                changed = False
+                still_remaining = []
+                for pts in remaining:
+                    wire_endpoints = {(pts[0][0], pts[0][1]), (pts[-1][0], pts[-1][1])}
+                    if any(
+                        points_coincide(list(ep), list(fp))
+                        for ep in wire_endpoints
+                        for fp in frontier
+                    ):
+                        connected_wires.append(pts)
+                        for pt in pts:
+                            frontier.add((pt[0], pt[1]))
+                        changed = True
+                    else:
+                        still_remaining.append(pts)
+                remaining = still_remaining
+
+            # Step 3: Collect all points from connected wires
+            connected_points = set()
+            for pts in connected_wires:
+                for pt in pts:
+                    connected_points.add((pt[0], pt[1]))
+
+            # Step 4: Find component pins at connected points
+            if not hasattr(schematic, "symbol"):
+                return {"success": True, "pins": []}
+
+            locator = PinLocator()
+            pins = []
+            seen = set()
+
+            for symbol in schematic.symbol:
+                if not hasattr(symbol.property, "Reference"):
+                    continue
+                ref = symbol.property.Reference.value
+                if ref.startswith("_TEMPLATE"):
+                    continue
+
+                try:
+                    all_pins = locator.get_all_symbol_pins(Path(schematic_path), ref)
+                    if not all_pins:
+                        continue
+                    for pin_num, pin_data in all_pins.items():
+                        pin_loc = [pin_data["x"], pin_data["y"]]
+                        for cp in connected_points:
+                            if points_coincide(pin_loc, list(cp)):
+                                key = (ref, pin_num)
+                                if key not in seen:
+                                    seen.add(key)
+                                    pins.append({"component": ref, "pin": pin_num})
+                                break
+                except Exception as e:
+                    logger.warning(f"Error checking pins for {ref}: {e}")
+
+            wires_out = [
+                {"start": {"x": pts[0][0], "y": pts[0][1]}, "end": {"x": pts[-1][0], "y": pts[-1][1]}}
+                for pts in connected_wires
+            ]
+            return {"success": True, "pins": pins, "wires": wires_out}
+
+        except Exception as e:
+            logger.error(f"Error getting wire connections: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
     def _handle_run_erc(self, params):
