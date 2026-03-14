@@ -226,16 +226,15 @@ class TestHandleAddSchematicWireRouting:
         assert result["success"] is True
         mock_poly.assert_called_once()
 
-    @patch("commands.wire_manager.WireManager.add_wire", return_value=True)
-    def test_points_key_fallback(self, mock_add_wire):
-        """Backward compat: 'points' key should work when 'waypoints' is absent."""
+    def test_points_key_without_waypoints_is_rejected(self):
+        """'points' key alone (without 'waypoints') is rejected — no fallback."""
         result = self.iface._handle_add_schematic_wire({
             "schematicPath": str(self.sch_path),
             "points": [[5.0, 5.0], [15.0, 5.0]],
             "snapToPins": False,
         })
-        assert result["success"] is True
-        mock_add_wire.assert_called_once()
+        assert result["success"] is False
+        assert "waypoint" in result["message"].lower()
 
     @patch("commands.wire_manager.WireManager.add_wire", return_value=False)
     def test_failure_response(self, _):
@@ -465,14 +464,15 @@ class TestIntegrationWireManager:
         wires = _find_elements(data, "wire")
         assert len(wires) == 1
 
-    def test_add_polyline_wire_writes_wire_element(self, sch):
+    def test_add_polyline_wire_creates_segments(self, sch):
+        """N waypoints should produce N-1 individual 2-point wire segments."""
         from commands.wire_manager import WireManager
         pts = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [20.0, 10.0]]
         ok = WireManager.add_polyline_wire(sch, pts)
         assert ok is True
         data = _parse_sch(sch)
         wires = _find_elements(data, "wire")
-        assert len(wires) == 1
+        assert len(wires) == 3, f"4 waypoints should produce 3 wire segments, got {len(wires)}"
 
     def test_add_junction_writes_junction_element(self, sch):
         from commands.wire_manager import WireManager
@@ -536,7 +536,7 @@ class TestIntegrationHandlerEndToEnd:
         wires = _find_elements(data, "wire")
         assert len(wires) == 1
 
-    def test_wire_handler_four_points_writes_wire(self):
+    def test_wire_handler_four_points_creates_three_segments(self):
         result = self.iface._handle_add_schematic_wire({
             "schematicPath": str(self.sch),
             "waypoints": [[0, 0], [10, 0], [10, 10], [20, 10]],
@@ -544,5 +544,358 @@ class TestIntegrationHandlerEndToEnd:
         })
         assert result["success"] is True
         data = _parse_sch(self.sch)
+        wires = _find_elements(data, "wire")
+        assert len(wires) == 3, f"4 waypoints should produce 3 wire segments, got {len(wires)}"
+
+
+# ---------------------------------------------------------------------------
+# 9. Unit tests — _point_strictly_on_wire
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestPointStrictlyOnWire:
+    """Unit tests for WireManager._point_strictly_on_wire geometry helper."""
+
+    @staticmethod
+    def _fn(px, py, x1, y1, x2, y2, eps=1e-6):
+        from commands.wire_manager import WireManager
+        return WireManager._point_strictly_on_wire(px, py, x1, y1, x2, y2, eps)
+
+    def test_horizontal_midpoint(self):
+        assert self._fn(5, 0, 0, 0, 10, 0) is True
+
+    def test_vertical_midpoint(self):
+        assert self._fn(0, 5, 0, 0, 0, 10) is True
+
+    def test_horizontal_at_start_endpoint(self):
+        """Point at wire start should NOT be strictly on wire."""
+        assert self._fn(0, 0, 0, 0, 10, 0) is False
+
+    def test_horizontal_at_end_endpoint(self):
+        """Point at wire end should NOT be strictly on wire."""
+        assert self._fn(10, 0, 0, 0, 10, 0) is False
+
+    def test_vertical_at_start_endpoint(self):
+        assert self._fn(0, 0, 0, 0, 0, 10) is False
+
+    def test_vertical_at_end_endpoint(self):
+        assert self._fn(0, 10, 0, 0, 0, 10) is False
+
+    def test_point_off_horizontal_wire(self):
+        """Point above a horizontal wire."""
+        assert self._fn(5, 1, 0, 0, 10, 0) is False
+
+    def test_point_off_vertical_wire(self):
+        """Point to the right of a vertical wire."""
+        assert self._fn(1, 5, 0, 0, 0, 10) is False
+
+    def test_point_beyond_horizontal_wire(self):
+        """Point collinear but past the end of a horizontal wire."""
+        assert self._fn(15, 0, 0, 0, 10, 0) is False
+
+    def test_point_beyond_vertical_wire(self):
+        """Point collinear but past the end of a vertical wire."""
+        assert self._fn(0, 15, 0, 0, 0, 10) is False
+
+    def test_diagonal_wire_always_false(self):
+        """Only horizontal/vertical wires are handled; diagonal → False."""
+        assert self._fn(5, 5, 0, 0, 10, 10) is False
+
+    def test_reversed_horizontal_endpoints(self):
+        """Wire endpoints reversed (x2 < x1) should still work."""
+        assert self._fn(5, 0, 10, 0, 0, 0) is True
+
+    def test_reversed_vertical_endpoints(self):
+        """Wire endpoints reversed (y2 < y1) should still work."""
+        assert self._fn(0, 5, 0, 10, 0, 0) is True
+
+    def test_near_endpoint_within_epsilon(self):
+        """Point within epsilon of endpoint should NOT be considered strictly on wire."""
+        assert self._fn(1e-7, 0, 0, 0, 10, 0) is False
+
+    def test_zero_length_wire(self):
+        """Degenerate wire with same start/end — nothing is strictly between."""
+        assert self._fn(5, 5, 5, 5, 5, 5) is False
+
+
+# ---------------------------------------------------------------------------
+# 10. Unit tests — _parse_wire
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestParseWire:
+    """Unit tests for WireManager._parse_wire S-expression parser."""
+
+    @staticmethod
+    def _fn(item):
+        from commands.wire_manager import WireManager
+        return WireManager._parse_wire(item)
+
+    def test_valid_wire(self):
+        wire = [
+            Symbol('wire'),
+            [Symbol('pts'),
+                [Symbol('xy'), 10.0, 20.0],
+                [Symbol('xy'), 30.0, 20.0]],
+            [Symbol('stroke'),
+                [Symbol('width'), 0],
+                [Symbol('type'), Symbol('default')]],
+            [Symbol('uuid'), 'abc-123']
+        ]
+        result = TestParseWire._fn(wire)
+        assert result is not None
+        start, end, width, stype = result
+        assert start == (10.0, 20.0)
+        assert end == (30.0, 20.0)
+        assert width == 0
+        assert stype == 'default'
+
+    def test_non_wire_element_returns_none(self):
+        junction = [Symbol('junction'), [Symbol('at'), 10, 20]]
+        assert TestParseWire._fn(junction) is None
+
+    def test_non_list_returns_none(self):
+        assert TestParseWire._fn("not a list") is None
+
+    def test_empty_list_returns_none(self):
+        assert TestParseWire._fn([]) is None
+
+    def test_wire_with_no_pts_returns_none(self):
+        wire = [Symbol('wire'), [Symbol('stroke'), [Symbol('width'), 0]]]
+        assert TestParseWire._fn(wire) is None
+
+    def test_wire_with_only_one_xy_returns_none(self):
+        wire = [
+            Symbol('wire'),
+            [Symbol('pts'), [Symbol('xy'), 10.0, 20.0]],
+        ]
+        assert TestParseWire._fn(wire) is None
+
+    def test_wire_without_stroke_uses_defaults(self):
+        wire = [
+            Symbol('wire'),
+            [Symbol('pts'),
+                [Symbol('xy'), 0, 0],
+                [Symbol('xy'), 10, 0]],
+        ]
+        result = TestParseWire._fn(wire)
+        assert result is not None
+        _, _, width, stype = result
+        assert width == 0
+        assert stype == 'default'
+
+
+# ---------------------------------------------------------------------------
+# 11. Unit tests — _make_wire_sexp
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestMakeWireSexp:
+    """Unit tests for WireManager._make_wire_sexp builder."""
+
+    def test_produces_valid_parseable_wire(self):
+        from commands.wire_manager import WireManager
+        sexp = WireManager._make_wire_sexp([10, 20], [30, 20])
+        parsed = WireManager._parse_wire(sexp)
+        assert parsed is not None
+        start, end, width, stype = parsed
+        assert start == (10, 20)
+        assert end == (30, 20)
+        assert width == 0
+        assert stype == 'default'
+
+    def test_custom_stroke(self):
+        from commands.wire_manager import WireManager
+        sexp = WireManager._make_wire_sexp([0, 0], [5, 0], stroke_width=0.5, stroke_type='dash')
+        parsed = WireManager._parse_wire(sexp)
+        assert parsed is not None
+        _, _, width, stype = parsed
+        assert width == 0.5
+        assert stype == 'dash'
+
+    def test_has_uuid(self):
+        from commands.wire_manager import WireManager
+        sexp = WireManager._make_wire_sexp([0, 0], [10, 0])
+        # uuid is the last element
+        uuid_entry = sexp[-1]
+        assert uuid_entry[0] == Symbol('uuid')
+        assert isinstance(uuid_entry[1], str) and len(uuid_entry[1]) > 0
+
+    def test_two_calls_produce_different_uuids(self):
+        from commands.wire_manager import WireManager
+        sexp1 = WireManager._make_wire_sexp([0, 0], [10, 0])
+        sexp2 = WireManager._make_wire_sexp([0, 0], [10, 0])
+        assert sexp1[-1][1] != sexp2[-1][1], "Each wire should have a unique UUID"
+
+
+# ---------------------------------------------------------------------------
+# 12. Unit tests — _break_wires_at_point
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestBreakWiresAtPoint:
+    """Unit tests for WireManager._break_wires_at_point T-junction logic."""
+
+    @staticmethod
+    def _make_sch_data_with_wires(wire_coords):
+        """Build a minimal sch_data list with wire elements and a sheet_instances marker."""
+        from commands.wire_manager import WireManager
+        data = [Symbol('kicad_sch')]
+        for (start, end) in wire_coords:
+            data.append(WireManager._make_wire_sexp(start, end))
+        data.append([Symbol('sheet_instances')])
+        return data
+
+    def test_split_horizontal_wire_at_midpoint(self):
+        from commands.wire_manager import WireManager
+        data = self._make_sch_data_with_wires([([0, 0], [20, 0])])
+        splits = WireManager._break_wires_at_point(data, [10, 0])
+        assert splits == 1
+        wires = _find_elements(data, "wire")
+        assert len(wires) == 2
+        # Verify the two segments share the split point
+        coords = []
+        for w in wires:
+            parsed = WireManager._parse_wire(w)
+            coords.append((parsed[0], parsed[1]))
+        endpoints = {c for pair in coords for c in pair}
+        assert (10.0, 0.0) in endpoints
+
+    def test_split_vertical_wire_at_midpoint(self):
+        from commands.wire_manager import WireManager
+        data = self._make_sch_data_with_wires([([5, 0], [5, 30])])
+        splits = WireManager._break_wires_at_point(data, [5, 15])
+        assert splits == 1
+        wires = _find_elements(data, "wire")
+        assert len(wires) == 2
+
+    def test_no_split_at_wire_endpoint(self):
+        """Point at existing endpoint should not trigger a split."""
+        from commands.wire_manager import WireManager
+        data = self._make_sch_data_with_wires([([0, 0], [20, 0])])
+        splits = WireManager._break_wires_at_point(data, [0, 0])
+        assert splits == 0
+        wires = _find_elements(data, "wire")
+        assert len(wires) == 1
+
+    def test_no_split_point_not_on_wire(self):
+        from commands.wire_manager import WireManager
+        data = self._make_sch_data_with_wires([([0, 0], [20, 0])])
+        splits = WireManager._break_wires_at_point(data, [10, 5])
+        assert splits == 0
+        wires = _find_elements(data, "wire")
+        assert len(wires) == 1
+
+    def test_split_multiple_wires_at_same_point(self):
+        """Two crossing wires at (10, 10) — both should be split."""
+        from commands.wire_manager import WireManager
+        data = self._make_sch_data_with_wires([
+            ([0, 10], [20, 10]),   # horizontal through (10,10)
+            ([10, 0], [10, 20]),   # vertical through (10,10)
+        ])
+        splits = WireManager._break_wires_at_point(data, [10, 10])
+        assert splits == 2
+        wires = _find_elements(data, "wire")
+        assert len(wires) == 4  # each wire split into 2
+
+    def test_split_preserves_stroke_properties(self):
+        from commands.wire_manager import WireManager
+        data = [Symbol('kicad_sch')]
+        data.append(WireManager._make_wire_sexp([0, 0], [20, 0], stroke_width=0.5, stroke_type='dash'))
+        data.append([Symbol('sheet_instances')])
+        splits = WireManager._break_wires_at_point(data, [10, 0])
+        assert splits == 1
+        wires = _find_elements(data, "wire")
+        for w in wires:
+            parsed = WireManager._parse_wire(w)
+            assert parsed[2] == 0.5, "stroke_width should be preserved"
+            assert parsed[3] == 'dash', "stroke_type should be preserved"
+
+    def test_no_split_on_diagonal_wire(self):
+        """Diagonal wires are not handled by _point_strictly_on_wire → no split."""
+        from commands.wire_manager import WireManager
+        data = self._make_sch_data_with_wires([([0, 0], [10, 10])])
+        splits = WireManager._break_wires_at_point(data, [5, 5])
+        assert splits == 0
+
+    def test_empty_sch_data(self):
+        from commands.wire_manager import WireManager
+        data = [Symbol('kicad_sch'), [Symbol('sheet_instances')]]
+        splits = WireManager._break_wires_at_point(data, [10, 10])
+        assert splits == 0
+
+
+# ---------------------------------------------------------------------------
+# 13. Integration tests — T-junction wire breaking
+# ---------------------------------------------------------------------------
+
+@pytest.mark.integration
+class TestIntegrationTJunction:
+    """Integration tests for T-junction wire breaking during add_wire/add_junction."""
+
+    @pytest.fixture(autouse=True)
+    def sch(self):
+        path = _make_temp_sch()
+        yield path
+        shutil.rmtree(path.parent, ignore_errors=True)
+
+    def test_add_wire_breaks_existing_horizontal_wire(self, sch):
+        """Adding a vertical wire whose endpoint is mid-horizontal-wire should split it."""
+        from commands.wire_manager import WireManager
+        # First add a horizontal wire (0,10) -> (20,10)
+        WireManager.add_wire(sch, [0, 10], [20, 10])
+        # Now add a vertical wire ending at (10,10) — the midpoint of the horizontal wire
+        WireManager.add_wire(sch, [10, 0], [10, 10])
+        data = _parse_sch(sch)
+        wires = _find_elements(data, "wire")
+        # Original horizontal wire should be split into 2, plus the new vertical = 3 total
+        assert len(wires) == 3, f"Expected 3 wires (split + new), got {len(wires)}"
+
+    def test_add_wire_does_not_break_at_shared_endpoint(self, sch):
+        """Wire connecting at an existing endpoint should not trigger a split."""
+        from commands.wire_manager import WireManager
+        WireManager.add_wire(sch, [0, 0], [10, 0])
+        # New wire starts at (10,0) — existing endpoint, not midpoint
+        WireManager.add_wire(sch, [10, 0], [10, 10])
+        data = _parse_sch(sch)
+        wires = _find_elements(data, "wire")
+        assert len(wires) == 2, f"Expected 2 wires (no split), got {len(wires)}"
+
+    def test_add_junction_breaks_wire(self, sch):
+        """Adding a junction mid-wire should split that wire."""
+        from commands.wire_manager import WireManager
+        WireManager.add_wire(sch, [0, 0], [30, 0])
+        WireManager.add_junction(sch, [15, 0])
+        data = _parse_sch(sch)
+        wires = _find_elements(data, "wire")
+        assert len(wires) == 2, f"Expected 2 wires after junction split, got {len(wires)}"
+        junctions = _find_elements(data, "junction")
+        assert len(junctions) == 1
+
+    def test_add_junction_at_wire_endpoint_no_split(self, sch):
+        """Junction at wire endpoint should not split it."""
+        from commands.wire_manager import WireManager
+        WireManager.add_wire(sch, [0, 0], [20, 0])
+        WireManager.add_junction(sch, [20, 0])
+        data = _parse_sch(sch)
+        wires = _find_elements(data, "wire")
+        assert len(wires) == 1, f"Expected 1 wire (no split at endpoint), got {len(wires)}"
+
+    def test_polyline_breaks_existing_wire(self, sch):
+        """Polyline whose start/end hits mid-wire should break it."""
+        from commands.wire_manager import WireManager
+        WireManager.add_wire(sch, [0, 10], [20, 10])
+        # Polyline starting at (10,10) — mid-horizontal-wire
+        WireManager.add_polyline_wire(sch, [[10, 10], [10, 20], [20, 20]])
+        data = _parse_sch(sch)
+        wires = _find_elements(data, "wire")
+        # 2 from split + 2 polyline segments = 4
+        assert len(wires) == 4, f"Expected 4 wires, got {len(wires)}"
+
+    def test_polyline_two_points_same_as_add_wire(self, sch):
+        """Polyline with exactly 2 points should produce 1 wire segment."""
+        from commands.wire_manager import WireManager
+        WireManager.add_polyline_wire(sch, [[0, 0], [10, 0]])
+        data = _parse_sch(sch)
         wires = _find_elements(data, "wire")
         assert len(wires) == 1
