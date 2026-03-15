@@ -150,13 +150,90 @@ def _parse_no_connects(sexp_data: list) -> Set[Tuple[float, float]]:
     return positions
 
 
-def _extract_lib_symbols(sexp_data: list) -> Dict[str, Dict[str, Dict]]:
+def _parse_lib_symbol_graphics(symbol_def: list) -> List[Tuple[float, float]]:
+    """
+    Parse graphical body elements from a lib_symbol definition and return
+    local-coordinate bounding points.
+
+    Extracts points from rectangle, polyline, circle, arc, and bezier
+    elements found in sub-symbols (typically the ``_0_1`` layers that
+    contain body shapes).
+
+    Returns a list of ``(x, y)`` points in local symbol coordinates.
+    """
+    points: List[Tuple[float, float]] = []
+
+    def _extract_graphics_recursive(sexp: list) -> None:
+        if not isinstance(sexp, list) or len(sexp) == 0:
+            return
+
+        tag = sexp[0]
+
+        if tag == Symbol("rectangle"):
+            # (rectangle (start x y) (end x y) ...)
+            for sub in sexp[1:]:
+                if isinstance(sub, list) and len(sub) >= 3:
+                    if sub[0] in (Symbol("start"), Symbol("end")):
+                        points.append((float(sub[1]), float(sub[2])))
+
+        elif tag == Symbol("polyline"):
+            # (polyline (pts (xy x y) (xy x y) ...) ...)
+            for sub in sexp[1:]:
+                if isinstance(sub, list) and len(sub) > 0 and sub[0] == Symbol("pts"):
+                    for pt in sub[1:]:
+                        if isinstance(pt, list) and len(pt) >= 3 and pt[0] == Symbol("xy"):
+                            points.append((float(pt[1]), float(pt[2])))
+
+        elif tag == Symbol("circle"):
+            # (circle (center x y) (radius r) ...)
+            cx, cy, r = 0.0, 0.0, 0.0
+            for sub in sexp[1:]:
+                if isinstance(sub, list) and len(sub) >= 3 and sub[0] == Symbol("center"):
+                    cx, cy = float(sub[1]), float(sub[2])
+                elif isinstance(sub, list) and len(sub) >= 2 and sub[0] == Symbol("radius"):
+                    r = float(sub[1])
+            if r > 0:
+                points.extend([
+                    (cx - r, cy - r),
+                    (cx + r, cy + r),
+                ])
+
+        elif tag == Symbol("arc"):
+            # (arc (start x y) (mid x y) (end x y) ...)
+            for sub in sexp[1:]:
+                if isinstance(sub, list) and len(sub) >= 3:
+                    if sub[0] in (Symbol("start"), Symbol("mid"), Symbol("end")):
+                        points.append((float(sub[1]), float(sub[2])))
+
+        elif tag == Symbol("bezier"):
+            # (bezier (pts (xy x y) ...) ...)
+            for sub in sexp[1:]:
+                if isinstance(sub, list) and len(sub) > 0 and sub[0] == Symbol("pts"):
+                    for pt in sub[1:]:
+                        if isinstance(pt, list) and len(pt) >= 3 and pt[0] == Symbol("xy"):
+                            points.append((float(pt[1]), float(pt[2])))
+
+        else:
+            # Recurse into sub-symbols to find graphics in nested definitions
+            for sub in sexp[1:]:
+                if isinstance(sub, list):
+                    _extract_graphics_recursive(sub)
+
+    # Search the top-level symbol definition and its sub-symbols
+    for item in symbol_def[1:]:
+        if isinstance(item, list):
+            _extract_graphics_recursive(item)
+
+    return points
+
+
+def _extract_lib_symbols(sexp_data: list) -> Dict[str, Dict]:
     """
     Walk the lib_symbols section of already-parsed sexp_data and return
-    pin definitions for every symbol definition.
+    pin definitions and graphics points for every symbol definition.
 
     Returns:
-        Dict mapping lib_id → pin definitions (pin_number → pin_data dict).
+        Dict mapping lib_id → {"pins": pin_defs, "graphics_points": [(x,y), ...]}.
     """
     lib_symbols_section = None
     for item in sexp_data:
@@ -168,12 +245,15 @@ def _extract_lib_symbols(sexp_data: list) -> Dict[str, Dict[str, Dict]]:
     if not lib_symbols_section:
         return {}
 
-    result: Dict[str, Dict[str, Dict]] = {}
+    result: Dict[str, Dict] = {}
     for item in lib_symbols_section[1:]:
         if (isinstance(item, list) and len(item) > 1
                 and item[0] == Symbol("symbol")):
             symbol_name = str(item[1]).strip('"')
-            result[symbol_name] = PinLocator.parse_symbol_definition(item)
+            result[symbol_name] = {
+                "pins": PinLocator.parse_symbol_definition(item),
+                "graphics_points": _parse_lib_symbol_graphics(item),
+            }
     return result
 
 
@@ -258,21 +338,48 @@ def _aabb_overlap(
     return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
 
 
+def _transform_local_point(
+    lx: float, ly: float,
+    sym_x: float, sym_y: float,
+    rotation: float,
+    mirror_x: bool, mirror_y: bool,
+) -> Tuple[float, float]:
+    """
+    Transform a point from local symbol coordinates to absolute schematic
+    coordinates using KiCad's transform order: mirror → rotate → translate.
+    """
+    # Apply mirroring in local coords
+    if mirror_x:
+        ly = -ly
+    if mirror_y:
+        lx = -lx
+
+    # Apply rotation
+    if rotation != 0:
+        lx, ly = PinLocator.rotate_point(lx, ly, rotation)
+
+    return (sym_x + lx, sym_y + ly)
+
+
 def _compute_symbol_bbox_direct(
     sym: Dict[str, Any],
     pin_defs: Dict[str, Dict],
     margin: float = 0.0,
+    graphics_points: Optional[List[Tuple[float, float]]] = None,
 ) -> Optional[Tuple[float, float, float, float]]:
     """
-    Compute bounding box of a symbol from its pin definitions and placement.
+    Compute bounding box of a symbol from its graphics and pin definitions.
 
-    Uses _compute_pin_positions_direct to get absolute pin positions, then
-    expands degenerate dimensions (pins in a line) to approximate body size.
+    When graphics_points are available (from lib_symbol body shapes), uses
+    those for the bbox and unions with pin positions. Falls back to
+    pin-only estimation with degenerate expansion when no graphics data
+    is available.
 
     Args:
         sym: Parsed symbol dict with x, y, rotation, mirror_x, mirror_y.
         pin_defs: Pin definitions from PinLocator.get_symbol_pins().
         margin: Shrink bbox by this amount on each side (mm).
+        graphics_points: Local-coordinate points from symbol body graphics.
 
     Returns (min_x, min_y, max_x, max_y) in mm, or None if no pins.
     """
@@ -280,20 +387,39 @@ def _compute_symbol_bbox_direct(
     if not pin_positions:
         return None
 
-    xs = [p[0] for p in pin_positions.values()]
-    ys = [p[1] for p in pin_positions.values()]
-    min_x, min_y, max_x, max_y = min(xs), min(ys), max(xs), max(ys)
+    if graphics_points:
+        # Transform graphics points to absolute coordinates
+        sym_x, sym_y = sym["x"], sym["y"]
+        rotation = sym["rotation"]
+        mirror_x = sym.get("mirror_x", False)
+        mirror_y = sym.get("mirror_y", False)
 
-    # Expand degenerate dimensions (pins in a line) to approximate body size
-    min_body = 1.5  # mm minimum half-extent for component body
-    if max_x - min_x < 2 * min_body:
-        cx = (min_x + max_x) / 2
-        min_x = cx - min_body
-        max_x = cx + min_body
-    if max_y - min_y < 2 * min_body:
-        cy = (min_y + max_y) / 2
-        min_y = cy - min_body
-        max_y = cy + min_body
+        abs_points = [
+            _transform_local_point(lx, ly, sym_x, sym_y, rotation, mirror_x, mirror_y)
+            for lx, ly in graphics_points
+        ]
+
+        # Union with pin positions so pins extending beyond body are included
+        all_xs = [p[0] for p in abs_points] + [p[0] for p in pin_positions.values()]
+        all_ys = [p[1] for p in abs_points] + [p[1] for p in pin_positions.values()]
+
+        min_x, min_y = min(all_xs), min(all_ys)
+        max_x, max_y = max(all_xs), max(all_ys)
+    else:
+        # Fallback: pin-only estimation with degenerate expansion
+        xs = [p[0] for p in pin_positions.values()]
+        ys = [p[1] for p in pin_positions.values()]
+        min_x, min_y, max_x, max_y = min(xs), min(ys), max(xs), max(ys)
+
+        min_body = 1.5  # mm minimum half-extent for component body
+        if max_x - min_x < 2 * min_body:
+            cx = (min_x + max_x) / 2
+            min_x = cx - min_body
+            max_x = cx + min_body
+        if max_y - min_y < 2 * min_body:
+            cy = (min_y + max_y) / 2
+            min_y = cy - min_body
+            max_y = cy + min_body
 
     # Shrink bbox by margin
     min_x += margin
@@ -372,7 +498,7 @@ def find_unconnected_pins(schematic_path: Path) -> List[Dict[str, Any]]:
                     return True
         return False
 
-    lib_pin_defs = _extract_lib_symbols(sexp_data)
+    lib_defs = _extract_lib_symbols(sexp_data)
     unconnected = []
 
     for sym in symbols:
@@ -381,7 +507,8 @@ def find_unconnected_pins(schematic_path: Path) -> List[Dict[str, Any]]:
         if sym["is_power"] or ref.startswith("_TEMPLATE") or not ref:
             continue
 
-        pin_defs = lib_pin_defs.get(sym["lib_id"], {})
+        lib_data = lib_defs.get(sym["lib_id"], {})
+        pin_defs = lib_data.get("pins", {})
         if not pin_defs:
             continue
 
@@ -434,7 +561,7 @@ def find_overlapping_elements(
     overlapping_labels = []
     overlapping_wires = []
 
-    lib_pin_defs = _extract_lib_symbols(sexp_data)
+    lib_defs = _extract_lib_symbols(sexp_data)
 
     # --- Symbol-symbol overlap using bounding-box intersection (O(n²)) ---
     non_template_symbols = [s for s in symbols if not s["reference"].startswith("_TEMPLATE") and s["reference"]]
@@ -442,10 +569,12 @@ def find_overlapping_elements(
     # Pre-compute bounding boxes for all non-template symbols
     symbol_bboxes = []
     for sym in non_template_symbols:
-        pin_defs = lib_pin_defs.get(sym["lib_id"], {})
+        lib_data = lib_defs.get(sym["lib_id"], {})
+        pin_defs = lib_data.get("pins", {})
+        graphics_points = lib_data.get("graphics_points", [])
         bbox = None
         if pin_defs:
-            bbox = _compute_symbol_bbox_direct(sym, pin_defs)
+            bbox = _compute_symbol_bbox_direct(sym, pin_defs, graphics_points=graphics_points)
         symbol_bboxes.append((sym, bbox))
 
     for i in range(len(symbol_bboxes)):
@@ -589,7 +718,7 @@ def get_elements_in_region(
     wires = _parse_wires(sexp_data)
     labels = _parse_labels(sexp_data)
 
-    lib_pin_defs = _extract_lib_symbols(sexp_data)
+    lib_defs = _extract_lib_symbols(sexp_data)
 
     # Symbols: include if position is within bounds
     region_symbols = []
@@ -604,7 +733,8 @@ def get_elements_in_region(
                 "isPower": sym["is_power"],
             }
             # Include pin positions (compute directly to handle unannotated duplicates)
-            pin_defs = lib_pin_defs.get(sym["lib_id"], {})
+            lib_data = lib_defs.get(sym["lib_id"], {})
+            pin_defs = lib_data.get("pins", {})
             if pin_defs:
                 pin_positions = _compute_pin_positions_direct(sym, pin_defs)
                 if pin_positions:
@@ -710,7 +840,7 @@ def find_wires_crossing_symbols(schematic_path: Path) -> List[Dict[str, Any]]:
     symbols = _parse_symbols(sexp_data)
     wires = _parse_wires(sexp_data)
 
-    lib_pin_defs = _extract_lib_symbols(sexp_data)
+    lib_defs = _extract_lib_symbols(sexp_data)
     margin = 0.5  # mm margin to shrink bbox (avoids false positives at pin tips)
     pin_tolerance = 0.05  # mm
 
@@ -723,11 +853,13 @@ def find_wires_crossing_symbols(schematic_path: Path) -> List[Dict[str, Any]]:
         if sym["is_power"] or ref.startswith("_TEMPLATE") or not ref:
             continue
 
-        pin_defs = lib_pin_defs.get(sym["lib_id"], {})
+        lib_data = lib_defs.get(sym["lib_id"], {})
+        pin_defs = lib_data.get("pins", {})
         if not pin_defs:
             continue
 
-        bbox = _compute_symbol_bbox_direct(sym, pin_defs, margin=margin)
+        graphics_points = lib_data.get("graphics_points", [])
+        bbox = _compute_symbol_bbox_direct(sym, pin_defs, margin=margin, graphics_points=graphics_points)
         if bbox is None:
             continue
 
