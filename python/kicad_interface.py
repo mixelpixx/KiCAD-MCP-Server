@@ -389,7 +389,7 @@ class KiCADInterface:
             "find_unconnected_pins": self._handle_find_unconnected_pins,
             "find_overlapping_elements": self._handle_find_overlapping_elements,
             "get_elements_in_region": self._handle_get_elements_in_region,
-            "check_wire_collisions": self._handle_check_wire_collisions,
+            "find_wires_crossing_symbols": self._handle_find_wires_crossing_symbols,
             "import_svg_logo": self._handle_import_svg_logo,
             # UI/Process management commands
             "check_kicad_ui": self._handle_check_kicad_ui,
@@ -1811,23 +1811,23 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_check_wire_collisions(self, params):
-        """Detect wires passing through component bodies without connecting to their pins"""
-        logger.info("Checking wire collisions in schematic")
+    def _handle_find_wires_crossing_symbols(self, params):
+        """Find wires that cross over component symbol bodies"""
+        logger.info("Finding wires crossing symbols in schematic")
         try:
             from pathlib import Path
-            from commands.schematic_analysis import check_wire_collisions
+            from commands.schematic_analysis import find_wires_crossing_symbols
 
             schematic_path = params.get("schematicPath")
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
 
-            result = check_wire_collisions(Path(schematic_path))
+            result = find_wires_crossing_symbols(Path(schematic_path))
             return {
                 "success": True,
                 "collisions": result,
                 "count": len(result),
-                "message": f"Found {len(result)} wire collision(s)",
+                "message": f"Found {len(result)} wire(s) crossing symbols",
             }
         except Exception as e:
             logger.error(f"Error checking wire collisions: {e}")

@@ -649,16 +649,21 @@ def _compute_pin_positions_direct(
     return result
 
 
-def check_wire_collisions(schematic_path: Path) -> List[Dict[str, Any]]:
+def find_wires_crossing_symbols(schematic_path: Path) -> List[Dict[str, Any]]:
     """
-    Detect wires passing through component bodies without connecting to their pins.
+    Find all wires that cross over component symbol bodies.
+
+    Wires passing over symbols are unacceptable in schematics — they indicate
+    routing mistakes where a wire was drawn across a component instead of
+    around it.
 
     For each non-power, non-template symbol:
     1. Compute bounding box from pin positions (shrunk by margin).
     2. For each wire segment, test intersection with the bbox.
-    3. If intersects but no wire endpoint matches a pin → collision.
+    3. If intersects and the wire is not simply terminating at a pin from
+       outside, report it as a crossing.
 
-    Returns list of collision dicts.
+    Returns list of crossing dicts.
     """
     sexp_data = _load_sexp(schematic_path)
     symbols = _parse_symbols(sexp_data)
@@ -717,12 +722,30 @@ def check_wire_collisions(schematic_path: Path) -> List[Dict[str, Any]]:
                 for px, py in sd["pin_set"]
             )
 
-            # Suppress only when exactly ONE endpoint is at a pin: the wire arrives
-            # from elsewhere and terminates at this component (a valid connection).
-            # If BOTH endpoints match pins of this same component, the wire shorts
-            # two pins while traversing the body — that IS a collision.
+            # When exactly one endpoint is at a pin, check whether the wire
+            # just terminates at the pin (valid connection) or continues through
+            # the component body (pass-through → collision).
+            # Nudge the pin endpoint slightly toward the other end; if the
+            # shortened segment still intersects the bbox, the wire extends
+            # into/through the body.
             if (start_at_pin or end_at_pin) and not (start_at_pin and end_at_pin):
-                continue
+                dx, dy = ex - sx, ey - sy
+                length = math.sqrt(dx * dx + dy * dy)
+                if length > 0:
+                    nudge = min(0.2, length * 0.5)
+                    ux, uy = dx / length, dy / length
+                    if start_at_pin:
+                        nsx, nsy = sx + ux * nudge, sy + uy * nudge
+                        if not _line_segment_intersects_aabb(
+                            nsx, nsy, ex, ey, bx1, by1, bx2, by2
+                        ):
+                            continue  # Wire terminates at pin from outside
+                    else:
+                        nex, ney = ex - ux * nudge, ey - uy * nudge
+                        if not _line_segment_intersects_aabb(
+                            sx, sy, nex, ney, bx1, by1, bx2, by2
+                        ):
+                            continue  # Wire terminates at pin from outside
 
             sym = sd["sym"]
             collisions.append({

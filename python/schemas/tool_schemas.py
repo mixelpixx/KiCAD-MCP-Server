@@ -1792,9 +1792,9 @@ SCHEMATIC_TOOLS = [
         }
     },
     {
-        "name": "check_wire_collisions",
-        "title": "Check Wire Collisions",
-        "description": "Detects wires that pass through component bodies without connecting to their pins. These are usually routing mistakes where a wire crosses over a symbol instead of connecting to it. Uses pin-based bounding boxes (approximate but effective for 80/20 detection).",
+        "name": "find_wires_crossing_symbols",
+        "title": "Find Wires Crossing Symbols",
+        "description": "Find all wires that cross over component symbol bodies. Wires passing over symbols are unacceptable in schematics — they indicate routing mistakes where a wire was drawn across a component instead of around it.",
         "inputSchema": {
             "type": "object",
             "properties": {

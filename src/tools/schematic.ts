@@ -701,21 +701,21 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
-  // Check wire collisions
+  // Find wires crossing symbols
   server.tool(
-    "check_wire_collisions",
-    "Detect wires that pass through component bodies without connecting to their pins. These are usually routing mistakes where a wire crosses over a symbol instead of connecting to it.",
+    "find_wires_crossing_symbols",
+    "Find all wires that cross over component symbol bodies. Wires passing over symbols are unacceptable in schematics — they indicate routing mistakes where a wire was drawn across a component instead of around it.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
     },
     async (args: { schematicPath: string }) => {
-      const result = await callKicadScript("check_wire_collisions", args);
+      const result = await callKicadScript("find_wires_crossing_symbols", args);
       if (result.success) {
         const collisions: any[] = result.collisions || [];
-        const lines = [`Found ${collisions.length} wire collision(s):`];
+        const lines = [`Found ${collisions.length} wire(s) crossing symbols:`];
         collisions.slice(0, 30).forEach((c: any, i: number) => {
           lines.push(
-            `  ${i + 1}. Wire (${c.wire.start.x},${c.wire.start.y})→(${c.wire.end.x},${c.wire.end.y}) passes through ${c.component.reference} (${c.component.libId})`
+            `  ${i + 1}. Wire (${c.wire.start.x},${c.wire.start.y})→(${c.wire.end.x},${c.wire.end.y}) crosses ${c.component.reference} (${c.component.libId})`
           );
         });
         if (collisions.length > 30) lines.push(`  ... and ${collisions.length - 30} more`);
