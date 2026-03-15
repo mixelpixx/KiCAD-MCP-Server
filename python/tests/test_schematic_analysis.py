@@ -23,7 +23,6 @@ from commands.schematic_analysis import (
     _parse_wires,
     _parse_labels,
     _parse_symbols,
-    _parse_no_connects,
     _load_sexp,
     _extract_lib_symbols,
     _parse_lib_symbol_graphics,
@@ -35,7 +34,6 @@ from commands.schematic_analysis import (
     _check_wire_overlap,
     _compute_symbol_bbox_direct,
     compute_symbol_bbox,
-    find_unconnected_pins,
     find_overlapping_elements,
     get_elements_in_region,
     find_wires_crossing_symbols,
@@ -220,16 +218,6 @@ class TestSexpParsers:
         assert symbols[1]["reference"] == "#PWR01"
         assert symbols[1]["is_power"] is True
 
-    def test_parse_no_connects(self):
-        sexp = sexpdata.loads("""(kicad_sch
-            (no_connect (at 10 20) (uuid "x"))
-            (no_connect (at 30 40) (uuid "y"))
-        )""")
-        nc = _parse_no_connects(sexp)
-        assert (10.0, 20.0) in nc
-        assert (30.0, 40.0) in nc
-        assert len(nc) == 2
-
 
 # ===================================================================
 # Unit tests — analysis functions with mocked PinLocator
@@ -375,44 +363,6 @@ class TestComputeSymbolBbox:
 # ===================================================================
 # Integration tests — full schematic parsing
 # ===================================================================
-
-@pytest.mark.integration
-class TestIntegrationFindUnconnectedPins:
-    """Integration test using real schematic files."""
-
-    def test_component_with_no_wires_has_unconnected_pins(self):
-        """A resistor placed with no wires should have 2 unconnected pins."""
-        extra = _make_resistor_sexp("R1", 100, 100)
-        tmp = _make_temp_schematic(extra)
-        result = find_unconnected_pins(tmp)
-        r1_pins = [p for p in result if p["reference"] == "R1"]
-        assert len(r1_pins) == 2
-
-    def test_pin_with_wire_is_connected(self):
-        """A wire endpoint exactly at a pin position should mark it connected."""
-        # R1 at (100,100), rotation 0 → pin 1 at (100, 103.81), pin 2 at (100, 96.19)
-        extra = _make_resistor_sexp("R1", 100, 100) + """
-        (wire (pts (xy 100 103.81) (xy 100 120))
-            (stroke (width 0) (type default))
-            (uuid "w1"))
-        """
-        tmp = _make_temp_schematic(extra)
-        result = find_unconnected_pins(tmp)
-        r1_pins = [p for p in result if p["reference"] == "R1"]
-        # Pin 1 should be connected (wire at 100, 103.81), pin 2 still unconnected
-        assert len(r1_pins) == 1
-        assert r1_pins[0]["pinNumber"] == "2"
-
-    def test_no_connect_suppresses_pin(self):
-        """A no_connect at a pin position should not report it as unconnected."""
-        extra = _make_resistor_sexp("R1", 100, 100) + """
-        (no_connect (at 100 96.19) (uuid "nc1"))
-        (no_connect (at 100 103.81) (uuid "nc2"))
-        """
-        tmp = _make_temp_schematic(extra)
-        result = find_unconnected_pins(tmp)
-        r1_pins = [p for p in result if p["reference"] == "R1"]
-        assert len(r1_pins) == 0
 
 
 @pytest.mark.integration

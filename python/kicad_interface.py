@@ -386,7 +386,6 @@ class KiCADInterface:
             "export_schematic_pdf": self._handle_export_schematic_pdf,
             # Schematic analysis tools (read-only)
             "get_schematic_view_region": self._handle_get_schematic_view_region,
-            "find_unconnected_pins": self._handle_find_unconnected_pins,
             "find_overlapping_elements": self._handle_find_overlapping_elements,
             "get_elements_in_region": self._handle_get_elements_in_region,
             "find_wires_crossing_symbols": self._handle_find_wires_crossing_symbols,
@@ -1737,29 +1736,6 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_find_unconnected_pins(self, params):
-        """Find all component pins with no wire, label, or power symbol touching them"""
-        logger.info("Finding unconnected pins in schematic")
-        try:
-            from pathlib import Path
-            from commands.schematic_analysis import find_unconnected_pins
-
-            schematic_path = params.get("schematicPath")
-            if not schematic_path:
-                return {"success": False, "message": "schematicPath is required"}
-
-            result = find_unconnected_pins(Path(schematic_path))
-            return {
-                "success": True,
-                "unconnectedPins": result,
-                "count": len(result),
-                "message": f"Found {len(result)} unconnected pin(s)",
-            }
-        except Exception as e:
-            logger.error(f"Error finding unconnected pins: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return {"success": False, "message": str(e)}
 
     def _handle_find_overlapping_elements(self, params):
         """Detect spatially overlapping symbols, wires, and labels"""

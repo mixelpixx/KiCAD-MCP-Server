@@ -1727,21 +1727,6 @@ SCHEMATIC_TOOLS = [
         }
     },
     {
-        "name": "find_unconnected_pins",
-        "title": "Find Unconnected Pins",
-        "description": "Lists all component pins in the schematic that have no wire, label, or power symbol touching them. Useful for checking connectivity before running ERC. Skips power symbols, template symbols, and pins with no_connect flags.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "schematicPath": {
-                    "type": "string",
-                    "description": "Path to the .kicad_sch schematic file"
-                }
-            },
-            "required": ["schematicPath"]
-        }
-    },
-    {
         "name": "find_overlapping_elements",
         "title": "Find Overlapping Elements",
         "description": "Detects spatially overlapping symbols, wires, and labels in the schematic. Finds: duplicate power symbols at the same position, collinear overlapping wire segments, and labels stacked on top of each other.",
