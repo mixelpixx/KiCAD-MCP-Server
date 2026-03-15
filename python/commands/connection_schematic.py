@@ -91,15 +91,20 @@ class ConnectionManager:
 
             # Add a small wire stub from the pin (2.54mm = 0.1 inch, standard grid spacing)
             # Stub direction follows the pin's outward angle from the PinLocator
-            pin_angle_deg = getattr(locator, '_last_pin_angle', 0)
+            pin_angle_deg = getattr(locator, "_last_pin_angle", 0)
             try:
-                pin_angle_deg = locator.get_pin_angle(schematic_path, component_ref, pin_name) or 0
+                pin_angle_deg = (
+                    locator.get_pin_angle(schematic_path, component_ref, pin_name) or 0
+                )
             except Exception:
                 pin_angle_deg = 0
             import math as _math
+
             angle_rad = _math.radians(pin_angle_deg)
-            stub_end = [round(pin_loc[0] + 2.54 * _math.cos(angle_rad), 4),
-                        round(pin_loc[1] - 2.54 * _math.sin(angle_rad), 4)]
+            stub_end = [
+                round(pin_loc[0] + 2.54 * _math.cos(angle_rad), 4),
+                round(pin_loc[1] - 2.54 * _math.sin(angle_rad), 4),
+            ]
 
             # Create wire stub using WireManager
             wire_success = WireManager.add_wire(schematic_path, pin_loc, stub_end)
@@ -167,9 +172,15 @@ class ConnectionManager:
         connected = []
         failed = []
 
-        for pin_num in sorted(src_pins.keys(), key=lambda x: int(x) if x.isdigit() else 0):
+        for pin_num in sorted(
+            src_pins.keys(), key=lambda x: int(x) if x.isdigit() else 0
+        ):
             try:
-                net_name = f"{net_prefix}_{int(pin_num) + pin_offset}" if pin_num.isdigit() else f"{net_prefix}_{pin_num}"
+                net_name = (
+                    f"{net_prefix}_{int(pin_num) + pin_offset}"
+                    if pin_num.isdigit()
+                    else f"{net_prefix}_{pin_num}"
+                )
 
                 ok_src = ConnectionManager.connect_to_net(
                     schematic_path, source_ref, pin_num, net_name
@@ -189,11 +200,15 @@ class ConnectionManager:
                     failed.append(f"{target_ref}/{pin_num} (pin not found)")
                     continue
 
-                connected.append(f"{source_ref}/{pin_num} <-> {target_ref}/{pin_num} [{net_name}]")
+                connected.append(
+                    f"{source_ref}/{pin_num} <-> {target_ref}/{pin_num} [{net_name}]"
+                )
             except Exception as e:
                 failed.append(f"{source_ref}/{pin_num}: {e}")
 
-        logger.info(f"connect_passthrough: {len(connected)} connected, {len(failed)} failed")
+        logger.info(
+            f"connect_passthrough: {len(connected)} connected, {len(failed)} failed"
+        )
         return {"connected": connected, "failed": failed}
 
     @staticmethod
@@ -441,5 +456,3 @@ class ConnectionManager:
         except Exception as e:
             logger.error(f"Error generating netlist: {e}")
             return {"nets": [], "components": []}
-
-

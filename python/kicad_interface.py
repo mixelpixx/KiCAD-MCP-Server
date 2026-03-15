@@ -523,11 +523,24 @@ class KiCADInterface:
 
     # Board-mutating commands that trigger auto-save on SWIG path
     _BOARD_MUTATING_COMMANDS = {
-        "place_component", "move_component", "rotate_component", "delete_component",
-        "route_trace", "route_pad_to_pad", "add_via", "delete_trace", "add_net",
-        "add_board_outline", "add_mounting_hole", "add_text", "add_board_text",
-        "add_copper_pour", "refill_zones", "import_svg_logo",
-        "sync_schematic_to_board", "connect_passthrough",
+        "place_component",
+        "move_component",
+        "rotate_component",
+        "delete_component",
+        "route_trace",
+        "route_pad_to_pad",
+        "add_via",
+        "delete_trace",
+        "add_net",
+        "add_board_outline",
+        "add_mounting_hole",
+        "add_text",
+        "add_board_text",
+        "add_copper_pour",
+        "refill_zones",
+        "import_svg_logo",
+        "sync_schematic_to_board",
+        "connect_passthrough",
     }
 
     def _auto_save_board(self):
@@ -989,6 +1002,7 @@ class KiCADInterface:
 
                 # Load schematic to iterate all symbols
                 from skip import Schematic as SkipSchematic
+
                 sch = SkipSchematic(str(sch_path))
 
                 # Collect all pin locations: list of (ref, pin_num, [x, y])
@@ -1020,16 +1034,24 @@ class KiCADInterface:
                 match = find_nearest_pin(points[0], snap_tolerance)
                 if match:
                     ref, pin_num, coords = match
-                    logger.info(f"Snapped start point {points[0]} -> {coords} (pin {ref}/{pin_num})")
-                    snapped_info.append(f"start snapped to {ref}/{pin_num} at [{coords[0]}, {coords[1]}]")
+                    logger.info(
+                        f"Snapped start point {points[0]} -> {coords} (pin {ref}/{pin_num})"
+                    )
+                    snapped_info.append(
+                        f"start snapped to {ref}/{pin_num} at [{coords[0]}, {coords[1]}]"
+                    )
                     points[0] = list(coords)
 
                 # Snap last endpoint
                 match = find_nearest_pin(points[-1], snap_tolerance)
                 if match:
                     ref, pin_num, coords = match
-                    logger.info(f"Snapped end point {points[-1]} -> {coords} (pin {ref}/{pin_num})")
-                    snapped_info.append(f"end snapped to {ref}/{pin_num} at [{coords[0]}, {coords[1]}]")
+                    logger.info(
+                        f"Snapped end point {points[-1]} -> {coords} (pin {ref}/{pin_num})"
+                    )
+                    snapped_info.append(
+                        f"end snapped to {ref}/{pin_num} at [{coords[0]}, {coords[1]}]"
+                    )
                     points[-1] = list(coords)
 
             # Extract wire properties
@@ -1394,7 +1416,10 @@ class KiCADInterface:
             pin_offset = int(params.get("pinOffset", 0))
 
             if not all([schematic_path, source_ref, target_ref]):
-                return {"success": False, "message": "Missing required parameters: schematicPath, sourceRef, targetRef"}
+                return {
+                    "success": False,
+                    "message": "Missing required parameters: schematicPath, sourceRef, targetRef",
+                }
 
             result = ConnectionManager.connect_passthrough(
                 Path(schematic_path), source_ref, target_ref, net_prefix, pin_offset
@@ -1411,6 +1436,7 @@ class KiCADInterface:
         except Exception as e:
             logger.error(f"Error in connect_passthrough: {str(e)}")
             import traceback
+
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
@@ -1425,26 +1451,39 @@ class KiCADInterface:
             reference = params.get("reference")
 
             if not all([schematic_path, reference]):
-                return {"success": False, "message": "Missing required parameters: schematicPath, reference"}
+                return {
+                    "success": False,
+                    "message": "Missing required parameters: schematicPath, reference",
+                }
 
             locator = PinLocator()
             all_pins = locator.get_all_symbol_pins(Path(schematic_path), reference)
 
             if not all_pins:
-                return {"success": False, "message": f"No pins found for {reference} — check reference and schematic path"}
+                return {
+                    "success": False,
+                    "message": f"No pins found for {reference} — check reference and schematic path",
+                }
 
             # Enrich with pin names and angles from the symbol definition
-            pins_def = locator.get_symbol_pins(
-                Path(schematic_path),
-                locator._get_lib_id(Path(schematic_path), reference),
-            ) if hasattr(locator, "_get_lib_id") else {}
+            pins_def = (
+                locator.get_symbol_pins(
+                    Path(schematic_path),
+                    locator._get_lib_id(Path(schematic_path), reference),
+                )
+                if hasattr(locator, "_get_lib_id")
+                else {}
+            )
 
             result = {}
             for pin_num, coords in all_pins.items():
                 entry = {"x": coords[0], "y": coords[1]}
                 if pin_num in pins_def:
                     entry["name"] = pins_def[pin_num].get("name", pin_num)
-                    entry["angle"] = locator.get_pin_angle(Path(schematic_path), reference, pin_num) or 0
+                    entry["angle"] = (
+                        locator.get_pin_angle(Path(schematic_path), reference, pin_num)
+                        or 0
+                    )
                 result[pin_num] = entry
 
             return {"success": True, "reference": reference, "pins": result}
@@ -1452,6 +1491,7 @@ class KiCADInterface:
         except Exception as e:
             logger.error(f"Error getting pin locations: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
@@ -1499,14 +1539,27 @@ class KiCADInterface:
                     "errorDetails": "Install KiCAD 8.0+ or add kicad-cli to PATH.",
                 }
 
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False
+            ) as tmp:
                 json_output = tmp.name
 
             try:
-                cmd = [kicad_cli, "sch", "erc", "--format", "json", "--output", json_output, schematic_path]
+                cmd = [
+                    kicad_cli,
+                    "sch",
+                    "erc",
+                    "--format",
+                    "json",
+                    "--output",
+                    json_output,
+                    schematic_path,
+                ]
                 logger.info(f"Running ERC command: {' '.join(cmd)}")
 
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=120
+                )
 
                 if result.returncode != 0:
                     logger.error(f"ERC command failed: {result.stderr}")
@@ -1527,13 +1580,18 @@ class KiCADInterface:
                     items = v.get("items", [])
                     loc = {}
                     if items and "pos" in items[0]:
-                        loc = {"x": items[0]["pos"].get("x", 0), "y": items[0]["pos"].get("y", 0)}
-                    violations.append({
-                        "type": v.get("type", "unknown"),
-                        "severity": vseverity,
-                        "message": v.get("description", ""),
-                        "location": loc,
-                    })
+                        loc = {
+                            "x": items[0]["pos"].get("x", 0),
+                            "y": items[0]["pos"].get("y", 0),
+                        }
+                    violations.append(
+                        {
+                            "type": v.get("type", "unknown"),
+                            "severity": vseverity,
+                            "message": v.get("description", ""),
+                            "location": loc,
+                        }
+                    )
                     if vseverity in severity_counts:
                         severity_counts[vseverity] += 1
 
@@ -1580,10 +1638,12 @@ class KiCADInterface:
 
     def _handle_sync_schematic_to_board(self, params):
         """Sync schematic netlist to PCB board (equivalent to KiCAD F8 'Update PCB from Schematic').
-        Reads net connections from the schematic and assigns them to the matching pads in the PCB."""
+        Reads net connections from the schematic and assigns them to the matching pads in the PCB.
+        """
         logger.info("Syncing schematic to board")
         try:
             from pathlib import Path
+
             schematic_path = params.get("schematicPath")
             board_path = params.get("boardPath")
 
@@ -1595,7 +1655,10 @@ class KiCADInterface:
                 board = self.board
                 board_path = board.GetFileName() if not board_path else board_path
             else:
-                return {"success": False, "message": "No board loaded. Use open_project first or provide boardPath."}
+                return {
+                    "success": False,
+                    "message": "No board loaded. Use open_project first or provide boardPath.",
+                }
 
             if not board_path:
                 board_path = board.GetFileName()
@@ -1612,14 +1675,19 @@ class KiCADInterface:
                         schematic_path = str(sch_files[0])
 
             if not schematic_path or not Path(schematic_path).exists():
-                return {"success": False, "message": f"Schematic not found. Provide schematicPath. Tried: {schematic_path}"}
+                return {
+                    "success": False,
+                    "message": f"Schematic not found. Provide schematicPath. Tried: {schematic_path}",
+                }
 
             # Generate netlist from schematic
             schematic = SchematicManager.load_schematic(schematic_path)
             if not schematic:
                 return {"success": False, "message": "Failed to load schematic"}
 
-            netlist = ConnectionManager.generate_netlist(schematic, schematic_path=schematic_path)
+            netlist = ConnectionManager.generate_netlist(
+                schematic, schematic_path=schematic_path
+            )
 
             # Build (reference, pad_number) -> net_name map
             pad_net_map = {}  # {(ref, pin_str): net_name}
@@ -1670,7 +1738,9 @@ class KiCADInterface:
                 self.board = board
                 self._update_command_handlers()
 
-            logger.info(f"sync_schematic_to_board: {len(added_nets)} nets added, {assigned_pads} pads assigned")
+            logger.info(
+                f"sync_schematic_to_board: {len(added_nets)} nets added, {assigned_pads} pads assigned"
+            )
             return {
                 "success": True,
                 "message": f"PCB nets synced from schematic: {len(added_nets)} nets added, {assigned_pads} pads assigned",
@@ -1683,6 +1753,7 @@ class KiCADInterface:
         except Exception as e:
             logger.error(f"Error in sync_schematic_to_board: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
@@ -1702,9 +1773,14 @@ class KiCADInterface:
             filled = bool(params.get("filled", True))
 
             if not pcb_path or not svg_path:
-                return {"success": False, "message": "Missing required parameters: pcbPath, svgPath"}
+                return {
+                    "success": False,
+                    "message": "Missing required parameters: pcbPath, svgPath",
+                }
 
-            result = import_svg_to_pcb(pcb_path, svg_path, x, y, width, layer, stroke_width, filled)
+            result = import_svg_to_pcb(
+                pcb_path, svg_path, x, y, width, layer, stroke_width, filled
+            )
 
             # import_svg_to_pcb writes gr_poly entries directly to the .kicad_pcb file,
             # bypassing the pcbnew in-memory board object.  Any subsequent board.Save()
@@ -1717,13 +1793,16 @@ class KiCADInterface:
                     self._update_command_handlers()
                     logger.info("Reloaded board into pcbnew after SVG logo import")
                 except Exception as reload_err:
-                    logger.warning(f"Board reload after SVG import failed (non-fatal): {reload_err}")
+                    logger.warning(
+                        f"Board reload after SVG import failed (non-fatal): {reload_err}"
+                    )
 
             return result
 
         except Exception as e:
             logger.error(f"Error importing SVG logo: {str(e)}")
             import traceback
+
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
@@ -1732,9 +1811,10 @@ class KiCADInterface:
         import shutil
         from datetime import datetime
         from pathlib import Path
+
         try:
-            step   = params.get("step", "")
-            label  = params.get("label", "")
+            step = params.get("step", "")
+            label = params.get("label", "")
             prompt_text = params.get("prompt", "")
             # Determine project directory from loaded board or explicit path
             project_dir = None
@@ -1745,7 +1825,10 @@ class KiCADInterface:
             if not project_dir:
                 project_dir = params.get("projectPath")
             if not project_dir or not os.path.isdir(project_dir):
-                return {"success": False, "message": "Could not determine project directory for snapshot"}
+                return {
+                    "success": False,
+                    "message": "Could not determine project directory for snapshot",
+                }
 
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -1755,16 +1838,21 @@ class KiCADInterface:
 
             prompt_file = None
             if prompt_text:
-                prompt_filename = f"PROMPT_step{step}_{ts}.md" if step else f"PROMPT_{ts}.md"
+                prompt_filename = (
+                    f"PROMPT_step{step}_{ts}.md" if step else f"PROMPT_{ts}.md"
+                )
                 prompt_file = logs_dir / prompt_filename
                 prompt_file.write_text(prompt_text, encoding="utf-8")
                 logger.info(f"Prompt saved: {prompt_file}")
 
             # Copy current MCP session log into logs/ before snapshotting
             import platform
+
             system = platform.system()
             if system == "Windows":
-                mcp_log_dir = os.path.join(os.environ.get("APPDATA", ""), "Claude", "logs")
+                mcp_log_dir = os.path.join(
+                    os.environ.get("APPDATA", ""), "Claude", "logs"
+                )
             elif system == "Darwin":
                 mcp_log_dir = os.path.expanduser("~/Library/Logs/Claude")
             else:
@@ -1779,11 +1867,15 @@ class KiCADInterface:
                     if "Initializing server" in line:
                         session_start = i
                 session_lines = all_lines[session_start:]
-                log_filename = f"mcp_log_step{step}_{ts}.txt" if step else f"mcp_log_{ts}.txt"
+                log_filename = (
+                    f"mcp_log_step{step}_{ts}.txt" if step else f"mcp_log_{ts}.txt"
+                )
                 mcp_log_dest = logs_dir / log_filename
                 with open(mcp_log_dest, "w", encoding="utf-8") as f:
                     f.writelines(session_lines)
-                logger.info(f"MCP session log saved: {mcp_log_dest} ({len(session_lines)} lines)")
+                logger.info(
+                    f"MCP session log saved: {mcp_log_dest} ({len(session_lines)} lines)"
+                )
 
             base_name = Path(project_dir).name
             suffix_parts = [p for p in [f"step{step}" if step else "", label, ts] if p]
@@ -1792,7 +1884,9 @@ class KiCADInterface:
             snapshots_base.mkdir(exist_ok=True)
             snapshot_dir = str(snapshots_base / snapshot_name)
 
-            shutil.copytree(project_dir, snapshot_dir, ignore=shutil.ignore_patterns("snapshots"))
+            shutil.copytree(
+                project_dir, snapshot_dir, ignore=shutil.ignore_patterns("snapshots")
+            )
             logger.info(f"Project snapshot saved: {snapshot_dir}")
             return {
                 "success": True,
@@ -1865,13 +1959,19 @@ class KiCADInterface:
             # First save the board so the subprocess can load it fresh
             board_path = self.board.GetFileName()
             if not board_path:
-                return {"success": False, "message": "Board has no file path — save first"}
+                return {
+                    "success": False,
+                    "message": "Board has no file path — save first",
+                }
             self.board.Save(board_path)
 
-            zone_count = self.board.GetAreaCount() if hasattr(self.board, "GetAreaCount") else 0
+            zone_count = (
+                self.board.GetAreaCount() if hasattr(self.board, "GetAreaCount") else 0
+            )
 
             # Run pcbnew zone fill in an isolated subprocess to prevent crashes
             import subprocess, sys, textwrap
+
             script = textwrap.dedent(f"""
 import pcbnew, sys
 board = pcbnew.LoadBoard({repr(board_path)})
@@ -1883,7 +1983,9 @@ print("ok")
             try:
                 result = subprocess.run(
                     [sys.executable, "-c", script],
-                    capture_output=True, text=True, timeout=60
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
                 )
                 if result.returncode == 0 and "ok" in result.stdout:
                     # Reload board after subprocess modified it
@@ -1896,12 +1998,18 @@ print("ok")
                         "zoneCount": zone_count,
                     }
                 else:
-                    logger.warning(f"Zone fill subprocess failed: rc={result.returncode} stderr={result.stderr[:200]}")
+                    logger.warning(
+                        f"Zone fill subprocess failed: rc={result.returncode} stderr={result.stderr[:200]}"
+                    )
                     return {
                         "success": False,
                         "message": "Zone fill failed in subprocess — zones are defined and will fill when opened in KiCAD (press B). Continuing is safe.",
                         "zoneCount": zone_count,
-                        "details": result.stderr[:300] if result.stderr else result.stdout[:300],
+                        "details": (
+                            result.stderr[:300]
+                            if result.stderr
+                            else result.stdout[:300]
+                        ),
                     }
             except subprocess.TimeoutExpired:
                 logger.warning("Zone fill subprocess timed out after 60s")
