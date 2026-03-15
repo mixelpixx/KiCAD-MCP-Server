@@ -334,6 +334,42 @@ class TestUpdateSymbolPosition:
         found = WireDragger.find_symbol(sch, "R1")
         assert abs(found[3] - 90) < EPS  # rotation preserved
 
+    def test_property_labels_follow_symbol_move(self):
+        """Property (at ...) positions must shift by the same delta as the symbol."""
+        sym = _make_symbol("R1", 100, 80)
+        sch = _make_sch_data([sym])
+
+        # Record initial property positions
+        prop_k = _sym("property")
+        at_k = _sym("at")
+        initial_positions = {}
+        for sub in sym[1:]:
+            if isinstance(sub, list) and sub and sub[0] == prop_k:
+                name = sub[1]
+                for psub in sub[2:]:
+                    if isinstance(psub, list) and psub and psub[0] == at_k:
+                        initial_positions[name] = (psub[1], psub[2])
+                        break
+        assert len(initial_positions) >= 2  # Reference and Value at minimum
+
+        # Move component from (100, 80) to (120, 100) — delta (20, 20)
+        result = WireDragger.update_symbol_position(sch, "R1", 120, 100)
+        assert result is True
+
+        # Verify each property shifted by (20, 20)
+        for sub in sym[1:]:
+            if isinstance(sub, list) and sub and sub[0] == prop_k:
+                name = sub[1]
+                for psub in sub[2:]:
+                    if isinstance(psub, list) and psub and psub[0] == at_k:
+                        expected_x = initial_positions[name][0] + 20
+                        expected_y = initial_positions[name][1] + 20
+                        assert abs(psub[1] - expected_x) < EPS, \
+                            f"{name} x: expected {expected_x}, got {psub[1]}"
+                        assert abs(psub[2] - expected_y) < EPS, \
+                            f"{name} y: expected {expected_y}, got {psub[2]}"
+                        break
+
 
 # ---------------------------------------------------------------------------
 # Integration tests

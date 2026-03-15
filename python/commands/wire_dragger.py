@@ -277,9 +277,28 @@ class WireDragger:
             return False
         item = found[0]
         at_k = _K["at"]
+        prop_k = _K["property"]
+
+        # Find current position and compute delta
+        old_x = old_y = None
         for sub in item[1:]:
             if isinstance(sub, list) and sub and sub[0] == at_k and len(sub) >= 3:
+                old_x, old_y = sub[1], sub[2]
                 sub[1] = new_x
                 sub[2] = new_y
-                return True
-        return False
+                break
+        if old_x is None:
+            return False
+
+        dx = new_x - old_x
+        dy = new_y - old_y
+
+        # Shift all property label positions by the same delta
+        for sub in item[1:]:
+            if isinstance(sub, list) and sub and sub[0] == prop_k:
+                for psub in sub[1:]:
+                    if isinstance(psub, list) and psub and psub[0] == at_k and len(psub) >= 3:
+                        psub[1] += dx
+                        psub[2] += dy
+                        break
+        return True
