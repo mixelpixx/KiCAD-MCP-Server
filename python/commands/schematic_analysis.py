@@ -85,7 +85,7 @@ def _parse_symbols(sexp_data: list) -> List[Dict[str, Any]]:
     """
     Parse all placed symbol instances from the schematic S-expression.
 
-    Returns list of dicts: {reference, lib_id, x, y, rotation, is_power}
+    Returns list of dicts: {reference, lib_id, x, y, rotation, mirror_x, mirror_y, is_power}
     """
     symbols = []
     for item in sexp_data:
@@ -98,6 +98,8 @@ def _parse_symbols(sexp_data: list) -> List[Dict[str, Any]]:
         x, y, rotation = 0.0, 0.0, 0.0
         reference = ""
         is_power = False
+        mirror_x = False
+        mirror_y = False
 
         for sub in item:
             if isinstance(sub, list) and len(sub) >= 2:
@@ -108,6 +110,12 @@ def _parse_symbols(sexp_data: list) -> List[Dict[str, Any]]:
                     y = float(sub[2])
                     if len(sub) >= 4:
                         rotation = float(sub[3])
+                elif sub[0] == Symbol("mirror"):
+                    m = str(sub[1])
+                    if m == "x":
+                        mirror_x = True
+                    elif m == "y":
+                        mirror_y = True
                 elif sub[0] == Symbol("property") and len(sub) >= 3:
                     prop_name = str(sub[1]).strip('"')
                     if prop_name == "Reference":
@@ -120,6 +128,8 @@ def _parse_symbols(sexp_data: list) -> List[Dict[str, Any]]:
             "x": x,
             "y": y,
             "rotation": rotation,
+            "mirror_x": mirror_x,
+            "mirror_y": mirror_y,
             "is_power": is_power,
         })
     return symbols
@@ -518,6 +528,44 @@ def get_elements_in_region(
 # Tool 5: check_wire_collisions
 # ---------------------------------------------------------------------------
 
+def _compute_pin_positions_direct(
+    sym: Dict[str, Any], pin_defs: Dict[str, Dict]
+) -> Dict[str, List[float]]:
+    """
+    Compute absolute schematic pin positions for a symbol instance directly from
+    its parsed position/rotation/mirror data and pin definitions in local coords.
+
+    Unlike PinLocator.get_all_symbol_pins, this does NOT do a reference-name
+    lookup in the schematic, so it works correctly when multiple symbols share
+    the same reference designator (e.g. unannotated "Q?").
+
+    KiCad transform order: mirror (in local coords) → rotate → translate.
+    """
+    sym_x = sym["x"]
+    sym_y = sym["y"]
+    rotation = sym["rotation"]
+    mirror_x = sym.get("mirror_x", False)
+    mirror_y = sym.get("mirror_y", False)
+
+    result: Dict[str, List[float]] = {}
+    for pin_num, pin_data in pin_defs.items():
+        rel_x = float(pin_data["x"])
+        rel_y = float(pin_data["y"])
+
+        # Apply mirroring in local symbol coordinates
+        if mirror_x:
+            rel_y = -rel_y
+        if mirror_y:
+            rel_x = -rel_x
+
+        # Apply symbol rotation
+        if rotation != 0:
+            rel_x, rel_y = PinLocator.rotate_point(rel_x, rel_y, rotation)
+
+        result[pin_num] = [sym_x + rel_x, sym_y + rel_y]
+    return result
+
+
 def check_wire_collisions(schematic_path: Path) -> List[Dict[str, Any]]:
     """
     Detect wires passing through component bodies without connecting to their pins.
@@ -546,11 +594,22 @@ def check_wire_collisions(schematic_path: Path) -> List[Dict[str, Any]]:
         if sym["is_power"] or ref.startswith("_TEMPLATE") or not ref:
             continue
 
-        bbox = compute_symbol_bbox(schematic_path, ref, locator)
-        if bbox is None:
+        # Get pin definitions by lib_id (works regardless of reference designator,
+        # so unannotated components with duplicate "Q?" references are handled correctly).
+        pin_defs = locator.get_symbol_pins(schematic_path, sym["lib_id"])
+        if not pin_defs:
             continue
 
-        min_x, min_y, max_x, max_y = bbox
+        # Compute absolute pin positions directly from this symbol's own position/rotation,
+        # bypassing the reference-name lookup in PinLocator (which always finds the first
+        # symbol with a given reference, breaking for unannotated duplicates like "Q?").
+        pin_positions = _compute_pin_positions_direct(sym, pin_defs)
+        if not pin_positions:
+            continue
+
+        xs = [p[0] for p in pin_positions.values()]
+        ys = [p[1] for p in pin_positions.values()]
+        min_x, min_y, max_x, max_y = min(xs), min(ys), max(xs), max(ys)
 
         # Expand degenerate dimensions (pins in a line) to approximate body size
         min_body = 1.5  # mm minimum half-extent for component body
@@ -573,7 +632,6 @@ def check_wire_collisions(schematic_path: Path) -> List[Dict[str, Any]]:
         if max_x <= min_x or max_y <= min_y:
             continue
 
-        pin_positions = locator.get_all_symbol_pins(schematic_path, ref)
         pin_set = set()
         for pos in pin_positions.values():
             pin_set.add((pos[0], pos[1]))

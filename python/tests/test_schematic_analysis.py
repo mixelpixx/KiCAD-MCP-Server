@@ -382,6 +382,39 @@ class TestIntegrationCheckWireCollisions:
         d1_collisions = [c for c in result if c["component"]["reference"] == "D1"]
         assert len(d1_collisions) >= 1
 
+    def test_unannotated_duplicates_not_over_reported(self):
+        """
+        Regression: two components with the same unannotated reference ("R?") at
+        different positions should each produce independent bounding boxes.
+        A wire crossing only one of them must produce exactly 1 collision, not 2.
+
+        Before the fix, PinLocator.get_all_symbol_pins always resolved "R?" to
+        the first match, so both symbols got identical bboxes and the same wire
+        was counted against both.
+        """
+        # R? at (100, 100): Device:R pins are at (100, 96.19) and (100, 103.81).
+        # Effective bbox (after expansion + margin) ≈ x=[99,101], y=[96.69,103.31].
+        # R? at (200, 100): identical type but far away → no intersection with wire.
+        r_at_100 = _make_resistor_sexp("R?", 100, 100)
+        r_at_200 = _make_resistor_sexp("R?", 200, 100)
+        # Horizontal wire crossing the body of the first R? only
+        wire = """
+        (wire (pts (xy 95 100) (xy 105 100))
+            (stroke (width 0) (type default))
+            (uuid "w-collision"))
+        """
+        tmp = _make_temp_schematic(r_at_100 + r_at_200 + wire)
+        result = check_wire_collisions(tmp)
+        # The wire must not be reported against the far-away R? at (200, 100)
+        collisions_at_200 = [
+            c for c in result
+            if abs(c["component"]["position"]["x"] - 200) < 0.5
+        ]
+        assert len(collisions_at_200) == 0, (
+            "Wire at x≈100 must not be flagged against the R? at x=200; "
+            "likely caused by reference-lookup always returning the first 'R?'"
+        )
+
 
 @pytest.mark.integration
 class TestIntegrationGetElementsInRegion:
