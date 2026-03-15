@@ -34,7 +34,7 @@ from commands.schematic_analysis import (
     find_unconnected_pins,
     find_overlapping_elements,
     get_elements_in_region,
-    check_wire_collisions,
+    find_wires_crossing_symbols,
 )
 
 
@@ -412,8 +412,8 @@ class TestIntegrationFindUnconnectedPins:
 
 
 @pytest.mark.integration
-class TestIntegrationCheckWireCollisions:
-    """Integration test for wire collision detection."""
+class TestIntegrationFindWiresCrossingSymbols:
+    """Integration test for wire crossing symbol detection."""
 
     def test_wire_not_touching_pins_is_collision(self):
         """A wire passing through a component bbox without pin contact → collision."""
@@ -426,7 +426,7 @@ class TestIntegrationCheckWireCollisions:
             (uuid "w1"))
         """
         tmp = _make_temp_schematic(extra)
-        result = check_wire_collisions(tmp)
+        result = find_wires_crossing_symbols(tmp)
         d1_collisions = [c for c in result if c["component"]["reference"] == "D1"]
         assert len(d1_collisions) >= 1
 
@@ -452,7 +452,7 @@ class TestIntegrationCheckWireCollisions:
             (uuid "w-collision"))
         """
         tmp = _make_temp_schematic(r_at_100 + r_at_200 + wire)
-        result = check_wire_collisions(tmp)
+        result = find_wires_crossing_symbols(tmp)
         # The wire must not be reported against the far-away R? at (200, 100)
         collisions_at_200 = [
             c for c in result
@@ -461,6 +461,41 @@ class TestIntegrationCheckWireCollisions:
         assert len(collisions_at_200) == 0, (
             "Wire at x≈100 must not be flagged against the R? at x=200; "
             "likely caused by reference-lookup always returning the first 'R?'"
+        )
+
+    def test_wire_starting_at_pin_passing_through_body(self):
+        """A wire that starts at a pin but continues through the component body
+        must be flagged — this is the core bug where the old suppression logic
+        treated any wire touching a pin as a valid connection."""
+        # LED D1 at (100,100) → pin 1 at (96.19, 100), pin 2 at (103.81, 100)
+        # Wire starts exactly at pin 1 and extends through the body to the right
+        extra = _make_led_sexp("D1", 100, 100) + """
+        (wire (pts (xy 96.19 100) (xy 110 100))
+            (stroke (width 0) (type default))
+            (uuid "w-through"))
+        """
+        tmp = _make_temp_schematic(extra)
+        result = find_wires_crossing_symbols(tmp)
+        d1_crossings = [c for c in result if c["component"]["reference"] == "D1"]
+        assert len(d1_crossings) >= 1, (
+            "Wire starting at pin but passing through body must be detected"
+        )
+
+    def test_wire_terminating_at_pin_from_outside(self):
+        """A wire that arrives at a pin from outside the component body
+        is a valid connection and must NOT be flagged."""
+        # LED D1 at (100,100) → pin 1 at (96.19, 100)
+        # Wire comes from the left and terminates at pin 1
+        extra = _make_led_sexp("D1", 100, 100) + """
+        (wire (pts (xy 80 100) (xy 96.19 100))
+            (stroke (width 0) (type default))
+            (uuid "w-valid"))
+        """
+        tmp = _make_temp_schematic(extra)
+        result = find_wires_crossing_symbols(tmp)
+        d1_crossings = [c for c in result if c["component"]["reference"] == "D1"]
+        assert len(d1_crossings) == 0, (
+            "Wire terminating at pin from outside should not be flagged"
         )
 
     def test_wire_shorts_component_pins_detected_as_collision(self):
@@ -473,7 +508,7 @@ class TestIntegrationCheckWireCollisions:
             '  (uuid "aaaaaaaa-0000-0000-0000-000000000001"))'
         )
         sch = _make_temp_schematic(r_sexp + "\n" + wire_sexp)
-        collisions = check_wire_collisions(sch)
+        collisions = find_wires_crossing_symbols(sch)
         assert len(collisions) == 1
         w = collisions[0]["wire"]
         assert w["start"]["x"] == pytest.approx(100.0)
