@@ -135,20 +135,6 @@ def _parse_symbols(sexp_data: list) -> List[Dict[str, Any]]:
     return symbols
 
 
-def _parse_no_connects(sexp_data: list) -> Set[Tuple[float, float]]:
-    """Parse all no_connect elements and return their positions as (x, y) tuples in mm."""
-    positions: Set[Tuple[float, float]] = set()
-    for item in sexp_data:
-        if not isinstance(item, list) or len(item) < 2:
-            continue
-        if item[0] != Symbol("no_connect"):
-            continue
-        for sub in item:
-            if isinstance(sub, list) and len(sub) >= 3 and sub[0] == Symbol("at"):
-                positions.add((float(sub[1]), float(sub[2])))
-                break
-    return positions
-
 
 def _parse_lib_symbol_graphics(symbol_def: list) -> List[Tuple[float, float]]:
     """
@@ -433,107 +419,6 @@ def _compute_symbol_bbox_direct(
 
     return (min_x, min_y, max_x, max_y)
 
-
-# ---------------------------------------------------------------------------
-# Tool 2: find_unconnected_pins
-# ---------------------------------------------------------------------------
-
-def find_unconnected_pins(schematic_path: Path) -> List[Dict[str, Any]]:
-    """
-    Find all component pins with no wire, label, or power symbol touching them.
-
-    Returns list of dicts: {reference, libId, pinNumber, pinName, position: {x, y}}
-    """
-    sexp_data = _load_sexp(schematic_path)
-    symbols = _parse_symbols(sexp_data)
-    wires = _parse_wires(sexp_data)
-    labels = _parse_labels(sexp_data)
-    no_connects = _parse_no_connects(sexp_data)
-
-    # Build set of "connected" positions in mm
-    connected: Set[Tuple[float, float]] = set()
-
-    # Wire endpoints
-    for w in wires:
-        connected.add(w["start"])
-        connected.add(w["end"])
-
-    # Label positions
-    for lbl in labels:
-        connected.add((lbl["x"], lbl["y"]))
-
-    # Power symbol positions (they implicitly connect)
-    for sym in symbols:
-        if sym["is_power"]:
-            connected.add((sym["x"], sym["y"]))
-
-    tolerance = 0.05  # mm
-
-    def _snap(v: float) -> int:
-        """Snap coordinate to grid for O(1) set lookup."""
-        return round(v / tolerance)
-
-    connected_grid: set = set()
-    for pos in connected:
-        connected_grid.add((_snap(pos[0]), _snap(pos[1])))
-
-    no_connect_grid: set = set()
-    for pos in no_connects:
-        no_connect_grid.add((_snap(pos[0]), _snap(pos[1])))
-
-    def is_connected(px: float, py: float) -> bool:
-        sx, sy = _snap(px), _snap(py)
-        # Check the snapped cell and immediate neighbors to handle edge cases
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                if (sx + dx, sy + dy) in connected_grid:
-                    return True
-        return False
-
-    def is_no_connect(px: float, py: float) -> bool:
-        sx, sy = _snap(px), _snap(py)
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                if (sx + dx, sy + dy) in no_connect_grid:
-                    return True
-        return False
-
-    lib_defs = _extract_lib_symbols(sexp_data)
-    unconnected = []
-
-    for sym in symbols:
-        ref = sym["reference"]
-        # Skip power symbols, templates, and empty references
-        if sym["is_power"] or ref.startswith("_TEMPLATE") or not ref:
-            continue
-
-        lib_data = lib_defs.get(sym["lib_id"], {})
-        pin_defs = lib_data.get("pins", {})
-        if not pin_defs:
-            continue
-
-        pin_positions = _compute_pin_positions_direct(sym, pin_defs)
-        if not pin_positions:
-            continue
-
-        for pin_num, pos in pin_positions.items():
-            px, py = pos[0], pos[1]
-
-            if is_no_connect(px, py):
-                continue
-            if is_connected(px, py):
-                continue
-
-            pin_name = pin_defs.get(pin_num, {}).get("name", pin_num)
-            unconnected.append({
-                "reference": ref,
-                "libId": sym["lib_id"],
-                "pinNumber": pin_num,
-                "pinName": pin_name,
-                "position": {"x": round(px, 4), "y": round(py, 4)},
-            })
-
-    return unconnected
 
 
 # ---------------------------------------------------------------------------

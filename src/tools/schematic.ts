@@ -1135,29 +1135,6 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
-  // Find unconnected pins
-  server.tool(
-    "find_unconnected_pins",
-    "List all component pins in the schematic that have no wire, label, or power symbol touching them. Useful for checking connectivity before running ERC.",
-    {
-      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
-    },
-    async (args: { schematicPath: string }) => {
-      const result = await callKicadScript("find_unconnected_pins", args);
-      if (result.success) {
-        const pins: any[] = result.unconnectedPins || [];
-        const lines = [`Found ${pins.length} unconnected pin(s):`];
-        pins.slice(0, 50).forEach((p: any) => {
-          lines.push(`  ${p.reference} pin ${p.pinNumber} (${p.pinName}) @ (${p.position.x}, ${p.position.y})`);
-        });
-        if (pins.length > 50) lines.push(`  ... and ${pins.length - 50} more`);
-        return { content: [{ type: "text", text: lines.join("\n") }] };
-      }
-      return {
-        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
-      };
-    },
-  );
 
   // Find overlapping elements
   server.tool(
