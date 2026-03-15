@@ -383,7 +383,24 @@ class KiCADInterface:
             "generate_netlist": self._handle_generate_netlist,
             "sync_schematic_to_board": self._handle_sync_schematic_to_board,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
+            "get_schematic_view": self._handle_get_schematic_view,
+            "list_schematic_components": self._handle_list_schematic_components,
+            "list_schematic_nets": self._handle_list_schematic_nets,
+            "list_schematic_wires": self._handle_list_schematic_wires,
+            "list_schematic_labels": self._handle_list_schematic_labels,
+            "move_schematic_component": self._handle_move_schematic_component,
+            "rotate_schematic_component": self._handle_rotate_schematic_component,
+            "annotate_schematic": self._handle_annotate_schematic,
+            "delete_schematic_wire": self._handle_delete_schematic_wire,
+            "delete_schematic_net_label": self._handle_delete_schematic_net_label,
             "export_schematic_pdf": self._handle_export_schematic_pdf,
+            "export_schematic_svg": self._handle_export_schematic_svg,
+            "get_schematic_view_region": self._handle_get_schematic_view_region,
+            "find_unconnected_pins": self._handle_find_unconnected_pins,
+            "find_overlapping_elements": self._handle_find_overlapping_elements,
+            "get_elements_in_region": self._handle_get_elements_in_region,
+            "check_wire_collisions": self._handle_check_wire_collisions,
+            "get_wire_connections": self._handle_get_wire_connections,
             "import_svg_logo": self._handle_import_svg_logo,
             # UI/Process management commands
             "check_kicad_ui": self._handle_check_kicad_ui,
@@ -523,11 +540,24 @@ class KiCADInterface:
 
     # Board-mutating commands that trigger auto-save on SWIG path
     _BOARD_MUTATING_COMMANDS = {
-        "place_component", "move_component", "rotate_component", "delete_component",
-        "route_trace", "route_pad_to_pad", "add_via", "delete_trace", "add_net",
-        "add_board_outline", "add_mounting_hole", "add_text", "add_board_text",
-        "add_copper_pour", "refill_zones", "import_svg_logo",
-        "sync_schematic_to_board", "connect_passthrough",
+        "place_component",
+        "move_component",
+        "rotate_component",
+        "delete_component",
+        "route_trace",
+        "route_pad_to_pad",
+        "add_via",
+        "delete_trace",
+        "add_net",
+        "add_board_outline",
+        "add_mounting_hole",
+        "add_text",
+        "add_board_text",
+        "add_copper_pour",
+        "refill_zones",
+        "import_svg_logo",
+        "sync_schematic_to_board",
+        "connect_passthrough",
     }
 
     def _auto_save_board(self):
@@ -1016,6 +1046,935 @@ class KiCADInterface:
             return {"success": False, "message": str(e)}
 
     # ------------------------------------------------------------------ #
+    #  Extended schematic handlers                                         #
+    # ------------------------------------------------------------------ #
+
+    def _handle_get_schematic_view(self, params):
+        """Get a rasterised image of the schematic (SVG export → optional PNG conversion)"""
+        logger.info("Getting schematic view")
+        import subprocess
+        import tempfile
+        import base64
+
+        try:
+            schematic_path = params.get("schematicPath")
+            if not schematic_path or not os.path.exists(schematic_path):
+                return {
+                    "success": False,
+                    "message": f"Schematic not found: {schematic_path}",
+                }
+
+            fmt = params.get("format", "png")
+            width = params.get("width", 1200)
+            height = params.get("height", 900)
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                cmd = [
+                    "kicad-cli",
+                    "sch",
+                    "export",
+                    "svg",
+                    "--output",
+                    tmpdir,
+                    "--no-background-color",
+                    schematic_path,
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+                if result.returncode != 0:
+                    return {
+                        "success": False,
+                        "message": f"kicad-cli SVG export failed: {result.stderr}",
+                    }
+
+                import glob
+
+                svg_files = glob.glob(os.path.join(tmpdir, "*.svg"))
+                if not svg_files:
+                    return {
+                        "success": False,
+                        "message": "No SVG file produced by kicad-cli",
+                    }
+                svg_path = svg_files[0]
+
+                if fmt == "svg":
+                    with open(svg_path, "r", encoding="utf-8") as f:
+                        svg_data = f.read()
+                    return {"success": True, "imageData": svg_data, "format": "svg"}
+
+                try:
+                    from cairosvg import svg2png
+                except ImportError:
+                    with open(svg_path, "r", encoding="utf-8") as f:
+                        svg_data = f.read()
+                    return {
+                        "success": True,
+                        "imageData": svg_data,
+                        "format": "svg",
+                        "message": "cairosvg not installed — returning SVG instead of PNG",
+                    }
+
+                png_data = svg2png(
+                    url=svg_path, output_width=width, output_height=height
+                )
+                return {
+                    "success": True,
+                    "imageData": base64.b64encode(png_data).decode("utf-8"),
+                    "format": "png",
+                    "width": width,
+                    "height": height,
+                }
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except Exception as e:
+            logger.error(f"Error getting schematic view: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_list_schematic_components(self, params):
+        """List all components in a schematic"""
+        logger.info("Listing schematic components")
+        try:
+            from pathlib import Path
+            from commands.pin_locator import PinLocator
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {
+                    "success": False,
+                    "message": f"Schematic not found: {schematic_path}",
+                }
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            filter_params = params.get("filter", {})
+            lib_id_filter = filter_params.get("libId", "")
+            ref_prefix_filter = filter_params.get("referencePrefix", "")
+
+            locator = PinLocator()
+            components = []
+
+            for symbol in schematic.symbol:
+                if not hasattr(symbol.property, "Reference"):
+                    continue
+                ref = symbol.property.Reference.value
+                if ref.startswith("_TEMPLATE"):
+                    continue
+
+                lib_id = symbol.lib_id.value if hasattr(symbol, "lib_id") else ""
+
+                if lib_id_filter and lib_id_filter not in lib_id:
+                    continue
+                if ref_prefix_filter and not ref.startswith(ref_prefix_filter):
+                    continue
+
+                value = (
+                    symbol.property.Value.value
+                    if hasattr(symbol.property, "Value")
+                    else ""
+                )
+                footprint = (
+                    symbol.property.Footprint.value
+                    if hasattr(symbol.property, "Footprint")
+                    else ""
+                )
+                position = symbol.at.value if hasattr(symbol, "at") else [0, 0, 0]
+                uuid_val = symbol.uuid.value if hasattr(symbol, "uuid") else ""
+
+                comp = {
+                    "reference": ref,
+                    "libId": lib_id,
+                    "value": value,
+                    "footprint": footprint,
+                    "position": {"x": float(position[0]), "y": float(position[1])},
+                    "rotation": float(position[2]) if len(position) > 2 else 0,
+                    "uuid": str(uuid_val),
+                }
+
+                try:
+                    all_pins = locator.get_all_symbol_pins(sch_file, ref)
+                    if all_pins:
+                        pins_def = locator.get_symbol_pins(sch_file, lib_id) or {}
+                        pin_list = []
+                        for pin_num, coords in all_pins.items():
+                            pin_info = {
+                                "number": pin_num,
+                                "position": {"x": coords[0], "y": coords[1]},
+                            }
+                            if pin_num in pins_def:
+                                pin_info["name"] = pins_def[pin_num].get(
+                                    "name", pin_num
+                                )
+                            pin_list.append(pin_info)
+                        comp["pins"] = pin_list
+                except Exception:
+                    pass
+
+                components.append(comp)
+
+            return {"success": True, "components": components, "count": len(components)}
+
+        except Exception as e:
+            logger.error(f"Error listing schematic components: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_list_schematic_nets(self, params):
+        """List all nets in a schematic with their connections"""
+        logger.info("Listing schematic nets")
+        try:
+            from pathlib import Path
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            net_names = set()
+            if hasattr(schematic, "label"):
+                for label in schematic.label:
+                    if hasattr(label, "value"):
+                        net_names.add(label.value)
+            if hasattr(schematic, "global_label"):
+                for label in schematic.global_label:
+                    if hasattr(label, "value"):
+                        net_names.add(label.value)
+
+            nets = []
+            for net_name in sorted(net_names):
+                connections = ConnectionManager.get_net_connections(
+                    schematic, net_name, Path(schematic_path)
+                )
+                nets.append({"name": net_name, "connections": connections})
+
+            return {"success": True, "nets": nets, "count": len(nets)}
+
+        except Exception as e:
+            logger.error(f"Error listing schematic nets: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_list_schematic_wires(self, params):
+        """List all wires in a schematic"""
+        logger.info("Listing schematic wires")
+        try:
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            wires = []
+            if hasattr(schematic, "wire"):
+                for wire in schematic.wire:
+                    if hasattr(wire, "pts") and hasattr(wire.pts, "xy"):
+                        points = []
+                        for point in wire.pts.xy:
+                            if hasattr(point, "value"):
+                                points.append(
+                                    {
+                                        "x": float(point.value[0]),
+                                        "y": float(point.value[1]),
+                                    }
+                                )
+                        if len(points) >= 2:
+                            wires.append({"start": points[0], "end": points[-1]})
+
+            return {"success": True, "wires": wires, "count": len(wires)}
+
+        except Exception as e:
+            logger.error(f"Error listing schematic wires: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_list_schematic_labels(self, params):
+        """List all net labels and power flags in a schematic"""
+        logger.info("Listing schematic labels")
+        try:
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            labels = []
+
+            if hasattr(schematic, "label"):
+                for label in schematic.label:
+                    if hasattr(label, "value"):
+                        pos = (
+                            label.at.value
+                            if hasattr(label, "at") and hasattr(label.at, "value")
+                            else [0, 0]
+                        )
+                        labels.append(
+                            {
+                                "name": label.value,
+                                "type": "net",
+                                "position": {"x": float(pos[0]), "y": float(pos[1])},
+                            }
+                        )
+
+            if hasattr(schematic, "global_label"):
+                for label in schematic.global_label:
+                    if hasattr(label, "value"):
+                        pos = (
+                            label.at.value
+                            if hasattr(label, "at") and hasattr(label.at, "value")
+                            else [0, 0]
+                        )
+                        labels.append(
+                            {
+                                "name": label.value,
+                                "type": "global",
+                                "position": {"x": float(pos[0]), "y": float(pos[1])},
+                            }
+                        )
+
+            if hasattr(schematic, "symbol"):
+                for symbol in schematic.symbol:
+                    if not hasattr(symbol.property, "Reference"):
+                        continue
+                    ref = symbol.property.Reference.value
+                    if ref.startswith("_TEMPLATE") or not ref.startswith("#PWR"):
+                        continue
+                    value = (
+                        symbol.property.Value.value
+                        if hasattr(symbol.property, "Value")
+                        else ref
+                    )
+                    pos = symbol.at.value if hasattr(symbol, "at") else [0, 0, 0]
+                    labels.append(
+                        {
+                            "name": value,
+                            "type": "power",
+                            "position": {"x": float(pos[0]), "y": float(pos[1])},
+                        }
+                    )
+
+            return {"success": True, "labels": labels, "count": len(labels)}
+
+        except Exception as e:
+            logger.error(f"Error listing schematic labels: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_move_schematic_component(self, params):
+        """Move a schematic component to a new position, dragging connected wires."""
+        logger.info("Moving schematic component")
+        try:
+            from pathlib import Path
+            from commands.wire_dragger import WireDragger
+            import sexpdata as _sexpdata
+
+            schematic_path = params.get("schematicPath")
+            reference = params.get("reference")
+            position = params.get("position", {})
+            new_x = position.get("x")
+            new_y = position.get("y")
+            preserve_wires = params.get("preserveWires", True)
+
+            if not schematic_path or not reference:
+                return {
+                    "success": False,
+                    "message": "schematicPath and reference are required",
+                }
+            if new_x is None or new_y is None:
+                return {
+                    "success": False,
+                    "message": "position with x and y is required",
+                }
+
+            with open(schematic_path, "r", encoding="utf-8") as f:
+                sch_data = _sexpdata.loads(f.read())
+
+            # Find symbol and record old position
+            found = WireDragger.find_symbol(sch_data, reference)
+            if found is None:
+                return {"success": False, "message": f"Component {reference} not found"}
+            _, old_x, old_y = found[0], found[1], found[2]
+            old_position = {"x": old_x, "y": old_y}
+
+            drag_summary = {}
+            if preserve_wires:
+                # Compute pin world positions before and after the move
+                pin_positions = WireDragger.compute_pin_positions(
+                    sch_data, reference, float(new_x), float(new_y)
+                )
+                # Build old→new coordinate map (deduplicate coincident pins)
+                old_to_new = {}
+                for _pin, (old_xy, new_xy) in pin_positions.items():
+                    old_to_new[old_xy] = new_xy
+
+                drag_summary = WireDragger.drag_wires(sch_data, old_to_new)
+
+            # Update symbol position
+            WireDragger.update_symbol_position(
+                sch_data, reference, float(new_x), float(new_y)
+            )
+
+            with open(schematic_path, "w", encoding="utf-8") as f:
+                f.write(_sexpdata.dumps(sch_data))
+
+            return {
+                "success": True,
+                "oldPosition": old_position,
+                "newPosition": {"x": new_x, "y": new_y},
+                "wiresMoved": drag_summary.get("endpoints_moved", 0),
+                "wiresRemoved": drag_summary.get("wires_removed", 0),
+            }
+
+        except Exception as e:
+            logger.error(f"Error moving schematic component: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_rotate_schematic_component(self, params):
+        """Rotate a schematic component"""
+        logger.info("Rotating schematic component")
+        try:
+            schematic_path = params.get("schematicPath")
+            reference = params.get("reference")
+            angle = params.get("angle", 0)
+            mirror = params.get("mirror")
+
+            if not schematic_path or not reference:
+                return {
+                    "success": False,
+                    "message": "schematicPath and reference are required",
+                }
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            for symbol in schematic.symbol:
+                if not hasattr(symbol.property, "Reference"):
+                    continue
+                if symbol.property.Reference.value == reference:
+                    pos = list(symbol.at.value)
+                    while len(pos) < 3:
+                        pos.append(0)
+                    pos[2] = angle
+                    symbol.at.value = pos
+
+                    if mirror:
+                        if hasattr(symbol, "mirror"):
+                            symbol.mirror.value = mirror
+                        else:
+                            logger.warning(
+                                f"Mirror '{mirror}' requested for {reference}, "
+                                f"but symbol has no mirror attribute; skipped"
+                            )
+
+                    SchematicManager.save_schematic(schematic, schematic_path)
+                    return {"success": True, "reference": reference, "angle": angle}
+
+            return {"success": False, "message": f"Component {reference} not found"}
+
+        except Exception as e:
+            logger.error(f"Error rotating schematic component: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_annotate_schematic(self, params):
+        """Annotate unannotated components in schematic (R? → R1, R2, ...)"""
+        logger.info("Annotating schematic")
+        try:
+            import re
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            existing_refs: dict = {}
+            unannotated = []
+
+            for symbol in schematic.symbol:
+                if not hasattr(symbol.property, "Reference"):
+                    continue
+                ref = symbol.property.Reference.value
+                if ref.startswith("_TEMPLATE"):
+                    continue
+                match = re.match(r"^([A-Za-z_]+)(\d+)$", ref)
+                if match:
+                    prefix = match.group(1)
+                    num = int(match.group(2))
+                    existing_refs.setdefault(prefix, set()).add(num)
+                elif ref.endswith("?"):
+                    unannotated.append((symbol, ref[:-1]))
+
+            if not unannotated:
+                return {
+                    "success": True,
+                    "annotated": [],
+                    "message": "All components already annotated",
+                }
+
+            annotated = []
+            for symbol, prefix in unannotated:
+                existing_refs.setdefault(prefix, set())
+                next_num = 1
+                while next_num in existing_refs[prefix]:
+                    next_num += 1
+                old_ref = symbol.property.Reference.value
+                new_ref = f"{prefix}{next_num}"
+                symbol.property.Reference.value = new_ref
+                existing_refs[prefix].add(next_num)
+                uuid_val = str(symbol.uuid.value) if hasattr(symbol, "uuid") else ""
+                annotated.append(
+                    {"uuid": uuid_val, "oldReference": old_ref, "newReference": new_ref}
+                )
+
+            SchematicManager.save_schematic(schematic, schematic_path)
+            return {"success": True, "annotated": annotated}
+
+        except Exception as e:
+            logger.error(f"Error annotating schematic: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_delete_schematic_wire(self, params):
+        """Delete a wire from the schematic by start/end coordinates"""
+        logger.info("Deleting schematic wire")
+        try:
+            from pathlib import Path
+            from commands.wire_manager import WireManager
+
+            schematic_path = params.get("schematicPath")
+            start = params.get("start", {})
+            end = params.get("end", {})
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            start_point = [start.get("x", 0), start.get("y", 0)]
+            end_point = [end.get("x", 0), end.get("y", 0)]
+
+            deleted = WireManager.delete_wire(
+                Path(schematic_path), start_point, end_point
+            )
+            if deleted:
+                return {"success": True}
+            return {"success": False, "message": "No matching wire found"}
+
+        except Exception as e:
+            logger.error(f"Error deleting schematic wire: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_delete_schematic_net_label(self, params):
+        """Delete a net label from the schematic"""
+        logger.info("Deleting schematic net label")
+        try:
+            from pathlib import Path
+            from commands.wire_manager import WireManager
+
+            schematic_path = params.get("schematicPath")
+            net_name = params.get("netName")
+            position = params.get("position")
+
+            if not schematic_path or not net_name:
+                return {
+                    "success": False,
+                    "message": "schematicPath and netName are required",
+                }
+
+            pos_list = None
+            if position:
+                pos_list = [position.get("x", 0), position.get("y", 0)]
+
+            deleted = WireManager.delete_label(Path(schematic_path), net_name, pos_list)
+            if deleted:
+                return {"success": True}
+            return {"success": False, "message": f"Label '{net_name}' not found"}
+
+        except Exception as e:
+            logger.error(f"Error deleting schematic net label: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_schematic_svg(self, params):
+        """Export schematic to SVG using kicad-cli"""
+        logger.info("Exporting schematic SVG")
+        import subprocess
+        import glob as _glob
+        import shutil
+
+        try:
+            schematic_path = params.get("schematicPath")
+            output_path = params.get("outputPath")
+
+            if not schematic_path or not output_path:
+                return {
+                    "success": False,
+                    "message": "schematicPath and outputPath are required",
+                }
+
+            if not os.path.exists(schematic_path):
+                return {
+                    "success": False,
+                    "message": f"Schematic not found: {schematic_path}",
+                }
+
+            output_dir = os.path.dirname(output_path) or "."
+            os.makedirs(output_dir, exist_ok=True)
+
+            cmd = [
+                "kicad-cli",
+                "sch",
+                "export",
+                "svg",
+                schematic_path,
+                "-o",
+                output_dir,
+            ]
+            if params.get("blackAndWhite"):
+                cmd.append("--black-and-white")
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed: {result.stderr}",
+                }
+
+            svg_files = _glob.glob(os.path.join(output_dir, "*.svg"))
+            if not svg_files:
+                return {
+                    "success": False,
+                    "message": "No SVG file produced by kicad-cli",
+                }
+
+            generated_svg = svg_files[0]
+            if os.path.abspath(generated_svg) != os.path.abspath(output_path):
+                shutil.move(generated_svg, output_path)
+
+            return {"success": True, "file": {"path": output_path}}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except Exception as e:
+            logger.error(f"Error exporting schematic SVG: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_get_wire_connections(self, params):
+        """Find all component pins reachable from a point via connected wires"""
+        logger.info("Getting wire connections")
+        try:
+            from commands.wire_connectivity import get_wire_connections
+
+            schematic_path = params.get("schematicPath")
+            x = params.get("x")
+            y = params.get("y")
+
+            if not (schematic_path and x is not None and y is not None):
+                return {
+                    "success": False,
+                    "message": "Missing required parameters: schematicPath, x, y",
+                }
+
+            try:
+                x, y = float(x), float(y)
+            except (TypeError, ValueError):
+                return {
+                    "success": False,
+                    "message": "Parameters x and y must be numeric",
+                }
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            result = get_wire_connections(schematic, x, y)
+            return {"success": True, "connections": result}
+
+        except ImportError:
+            return {
+                "success": False,
+                "message": "wire_connectivity module not available",
+            }
+        except Exception as e:
+            logger.error(f"Error getting wire connections: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_get_schematic_view_region(self, params):
+        """Export a cropped region of the schematic as an image"""
+        logger.info("Getting schematic view region")
+        import subprocess
+        import tempfile
+        import base64
+
+        try:
+            schematic_path = params.get("schematicPath")
+            if not schematic_path or not os.path.exists(schematic_path):
+                return {
+                    "success": False,
+                    "message": f"Schematic not found: {schematic_path}",
+                }
+
+            x1 = float(params.get("x1", 0))
+            y1 = float(params.get("y1", 0))
+            x2 = float(params.get("x2", 100))
+            y2 = float(params.get("y2", 100))
+            fmt = params.get("format", "png")
+            output_width = int(params.get("width", 800))
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                cmd = [
+                    "kicad-cli",
+                    "sch",
+                    "export",
+                    "svg",
+                    "--output",
+                    tmpdir,
+                    "--no-background-color",
+                    schematic_path,
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                if result.returncode != 0:
+                    return {
+                        "success": False,
+                        "message": f"kicad-cli SVG export failed: {result.stderr}",
+                    }
+
+                import glob
+
+                svg_files = glob.glob(os.path.join(tmpdir, "*.svg"))
+                if not svg_files:
+                    return {
+                        "success": False,
+                        "message": "No SVG file produced by kicad-cli",
+                    }
+                svg_path = svg_files[0]
+
+                try:
+                    import cairosvg
+                    from PIL import Image
+                    import io
+
+                    # Render at high resolution
+                    scale = 3.7795  # mm to px at 96dpi
+                    vp_x = x1 * scale
+                    vp_y = y1 * scale
+                    vp_w = (x2 - x1) * scale
+                    vp_h = (y2 - y1) * scale
+
+                    if vp_w <= 0 or vp_h <= 0:
+                        return {
+                            "success": False,
+                            "message": "Invalid region: width and height must be positive",
+                        }
+
+                    output_height = int(output_width * vp_h / vp_w)
+                    png_data = cairosvg.svg2png(
+                        url=svg_path,
+                        output_width=output_width,
+                        output_height=output_height,
+                    )
+
+                    img = Image.open(io.BytesIO(png_data))
+                    img_w, img_h = img.size
+
+                    # Map schematic mm to rendered pixel coordinates
+                    with open(svg_path, "r", encoding="utf-8") as f:
+                        svg_content = f.read()
+                    import re
+
+                    vb_match = re.search(r'viewBox=["\']([^"\']+)["\']', svg_content)
+                    if vb_match:
+                        vb = [float(v) for v in vb_match.group(1).split()]
+                        svg_vb_x, svg_vb_y, svg_vb_w, svg_vb_h = vb
+                        px_x1 = int(
+                            (x1 - svg_vb_x / scale) / (svg_vb_w / scale) * img_w
+                        )
+                        px_y1 = int(
+                            (y1 - svg_vb_y / scale) / (svg_vb_h / scale) * img_h
+                        )
+                        px_x2 = int(
+                            (x2 - svg_vb_x / scale) / (svg_vb_w / scale) * img_w
+                        )
+                        px_y2 = int(
+                            (y2 - svg_vb_y / scale) / (svg_vb_h / scale) * img_h
+                        )
+                        px_x1 = max(0, min(px_x1, img_w))
+                        px_y1 = max(0, min(px_y1, img_h))
+                        px_x2 = max(0, min(px_x2, img_w))
+                        px_y2 = max(0, min(px_y2, img_h))
+                        if px_x2 > px_x1 and px_y2 > px_y1:
+                            img = img.crop((px_x1, px_y1, px_x2, px_y2))
+                            img = img.resize(
+                                (
+                                    output_width,
+                                    int(
+                                        output_width * (px_y2 - px_y1) / (px_x2 - px_x1)
+                                    ),
+                                ),
+                                Image.LANCZOS,
+                            )
+
+                    buf = io.BytesIO()
+                    img.save(buf, format="PNG")
+                    buf.seek(0)
+
+                    if fmt == "png":
+                        return {
+                            "success": True,
+                            "imageData": base64.b64encode(buf.read()).decode("utf-8"),
+                            "format": "png",
+                        }
+                    else:
+                        with open(svg_path, "r", encoding="utf-8") as f:
+                            return {
+                                "success": True,
+                                "imageData": f.read(),
+                                "format": "svg",
+                            }
+
+                except ImportError:
+                    with open(svg_path, "r", encoding="utf-8") as f:
+                        return {
+                            "success": True,
+                            "imageData": f.read(),
+                            "format": "svg",
+                            "message": "cairosvg/Pillow not installed — returning full SVG",
+                        }
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except Exception as e:
+            logger.error(f"Error getting schematic view region: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_find_unconnected_pins(self, params):
+        """List component pins with no wire/label/power symbol touching them"""
+        logger.info("Finding unconnected pins")
+        try:
+            from commands.schematic_analysis import find_unconnected_pins
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            result = find_unconnected_pins(schematic_path)
+            return {"success": True, **result}
+        except ImportError:
+            return {
+                "success": False,
+                "message": "schematic_analysis module not available",
+            }
+        except Exception as e:
+            logger.error(f"Error finding unconnected pins: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_find_overlapping_elements(self, params):
+        """Detect spatially overlapping symbols, wires, and labels"""
+        logger.info("Finding overlapping elements")
+        try:
+            from commands.schematic_analysis import find_overlapping_elements
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            result = find_overlapping_elements(schematic_path)
+            return {"success": True, **result}
+        except ImportError:
+            return {
+                "success": False,
+                "message": "schematic_analysis module not available",
+            }
+        except Exception as e:
+            logger.error(f"Error finding overlapping elements: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_get_elements_in_region(self, params):
+        """List all symbols, wires, and labels within a rectangular region"""
+        logger.info("Getting elements in region")
+        try:
+            from commands.schematic_analysis import get_elements_in_region
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            x1 = float(params.get("x1", 0))
+            y1 = float(params.get("y1", 0))
+            x2 = float(params.get("x2", 100))
+            y2 = float(params.get("y2", 100))
+            result = get_elements_in_region(schematic_path, x1, y1, x2, y2)
+            return {"success": True, **result}
+        except ImportError:
+            return {
+                "success": False,
+                "message": "schematic_analysis module not available",
+            }
+        except Exception as e:
+            logger.error(f"Error getting elements in region: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_check_wire_collisions(self, params):
+        """Detect wires passing through component bodies without connecting to pins"""
+        logger.info("Checking wire collisions")
+        try:
+            from commands.schematic_analysis import check_wire_collisions
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            result = check_wire_collisions(schematic_path)
+            return {"success": True, **result}
+        except ImportError:
+            return {
+                "success": False,
+                "message": "schematic_analysis module not available",
+            }
+        except Exception as e:
+            logger.error(f"Error checking wire collisions: {e}")
+            return {"success": False, "message": str(e)}
+
+    # ------------------------------------------------------------------ #
     #  Footprint handlers                                                  #
     # ------------------------------------------------------------------ #
 
@@ -1342,7 +2301,10 @@ class KiCADInterface:
             pin_offset = int(params.get("pinOffset", 0))
 
             if not all([schematic_path, source_ref, target_ref]):
-                return {"success": False, "message": "Missing required parameters: schematicPath, sourceRef, targetRef"}
+                return {
+                    "success": False,
+                    "message": "Missing required parameters: schematicPath, sourceRef, targetRef",
+                }
 
             result = ConnectionManager.connect_passthrough(
                 Path(schematic_path), source_ref, target_ref, net_prefix, pin_offset
@@ -1359,6 +2321,7 @@ class KiCADInterface:
         except Exception as e:
             logger.error(f"Error in connect_passthrough: {str(e)}")
             import traceback
+
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
@@ -1373,26 +2336,39 @@ class KiCADInterface:
             reference = params.get("reference")
 
             if not all([schematic_path, reference]):
-                return {"success": False, "message": "Missing required parameters: schematicPath, reference"}
+                return {
+                    "success": False,
+                    "message": "Missing required parameters: schematicPath, reference",
+                }
 
             locator = PinLocator()
             all_pins = locator.get_all_symbol_pins(Path(schematic_path), reference)
 
             if not all_pins:
-                return {"success": False, "message": f"No pins found for {reference} — check reference and schematic path"}
+                return {
+                    "success": False,
+                    "message": f"No pins found for {reference} — check reference and schematic path",
+                }
 
             # Enrich with pin names and angles from the symbol definition
-            pins_def = locator.get_symbol_pins(
-                Path(schematic_path),
-                locator._get_lib_id(Path(schematic_path), reference),
-            ) if hasattr(locator, "_get_lib_id") else {}
+            pins_def = (
+                locator.get_symbol_pins(
+                    Path(schematic_path),
+                    locator._get_lib_id(Path(schematic_path), reference),
+                )
+                if hasattr(locator, "_get_lib_id")
+                else {}
+            )
 
             result = {}
             for pin_num, coords in all_pins.items():
                 entry = {"x": coords[0], "y": coords[1]}
                 if pin_num in pins_def:
                     entry["name"] = pins_def[pin_num].get("name", pin_num)
-                    entry["angle"] = locator.get_pin_angle(Path(schematic_path), reference, pin_num) or 0
+                    entry["angle"] = (
+                        locator.get_pin_angle(Path(schematic_path), reference, pin_num)
+                        or 0
+                    )
                 result[pin_num] = entry
 
             return {"success": True, "reference": reference, "pins": result}
@@ -1400,6 +2376,7 @@ class KiCADInterface:
         except Exception as e:
             logger.error(f"Error getting pin locations: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
@@ -1447,14 +2424,27 @@ class KiCADInterface:
                     "errorDetails": "Install KiCAD 8.0+ or add kicad-cli to PATH.",
                 }
 
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False
+            ) as tmp:
                 json_output = tmp.name
 
             try:
-                cmd = [kicad_cli, "sch", "erc", "--format", "json", "--output", json_output, schematic_path]
+                cmd = [
+                    kicad_cli,
+                    "sch",
+                    "erc",
+                    "--format",
+                    "json",
+                    "--output",
+                    json_output,
+                    schematic_path,
+                ]
                 logger.info(f"Running ERC command: {' '.join(cmd)}")
 
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=120
+                )
 
                 if result.returncode != 0:
                     logger.error(f"ERC command failed: {result.stderr}")
@@ -1475,13 +2465,18 @@ class KiCADInterface:
                     items = v.get("items", [])
                     loc = {}
                     if items and "pos" in items[0]:
-                        loc = {"x": items[0]["pos"].get("x", 0), "y": items[0]["pos"].get("y", 0)}
-                    violations.append({
-                        "type": v.get("type", "unknown"),
-                        "severity": vseverity,
-                        "message": v.get("description", ""),
-                        "location": loc,
-                    })
+                        loc = {
+                            "x": items[0]["pos"].get("x", 0),
+                            "y": items[0]["pos"].get("y", 0),
+                        }
+                    violations.append(
+                        {
+                            "type": v.get("type", "unknown"),
+                            "severity": vseverity,
+                            "message": v.get("description", ""),
+                            "location": loc,
+                        }
+                    )
                     if vseverity in severity_counts:
                         severity_counts[vseverity] += 1
 
@@ -1528,10 +2523,12 @@ class KiCADInterface:
 
     def _handle_sync_schematic_to_board(self, params):
         """Sync schematic netlist to PCB board (equivalent to KiCAD F8 'Update PCB from Schematic').
-        Reads net connections from the schematic and assigns them to the matching pads in the PCB."""
+        Reads net connections from the schematic and assigns them to the matching pads in the PCB.
+        """
         logger.info("Syncing schematic to board")
         try:
             from pathlib import Path
+
             schematic_path = params.get("schematicPath")
             board_path = params.get("boardPath")
 
@@ -1543,7 +2540,10 @@ class KiCADInterface:
                 board = self.board
                 board_path = board.GetFileName() if not board_path else board_path
             else:
-                return {"success": False, "message": "No board loaded. Use open_project first or provide boardPath."}
+                return {
+                    "success": False,
+                    "message": "No board loaded. Use open_project first or provide boardPath.",
+                }
 
             if not board_path:
                 board_path = board.GetFileName()
@@ -1560,14 +2560,19 @@ class KiCADInterface:
                         schematic_path = str(sch_files[0])
 
             if not schematic_path or not Path(schematic_path).exists():
-                return {"success": False, "message": f"Schematic not found. Provide schematicPath. Tried: {schematic_path}"}
+                return {
+                    "success": False,
+                    "message": f"Schematic not found. Provide schematicPath. Tried: {schematic_path}",
+                }
 
             # Generate netlist from schematic
             schematic = SchematicManager.load_schematic(schematic_path)
             if not schematic:
                 return {"success": False, "message": "Failed to load schematic"}
 
-            netlist = ConnectionManager.generate_netlist(schematic, schematic_path=schematic_path)
+            netlist = ConnectionManager.generate_netlist(
+                schematic, schematic_path=schematic_path
+            )
 
             # Build (reference, pad_number) -> net_name map
             pad_net_map = {}  # {(ref, pin_str): net_name}
@@ -1618,7 +2623,9 @@ class KiCADInterface:
                 self.board = board
                 self._update_command_handlers()
 
-            logger.info(f"sync_schematic_to_board: {len(added_nets)} nets added, {assigned_pads} pads assigned")
+            logger.info(
+                f"sync_schematic_to_board: {len(added_nets)} nets added, {assigned_pads} pads assigned"
+            )
             return {
                 "success": True,
                 "message": f"PCB nets synced from schematic: {len(added_nets)} nets added, {assigned_pads} pads assigned",
@@ -1631,6 +2638,7 @@ class KiCADInterface:
         except Exception as e:
             logger.error(f"Error in sync_schematic_to_board: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
@@ -1650,9 +2658,14 @@ class KiCADInterface:
             filled = bool(params.get("filled", True))
 
             if not pcb_path or not svg_path:
-                return {"success": False, "message": "Missing required parameters: pcbPath, svgPath"}
+                return {
+                    "success": False,
+                    "message": "Missing required parameters: pcbPath, svgPath",
+                }
 
-            result = import_svg_to_pcb(pcb_path, svg_path, x, y, width, layer, stroke_width, filled)
+            result = import_svg_to_pcb(
+                pcb_path, svg_path, x, y, width, layer, stroke_width, filled
+            )
 
             # import_svg_to_pcb writes gr_poly entries directly to the .kicad_pcb file,
             # bypassing the pcbnew in-memory board object.  Any subsequent board.Save()
@@ -1665,13 +2678,16 @@ class KiCADInterface:
                     self._update_command_handlers()
                     logger.info("Reloaded board into pcbnew after SVG logo import")
                 except Exception as reload_err:
-                    logger.warning(f"Board reload after SVG import failed (non-fatal): {reload_err}")
+                    logger.warning(
+                        f"Board reload after SVG import failed (non-fatal): {reload_err}"
+                    )
 
             return result
 
         except Exception as e:
             logger.error(f"Error importing SVG logo: {str(e)}")
             import traceback
+
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
@@ -1680,9 +2696,10 @@ class KiCADInterface:
         import shutil
         from datetime import datetime
         from pathlib import Path
+
         try:
-            step   = params.get("step", "")
-            label  = params.get("label", "")
+            step = params.get("step", "")
+            label = params.get("label", "")
             prompt_text = params.get("prompt", "")
             # Determine project directory from loaded board or explicit path
             project_dir = None
@@ -1693,7 +2710,10 @@ class KiCADInterface:
             if not project_dir:
                 project_dir = params.get("projectPath")
             if not project_dir or not os.path.isdir(project_dir):
-                return {"success": False, "message": "Could not determine project directory for snapshot"}
+                return {
+                    "success": False,
+                    "message": "Could not determine project directory for snapshot",
+                }
 
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -1703,16 +2723,21 @@ class KiCADInterface:
 
             prompt_file = None
             if prompt_text:
-                prompt_filename = f"PROMPT_step{step}_{ts}.md" if step else f"PROMPT_{ts}.md"
+                prompt_filename = (
+                    f"PROMPT_step{step}_{ts}.md" if step else f"PROMPT_{ts}.md"
+                )
                 prompt_file = logs_dir / prompt_filename
                 prompt_file.write_text(prompt_text, encoding="utf-8")
                 logger.info(f"Prompt saved: {prompt_file}")
 
             # Copy current MCP session log into logs/ before snapshotting
             import platform
+
             system = platform.system()
             if system == "Windows":
-                mcp_log_dir = os.path.join(os.environ.get("APPDATA", ""), "Claude", "logs")
+                mcp_log_dir = os.path.join(
+                    os.environ.get("APPDATA", ""), "Claude", "logs"
+                )
             elif system == "Darwin":
                 mcp_log_dir = os.path.expanduser("~/Library/Logs/Claude")
             else:
@@ -1727,11 +2752,15 @@ class KiCADInterface:
                     if "Initializing server" in line:
                         session_start = i
                 session_lines = all_lines[session_start:]
-                log_filename = f"mcp_log_step{step}_{ts}.txt" if step else f"mcp_log_{ts}.txt"
+                log_filename = (
+                    f"mcp_log_step{step}_{ts}.txt" if step else f"mcp_log_{ts}.txt"
+                )
                 mcp_log_dest = logs_dir / log_filename
                 with open(mcp_log_dest, "w", encoding="utf-8") as f:
                     f.writelines(session_lines)
-                logger.info(f"MCP session log saved: {mcp_log_dest} ({len(session_lines)} lines)")
+                logger.info(
+                    f"MCP session log saved: {mcp_log_dest} ({len(session_lines)} lines)"
+                )
 
             base_name = Path(project_dir).name
             suffix_parts = [p for p in [f"step{step}" if step else "", label, ts] if p]
@@ -1740,7 +2769,9 @@ class KiCADInterface:
             snapshots_base.mkdir(exist_ok=True)
             snapshot_dir = str(snapshots_base / snapshot_name)
 
-            shutil.copytree(project_dir, snapshot_dir, ignore=shutil.ignore_patterns("snapshots"))
+            shutil.copytree(
+                project_dir, snapshot_dir, ignore=shutil.ignore_patterns("snapshots")
+            )
             logger.info(f"Project snapshot saved: {snapshot_dir}")
             return {
                 "success": True,
@@ -1813,13 +2844,19 @@ class KiCADInterface:
             # First save the board so the subprocess can load it fresh
             board_path = self.board.GetFileName()
             if not board_path:
-                return {"success": False, "message": "Board has no file path — save first"}
+                return {
+                    "success": False,
+                    "message": "Board has no file path — save first",
+                }
             self.board.Save(board_path)
 
-            zone_count = self.board.GetAreaCount() if hasattr(self.board, "GetAreaCount") else 0
+            zone_count = (
+                self.board.GetAreaCount() if hasattr(self.board, "GetAreaCount") else 0
+            )
 
             # Run pcbnew zone fill in an isolated subprocess to prevent crashes
             import subprocess, sys, textwrap
+
             script = textwrap.dedent(f"""
 import pcbnew, sys
 board = pcbnew.LoadBoard({repr(board_path)})
@@ -1831,7 +2868,9 @@ print("ok")
             try:
                 result = subprocess.run(
                     [sys.executable, "-c", script],
-                    capture_output=True, text=True, timeout=60
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
                 )
                 if result.returncode == 0 and "ok" in result.stdout:
                     # Reload board after subprocess modified it
@@ -1844,12 +2883,18 @@ print("ok")
                         "zoneCount": zone_count,
                     }
                 else:
-                    logger.warning(f"Zone fill subprocess failed: rc={result.returncode} stderr={result.stderr[:200]}")
+                    logger.warning(
+                        f"Zone fill subprocess failed: rc={result.returncode} stderr={result.stderr[:200]}"
+                    )
                     return {
                         "success": False,
                         "message": "Zone fill failed in subprocess — zones are defined and will fill when opened in KiCAD (press B). Continuing is safe.",
                         "zoneCount": zone_count,
-                        "details": result.stderr[:300] if result.stderr else result.stdout[:300],
+                        "details": (
+                            result.stderr[:300]
+                            if result.stderr
+                            else result.stdout[:300]
+                        ),
                     }
             except subprocess.TimeoutExpired:
                 logger.warning("Zone fill subprocess timed out after 60s")
