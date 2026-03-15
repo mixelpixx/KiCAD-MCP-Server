@@ -1754,7 +1754,7 @@ SCHEMATIC_TOOLS = [
                 },
                 "tolerance": {
                     "type": "number",
-                    "description": "Distance in mm below which elements are considered overlapping (default: 0.5)"
+                    "description": "Distance threshold in mm for label proximity and wire collinearity checks. Symbol overlap uses bounding-box intersection. (default: 0.5)"
                 }
             },
             "required": ["schematicPath"]

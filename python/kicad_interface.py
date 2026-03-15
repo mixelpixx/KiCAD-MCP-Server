@@ -1661,6 +1661,8 @@ class KiCADInterface:
             y1 = float(params.get("y1", 0))
             x2 = float(params.get("x2", 297))
             y2 = float(params.get("y2", 210))
+            x1, x2 = min(x1, x2), max(x1, x2)
+            y1, y2 = min(y1, y2), max(y1, y2)
             out_format = params.get("format", "png")
             width = int(params.get("width", 800))
             height = int(params.get("height", 600))
