@@ -220,6 +220,67 @@ def _distance(p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
     return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
 
 
+def _aabb_overlap(
+    a: Tuple[float, float, float, float],
+    b: Tuple[float, float, float, float],
+) -> bool:
+    """Check if two axis-aligned bounding boxes overlap.
+
+    Each bbox is (min_x, min_y, max_x, max_y).
+    """
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def _compute_symbol_bbox_direct(
+    sym: Dict[str, Any],
+    pin_defs: Dict[str, Dict],
+    margin: float = 0.0,
+) -> Optional[Tuple[float, float, float, float]]:
+    """
+    Compute bounding box of a symbol from its pin definitions and placement.
+
+    Uses _compute_pin_positions_direct to get absolute pin positions, then
+    expands degenerate dimensions (pins in a line) to approximate body size.
+
+    Args:
+        sym: Parsed symbol dict with x, y, rotation, mirror_x, mirror_y.
+        pin_defs: Pin definitions from PinLocator.get_symbol_pins().
+        margin: Shrink bbox by this amount on each side (mm).
+
+    Returns (min_x, min_y, max_x, max_y) in mm, or None if no pins.
+    """
+    pin_positions = _compute_pin_positions_direct(sym, pin_defs)
+    if not pin_positions:
+        return None
+
+    xs = [p[0] for p in pin_positions.values()]
+    ys = [p[1] for p in pin_positions.values()]
+    min_x, min_y, max_x, max_y = min(xs), min(ys), max(xs), max(ys)
+
+    # Expand degenerate dimensions (pins in a line) to approximate body size
+    min_body = 1.5  # mm minimum half-extent for component body
+    if max_x - min_x < 2 * min_body:
+        cx = (min_x + max_x) / 2
+        min_x = cx - min_body
+        max_x = cx + min_body
+    if max_y - min_y < 2 * min_body:
+        cy = (min_y + max_y) / 2
+        min_y = cy - min_body
+        max_y = cy + min_body
+
+    # Shrink bbox by margin
+    min_x += margin
+    min_y += margin
+    max_x -= margin
+    max_y -= margin
+
+    # Skip degenerate bboxes
+    if max_x <= min_x or max_y <= min_y:
+        return None
+
+    return (min_x, min_y, max_x, max_y)
+
+
 # ---------------------------------------------------------------------------
 # Tool 2: find_unconnected_pins
 # ---------------------------------------------------------------------------
@@ -346,14 +407,35 @@ def find_overlapping_elements(
     overlapping_labels = []
     overlapping_wires = []
 
-    # --- Symbol-symbol overlap (O(n²)) ---
+    locator = PinLocator()
+
+    # --- Symbol-symbol overlap using bounding-box intersection (O(n²)) ---
     non_template_symbols = [s for s in symbols if not s["reference"].startswith("_TEMPLATE") and s["reference"]]
-    for i in range(len(non_template_symbols)):
-        for j in range(i + 1, len(non_template_symbols)):
-            s1 = non_template_symbols[i]
-            s2 = non_template_symbols[j]
+
+    # Pre-compute bounding boxes for all non-template symbols
+    symbol_bboxes = []
+    for sym in non_template_symbols:
+        pin_defs = locator.get_symbol_pins(schematic_path, sym["lib_id"])
+        bbox = None
+        if pin_defs:
+            bbox = _compute_symbol_bbox_direct(sym, pin_defs)
+        symbol_bboxes.append((sym, bbox))
+
+    for i in range(len(symbol_bboxes)):
+        s1, bbox1 = symbol_bboxes[i]
+        for j in range(i + 1, len(symbol_bboxes)):
+            s2, bbox2 = symbol_bboxes[j]
             dist = _distance((s1["x"], s1["y"]), (s2["x"], s2["y"]))
-            if dist < tolerance:
+
+            overlap_detected = False
+            if bbox1 is not None and bbox2 is not None:
+                # Use bounding box intersection
+                overlap_detected = _aabb_overlap(bbox1, bbox2)
+            else:
+                # Fallback to center distance when pin data is unavailable
+                overlap_detected = dist < tolerance
+
+            if overlap_detected:
                 entry = {
                     "element1": {"reference": s1["reference"], "libId": s1["lib_id"],
                                  "position": {"x": s1["x"], "y": s1["y"]}},
@@ -595,51 +677,22 @@ def check_wire_collisions(schematic_path: Path) -> List[Dict[str, Any]]:
         if sym["is_power"] or ref.startswith("_TEMPLATE") or not ref:
             continue
 
-        # Get pin definitions by lib_id (works regardless of reference designator,
-        # so unannotated components with duplicate "Q?" references are handled correctly).
         pin_defs = locator.get_symbol_pins(schematic_path, sym["lib_id"])
         if not pin_defs:
             continue
 
-        # Compute absolute pin positions directly from this symbol's own position/rotation,
-        # bypassing the reference-name lookup in PinLocator (which always finds the first
-        # symbol with a given reference, breaking for unannotated duplicates like "Q?").
+        bbox = _compute_symbol_bbox_direct(sym, pin_defs, margin=margin)
+        if bbox is None:
+            continue
+
         pin_positions = _compute_pin_positions_direct(sym, pin_defs)
-        if not pin_positions:
-            continue
-
-        xs = [p[0] for p in pin_positions.values()]
-        ys = [p[1] for p in pin_positions.values()]
-        min_x, min_y, max_x, max_y = min(xs), min(ys), max(xs), max(ys)
-
-        # Expand degenerate dimensions (pins in a line) to approximate body size
-        min_body = 1.5  # mm minimum half-extent for component body
-        if max_x - min_x < 2 * min_body:
-            cx = (min_x + max_x) / 2
-            min_x = cx - min_body
-            max_x = cx + min_body
-        if max_y - min_y < 2 * min_body:
-            cy = (min_y + max_y) / 2
-            min_y = cy - min_body
-            max_y = cy + min_body
-
-        # Shrink bbox by margin
-        min_x += margin
-        min_y += margin
-        max_x -= margin
-        max_y -= margin
-
-        # Skip degenerate bboxes (single-pin or very small after shrink)
-        if max_x <= min_x or max_y <= min_y:
-            continue
-
         pin_set = set()
         for pos in pin_positions.values():
             pin_set.add((pos[0], pos[1]))
 
         symbol_data.append({
             "sym": sym,
-            "bbox": (min_x, min_y, max_x, max_y),
+            "bbox": bbox,
             "pin_set": pin_set,
         })
 

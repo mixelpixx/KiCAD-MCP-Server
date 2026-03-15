@@ -28,6 +28,8 @@ from commands.schematic_analysis import (
     _line_segment_intersects_aabb,
     _point_in_rect,
     _distance,
+    _aabb_overlap,
+    _compute_symbol_bbox_direct,
     compute_symbol_bbox,
     find_unconnected_pins,
     find_overlapping_elements,
@@ -229,6 +231,27 @@ class TestSexpParsers:
 # Unit tests — analysis functions with mocked PinLocator
 # ===================================================================
 
+class TestAABBOverlap:
+    """Test AABB overlap helper."""
+
+    def test_overlapping_boxes(self):
+        assert _aabb_overlap((0, 0, 10, 10), (5, 5, 15, 15)) is True
+
+    def test_non_overlapping_boxes(self):
+        assert _aabb_overlap((0, 0, 10, 10), (20, 20, 30, 30)) is False
+
+    def test_touching_boxes_no_overlap(self):
+        # Touching edges are not overlapping (strict inequality)
+        assert _aabb_overlap((0, 0, 10, 10), (10, 0, 20, 10)) is False
+
+    def test_contained_box(self):
+        assert _aabb_overlap((0, 0, 20, 20), (5, 5, 15, 15)) is True
+
+    def test_overlap_one_axis_only(self):
+        # Overlap in X but not Y
+        assert _aabb_overlap((0, 0, 10, 10), (5, 15, 15, 25)) is False
+
+
 class TestFindOverlappingElements:
     """Test overlapping detection logic."""
 
@@ -238,29 +261,15 @@ class TestFindOverlappingElements:
         assert result["totalOverlaps"] == 0
 
     def test_overlapping_symbols_detected(self):
-        # Two symbols at nearly the same position
-        extra = """
-        (symbol (lib_id "Device:R") (at 100 100 0)
-            (property "Reference" "R1" (at 0 0 0))
-            (property "Value" "10k" (at 0 0 0)))
-        (symbol (lib_id "Device:R") (at 100.1 100 0)
-            (property "Reference" "R2" (at 0 0 0))
-            (property "Value" "10k" (at 0 0 0)))
-        """
+        # Two resistors at nearly the same position — bboxes fully overlap
+        extra = _make_resistor_sexp("R1", 100, 100) + _make_resistor_sexp("R2", 100.1, 100)
         tmp = _make_temp_schematic(extra)
         result = find_overlapping_elements(tmp, tolerance=0.5)
         assert result["totalOverlaps"] >= 1
         assert len(result["overlappingSymbols"]) >= 1
 
     def test_well_separated_symbols_not_flagged(self):
-        extra = """
-        (symbol (lib_id "Device:R") (at 100 100 0)
-            (property "Reference" "R1" (at 0 0 0))
-            (property "Value" "10k" (at 0 0 0)))
-        (symbol (lib_id "Device:R") (at 200 200 0)
-            (property "Reference" "R2" (at 0 0 0))
-            (property "Value" "10k" (at 0 0 0)))
-        """
+        extra = _make_resistor_sexp("R1", 100, 100) + _make_resistor_sexp("R2", 200, 200)
         tmp = _make_temp_schematic(extra)
         result = find_overlapping_elements(tmp, tolerance=0.5)
         assert result["totalOverlaps"] == 0
@@ -277,6 +286,45 @@ class TestFindOverlappingElements:
         tmp = _make_temp_schematic(extra)
         result = find_overlapping_elements(tmp, tolerance=0.5)
         assert len(result["overlappingWires"]) >= 1
+
+    def test_overlapping_bodies_different_centers(self):
+        """Two resistors whose bodies overlap even though centers are ~5mm apart.
+
+        Device:R pins are at y ±3.81 relative to center, so the body spans
+        ~7.62mm vertically. Two resistors at the same X but 5mm apart in Y
+        have overlapping bodies — this is the bug the center-distance approach missed.
+        """
+        # R1 at y=100, R2 at y=105 — pin spans [96.19, 103.81] and [101.19, 108.81]
+        # These overlap in Y from 101.19 to 103.81
+        extra = _make_resistor_sexp("R1", 100, 100) + _make_resistor_sexp("R2", 100, 105)
+        tmp = _make_temp_schematic(extra)
+        result = find_overlapping_elements(tmp, tolerance=0.5)
+        assert result["totalOverlaps"] >= 1, (
+            "Should detect overlap when component bodies intersect, "
+            "even if centers are far apart"
+        )
+        assert len(result["overlappingSymbols"]) >= 1
+
+    def test_adjacent_resistors_no_overlap(self):
+        """Two vertical resistors side by side should not overlap.
+
+        R pins at y ±3.81, but different X positions far enough apart.
+        """
+        extra = _make_resistor_sexp("R1", 100, 100) + _make_resistor_sexp("R2", 110, 100)
+        tmp = _make_temp_schematic(extra)
+        result = find_overlapping_elements(tmp, tolerance=0.5)
+        assert result["totalOverlaps"] == 0
+
+    def test_resistor_and_led_overlapping_bodies(self):
+        """A resistor and an LED placed close enough that bodies overlap.
+
+        LED pins at x ±3.81, R pins at y ±3.81. Place LED at same position
+        as R — bodies clearly overlap.
+        """
+        extra = _make_resistor_sexp("R1", 100, 100) + _make_led_sexp("D1", 100, 100)
+        tmp = _make_temp_schematic(extra)
+        result = find_overlapping_elements(tmp, tolerance=0.5)
+        assert result["totalOverlaps"] >= 1
 
 
 class TestGetElementsInRegion:
