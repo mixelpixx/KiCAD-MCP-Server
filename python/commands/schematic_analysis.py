@@ -654,19 +654,25 @@ def check_wire_collisions(schematic_path: Path) -> List[Dict[str, Any]]:
             if not _line_segment_intersects_aabb(sx, sy, ex, ey, bx1, by1, bx2, by2):
                 continue
 
-            # Check if either wire endpoint matches a pin of this symbol
-            endpoint_matches_pin = False
-            for px, py in sd["pin_set"]:
-                if (abs(sx - px) < pin_tolerance and abs(sy - py) < pin_tolerance):
-                    endpoint_matches_pin = True
-                    break
-                if (abs(ex - px) < pin_tolerance and abs(ey - py) < pin_tolerance):
-                    endpoint_matches_pin = True
-                    break
+            # Check which endpoints land on a pin of this symbol
+            start_at_pin = any(
+                abs(sx - px) < pin_tolerance and abs(sy - py) < pin_tolerance
+                for px, py in sd["pin_set"]
+            )
+            end_at_pin = any(
+                abs(ex - px) < pin_tolerance and abs(ey - py) < pin_tolerance
+                for px, py in sd["pin_set"]
+            )
 
-            if not endpoint_matches_pin:
-                sym = sd["sym"]
-                collisions.append({
+            # Suppress only when exactly ONE endpoint is at a pin: the wire arrives
+            # from elsewhere and terminates at this component (a valid connection).
+            # If BOTH endpoints match pins of this same component, the wire shorts
+            # two pins while traversing the body — that IS a collision.
+            if (start_at_pin or end_at_pin) and not (start_at_pin and end_at_pin):
+                continue
+
+            sym = sd["sym"]
+            collisions.append({
                     "wire": {
                         "start": {"x": sx, "y": sy},
                         "end": {"x": ex, "y": ey},

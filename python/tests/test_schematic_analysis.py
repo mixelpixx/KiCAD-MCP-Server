@@ -415,6 +415,23 @@ class TestIntegrationCheckWireCollisions:
             "likely caused by reference-lookup always returning the first 'R?'"
         )
 
+    def test_wire_shorts_component_pins_detected_as_collision(self):
+        """Regression: a wire connecting pin1→pin2 of the same component
+        must be reported even though both endpoints land on pins."""
+        r_sexp = _make_resistor_sexp("R_short", 100.0, 100.0)
+        wire_sexp = (
+            '(wire (pts (xy 100 103.81) (xy 100 96.19))\n'
+            '  (stroke (width 0) (type default))\n'
+            '  (uuid "aaaaaaaa-0000-0000-0000-000000000001"))'
+        )
+        sch = _make_temp_schematic(r_sexp + "\n" + wire_sexp)
+        collisions = check_wire_collisions(sch)
+        assert len(collisions) == 1
+        w = collisions[0]["wire"]
+        assert w["start"]["x"] == pytest.approx(100.0)
+        assert w["start"]["y"] == pytest.approx(103.81)
+        assert collisions[0]["component"]["reference"] == "R_short"
+
 
 @pytest.mark.integration
 class TestIntegrationGetElementsInRegion:
