@@ -749,21 +749,24 @@ class TestTransformLocalPoint:
     """Test local→absolute coordinate transform."""
 
     def test_no_transform(self):
+        # ly is negated (lib y-up → schematic y-down)
         x, y = _transform_local_point(1.0, 2.0, 100.0, 200.0, 0, False, False)
         assert x == pytest.approx(101.0)
-        assert y == pytest.approx(202.0)
+        assert y == pytest.approx(198.0)
 
     def test_mirror_x(self):
+        # y-negate then mirror_x cancel out → net ly unchanged
         x, y = _transform_local_point(1.0, 2.0, 0.0, 0.0, 0, True, False)
         assert x == pytest.approx(1.0)
-        assert y == pytest.approx(-2.0)
+        assert y == pytest.approx(2.0)
 
     def test_mirror_y(self):
         x, y = _transform_local_point(1.0, 2.0, 0.0, 0.0, 0, False, True)
         assert x == pytest.approx(-1.0)
-        assert y == pytest.approx(2.0)
+        assert y == pytest.approx(-2.0)
 
     def test_rotation_90(self):
+        # ly=0 negated is still 0, then rotate lx=1 by 90°
         x, y = _transform_local_point(1.0, 0.0, 0.0, 0.0, 90, False, False)
         assert x == pytest.approx(0.0, abs=1e-9)
         assert y == pytest.approx(1.0, abs=1e-9)

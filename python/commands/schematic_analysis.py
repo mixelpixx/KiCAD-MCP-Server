@@ -332,8 +332,12 @@ def _transform_local_point(
 ) -> Tuple[float, float]:
     """
     Transform a point from local symbol coordinates to absolute schematic
-    coordinates using KiCad's transform order: mirror → rotate → translate.
+    coordinates using KiCad's transform order:
+    negate-y (lib y-up → schematic y-down) → mirror → rotate → translate.
     """
+    # Library symbols use y-up; schematic uses y-down
+    ly = -ly
+
     # Apply mirroring in local coords
     if mirror_x:
         ly = -ly
