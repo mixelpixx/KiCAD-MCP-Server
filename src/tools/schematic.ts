@@ -1165,7 +1165,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     "Detect spatially overlapping symbols, wires, and labels in the schematic. Finds duplicate power symbols at the same position, collinear overlapping wires, and labels stacked on top of each other.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
-      tolerance: z.number().optional().describe("Distance in mm below which elements are considered overlapping (default: 0.5)"),
+      tolerance: z.number().optional().describe("Distance threshold in mm for label proximity and wire collinearity checks. Symbol overlap uses bounding-box intersection. (default: 0.5)"),
     },
     async (args: { schematicPath: string; tolerance?: number }) => {
       const result = await callKicadScript("find_overlapping_elements", args);

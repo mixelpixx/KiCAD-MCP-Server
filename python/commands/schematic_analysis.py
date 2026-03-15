@@ -150,6 +150,33 @@ def _parse_no_connects(sexp_data: list) -> Set[Tuple[float, float]]:
     return positions
 
 
+def _extract_lib_symbols(sexp_data: list) -> Dict[str, Dict[str, Dict]]:
+    """
+    Walk the lib_symbols section of already-parsed sexp_data and return
+    pin definitions for every symbol definition.
+
+    Returns:
+        Dict mapping lib_id → pin definitions (pin_number → pin_data dict).
+    """
+    lib_symbols_section = None
+    for item in sexp_data:
+        if (isinstance(item, list) and len(item) > 0
+                and item[0] == Symbol("lib_symbols")):
+            lib_symbols_section = item
+            break
+
+    if not lib_symbols_section:
+        return {}
+
+    result: Dict[str, Dict[str, Dict]] = {}
+    for item in lib_symbols_section[1:]:
+        if (isinstance(item, list) and len(item) > 1
+                and item[0] == Symbol("symbol")):
+            symbol_name = str(item[1]).strip('"')
+            result[symbol_name] = PinLocator.parse_symbol_definition(item)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Geometry helpers
 # ---------------------------------------------------------------------------
@@ -345,7 +372,7 @@ def find_unconnected_pins(schematic_path: Path) -> List[Dict[str, Any]]:
                     return True
         return False
 
-    locator = PinLocator()
+    lib_pin_defs = _extract_lib_symbols(sexp_data)
     unconnected = []
 
     for sym in symbols:
@@ -354,7 +381,7 @@ def find_unconnected_pins(schematic_path: Path) -> List[Dict[str, Any]]:
         if sym["is_power"] or ref.startswith("_TEMPLATE") or not ref:
             continue
 
-        pin_defs = locator.get_symbol_pins(schematic_path, sym["lib_id"])
+        pin_defs = lib_pin_defs.get(sym["lib_id"], {})
         if not pin_defs:
             continue
 
@@ -394,7 +421,7 @@ def find_overlapping_elements(
 
     Args:
         schematic_path: Path to .kicad_sch file
-        tolerance: Distance in mm below which elements are considered overlapping
+        tolerance: Distance threshold in mm for label proximity and wire collinearity checks. Symbol overlap uses bounding-box intersection.
 
     Returns dict: {overlappingSymbols, overlappingLabels, overlappingWires, totalOverlaps}
     """
@@ -407,7 +434,7 @@ def find_overlapping_elements(
     overlapping_labels = []
     overlapping_wires = []
 
-    locator = PinLocator()
+    lib_pin_defs = _extract_lib_symbols(sexp_data)
 
     # --- Symbol-symbol overlap using bounding-box intersection (O(n²)) ---
     non_template_symbols = [s for s in symbols if not s["reference"].startswith("_TEMPLATE") and s["reference"]]
@@ -415,7 +442,7 @@ def find_overlapping_elements(
     # Pre-compute bounding boxes for all non-template symbols
     symbol_bboxes = []
     for sym in non_template_symbols:
-        pin_defs = locator.get_symbol_pins(schematic_path, sym["lib_id"])
+        pin_defs = lib_pin_defs.get(sym["lib_id"], {})
         bbox = None
         if pin_defs:
             bbox = _compute_symbol_bbox_direct(sym, pin_defs)
@@ -490,36 +517,49 @@ def _check_wire_overlap(
     """
     Check if two wire segments are collinear and overlapping.
 
+    Works for horizontal, vertical, and diagonal wires. Uses direction
+    vectors, cross-product parallelism, point-to-line distance for
+    collinearity, and 1D projection overlap.
+
     Returns overlap info dict or None.
     """
     s1, e1 = w1["start"], w1["end"]
     s2, e2 = w2["start"], w2["end"]
 
-    # Check horizontal collinearity
-    if abs(s1[1] - e1[1]) < tolerance and abs(s2[1] - e2[1]) < tolerance:
-        if abs(s1[1] - s2[1]) < tolerance:
-            # Both horizontal, same Y
-            min1, max1 = min(s1[0], e1[0]), max(s1[0], e1[0])
-            min2, max2 = min(s2[0], e2[0]), max(s2[0], e2[0])
-            if min1 < max2 and min2 < max1:
-                return {
-                    "wire1": {"start": {"x": s1[0], "y": s1[1]}, "end": {"x": e1[0], "y": e1[1]}},
-                    "wire2": {"start": {"x": s2[0], "y": s2[1]}, "end": {"x": e2[0], "y": e2[1]}},
-                    "type": "collinear_overlap",
-                }
+    d1 = (e1[0] - s1[0], e1[1] - s1[1])
+    d2 = (e2[0] - s2[0], e2[1] - s2[1])
 
-    # Check vertical collinearity
-    if abs(s1[0] - e1[0]) < tolerance and abs(s2[0] - e2[0]) < tolerance:
-        if abs(s1[0] - s2[0]) < tolerance:
-            # Both vertical, same X
-            min1, max1 = min(s1[1], e1[1]), max(s1[1], e1[1])
-            min2, max2 = min(s2[1], e2[1]), max(s2[1], e2[1])
-            if min1 < max2 and min2 < max1:
-                return {
-                    "wire1": {"start": {"x": s1[0], "y": s1[1]}, "end": {"x": e1[0], "y": e1[1]}},
-                    "wire2": {"start": {"x": s2[0], "y": s2[1]}, "end": {"x": e2[0], "y": e2[1]}},
-                    "type": "collinear_overlap",
-                }
+    len1 = math.sqrt(d1[0] ** 2 + d1[1] ** 2)
+    len2 = math.sqrt(d2[0] ** 2 + d2[1] ** 2)
+    if len1 < 1e-12 or len2 < 1e-12:
+        return None  # degenerate zero-length segment
+
+    # Cross product to check parallel
+    cross = d1[0] * d2[1] - d1[1] * d2[0]
+    if abs(cross) > tolerance * max(len1, len2):
+        return None  # not parallel
+
+    # Point-to-line distance: s2 relative to line through s1 along d1
+    ds = (s2[0] - s1[0], s2[1] - s1[1])
+    perp_dist = abs(ds[0] * d1[1] - ds[1] * d1[0]) / len1
+    if perp_dist > tolerance:
+        return None  # parallel but offset
+
+    # Project onto d1 direction for 1D overlap check
+    u1 = (d1[0] / len1, d1[1] / len1)
+    proj_s1 = s1[0] * u1[0] + s1[1] * u1[1]
+    proj_e1 = e1[0] * u1[0] + e1[1] * u1[1]
+    proj_s2 = s2[0] * u1[0] + s2[1] * u1[1]
+    proj_e2 = e2[0] * u1[0] + e2[1] * u1[1]
+
+    min1, max1 = min(proj_s1, proj_e1), max(proj_s1, proj_e1)
+    min2, max2 = min(proj_s2, proj_e2), max(proj_s2, proj_e2)
+    if min1 < max2 and min2 < max1:
+        return {
+            "wire1": {"start": {"x": s1[0], "y": s1[1]}, "end": {"x": e1[0], "y": e1[1]}},
+            "wire2": {"start": {"x": s2[0], "y": s2[1]}, "end": {"x": e2[0], "y": e2[1]}},
+            "type": "collinear_overlap",
+        }
 
     return None
 
@@ -549,7 +589,7 @@ def get_elements_in_region(
     wires = _parse_wires(sexp_data)
     labels = _parse_labels(sexp_data)
 
-    locator = PinLocator()
+    lib_pin_defs = _extract_lib_symbols(sexp_data)
 
     # Symbols: include if position is within bounds
     region_symbols = []
@@ -564,7 +604,7 @@ def get_elements_in_region(
                 "isPower": sym["is_power"],
             }
             # Include pin positions (compute directly to handle unannotated duplicates)
-            pin_defs = locator.get_symbol_pins(schematic_path, sym["lib_id"])
+            pin_defs = lib_pin_defs.get(sym["lib_id"], {})
             if pin_defs:
                 pin_positions = _compute_pin_positions_direct(sym, pin_defs)
                 if pin_positions:
@@ -574,12 +614,13 @@ def get_elements_in_region(
                     }
             region_symbols.append(entry)
 
-    # Wires: include if ANY endpoint is within bounds
+    # Wires: include if any part of the wire intersects the region
     region_wires = []
     for w in wires:
         s, e = w["start"], w["end"]
         if (_point_in_rect(s[0], s[1], min_x, min_y, max_x, max_y) or
-                _point_in_rect(e[0], e[1], min_x, min_y, max_x, max_y)):
+                _point_in_rect(e[0], e[1], min_x, min_y, max_x, max_y) or
+                _line_segment_intersects_aabb(s[0], s[1], e[0], e[1], min_x, min_y, max_x, max_y)):
             region_wires.append({
                 "start": {"x": s[0], "y": s[1]},
                 "end": {"x": e[0], "y": e[1]},
@@ -669,7 +710,7 @@ def find_wires_crossing_symbols(schematic_path: Path) -> List[Dict[str, Any]]:
     symbols = _parse_symbols(sexp_data)
     wires = _parse_wires(sexp_data)
 
-    locator = PinLocator()
+    lib_pin_defs = _extract_lib_symbols(sexp_data)
     margin = 0.5  # mm margin to shrink bbox (avoids false positives at pin tips)
     pin_tolerance = 0.05  # mm
 
@@ -682,7 +723,7 @@ def find_wires_crossing_symbols(schematic_path: Path) -> List[Dict[str, Any]]:
         if sym["is_power"] or ref.startswith("_TEMPLATE") or not ref:
             continue
 
-        pin_defs = locator.get_symbol_pins(schematic_path, sym["lib_id"])
+        pin_defs = lib_pin_defs.get(sym["lib_id"], {})
         if not pin_defs:
             continue
 

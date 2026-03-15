@@ -25,10 +25,12 @@ from commands.schematic_analysis import (
     _parse_symbols,
     _parse_no_connects,
     _load_sexp,
+    _extract_lib_symbols,
     _line_segment_intersects_aabb,
     _point_in_rect,
     _distance,
     _aabb_overlap,
+    _check_wire_overlap,
     _compute_symbol_bbox_direct,
     compute_symbol_bbox,
     find_unconnected_pins,
@@ -529,3 +531,167 @@ class TestIntegrationGetElementsInRegion:
         sym = result["symbols"][0]
         assert "pins" in sym
         assert len(sym["pins"]) == 2  # Resistor has 2 pins
+
+    def test_wire_passing_through_region_included(self):
+        """A wire that passes through a region (no endpoints inside) should be included."""
+        extra = """
+        (wire (pts (xy 0 50) (xy 100 50))
+            (stroke (width 0) (type default))
+            (uuid "w-through"))
+        """
+        tmp = _make_temp_schematic(extra)
+        result = get_elements_in_region(tmp, 40, 40, 60, 60)
+        assert result["counts"]["wires"] == 1
+
+    def test_wire_outside_region_excluded(self):
+        """A wire entirely outside a region should not be included."""
+        extra = """
+        (wire (pts (xy 0 0) (xy 10 0))
+            (stroke (width 0) (type default))
+            (uuid "w-outside"))
+        """
+        tmp = _make_temp_schematic(extra)
+        result = get_elements_in_region(tmp, 40, 40, 60, 60)
+        assert result["counts"]["wires"] == 0
+
+
+# ===================================================================
+# Unit tests — _check_wire_overlap
+# ===================================================================
+
+class TestCheckWireOverlap:
+    """Test wire overlap detection for horizontal, vertical, and diagonal cases."""
+
+    def test_horizontal_overlap(self):
+        w1 = {"start": (10, 50), "end": (30, 50)}
+        w2 = {"start": (20, 50), "end": (40, 50)}
+        result = _check_wire_overlap(w1, w2, 0.5)
+        assert result is not None
+        assert result["type"] == "collinear_overlap"
+
+    def test_vertical_overlap(self):
+        w1 = {"start": (50, 10), "end": (50, 30)}
+        w2 = {"start": (50, 20), "end": (50, 40)}
+        result = _check_wire_overlap(w1, w2, 0.5)
+        assert result is not None
+        assert result["type"] == "collinear_overlap"
+
+    def test_diagonal_overlap(self):
+        w1 = {"start": (0, 0), "end": (20, 20)}
+        w2 = {"start": (10, 10), "end": (30, 30)}
+        result = _check_wire_overlap(w1, w2, 0.5)
+        assert result is not None
+        assert result["type"] == "collinear_overlap"
+
+    def test_horizontal_no_overlap(self):
+        w1 = {"start": (10, 50), "end": (20, 50)}
+        w2 = {"start": (30, 50), "end": (40, 50)}
+        result = _check_wire_overlap(w1, w2, 0.5)
+        assert result is None
+
+    def test_parallel_offset_no_overlap(self):
+        """Two parallel wires offset perpendicularly should not overlap."""
+        w1 = {"start": (0, 0), "end": (20, 20)}
+        w2 = {"start": (0, 5), "end": (20, 25)}
+        result = _check_wire_overlap(w1, w2, 0.5)
+        assert result is None
+
+    def test_non_parallel_no_overlap(self):
+        """Two wires at different angles should not overlap."""
+        w1 = {"start": (0, 0), "end": (10, 10)}
+        w2 = {"start": (0, 0), "end": (10, 0)}
+        result = _check_wire_overlap(w1, w2, 0.5)
+        assert result is None
+
+    def test_zero_length_segment(self):
+        w1 = {"start": (10, 10), "end": (10, 10)}
+        w2 = {"start": (10, 10), "end": (20, 20)}
+        result = _check_wire_overlap(w1, w2, 0.5)
+        assert result is None
+
+
+@pytest.mark.integration
+class TestIntegrationDiagonalWireOverlap:
+    """Integration tests for diagonal collinear wire overlap detection."""
+
+    def test_diagonal_collinear_wire_overlap(self):
+        """Two 45-degree wires that overlap should be detected."""
+        extra = """
+        (wire (pts (xy 0 0) (xy 20 20))
+            (stroke (width 0) (type default))
+            (uuid "w-diag1"))
+        (wire (pts (xy 10 10) (xy 30 30))
+            (stroke (width 0) (type default))
+            (uuid "w-diag2"))
+        """
+        tmp = _make_temp_schematic(extra)
+        result = find_overlapping_elements(tmp, tolerance=0.5)
+        assert len(result["overlappingWires"]) >= 1
+
+    def test_diagonal_parallel_no_overlap(self):
+        """Two parallel 45-degree wires that are offset should not overlap."""
+        extra = """
+        (wire (pts (xy 0 0) (xy 20 20))
+            (stroke (width 0) (type default))
+            (uuid "w-diag1"))
+        (wire (pts (xy 0 5) (xy 20 25))
+            (stroke (width 0) (type default))
+            (uuid "w-diag2"))
+        """
+        tmp = _make_temp_schematic(extra)
+        result = find_overlapping_elements(tmp, tolerance=0.5)
+        assert len(result["overlappingWires"]) == 0
+
+    def test_diagonal_non_collinear_no_overlap(self):
+        """Two wires at different angles crossing should not be flagged as collinear overlap."""
+        extra = """
+        (wire (pts (xy 0 0) (xy 20 20))
+            (stroke (width 0) (type default))
+            (uuid "w-diag1"))
+        (wire (pts (xy 0 20) (xy 20 0))
+            (stroke (width 0) (type default))
+            (uuid "w-diag2"))
+        """
+        tmp = _make_temp_schematic(extra)
+        result = find_overlapping_elements(tmp, tolerance=0.5)
+        assert len(result["overlappingWires"]) == 0
+
+
+# ===================================================================
+# Unit tests — _extract_lib_symbols
+# ===================================================================
+
+class TestExtractLibSymbols:
+    """Test _extract_lib_symbols helper."""
+
+    def test_extracts_pins_from_lib_symbols(self):
+        sexp = sexpdata.loads("""(kicad_sch
+            (lib_symbols
+                (symbol "Device:R"
+                    (symbol "Device:R_0_1"
+                        (pin passive (at 0 3.81 270) (length 1.27)
+                            (name "~" (effects (font (size 1.27 1.27))))
+                            (number "1" (effects (font (size 1.27 1.27)))))
+                        (pin passive (at 0 -3.81 90) (length 1.27)
+                            (name "~" (effects (font (size 1.27 1.27))))
+                            (number "2" (effects (font (size 1.27 1.27)))))))
+            )
+        )""")
+        result = _extract_lib_symbols(sexp)
+        assert "Device:R" in result
+        pins = result["Device:R"]
+        assert "1" in pins
+        assert "2" in pins
+        assert pins["1"]["y"] == pytest.approx(3.81)
+
+    def test_empty_schematic_returns_empty(self):
+        sexp = sexpdata.loads("(kicad_sch)")
+        result = _extract_lib_symbols(sexp)
+        assert result == {}
+
+    def test_no_lib_symbols_section(self):
+        sexp = sexpdata.loads("""(kicad_sch
+            (wire (pts (xy 0 0) (xy 10 10)))
+        )""")
+        result = _extract_lib_symbols(sexp)
+        assert result == {}
