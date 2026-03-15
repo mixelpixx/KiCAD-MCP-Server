@@ -1480,19 +1480,19 @@ SCHEMATIC_TOOLS = [
             "properties": {
                 "schematicPath": {
                     "type": "string",
-                    "description": "Path to schematic file"
+                    "description": "Path to schematic file",
                 },
                 "x": {
                     "type": "number",
-                    "description": "X coordinate of the point on the wire"
+                    "description": "X coordinate of the point on the wire",
                 },
                 "y": {
                     "type": "number",
-                    "description": "Y coordinate of the point on the wire"
-                }
+                    "description": "Y coordinate of the point on the wire",
+                },
             },
-            "required": ["schematicPath", "x", "y"]
-        }
+            "required": ["schematicPath", "x", "y"],
+        },
     },
     {
         "name": "get_schematic_pin_locations",

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 from commands.pin_locator import PinLocator
 
-logger = logging.getLogger('kicad_interface')
+logger = logging.getLogger("kicad_interface")
 
 _IU_PER_MM = 10000  # KiCad schematic internal units per millimeter
 
@@ -95,7 +95,9 @@ def _parse_virtual_connections(schematic, schematic_path):
         locator = PinLocator()
         for symbol in schematic.symbol:
             try:
-                if not hasattr(symbol, "property") or not hasattr(symbol.property, "Reference"):
+                if not hasattr(symbol, "property") or not hasattr(
+                    symbol.property, "Reference"
+                ):
                     continue
                 ref = symbol.property.Reference.value
                 if not ref.startswith("#PWR"):
@@ -192,7 +194,9 @@ def _find_pins_on_net(
     ref = None
     for symbol in schematic.symbol:
         try:
-            if not hasattr(symbol, 'property') or not hasattr(symbol.property, "Reference"):
+            if not hasattr(symbol, "property") or not hasattr(
+                symbol.property, "Reference"
+            ):
                 continue
             ref = symbol.property.Reference.value
             if ref.startswith("_TEMPLATE"):
@@ -207,12 +211,16 @@ def _find_pins_on_net(
                         seen.add(key)
                         pins.append({"component": ref, "pin": pin_num})
         except Exception as e:
-            logger.warning(f"Error checking pins for {ref if ref is not None else '<unknown>'}: {e}")
+            logger.warning(
+                f"Error checking pins for {ref if ref is not None else '<unknown>'}: {e}"
+            )
 
     return pins
 
 
-def get_wire_connections(schematic, schematic_path: str, x_mm: float, y_mm: float) -> Optional[Dict]:
+def get_wire_connections(
+    schematic, schematic_path: str, x_mm: float, y_mm: float
+) -> Optional[Dict]:
     """Find all component pins reachable from a point via connected wires, net labels, and power symbols.
 
     The query point (x_mm, y_mm) must be exactly on a wire endpoint or junction (exact IU match).
@@ -233,10 +241,16 @@ def get_wire_connections(schematic, schematic_path: str, x_mm: float, y_mm: floa
 
     adjacency, iu_to_wires = _build_adjacency(all_wires)
 
-    point_to_label, label_to_points = _parse_virtual_connections(schematic, schematic_path)
+    point_to_label, label_to_points = _parse_virtual_connections(
+        schematic, schematic_path
+    )
 
     visited, net_points = _find_connected_wires(
-        x_mm, y_mm, all_wires, iu_to_wires, adjacency,
+        x_mm,
+        y_mm,
+        all_wires,
+        iu_to_wires,
+        adjacency,
         point_to_label=point_to_label,
         label_to_points=label_to_points,
     )
@@ -244,8 +258,16 @@ def get_wire_connections(schematic, schematic_path: str, x_mm: float, y_mm: floa
         return None
 
     wires_out = [
-        {"start": {"x": all_wires[i][0][0] / _IU_PER_MM, "y": all_wires[i][0][1] / _IU_PER_MM},
-         "end": {"x": all_wires[i][-1][0] / _IU_PER_MM, "y": all_wires[i][-1][1] / _IU_PER_MM}}
+        {
+            "start": {
+                "x": all_wires[i][0][0] / _IU_PER_MM,
+                "y": all_wires[i][0][1] / _IU_PER_MM,
+            },
+            "end": {
+                "x": all_wires[i][-1][0] / _IU_PER_MM,
+                "y": all_wires[i][-1][1] / _IU_PER_MM,
+            },
+        }
         for i in visited
     ]
 

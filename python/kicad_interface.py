@@ -2332,12 +2332,18 @@ class KiCADInterface:
             y = params.get("y")
 
             if not (schematic_path and x is not None and y is not None):
-                return {"success": False, "message": "Missing required parameters: schematicPath, x, y"}
+                return {
+                    "success": False,
+                    "message": "Missing required parameters: schematicPath, x, y",
+                }
 
             try:
                 x, y = float(x), float(y)
             except (TypeError, ValueError):
-                return {"success": False, "message": "Parameters x and y must be numeric"}
+                return {
+                    "success": False,
+                    "message": "Parameters x and y must be numeric",
+                }
 
             schematic = SchematicManager.load_schematic(schematic_path)
             if not schematic:
@@ -2348,13 +2354,17 @@ class KiCADInterface:
 
             result = get_wire_connections(schematic, schematic_path, x, y)
             if result is None:
-                return {"success": False, "message": f"No wire found at ({x},{y}) within tolerance"}
+                return {
+                    "success": False,
+                    "message": f"No wire found at ({x},{y}) within tolerance",
+                }
 
             return {"success": True, **result}
 
         except Exception as e:
             logger.error(f"Error getting wire connections: {str(e)}")
             import traceback
+
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
