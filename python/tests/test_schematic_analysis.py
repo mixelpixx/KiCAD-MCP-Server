@@ -26,6 +26,8 @@ from commands.schematic_analysis import (
     _parse_no_connects,
     _load_sexp,
     _extract_lib_symbols,
+    _parse_lib_symbol_graphics,
+    _transform_local_point,
     _line_segment_intersects_aabb,
     _point_in_rect,
     _distance,
@@ -679,7 +681,7 @@ class TestExtractLibSymbols:
         )""")
         result = _extract_lib_symbols(sexp)
         assert "Device:R" in result
-        pins = result["Device:R"]
+        pins = result["Device:R"]["pins"]
         assert "1" in pins
         assert "2" in pins
         assert pins["1"]["y"] == pytest.approx(3.81)
@@ -695,3 +697,236 @@ class TestExtractLibSymbols:
         )""")
         result = _extract_lib_symbols(sexp)
         assert result == {}
+
+    def test_extract_includes_graphics_points(self):
+        """_extract_lib_symbols should return graphics_points from body shapes."""
+        sexp = sexpdata.loads("""(kicad_sch
+            (lib_symbols
+                (symbol "Device:R"
+                    (symbol "Device:R_0_1"
+                        (rectangle (start -1.016 -2.54) (end 1.016 2.54)
+                            (stroke (width 0.254) (type default))
+                            (fill (type none))))
+                    (symbol "Device:R_1_1"
+                        (pin passive line (at 0 3.81 270) (length 1.27)
+                            (name "~" (effects (font (size 1.27 1.27))))
+                            (number "1" (effects (font (size 1.27 1.27)))))
+                        (pin passive line (at 0 -3.81 90) (length 1.27)
+                            (name "~" (effects (font (size 1.27 1.27))))
+                            (number "2" (effects (font (size 1.27 1.27)))))))
+            )
+        )""")
+        result = _extract_lib_symbols(sexp)
+        lib_data = result["Device:R"]
+        assert "graphics_points" in lib_data
+        gfx = lib_data["graphics_points"]
+        assert len(gfx) >= 2
+        # Rectangle corners should be present
+        xs = [p[0] for p in gfx]
+        ys = [p[1] for p in gfx]
+        assert pytest.approx(-1.016) in xs
+        assert pytest.approx(1.016) in xs
+        assert pytest.approx(-2.54) in ys
+        assert pytest.approx(2.54) in ys
+
+
+# ===================================================================
+# Unit tests — _parse_lib_symbol_graphics
+# ===================================================================
+
+class TestParseLibSymbolGraphics:
+    """Test graphics extraction from lib_symbol definitions."""
+
+    def test_rectangle(self):
+        sexp = sexpdata.loads("""(symbol "Device:R"
+            (symbol "Device:R_0_1"
+                (rectangle (start -1.016 -2.54) (end 1.016 2.54)
+                    (stroke (width 0.254) (type default))
+                    (fill (type none)))))""")
+        pts = _parse_lib_symbol_graphics(sexp)
+        assert len(pts) == 2
+        assert (-1.016, -2.54) in pts
+        assert (1.016, 2.54) in pts
+
+    def test_polyline(self):
+        sexp = sexpdata.loads("""(symbol "Device:C"
+            (symbol "Device:C_0_1"
+                (polyline
+                    (pts (xy -2.032 -0.762) (xy 2.032 -0.762))
+                    (stroke (width 0.508) (type default))
+                    (fill (type none)))))""")
+        pts = _parse_lib_symbol_graphics(sexp)
+        assert (-2.032, -0.762) in pts
+        assert (2.032, -0.762) in pts
+
+    def test_circle(self):
+        sexp = sexpdata.loads("""(symbol "Test:Circle"
+            (symbol "Test:Circle_0_1"
+                (circle (center 0 0) (radius 5)
+                    (stroke (width 0.254) (type default))
+                    (fill (type none)))))""")
+        pts = _parse_lib_symbol_graphics(sexp)
+        assert len(pts) == 2
+        assert (-5.0, -5.0) in pts
+        assert (5.0, 5.0) in pts
+
+    def test_arc(self):
+        sexp = sexpdata.loads("""(symbol "Test:Arc"
+            (symbol "Test:Arc_0_1"
+                (arc (start 1 0) (mid 0 1) (end -1 0)
+                    (stroke (width 0.254) (type default))
+                    (fill (type none)))))""")
+        pts = _parse_lib_symbol_graphics(sexp)
+        assert (1.0, 0.0) in pts
+        assert (0.0, 1.0) in pts
+        assert (-1.0, 0.0) in pts
+
+    def test_no_graphics(self):
+        sexp = sexpdata.loads("""(symbol "Test:Empty"
+            (symbol "Test:Empty_1_1"
+                (pin passive line (at 0 0 0) (length 1.27)
+                    (name "~" (effects (font (size 1.27 1.27))))
+                    (number "1" (effects (font (size 1.27 1.27)))))))""")
+        pts = _parse_lib_symbol_graphics(sexp)
+        assert pts == []
+
+
+# ===================================================================
+# Unit tests — _transform_local_point
+# ===================================================================
+
+class TestTransformLocalPoint:
+    """Test local→absolute coordinate transform."""
+
+    def test_no_transform(self):
+        x, y = _transform_local_point(1.0, 2.0, 100.0, 200.0, 0, False, False)
+        assert x == pytest.approx(101.0)
+        assert y == pytest.approx(202.0)
+
+    def test_mirror_x(self):
+        x, y = _transform_local_point(1.0, 2.0, 0.0, 0.0, 0, True, False)
+        assert x == pytest.approx(1.0)
+        assert y == pytest.approx(-2.0)
+
+    def test_mirror_y(self):
+        x, y = _transform_local_point(1.0, 2.0, 0.0, 0.0, 0, False, True)
+        assert x == pytest.approx(-1.0)
+        assert y == pytest.approx(2.0)
+
+    def test_rotation_90(self):
+        x, y = _transform_local_point(1.0, 0.0, 0.0, 0.0, 90, False, False)
+        assert x == pytest.approx(0.0, abs=1e-9)
+        assert y == pytest.approx(1.0, abs=1e-9)
+
+
+# ===================================================================
+# Unit tests — _compute_symbol_bbox_direct with graphics
+# ===================================================================
+
+class TestComputeSymbolBboxWithGraphics:
+    """Test that bounding box computation uses graphics points when available."""
+
+    def test_resistor_bbox_from_graphics(self):
+        """Device:R rectangle is (-1.016, -2.54) to (1.016, 2.54) in local coords.
+        Pins at (0, ±3.81). Placed at (100, 100) with no rotation.
+        Bbox should span from pin-to-pin in Y and use rectangle width in X."""
+        sym = {"x": 100.0, "y": 100.0, "rotation": 0, "mirror_x": False, "mirror_y": False}
+        pin_defs = {
+            "1": {"x": 0, "y": 3.81, "angle": 270, "length": 1.27, "name": "~", "type": "passive"},
+            "2": {"x": 0, "y": -3.81, "angle": 90, "length": 1.27, "name": "~", "type": "passive"},
+        }
+        graphics_points = [(-1.016, -2.54), (1.016, 2.54)]
+
+        bbox = _compute_symbol_bbox_direct(sym, pin_defs, graphics_points=graphics_points)
+        assert bbox is not None
+        min_x, min_y, max_x, max_y = bbox
+        # X should come from rectangle: 100 ± 1.016
+        assert min_x == pytest.approx(100 - 1.016)
+        assert max_x == pytest.approx(100 + 1.016)
+        # Y should come from pins (extending beyond rectangle): 100 ± 3.81
+        assert min_y == pytest.approx(100 - 3.81)
+        assert max_y == pytest.approx(100 + 3.81)
+
+    def test_fallback_without_graphics(self):
+        """Without graphics_points, should use the old degenerate expansion."""
+        sym = {"x": 100.0, "y": 100.0, "rotation": 0, "mirror_x": False, "mirror_y": False}
+        pin_defs = {
+            "1": {"x": 0, "y": 3.81, "angle": 270, "length": 1.27, "name": "~", "type": "passive"},
+            "2": {"x": 0, "y": -3.81, "angle": 90, "length": 1.27, "name": "~", "type": "passive"},
+        }
+
+        bbox = _compute_symbol_bbox_direct(sym, pin_defs)
+        assert bbox is not None
+        min_x, min_y, max_x, max_y = bbox
+        # X should be expanded with min_body=1.5: 100 ± 1.5
+        assert min_x == pytest.approx(100 - 1.5)
+        assert max_x == pytest.approx(100 + 1.5)
+
+    def test_rotated_symbol_graphics(self):
+        """Graphics points should be rotated along with the symbol."""
+        sym = {"x": 100.0, "y": 100.0, "rotation": 90, "mirror_x": False, "mirror_y": False}
+        pin_defs = {
+            "1": {"x": 0, "y": 3.81, "angle": 270, "length": 1.27, "name": "~", "type": "passive"},
+            "2": {"x": 0, "y": -3.81, "angle": 90, "length": 1.27, "name": "~", "type": "passive"},
+        }
+        # Rectangle corners in local coords
+        graphics_points = [(-1.016, -2.54), (1.016, 2.54)]
+
+        bbox = _compute_symbol_bbox_direct(sym, pin_defs, graphics_points=graphics_points)
+        assert bbox is not None
+        min_x, min_y, max_x, max_y = bbox
+        # After 90° rotation, X and Y swap roles
+        # Pins now extend along X: 100 ± 3.81
+        # Rectangle now extends along Y: 100 ± 1.016
+        assert min_x == pytest.approx(100 - 3.81, abs=0.01)
+        assert max_x == pytest.approx(100 + 3.81, abs=0.01)
+
+
+@pytest.mark.integration
+class TestIntegrationGraphicsBbox:
+    """Integration tests verifying graphics-based bbox from real template data."""
+
+    def test_resistor_bbox_uses_rectangle(self):
+        """The template's Device:R has a rectangle body.
+        Verify that the bbox for a placed resistor uses the actual
+        rectangle width rather than the degenerate 1.5mm expansion."""
+        extra = _make_resistor_sexp("R1", 100, 100)
+        tmp = _make_temp_schematic(extra)
+        sexp_data = _load_sexp(tmp)
+        symbols = _parse_symbols(sexp_data)
+        lib_defs = _extract_lib_symbols(sexp_data)
+
+        r1 = [s for s in symbols if s["reference"] == "R1"][0]
+        lib_data = lib_defs.get(r1["lib_id"], {})
+        pin_defs = lib_data.get("pins", {})
+        graphics_points = lib_data.get("graphics_points", [])
+
+        assert len(graphics_points) >= 2, "Should have extracted rectangle points"
+
+        bbox = _compute_symbol_bbox_direct(r1, pin_defs, graphics_points=graphics_points)
+        assert bbox is not None
+        min_x, min_y, max_x, max_y = bbox
+        # Rectangle is ±1.016 in X, NOT ±1.5 from degenerate expansion
+        assert max_x - min_x == pytest.approx(2 * 1.016, abs=0.01)
+
+    def test_led_bbox_uses_polyline(self):
+        """The template's Device:LED uses polylines for its body.
+        Verify that the bbox uses polyline extents."""
+        extra = _make_led_sexp("D1", 100, 100)
+        tmp = _make_temp_schematic(extra)
+        sexp_data = _load_sexp(tmp)
+        symbols = _parse_symbols(sexp_data)
+        lib_defs = _extract_lib_symbols(sexp_data)
+
+        d1 = [s for s in symbols if s["reference"] == "D1"][0]
+        lib_data = lib_defs.get(d1["lib_id"], {})
+        graphics_points = lib_data.get("graphics_points", [])
+
+        assert len(graphics_points) >= 4, "Should have extracted polyline points"
+        # LED body polylines span from -1.27 to 1.27 in both X and Y
+        xs = [p[0] for p in graphics_points]
+        ys = [p[1] for p in graphics_points]
+        assert min(xs) == pytest.approx(-1.27)
+        assert max(xs) == pytest.approx(1.27)
+        assert min(ys) == pytest.approx(-1.27)
+        assert max(ys) == pytest.approx(1.27)
