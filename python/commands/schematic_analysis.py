@@ -22,6 +22,7 @@ logger = logging.getLogger("kicad_interface")
 # S-expression parsing helpers
 # ---------------------------------------------------------------------------
 
+
 def _load_sexp(schematic_path: Path) -> list:
     """Load schematic file and return parsed S-expression data."""
     with open(schematic_path, "r", encoding="utf-8") as f:
@@ -122,18 +123,19 @@ def _parse_symbols(sexp_data: list) -> List[Dict[str, Any]]:
                         reference = str(sub[2]).strip('"')
 
         is_power = reference.startswith("#PWR") or reference.startswith("#FLG")
-        symbols.append({
-            "reference": reference,
-            "lib_id": lib_id,
-            "x": x,
-            "y": y,
-            "rotation": rotation,
-            "mirror_x": mirror_x,
-            "mirror_y": mirror_y,
-            "is_power": is_power,
-        })
+        symbols.append(
+            {
+                "reference": reference,
+                "lib_id": lib_id,
+                "x": x,
+                "y": y,
+                "rotation": rotation,
+                "mirror_x": mirror_x,
+                "mirror_y": mirror_y,
+                "is_power": is_power,
+            }
+        )
     return symbols
-
 
 
 def _parse_lib_symbol_graphics(symbol_def: list) -> List[Tuple[float, float]]:
@@ -167,22 +169,36 @@ def _parse_lib_symbol_graphics(symbol_def: list) -> List[Tuple[float, float]]:
             for sub in sexp[1:]:
                 if isinstance(sub, list) and len(sub) > 0 and sub[0] == Symbol("pts"):
                     for pt in sub[1:]:
-                        if isinstance(pt, list) and len(pt) >= 3 and pt[0] == Symbol("xy"):
+                        if (
+                            isinstance(pt, list)
+                            and len(pt) >= 3
+                            and pt[0] == Symbol("xy")
+                        ):
                             points.append((float(pt[1]), float(pt[2])))
 
         elif tag == Symbol("circle"):
             # (circle (center x y) (radius r) ...)
             cx, cy, r = 0.0, 0.0, 0.0
             for sub in sexp[1:]:
-                if isinstance(sub, list) and len(sub) >= 3 and sub[0] == Symbol("center"):
+                if (
+                    isinstance(sub, list)
+                    and len(sub) >= 3
+                    and sub[0] == Symbol("center")
+                ):
                     cx, cy = float(sub[1]), float(sub[2])
-                elif isinstance(sub, list) and len(sub) >= 2 and sub[0] == Symbol("radius"):
+                elif (
+                    isinstance(sub, list)
+                    and len(sub) >= 2
+                    and sub[0] == Symbol("radius")
+                ):
                     r = float(sub[1])
             if r > 0:
-                points.extend([
-                    (cx - r, cy - r),
-                    (cx + r, cy + r),
-                ])
+                points.extend(
+                    [
+                        (cx - r, cy - r),
+                        (cx + r, cy + r),
+                    ]
+                )
 
         elif tag == Symbol("arc"):
             # (arc (start x y) (mid x y) (end x y) ...)
@@ -196,7 +212,11 @@ def _parse_lib_symbol_graphics(symbol_def: list) -> List[Tuple[float, float]]:
             for sub in sexp[1:]:
                 if isinstance(sub, list) and len(sub) > 0 and sub[0] == Symbol("pts"):
                     for pt in sub[1:]:
-                        if isinstance(pt, list) and len(pt) >= 3 and pt[0] == Symbol("xy"):
+                        if (
+                            isinstance(pt, list)
+                            and len(pt) >= 3
+                            and pt[0] == Symbol("xy")
+                        ):
                             points.append((float(pt[1]), float(pt[2])))
 
         else:
@@ -223,8 +243,11 @@ def _extract_lib_symbols(sexp_data: list) -> Dict[str, Dict]:
     """
     lib_symbols_section = None
     for item in sexp_data:
-        if (isinstance(item, list) and len(item) > 0
-                and item[0] == Symbol("lib_symbols")):
+        if (
+            isinstance(item, list)
+            and len(item) > 0
+            and item[0] == Symbol("lib_symbols")
+        ):
             lib_symbols_section = item
             break
 
@@ -233,8 +256,7 @@ def _extract_lib_symbols(sexp_data: list) -> Dict[str, Dict]:
 
     result: Dict[str, Dict] = {}
     for item in lib_symbols_section[1:]:
-        if (isinstance(item, list) and len(item) > 1
-                and item[0] == Symbol("symbol")):
+        if isinstance(item, list) and len(item) > 1 and item[0] == Symbol("symbol"):
             symbol_name = str(item[1]).strip('"')
             result[symbol_name] = {
                 "pins": PinLocator.parse_symbol_definition(item),
@@ -246,6 +268,7 @@ def _extract_lib_symbols(sexp_data: list) -> Dict[str, Dict]:
 # ---------------------------------------------------------------------------
 # Geometry helpers
 # ---------------------------------------------------------------------------
+
 
 def compute_symbol_bbox(
     schematic_path: Path,
@@ -266,8 +289,14 @@ def compute_symbol_bbox(
 
 
 def _line_segment_intersects_aabb(
-    x1: float, y1: float, x2: float, y2: float,
-    box_min_x: float, box_min_y: float, box_max_x: float, box_max_y: float,
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    box_min_x: float,
+    box_min_y: float,
+    box_max_x: float,
+    box_max_y: float,
 ) -> bool:
     """
     Test whether line segment (x1,y1)→(x2,y2) intersects an axis-aligned bounding box.
@@ -301,8 +330,12 @@ def _line_segment_intersects_aabb(
 
 
 def _point_in_rect(
-    px: float, py: float,
-    min_x: float, min_y: float, max_x: float, max_y: float,
+    px: float,
+    py: float,
+    min_x: float,
+    min_y: float,
+    max_x: float,
+    max_y: float,
 ) -> bool:
     """Check if a point is within a rectangle."""
     return min_x <= px <= max_x and min_y <= py <= max_y
@@ -325,10 +358,13 @@ def _aabb_overlap(
 
 
 def _transform_local_point(
-    lx: float, ly: float,
-    sym_x: float, sym_y: float,
+    lx: float,
+    ly: float,
+    sym_x: float,
+    sym_y: float,
     rotation: float,
-    mirror_x: bool, mirror_y: bool,
+    mirror_x: bool,
+    mirror_y: bool,
 ) -> Tuple[float, float]:
     """
     Transform a point from local symbol coordinates to absolute schematic
@@ -424,10 +460,10 @@ def _compute_symbol_bbox_direct(
     return (min_x, min_y, max_x, max_y)
 
 
-
 # ---------------------------------------------------------------------------
 # Tool 3: find_overlapping_elements
 # ---------------------------------------------------------------------------
+
 
 def find_overlapping_elements(
     schematic_path: Path, tolerance: float = 0.5
@@ -453,7 +489,11 @@ def find_overlapping_elements(
     lib_defs = _extract_lib_symbols(sexp_data)
 
     # --- Symbol-symbol overlap using bounding-box intersection (O(n²)) ---
-    non_template_symbols = [s for s in symbols if not s["reference"].startswith("_TEMPLATE") and s["reference"]]
+    non_template_symbols = [
+        s
+        for s in symbols
+        if not s["reference"].startswith("_TEMPLATE") and s["reference"]
+    ]
 
     # Pre-compute bounding boxes for all non-template symbols
     symbol_bboxes = []
@@ -463,7 +503,9 @@ def find_overlapping_elements(
         graphics_points = lib_data.get("graphics_points", [])
         bbox = None
         if pin_defs:
-            bbox = _compute_symbol_bbox_direct(sym, pin_defs, graphics_points=graphics_points)
+            bbox = _compute_symbol_bbox_direct(
+                sym, pin_defs, graphics_points=graphics_points
+            )
         symbol_bboxes.append((sym, bbox))
 
     for i in range(len(symbol_bboxes)):
@@ -482,10 +524,16 @@ def find_overlapping_elements(
 
             if overlap_detected:
                 entry = {
-                    "element1": {"reference": s1["reference"], "libId": s1["lib_id"],
-                                 "position": {"x": s1["x"], "y": s1["y"]}},
-                    "element2": {"reference": s2["reference"], "libId": s2["lib_id"],
-                                 "position": {"x": s2["x"], "y": s2["y"]}},
+                    "element1": {
+                        "reference": s1["reference"],
+                        "libId": s1["lib_id"],
+                        "position": {"x": s1["x"], "y": s1["y"]},
+                    },
+                    "element2": {
+                        "reference": s2["reference"],
+                        "libId": s2["lib_id"],
+                        "position": {"x": s2["x"], "y": s2["y"]},
+                    },
                     "distance": round(dist, 4),
                 }
                 # Flag power symbol pairs specifically
@@ -502,13 +550,21 @@ def find_overlapping_elements(
             l2 = labels[j]
             dist = _distance((l1["x"], l1["y"]), (l2["x"], l2["y"]))
             if dist < tolerance:
-                overlapping_labels.append({
-                    "element1": {"name": l1["name"], "type": l1["type"],
-                                 "position": {"x": l1["x"], "y": l1["y"]}},
-                    "element2": {"name": l2["name"], "type": l2["type"],
-                                 "position": {"x": l2["x"], "y": l2["y"]}},
-                    "distance": round(dist, 4),
-                })
+                overlapping_labels.append(
+                    {
+                        "element1": {
+                            "name": l1["name"],
+                            "type": l1["type"],
+                            "position": {"x": l1["x"], "y": l1["y"]},
+                        },
+                        "element2": {
+                            "name": l2["name"],
+                            "type": l2["type"],
+                            "position": {"x": l2["x"], "y": l2["y"]},
+                        },
+                        "distance": round(dist, 4),
+                    }
+                )
 
     # --- Wire-wire collinear overlap ---
     for i in range(len(wires)):
@@ -574,8 +630,14 @@ def _check_wire_overlap(
     min2, max2 = min(proj_s2, proj_e2), max(proj_s2, proj_e2)
     if min1 < max2 and min2 < max1:
         return {
-            "wire1": {"start": {"x": s1[0], "y": s1[1]}, "end": {"x": e1[0], "y": e1[1]}},
-            "wire2": {"start": {"x": s2[0], "y": s2[1]}, "end": {"x": e2[0], "y": e2[1]}},
+            "wire1": {
+                "start": {"x": s1[0], "y": s1[1]},
+                "end": {"x": e1[0], "y": e1[1]},
+            },
+            "wire2": {
+                "start": {"x": s2[0], "y": s2[1]},
+                "end": {"x": e2[0], "y": e2[1]},
+            },
             "type": "collinear_overlap",
         }
 
@@ -586,9 +648,13 @@ def _check_wire_overlap(
 # Tool 4: get_elements_in_region
 # ---------------------------------------------------------------------------
 
+
 def get_elements_in_region(
     schematic_path: Path,
-    x1: float, y1: float, x2: float, y2: float,
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
 ) -> Dict[str, Any]:
     """
     List all wires, labels, and symbols within a rectangular region.
@@ -637,23 +703,31 @@ def get_elements_in_region(
     region_wires = []
     for w in wires:
         s, e = w["start"], w["end"]
-        if (_point_in_rect(s[0], s[1], min_x, min_y, max_x, max_y) or
-                _point_in_rect(e[0], e[1], min_x, min_y, max_x, max_y) or
-                _line_segment_intersects_aabb(s[0], s[1], e[0], e[1], min_x, min_y, max_x, max_y)):
-            region_wires.append({
-                "start": {"x": s[0], "y": s[1]},
-                "end": {"x": e[0], "y": e[1]},
-            })
+        if (
+            _point_in_rect(s[0], s[1], min_x, min_y, max_x, max_y)
+            or _point_in_rect(e[0], e[1], min_x, min_y, max_x, max_y)
+            or _line_segment_intersects_aabb(
+                s[0], s[1], e[0], e[1], min_x, min_y, max_x, max_y
+            )
+        ):
+            region_wires.append(
+                {
+                    "start": {"x": s[0], "y": s[1]},
+                    "end": {"x": e[0], "y": e[1]},
+                }
+            )
 
     # Labels: include if position is within bounds
     region_labels = []
     for lbl in labels:
         if _point_in_rect(lbl["x"], lbl["y"], min_x, min_y, max_x, max_y):
-            region_labels.append({
-                "name": lbl["name"],
-                "type": lbl["type"],
-                "position": {"x": lbl["x"], "y": lbl["y"]},
-            })
+            region_labels.append(
+                {
+                    "name": lbl["name"],
+                    "type": lbl["type"],
+                    "position": {"x": lbl["x"], "y": lbl["y"]},
+                }
+            )
 
     return {
         "symbols": region_symbols,
@@ -670,6 +744,7 @@ def get_elements_in_region(
 # ---------------------------------------------------------------------------
 # Tool 5: check_wire_collisions
 # ---------------------------------------------------------------------------
+
 
 def _compute_pin_positions_direct(
     sym: Dict[str, Any], pin_defs: Dict[str, Dict]
@@ -748,7 +823,9 @@ def find_wires_crossing_symbols(schematic_path: Path) -> List[Dict[str, Any]]:
             continue
 
         graphics_points = lib_data.get("graphics_points", [])
-        bbox = _compute_symbol_bbox_direct(sym, pin_defs, margin=margin, graphics_points=graphics_points)
+        bbox = _compute_symbol_bbox_direct(
+            sym, pin_defs, margin=margin, graphics_points=graphics_points
+        )
         if bbox is None:
             continue
 
@@ -757,11 +834,13 @@ def find_wires_crossing_symbols(schematic_path: Path) -> List[Dict[str, Any]]:
         for pos in pin_positions.values():
             pin_set.add((pos[0], pos[1]))
 
-        symbol_data.append({
-            "sym": sym,
-            "bbox": bbox,
-            "pin_set": pin_set,
-        })
+        symbol_data.append(
+            {
+                "sym": sym,
+                "bbox": bbox,
+                "pin_set": pin_set,
+            }
+        )
 
     # Test each wire against each symbol bbox
     for w in wires:
@@ -810,7 +889,8 @@ def find_wires_crossing_symbols(schematic_path: Path) -> List[Dict[str, Any]]:
                             continue  # Wire terminates at pin from outside
 
             sym = sd["sym"]
-            collisions.append({
+            collisions.append(
+                {
                     "wire": {
                         "start": {"x": sx, "y": sy},
                         "end": {"x": ex, "y": ey},
@@ -821,6 +901,7 @@ def find_wires_crossing_symbols(schematic_path: Path) -> List[Dict[str, Any]]:
                         "position": {"x": sym["x"], "y": sym["y"]},
                     },
                     "intersectionType": "passes_through",
-                })
+                }
+            )
 
     return collisions
