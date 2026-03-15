@@ -27,6 +27,7 @@ TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "empty.ki
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _sym(name: str) -> Symbol:
     return Symbol(name)
 
@@ -57,10 +58,8 @@ def _make_symbol(ref, x, y, rotation=0, lib_id="Device:R", mirror=None):
         [_sym("lib_id"), lib_id],
         [_sym("at"), x, y, rotation],
         [_sym("unit"), 1],
-        [_sym("property"), "Reference", ref,
-         [_sym("at"), x + 2, y, 0]],
-        [_sym("property"), "Value", "10k",
-         [_sym("at"), x, y, 0]],
+        [_sym("property"), "Reference", ref, [_sym("at"), x + 2, y, 0]],
+        [_sym("property"), "Value", "10k", [_sym("at"), x, y, 0]],
     ]
     if mirror:
         item.append([_sym("mirror"), _sym(mirror)])
@@ -70,16 +69,45 @@ def _make_symbol(ref, x, y, rotation=0, lib_id="Device:R", mirror=None):
 def _make_lib_symbol_r():
     """Minimal Device:R lib_symbols entry — pins at (0, 3.81) and (0, -3.81)."""
     return [
-        _sym("symbol"), "Device:R",
-        [_sym("symbol"), "R_1_1",
-            [_sym("pin"), _sym("passive"), _sym("line"),
-             [_sym("at"), 0, 3.81, 270], [_sym("length"), 1.27],
-             [_sym("name"), "~", [_sym("effects"), [_sym("font"), [_sym("size"), 1.27, 1.27]]]],
-             [_sym("number"), "1", [_sym("effects"), [_sym("font"), [_sym("size"), 1.27, 1.27]]]]],
-            [_sym("pin"), _sym("passive"), _sym("line"),
-             [_sym("at"), 0, -3.81, 90], [_sym("length"), 1.27],
-             [_sym("name"), "~", [_sym("effects"), [_sym("font"), [_sym("size"), 1.27, 1.27]]]],
-             [_sym("number"), "2", [_sym("effects"), [_sym("font"), [_sym("size"), 1.27, 1.27]]]]],
+        _sym("symbol"),
+        "Device:R",
+        [
+            _sym("symbol"),
+            "R_1_1",
+            [
+                _sym("pin"),
+                _sym("passive"),
+                _sym("line"),
+                [_sym("at"), 0, 3.81, 270],
+                [_sym("length"), 1.27],
+                [
+                    _sym("name"),
+                    "~",
+                    [_sym("effects"), [_sym("font"), [_sym("size"), 1.27, 1.27]]],
+                ],
+                [
+                    _sym("number"),
+                    "1",
+                    [_sym("effects"), [_sym("font"), [_sym("size"), 1.27, 1.27]]],
+                ],
+            ],
+            [
+                _sym("pin"),
+                _sym("passive"),
+                _sym("line"),
+                [_sym("at"), 0, -3.81, 90],
+                [_sym("length"), 1.27],
+                [
+                    _sym("name"),
+                    "~",
+                    [_sym("effects"), [_sym("font"), [_sym("size"), 1.27, 1.27]]],
+                ],
+                [
+                    _sym("number"),
+                    "2",
+                    [_sym("effects"), [_sym("font"), [_sym("size"), 1.27, 1.27]]],
+                ],
+            ],
         ],
     ]
 
@@ -101,6 +129,7 @@ def _make_sch_data(extra_items=None):
 # ---------------------------------------------------------------------------
 # TestRotatePoint
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 class TestRotatePoint:
@@ -127,6 +156,7 @@ class TestRotatePoint:
 # TestFindSymbol
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 class TestFindSymbol:
     def test_returns_none_for_missing_reference(self):
@@ -149,7 +179,7 @@ class TestFindSymbol:
         sch = _make_sch_data([_make_symbol("R1", 0, 0, mirror="x")])
         result = WireDragger.find_symbol(sch, "R1")
         assert result is not None
-        assert result[5] is True   # mirror_x
+        assert result[5] is True  # mirror_x
         assert result[6] is False  # mirror_y
 
     def test_detects_mirror_y(self):
@@ -157,12 +187,13 @@ class TestFindSymbol:
         result = WireDragger.find_symbol(sch, "R1")
         assert result is not None
         assert result[5] is False  # mirror_x
-        assert result[6] is True   # mirror_y
+        assert result[6] is True  # mirror_y
 
 
 # ---------------------------------------------------------------------------
 # TestComputePinPositions
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 class TestComputePinPositions:
@@ -218,6 +249,7 @@ class TestComputePinPositions:
 # TestDragWires
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.unit
 class TestDragWires:
     def test_no_wires_returns_zero_counts(self):
@@ -233,8 +265,14 @@ class TestDragWires:
         assert result["endpoints_moved"] == 1
         assert result["wires_removed"] == 0
         # Find the updated wire in sch_data
-        updated = next(i for i in sch if isinstance(i, list) and i and i[0] == Symbol("wire"))
-        pts = next(s for s in updated[1:] if isinstance(s, list) and s and s[0] == Symbol("pts"))
+        updated = next(
+            i for i in sch if isinstance(i, list) and i and i[0] == Symbol("wire")
+        )
+        pts = next(
+            s
+            for s in updated[1:]
+            if isinstance(s, list) and s and s[0] == Symbol("pts")
+        )
         xy1 = pts[1]
         assert abs(xy1[1] - 10.0) < EPS
         assert abs(xy1[2] - 23.81) < EPS
@@ -244,8 +282,14 @@ class TestDragWires:
         sch = _make_sch_data([wire])
         result = WireDragger.drag_wires(sch, {(0.0, -3.81): (10.0, 16.19)})
         assert result["endpoints_moved"] == 1
-        updated = next(i for i in sch if isinstance(i, list) and i and i[0] == Symbol("wire"))
-        pts = next(s for s in updated[1:] if isinstance(s, list) and s and s[0] == Symbol("pts"))
+        updated = next(
+            i for i in sch if isinstance(i, list) and i and i[0] == Symbol("wire")
+        )
+        pts = next(
+            s
+            for s in updated[1:]
+            if isinstance(s, list) and s and s[0] == Symbol("pts")
+        )
         xy2 = pts[2]
         assert abs(xy2[1] - 10.0) < EPS
         assert abs(xy2[2] - 16.19) < EPS
@@ -255,12 +299,17 @@ class TestDragWires:
         wire = _make_wire(0, 3.81, 0, -3.81)
         sch = _make_sch_data([wire])
         # Both pins land at same position (degenerate move)
-        result = WireDragger.drag_wires(sch, {
-            (0.0, 3.81): (5.0, 5.0),
-            (0.0, -3.81): (5.0, 5.0),
-        })
+        result = WireDragger.drag_wires(
+            sch,
+            {
+                (0.0, 3.81): (5.0, 5.0),
+                (0.0, -3.81): (5.0, 5.0),
+            },
+        )
         assert result["wires_removed"] == 1
-        wires_remaining = [i for i in sch if isinstance(i, list) and i and i[0] == Symbol("wire")]
+        wires_remaining = [
+            i for i in sch if isinstance(i, list) and i and i[0] == Symbol("wire")
+        ]
         assert len(wires_remaining) == 0
 
     def test_unrelated_wire_not_touched(self):
@@ -270,8 +319,14 @@ class TestDragWires:
         original_start = (50.0, 50.0)
         result = WireDragger.drag_wires(sch, {(0.0, 3.81): (10.0, 23.81)})
         assert result["endpoints_moved"] == 0
-        updated = next(i for i in sch if isinstance(i, list) and i and i[0] == Symbol("wire"))
-        pts = next(s for s in updated[1:] if isinstance(s, list) and s and s[0] == Symbol("pts"))
+        updated = next(
+            i for i in sch if isinstance(i, list) and i and i[0] == Symbol("wire")
+        )
+        pts = next(
+            s
+            for s in updated[1:]
+            if isinstance(s, list) and s and s[0] == Symbol("pts")
+        )
         xy1 = pts[1]
         assert abs(xy1[1] - 50.0) < EPS
         assert abs(xy1[2] - 50.0) < EPS
@@ -280,10 +335,13 @@ class TestDragWires:
         """Wire connecting two pins of same component — both endpoints shift together."""
         wire = _make_wire(0, 3.81, 0, -3.81)
         sch = _make_sch_data([wire])
-        result = WireDragger.drag_wires(sch, {
-            (0.0, 3.81): (10.0, 23.81),
-            (0.0, -3.81): (10.0, 16.19),
-        })
+        result = WireDragger.drag_wires(
+            sch,
+            {
+                (0.0, 3.81): (10.0, 23.81),
+                (0.0, -3.81): (10.0, 16.19),
+            },
+        )
         assert result["endpoints_moved"] == 2
         assert result["wires_removed"] == 0
 
@@ -294,7 +352,11 @@ class TestDragWires:
         updated_j = next(
             i for i in sch if isinstance(i, list) and i and i[0] == Symbol("junction")
         )
-        at_sub = next(s for s in updated_j[1:] if isinstance(s, list) and s and s[0] == Symbol("at"))
+        at_sub = next(
+            s
+            for s in updated_j[1:]
+            if isinstance(s, list) and s and s[0] == Symbol("at")
+        )
         assert abs(at_sub[1] - 10.0) < EPS
         assert abs(at_sub[2] - 23.81) < EPS
 
@@ -305,7 +367,11 @@ class TestDragWires:
         updated_j = next(
             i for i in sch if isinstance(i, list) and i and i[0] == Symbol("junction")
         )
-        at_sub = next(s for s in updated_j[1:] if isinstance(s, list) and s and s[0] == Symbol("at"))
+        at_sub = next(
+            s
+            for s in updated_j[1:]
+            if isinstance(s, list) and s and s[0] == Symbol("at")
+        )
         assert abs(at_sub[1] - 99.0) < EPS
         assert abs(at_sub[2] - 99.0) < EPS
 
@@ -313,6 +379,7 @@ class TestDragWires:
 # ---------------------------------------------------------------------------
 # TestUpdateSymbolPosition
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 class TestUpdateSymbolPosition:
@@ -364,16 +431,19 @@ class TestUpdateSymbolPosition:
                     if isinstance(psub, list) and psub and psub[0] == at_k:
                         expected_x = initial_positions[name][0] + 20
                         expected_y = initial_positions[name][1] + 20
-                        assert abs(psub[1] - expected_x) < EPS, \
-                            f"{name} x: expected {expected_x}, got {psub[1]}"
-                        assert abs(psub[2] - expected_y) < EPS, \
-                            f"{name} y: expected {expected_y}, got {psub[2]}"
+                        assert (
+                            abs(psub[1] - expected_x) < EPS
+                        ), f"{name} x: expected {expected_x}, got {psub[1]}"
+                        assert (
+                            abs(psub[2] - expected_y) < EPS
+                        ), f"{name} y: expected {expected_y}, got {psub[2]}"
                         break
 
 
 # ---------------------------------------------------------------------------
 # Integration tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.integration
 class TestMoveWithWirePreservation:
@@ -390,9 +460,12 @@ class TestMoveWithWirePreservation:
             tmp.write_text(content, encoding="utf-8")
         return tmp
 
-    def _add_resistor(self, path: Path, ref: str, x: float, y: float, rotation: float = 0) -> Path:
+    def _add_resistor(
+        self, path: Path, ref: str, x: float, y: float, rotation: float = 0
+    ) -> Path:
         """Append a Device:R symbol to the schematic file."""
         import uuid
+
         u = str(uuid.uuid4())
         sexp = f"""
   (symbol (lib_id "Device:R") (at {x} {y} {rotation}) (unit 1)
@@ -422,6 +495,7 @@ class TestMoveWithWirePreservation:
     def _add_wire(self, path: Path, x1, y1, x2, y2) -> Path:
         """Append a wire to the schematic file."""
         import uuid
+
         wire_sexp = f"""
   (wire (pts (xy {x1} {y1}) (xy {x2} {y2}))
     (stroke (width 0) (type default))
@@ -440,13 +514,28 @@ class TestMoveWithWirePreservation:
         for item in data:
             if not (isinstance(item, list) and item and item[0] == Symbol("wire")):
                 continue
-            pts = next((s for s in item[1:] if isinstance(s, list) and s and s[0] == Symbol("pts")), None)
+            pts = next(
+                (
+                    s
+                    for s in item[1:]
+                    if isinstance(s, list) and s and s[0] == Symbol("pts")
+                ),
+                None,
+            )
             if pts is None:
                 continue
-            xys = [p for p in pts[1:] if isinstance(p, list) and len(p) >= 3 and p[0] == Symbol("xy")]
+            xys = [
+                p
+                for p in pts[1:]
+                if isinstance(p, list) and len(p) >= 3 and p[0] == Symbol("xy")
+            ]
             if len(xys) >= 2:
-                wires.append(((float(xys[0][1]), float(xys[0][2])),
-                               (float(xys[-1][1]), float(xys[-1][2]))))
+                wires.append(
+                    (
+                        (float(xys[0][1]), float(xys[0][2])),
+                        (float(xys[-1][1]), float(xys[-1][2])),
+                    )
+                )
         return wires
 
     def _get_symbol_pos(self, path: Path, ref: str):
@@ -463,12 +552,16 @@ class TestMoveWithWirePreservation:
         # Call handler directly
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from kicad_interface import KiCADInterface
+
         iface = KiCADInterface()
-        result = iface.handle_command("move_schematic_component", {
-            "schematicPath": str(sch),
-            "reference": "R1",
-            "position": {"x": 120, "y": 130},
-        })
+        result = iface.handle_command(
+            "move_schematic_component",
+            {
+                "schematicPath": str(sch),
+                "reference": "R1",
+                "position": {"x": 120, "y": 130},
+            },
+        )
         assert result["success"], result.get("message")
         pos = self._get_symbol_pos(sch, "R1")
         assert abs(pos[0] - 120) < EPS
@@ -483,12 +576,16 @@ class TestMoveWithWirePreservation:
 
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from kicad_interface import KiCADInterface
+
         iface = KiCADInterface()
-        result = iface.handle_command("move_schematic_component", {
-            "schematicPath": str(sch),
-            "reference": "R1",
-            "position": {"x": 110, "y": 100},
-        })
+        result = iface.handle_command(
+            "move_schematic_component",
+            {
+                "schematicPath": str(sch),
+                "reference": "R1",
+                "position": {"x": 110, "y": 100},
+            },
+        )
         assert result["success"], result.get("message")
         assert result["wiresMoved"] >= 1
 
@@ -498,8 +595,10 @@ class TestMoveWithWirePreservation:
         w = wires[0]
         endpoints = {w[0], w[1]}
         new_pin1 = (110.0, 103.81)
-        assert any(abs(ep[0] - new_pin1[0]) < 0.01 and abs(ep[1] - new_pin1[1]) < 0.01
-                   for ep in endpoints), f"Expected pin endpoint near {new_pin1}, got {endpoints}"
+        assert any(
+            abs(ep[0] - new_pin1[0]) < 0.01 and abs(ep[1] - new_pin1[1]) < 0.01
+            for ep in endpoints
+        ), f"Expected pin endpoint near {new_pin1}, got {endpoints}"
 
     def test_unrelated_wire_unchanged(self):
         """A wire not connected to R1 must not be modified."""
@@ -509,16 +608,21 @@ class TestMoveWithWirePreservation:
 
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from kicad_interface import KiCADInterface
+
         iface = KiCADInterface()
-        iface.handle_command("move_schematic_component", {
-            "schematicPath": str(sch),
-            "reference": "R1",
-            "position": {"x": 110, "y": 110},
-        })
+        iface.handle_command(
+            "move_schematic_component",
+            {
+                "schematicPath": str(sch),
+                "reference": "R1",
+                "position": {"x": 110, "y": 110},
+            },
+        )
 
         wires = self._parse_wires(sch)
-        unrelated = [(s, e) for s, e in wires
-                     if abs(s[0] - 50) < 0.01 and abs(s[1] - 50) < 0.01]
+        unrelated = [
+            (s, e) for s, e in wires if abs(s[0] - 50) < 0.01 and abs(s[1] - 50) < 0.01
+        ]
         assert len(unrelated) == 1
 
     def test_no_zero_length_wires_after_move(self):
@@ -530,17 +634,22 @@ class TestMoveWithWirePreservation:
 
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from kicad_interface import KiCADInterface
+
         iface = KiCADInterface()
-        iface.handle_command("move_schematic_component", {
-            "schematicPath": str(sch),
-            "reference": "R1",
-            "position": {"x": 110, "y": 100},
-        })
+        iface.handle_command(
+            "move_schematic_component",
+            {
+                "schematicPath": str(sch),
+                "reference": "R1",
+                "position": {"x": 110, "y": 100},
+            },
+        )
 
         wires = self._parse_wires(sch)
         for start, end in wires:
-            assert not (abs(start[0] - end[0]) < EPS and abs(start[1] - end[1]) < EPS), \
-                f"Zero-length wire found at {start}"
+            assert not (
+                abs(start[0] - end[0]) < EPS and abs(start[1] - end[1]) < EPS
+            ), f"Zero-length wire found at {start}"
 
     def test_preserve_wires_false_skips_wire_update(self):
         """preserveWires=False should move the symbol but leave wires alone."""
@@ -550,13 +659,17 @@ class TestMoveWithWirePreservation:
 
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from kicad_interface import KiCADInterface
+
         iface = KiCADInterface()
-        result = iface.handle_command("move_schematic_component", {
-            "schematicPath": str(sch),
-            "reference": "R1",
-            "position": {"x": 110, "y": 100},
-            "preserveWires": False,
-        })
+        result = iface.handle_command(
+            "move_schematic_component",
+            {
+                "schematicPath": str(sch),
+                "reference": "R1",
+                "position": {"x": 110, "y": 100},
+                "preserveWires": False,
+            },
+        )
         assert result["success"]
         assert result["wiresMoved"] == 0
 
@@ -565,18 +678,24 @@ class TestMoveWithWirePreservation:
         assert len(wires) == 1
         endpoints = {wires[0][0], wires[0][1]}
         old_pin1 = (100.0, 103.81)
-        assert any(abs(ep[0] - old_pin1[0]) < 0.01 and abs(ep[1] - old_pin1[1]) < 0.01
-                   for ep in endpoints), f"Wire should still be at {old_pin1}, got {endpoints}"
+        assert any(
+            abs(ep[0] - old_pin1[0]) < 0.01 and abs(ep[1] - old_pin1[1]) < 0.01
+            for ep in endpoints
+        ), f"Wire should still be at {old_pin1}, got {endpoints}"
 
     def test_missing_component_returns_error(self):
         sch = self._make_schematic()
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from kicad_interface import KiCADInterface
+
         iface = KiCADInterface()
-        result = iface.handle_command("move_schematic_component", {
-            "schematicPath": str(sch),
-            "reference": "NOTHERE",
-            "position": {"x": 0, "y": 0},
-        })
+        result = iface.handle_command(
+            "move_schematic_component",
+            {
+                "schematicPath": str(sch),
+                "reference": "NOTHERE",
+                "position": {"x": 0, "y": 0},
+            },
+        )
         assert not result["success"]
         assert "not found" in result.get("message", "").lower()

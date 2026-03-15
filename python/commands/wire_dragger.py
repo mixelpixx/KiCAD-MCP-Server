@@ -17,8 +17,16 @@ logger = logging.getLogger("kicad_interface")
 _K = {
     name: Symbol(name)
     for name in [
-        "symbol", "at", "lib_id", "mirror", "lib_symbols",
-        "pts", "xy", "wire", "junction", "property",
+        "symbol",
+        "at",
+        "lib_id",
+        "mirror",
+        "lib_symbols",
+        "pts",
+        "xy",
+        "wire",
+        "junction",
+        "property",
     ]
 }
 
@@ -34,8 +42,7 @@ def _rotate(x: float, y: float, angle_deg: float) -> Tuple[float, float]:
     return x * c - y * s, x * s + y * c
 
 
-def _coords_match(ax: float, ay: float, bx: float, by: float,
-                  eps: float = EPS) -> bool:
+def _coords_match(ax: float, ay: float, bx: float, by: float, eps: float = EPS) -> bool:
     return abs(ax - bx) < eps and abs(ay - by) < eps
 
 
@@ -117,7 +124,9 @@ class WireDragger:
             if not (isinstance(item, list) and item and item[0] == lib_sym_k):
                 continue
             for sym_def in item[1:]:
-                if not (isinstance(sym_def, list) and sym_def and sym_def[0] == symbol_k):
+                if not (
+                    isinstance(sym_def, list) and sym_def and sym_def[0] == symbol_k
+                ):
                     continue
                 if len(sym_def) < 2:
                     continue
@@ -129,10 +138,13 @@ class WireDragger:
 
     @staticmethod
     def pin_world_xy(
-        px: float, py: float,
-        sym_x: float, sym_y: float,
+        px: float,
+        py: float,
+        sym_x: float,
+        sym_y: float,
         rotation: float,
-        mirror_x: bool, mirror_y: bool,
+        mirror_x: bool,
+        mirror_y: bool,
     ) -> Tuple[float, float]:
         """
         Compute the world coordinate of a pin given the symbol transform.
@@ -226,7 +238,8 @@ class WireDragger:
                 continue
 
             xy_items = [
-                p for p in pts_sub[1:]
+                p
+                for p in pts_sub[1:]
                 if isinstance(p, list) and len(p) >= 3 and p[0] == xy_k
             ]
             for xy_item in xy_items:
@@ -287,7 +300,7 @@ class WireDragger:
                 sub[1] = new_x
                 sub[2] = new_y
                 break
-        if old_x is None:
+        if old_x is None or old_y is None:
             return False
 
         dx = new_x - old_x
@@ -297,7 +310,12 @@ class WireDragger:
         for sub in item[1:]:
             if isinstance(sub, list) and sub and sub[0] == prop_k:
                 for psub in sub[1:]:
-                    if isinstance(psub, list) and psub and psub[0] == at_k and len(psub) >= 3:
+                    if (
+                        isinstance(psub, list)
+                        and psub
+                        and psub[0] == at_k
+                        and len(psub) >= 3
+                    ):
                         psub[1] += dx
                         psub[2] += dy
                         break
