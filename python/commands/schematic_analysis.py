@@ -293,11 +293,13 @@ def find_unconnected_pins(schematic_path: Path) -> List[Dict[str, Any]]:
         if sym["is_power"] or ref.startswith("_TEMPLATE") or not ref:
             continue
 
-        pin_positions = locator.get_all_symbol_pins(schematic_path, ref)
-        if not pin_positions:
+        pin_defs = locator.get_symbol_pins(schematic_path, sym["lib_id"])
+        if not pin_defs:
             continue
 
-        pin_defs = None
+        pin_positions = _compute_pin_positions_direct(sym, pin_defs)
+        if not pin_positions:
+            continue
 
         for pin_num, pos in pin_positions.items():
             px, py = pos[0], pos[1]
@@ -306,9 +308,6 @@ def find_unconnected_pins(schematic_path: Path) -> List[Dict[str, Any]]:
                 continue
             if is_connected(px, py):
                 continue
-
-            if pin_defs is None:
-                pin_defs = locator.get_symbol_pins(schematic_path, sym["lib_id"])
 
             pin_name = pin_defs.get(pin_num, {}).get("name", pin_num)
             unconnected.append({
@@ -482,13 +481,15 @@ def get_elements_in_region(
                 "position": {"x": sym["x"], "y": sym["y"]},
                 "isPower": sym["is_power"],
             }
-            # Include pin positions
-            pin_positions = locator.get_all_symbol_pins(schematic_path, sym["reference"])
-            if pin_positions:
-                entry["pins"] = {
-                    pn: {"x": round(pos[0], 4), "y": round(pos[1], 4)}
-                    for pn, pos in pin_positions.items()
-                }
+            # Include pin positions (compute directly to handle unannotated duplicates)
+            pin_defs = locator.get_symbol_pins(schematic_path, sym["lib_id"])
+            if pin_defs:
+                pin_positions = _compute_pin_positions_direct(sym, pin_defs)
+                if pin_positions:
+                    entry["pins"] = {
+                        pn: {"x": round(pos[0], 4), "y": round(pos[1], 4)}
+                        for pn, pos in pin_positions.items()
+                    }
             region_symbols.append(entry)
 
     # Wires: include if ANY endpoint is within bounds
