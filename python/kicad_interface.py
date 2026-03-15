@@ -2597,19 +2597,34 @@ class KiCADInterface:
             svg_output = None
 
             try:
-                cmd = [kicad_cli, "sch", "export", "svg", "--output", tmp_dir, schematic_path]
+                cmd = [
+                    kicad_cli,
+                    "sch",
+                    "export",
+                    "svg",
+                    "--output",
+                    tmp_dir,
+                    schematic_path,
+                ]
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
                 if result.returncode != 0:
-                    return {"success": False, "message": f"SVG export failed: {result.stderr}"}
+                    return {
+                        "success": False,
+                        "message": f"SVG export failed: {result.stderr}",
+                    }
 
                 # kicad-cli names the file after the schematic
                 svg_files = [f for f in os.listdir(tmp_dir) if f.endswith(".svg")]
                 if not svg_files:
-                    return {"success": False, "message": "kicad-cli produced no SVG output"}
+                    return {
+                        "success": False,
+                        "message": "kicad-cli produced no SVG output",
+                    }
                 svg_output = os.path.join(tmp_dir, svg_files[0])
 
                 import xml.etree.ElementTree as ET
+
                 tree = ET.parse(svg_output)
                 root = tree.getroot()
 
@@ -2642,8 +2657,13 @@ class KiCADInterface:
                     try:
                         from cairosvg import svg2png
                     except ImportError:
-                        return {"success": False, "message": "PNG export requires the 'cairosvg' package. Install it with: pip install cairosvg"}
-                    png_data = svg2png(url=cropped_svg_path, output_width=width, output_height=height)
+                        return {
+                            "success": False,
+                            "message": "PNG export requires the 'cairosvg' package. Install it with: pip install cairosvg",
+                        }
+                    png_data = svg2png(
+                        url=cropped_svg_path, output_width=width, output_height=height
+                    )
                     return {
                         "success": True,
                         "imageData": base64.b64encode(png_data).decode("utf-8"),
@@ -2651,14 +2671,15 @@ class KiCADInterface:
                     }
             finally:
                 import shutil
+
                 shutil.rmtree(tmp_dir, ignore_errors=True)
 
         except Exception as e:
             logger.error(f"Error in get_schematic_view_region: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
-
 
     def _handle_find_overlapping_elements(self, params):
         """Detect spatially overlapping symbols, wires, and labels"""
@@ -2681,6 +2702,7 @@ class KiCADInterface:
         except Exception as e:
             logger.error(f"Error finding overlapping elements: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
@@ -2709,6 +2731,7 @@ class KiCADInterface:
         except Exception as e:
             logger.error(f"Error getting elements in region: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
@@ -2733,6 +2756,7 @@ class KiCADInterface:
         except Exception as e:
             logger.error(f"Error checking wire collisions: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 

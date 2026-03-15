@@ -39,7 +39,6 @@ from commands.schematic_analysis import (
     find_wires_crossing_symbols,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -127,6 +126,7 @@ def _make_led_sexp(ref: str, x: float, y: float, rotation: float = 0) -> str:
 # Unit tests — geometry helpers
 # ===================================================================
 
+
 class TestGeometryHelpers:
     """Test low-level geometry utilities."""
 
@@ -173,6 +173,7 @@ class TestGeometryHelpers:
 # ===================================================================
 # Unit tests — S-expression parsers
 # ===================================================================
+
 
 class TestSexpParsers:
     """Test S-expression parsing functions with synthetic data."""
@@ -223,6 +224,7 @@ class TestSexpParsers:
 # Unit tests — analysis functions with mocked PinLocator
 # ===================================================================
 
+
 class TestAABBOverlap:
     """Test AABB overlap helper."""
 
@@ -254,14 +256,18 @@ class TestFindOverlappingElements:
 
     def test_overlapping_symbols_detected(self):
         # Two resistors at nearly the same position — bboxes fully overlap
-        extra = _make_resistor_sexp("R1", 100, 100) + _make_resistor_sexp("R2", 100.1, 100)
+        extra = _make_resistor_sexp("R1", 100, 100) + _make_resistor_sexp(
+            "R2", 100.1, 100
+        )
         tmp = _make_temp_schematic(extra)
         result = find_overlapping_elements(tmp, tolerance=0.5)
         assert result["totalOverlaps"] >= 1
         assert len(result["overlappingSymbols"]) >= 1
 
     def test_well_separated_symbols_not_flagged(self):
-        extra = _make_resistor_sexp("R1", 100, 100) + _make_resistor_sexp("R2", 200, 200)
+        extra = _make_resistor_sexp("R1", 100, 100) + _make_resistor_sexp(
+            "R2", 200, 200
+        )
         tmp = _make_temp_schematic(extra)
         result = find_overlapping_elements(tmp, tolerance=0.5)
         assert result["totalOverlaps"] == 0
@@ -288,7 +294,9 @@ class TestFindOverlappingElements:
         """
         # R1 at y=100, R2 at y=105 — pin spans [96.19, 103.81] and [101.19, 108.81]
         # These overlap in Y from 101.19 to 103.81
-        extra = _make_resistor_sexp("R1", 100, 100) + _make_resistor_sexp("R2", 100, 105)
+        extra = _make_resistor_sexp("R1", 100, 100) + _make_resistor_sexp(
+            "R2", 100, 105
+        )
         tmp = _make_temp_schematic(extra)
         result = find_overlapping_elements(tmp, tolerance=0.5)
         assert result["totalOverlaps"] >= 1, (
@@ -302,7 +310,9 @@ class TestFindOverlappingElements:
 
         R pins at y ±3.81, but different X positions far enough apart.
         """
-        extra = _make_resistor_sexp("R1", 100, 100) + _make_resistor_sexp("R2", 110, 100)
+        extra = _make_resistor_sexp("R1", 100, 100) + _make_resistor_sexp(
+            "R2", 110, 100
+        )
         tmp = _make_temp_schematic(extra)
         result = find_overlapping_elements(tmp, tolerance=0.5)
         assert result["totalOverlaps"] == 0
@@ -355,6 +365,7 @@ class TestComputeSymbolBbox:
     def test_returns_none_for_unknown_symbol(self):
         tmp = _make_temp_schematic()
         from commands.pin_locator import PinLocator
+
         locator = PinLocator()
         result = compute_symbol_bbox(tmp, "NONEXISTENT", locator)
         assert result is None
@@ -409,8 +420,7 @@ class TestIntegrationFindWiresCrossingSymbols:
         result = find_wires_crossing_symbols(tmp)
         # The wire must not be reported against the far-away R? at (200, 100)
         collisions_at_200 = [
-            c for c in result
-            if abs(c["component"]["position"]["x"] - 200) < 0.5
+            c for c in result if abs(c["component"]["position"]["x"] - 200) < 0.5
         ]
         assert len(collisions_at_200) == 0, (
             "Wire at x≈100 must not be flagged against the R? at x=200; "
@@ -431,9 +441,9 @@ class TestIntegrationFindWiresCrossingSymbols:
         tmp = _make_temp_schematic(extra)
         result = find_wires_crossing_symbols(tmp)
         d1_crossings = [c for c in result if c["component"]["reference"] == "D1"]
-        assert len(d1_crossings) >= 1, (
-            "Wire starting at pin but passing through body must be detected"
-        )
+        assert (
+            len(d1_crossings) >= 1
+        ), "Wire starting at pin but passing through body must be detected"
 
     def test_wire_terminating_at_pin_from_outside(self):
         """A wire that arrives at a pin from outside the component body
@@ -448,17 +458,17 @@ class TestIntegrationFindWiresCrossingSymbols:
         tmp = _make_temp_schematic(extra)
         result = find_wires_crossing_symbols(tmp)
         d1_crossings = [c for c in result if c["component"]["reference"] == "D1"]
-        assert len(d1_crossings) == 0, (
-            "Wire terminating at pin from outside should not be flagged"
-        )
+        assert (
+            len(d1_crossings) == 0
+        ), "Wire terminating at pin from outside should not be flagged"
 
     def test_wire_shorts_component_pins_detected_as_collision(self):
         """Regression: a wire connecting pin1→pin2 of the same component
         must be reported even though both endpoints land on pins."""
         r_sexp = _make_resistor_sexp("R_short", 100.0, 100.0)
         wire_sexp = (
-            '(wire (pts (xy 100 103.81) (xy 100 96.19))\n'
-            '  (stroke (width 0) (type default))\n'
+            "(wire (pts (xy 100 103.81) (xy 100 96.19))\n"
+            "  (stroke (width 0) (type default))\n"
             '  (uuid "aaaaaaaa-0000-0000-0000-000000000001"))'
         )
         sch = _make_temp_schematic(r_sexp + "\n" + wire_sexp)
@@ -510,6 +520,7 @@ class TestIntegrationGetElementsInRegion:
 # ===================================================================
 # Unit tests — _check_wire_overlap
 # ===================================================================
+
 
 class TestCheckWireOverlap:
     """Test wire overlap detection for horizontal, vertical, and diagonal cases."""
@@ -613,6 +624,7 @@ class TestIntegrationDiagonalWireOverlap:
 # Unit tests — _extract_lib_symbols
 # ===================================================================
 
+
 class TestExtractLibSymbols:
     """Test _extract_lib_symbols helper."""
 
@@ -684,6 +696,7 @@ class TestExtractLibSymbols:
 # Unit tests — _parse_lib_symbol_graphics
 # ===================================================================
 
+
 class TestParseLibSymbolGraphics:
     """Test graphics extraction from lib_symbol definitions."""
 
@@ -745,6 +758,7 @@ class TestParseLibSymbolGraphics:
 # Unit tests — _transform_local_point
 # ===================================================================
 
+
 class TestTransformLocalPoint:
     """Test local→absolute coordinate transform."""
 
@@ -776,6 +790,7 @@ class TestTransformLocalPoint:
 # Unit tests — _compute_symbol_bbox_direct with graphics
 # ===================================================================
 
+
 class TestComputeSymbolBboxWithGraphics:
     """Test that bounding box computation uses graphics points when available."""
 
@@ -783,14 +798,36 @@ class TestComputeSymbolBboxWithGraphics:
         """Device:R rectangle is (-1.016, -2.54) to (1.016, 2.54) in local coords.
         Pins at (0, ±3.81). Placed at (100, 100) with no rotation.
         Bbox should span from pin-to-pin in Y and use rectangle width in X."""
-        sym = {"x": 100.0, "y": 100.0, "rotation": 0, "mirror_x": False, "mirror_y": False}
+        sym = {
+            "x": 100.0,
+            "y": 100.0,
+            "rotation": 0,
+            "mirror_x": False,
+            "mirror_y": False,
+        }
         pin_defs = {
-            "1": {"x": 0, "y": 3.81, "angle": 270, "length": 1.27, "name": "~", "type": "passive"},
-            "2": {"x": 0, "y": -3.81, "angle": 90, "length": 1.27, "name": "~", "type": "passive"},
+            "1": {
+                "x": 0,
+                "y": 3.81,
+                "angle": 270,
+                "length": 1.27,
+                "name": "~",
+                "type": "passive",
+            },
+            "2": {
+                "x": 0,
+                "y": -3.81,
+                "angle": 90,
+                "length": 1.27,
+                "name": "~",
+                "type": "passive",
+            },
         }
         graphics_points = [(-1.016, -2.54), (1.016, 2.54)]
 
-        bbox = _compute_symbol_bbox_direct(sym, pin_defs, graphics_points=graphics_points)
+        bbox = _compute_symbol_bbox_direct(
+            sym, pin_defs, graphics_points=graphics_points
+        )
         assert bbox is not None
         min_x, min_y, max_x, max_y = bbox
         # X should come from rectangle: 100 ± 1.016
@@ -802,10 +839,30 @@ class TestComputeSymbolBboxWithGraphics:
 
     def test_fallback_without_graphics(self):
         """Without graphics_points, should use the old degenerate expansion."""
-        sym = {"x": 100.0, "y": 100.0, "rotation": 0, "mirror_x": False, "mirror_y": False}
+        sym = {
+            "x": 100.0,
+            "y": 100.0,
+            "rotation": 0,
+            "mirror_x": False,
+            "mirror_y": False,
+        }
         pin_defs = {
-            "1": {"x": 0, "y": 3.81, "angle": 270, "length": 1.27, "name": "~", "type": "passive"},
-            "2": {"x": 0, "y": -3.81, "angle": 90, "length": 1.27, "name": "~", "type": "passive"},
+            "1": {
+                "x": 0,
+                "y": 3.81,
+                "angle": 270,
+                "length": 1.27,
+                "name": "~",
+                "type": "passive",
+            },
+            "2": {
+                "x": 0,
+                "y": -3.81,
+                "angle": 90,
+                "length": 1.27,
+                "name": "~",
+                "type": "passive",
+            },
         }
 
         bbox = _compute_symbol_bbox_direct(sym, pin_defs)
@@ -817,15 +874,37 @@ class TestComputeSymbolBboxWithGraphics:
 
     def test_rotated_symbol_graphics(self):
         """Graphics points should be rotated along with the symbol."""
-        sym = {"x": 100.0, "y": 100.0, "rotation": 90, "mirror_x": False, "mirror_y": False}
+        sym = {
+            "x": 100.0,
+            "y": 100.0,
+            "rotation": 90,
+            "mirror_x": False,
+            "mirror_y": False,
+        }
         pin_defs = {
-            "1": {"x": 0, "y": 3.81, "angle": 270, "length": 1.27, "name": "~", "type": "passive"},
-            "2": {"x": 0, "y": -3.81, "angle": 90, "length": 1.27, "name": "~", "type": "passive"},
+            "1": {
+                "x": 0,
+                "y": 3.81,
+                "angle": 270,
+                "length": 1.27,
+                "name": "~",
+                "type": "passive",
+            },
+            "2": {
+                "x": 0,
+                "y": -3.81,
+                "angle": 90,
+                "length": 1.27,
+                "name": "~",
+                "type": "passive",
+            },
         }
         # Rectangle corners in local coords
         graphics_points = [(-1.016, -2.54), (1.016, 2.54)]
 
-        bbox = _compute_symbol_bbox_direct(sym, pin_defs, graphics_points=graphics_points)
+        bbox = _compute_symbol_bbox_direct(
+            sym, pin_defs, graphics_points=graphics_points
+        )
         assert bbox is not None
         min_x, min_y, max_x, max_y = bbox
         # After 90° rotation, X and Y swap roles
@@ -856,7 +935,9 @@ class TestIntegrationGraphicsBbox:
 
         assert len(graphics_points) >= 2, "Should have extracted rectangle points"
 
-        bbox = _compute_symbol_bbox_direct(r1, pin_defs, graphics_points=graphics_points)
+        bbox = _compute_symbol_bbox_direct(
+            r1, pin_defs, graphics_points=graphics_points
+        )
         assert bbox is not None
         min_x, min_y, max_x, max_y = bbox
         # Rectangle is ±1.016 in X, NOT ±1.5 from degenerate expansion

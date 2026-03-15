@@ -33,6 +33,7 @@ except ImportError:
 
     class _FakeSchematic:
         """Minimal stand-in for skip.Schematic used in PinLocator cache."""
+
         def __init__(self, path: str):
             self.path = path
             self.symbol = []
