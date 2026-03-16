@@ -4,7 +4,7 @@
  * Centralizes all tool definitions and provides lookup/search functionality
  */
 
-import { z } from 'zod';
+import { z } from "zod";
 
 export interface ToolDefinition {
   name: string;
@@ -26,7 +26,8 @@ export interface ToolCategory {
 export const toolCategories: ToolCategory[] = [
   {
     name: "board",
-    description: "Board configuration: layers, mounting holes, zones, visualization",
+    description:
+      "Board configuration: layers, mounting holes, zones, visualization",
     tools: [
       "add_layer",
       "set_active_layer",
@@ -36,12 +37,13 @@ export const toolCategories: ToolCategory[] = [
       "add_zone",
       "get_board_extents",
       "get_board_2d_view",
-      "launch_kicad_ui"
-    ]
+      "launch_kicad_ui",
+    ],
   },
   {
     name: "component",
-    description: "Advanced component operations: edit, delete, search, group, annotate",
+    description:
+      "Advanced component operations: edit, delete, search, group, annotate",
     tools: [
       "rotate_component",
       "delete_component",
@@ -50,12 +52,13 @@ export const toolCategories: ToolCategory[] = [
       "get_component_properties",
       "add_component_annotation",
       "group_components",
-      "replace_component"
-    ]
+      "replace_component",
+    ],
   },
   {
     name: "export",
-    description: "File export for fabrication and documentation: Gerber, PDF, BOM, 3D models",
+    description:
+      "File export for fabrication and documentation: Gerber, PDF, BOM, 3D models",
     tools: [
       "export_gerber",
       "export_pdf",
@@ -64,12 +67,13 @@ export const toolCategories: ToolCategory[] = [
       "export_bom",
       "export_netlist",
       "export_position_file",
-      "export_vrml"
-    ]
+      "export_vrml",
+    ],
   },
   {
     name: "drc",
-    description: "Design rule checking and electrical validation: DRC, net classes, clearances",
+    description:
+      "Design rule checking and electrical validation: DRC, net classes, clearances",
     tools: [
       "set_design_rules",
       "get_design_rules",
@@ -78,42 +82,41 @@ export const toolCategories: ToolCategory[] = [
       "assign_net_to_class",
       "set_layer_constraints",
       "check_clearance",
-      "get_drc_violations"
-    ]
+      "get_drc_violations",
+    ],
   },
   {
     name: "schematic",
-    description: "Schematic operations: create, add components, wire connections, netlists",
+    description:
+      "Schematic operations: create, add components, wire connections, netlists",
     tools: [
       "create_schematic",
       "add_schematic_component",
-      "add_wire",
-      "add_schematic_connection",
+      "add_schematic_wire",
+      "add_schematic_junction",
       "add_schematic_net_label",
       "connect_to_net",
       "get_net_connections",
       "generate_netlist",
-      "sync_schematic_to_board"
-    ]
+      "sync_schematic_to_board",
+    ],
   },
   {
     name: "library",
-    description: "Footprint library access: search, browse, get footprint information",
+    description:
+      "Footprint library access: search, browse, get footprint information",
     tools: [
       "list_libraries",
       "search_footprints",
       "list_library_footprints",
-      "get_footprint_info"
-    ]
+      "get_footprint_info",
+    ],
   },
   {
     name: "routing",
     description: "Advanced routing operations: vias, copper pours",
-    tools: [
-      "add_via",
-      "add_copper_pour"
-    ]
-  }
+    tools: ["add_via", "add_copper_pour"],
+  },
 ];
 
 /**
@@ -149,7 +152,7 @@ export const directToolNames = [
   "sync_schematic_to_board",
 
   // UI management
-  "check_kicad_ui"
+  "check_kicad_ui",
 ];
 
 // Build lookup maps at module load time
@@ -234,7 +237,7 @@ export function searchTools(query: string): SearchResult[] {
       matches.push({
         category: "direct",
         tool: toolName,
-        description: `${toolName} (direct tool — call directly, no execute_tool needed)`
+        description: `${toolName} (direct tool — call directly, no execute_tool needed)`,
       });
     }
   }
@@ -250,7 +253,7 @@ export function searchTools(query: string): SearchResult[] {
         matches.push({
           category: category.name,
           tool: toolName,
-          description: `${toolName} (${category.name})`
+          description: `${toolName} (${category.name})`,
         });
       }
     }
@@ -271,10 +274,10 @@ export function getRegistryStats() {
     total_routed_tools: routedToolCount,
     total_direct_tools: directToolCount,
     total_tools: routedToolCount + directToolCount,
-    categories: toolCategories.map(c => ({
+    categories: toolCategories.map((c) => ({
       name: c.name,
-      tool_count: c.tools.length
-    }))
+      tool_count: c.tools.length,
+    })),
   };
 }
 
