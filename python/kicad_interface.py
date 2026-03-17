@@ -755,59 +755,55 @@ class KiCADInterface:
                 }
 
             with open(sch_file, "r", encoding="utf-8") as f:
-                lines = f.read().split("\n")
+                content = f.read()
 
-            # Find lib_symbols range to skip it
-            lib_sym_start, lib_sym_end = None, None
-            depth = 0
-            for i, line in enumerate(lines):
-                if "(lib_symbols" in line and lib_sym_start is None:
-                    lib_sym_start = i
-                    depth = sum(1 for c in line if c == "(") - sum(
-                        1 for c in line if c == ")"
-                    )
-                elif lib_sym_start is not None and lib_sym_end is None:
-                    depth += sum(1 for c in line if c == "(") - sum(
-                        1 for c in line if c == ")"
-                    )
-                    if depth == 0:
-                        lib_sym_end = i
-                        break
+            def find_matching_paren(s, start):
+                """Find the closing paren matching the opening paren at start."""
+                depth = 0
+                i = start
+                while i < len(s):
+                    if s[i] == "(":
+                        depth += 1
+                    elif s[i] == ")":
+                        depth -= 1
+                        if depth == 0:
+                            return i
+                    i += 1
+                return -1
 
-            # Find ALL placed symbol blocks matching the reference (handles duplicates)
-            blocks_to_delete = []
-            i = 0
-            while i < len(lines):
-                # Skip lib_symbols
-                if lib_sym_start is not None and lib_sym_end is not None:
-                    if lib_sym_start <= i <= lib_sym_end:
-                        i += 1
-                        continue
+            # Skip lib_symbols section
+            lib_sym_pos = content.find("(lib_symbols")
+            lib_sym_end = (
+                find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
+            )
 
-                if re.match(r"\s*\(symbol\s+\(lib_id\s+\"", lines[i]):
-                    b_start = i
-                    b_depth = sum(1 for c in lines[i] if c == "(") - sum(
-                        1 for c in lines[i] if c == ")"
-                    )
-                    j = i + 1
-                    while j < len(lines) and b_depth > 0:
-                        b_depth += sum(1 for c in lines[j] if c == "(") - sum(
-                            1 for c in lines[j] if c == ")"
-                        )
-                        j += 1
-                    b_end = j - 1
-
-                    block_text = "\n".join(lines[b_start : b_end + 1])
-                    if re.search(
-                        r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"',
-                        block_text,
-                    ):
-                        blocks_to_delete.append((b_start, b_end))
-
-                    i = b_end + 1
+            # Find ALL placed symbol blocks matching the reference (handles duplicates).
+            # Use content-string search so multi-line KiCAD format is handled correctly:
+            # KiCAD writes (symbol\n\t\t(lib_id "...") across two lines, which a
+            # line-by-line regex would never match.
+            blocks_to_delete = []  # list of (char_start, char_end) into content
+            search_start = 0
+            pattern = re.compile(r'\(symbol\s+\(lib_id\s+"')
+            while True:
+                m = pattern.search(content, search_start)
+                if not m:
+                    break
+                pos = m.start()
+                # Skip blocks inside lib_symbols
+                if lib_sym_pos >= 0 and lib_sym_pos <= pos <= lib_sym_end:
+                    search_start = lib_sym_end + 1
                     continue
-
-                i += 1
+                end = find_matching_paren(content, pos)
+                if end < 0:
+                    search_start = pos + 1
+                    continue
+                block_text = content[pos : end + 1]
+                if re.search(
+                    r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"',
+                    block_text,
+                ):
+                    blocks_to_delete.append((pos, end))
+                search_start = end + 1
 
             if not blocks_to_delete:
                 return {
@@ -815,14 +811,18 @@ class KiCADInterface:
                     "message": f"Component '{reference}' not found in schematic (note: this tool removes schematic symbols, use delete_component for PCB footprints)",
                 }
 
-            # Delete from back to front to preserve line indices
+            # Delete from back to front to preserve character offsets
             for b_start, b_end in sorted(blocks_to_delete, reverse=True):
-                del lines[b_start : b_end + 1]
-                if b_start < len(lines) and lines[b_start].strip() == "":
-                    del lines[b_start]
+                # Include any leading newline/whitespace before the block
+                trim_start = b_start
+                while trim_start > 0 and content[trim_start - 1] in (" ", "\t"):
+                    trim_start -= 1
+                if trim_start > 0 and content[trim_start - 1] == "\n":
+                    trim_start -= 1
+                content = content[:trim_start] + content[b_end + 1:]
 
             with open(sch_file, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines))
+                f.write(content)
 
             deleted_count = len(blocks_to_delete)
             logger.info(
