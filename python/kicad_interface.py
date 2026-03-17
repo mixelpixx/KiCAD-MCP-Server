@@ -372,6 +372,7 @@ class KiCADInterface:
             "add_schematic_component": self._handle_add_schematic_component,
             "delete_schematic_component": self._handle_delete_schematic_component,
             "edit_schematic_component": self._handle_edit_schematic_component,
+            "get_schematic_component": self._handle_get_schematic_component,
             "add_schematic_wire": self._handle_add_schematic_wire,
             "add_schematic_connection": self._handle_add_schematic_connection,
             "add_schematic_net_label": self._handle_add_schematic_net_label,
@@ -856,6 +857,9 @@ class KiCADInterface:
             new_footprint = params.get("footprint")
             new_value = params.get("value")
             new_reference = params.get("newReference")
+            field_positions = params.get(
+                "fieldPositions"
+            )  # dict: {"Reference": {"x": 1, "y": 2, "angle": 0}}
 
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
@@ -866,11 +870,12 @@ class KiCADInterface:
                     new_footprint is not None,
                     new_value is not None,
                     new_reference is not None,
+                    field_positions is not None,
                 ]
             ):
                 return {
                     "success": False,
-                    "message": "At least one of footprint, value, or newReference must be provided",
+                    "message": "At least one of footprint, value, newReference, or fieldPositions must be provided",
                 }
 
             sch_file = Path(schematic_path)
@@ -954,6 +959,18 @@ class KiCADInterface:
                     rf'\1"{new_reference}"',
                     block_text,
                 )
+            if field_positions is not None:
+                for field_name, pos in field_positions.items():
+                    x = pos.get("x", 0)
+                    y = pos.get("y", 0)
+                    angle = pos.get("angle", 0)
+                    block_text = re.sub(
+                        r'(\(property\s+"'
+                        + re.escape(field_name)
+                        + r'"\s+"[^"]*"\s+)\(at\s+[\d\.\-]+\s+[\d\.\-]+\s+[\d\.\-]+\s*\)',
+                        rf"\1(at {x} {y} {angle})",
+                        block_text,
+                    )
 
             content = content[:block_start] + block_text + content[block_end + 1 :]
 
@@ -969,11 +986,138 @@ class KiCADInterface:
                 }.items()
                 if v is not None
             }
+            if field_positions is not None:
+                changes["fieldPositions"] = field_positions
             logger.info(f"Edited schematic component {reference}: {changes}")
             return {"success": True, "reference": reference, "updated": changes}
 
         except Exception as e:
             logger.error(f"Error editing schematic component: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_get_schematic_component(self, params):
+        """Return full component info: position and all field values with their (at x y angle) positions."""
+        logger.info("Getting schematic component info")
+        try:
+            from pathlib import Path
+            import re
+
+            schematic_path = params.get("schematicPath")
+            reference = params.get("reference")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not reference:
+                return {"success": False, "message": "reference is required"}
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {
+                    "success": False,
+                    "message": f"Schematic not found: {schematic_path}",
+                }
+
+            with open(sch_file, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            def find_matching_paren(s, start):
+                depth = 0
+                i = start
+                while i < len(s):
+                    if s[i] == "(":
+                        depth += 1
+                    elif s[i] == ")":
+                        depth -= 1
+                        if depth == 0:
+                            return i
+                    i += 1
+                return -1
+
+            # Skip lib_symbols section
+            lib_sym_pos = content.find("(lib_symbols")
+            lib_sym_end = (
+                find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
+            )
+
+            # Find the placed symbol block for this reference
+            block_start = block_end = None
+            search_start = 0
+            pattern = re.compile(r'\(symbol\s+\(lib_id\s+"')
+            while True:
+                m = pattern.search(content, search_start)
+                if not m:
+                    break
+                pos = m.start()
+                if lib_sym_pos >= 0 and lib_sym_pos <= pos <= lib_sym_end:
+                    search_start = lib_sym_end + 1
+                    continue
+                end = find_matching_paren(content, pos)
+                if end < 0:
+                    search_start = pos + 1
+                    continue
+                block_text = content[pos : end + 1]
+                if re.search(
+                    r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"',
+                    block_text,
+                ):
+                    block_start, block_end = pos, end
+                    break
+                search_start = end + 1
+
+            if block_start is None:
+                return {
+                    "success": False,
+                    "message": f"Component '{reference}' not found in schematic",
+                }
+
+            block_text = content[block_start : block_end + 1]
+
+            # Extract component position: first (at x y angle) in the symbol header line
+            comp_at = re.search(
+                r'\(symbol\s+\(lib_id\s+"[^"]*"\s*\)\s+\(at\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s*\)',
+                block_text,
+            )
+            if comp_at:
+                comp_pos = {
+                    "x": float(comp_at.group(1)),
+                    "y": float(comp_at.group(2)),
+                    "angle": float(comp_at.group(3)),
+                }
+            else:
+                comp_pos = None
+
+            # Extract all properties with their at positions
+            prop_pattern = re.compile(
+                r'\(property\s+"([^"]*)"\s+"([^"]*)"\s+\(at\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s*\)'
+            )
+            fields = {}
+            for m in prop_pattern.finditer(block_text):
+                name, value, x, y, angle = (
+                    m.group(1),
+                    m.group(2),
+                    m.group(3),
+                    m.group(4),
+                    m.group(5),
+                )
+                fields[name] = {
+                    "value": value,
+                    "x": float(x),
+                    "y": float(y),
+                    "angle": float(angle),
+                }
+
+            return {
+                "success": True,
+                "reference": reference,
+                "position": comp_pos,
+                "fields": fields,
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting schematic component: {e}")
             import traceback
 
             logger.error(traceback.format_exc())

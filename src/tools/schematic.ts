@@ -160,6 +160,11 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       footprint: z.string().optional().describe("New KiCAD footprint string (e.g. Resistor_SMD:R_0603_1608Metric)"),
       value: z.string().optional().describe("New value string (e.g. 10k, 100nF)"),
       newReference: z.string().optional().describe("Rename the reference designator (e.g. R1 → R10)"),
+      fieldPositions: z.record(z.object({
+        x: z.number(),
+        y: z.number(),
+        angle: z.number().optional().default(0),
+      })).optional().describe("Reposition field labels: map of field name to {x, y, angle} (e.g. {\"Reference\": {\"x\": 12.5, \"y\": 17.0}})"),
     },
     async (args: {
       schematicPath: string;
@@ -167,6 +172,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       footprint?: string;
       value?: string;
       newReference?: string;
+      fieldPositions?: Record<string, { x: number; y: number; angle?: number }>;
     }) => {
       const result = await callKicadScript("edit_schematic_component", args);
       if (result.success) {
@@ -189,6 +195,40 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
             text: `Failed to edit component: ${result.message || "Unknown error"}`,
           },
         ],
+      };
+    },
+  );
+
+  // Get component properties and field positions from schematic
+  server.tool(
+    "get_schematic_component",
+    "Get full component info from a schematic: position, field values, and each field's label position (at x/y/angle). Use this to inspect or prepare repositioning of Reference/Value labels.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      reference: z.string().describe("Component reference designator (e.g. R1, U1)"),
+    },
+    async (args: { schematicPath: string; reference: string }) => {
+      const result = await callKicadScript("get_schematic_component", args);
+      if (result.success) {
+        const pos = result.position
+          ? `(${result.position.x}, ${result.position.y}, angle=${result.position.angle}°)`
+          : "unknown";
+        const fieldLines = Object.entries(result.fields ?? {}).map(
+          ([name, f]: [string, any]) =>
+            `  ${name}: "${f.value}" @ (${f.x}, ${f.y}, angle=${f.angle}°)`
+        );
+        return {
+          content: [{
+            type: "text",
+            text: `Component ${result.reference} at ${pos}\nFields:\n${fieldLines.join("\n")}`,
+          }],
+        };
+      }
+      return {
+        content: [{
+          type: "text",
+          text: `Failed to get component: ${result.message || "Unknown error"}`,
+        }],
       };
     },
   );
