@@ -83,17 +83,30 @@ export const toolCategories: ToolCategory[] = [
   },
   {
     name: "schematic",
-    description: "Schematic operations: create, add components, wire connections, netlists",
+    description: "Schematic operations: create, inspect, add/edit/delete components, wire connections, netlists, annotation",
     tools: [
       "create_schematic",
       "add_schematic_component",
+      "list_schematic_components",
+      "move_schematic_component",
+      "rotate_schematic_component",
+      "annotate_schematic",
       "add_wire",
+      "delete_schematic_wire",
       "add_schematic_connection",
       "add_schematic_net_label",
+      "delete_schematic_net_label",
       "connect_to_net",
+      "connect_passthrough",
       "get_net_connections",
+      "list_schematic_nets",
+      "list_schematic_wires",
+      "list_schematic_labels",
       "generate_netlist",
-      "sync_schematic_to_board"
+      "sync_schematic_to_board",
+      "get_schematic_view",
+      "export_schematic_svg",
+      "export_schematic_pdf"
     ]
   },
   {
@@ -141,6 +154,8 @@ export const directToolNames = [
 
   // Schematic essentials (always visible so AI uses them correctly)
   "add_schematic_component",
+  "list_schematic_components",
+  "annotate_schematic",
   "connect_passthrough",
   "connect_to_net",
   "add_schematic_net_label",

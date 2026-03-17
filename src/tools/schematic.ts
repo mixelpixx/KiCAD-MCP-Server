@@ -445,6 +445,515 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
+  // List all components in schematic
+  server.tool(
+    "list_schematic_components",
+    "List all components in a schematic with their references, values, positions, and pins. Essential for inspecting what's on the schematic before making edits.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      filter: z
+        .object({
+          libId: z.string().optional().describe("Filter by library ID (e.g., 'Device:R')"),
+          referencePrefix: z.string().optional().describe("Filter by reference prefix (e.g., 'R', 'C', 'U')"),
+        })
+        .optional()
+        .describe("Optional filters"),
+    },
+    async (args: {
+      schematicPath: string;
+      filter?: { libId?: string; referencePrefix?: string };
+    }) => {
+      const result = await callKicadScript("list_schematic_components", args);
+      if (result.success) {
+        const comps = result.components || [];
+        if (comps.length === 0) {
+          return {
+            content: [{ type: "text", text: "No components found in schematic." }],
+          };
+        }
+        const lines = comps.map(
+          (c: any) =>
+            `  ${c.reference}: ${c.libId} = "${c.value}" at (${c.position.x}, ${c.position.y}) rot=${c.rotation}°${c.pins ? ` [${c.pins.length} pins]` : ""}`,
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Components (${comps.length}):\n${lines.join("\n")}`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Failed to list components: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
+  // List all nets in schematic
+  server.tool(
+    "list_schematic_nets",
+    "List all nets in the schematic with their connections.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+    },
+    async (args: { schematicPath: string }) => {
+      const result = await callKicadScript("list_schematic_nets", args);
+      if (result.success) {
+        const nets = result.nets || [];
+        if (nets.length === 0) {
+          return {
+            content: [{ type: "text", text: "No nets found in schematic." }],
+          };
+        }
+        const lines = nets.map((n: any) => {
+          const conns = (n.connections || [])
+            .map((c: any) => `${c.component}/${c.pin}`)
+            .join(", ");
+          return `  ${n.name}: ${conns || "(no connections)"}`;
+        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Nets (${nets.length}):\n${lines.join("\n")}`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          { type: "text", text: `Failed to list nets: ${result.message || "Unknown error"}` },
+        ],
+        isError: true,
+      };
+    },
+  );
+
+  // List all wires in schematic
+  server.tool(
+    "list_schematic_wires",
+    "List all wires in the schematic with start/end coordinates.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+    },
+    async (args: { schematicPath: string }) => {
+      const result = await callKicadScript("list_schematic_wires", args);
+      if (result.success) {
+        const wires = result.wires || [];
+        if (wires.length === 0) {
+          return {
+            content: [{ type: "text", text: "No wires found in schematic." }],
+          };
+        }
+        const lines = wires.map(
+          (w: any) =>
+            `  (${w.start.x}, ${w.start.y}) → (${w.end.x}, ${w.end.y})`,
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Wires (${wires.length}):\n${lines.join("\n")}`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          { type: "text", text: `Failed to list wires: ${result.message || "Unknown error"}` },
+        ],
+        isError: true,
+      };
+    },
+  );
+
+  // List all labels in schematic
+  server.tool(
+    "list_schematic_labels",
+    "List all net labels, global labels, and power flags in the schematic.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+    },
+    async (args: { schematicPath: string }) => {
+      const result = await callKicadScript("list_schematic_labels", args);
+      if (result.success) {
+        const labels = result.labels || [];
+        if (labels.length === 0) {
+          return {
+            content: [{ type: "text", text: "No labels found in schematic." }],
+          };
+        }
+        const lines = labels.map(
+          (l: any) =>
+            `  [${l.type}] ${l.name} at (${l.position.x}, ${l.position.y})`,
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Labels (${labels.length}):\n${lines.join("\n")}`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          { type: "text", text: `Failed to list labels: ${result.message || "Unknown error"}` },
+        ],
+        isError: true,
+      };
+    },
+  );
+
+  // Move schematic component
+  server.tool(
+    "move_schematic_component",
+    "Move a placed symbol to a new position in the schematic.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      reference: z.string().describe("Reference designator (e.g., R1, U1)"),
+      position: z
+        .object({
+          x: z.number(),
+          y: z.number(),
+        })
+        .describe("New position"),
+    },
+    async (args: {
+      schematicPath: string;
+      reference: string;
+      position: { x: number; y: number };
+    }) => {
+      const result = await callKicadScript("move_schematic_component", args);
+      if (result.success) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Moved ${args.reference} from (${result.oldPosition.x}, ${result.oldPosition.y}) to (${result.newPosition.x}, ${result.newPosition.y})`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Failed to move component: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
+  // Rotate schematic component
+  server.tool(
+    "rotate_schematic_component",
+    "Rotate a placed symbol in the schematic.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      reference: z.string().describe("Reference designator (e.g., R1, U1)"),
+      angle: z.number().describe("Rotation angle in degrees (0, 90, 180, 270)"),
+      mirror: z
+        .enum(["x", "y"])
+        .optional()
+        .describe("Optional mirror axis"),
+    },
+    async (args: {
+      schematicPath: string;
+      reference: string;
+      angle: number;
+      mirror?: "x" | "y";
+    }) => {
+      const result = await callKicadScript("rotate_schematic_component", args);
+      if (result.success) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Rotated ${args.reference} to ${args.angle}°${args.mirror ? ` (mirrored ${args.mirror})` : ""}`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Failed to rotate component: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
+  // Annotate schematic
+  server.tool(
+    "annotate_schematic",
+    "Assign reference designators to unannotated components (R? → R1, R2, ...). Must be called before tools that require known references.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+    },
+    async (args: { schematicPath: string }) => {
+      const result = await callKicadScript("annotate_schematic", args);
+      if (result.success) {
+        const annotated = result.annotated || [];
+        if (annotated.length === 0) {
+          return {
+            content: [
+              { type: "text", text: "All components are already annotated." },
+            ],
+          };
+        }
+        const lines = annotated.map(
+          (a: any) => `  ${a.oldReference} → ${a.newReference}`,
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Annotated ${annotated.length} component(s):\n${lines.join("\n")}`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Failed to annotate: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
+  // Delete wire from schematic
+  server.tool(
+    "delete_schematic_wire",
+    "Remove a wire from the schematic by start and end coordinates.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      start: z
+        .object({ x: z.number(), y: z.number() })
+        .describe("Wire start position"),
+      end: z
+        .object({ x: z.number(), y: z.number() })
+        .describe("Wire end position"),
+    },
+    async (args: {
+      schematicPath: string;
+      start: { x: number; y: number };
+      end: { x: number; y: number };
+    }) => {
+      const result = await callKicadScript("delete_schematic_wire", args);
+      if (result.success) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Deleted wire from (${args.start.x}, ${args.start.y}) to (${args.end.x}, ${args.end.y})`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Failed to delete wire: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
+  // Delete net label from schematic
+  server.tool(
+    "delete_schematic_net_label",
+    "Remove a net label from the schematic.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      netName: z.string().describe("Name of the net label to remove"),
+      position: z
+        .object({ x: z.number(), y: z.number() })
+        .optional()
+        .describe("Position to disambiguate if multiple labels with same name"),
+    },
+    async (args: {
+      schematicPath: string;
+      netName: string;
+      position?: { x: number; y: number };
+    }) => {
+      const result = await callKicadScript("delete_schematic_net_label", args);
+      if (result.success) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Deleted net label '${args.netName}'`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Failed to delete label: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
+  // Export schematic to SVG
+  server.tool(
+    "export_schematic_svg",
+    "Export schematic to SVG format using kicad-cli.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      outputPath: z.string().describe("Output SVG file path"),
+      blackAndWhite: z
+        .boolean()
+        .optional()
+        .describe("Export in black and white"),
+    },
+    async (args: {
+      schematicPath: string;
+      outputPath: string;
+      blackAndWhite?: boolean;
+    }) => {
+      const result = await callKicadScript("export_schematic_svg", args);
+      if (result.success) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Exported schematic SVG to ${result.file?.path || args.outputPath}`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Failed to export SVG: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
+  // Export schematic to PDF
+  server.tool(
+    "export_schematic_pdf",
+    "Export schematic to PDF format using kicad-cli.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      outputPath: z.string().describe("Output PDF file path"),
+      blackAndWhite: z
+        .boolean()
+        .optional()
+        .describe("Export in black and white"),
+    },
+    async (args: {
+      schematicPath: string;
+      outputPath: string;
+      blackAndWhite?: boolean;
+    }) => {
+      const result = await callKicadScript("export_schematic_pdf", args);
+      if (result.success) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Exported schematic PDF to ${result.file?.path || args.outputPath}`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Failed to export PDF: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
+  // Get schematic view (rasterized image)
+  server.tool(
+    "get_schematic_view",
+    "Return a rasterized image of the schematic (PNG by default, or SVG). Uses kicad-cli to export SVG, then converts to PNG via cairosvg. Use this for visual feedback after placing or wiring components.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      format: z
+        .enum(["png", "svg"])
+        .optional()
+        .describe("Output format (default: png)"),
+      width: z.number().optional().describe("Image width in pixels (default: 1200)"),
+      height: z.number().optional().describe("Image height in pixels (default: 900)"),
+    },
+    async (args: {
+      schematicPath: string;
+      format?: "png" | "svg";
+      width?: number;
+      height?: number;
+    }) => {
+      const result = await callKicadScript("get_schematic_view", args);
+      if (result.success) {
+        if (result.format === "svg") {
+          const parts: { type: "text"; text: string }[] = [];
+          if (result.message) {
+            parts.push({ type: "text", text: result.message });
+          }
+          parts.push({
+            type: "text",
+            text: result.imageData || "",
+          });
+          return { content: parts };
+        }
+        // PNG — return as base64 image
+        return {
+          content: [
+            {
+              type: "image" as const,
+              data: result.imageData,
+              mimeType: "image/png",
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Failed to get schematic view: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
   // Run Electrical Rules Check (ERC)
   server.tool(
     "run_erc",
