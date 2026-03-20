@@ -603,7 +603,23 @@ Create a differential pair for USB_P and USB_N with 0.2mm width and 0.15mm gap.
 
 Automatically route all unconnected nets using the [Freerouting](https://github.com/freerouting/freerouting) autorouter.
 
-**Prerequisites:** Java 11+ and `freerouting.jar` (place at `~/.kicad-mcp/freerouting.jar` or set `FREEROUTING_JAR` env var).
+**Setup (one-time):**
+
+```bash
+# 1. Download the Freerouting JAR
+mkdir -p ~/.kicad-mcp
+curl -L -o ~/.kicad-mcp/freerouting.jar \
+  https://github.com/freerouting/freerouting/releases/download/v2.0.1/freerouting-2.0.1-executable.jar
+
+# 2. Runtime — pick ONE:
+#    Option A: Docker (recommended, no Java install needed)
+docker pull eclipse-temurin:21-jre
+
+#    Option B: Install Java 21+ locally
+#    (Ubuntu/Debian) sudo apt install openjdk-21-jre
+```
+
+The autorouter auto-detects which runtime is available (Java 21+ direct, or Docker/Podman fallback).
 
 ```text
 Check if Freerouting is ready on my system.
