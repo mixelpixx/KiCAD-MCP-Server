@@ -599,6 +599,51 @@ Add a copper pour for GND on the bottom layer covering the entire board.
 Create a differential pair for USB_P and USB_N with 0.2mm width and 0.15mm gap.
 ```
 
+### Autoroute with Freerouting
+
+Automatically route all unconnected nets using the [Freerouting](https://github.com/freerouting/freerouting) autorouter.
+
+**Setup (one-time):**
+
+```bash
+# 1. Download the Freerouting JAR
+mkdir -p ~/.kicad-mcp
+curl -L -o ~/.kicad-mcp/freerouting.jar \
+  https://github.com/freerouting/freerouting/releases/download/v2.0.1/freerouting-2.0.1-executable.jar
+
+# 2. Runtime — pick ONE:
+#    Option A: Docker (recommended, no Java install needed)
+docker pull eclipse-temurin:21-jre
+
+#    Option B: Install Java 21+ locally
+#    (Ubuntu/Debian) sudo apt install openjdk-21-jre
+```
+
+The autorouter auto-detects which runtime is available (Java 21+ direct, or Docker/Podman fallback).
+
+```text
+Check if Freerouting is ready on my system.
+Autoroute the current board using Freerouting with a 5-minute timeout.
+```
+
+**Step-by-step workflow:**
+
+```text
+1. Open the project at ~/Projects/LEDBoard/LEDBoard.kicad_pcb
+2. Check Freerouting dependencies are installed
+3. Run autoroute with max 10 passes
+4. Run DRC to verify the autorouted result
+5. Export Gerbers to the fabrication folder
+```
+
+**Manual DSN/SES workflow** (for advanced users or external autorouters):
+
+```text
+Export the board to Specctra DSN format.
+# ... run Freerouting GUI or another autorouter externally ...
+Import the routed SES file from ~/Projects/LEDBoard/LEDBoard.ses
+```
+
 ### Design Verification
 
 ```text
