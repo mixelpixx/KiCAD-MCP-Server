@@ -126,6 +126,16 @@ export const toolCategories: ToolCategory[] = [
       "add_via",
       "add_copper_pour"
     ]
+  },
+  {
+    name: "autoroute",
+    description: "Freerouting autorouter: automatic PCB routing via Specctra DSN/SES",
+    tools: [
+      "autoroute",
+      "export_dsn",
+      "import_ses",
+      "check_freerouting"
+    ]
   }
 ];
 

@@ -226,6 +226,7 @@ try:
     from commands.datasheet_manager import DatasheetManager
     from commands.footprint import FootprintCreator
     from commands.symbol_creator import SymbolCreator
+    from commands.freerouting import FreeroutingCommands
 
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
@@ -270,6 +271,7 @@ class KiCADInterface:
         self.board_commands = BoardCommands(self.board)
         self.component_commands = ComponentCommands(self.board, self.footprint_library)
         self.routing_commands = RoutingCommands(self.board)
+        self.freerouting_commands = FreeroutingCommands(self.board)
         self.design_rule_commands = DesignRuleCommands(self.board)
         self.export_commands = ExportCommands(self.board)
         self.library_commands = LibraryCommands(self.footprint_library)
@@ -419,6 +421,11 @@ class KiCADInterface:
             "delete_symbol": self._handle_delete_symbol,
             "list_symbols_in_library": self._handle_list_symbols_in_library,
             "register_symbol_library": self._handle_register_symbol_library,
+            # Freerouting autoroute commands
+            "autoroute": self.freerouting_commands.autoroute,
+            "export_dsn": self.freerouting_commands.export_dsn,
+            "import_ses": self.freerouting_commands.import_ses,
+            "check_freerouting": self.freerouting_commands.check_freerouting,
         }
 
         logger.info(
@@ -578,6 +585,7 @@ class KiCADInterface:
         self.routing_commands.board = self.board
         self.design_rule_commands.board = self.board
         self.export_commands.board = self.board
+        self.freerouting_commands.board = self.board
 
     # Schematic command handlers
     def _handle_create_schematic(self, params):

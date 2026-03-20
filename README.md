@@ -599,6 +599,35 @@ Add a copper pour for GND on the bottom layer covering the entire board.
 Create a differential pair for USB_P and USB_N with 0.2mm width and 0.15mm gap.
 ```
 
+### Autoroute with Freerouting
+
+Automatically route all unconnected nets using the [Freerouting](https://github.com/freerouting/freerouting) autorouter.
+
+**Prerequisites:** Java 11+ and `freerouting.jar` (place at `~/.kicad-mcp/freerouting.jar` or set `FREEROUTING_JAR` env var).
+
+```text
+Check if Freerouting is ready on my system.
+Autoroute the current board using Freerouting with a 5-minute timeout.
+```
+
+**Step-by-step workflow:**
+
+```text
+1. Open the project at ~/Projects/LEDBoard/LEDBoard.kicad_pcb
+2. Check Freerouting dependencies are installed
+3. Run autoroute with max 10 passes
+4. Run DRC to verify the autorouted result
+5. Export Gerbers to the fabrication folder
+```
+
+**Manual DSN/SES workflow** (for advanced users or external autorouters):
+
+```text
+Export the board to Specctra DSN format.
+# ... run Freerouting GUI or another autorouter externally ...
+Import the routed SES file from ~/Projects/LEDBoard/LEDBoard.ses
+```
+
 ### Design Verification
 
 ```text
