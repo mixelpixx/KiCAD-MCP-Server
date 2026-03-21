@@ -8,10 +8,14 @@ A Model Context Protocol (MCP) server that enables AI assistants like Claude to 
 The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standard from Anthropic that allows AI assistants to securely connect to external tools and data sources. This implementation provides a standardized bridge between AI assistants and KiCAD, enabling natural language control of PCB design operations.
 
 **Key Capabilities:**
-- 64 fully-documented tools with JSON Schema validation
+- 122 tools across 16 categories with JSON Schema validation
 - Smart tool discovery with router pattern (reduces AI context by 70%)
 - 8 dynamic resources exposing project state
+- Complete schematic workflow with 27 tools and dynamic symbol loading (~10,000 symbols)
+- Freerouting autorouter integration (Java, Docker, or Podman)
+- Custom footprint and symbol creation tools
 - JLCPCB parts integration with 2.5M+ component catalog and local library search
+- Datasheet enrichment via LCSC
 - Full MCP 2025-06-18 protocol compliance
 - Cross-platform support (Linux, Windows, macOS)
 - Real-time KiCAD UI integration via IPC API (experimental)
@@ -62,7 +66,7 @@ the MCP session log into the project's `logs/` folder on every `export_gerber` a
 }
 ```
 
-> ⚠️ **Privacy warning:** The session log contains your full tool call history
+> **Privacy warning:** The session log contains your full tool call history
 > (including file paths and design details). **Review or delete `logs/` before
 > sharing a project directory publicly.**
 
@@ -150,7 +154,7 @@ connections = ConnectionManager.get_net_connections(sch, "VCC", sch_path)
 - Net connectivity: 100% accurate (VCC: 2 connections, GND: 4 connections)
 - Netlist generation: Working with accurate pin-level connections
 
-See [Dynamic Loading Status](docs/DYNAMIC_LOADING_STATUS.md) and [Wiring Implementation Plan](docs/SCHEMATIC_WIRING_PLAN.md) for technical details.
+See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for the complete schematic tool documentation.
 
 ### IPC Backend (Experimental)
 We are currently implementing and testing the KiCAD 9.0 IPC API for real-time UI synchronization:
@@ -163,15 +167,16 @@ Note: IPC features are under active development and testing. Enable IPC in KiCAD
 
 ### Tool Discovery & Router Pattern
 We've implemented an intelligent tool router to keep AI context efficient while maintaining full functionality:
-- **12 direct tools** always visible for high-frequency operations
-- **47 routed tools** organized into 7 categories (board, component, export, drc, schematic, library, routing)
+- **18 direct tools** always visible for high-frequency operations
+- **65 routed tools** organized into 8 categories (board, component, export, drc, schematic, library, routing, autoroute)
+- **35 additional tools** always visible (symbol/footprint creators, JLCPCB, datasheet, advanced routing)
 - **4 router tools** for discovery and execution:
   - `list_tool_categories` - Browse all available categories
   - `get_category_tools` - View tools in a specific category
   - `search_tools` - Find tools by keyword
   - `execute_tool` - Run any tool with parameters
 
-**Why this matters:** By organizing tools into discoverable categories, Claude can intelligently find and use the right tool for your task without loading all 64 tool schemas into every conversation. This reduces context consumption by up to 70% while maintaining full access to all functionality.
+**Why this matters:** By organizing tools into discoverable categories, Claude can intelligently find and use the right tool for your task without loading all 122 tool schemas into every conversation. This reduces context consumption while maintaining full access to all functionality.
 
 **Usage is seamless:** Just ask naturally - "export gerber files" or "add mounting holes" - and Claude will discover and execute the appropriate tools automatically.
 
@@ -225,106 +230,148 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server provides 64 tools organized into functional categories. With the new router pattern, tools are automatically discovered as needed - just ask Claude what you want to accomplish!
+The server provides **122 tools** organized into 16 functional categories. With the router pattern, tools are automatically discovered as needed -- just ask Claude what you want to accomplish.
 
-### Project Management (4 tools)
+For the complete tool reference with access types (direct/routed/additional), see [Tool Inventory](docs/TOOL_INVENTORY.md).
+
+### Project Management (5 tools)
 - `create_project` - Initialize new KiCAD projects
 - `open_project` - Load existing project files
 - `save_project` - Save current project state
 - `get_project_info` - Retrieve project metadata
+- `snapshot_project` - Save named checkpoint snapshot
 
-### Board Operations (9 tools)
+### Board Operations (12 tools)
 - `set_board_size` - Configure PCB dimensions
-- `add_board_outline` - Create board edge (rectangle, circle, polygon)
+- `add_board_outline` - Create board edge (rectangle, circle, polygon, rounded rectangle)
 - `add_layer` - Add custom layers to stack
 - `set_active_layer` - Switch working layer
 - `get_layer_list` - List all board layers
 - `get_board_info` - Retrieve board properties
 - `get_board_2d_view` - Generate board preview image
+- `get_board_extents` - Get board bounding box
 - `add_mounting_hole` - Place mounting holes
 - `add_board_text` - Add text annotations
+- `add_zone` - Add copper zone/pour with clearance settings
+- `import_svg_logo` - Import SVG file as PCB silkscreen polygons
 
-### Component Placement (10 tools)
+### Component Management (16 tools)
 - `place_component` - Place single component with footprint
 - `move_component` - Reposition existing component
 - `rotate_component` - Rotate component by angle
 - `delete_component` - Remove component from board
 - `edit_component` - Modify component properties
+- `find_component` - Search by reference or value
 - `get_component_properties` - Query component details
+- `add_component_annotation` - Add annotation/comment
+- `group_components` - Group multiple components
+- `replace_component` - Replace with different footprint
+- `get_component_pads` - Get all pad information
 - `get_component_list` - List all placed components
+- `get_pad_position` - Get precise pad position
 - `place_component_array` - Create component grids/patterns
 - `align_components` - Align multiple components
 - `duplicate_component` - Copy existing component
 
-### Routing & Nets (8 tools)
+### Routing (13 tools)
 - `add_net` - Create electrical net
-- `route_trace` - Route copper traces
+- `route_trace` - Route copper traces between XY points
+- `route_pad_to_pad` - Route between pads with auto-via insertion
 - `add_via` - Place vias for layer transitions
-- `delete_trace` - Remove traces
-- `get_nets_list` - List all nets
+- `delete_trace` - Remove traces (by UUID, position, or net)
+- `query_traces` - Query/filter traces
+- `get_nets_list` - List all nets with statistics
+- `modify_trace` - Change trace width, layer, or net
 - `create_netclass` - Define net class with rules
 - `add_copper_pour` - Create copper zones/pours
 - `route_differential_pair` - Route differential signals
+- `refill_zones` - Refill all copper zones
+- `copy_routing_pattern` - Replicate routing between component groups
 
-### Library Management (4 tools)
-- `list_libraries` - List available footprint libraries
-- `search_footprints` - Search for footprints
-- `list_library_footprints` - List footprints in library
-- `get_footprint_info` - Get footprint details
+### Schematic (27 tools)
+Complete schematic workflow with dynamic symbol loading (~10,000 symbols) and intelligent wiring.
+
+**Component Operations:**
+- `add_schematic_component` - Place symbols from any KiCad library
+- `delete_schematic_component` - Remove component
+- `edit_schematic_component` - Edit properties and fields
+- `get_schematic_component` - Get component info with field positions
+- `list_schematic_components` - List all components
+- `move_schematic_component` - Reposition component
+- `rotate_schematic_component` - Rotate component
+- `annotate_schematic` - Auto-assign reference designators
+
+**Wiring and Connections:**
+- `add_wire` - Create wire between points
+- `delete_schematic_wire` - Remove wire segment
+- `add_schematic_connection` - Auto-connect pins with routing
+- `add_schematic_net_label` - Add net labels (VCC, GND, signals)
+- `delete_schematic_net_label` - Remove net label
+- `connect_to_net` - Connect pin to named net
+- `connect_passthrough` - Wire all matching pins between connectors (FFC/ribbon)
+- `get_schematic_pin_locations` - Get pin locations for component
+
+**Analysis and Export:**
+- `get_net_connections` - Trace net connectivity
+- `list_schematic_nets` / `list_schematic_wires` / `list_schematic_labels`
+- `create_schematic` - Create new schematic file
+- `get_schematic_view` - Rasterized schematic preview
+- `export_schematic_svg` / `export_schematic_pdf`
+- `run_erc` - Electrical rule check
+- `generate_netlist` - Generate netlist from schematic
+- `sync_schematic_to_board` - Import nets/pads to PCB (F8 equivalent)
+
+See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for details and examples.
+
+### Design Rules / DRC (8 tools)
+- `set_design_rules` / `get_design_rules` - Configure and inspect rules
+- `run_drc` - Execute design rule check
+- `get_drc_violations` - Get violation list by severity
+- `add_net_class` / `assign_net_to_class` - Net class management
+- `set_layer_constraints` / `check_clearance` - Layer and clearance rules
+
+### Export (8 tools)
+- `export_gerber` - Gerber fabrication files
+- `export_pdf` / `export_svg` - Documentation and vector graphics
+- `export_3d` - 3D models (STEP, STL, VRML, OBJ)
+- `export_bom` - Bill of materials (CSV, XML, HTML, JSON)
+- `export_netlist` - Netlist (KiCad, Spice, Cadstar, OrcadPCB2)
+- `export_position_file` - Component positions for pick and place
+- `export_vrml` - VRML 3D model
+
+### Footprint Libraries (4 tools) and Symbol Libraries (4 tools)
+- `list_libraries` / `list_symbol_libraries` - Browse available libraries
+- `search_footprints` / `search_symbols` - Search across all libraries
+- `list_library_footprints` / `list_library_symbols` - Browse specific library
+- `get_footprint_info` / `get_symbol_info` - Detailed information
+
+### Footprint Creator (4 tools) and Symbol Creator (4 tools)
+Create custom components when existing libraries do not have what you need.
+- `create_footprint` / `create_symbol` - Build from scratch with pads/pins
+- `edit_footprint_pad` - Modify pad properties
+- `register_footprint_library` / `register_symbol_library` - Register in lib-table
+- `list_footprint_libraries` / `list_symbols_in_library` - Browse custom libraries
+- `delete_symbol` - Remove symbol from library
+
+See [Footprint and Symbol Creator Guide](docs/FOOTPRINT_SYMBOL_CREATOR_GUIDE.md) for details.
+
+### Datasheet Tools (2 tools)
+- `enrich_datasheets` - Auto-populate datasheet URLs using LCSC part numbers
+- `get_datasheet_url` - Get LCSC datasheet URL for a component
 
 ### JLCPCB Integration (5 tools)
-- `download_jlcpcb_database` - Download complete JLCPCB parts catalog (one-time setup)
-- `search_jlcpcb_parts` - Search 2.5M+ parts with parametric filters
-- `get_jlcpcb_part` - Get detailed part info with pricing and footprints
-- `get_jlcpcb_database_stats` - View database statistics and coverage
-- `suggest_jlcpcb_alternatives` - Find cheaper or more available alternatives
+- `download_jlcpcb_database` - Download 2.5M+ parts catalog (one-time setup)
+- `search_jlcpcb_parts` - Search with parametric filters
+- `get_jlcpcb_part` - Detailed part info with pricing
+- `get_jlcpcb_database_stats` - Database statistics
+- `suggest_jlcpcb_alternatives` - Find cheaper or in-stock alternatives
 
-### Design Rules (4 tools)
-- `set_design_rules` - Configure DRC parameters
-- `get_design_rules` - Retrieve current rules
-- `run_drc` - Execute design rule check
-- `get_drc_violations` - Get DRC error report
+### Freerouting Autorouter (4 tools)
+- `autoroute` - Run Freerouting autorouter (DSN export, route, SES import)
+- `export_dsn` / `import_ses` - Manual Specctra DSN/SES workflow
+- `check_freerouting` - Verify Java and Freerouting availability
 
-### Export (5 tools)
-- `export_gerber` - Generate Gerber fabrication files
-- `export_pdf` - Export PDF documentation
-- `export_svg` - Create SVG vector graphics
-- `export_3d` - Generate 3D models (STEP/VRML)
-- `export_bom` - Produce bill of materials
-
-### Schematic Design (9 tools)
-**Now fully functional with DYNAMIC SYMBOL LOADING + INTELLIGENT WIRING!** (Fixed in v2.1.0 - see Issue #26)
-
-**Component Placement:**
-- `create_schematic` - Initialize new schematic from template
-- `load_schematic` - Open existing schematic
-- `add_schematic_component` - Place symbols with automatic dynamic loading from KiCad libraries
-- `list_schematic_libraries` - List symbol libraries
-- `export_schematic_pdf` - Export schematic PDF
-
-**Wiring & Connections:** NEW in v2.1.0
-- `add_schematic_wire` - Create wires between points with customizable stroke
-- `add_schematic_connection` - Auto-connect pins with intelligent routing (direct, orthogonal)
-- `add_schematic_net_label` - Add net labels (VCC, GND, signals) with orientation control
-- `connect_to_net` - Connect component pins to named nets
-
-**Major Enhancements:**
-
-1. **Dynamic Symbol Loading** - Access to **ALL ~10,000 KiCad symbols**! Specify any `library` and `type` (e.g., `"library": "MCU_ST_STM32F1", "type": "STM32F103C8Tx"`) and the system automatically:
-   - Searches KiCad symbol libraries
-   - Injects symbol definition into your schematic
-   - Creates cloneable template instance
-   - Places component seamlessly
-   - Fallback to 13 static templates (R, C, L, LED, etc.) when needed
-
-2. **Intelligent Wiring System** - Professional schematic wiring with automation:
-   - **Automatic pin discovery** - rotation-aware (0°, 90°, 180°, 270°)
-   - **Smart routing** - direct lines or orthogonal (right-angle) paths
-   - **Power symbol support** - VCC, GND, +3V3, +5V, etc.
-   - **Wire graph analysis** - geometric tracing for accurate net connectivity
-   - **Net label management** - local, global, and hierarchical labels
-   - **Netlist generation** - accurate component/pin connection tracking
-   - **S-expression precision** - guaranteed KiCad format compliance
+See [Freerouting Guide](docs/FREEROUTING_GUIDE.md) for setup and usage.
 
 ### UI Management (2 tools)
 - `check_kicad_ui` - Check if KiCAD is running
@@ -705,8 +752,8 @@ How many Basic parts are available?
 ### MCP Protocol Layer
 - **JSON-RPC 2.0 Transport:** Bi-directional communication via STDIO
 - **Protocol Version:** MCP 2025-06-18
-- **Capabilities:** Tools (59), Resources (8)
-- **Tool Router:** Intelligent discovery system with 7 categories
+- **Capabilities:** Tools (122), Resources (8)
+- **Tool Router:** Intelligent discovery system with 8 categories
 - **Error Handling:** Standard JSON-RPC error codes
 
 ### TypeScript Server (`src/`)
@@ -842,62 +889,46 @@ npm run format
 
 ## Project Status
 
-**Current Version:** 2.1.0-alpha
+**Current Version:** 2.2.3
 
-**Working Features:**
-- Project creation and management (PCB + Schematic)
-- Board outline and sizing
-- Layer management
-- Component placement with footprint library loading
-- Mounting holes and text annotations
-- Design rule checking
-- Export to Gerber, PDF, SVG, 3D
-- **Schematic creation and editing (Issue #26 RESOLVED - fully functional!)**
-- **DYNAMIC SYMBOL LOADING - Access to ALL ~10,000 KiCad symbols! 🚀**
-- Template-based schematic workflow with automatic dynamic injection
-- Symbol cloning from static templates (13 types) and dynamic libraries
-- UI auto-launch
-- Full MCP protocol compliance
-- JLCPCB parts integration (local libraries + JLCSearch API)
-- Cost optimization and component selection with 2.5M+ parts catalog
+See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-**Under Active Development (IPC Backend):**
+**Working Features (122 tools):**
+- Project management with snapshot checkpointing
+- Complete board design (outline, layers, zones, mounting holes, text, SVG logos)
+- Component placement with arrays, alignment, and duplication
+- Advanced routing (pad-to-pad with auto-via, differential pairs, pattern copying)
+- Complete schematic workflow with dynamic symbol loading (~10,000 symbols)
+- Intelligent wiring system with pin discovery and smart routing
+- FFC/ribbon cable passthrough workflow
+- Schematic-to-board synchronization
+- Design rule checking (DRC and ERC)
+- Export to Gerber, PDF, SVG, 3D, BOM, netlist, position file
+- Custom footprint and symbol creation
+- JLCPCB parts integration (2.5M+ parts catalog)
+- Datasheet enrichment via LCSC
+- Freerouting autorouter integration (Java, Docker, Podman)
+- UI auto-launch and management
+- Full MCP 2025-06-18 protocol compliance
+
+**IPC Backend (Experimental):**
 - Real-time UI synchronization via KiCAD 9.0 IPC API
-- IPC-enabled commands: route_trace, add_via, place_component, move_component, delete_component, add_copper_pour, refill_zones, add_board_outline, add_mounting_hole, and more
+- 21 IPC-enabled commands with automatic SWIG fallback
 - Hybrid footprint loading (SWIG for library access, IPC for placement)
-- Zone/copper pour support via IPC
 
-Note: IPC features are experimental and under testing. Some commands may not work as expected in all scenarios.
+**Developer Mode:**
+Set `KICAD_MCP_DEV=1` to capture MCP session logs for debugging. See CHANGELOG v2.2.3 for details.
 
-**Planned:**
-- Digikey API integration
-- Mouser API integration
-- Advanced routing algorithms
-- Smart BOM management with real-time pricing
-- AI-assisted component selection and optimization
-- Design pattern library (Arduino shields, RPi HATs)
-- Panelization support
-
-See [ROADMAP.md](docs/ROADMAP.md) for detailed development timeline.
+See [ROADMAP.md](docs/ROADMAP.md) for planned features.
 
 ## What Do You Want to See Next?
 
-We're actively developing new features and tools for the KiCAD MCP Server. **Your input matters!**
-
-**We'd love to hear from you:**
-- What PCB design workflows could be automated?
-- Which component suppliers should we integrate next (Digikey, Mouser, Arrow, etc.)?
-- What export formats or manufacturing outputs do you need?
-- Are there specific routing algorithms or design patterns you want?
-- What pain points in your KiCAD workflow could AI help solve?
-- How can we improve the JLCPCB integration?
+We are actively developing new features. Your feedback directly shapes development priorities.
 
 **Share your ideas:**
-1. 💡 [Open a feature request](https://github.com/mixelpixx/KiCAD-MCP-Server/issues/new?labels=enhancement&template=feature_request.md)
-2. 💬 [Join the discussion](https://github.com/mixelpixx/KiCAD-MCP-Server/discussions)
-3. ⭐ Star the repo if you find it useful!
-
-Your feedback directly shapes our development priorities. Whether it's a small quality-of-life improvement or a major new capability, we want to hear about it.
+1. [Open a feature request](https://github.com/mixelpixx/KiCAD-MCP-Server/issues/new?labels=enhancement&template=feature_request.md)
+2. [Join the discussion](https://github.com/mixelpixx/KiCAD-MCP-Server/discussions)
+3. Star the repo if you find it useful
 
 ## Contributing
 
@@ -924,9 +955,20 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 - Built on the [Model Context Protocol](https://modelcontextprotocol.io/) by Anthropic
 - Powered by [KiCAD](https://www.kicad.org/) open-source PCB design software
 - Uses [kicad-skip](https://github.com/kicad-skip) for schematic manipulation
-- JLCPCB local library search contributed by [@l3wi](https://github.com/l3wi) - [PR #25](https://github.com/mixelpixx/KiCAD-MCP-Server/pull/25)
 - [JLCSearch API](https://jlcsearch.tscircuit.com/) by [@tscircuit](https://github.com/tscircuit/jlcsearch) - Public JLCPCB parts API
 - [JLCParts Database](https://github.com/yaqwsx/jlcparts) by [@yaqwsx](https://github.com/yaqwsx) - JLCPCB parts data
+
+### Community Contributors
+
+- [@Kletternaut](https://github.com/Kletternaut) - Routing/component tools, footprint/symbol creators, passthrough workflow, template fixes (PRs #44, #48, #49, #51, #53, #57, #59)
+- [@Mehanik](https://github.com/Mehanik) - Schematic inspection/editing tools, component field positions (PRs #60, #66, #67)
+- [@jflaflamme](https://github.com/jflaflamme) - Freerouting autorouter integration with Docker/Podman support (PR #68)
+- [@l3wi](https://github.com/l3wi) - Local symbol library search, JLCPCB third-party library support (PR #25)
+- [@gwall-ceres](https://github.com/gwall-ceres) - MCP protocol compliance, Windows compatibility (PR #10)
+- [@fariouche](https://github.com/fariouche) - Bug fixes (PR #17)
+- [@shuofengzhang](https://github.com/shuofengzhang) - XDG relative path handling (PR #58)
+- [@sid115](https://github.com/sid115) - Windows setup script improvements (PR #13)
+- [@pasrom](https://github.com/pasrom) - MCP server bug fixes (PR #50)
 
 ## Citation
 
@@ -938,7 +980,7 @@ If you use this project in your research or publication, please cite:
   author = {mixelpixx},
   year = {2025},
   url = {https://github.com/mixelpixx/KiCAD-MCP-Server},
-  version = {2.1.0-alpha}
+  version = {2.2.3}
 }
 ```
 

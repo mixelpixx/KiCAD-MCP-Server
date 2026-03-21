@@ -2,313 +2,113 @@
 
 **Vision:** Enable anyone to design professional PCBs through natural conversation with AI
 
-**Current Version:** 2.1.0-alpha
-**Target:** 2.0.0 stable by end of Week 12
+**Current Version:** 2.2.3
+**Last Updated:** 2026-03-21
 
 ---
 
-## Week 2: Component Integration & Routing
+## Completed Milestones
 
-**Goal:** Make the MCP server useful for real PCB design
-**Status:** 80% Complete (2025-11-01)
+### v1.0.0 - Core Foundation (October 2025)
+- [x] MCP protocol implementation (JSON-RPC 2.0, MCP 2025-06-18)
+- [x] Project management (create, open, save)
+- [x] Board operations (size, outline, layers, mounting holes, text)
+- [x] Component placement with 153+ footprint libraries
+- [x] Basic routing (traces, vias, copper pours)
+- [x] Design rule checking
+- [x] Export (Gerber, PDF, SVG, 3D, BOM)
+- [x] Cross-platform support (Linux, Windows, macOS)
+- [x] UI auto-launch and detection
 
-### High Priority
+### v2.0.0-alpha - Router and IPC (November-December 2025)
+- [x] Tool router pattern -- 70% AI context reduction
+- [x] IPC backend for real-time KiCAD UI synchronization (21 commands)
+- [x] Hybrid SWIG/IPC backend with automatic fallback
+- [x] Comprehensive Windows support with automated setup
 
-**1. Component Library Integration** ✅ **COMPLETE**
-- [x] Detect KiCAD footprint library paths
-- [x] Add configuration for custom library paths
-- [x] Create footprint search/autocomplete
-- [x] Test component placement end-to-end
-- [x] Document supported footprints
+### v2.1.0-alpha - Schematics and JLCPCB (January 2026)
+- [x] Complete schematic workflow fix (Issue #26)
+- [x] Dynamic symbol loading -- access to all ~10,000 KiCad symbols
+- [x] Intelligent wiring system with pin discovery and smart routing
+- [x] Power symbol support (VCC, GND, +3V3, +5V)
+- [x] Wire graph analysis for net connectivity
+- [x] JLCPCB parts integration (2.5M+ parts, dual-mode architecture)
+- [x] Local symbol library search (contributor: @l3wi)
 
-**Deliverable:** ✅ Place components with actual footprints from libraries (153 libraries discovered!)
-
-**2. Routing Operations** ✅ **COMPLETE**
-- [x] Test `route_trace` with KiCAD 9.0
-- [x] Test `add_via` with KiCAD 9.0
-- [x] Test `add_copper_pour` with KiCAD 9.0
-- [x] Fix any API compatibility issues
-- [x] Add routing examples to docs
-
-**Deliverable:** ✅ Successfully route a simple board (tested with nets, traces, vias, copper pours)
-
-**3. JLCPCB Parts Database** 📋 **PLANNED**
-- [x] Research JLCPCB API and data format
-- [x] Design integration architecture
-- [ ] Download/parse JLCPCB parts database (~108k parts)
-- [ ] Map parts to KiCAD footprints
-- [ ] Create search by part number
-- [ ] Add price/stock information
-- [ ] Integrate with component placement
-
-**Deliverable:** "Add a 10k resistor (JLCPCB basic part)" - Ready to implement
-
-### Medium Priority
-
-**4. Fix get_board_info** 🟡 **DEFERRED**
-- [ ] Update layer constants for KiCAD 9.0
-- [ ] Add backward compatibility
-- [ ] Test with real boards
-
-**Status:** Low priority, workarounds available
-
-**5. Example Projects** 🟢
-- [ ] LED blinker (555 timer)
-- [ ] Arduino Uno shield template
-- [ ] Raspberry Pi HAT template
-- [ ] Video tutorial of complete workflow
-
-### Bonus Achievements ✨
-
-**Real-time Collaboration** ✅ **COMPLETE**
-- [x] Test MCP→UI workflow (AI places, human sees)
-- [x] Test UI→MCP workflow (human edits, AI reads)
-- [x] Document best practices and limitations
-- [x] Verify bidirectional sync works correctly
-
-**Documentation** ✅ **COMPLETE**
-- [x] LIBRARY_INTEGRATION.md (comprehensive library guide)
-- [x] REALTIME_WORKFLOW.md (collaboration workflows)
-- [x] JLCPCB_INTEGRATION_PLAN.md (implementation plan)
+### v2.2.0 through v2.2.3 - Routing, Creators, Autorouting (February-March 2026)
+- [x] 13 new routing/component tools (delete/query/modify traces, arrays, alignment)
+- [x] route_pad_to_pad with auto-via insertion for cross-layer connections
+- [x] copy_routing_pattern for trace replication
+- [x] route_differential_pair for matched signals
+- [x] Custom footprint creator (4 tools)
+- [x] Custom symbol creator (4 tools)
+- [x] Datasheet enrichment tools (LCSC integration)
+- [x] 11 schematic inspection/editing tools (contributor: @Mehanik)
+- [x] FFC/ribbon cable passthrough workflow (connect_passthrough, sync_schematic_to_board)
+- [x] SVG logo import for PCB silkscreen
+- [x] ERC validation
+- [x] Project snapshot system
+- [x] Freerouting autorouter integration with Docker/Podman (contributor: @jflaflamme)
+- [x] Project-local library resolution
+- [x] Developer mode (KICAD_MCP_DEV=1)
 
 ---
 
-## Week 3: IPC Backend & Real-time Updates
+## Current Focus: v2.3+
 
-**Goal:** Eliminate manual reload - see changes instantly
-**Status:** 🟢 **IMPLEMENTED** (2025-11-30)
+### Documentation Overhaul (In Progress)
+- [ ] Per-feature documentation for all 122 tools
+- [ ] Architecture guide for contributors
+- [ ] End-to-end PCB design workflow guide
+- [ ] Documentation index
 
-### High Priority
-
-**1. IPC Connection** ✅ **COMPLETE**
-- [x] Establish socket connection to KiCAD
-- [x] Handle connection errors gracefully
-- [x] Auto-reconnect if KiCAD restarts
-- [x] Fall back to SWIG if IPC unavailable
-
-**2. IPC Operations** ✅ **COMPLETE**
-- [x] Port project operations to IPC
-- [x] Port board operations to IPC
-- [x] Port component operations to IPC
-- [x] Port routing operations to IPC
-
-**3. Real-time UI Updates** ✅ **COMPLETE**
-- [x] Changes appear instantly in UI
-- [x] No reload prompt
-- [x] Visual feedback within 100ms
-- [ ] Demo video showing real-time design
-
-**Deliverable:** ✅ Design a board with live updates as Claude works
-
-### Medium Priority
-
-**4. Dual Backend Support** ✅ **COMPLETE**
-- [x] Auto-detect if IPC is available
-- [x] Switch between SWIG/IPC seamlessly
-- [x] Document when to use each
-- [ ] Performance comparison
+### Quality and Stability
+- [ ] Expand test coverage across all tool categories
+- [ ] Performance profiling for large boards
+- [ ] Update package.json version to match CHANGELOG
 
 ---
 
-## Week 4-5: Smart BOM & Supplier Integration
+## Planned Features
 
-**Goal:** Optimize component selection for cost and availability
+### Supplier Integration
+- [ ] Digikey API integration
+- [ ] Mouser API integration
+- [ ] Smart BOM management with real-time pricing
+- [ ] Cost optimization across suppliers
 
-**1. Digikey Integration**
-- [ ] API authentication
-- [ ] Part search by specs
-- [ ] Price/stock checking
-- [ ] Parametric search (e.g., "10k resistor, 0603, 1%")
+### Design Patterns and Templates
+- [ ] Circuit patterns library (voltage regulators, USB, microcontrollers)
+- [ ] Board templates (Arduino shields, RPi HATs, Feather wings)
+- [ ] Auto-suggest trace widths by current
+- [ ] Impedance-controlled trace support
 
-**2. Smart BOM Management**
-- [ ] Auto-suggest component substitutions
-- [ ] Calculate total board cost
-- [ ] Check component availability
-- [ ] Generate purchase links
+### Advanced Capabilities
+- [ ] Panelization support
+- [ ] Multi-board project management
+- [ ] High-speed design helpers (length matching, via stitching)
+- [ ] SPICE simulation integration
 
-**3. Cost Optimization**
-- [ ] Suggest JLCPCB basic parts (free assembly)
-- [ ] Warn about expensive/obsolete parts
-- [ ] Batch component suggestions
-
-**Deliverable:** "Design a low-cost LED driver under $5 BOM"
-
----
-
-## Week 6-7: Design Patterns & Templates
-
-**Goal:** Accelerate common design tasks
-
-**1. Circuit Patterns Library**
-- [ ] Voltage regulators (LDO, switching)
-- [ ] USB interfaces (USB-C, micro-USB)
-- [ ] Microcontroller circuits (ESP32, STM32, RP2040)
-- [ ] Power protection (reverse polarity, ESD)
-- [ ] Common interfaces (I2C, SPI, UART)
-
-**2. Board Templates**
-- [ ] Arduino form factors (Uno, Nano, Mega)
-- [ ] Raspberry Pi HATs
-- [ ] Feather wings
-- [ ] Custom PCB shapes (badges, wearables)
-
-**3. Auto-routing Helpers**
-- [ ] Suggest trace widths by current
-- [ ] Auto-create ground pours
-- [ ] Match differential pair lengths
-- [ ] Check impedance requirements
-
-**Deliverable:** "Create an ESP32 dev board with USB-C"
-
----
-
-## Week 8-9: Guided Workflows & Education
-
-**Goal:** Make PCB design accessible to beginners
-
-**1. Interactive Tutorials**
-- [ ] First PCB (LED blinker)
-- [ ] Understanding layers and vias
-- [ ] Routing best practices
-- [ ] Design rule checking
-
-**2. Design Validation**
-- [ ] Check for common mistakes
-- [ ] Suggest improvements
-- [ ] Explain DRC violations
-- [ ] Manufacturing feasibility check
-
-**3. Documentation Generation**
-- [ ] Auto-generate assembly drawings
-- [ ] Create BOM spreadsheets
-- [ ] Export fabrication files
-- [ ] Generate user manual
-
-**Deliverable:** Complete beginner-to-fabrication tutorial
-
----
-
-## Week 10-11: Advanced Features
-
-**Goal:** Support complex professional designs
-
-**1. Multi-board Projects**
-- [ ] Panel designs for manufacturing
-- [ ] Shared schematics across boards
-- [ ] Version management
-
-**2. High-speed Design**
-- [ ] Impedance-controlled traces
-- [ ] Length matching for DDR/PCIe
-- [ ] Signal integrity analysis
-- [ ] Via stitching for EMI
-
-**3. Advanced Components**
-- [ ] BGAs and fine-pitch packages
-- [ ] Flex PCB support
-- [ ] Rigid-flex designs
-
----
-
-## Week 12: Polish & Release
-
-**Goal:** Production-ready v2.0 release
-
-**1. Performance**
-- [ ] Optimize large board operations
-- [ ] Cache library searches
-- [ ] Parallel operations where possible
-
-**2. Testing**
-- [ ] Unit tests for all commands
-- [ ] Integration tests for workflows
-- [ ] Test on Windows/macOS/Linux
-- [ ] Load testing with complex boards
-
-**3. Documentation**
-- [ ] Complete API reference
-- [ ] Video tutorial series
-- [ ] Blog post/announcement
-- [ ] Example project gallery
-
-**4. Community**
-- [ ] Contribution guidelines
+### Community and Education
+- [ ] Example project gallery with tutorials
+- [ ] Video walkthrough series
+- [ ] Interactive beginner tutorials
 - [ ] Plugin system for custom tools
-- [ ] Discord/forum for support
-
-**Deliverable:** KiCAD MCP v2.0 stable release
-
----
-
-## Future (Post-v2.0)
-
-**Big Ideas for v3.0+**
-
-**1. AI-Powered Design**
-- Generate circuits from specifications
-- Optimize layouts for size/cost/performance
-- Suggest alternative designs
-- Learn from user preferences
-
-**2. Collaboration**
-- Multi-user design sessions
-- Design reviews and comments
-- Version control integration (Git)
-- Share design patterns
-
-**3. Manufacturing Integration**
-- Direct order to PCB fabs
-- Assembly service integration
-- Track order status
-- Automated quoting
-
-**4. Simulation**
-- SPICE integration for circuit sim
-- Thermal simulation
-- Signal integrity
-- Power integrity
-
-**5. Extended Platform Support**
-- Altium import/export
-- Eagle compatibility
-- EasyEDA integration
-- Web-based viewer
-
----
-
-## Success Metrics
-
-**v2.0 Release Criteria:**
-
-- [ ] 95%+ of commands working reliably
-- [ ] Component placement with 10,000+ footprints
-- [ ] IPC backend working on all platforms
-- [ ] 10+ example projects
-- [ ] 5+ video tutorials
-- [ ] 100+ GitHub stars
-- [ ] 10+ community contributors
-
-**User Success Stories:**
-- "Designed my first PCB with Claude Code in 30 minutes"
-- "Cut PCB design time by 80% using MCP"
-- "Got my board manufactured - it works!"
 
 ---
 
 ## How to Contribute
 
-See the roadmap and want to help?
+See the roadmap items above and want to help? High-value contributions:
 
-**High-value contributions:**
-1. Component library mappings (JLCPCB → KiCAD)
-2. Design pattern library (circuits you use often)
-3. Testing on Windows/macOS
-4. Documentation and tutorials
-5. Bug reports with reproductions
+1. Testing on Windows/macOS with KiCAD 9
+2. Example projects and workflow documentation
+3. Bug reports with reproduction steps
+4. New tool implementations (see [ARCHITECTURE.md](ARCHITECTURE.md))
+5. Design pattern library contributions
 
 Check [CONTRIBUTING.md](../CONTRIBUTING.md) for details.
 
 ---
 
-**Last Updated:** 2025-11-30
-**Maintained by:** KiCAD MCP Team
+*Maintained by: KiCAD MCP Team and community contributors*

@@ -6,6 +6,7 @@ Thank you for your interest in contributing to the KiCAD MCP Server! This guide 
 
 - [Development Environment Setup](#development-environment-setup)
 - [Project Structure](#project-structure)
+- [Architecture Overview](#architecture-overview)
 - [Development Workflow](#development-workflow)
 - [Testing](#testing)
 - [Code Style](#code-style)
@@ -141,6 +142,22 @@ kicad-mcp-server/
 ├── requirements.txt      # Python production dependencies
 └── requirements-dev.txt  # Python dev dependencies
 ```
+
+---
+
+## Architecture Overview
+
+The KiCAD MCP Server is organized into several key components:
+
+- **TypeScript MCP Server** (`src/`) - Handles MCP protocol communication and tool routing
+- **Python KiCAD Interface** (`python/`) - Interfaces with KiCAD's Python API (pcbnew)
+- **Tool Router** - Organizes 122+ tools into 8 discoverable categories
+- **Resource System** - Provides dynamic project/board state information
+- **Prompt System** - Offers context-aware design prompts
+
+**Current Tool Count:** 122+ tools across 8 categories (direct + routed)
+
+For detailed architecture information, see `docs/ROUTER_ARCHITECTURE.md`.
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## What is the Router?
 
-The KiCAD MCP Server now includes an intelligent tool router that organizes 59 tools into 7 discoverable categories. This reduces AI context usage by up to 70% while maintaining full access to all functionality.
+The KiCAD MCP Server includes an intelligent tool router that organizes 122+ tools into 8 discoverable categories. This reduces AI context usage by up to 70% while maintaining full access to all functionality.
 
 ## How It Works
 
@@ -20,7 +20,7 @@ When you ask Claude to do something (like "export gerber files"), it will:
 
 ## Tool Categories
 
-The 47 routed tools are organized into these categories:
+The 110+ routed tools are organized into these categories:
 
 ### 1. board (9 tools)
 Board configuration: layers, mounting holes, zones, visualization
@@ -154,15 +154,12 @@ For implementation details, see:
 ## Token Savings
 
 **Before Router:**
-- 59 tools × ~700 tokens each = ~42K tokens per conversation
+- 122 tools × ~700 tokens each = ~85K tokens per conversation
 
-**After Router (Current - Phase 1):**
+**After Router (Current):**
 - 12 direct tools + 4 router tools = 16 tools visible
-- Still ~42K tokens (all tools still registered for backwards compatibility)
+- Routed tools discovered on-demand
+- ~12-15K tokens per conversation
+- **~80% reduction** in context usage
 
-**After Phase 2 (Optional Optimization):**
-- Only 16 tools visible to Claude
-- ~12K tokens per conversation
-- **70% reduction** in context usage
-
-Phase 1 is complete and functional. Phase 2 (hiding routed tools) is optional and can be implemented when desired.
+The router pattern is complete and functional, providing efficient tool discovery while maintaining full access to all 122+ tools.

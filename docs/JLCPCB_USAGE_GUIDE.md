@@ -1,5 +1,7 @@
 # JLCPCB Integration Guide
 
+> **Note:** This document provides usage examples and workflow guidance. For complete API reference and setup instructions, see [JLCPCB_INTEGRATION.md](JLCPCB_INTEGRATION.md).
+
 The KiCAD MCP Server provides **three complementary approaches** for working with JLCPCB parts:
 
 1. **JLCSearch Public API** - No authentication required, 2.5M+ parts with pricing (Recommended)

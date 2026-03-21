@@ -220,6 +220,8 @@ For any MCP-compatible client that supports STDIO transport:
 | `LOG_LEVEL` | Logging verbosity | `info` |
 | `NODE_ENV` | Node environment | `development` |
 | `KICAD_BACKEND` | Force backend (`swig` or `ipc`) | Auto-detect |
+| `KICAD_MCP_DEV` | Enable developer mode (auto-save logs to project) | `0` (disabled) |
+| `FREEROUTING_JAR` | Path to FreeRouting JAR file for autorouting | Not set |
 
 ---
 
@@ -537,5 +539,5 @@ For bugs or feature requests, open an issue on GitHub.
 
 ---
 
-**Last Updated:** October 25, 2025
-**Version:** 2.0.0-alpha.1
+**Last Updated:** March 21, 2026
+**Version:** 2.2.3+

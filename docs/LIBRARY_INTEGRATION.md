@@ -1,26 +1,36 @@
-# KiCAD Footprint Library Integration
+# KiCAD Library Integration
 
-**Status:** ✅ COMPLETE (Week 2 - Component Library Integration)
-**Date:** 2025-11-01
-**Version:** 2.1.0-alpha
+**Status:** ✅ COMPLETE
+**Date:** 2026-03-21
+**Version:** 2.2.3+
 
 ## Overview
 
-The KiCAD MCP Server now includes full footprint library integration, enabling:
+The KiCAD MCP Server includes full library integration for both footprints and symbols, enabling:
 - ✅ Automatic discovery of all installed KiCAD footprint libraries
-- ✅ Search and browse footprints across all libraries
+- ✅ Automatic discovery of KiCAD symbol libraries (including project-local)
+- ✅ Search and browse footprints/symbols across all libraries
 - ✅ Component placement using library footprints
+- ✅ Symbol creation and editing with project-local library support (v2.2.2+)
 - ✅ Support for both `Library:Footprint` and `Footprint` formats
 
 ## How It Works
 
 ### Library Discovery
 
-The `LibraryManager` class automatically discovers footprint libraries by:
+The library system automatically discovers both footprint and symbol libraries:
+
+**Footprint Libraries** - `LibraryManager` class:
 
 1. **Parsing fp-lib-table files:**
    - Global: `~/.config/kicad/9.0/fp-lib-table`
    - Project-specific: `project-dir/fp-lib-table`
+
+**Symbol Libraries** - `DynamicSymbolLoader` class (v2.2.2+):
+
+1. **Parsing sym-lib-table files:**
+   - Global: `~/.config/kicad/9.0/sym-lib-table`
+   - Project-local: `project-dir/sym-lib-table` (added v2.2.2)
 
 2. **Resolving environment variables:**
    - `${KICAD9_FOOTPRINT_DIR}` → `/usr/share/kicad/footprints`
@@ -337,7 +347,9 @@ rotation = module.GetOrientation().AsDegrees()
 
 ## Changelog
 
-**2025-11-01 - v2.1.0-alpha**
+**2026-03-21 - v2.2.3+**
+- ✅ Project-local symbol library support (v2.2.2)
+- ✅ Project-local footprint library support (v2.2.2)
 - ✅ Implemented LibraryManager class
 - ✅ Added 4 new MCP library tools
 - ✅ Updated component placement to use libraries

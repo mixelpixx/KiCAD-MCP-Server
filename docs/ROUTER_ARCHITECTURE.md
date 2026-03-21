@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the router pattern implementation for the KiCAD MCP Server. The router reduces context window consumption from ~40K tokens (59 tools) to ~12K tokens (16 visible tools).
+This document describes the router pattern implementation for the KiCAD MCP Server. The router reduces context window consumption by organizing 122+ tools into 8 discoverable categories, keeping only the most frequently used tools directly visible.
 
 ## Architecture Layers
 
@@ -29,14 +29,14 @@ This document describes the router pattern implementation for the KiCAD MCP Serv
 │                              │                               │
 │                              ▼                               │
 │  ┌─────────────────────────────────────────────────────────┐│
-│  │            ROUTED TOOLS (Hidden - 47)                   ││
+│  │            ROUTED TOOLS (Hidden - 110+)                 ││
 │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   ││
 │  │  │  board   │ │component │ │  export  │ │   drc    │   ││
-│  │  │(9 tools) │ │(8 tools) │ │(8 tools) │ │(9 tools) │   ││
+│  │  │   tools  │ │  tools   │ │  tools   │ │  tools   │   ││
 │  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘   ││
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐                ││
-│  │  │schematic │ │ library  │ │ routing  │ ┌──────────┐   ││
-│  │  │(9 tools) │ │(4 tools) │ │(3 tools) │ │ui (1 tool)│   ││
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   ││
+│  │  │schematic │ │ library  │ │ routing  │ │footprint │   ││
+│  │  │  tools   │ │  tools   │ │  tools   │ │  tools   │   ││
 │  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘   ││
 │  └─────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────┘
@@ -68,7 +68,7 @@ These cover the primary workflow (80%+ of use cases):
 4. **UI Management** (1):
    - `check_kicad_ui` - Check if KiCAD UI is running
 
-### Routed Categories (7 categories, 47 tools)
+### Routed Categories (8+ categories, 110+ tools)
 
 #### 1. `board` - Board Configuration & Layout (9 tools)
 Setup and configuration operations.

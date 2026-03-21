@@ -1,7 +1,7 @@
 # Known Issues & Workarounds
 
-**Last Updated:** 2025-12-02
-**Version:** 2.1.0-alpha
+**Last Updated:** 2026-03-21
+**Version:** 2.2.3
 
 This document tracks known issues and provides workarounds where available.
 
@@ -36,7 +36,8 @@ AttributeError: 'BOARD' object has no attribute 'LT_USER'
 
 **Workaround Options:**
 1. Use IPC backend (zones fill correctly via IPC)
-2. Open the board in KiCAD UI - zones fill automatically when opened
+2. Open the board in KiCAD UI -- zones fill automatically when opened
+3. Use `refill_zones` tool (may still segfault in some configurations)
 
 **Impact:** Medium - affects copper pour visualization until opened in KiCAD
 
@@ -44,94 +45,75 @@ AttributeError: 'BOARD' object has no attribute 'LT_USER'
 
 ### 3. UI Manual Reload Required (SWIG Backend)
 
-**Status:** BY DESIGN - Fixed by IPC
+**Status:** BY DESIGN
 
 **Symptoms:**
 - MCP makes changes via SWIG backend
-- KiCAD doesn't show changes until file is reloaded
+- KiCAD does not show changes until file is reloaded
 
-**Current Workflow:**
-```
-1. MCP makes change via SWIG
-2. KiCAD shows: "File has been modified. Reload? [Yes] [No]"
-3. User clicks "Yes"
-4. Changes appear in UI
-```
+**Why:** SWIG-based backend modifies files directly and cannot push changes to a running UI
 
-**Why:** SWIG-based backend requires file I/O, can't push changes to running UI
+**Fix:** Use IPC backend for real-time updates (requires KiCAD running with IPC enabled)
 
-**Fix:** Use IPC backend for real-time updates (requires KiCAD to be running with IPC enabled)
-
-**Workaround:** Click reload prompt or use File > Revert
+**Workaround:** Click the reload prompt in KiCAD or use File > Revert
 
 ---
 
-### 4. IPC Backend Experimental
+### 4. IPC Backend Limitations
 
-**Status:** UNDER DEVELOPMENT
+**Status:** EXPERIMENTAL
 
-**Description:**
-The IPC backend is currently being implemented and tested. Some commands may not work as expected in all scenarios.
-
-**Known IPC Limitations:**
-- KiCAD must be running with IPC enabled
+**Known Limitations:**
+- KiCAD must be running with IPC enabled (Preferences > Plugins > Enable IPC API Server)
 - Some commands fall back to SWIG (e.g., delete_trace)
 - Footprint loading uses hybrid approach (SWIG for library, IPC for placement)
-- Error handling may not be comprehensive in all cases
 
-**Workaround:** If IPC fails, the server automatically falls back to SWIG backend
-
----
+**Workaround:** The server automatically falls back to SWIG backend when IPC is unavailable
 
 ---
 
-## Recently Fixed
+### 5. package.json Version Mismatch
 
-### Schematic Component Corruption (Fixed 2026-02-26)
+**Status:** KNOWN - Non-critical
 
-**Was:** `add_schematic_component` corrupted .kicad_sch files due to sexpdata formatting issues
-**Now:** Rewritten to use text manipulation, preserves KiCAD file formatting perfectly
-**Impact:** Schematic workflow fully functional with all component types
-**Fixed in:** PR #40, commit a69d288
+**Symptoms:** package.json shows version 2.1.0-alpha while CHANGELOG documents version 2.2.3
 
-### DRC Violations API KiCAD 9.0 (Fixed 2026-02-26)
+**Impact:** Cosmetic only. CHANGELOG.md is the authoritative version reference.
 
-**Was:** `get_drc_violations` failed with `AttributeError: 'BOARD' object has no attribute 'GetDRCMarkers'`
-**Now:** Reimplemented to use `run_drc()` internally which calls kicad-cli
-**Impact:** Maintains backward compatibility while using stable kicad-cli interface
+---
 
-### Component Library Integration (Fixed 2025-11-01)
+## Recently Fixed (v2.2.0 - v2.2.3)
 
-**Was:** Could not find footprint libraries
-**Now:** Auto-discovers 153 KiCAD footprint libraries, search and list working
+### B.Cu Footprint Routing (Fixed v2.2.3)
+- `route_pad_to_pad` now correctly detects B.Cu footprints and inserts vias
+- KiCAD 9 SWIG `pad.GetLayerName()` always returned F.Cu for flipped footprints -- fixed using `footprint.GetLayer()`
 
-### Routing Operations KiCAD 9.0 (Fixed 2025-11-01)
+### B.Cu Placement Hang (Fixed v2.2.3)
+- Placing footprints on B.Cu no longer causes ~30s freeze
+- Fix: call `board.Add()` before `Flip()`
 
-**Was:** Multiple API compatibility issues with KiCAD 9.0
-**Now:** All routing commands tested and working:
-- `netinfo.FindNet()` -> `netinfo.NetsByName()[name]`
-- `zone.SetPriority()` -> `zone.SetAssignedPriority()`
-- `ZONE_FILL_MODE_POLYGON` -> `ZONE_FILL_MODE_POLYGONS`
+### Board Outline Rounded Corners (Fixed v2.2.3)
+- `add_board_outline` now correctly applies cornerRadius for rounded_rectangle shape
 
-### KiCAD Process Detection (Fixed 2025-10-26)
+### Project-Local Library Resolution (Fixed v2.2.2)
+- `add_schematic_component` and `place_component` now search project-local sym-lib-table and fp-lib-table
+- Previously only global KiCAD library paths were searched
 
-**Was:** `check_kicad_ui` detected MCP server's own processes
-**Now:** Properly filters to only detect actual KiCAD binaries
+### Template File Corruption (Fixed v2.2.2)
+- Removed invalid `;;` comment lines from template schematics
+- Restored KiCAD 9 format version (20250114) in templates
 
-### set_board_size KiCAD 9.0 (Fixed 2025-10-26)
+### copy_routing_pattern Empty Results (Fixed v2.2.2)
+- Added geometric fallback when pads have no net assignments
 
-**Was:** Failed with `BOX2I_SetSize` type error
-**Now:** Works with KiCAD 9.0 API
+### Schematic Component Corruption (Fixed v2.2.1)
+- `add_schematic_component` no longer corrupts .kicad_sch files
+- Rewritten to use text manipulation instead of sexpdata formatting
 
-### add_board_text KiCAD 9.0 (Fixed 2025-10-26)
-
-**Was:** Failed with `EDA_ANGLE` type error
-**Now:** Works with KiCAD 9.0 API
-
-### Schematic Parameter Mismatch (Fixed 2025-12-02)
-
-**Was:** `create_schematic` failed due to parameter name differences between TypeScript and Python
-**Now:** Accepts multiple parameter naming conventions (`name`, `projectName`, `title`, `filename`)
+### SWIG/UUID Comparison Bugs (Fixed v2.2.0)
+- Fixed SwigPyObject UUID comparison
+- Fixed SWIG iterator invalidation after board.Remove()
+- Added board.SetModified() to prevent dangling pointer crashes
 
 ---
 
@@ -140,31 +122,20 @@ The IPC backend is currently being implemented and tested. Some commands may not
 If you encounter an issue not listed here:
 
 1. **Check MCP logs:** `~/.kicad-mcp/logs/kicad_interface.log`
-2. **Check KiCAD version:** `python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"` (must be 9.0+)
-3. **Try the operation in KiCAD directly** - is it a KiCAD issue?
-4. **Open GitHub issue** with:
-   - Error message
-   - Log excerpt
+2. **Enable developer mode:** Set `KICAD_MCP_DEV=1` to capture session logs
+3. **Check KiCAD version:** `python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"` (must be 9.0+)
+4. **Try the operation in KiCAD directly** -- is it a KiCAD issue?
+5. **Open a GitHub issue** with:
+   - Error message and log excerpt
    - Steps to reproduce
-   - KiCAD version
-   - OS and version
-
----
-
-## Priority Matrix
-
-| Issue | Priority | Impact | Status |
-|-------|----------|--------|--------|
-| IPC Backend Testing | High | Medium | In Progress |
-| get_board_info Fix | Low | Low | Known |
-| Zone Filling (SWIG) | Medium | Medium | Workaround Available |
-| Schematic Support | Medium | Medium | Partial |
+   - KiCAD version and OS
+   - MCP session log (from `logs/` folder if dev mode is enabled)
 
 ---
 
 ## General Workarounds
 
-### Server Won't Start
+### Server Will Not Start
 ```bash
 # Check Python can import pcbnew
 python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"
@@ -179,7 +150,7 @@ python3 python/utils/platform_helper.py
 # Always run open_project after server restart
 ```
 
-### KiCAD UI Doesn't Show Changes (SWIG Mode)
+### KiCAD UI Does Not Show Changes (SWIG Mode)
 ```
 # File > Revert (or click reload prompt)
 # Or: Close and reopen file in KiCAD
@@ -198,6 +169,5 @@ python3 python/utils/platform_helper.py
 
 **Need Help?**
 - Check [IPC_BACKEND_STATUS.md](IPC_BACKEND_STATUS.md) for IPC details
-- Check [REALTIME_WORKFLOW.md](REALTIME_WORKFLOW.md) for workflow tips
 - Check logs: `~/.kicad-mcp/logs/kicad_interface.log`
 - Open an issue on GitHub

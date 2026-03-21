@@ -1,9 +1,9 @@
 # KiCAD IPC Backend Implementation Status
 
 **Status:** Under Active Development and Testing
-**Date:** 2025-12-02
-**KiCAD Version:** 9.0.6
-**kicad-python Version:** 0.5.0
+**Date:** 2026-03-21
+**KiCAD Version:** 9.0+
+**kicad-python Version:** 0.5.0+
 
 ---
 
@@ -209,4 +209,4 @@ python/
 
 ---
 
-**Last Updated:** 2025-12-02
+**Last Updated:** 2026-03-21
