@@ -77,13 +77,16 @@ class SymbolLibraryManager:
         """Get path to global sym-lib-table file"""
         # Try different possible locations (same as fp-lib-table but for symbols)
         kicad_config_paths = [
+            Path.home() / ".config" / "kicad" / "10.0" / "sym-lib-table",
             Path.home() / ".config" / "kicad" / "9.0" / "sym-lib-table",
             Path.home() / ".config" / "kicad" / "8.0" / "sym-lib-table",
             Path.home() / ".config" / "kicad" / "sym-lib-table",
             # Windows paths
+            Path.home() / "AppData" / "Roaming" / "kicad" / "10.0" / "sym-lib-table",
             Path.home() / "AppData" / "Roaming" / "kicad" / "9.0" / "sym-lib-table",
             Path.home() / "AppData" / "Roaming" / "kicad" / "8.0" / "sym-lib-table",
             # macOS paths
+            Path.home() / "Library" / "Preferences" / "kicad" / "10.0" / "sym-lib-table",
             Path.home() / "Library" / "Preferences" / "kicad" / "9.0" / "sym-lib-table",
             Path.home() / "Library" / "Preferences" / "kicad" / "8.0" / "sym-lib-table",
         ]
@@ -109,11 +112,21 @@ class SymbolLibraryManager:
 
             # Simple regex-based parser for lib entries
             # Pattern: (lib (name "NAME")(type TYPE)(uri "URI")...)
-            lib_pattern = r'\(lib\s+\(name\s+"?([^")\s]+)"?\)\s*\(type\s+[^)]+\)\s*\(uri\s+"?([^")\s]+)"?'
+            lib_pattern = r'\(lib\s+\(name\s+"?([^")\s]+)"?\)\s*\(type\s+"?([^")\s]+)"?\)\s*\(uri\s+"?([^")\s]+)"?'
 
             for match in re.finditer(lib_pattern, content, re.IGNORECASE):
                 nickname = match.group(1)
-                uri = match.group(2)
+                lib_type = match.group(2)
+                uri = match.group(3)
+
+                if lib_type.lower() == "table":
+                    table_uri = uri
+                    if os.path.isabs(table_uri) and os.path.isfile(table_uri):
+                        logger.info(f"  Following Table reference: {nickname} -> {table_uri}")
+                        self._parse_sym_lib_table(Path(table_uri))
+                    else:
+                        logger.warning(f"  Could not resolve Table URI: {table_uri}")
+                    continue
 
                 # Resolve environment variables in URI
                 resolved_uri = self._resolve_uri(uri)
@@ -142,9 +155,11 @@ class SymbolLibraryManager:
 
         # Common KiCAD environment variables
         env_vars = {
+            'KICAD10_SYMBOL_DIR': self._find_kicad_symbol_dir(),
             'KICAD9_SYMBOL_DIR': self._find_kicad_symbol_dir(),
             'KICAD8_SYMBOL_DIR': self._find_kicad_symbol_dir(),
             'KICAD_SYMBOL_DIR': self._find_kicad_symbol_dir(),
+            'KICAD10_3RD_PARTY': self._find_3rd_party_dir(),
             'KICAD9_3RD_PARTY': self._find_3rd_party_dir(),
             'KICAD8_3RD_PARTY': self._find_3rd_party_dir(),
             'KISYSSYM': self._find_kicad_symbol_dir(),
@@ -198,11 +213,14 @@ class SymbolLibraryManager:
     def _find_3rd_party_dir(self) -> Optional[str]:
         """Find KiCAD 3rd party library directory (PCM installed libs)"""
         possible_paths = [
+            str(Path.home() / "Documents" / "KiCad" / "10.0" / "3rdparty"),
             str(Path.home() / "Documents" / "KiCad" / "9.0" / "3rdparty"),
             str(Path.home() / "Documents" / "KiCad" / "8.0" / "3rdparty"),
         ]
 
         # Check environment variable
+        if 'KICAD10_3RD_PARTY' in os.environ:
+            possible_paths.insert(0, os.environ['KICAD10_3RD_PARTY'])
         if 'KICAD9_3RD_PARTY' in os.environ:
             possible_paths.insert(0, os.environ['KICAD9_3RD_PARTY'])
         if 'KICAD8_3RD_PARTY' in os.environ:
