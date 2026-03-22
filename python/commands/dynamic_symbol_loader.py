@@ -41,10 +41,12 @@ class DynamicSymbolLoader:
             Path("C:/Program Files/KiCad/9.0/share/kicad/symbols"),
             Path("C:/Program Files/KiCad/8.0/share/kicad/symbols"),
             Path("/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols"),
+            Path.home() / ".local" / "share" / "kicad" / "10.0" / "symbols",
             Path.home() / ".local" / "share" / "kicad" / "9.0" / "symbols",
+            Path.home() / "Documents" / "KiCad" / "10.0" / "3rdparty" / "symbols",
             Path.home() / "Documents" / "KiCad" / "9.0" / "3rdparty" / "symbols",
         ]
-        for env_var in ["KICAD9_SYMBOL_DIR", "KICAD8_SYMBOL_DIR", "KICAD_SYMBOL_DIR"]:
+        for env_var in ["KICAD10_SYMBOL_DIR", "KICAD9_SYMBOL_DIR", "KICAD8_SYMBOL_DIR", "KICAD_SYMBOL_DIR"]:
             if env_var in os.environ:
                 possible_paths.insert(0, Path(os.environ[env_var]))
 
@@ -97,6 +99,11 @@ class DynamicSymbolLoader:
     def _resolve_sym_uri(self, uri: str) -> Optional[str]:
         """Resolve environment variables in a sym-lib-table URI."""
         env_map = {
+            "KICAD10_SYMBOL_DIR": [
+                "/usr/share/kicad/symbols",
+                "C:/Program Files/KiCad/10.0/share/kicad/symbols",
+                "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols",
+            ],
             "KICAD9_SYMBOL_DIR": [
                 "C:/Program Files/KiCad/9.0/share/kicad/symbols",
                 "/usr/share/kicad/symbols",
