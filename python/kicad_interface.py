@@ -833,7 +833,7 @@ class KiCADInterface:
                     trim_start -= 1
                 if trim_start > 0 and content[trim_start - 1] == "\n":
                     trim_start -= 1
-                content = content[:trim_start] + content[b_end + 1:]
+                content = content[:trim_start] + content[b_end + 1 :]
 
             with open(sch_file, "w", encoding="utf-8") as f:
                 f.write(content)
