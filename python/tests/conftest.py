@@ -1,26 +1,42 @@
 """
-Pytest configuration for python/tests.
+Test configuration for python/tests.
 
-Sets up sys.path so that the python/ package root is importable without
-installing the project, and provides shared fixtures.
+Sets up sys.modules stubs for heavy KiCAD modules (pcbnew, skip) before any
+test module can trigger their import, preventing crashes on systems where the
+real KiCAD environment is not fully initialised for testing.
 """
+
 import sys
-from pathlib import Path
-
-# Make the python/ package root importable
-PYTHON_ROOT = Path(__file__).parent.parent
-if str(PYTHON_ROOT) not in sys.path:
-    sys.path.insert(0, str(PYTHON_ROOT))
-
-# Stub out heavy KiCAD C-extension modules so tests can run without a real
-# KiCAD installation.  Extend this list whenever a new import fails.
 import types
 from unittest.mock import MagicMock
 
-# Use MagicMock so any attribute access (e.g. pcbnew.BOARD, pcbnew.LoadBoard)
-# returns another MagicMock rather than raising AttributeError.
-for _stub_name in ("pcbnew", "skip"):
-    if _stub_name not in sys.modules:
-        _m = MagicMock(spec_set=None)
-        _m.__name__ = _stub_name
-        sys.modules[_stub_name] = _m
+# ---------------------------------------------------------------------------
+# pcbnew stub — kicad_interface.py accesses pcbnew.__file__ and
+# pcbnew.GetBuildVersion() at module level.  Use MagicMock so that any
+# attribute access (pcbnew.BOARD, pcbnew.PCB_TRACK, …) returns a mock
+# rather than raising AttributeError.
+# ---------------------------------------------------------------------------
+_pcbnew = MagicMock(name="pcbnew")
+_pcbnew.__file__ = "/fake/pcbnew.cpython-313-x86_64-linux-gnu.so"
+_pcbnew.__name__ = "pcbnew"
+_pcbnew.__spec__ = None
+_pcbnew.GetBuildVersion.return_value = "9.0.0-stub"
+sys.modules["pcbnew"] = _pcbnew
+
+# ---------------------------------------------------------------------------
+# Stub: skip  (kicad-skip — use real module if available, stub otherwise)
+# ---------------------------------------------------------------------------
+try:
+    import skip as _skip_test  # noqa: F401 — try importing real skip
+except ImportError:
+    skip_mod = types.ModuleType("skip")
+
+    class _FakeSchematic:
+        """Minimal stand-in for skip.Schematic used in PinLocator cache."""
+
+        def __init__(self, path: str):
+            self.path = path
+            self.symbol = []
+
+    skip_mod.Schematic = _FakeSchematic  # type: ignore[attr-defined]
+    sys.modules["skip"] = skip_mod
