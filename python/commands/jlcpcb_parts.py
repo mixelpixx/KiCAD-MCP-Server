@@ -280,13 +280,19 @@ class JLCPCBPartsManager:
 
         if query:
             # Use FTS for text search
+            # Add prefix wildcard to each term for partial matching
+            # (e.g., "BQ25895" becomes "BQ25895*" so FTS matches "BQ25895RTWR")
+            fts_query = " ".join(
+                f"{term}*" if not term.endswith("*") else term
+                for term in query.strip().split()
+            )
             sql_parts.append('''
                 AND lcsc IN (
                     SELECT lcsc FROM components_fts
                     WHERE components_fts MATCH ?
                 )
             ''')
-            params.append(query)
+            params.append(fts_query)
 
         if category:
             sql_parts.append("AND category LIKE ?")
