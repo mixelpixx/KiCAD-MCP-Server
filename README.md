@@ -1,3 +1,6 @@
+# Discussions. Get in here.
+https://github.com/mixelpixx/KiCAD-MCP-Server/discussions/73
+
 
 # KiCAD MCP Server
 
