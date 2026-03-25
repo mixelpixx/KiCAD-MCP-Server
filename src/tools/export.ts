@@ -175,86 +175,86 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     }
   );
 
-  // ------------------------------------------------------
-  // Export Netlist Tool
-  // ------------------------------------------------------
-  server.tool(
-    "export_netlist",
-    {
-      outputPath: z.string().describe("Path to save the netlist file"),
-      format: z.enum(["KiCad", "Spice", "Cadstar", "OrcadPCB2"]).optional().describe("Netlist format (default: KiCad)")
-    },
-    async ({ outputPath, format }) => {
-      logger.debug(`Exporting netlist to: ${outputPath}`);
-      const result = await callKicadScript("export_netlist", {
-        outputPath,
-        format
-      });
-      
-      return {
-        content: [{
-          type: "text",
-          text: JSON.stringify(result)
-        }]
-      };
-    }
-  );
+  // TODO: Python handler not implemented - uncomment when added to command_routes
+  // // ------------------------------------------------------
+  // // Export Netlist Tool
+  // // ------------------------------------------------------
+  // server.tool(
+  //   "export_netlist",
+  //   {
+  //     outputPath: z.string().describe("Path to save the netlist file"),
+  //     format: z.enum(["KiCad", "Spice", "Cadstar", "OrcadPCB2"]).optional().describe("Netlist format (default: KiCad)")
+  //   },
+  //   async ({ outputPath, format }) => {
+  //     logger.debug(`Exporting netlist to: ${outputPath}`);
+  //     const result = await callKicadScript("export_netlist", {
+  //       outputPath,
+  //       format
+  //     });
+  //     return {
+  //       content: [{
+  //         type: "text",
+  //         text: JSON.stringify(result)
+  //       }]
+  //     };
+  //   }
+  // );
 
-  // ------------------------------------------------------
-  // Export Position File Tool
-  // ------------------------------------------------------
-  server.tool(
-    "export_position_file",
-    {
-      outputPath: z.string().describe("Path to save the position file"),
-      format: z.enum(["CSV", "ASCII"]).optional().describe("File format (default: CSV)"),
-      units: z.enum(["mm", "inch"]).optional().describe("Units to use (default: mm)"),
-      side: z.enum(["top", "bottom", "both"]).optional().describe("Which board side to include (default: both)")
-    },
-    async ({ outputPath, format, units, side }) => {
-      logger.debug(`Exporting position file to: ${outputPath}`);
-      const result = await callKicadScript("export_position_file", {
-        outputPath,
-        format,
-        units,
-        side
-      });
-      
-      return {
-        content: [{
-          type: "text",
-          text: JSON.stringify(result)
-        }]
-      };
-    }
-  );
+  // TODO: Python handler not implemented - uncomment when added to command_routes
+  // // ------------------------------------------------------
+  // // Export Position File Tool
+  // // ------------------------------------------------------
+  // server.tool(
+  //   "export_position_file",
+  //   {
+  //     outputPath: z.string().describe("Path to save the position file"),
+  //     format: z.enum(["CSV", "ASCII"]).optional().describe("File format (default: CSV)"),
+  //     units: z.enum(["mm", "inch"]).optional().describe("Units to use (default: mm)"),
+  //     side: z.enum(["top", "bottom", "both"]).optional().describe("Which board side to include (default: both)")
+  //   },
+  //   async ({ outputPath, format, units, side }) => {
+  //     logger.debug(`Exporting position file to: ${outputPath}`);
+  //     const result = await callKicadScript("export_position_file", {
+  //       outputPath,
+  //       format,
+  //       units,
+  //       side
+  //     });
+  //     return {
+  //       content: [{
+  //         type: "text",
+  //         text: JSON.stringify(result)
+  //       }]
+  //     };
+  //   }
+  // );
 
-  // ------------------------------------------------------
-  // Export VRML Tool
-  // ------------------------------------------------------
-  server.tool(
-    "export_vrml",
-    {
-      outputPath: z.string().describe("Path to save the VRML file"),
-      includeComponents: z.boolean().optional().describe("Whether to include 3D component models"),
-      useRelativePaths: z.boolean().optional().describe("Whether to use relative paths for 3D models")
-    },
-    async ({ outputPath, includeComponents, useRelativePaths }) => {
-      logger.debug(`Exporting VRML to: ${outputPath}`);
-      const result = await callKicadScript("export_vrml", {
-        outputPath,
-        includeComponents,
-        useRelativePaths
-      });
-      
-      return {
-        content: [{
-          type: "text",
-          text: JSON.stringify(result)
-        }]
-      };
-    }
-  );
+  // TODO: Python handler not implemented - uncomment when added to command_routes
+  // // ------------------------------------------------------
+  // // Export VRML Tool
+  // // ------------------------------------------------------
+  // server.tool(
+  //   "export_vrml",
+  //   {
+  //     outputPath: z.string().describe("Path to save the VRML file"),
+  //     includeComponents: z.boolean().optional().describe("Whether to include 3D component models"),
+  //     useRelativePaths: z.boolean().optional().describe("Whether to use relative paths for 3D models")
+  //   },
+  //   async ({ outputPath, includeComponents, useRelativePaths }) => {
+  //     logger.debug(`Exporting VRML to: ${outputPath}`);
+  //     const result = await callKicadScript("export_vrml", {
+  //       outputPath,
+  //       includeComponents,
+  //       useRelativePaths
+  //     });
+  //     return {
+  //       content: [{
+  //         type: "text",
+  //         text: JSON.stringify(result)
+  //       }]
+  //     };
+  //   }
+  // );
 
   logger.info('Export tools registered');
 }

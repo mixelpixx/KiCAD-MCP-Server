@@ -25,7 +25,7 @@ export function registerComponentPrompts(server: McpServer): void {
     {
       requirements: z.string().describe("Description of the circuit requirements and constraints")
     },
-    () => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -33,7 +33,7 @@ export function registerComponentPrompts(server: McpServer): void {
             type: "text",
             text: `You're helping to select components for a circuit design. Given the following requirements:
 
-{{requirements}}
+${args?.requirements || 'No requirements specified'}
 
 Suggest appropriate components with their values, ratings, and footprints. Consider factors like:
 - Power and voltage ratings
@@ -59,7 +59,7 @@ For each component type, recommend specific values and provide a brief explanati
     {
       components: z.string().describe("List of components to be placed on the PCB")
     },
-    () => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -67,7 +67,7 @@ For each component type, recommend specific values and provide a brief explanati
             type: "text",
             text: `You're helping with component placement for a PCB layout. Here are the components to place:
 
-{{components}}
+${args?.components || 'No components specified'}
 
 Provide a strategy for optimal placement considering:
 
@@ -106,7 +106,7 @@ Group components functionally and suggest a logical arrangement. If possible, pr
     {
       component_info: z.string().describe("Information about the component that needs to be replaced")
     },
-    () => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -114,7 +114,7 @@ Group components functionally and suggest a logical arrangement. If possible, pr
             type: "text",
             text: `You're helping to find a replacement for a component that is unavailable or needs to be updated. Here's the original component information:
 
-{{component_info}}
+${args?.component_info || 'No component information specified'}
 
 Consider these factors when suggesting replacements:
 
@@ -152,7 +152,7 @@ Suggest suitable replacement options and explain the advantages and disadvantage
     {
       issue_description: z.string().describe("Description of the component or circuit issue being troubleshooted")
     },
-    () => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -160,7 +160,7 @@ Suggest suitable replacement options and explain the advantages and disadvantage
             type: "text",
             text: `You're helping to troubleshoot an issue with a component or circuit section in a PCB design. Here's the issue description:
 
-{{issue_description}}
+${args?.issue_description || 'No issue description specified'}
 
 Use the following systematic approach to diagnose the problem:
 
@@ -199,7 +199,7 @@ Based on the available information, suggest likely causes of the issue and recom
     {
       circuit_requirements: z.string().describe("Description of the circuit function and performance requirements")
     },
-    () => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -207,7 +207,7 @@ Based on the available information, suggest likely causes of the issue and recom
             type: "text",
             text: `You're helping to calculate appropriate component values for a specific circuit function. Here's the circuit description and requirements:
 
-{{circuit_requirements}}
+${args?.circuit_requirements || 'No circuit requirements specified'}
 
 Follow these steps to determine the optimal component values:
 

@@ -46,7 +46,7 @@ export function registerProjectTools(server: McpServer, callKicadScript: Functio
   // Save project tool
   server.tool(
     "save_project",
-    "Save the current KiCAD project",
+    "Save the PCB board file to disk. Schematic changes are saved automatically by each MCP schematic tool on every operation — this only affects the board (.kicad_pcb).",
     {
       path: z.string().optional().describe("Optional new path to save to"),
     },

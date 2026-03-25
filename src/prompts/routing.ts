@@ -25,7 +25,7 @@ export function registerRoutingPrompts(server: McpServer): void {
     {
       board_info: z.string().describe("Information about the PCB board, including dimensions, layer stack-up, and components")
     },
-    () => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -33,7 +33,7 @@ export function registerRoutingPrompts(server: McpServer): void {
             type: "text",
             text: `You're helping to develop a routing strategy for a PCB design. Here's information about the board:
 
-{{board_info}}
+${args?.board_info || 'No board information specified'}
 
 Consider the following aspects when developing your routing strategy:
 
@@ -78,7 +78,7 @@ Provide a comprehensive routing strategy that addresses these aspects, with spec
     {
       differential_pairs: z.string().describe("Information about the differential pairs to be routed, including signal names, source and destination components, and speed/frequency requirements")
     },
-    () => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -86,7 +86,7 @@ Provide a comprehensive routing strategy that addresses these aspects, with spec
             type: "text",
             text: `You're helping with routing differential pairs on a PCB. Here's information about the differential pairs:
 
-{{differential_pairs}}
+${args?.differential_pairs || 'No differential pair information specified'}
 
 When routing differential pairs, follow these best practices:
 
@@ -130,7 +130,7 @@ Based on the provided information, suggest specific routing approaches for these
     {
       high_speed_signals: z.string().describe("Information about the high-speed signals to be routed, including signal names, source and destination components, and speed/frequency requirements")
     },
-    () => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -138,7 +138,7 @@ Based on the provided information, suggest specific routing approaches for these
             type: "text",
             text: `You're helping with routing high-speed signals on a PCB. Here's information about the high-speed signals:
 
-{{high_speed_signals}}
+${args?.high_speed_signals || 'No high-speed signal information specified'}
 
 When routing high-speed signals, consider these critical factors:
 
@@ -183,7 +183,7 @@ Based on the provided information, suggest specific routing approaches for these
     {
       power_requirements: z.string().describe("Information about the power requirements, including voltage rails, current needs, and components requiring power")
     },
-    () => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -191,7 +191,7 @@ Based on the provided information, suggest specific routing approaches for these
             type: "text",
             text: `You're helping with designing the power distribution network for a PCB. Here's information about the power requirements:
 
-{{power_requirements}}
+${args?.power_requirements || 'No power requirements specified'}
 
 Consider these key aspects of power distribution network design:
 
@@ -236,7 +236,7 @@ Based on the provided information, suggest a comprehensive power distribution st
     {
       board_info: z.string().describe("Information about the PCB board, including layer count, thickness, and design requirements")
     },
-    () => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -244,7 +244,7 @@ Based on the provided information, suggest a comprehensive power distribution st
             type: "text",
             text: `You're helping with planning via usage in a PCB design. Here's information about the board:
 
-{{board_info}}
+${args?.board_info || 'No board information specified'}
 
 Consider these important aspects of via usage:
 

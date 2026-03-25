@@ -4,7 +4,6 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import express from "express";
 import { spawn, exec, execSync, ChildProcess } from "child_process";
 import { existsSync } from "fs";
 import { join, dirname } from "path";
@@ -25,8 +24,7 @@ import { registerDatasheetTools } from "./tools/datasheet.js";
 import { registerFootprintTools } from "./tools/footprint.js";
 import { registerSymbolCreatorTools } from "./tools/symbol-creator.js";
 import { registerUITools } from "./tools/ui.js";
-import { registerFreeroutingTools } from "./tools/freerouting.js";
-import { registerRouterTools } from "./tools/router.js";
+// import { registerRouterTools } from "./tools/router.js"; // Router disabled - see registerAll()
 
 // Import resource registration functions
 import { registerProjectResources } from "./resources/project.js";
@@ -190,6 +188,7 @@ export class KiCADMcpServer {
     reject: Function;
     timeoutHandle: NodeJS.Timeout;
   } | null = null;
+  private pythonExePath: string = "";
 
   /**
    * Constructor for the KiCAD MCP Server
@@ -252,7 +251,6 @@ export class KiCADMcpServer {
     registerFootprintTools(this.server, this.callKicadScript.bind(this));
     registerSymbolCreatorTools(this.server, this.callKicadScript.bind(this));
     registerUITools(this.server, this.callKicadScript.bind(this));
-    registerFreeroutingTools(this.server, this.callKicadScript.bind(this));
 
     // Register all resources
     registerProjectResources(this.server, this.callKicadScript.bind(this));
@@ -267,9 +265,6 @@ export class KiCADMcpServer {
     registerFootprintPrompts(this.server);
 
     logger.info("All KiCAD tools, resources, and prompts registered");
-    logger.info(
-      "Router pattern enabled: 4 router tools + direct tools for discovery",
-    );
   }
 
   /**
@@ -472,42 +467,8 @@ export class KiCADMcpServer {
           "Prerequisites validation failed. See logs above for details.",
         );
       }
-      this.pythonProcess = spawn(pythonExe, [this.kicadScriptPath], {
-        stdio: ["pipe", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          PYTHONPATH:
-            process.env.PYTHONPATH ||
-            "C:/Program Files/KiCad/9.0/lib/python3/dist-packages",
-        },
-      });
-
-      // Listen for process exit
-      this.pythonProcess.on("exit", (code, signal) => {
-        logger.warn(
-          `Python process exited with code ${code} and signal ${signal}`,
-        );
-        this.pythonProcess = null;
-      });
-
-      // Listen for process errors
-      this.pythonProcess.on("error", (err) => {
-        logger.error(`Python process error: ${err.message}`);
-      });
-
-      // Set up error logging for stderr
-      if (this.pythonProcess.stderr) {
-        this.pythonProcess.stderr.on("data", (data: Buffer) => {
-          logger.error(`Python stderr: ${data.toString()}`);
-        });
-      }
-
-      // Set up persistent stdout handler (instead of adding/removing per request)
-      if (this.pythonProcess.stdout) {
-        this.pythonProcess.stdout.on("data", (data: Buffer) => {
-          this.handlePythonResponse(data);
-        });
-      }
+      this.pythonExePath = pythonExe;
+      this.spawnPythonProcess();
 
       // Connect server to STDIO transport
       logger.info("Connecting MCP server to STDIO transport...");
@@ -530,10 +491,95 @@ export class KiCADMcpServer {
   }
 
   /**
+   * Spawn (or re-spawn) the Python backend process
+   */
+  private spawnPythonProcess(): void {
+    this.pythonProcess = spawn(this.pythonExePath, [this.kicadScriptPath], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        PYTHONPATH: process.env.PYTHONPATH || "",
+      },
+    });
+
+    // Listen for process exit — auto-restart on unexpected crash
+    this.pythonProcess.on("exit", (code, signal) => {
+      logger.warn(
+        `Python process exited with code ${code} and signal ${signal}`,
+      );
+
+      // Reject any pending request so it doesn't hang
+      if (this.currentRequestHandler) {
+        if (this.currentRequestHandler.timeoutHandle) {
+          clearTimeout(this.currentRequestHandler.timeoutHandle);
+        }
+        this.currentRequestHandler.reject(
+          new Error(`Python process crashed (code=${code}, signal=${signal})`),
+        );
+        this.currentRequestHandler = null;
+      }
+      this.responseBuffer = "";
+      this.processingRequest = false;
+      this.pythonProcess = null;
+
+      // Auto-restart after a short delay (unless code 0 = clean exit)
+      if (code !== 0) {
+        logger.info("Auto-restarting Python process in 1 second...");
+        setTimeout(() => {
+          try {
+            this.spawnPythonProcess();
+            logger.info("Python process restarted successfully");
+            // Process any queued requests
+            this.processNextRequest();
+          } catch (err) {
+            logger.error(`Failed to restart Python process: ${err}`);
+          }
+        }, 1000);
+      }
+    });
+
+    // Listen for process errors
+    this.pythonProcess.on("error", (err) => {
+      logger.error(`Python process error: ${err.message}`);
+    });
+
+    // Set up error logging for stderr
+    if (this.pythonProcess.stderr) {
+      this.pythonProcess.stderr.on("data", (data: Buffer) => {
+        logger.error(`Python stderr: ${data.toString()}`);
+      });
+    }
+
+    // Set up persistent stdout handler
+    if (this.pythonProcess.stdout) {
+      this.pythonProcess.stdout.on("data", (data: Buffer) => {
+        this.handlePythonResponse(data);
+      });
+    }
+  }
+
+  /**
    * Stop the MCP server and clean up resources
    */
   async stop(): Promise<void> {
     logger.info("Stopping KiCAD MCP server...");
+
+    // Reject all queued requests
+    while (this.requestQueue.length > 0) {
+      const queued = this.requestQueue.shift();
+      if (queued) {
+        queued.reject(new Error('Server shutting down'));
+      }
+    }
+
+    // Reject any in-flight request
+    if (this.currentRequestHandler) {
+      if (this.currentRequestHandler.timeoutHandle) {
+        clearTimeout(this.currentRequestHandler.timeoutHandle);
+      }
+      this.currentRequestHandler.reject(new Error('Server shutting down'));
+      this.currentRequestHandler = null;
+    }
 
     // Kill the Python process if it's running
     if (this.pythonProcess) {
@@ -553,39 +599,61 @@ export class KiCADMcpServer {
    */
   private async callKicadScript(command: string, params: any): Promise<any> {
     return new Promise((resolve, reject) => {
-      // Check if Python process is running
-      if (!this.pythonProcess) {
-        logger.error("Python process is not running");
-        reject(new Error("Python process for KiCAD scripting is not running"));
-        return;
-      }
+      try {
+        // Check if Python process is running
+        if (!this.pythonProcess) {
+          logger.error(
+            `Python process is not running (command: ${command}). ` +
+            "It may have crashed or failed to start. Check logs at ~/.kicad-mcp/logs/kicad_interface.log",
+          );
+          reject(
+            new Error(
+              `Python process for KiCAD scripting is not running. Cannot execute command '${command}'. ` +
+              "The process may have crashed - check Python logs for details.",
+            ),
+          );
+          return;
+        }
 
-      // Determine timeout based on command type
-      // DRC and export operations need longer timeouts for large boards
-      let commandTimeout = 30000; // Default 30 seconds
-      const longRunningCommands = [
-        "run_drc",
-        "export_gerber",
-        "export_pdf",
-        "export_3d",
-      ];
-      if (longRunningCommands.includes(command)) {
-        commandTimeout = 600000; // 10 minutes for long operations
-        logger.info(
-          `Using extended timeout (${commandTimeout / 1000}s) for command: ${command}`,
+        // Determine timeout based on command type
+        // DRC and export operations need longer timeouts for large boards
+        let commandTimeout = 30000; // Default 30 seconds
+        const longRunningCommands = [
+          "run_drc",
+          "run_erc",
+          "export_gerber",
+          "export_pdf",
+          "export_3d",
+          "export_schematic_pdf",
+          "export_schematic_svg",
+          "fix_connectivity",
+        ];
+        if (longRunningCommands.includes(command)) {
+          commandTimeout = 600000; // 10 minutes for long operations
+          logger.info(
+            `Using extended timeout (${commandTimeout / 1000}s) for command: ${command}`,
+          );
+        }
+
+        // Add request to queue with timeout info
+        this.requestQueue.push({
+          request: { command, params, timeout: commandTimeout },
+          resolve,
+          reject,
+        });
+
+        // Process the queue if not already processing
+        if (!this.processingRequest) {
+          this.processNextRequest();
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(`callKicadScript failed for command '${command}': ${message}`);
+        reject(
+          new Error(
+            `Failed to queue command '${command}': ${message}`,
+          ),
         );
-      }
-
-      // Add request to queue with timeout info
-      this.requestQueue.push({
-        request: { command, params, timeout: commandTimeout },
-        resolve,
-        reject,
-      });
-
-      // Process the queue if not already processing
-      if (!this.processingRequest) {
-        this.processNextRequest();
       }
     });
   }
@@ -697,7 +765,12 @@ export class KiCADMcpServer {
           ),
         );
 
-        // Process next request
+        // Kill hung Python process and restart
+        if (this.pythonProcess) {
+          this.pythonProcess.kill('SIGTERM');
+        }
+
+        // Process next request (auto-restart will handle spawning new process)
         setTimeout(() => this.processNextRequest(), 0);
       }, timeoutDuration);
 

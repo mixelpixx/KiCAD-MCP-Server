@@ -25,7 +25,7 @@ export function registerDesignPrompts(server: McpServer): void {
     {
       pcb_design_info: z.string().describe("Information about the current PCB design, including board dimensions, layer stack-up, component placement, and routing details")
     },
-    () => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -33,7 +33,7 @@ export function registerDesignPrompts(server: McpServer): void {
             type: "text",
             text: `You're helping to review a PCB layout for potential issues and improvements. Here's information about the current PCB design:
 
-{{pcb_design_info}}
+${args?.pcb_design_info || 'No PCB design information specified'}
 
 When reviewing the PCB layout, consider these key areas:
 
@@ -86,7 +86,7 @@ Based on the provided information, identify potential issues and suggest specifi
     {
       design_requirements: z.string().describe("Information about the PCB design requirements, including signal types, speed/frequency, power requirements, and any special considerations")
     },
-    () => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -94,7 +94,7 @@ Based on the provided information, identify potential issues and suggest specifi
             type: "text",
             text: `You're helping to plan an appropriate layer stack-up for a PCB design. Here's information about the design requirements:
 
-{{design_requirements}}
+${args?.design_requirements || 'No design requirements specified'}
 
 When planning a PCB layer stack-up, consider these important factors:
 
@@ -143,7 +143,7 @@ Based on the provided requirements, recommend an appropriate layer stack-up, inc
     {
       project_requirements: z.string().describe("Information about the PCB project requirements, including technology, speed/frequency, manufacturing capabilities, and any special considerations")
     },
-    () => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -151,7 +151,7 @@ Based on the provided requirements, recommend an appropriate layer stack-up, inc
             type: "text",
             text: `You're helping to develop appropriate design rules for a PCB project. Here's information about the project requirements:
 
-{{project_requirements}}
+${args?.project_requirements || 'No project requirements specified'}
 
 When developing PCB design rules, consider these key areas:
 
@@ -200,7 +200,7 @@ Based on the provided project requirements, recommend a comprehensive set of des
     {
       circuit_requirements: z.string().describe("Information about the circuit requirements, including functionality, performance needs, operating environment, and any special considerations")
     },
-    () => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -208,7 +208,7 @@ Based on the provided project requirements, recommend a comprehensive set of des
             type: "text",
             text: `You're helping with component selection for a PCB design. Here's information about the circuit requirements:
 
-{{circuit_requirements}}
+${args?.circuit_requirements || 'No circuit requirements specified'}
 
 When selecting components for a PCB design, consider these important factors:
 
@@ -262,7 +262,7 @@ Based on the provided circuit requirements, recommend appropriate component type
       design_info: z.string().describe("Information about the current PCB design, including board dimensions, layer stack-up, component placement, and routing details"),
       optimization_goals: z.string().describe("Specific goals for optimization, such as performance improvement, cost reduction, size reduction, or manufacturability enhancement")
     },
-    () => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -270,8 +270,8 @@ Based on the provided circuit requirements, recommend appropriate component type
             type: "text",
             text: `You're helping to optimize a PCB design. Here's information about the current design and optimization goals:
 
-{{design_info}}
-{{optimization_goals}}
+${args?.design_info || 'No design information specified'}
+${args?.optimization_goals || 'No optimization goals specified'}
 
 When optimizing a PCB design, consider these key areas based on the stated goals:
 

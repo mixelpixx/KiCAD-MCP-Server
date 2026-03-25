@@ -575,6 +575,8 @@ def import_svg_to_pcb(
 
         with open(pcb_path, "w", encoding="utf-8") as f:
             f.write(new_content)
+            f.flush()
+            os.fsync(f.fileno())
 
         logger.info(f"SVG logo import: wrote {len(gr_lines)} polygons to {pcb_path}")
 

@@ -58,16 +58,13 @@ class LibraryManager:
         """Get path to global fp-lib-table file"""
         # Try different possible locations
         kicad_config_paths = [
-            Path.home() / ".config" / "kicad" / "10.0" / "fp-lib-table",
             Path.home() / ".config" / "kicad" / "9.0" / "fp-lib-table",
             Path.home() / ".config" / "kicad" / "8.0" / "fp-lib-table",
             Path.home() / ".config" / "kicad" / "fp-lib-table",
             # Windows paths
-            Path.home() / "AppData" / "Roaming" / "kicad" / "10.0" / "fp-lib-table",
             Path.home() / "AppData" / "Roaming" / "kicad" / "9.0" / "fp-lib-table",
             Path.home() / "AppData" / "Roaming" / "kicad" / "8.0" / "fp-lib-table",
             # macOS paths
-            Path.home() / "Library" / "Preferences" / "kicad" / "10.0" / "fp-lib-table",
             Path.home() / "Library" / "Preferences" / "kicad" / "9.0" / "fp-lib-table",
             Path.home() / "Library" / "Preferences" / "kicad" / "8.0" / "fp-lib-table",
         ]
@@ -93,21 +90,11 @@ class LibraryManager:
 
             # Simple regex-based parser for lib entries
             # Pattern: (lib (name "NAME")(type TYPE)(uri "URI")...)
-            lib_pattern = r'\(lib\s+\(name\s+"?([^")\s]+)"?\)\s*\(type\s+"?([^")\s]+)"?\)\s*\(uri\s+"?([^")\s]+)"?'
+            lib_pattern = r'\(lib\s+\(name\s+"?([^")\s]+)"?\)\s*\(type\s+[^)]+\)\s*\(uri\s+"?([^")\s]+)"?'
 
             for match in re.finditer(lib_pattern, content, re.IGNORECASE):
                 nickname = match.group(1)
-                lib_type = match.group(2)
-                uri = match.group(3)
-
-                if lib_type.lower() == "table":
-                    table_uri = uri
-                    if os.path.isabs(table_uri) and os.path.isfile(table_uri):
-                        logger.info(f"  Following Table reference: {nickname} -> {table_uri}")
-                        self._parse_fp_lib_table(Path(table_uri))
-                    else:
-                        logger.warning(f"  Could not resolve Table URI: {table_uri}")
-                    continue
+                uri = match.group(2)
 
                 # Resolve environment variables in URI
                 resolved_uri = self._resolve_uri(uri)
@@ -139,12 +126,10 @@ class LibraryManager:
 
         # Common KiCAD environment variables
         env_vars = {
-            "KICAD10_FOOTPRINT_DIR": self._find_kicad_footprint_dir(),
             "KICAD9_FOOTPRINT_DIR": self._find_kicad_footprint_dir(),
             "KICAD8_FOOTPRINT_DIR": self._find_kicad_footprint_dir(),
             "KICAD_FOOTPRINT_DIR": self._find_kicad_footprint_dir(),
             "KISYSMOD": self._find_kicad_footprint_dir(),
-            "KICAD10_3RD_PARTY": self._find_kicad_3rdparty_dir(),
             "KICAD9_3RD_PARTY": self._find_kicad_3rdparty_dir(),
             "KICAD8_3RD_PARTY": self._find_kicad_3rdparty_dir(),
         }

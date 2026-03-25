@@ -1,11 +1,17 @@
 from skip import Schematic
 import os
+import re
 import uuid
 import logging
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _snap_to_grid(val, grid=1.27):
+    """Snap a coordinate value to the nearest KiCad schematic grid point."""
+    return round(val / grid) * grid
 
 # Import dynamic symbol loader
 try:
@@ -255,12 +261,12 @@ class ComponentManager:
             if "datasheet" in component_def:
                 new_symbol.property.Datasheet.value = component_def["datasheet"]
 
-            # Set position
-            x = component_def.get("x", 0)
-            y = component_def.get("y", 0)
+            # Set position (snap to 1.27mm grid to avoid off-grid pins)
+            x = _snap_to_grid(component_def.get("x", 0))
+            y = _snap_to_grid(component_def.get("y", 0))
             rotation = component_def.get("rotation", 0)
             new_symbol.at.value = [x, y, rotation]
-            logger.debug(f"Set position to ({x}, {y}, {rotation})")
+            logger.debug(f"Set position to ({x}, {y}, {rotation}) [grid-snapped]")
 
             # Set BOM and board flags
             new_symbol.in_bom.value = component_def.get("in_bom", True)
@@ -280,26 +286,92 @@ class ComponentManager:
             raise
 
     @staticmethod
-    def remove_component(schematic: Schematic, component_ref: str):
-        """Remove a component from the schematic by reference designator"""
-        try:
-            # kicad-skip doesn't have a direct remove_symbol method by reference.
-            # We need to find the symbol and then remove it from the symbols list.
-            symbol_to_remove = None
-            for symbol in schematic.symbol:
-                if symbol.reference == component_ref:
-                    symbol_to_remove = symbol
-                    break
+    def remove_component(schematic_path, component_ref: str):
+        """Remove a component from the schematic by reference designator.
 
-            if symbol_to_remove:
-                schematic.symbol._elements.remove(symbol_to_remove)
-                print(f"Removed component {component_ref} from schematic.")
-                return True
-            else:
-                print(f"Component with reference {component_ref} not found.")
+        Uses text-based deletion (same approach as _delete_component_from_content
+        in kicad_interface.py) to avoid kicad-skip private API issues.
+
+        Args:
+            schematic_path: Path to the .kicad_sch file (str or Path)
+            component_ref: Reference designator to remove (e.g., "R1")
+
+        Returns:
+            True if component was removed, False otherwise
+        """
+        try:
+            from pathlib import Path as _Path
+            sch_file = _Path(schematic_path)
+            if not sch_file.exists():
+                logger.error(f"Schematic file not found: {schematic_path}")
                 return False
+
+            with open(sch_file, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            # Use text-based balanced-paren deletion (mirrors _delete_component_from_content)
+            def find_matching_paren(s, start):
+                depth = 0
+                i = start
+                while i < len(s):
+                    if s[i] == "(":
+                        depth += 1
+                    elif s[i] == ")":
+                        depth -= 1
+                        if depth == 0:
+                            return i
+                    i += 1
+                return -1
+
+            lib_sym_pos = content.find("(lib_symbols")
+            lib_sym_end = (
+                find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
+            )
+
+            blocks_to_delete = []
+            search_start = 0
+            pattern = re.compile(r'\(symbol\s+\(lib_id\s+"')
+            while True:
+                m = pattern.search(content, search_start)
+                if not m:
+                    break
+                pos = m.start()
+                if lib_sym_pos >= 0 and lib_sym_pos <= pos <= lib_sym_end:
+                    search_start = lib_sym_end + 1
+                    continue
+                end = find_matching_paren(content, pos)
+                if end < 0:
+                    search_start = pos + 1
+                    continue
+                block_text = content[pos : end + 1]
+                if re.search(
+                    r'\(property\s+"Reference"\s+"' + re.escape(component_ref) + r'"',
+                    block_text,
+                ):
+                    blocks_to_delete.append((pos, end))
+                search_start = end + 1
+
+            if not blocks_to_delete:
+                logger.debug(f"Component with reference {component_ref} not found.")
+                return False
+
+            for b_start, b_end in sorted(blocks_to_delete, reverse=True):
+                trim_start = b_start
+                while trim_start > 0 and content[trim_start - 1] in (" ", "\t"):
+                    trim_start -= 1
+                if trim_start > 0 and content[trim_start - 1] == "\n":
+                    trim_start -= 1
+                content = content[:trim_start] + content[b_end + 1 :]
+
+            with open(sch_file, "w", encoding="utf-8") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+
+            logger.debug(f"Removed {len(blocks_to_delete)} instance(s) of {component_ref} from schematic.")
+            return True
         except Exception as e:
-            print(f"Error removing component {component_ref}: {e}")
+            logger.error(f"Error removing component {component_ref}: {e}")
             return False
 
     @staticmethod
@@ -310,7 +382,10 @@ class ComponentManager:
         try:
             symbol_to_update = None
             for symbol in schematic.symbol:
-                if symbol.reference == component_ref:
+                if (
+                    hasattr(symbol.property, "Reference")
+                    and symbol.property.Reference.value == component_ref
+                ):
                     symbol_to_update = symbol
                     break
 
@@ -321,23 +396,26 @@ class ComponentManager:
                     else:
                         # Add as a new property if it doesn't exist
                         symbol_to_update.property.append(key, value)
-                print(f"Updated properties for component {component_ref}.")
+                logger.debug(f"Updated properties for component {component_ref}.")
                 return True
             else:
-                print(f"Component with reference {component_ref} not found.")
+                logger.debug(f"Component with reference {component_ref} not found.")
                 return False
         except Exception as e:
-            print(f"Error updating component {component_ref}: {e}")
+            logger.error(f"Error updating component {component_ref}: {e}")
             return False
 
     @staticmethod
     def get_component(schematic: Schematic, component_ref: str):
         """Get a component by reference designator"""
         for symbol in schematic.symbol:
-            if symbol.reference == component_ref:
-                print(f"Found component with reference {component_ref}.")
+            if (
+                hasattr(symbol.property, "Reference")
+                and symbol.property.Reference.value == component_ref
+            ):
+                logger.debug(f"Found component with reference {component_ref}.")
                 return symbol
-        print(f"Component with reference {component_ref} not found.")
+        logger.debug(f"Component with reference {component_ref} not found.")
         return None
 
     @staticmethod
@@ -347,22 +425,32 @@ class ComponentManager:
         matching_components = []
         query_lower = query.lower()
         for symbol in schematic.symbol:
+            ref = (
+                symbol.property.Reference.value
+                if hasattr(symbol.property, "Reference")
+                else ""
+            )
+            lib_id = (
+                symbol.lib_id.value if hasattr(symbol, "lib_id") else ""
+            )
+            value = (
+                symbol.property.Value.value
+                if hasattr(symbol.property, "Value")
+                else ""
+            )
             if (
-                query_lower in symbol.reference.lower()
-                or query_lower in symbol.name.lower()
-                or (
-                    hasattr(symbol.property, "Value")
-                    and query_lower in symbol.property.Value.value.lower()
-                )
+                query_lower in ref.lower()
+                or query_lower in lib_id.lower()
+                or query_lower in value.lower()
             ):
                 matching_components.append(symbol)
-        print(f"Found {len(matching_components)} components matching query '{query}'.")
+        logger.debug(f"Found {len(matching_components)} components matching query '{query}'.")
         return matching_components
 
     @staticmethod
     def get_all_components(schematic: Schematic):
         """Get all components in schematic"""
-        print(f"Retrieving all {len(schematic.symbol)} components.")
+        logger.debug(f"Retrieving all {len(schematic.symbol)} components.")
         return list(schematic.symbol)
 
 

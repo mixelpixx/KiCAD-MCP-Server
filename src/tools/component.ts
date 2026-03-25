@@ -292,103 +292,103 @@ export function registerComponentTools(
     },
   );
 
-  // ------------------------------------------------------
-  // Add Component Annotation Tool
-  // ------------------------------------------------------
-  server.tool(
-    "add_component_annotation",
-    {
-      reference: z
-        .string()
-        .describe("Reference designator of the component (e.g., 'R5')"),
-      annotation: z.string().describe("Annotation or comment text to add"),
-      visible: z
-        .boolean()
-        .optional()
-        .describe("Whether the annotation should be visible on the PCB"),
-    },
-    async ({ reference, annotation, visible }) => {
-      logger.debug(`Adding annotation to component: ${reference}`);
-      const result = await callKicadScript("add_component_annotation", {
-        reference,
-        annotation,
-        visible,
-      });
+  // TODO: Python handler not implemented - uncomment when added to command_routes
+  // // ------------------------------------------------------
+  // // Add Component Annotation Tool
+  // // ------------------------------------------------------
+  // server.tool(
+  //   "add_component_annotation",
+  //   {
+  //     reference: z
+  //       .string()
+  //       .describe("Reference designator of the component (e.g., 'R5')"),
+  //     annotation: z.string().describe("Annotation or comment text to add"),
+  //     visible: z
+  //       .boolean()
+  //       .optional()
+  //       .describe("Whether the annotation should be visible on the PCB"),
+  //   },
+  //   async ({ reference, annotation, visible }) => {
+  //     logger.debug(`Adding annotation to component: ${reference}`);
+  //     const result = await callKicadScript("add_component_annotation", {
+  //       reference,
+  //       annotation,
+  //       visible,
+  //     });
+  //     return {
+  //       content: [
+  //         {
+  //           type: "text",
+  //           text: JSON.stringify(result),
+  //         },
+  //       ],
+  //     };
+  //   },
+  // );
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-        ],
-      };
-    },
-  );
+  // TODO: Python handler not implemented - uncomment when added to command_routes
+  // // ------------------------------------------------------
+  // // Group Components Tool
+  // // ------------------------------------------------------
+  // server.tool(
+  //   "group_components",
+  //   {
+  //     references: z
+  //       .array(z.string())
+  //       .describe("Reference designators of components to group"),
+  //     groupName: z.string().describe("Name for the component group"),
+  //   },
+  //   async ({ references, groupName }) => {
+  //     logger.debug(
+  //       `Grouping components: ${references.join(", ")} as ${groupName}`,
+  //     );
+  //     const result = await callKicadScript("group_components", {
+  //       references,
+  //       groupName,
+  //     });
+  //     return {
+  //       content: [
+  //         {
+  //           type: "text",
+  //           text: JSON.stringify(result),
+  //         },
+  //       ],
+  //     };
+  //   },
+  // );
 
-  // ------------------------------------------------------
-  // Group Components Tool
-  // ------------------------------------------------------
-  server.tool(
-    "group_components",
-    {
-      references: z
-        .array(z.string())
-        .describe("Reference designators of components to group"),
-      groupName: z.string().describe("Name for the component group"),
-    },
-    async ({ references, groupName }) => {
-      logger.debug(
-        `Grouping components: ${references.join(", ")} as ${groupName}`,
-      );
-      const result = await callKicadScript("group_components", {
-        references,
-        groupName,
-      });
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-        ],
-      };
-    },
-  );
-
-  // ------------------------------------------------------
-  // Replace Component Tool
-  // ------------------------------------------------------
-  server.tool(
-    "replace_component",
-    {
-      reference: z
-        .string()
-        .describe("Reference designator of the component to replace"),
-      newComponentId: z.string().describe("ID of the new component to use"),
-      newFootprint: z.string().optional().describe("Optional new footprint"),
-      newValue: z.string().optional().describe("Optional new component value"),
-    },
-    async ({ reference, newComponentId, newFootprint, newValue }) => {
-      logger.debug(`Replacing component: ${reference} with ${newComponentId}`);
-      const result = await callKicadScript("replace_component", {
-        reference,
-        newComponentId,
-        newFootprint,
-        newValue,
-      });
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-        ],
-      };
-    },
-  );
+  // TODO: Python handler not implemented - uncomment when added to command_routes
+  // // ------------------------------------------------------
+  // // Replace Component Tool
+  // // ------------------------------------------------------
+  // server.tool(
+  //   "replace_component",
+  //   {
+  //     reference: z
+  //       .string()
+  //       .describe("Reference designator of the component to replace"),
+  //     newComponentId: z.string().describe("ID of the new component to use"),
+  //     newFootprint: z.string().optional().describe("Optional new footprint"),
+  //     newValue: z.string().optional().describe("Optional new component value"),
+  //   },
+  //   async ({ reference, newComponentId, newFootprint, newValue }) => {
+  //     logger.debug(`Replacing component: ${reference} with ${newComponentId}`);
+  //     const result = await callKicadScript("replace_component", {
+  //       reference,
+  //       newComponentId,
+  //       newFootprint,
+  //       newValue,
+  //     });
+  //     return {
+  //       content: [
+  //         {
+  //           type: "text",
+  //           text: JSON.stringify(result),
+  //         },
+  //       ],
+  //     };
+  //   },
+  // );
 
   // ------------------------------------------------------
   // Get Component Pads Tool

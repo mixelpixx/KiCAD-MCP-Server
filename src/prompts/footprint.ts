@@ -28,7 +28,7 @@ export function registerFootprintPrompts(server: McpServer): void {
         .optional()
         .describe("Target .pretty library path (optional)"),
     },
-    () => ({
+    (args) => ({
       messages: [
         {
           role: "user",
@@ -37,10 +37,10 @@ export function registerFootprintPrompts(server: McpServer): void {
             text: `You are a KiCAD footprint expert. Create a correct KiCAD 9 footprint using the create_footprint tool.
 
 ## Component to footprint
-{{component}}
+${args?.component || 'No component specified'}
 
 ## Library path
-{{libraryPath}}
+${args?.libraryPath || 'No library path specified'}
 
 ## Rules for correct footprints
 
@@ -94,7 +94,7 @@ export function registerFootprintPrompts(server: McpServer): void {
 | SOIC-8    | 1.27 mm| 1.6 × 0.6 mm     | 4 pins each side             |
 | DIP-8     | 2.54 mm| dia 1.6, drill 0.8| THT, 100 mil grid            |
 
-Now create the footprint for: {{component}}`,
+Now create the footprint for: ${args?.component || 'No component specified'}`,
           },
         },
       ],
@@ -111,13 +111,13 @@ Now create the footprint for: {{component}}`,
         .string()
         .describe("Path to the .kicad_mod file to review"),
     },
-    () => ({
+    (args) => ({
       messages: [
         {
           role: "user",
           content: {
             type: "text",
-            text: `Review the footprint at {{footprintPath}} against IPC-7351 land pattern guidelines.
+            text: `Review the footprint at ${args?.footprintPath || 'No footprint path specified'} against IPC-7351 land pattern guidelines.
 
 Check:
 1. **Pad size** – is the copper area sufficient for soldering (not undersized)?

@@ -9,6 +9,7 @@ URL schema: https://www.lcsc.com/datasheet/{LCSC#}.pdf
 No API key required.
 """
 
+import os
 import re
 import logging
 from pathlib import Path
@@ -256,6 +257,8 @@ class DatasheetManager:
         if not dry_run and updated > 0:
             with open(schematic_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(new_lines))
+                f.flush()
+                os.fsync(f.fileno())
             logger.info(
                 f"Saved {schematic_path.name}: {updated} datasheet URLs written"
             )

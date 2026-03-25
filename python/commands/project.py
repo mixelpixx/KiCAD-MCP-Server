@@ -83,13 +83,15 @@ class ProjectCommands:
                     content = f.read()
                 new_uuid = str(uuid_module.uuid4())
                 content = re.sub(
-                    r"\(uuid [0-9a-fA-F-]+\)",
-                    f"(uuid {new_uuid})",
+                    r'\(uuid "?[0-9a-fA-F-]+"?\)',
+                    f'(uuid "{new_uuid}")',
                     content,
                     count=1,  # Only replace first (schematic) UUID
                 )
                 with open(schematic_path, "w", encoding="utf-8", newline="\n") as f:
                     f.write(content)
+                    f.flush()
+                    os.fsync(f.fileno())
 
                 logger.info(f"Created schematic from template: {schematic_path}")
             else:
@@ -104,11 +106,13 @@ class ProjectCommands:
                     f.write(
                         '(kicad_sch (version 20250114) (generator "KiCAD-MCP-Server")\n\n'
                     )
-                    f.write(f"  (uuid {schematic_uuid})\n\n")
+                    f.write(f'  (uuid "{schematic_uuid}")\n\n')
                     f.write('  (paper "A4")\n\n')
                     f.write("  (lib_symbols\n  )\n\n")
                     f.write('  (sheet_instances\n    (path "/" (page "1"))\n  )\n')
                     f.write(")\n")
+                    f.flush()
+                    os.fsync(f.fileno())
 
             # Create project file with schematic reference
             with open(project_path, "w") as f:
@@ -120,6 +124,8 @@ class ProjectCommands:
                 f.write(f'    ["root", "{os.path.basename(schematic_path)}"]\n')
                 f.write("  ]\n")
                 f.write("}\n")
+                f.flush()
+                os.fsync(f.fileno())
 
             self.board = board
 

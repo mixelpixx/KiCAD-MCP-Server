@@ -254,45 +254,45 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
     }
   );
 
-  // ------------------------------------------------------
-  // Add Zone Tool
-  // ------------------------------------------------------
-  server.tool(
-    "add_zone",
-    {
-      layer: z.string().describe("Layer for the zone"),
-      net: z.string().describe("Net name for the zone"),
-      points: z.array(
-        z.object({
-          x: z.number().describe("X coordinate"),
-          y: z.number().describe("Y coordinate")
-        })
-      ).describe("Points defining the zone outline"),
-      unit: z.enum(["mm", "inch"]).describe("Unit of measurement"),
-      clearance: z.number().optional().describe("Clearance value"),
-      minWidth: z.number().optional().describe("Minimum width"),
-      padConnection: z.enum(["thermal", "solid", "none"]).optional().describe("Pad connection type")
-    },
-    async ({ layer, net, points, unit, clearance, minWidth, padConnection }) => {
-      logger.debug(`Adding zone on layer ${layer} for net ${net}`);
-      const result = await callKicadScript("add_zone", {
-        layer,
-        net,
-        points,
-        unit,
-        clearance,
-        minWidth,
-        padConnection
-      });
-      
-      return {
-        content: [{
-          type: "text",
-          text: JSON.stringify(result)
-        }]
-      };
-    }
-  );
+  // TODO: Python handler not implemented - uncomment when added to command_routes
+  // // ------------------------------------------------------
+  // // Add Zone Tool
+  // // ------------------------------------------------------
+  // server.tool(
+  //   "add_zone",
+  //   {
+  //     layer: z.string().describe("Layer for the zone"),
+  //     net: z.string().describe("Net name for the zone"),
+  //     points: z.array(
+  //       z.object({
+  //         x: z.number().describe("X coordinate"),
+  //         y: z.number().describe("Y coordinate")
+  //       })
+  //     ).describe("Points defining the zone outline"),
+  //     unit: z.enum(["mm", "inch"]).describe("Unit of measurement"),
+  //     clearance: z.number().optional().describe("Clearance value"),
+  //     minWidth: z.number().optional().describe("Minimum width"),
+  //     padConnection: z.enum(["thermal", "solid", "none"]).optional().describe("Pad connection type")
+  //   },
+  //   async ({ layer, net, points, unit, clearance, minWidth, padConnection }) => {
+  //     logger.debug(`Adding zone on layer ${layer} for net ${net}`);
+  //     const result = await callKicadScript("add_zone", {
+  //       layer,
+  //       net,
+  //       points,
+  //       unit,
+  //       clearance,
+  //       minWidth,
+  //       padConnection
+  //     });
+  //     return {
+  //       content: [{
+  //         type: "text",
+  //         text: JSON.stringify(result)
+  //       }]
+  //     };
+  //   }
+  // );
 
   // ------------------------------------------------------
   // Get Board Extents Tool
