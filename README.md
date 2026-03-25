@@ -11,8 +11,8 @@ A Model Context Protocol (MCP) server that enables AI assistants like Claude to 
 The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standard from Anthropic that allows AI assistants to securely connect to external tools and data sources. This implementation provides a standardized bridge between AI assistants and KiCAD, enabling natural language control of PCB design operations.
 
 **Key Capabilities:**
-- 122 tools across 16 categories with JSON Schema validation
-- Smart tool discovery with router pattern (reduces AI context by 70%)
+- 155+ tools across 16 categories with JSON Schema validation
+- Toolbox mode: split into PCB (~35), Schematic (~50), and Library (~25) focused servers
 - 8 dynamic resources exposing project state
 - Complete schematic workflow with 27 tools and dynamic symbol loading (~10,000 symbols)
 - Freerouting autorouter integration (Java, Docker, or Podman)
@@ -557,6 +557,52 @@ To find your Python path:
 which python3  # Example output: /usr/bin/python3
 python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"  # Verify pcbnew access
 ```
+
+### Toolbox Mode (Recommended for Large Projects)
+
+Instead of loading all 150+ tools at once, you can run focused toolbox servers that each expose only the tools relevant to one workflow. This improves LLM accuracy and reduces token overhead.
+
+**Option A: Dedicated entry points** (3 separate servers)
+```json
+{
+  "mcpServers": {
+    "kicad-pcb": {
+      "command": "node",
+      "args": ["/path/to/KiCAD-MCP-Server/dist/pcb.js"],
+      "env": { "PYTHONPATH": "/path/to/kicad/python" }
+    },
+    "kicad-schematic": {
+      "command": "node",
+      "args": ["/path/to/KiCAD-MCP-Server/dist/schematic.js"],
+      "env": { "PYTHONPATH": "/path/to/kicad/python" }
+    },
+    "kicad-library": {
+      "command": "node",
+      "args": ["/path/to/KiCAD-MCP-Server/dist/library.js"],
+      "env": { "PYTHONPATH": "/path/to/kicad/python" }
+    }
+  }
+}
+```
+
+**Option B: Single entry point with `--toolbox` flag**
+```json
+{
+  "mcpServers": {
+    "kicad-pcb": {
+      "command": "node",
+      "args": ["/path/to/KiCAD-MCP-Server/dist/index.js", "--toolbox", "pcb"]
+    }
+  }
+}
+```
+
+| Toolbox | Tools | What's included |
+|---------|-------|-----------------|
+| `pcb` | ~35 | Board, components, routing, DRC, export, freerouting, UI |
+| `schematic` | ~50 | Schematic capture, wiring, net analysis, ERC, export |
+| `library` | ~25 | Footprint/symbol libraries, JLCPCB parts, datasheets, creators |
+| `all` | ~150 | Everything (default, backwards-compatible) |
 
 ### Cline (VSCode)
 

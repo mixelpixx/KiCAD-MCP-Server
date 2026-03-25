@@ -24,7 +24,20 @@ import { registerDatasheetTools } from "./tools/datasheet.js";
 import { registerFootprintTools } from "./tools/footprint.js";
 import { registerSymbolCreatorTools } from "./tools/symbol-creator.js";
 import { registerUITools } from "./tools/ui.js";
+import { registerFreeroutingTools } from "./tools/freerouting.js";
 // import { registerRouterTools } from "./tools/router.js"; // Router disabled - see registerAll()
+
+/**
+ * Toolbox types for focused MCP server instances.
+ * Each toolbox registers only its relevant tools, keeping the tool count
+ * within the 30-50 range that LLMs handle best.
+ *
+ * - "all": All tools (backwards-compatible, default)
+ * - "pcb": Board, component, routing, DRC, export, freerouting, UI, project (~35 tools)
+ * - "schematic": Schematic tools, ERC, schematic export, project (~50 tools)
+ * - "library": Footprint/symbol libraries, JLCPCB, datasheets, creators (~25 tools)
+ */
+export type Toolbox = "all" | "pcb" | "schematic" | "library";
 
 // Import resource registration functions
 import { registerProjectResources } from "./resources/project.js";
@@ -189,18 +202,23 @@ export class KiCADMcpServer {
     timeoutHandle: NodeJS.Timeout;
   } | null = null;
   private pythonExePath: string = "";
+  private toolbox: Toolbox;
 
   /**
    * Constructor for the KiCAD MCP Server
    * @param kicadScriptPath Path to the Python KiCAD interface script
    * @param logLevel Log level for the server
+   * @param toolbox Which toolbox to load ("all", "pcb", "schematic", "library")
    */
   constructor(
     kicadScriptPath: string,
     logLevel: "error" | "warn" | "info" | "debug" = "info",
+    toolbox: Toolbox = "all",
   ) {
     // Set up the logger
     logger.setLogLevel(logLevel);
+
+    this.toolbox = toolbox;
 
     // Check if KiCAD script exists
     this.kicadScriptPath = kicadScriptPath;
@@ -210,16 +228,31 @@ export class KiCADMcpServer {
       );
     }
 
+    // Server name varies by toolbox for clear identification
+    const serverNames: Record<Toolbox, string> = {
+      all: "kicad-mcp-server",
+      pcb: "kicad-pcb",
+      schematic: "kicad-schematic",
+      library: "kicad-library",
+    };
+
+    const serverDescriptions: Record<Toolbox, string> = {
+      all: "MCP server for KiCAD PCB design operations",
+      pcb: "KiCAD PCB toolbox — board layout, components, routing, DRC, and manufacturing export",
+      schematic: "KiCAD Schematic toolbox — schematic capture, wiring, net analysis, and ERC",
+      library: "KiCAD Library toolbox — footprint/symbol libraries, JLCPCB parts, and datasheet management",
+    };
+
     // Initialize the MCP server
     this.server = new McpServer({
-      name: "kicad-mcp-server",
+      name: serverNames[toolbox],
       version: "1.0.0",
-      description: "MCP server for KiCAD PCB design operations",
+      description: serverDescriptions[toolbox],
     });
 
     // Initialize STDIO transport
     this.stdioTransport = new StdioServerTransport();
-    logger.info("Using STDIO transport for local communication");
+    logger.info(`Using STDIO transport — toolbox: ${toolbox}`);
 
     // Register tools, resources, and prompts
     this.registerAll();
@@ -229,42 +262,61 @@ export class KiCADMcpServer {
    * Register all tools, resources, and prompts
    */
   private registerAll(): void {
-    logger.info("Registering KiCAD tools, resources, and prompts...");
+    const call = this.callKicadScript.bind(this);
+    const tb = this.toolbox;
 
-    // Register router tools FIRST (for tool discovery and execution)
-    // NOTE: Router disabled — causes Claude to hallucinate tool schemas via search_tools/execute_tool.
-    // All tools are registered directly below and are immediately visible to Claude.
-    // registerRouterTools(this.server, this.callKicadScript.bind(this));
+    logger.info(`Registering KiCAD tools for toolbox: ${tb}`);
 
-    // Register all tools
-    registerProjectTools(this.server, this.callKicadScript.bind(this));
-    registerBoardTools(this.server, this.callKicadScript.bind(this));
-    registerComponentTools(this.server, this.callKicadScript.bind(this));
-    registerRoutingTools(this.server, this.callKicadScript.bind(this));
-    registerDesignRuleTools(this.server, this.callKicadScript.bind(this));
-    registerExportTools(this.server, this.callKicadScript.bind(this));
-    registerSchematicTools(this.server, this.callKicadScript.bind(this));
-    registerLibraryTools(this.server, this.callKicadScript.bind(this));
-    registerSymbolLibraryTools(this.server, this.callKicadScript.bind(this));
-    registerJLCPCBApiTools(this.server, this.callKicadScript.bind(this));
-    registerDatasheetTools(this.server, this.callKicadScript.bind(this));
-    registerFootprintTools(this.server, this.callKicadScript.bind(this));
-    registerSymbolCreatorTools(this.server, this.callKicadScript.bind(this));
-    registerUITools(this.server, this.callKicadScript.bind(this));
+    // Project tools are shared across all toolboxes
+    registerProjectTools(this.server, call);
 
-    // Register all resources
-    registerProjectResources(this.server, this.callKicadScript.bind(this));
-    registerBoardResources(this.server, this.callKicadScript.bind(this));
-    registerComponentResources(this.server, this.callKicadScript.bind(this));
-    registerLibraryResources(this.server, this.callKicadScript.bind(this));
+    // --- PCB Toolbox ---
+    if (tb === "all" || tb === "pcb") {
+      registerBoardTools(this.server, call);
+      registerComponentTools(this.server, call);
+      registerRoutingTools(this.server, call);
+      registerDesignRuleTools(this.server, call);
+      registerExportTools(this.server, call);
+      registerFreeroutingTools(this.server, call);
+      registerUITools(this.server, call);
+    }
 
-    // Register all prompts
-    registerComponentPrompts(this.server);
-    registerRoutingPrompts(this.server);
-    registerDesignPrompts(this.server);
-    registerFootprintPrompts(this.server);
+    // --- Schematic Toolbox ---
+    if (tb === "all" || tb === "schematic") {
+      registerSchematicTools(this.server, call);
+    }
 
-    logger.info("All KiCAD tools, resources, and prompts registered");
+    // --- Library Toolbox ---
+    if (tb === "all" || tb === "library") {
+      registerLibraryTools(this.server, call);
+      registerSymbolLibraryTools(this.server, call);
+      registerJLCPCBApiTools(this.server, call);
+      registerDatasheetTools(this.server, call);
+      registerFootprintTools(this.server, call);
+      registerSymbolCreatorTools(this.server, call);
+    }
+
+    // Resources — register relevant ones per toolbox
+    registerProjectResources(this.server, call);
+    if (tb === "all" || tb === "pcb") {
+      registerBoardResources(this.server, call);
+      registerComponentResources(this.server, call);
+    }
+    if (tb === "all" || tb === "library") {
+      registerLibraryResources(this.server, call);
+    }
+
+    // Prompts — register relevant ones per toolbox
+    if (tb === "all" || tb === "pcb") {
+      registerComponentPrompts(this.server);
+      registerRoutingPrompts(this.server);
+      registerDesignPrompts(this.server);
+    }
+    if (tb === "all" || tb === "library") {
+      registerFootprintPrompts(this.server);
+    }
+
+    logger.info(`Toolbox "${tb}" registered`);
   }
 
   /**

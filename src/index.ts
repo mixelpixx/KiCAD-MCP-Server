@@ -5,7 +5,7 @@
 
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { KiCADMcpServer } from './server.js';
+import { KiCADMcpServer, type Toolbox } from './server.js';
 import { loadConfig } from './config.js';
 import { logger } from './logger.js';
 
@@ -28,10 +28,11 @@ async function main() {
     // Path to the Python script that interfaces with KiCAD
     const kicadScriptPath = join(dirname(__dirname), 'python', 'kicad_interface.py');
     
-    // Create the server
+    // Create the server (supports --toolbox pcb|schematic|library, defaults to all)
     const server = new KiCADMcpServer(
       kicadScriptPath,
-      config.logLevel
+      config.logLevel,
+      options.toolbox
     );
     
     // Start the server
@@ -52,16 +53,23 @@ async function main() {
  * Parse command line arguments
  */
 function parseCommandLineArgs(args: string[]) {
-  let configPath = undefined;
-  
+  let configPath: string | undefined;
+  let toolbox: Toolbox = "all";
+
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--config' && i + 1 < args.length) {
-      configPath = args[i + 1];
-      i++;
+      configPath = args[++i];
+    } else if (args[i] === '--toolbox' && i + 1 < args.length) {
+      const val = args[++i];
+      if (val === "pcb" || val === "schematic" || val === "library" || val === "all") {
+        toolbox = val;
+      } else {
+        logger.warn(`Unknown toolbox "${val}", using "all". Valid: pcb, schematic, library, all`);
+      }
     }
   }
-  
-  return { configPath };
+
+  return { configPath, toolbox };
 }
 
 /**
