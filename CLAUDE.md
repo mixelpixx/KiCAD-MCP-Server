@@ -137,7 +137,7 @@ Note: `npm run lint:py` uses `black --check` (read-only). Use `npm run format:py
 ## Rules
 
 - **ALWAYS rebuild after every change**: Run `npm run build` after any edit to TypeScript files. The MCP server runs from `dist/`, not `src/`. Forgetting to rebuild means your changes won't take effect.
-- **ALWAYS commit and push after every change**: After fixing a bug or adding a feature, commit and push to `remix` remote immediately. Don't batch changes.
+- **ALWAYS commit and push after every change**: After fixing a bug or adding a feature, commit and push immediately. Don't batch changes.
 - **ALWAYS flush writes to disk**: Every file write to `.kicad_sch` or `.kicad_pcb` must use `f.flush()` + `os.fsync(f.fileno())` inside the `with open(...)` block. The MCP client reads the file immediately after the tool call returns — unflushed data causes stale reads.
 - **ALWAYS quote UUIDs**: KiCad 9 requires UUIDs to be quoted: `(uuid "04a291d4-...")`. Unquoted UUIDs cause `kicad-cli` to reject the file. All `sexp_writer.py` functions use quoted UUIDs. When adding new s-expression generators, use `f'(uuid "{my_uuid}")'`.
 - **Tool name must match across layers**: The `callKicadScript("command_name", ...)` string in TypeScript **must exactly match** the key in the `command_routes` dict in `python/kicad_interface.py`. A mismatch causes "unknown command" errors.
@@ -276,7 +276,7 @@ When adding or modifying a schematic tool, verify:
 14. [ ] Wire tracing includes T-junction detection via `_point_on_wire_segment()` (both forward and reverse checks)
 15. [ ] Wire placement tools auto-add junctions at T-junctions (handled by `sexp_writer.add_wire()` / `add_polyline_wire()` / `batch_add_wire`)
 16. [ ] `npm run build` run after TypeScript changes
-17. [ ] Commit and push to `remix` remote
+17. [ ] Commit and push
 
 ## Code Patterns
 
