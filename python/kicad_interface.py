@@ -402,6 +402,7 @@ class KiCADInterface:
             "get_nets_list": self.routing_commands.get_nets_list,
             "create_netclass": self.routing_commands.create_netclass,
             "add_copper_pour": self.routing_commands.add_copper_pour,
+            "add_zone": self.routing_commands.add_copper_pour,  # alias — same implementation
             "route_differential_pair": self.routing_commands.route_differential_pair,
             "refill_zones": self._handle_refill_zones,
             # Design rule commands
@@ -409,12 +410,23 @@ class KiCADInterface:
             "get_design_rules": self.design_rule_commands.get_design_rules,
             "run_drc": self.design_rule_commands.run_drc,
             "get_drc_violations": self.design_rule_commands.get_drc_violations,
+            "add_net_class": self.routing_commands.create_netclass,  # alias
+            "assign_net_to_class": self._handle_assign_net_to_class,
+            "set_layer_constraints": self._handle_set_layer_constraints,
+            "check_clearance": self._handle_check_clearance,
+            # Component annotation/grouping
+            "add_component_annotation": self._handle_add_component_annotation,
+            "group_components": self._handle_group_components,
+            "replace_component": self._handle_replace_component,
             # Export commands
             "export_gerber": self.export_commands.export_gerber,
             "export_pdf": self.export_commands.export_pdf,
             "export_svg": self.export_commands.export_svg,
             "export_3d": self.export_commands.export_3d,
             "export_bom": self.export_commands.export_bom,
+            "export_netlist": self._handle_export_netlist,
+            "export_position_file": self._handle_export_position_file,
+            "export_vrml": self._handle_export_vrml,
             # Library commands (footprint management)
             "list_libraries": self.library_commands.list_libraries,
             "search_footprints": self.library_commands.search_footprints,
@@ -7197,6 +7209,431 @@ print("ok")
 
         except Exception as e:
             logger.error(f"Error refilling zones: {str(e)}")
+            return {"success": False, "message": str(e)}
+
+    # =========================================================================
+    # Newly implemented tool handlers
+    # =========================================================================
+
+    def _handle_assign_net_to_class(self, params):
+        """Assign a net to an existing net class"""
+        try:
+            if not self.board:
+                return {"success": False, "message": "No board is loaded"}
+
+            net_name = params.get("net")
+            netclass_name = params.get("netClass")
+
+            if not net_name or not netclass_name:
+                return {"success": False, "message": "Missing 'net' or 'netClass' parameter"}
+
+            netinfo = self.board.GetNetInfo()
+            nets_map = netinfo.NetsByName()
+            if not nets_map.has_key(net_name):
+                return {"success": False, "message": f"Net '{net_name}' not found"}
+
+            net_classes = self.board.GetNetClasses()
+            netclass = net_classes.Find(netclass_name)
+            if not netclass:
+                return {"success": False, "message": f"Net class '{netclass_name}' not found"}
+
+            net_obj = nets_map[net_name]
+            net_obj.SetClass(netclass)
+
+            return {
+                "success": True,
+                "message": f"Assigned net '{net_name}' to class '{netclass_name}'",
+                "net": net_name,
+                "netClass": netclass_name,
+            }
+        except Exception as e:
+            logger.error(f"Error assigning net to class: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_set_layer_constraints(self, params):
+        """Set design constraints (applied globally — KiCAD 9 Python API does not support per-layer rules)"""
+        try:
+            if not self.board:
+                return {"success": False, "message": "No board is loaded"}
+
+            min_track_width = params.get("minTrackWidth")
+            min_clearance = params.get("minClearance")
+            min_via_diameter = params.get("minViaDiameter")
+            min_via_drill = params.get("minViaDrill")
+
+            ds = self.board.GetDesignSettings()
+            scale = 1000000  # mm to nm
+
+            if min_track_width is not None:
+                ds.m_TrackMinWidth = int(min_track_width * scale)
+            if min_clearance is not None:
+                ds.m_MinClearance = int(min_clearance * scale)
+            if min_via_diameter is not None:
+                ds.m_ViasMinSize = int(min_via_diameter * scale)
+            if min_via_drill is not None:
+                ds.m_MinThroughDrill = int(min_via_drill * scale)
+
+            return {
+                "success": True,
+                "message": "Updated design constraints",
+                "note": "KiCAD 9 Python API applies these globally, not per-layer",
+                "constraints": {
+                    "minTrackWidth": ds.m_TrackMinWidth / scale,
+                    "minClearance": ds.m_MinClearance / scale,
+                    "minViaDiameter": ds.m_ViasMinSize / scale,
+                    "minViaDrill": ds.m_MinThroughDrill / scale,
+                },
+            }
+        except Exception as e:
+            logger.error(f"Error setting layer constraints: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_check_clearance(self, params):
+        """Check clearance between two components (simplified — use run_drc for full check)"""
+        try:
+            if not self.board:
+                return {"success": False, "message": "No board is loaded"}
+
+            item1 = params.get("item1", {})
+            item2 = params.get("item2", {})
+
+            ref1 = item1.get("reference") or item1.get("id", "")
+            ref2 = item2.get("reference") or item2.get("id", "")
+
+            mod1 = self.board.FindFootprintByReference(ref1)
+            mod2 = self.board.FindFootprintByReference(ref2)
+
+            if not mod1:
+                return {"success": False, "message": f"Component '{ref1}' not found"}
+            if not mod2:
+                return {"success": False, "message": f"Component '{ref2}' not found"}
+
+            pos1 = mod1.GetPosition()
+            pos2 = mod2.GetPosition()
+            dx = (pos2.x - pos1.x) / 1000000.0
+            dy = (pos2.y - pos1.y) / 1000000.0
+            distance = (dx**2 + dy**2) ** 0.5
+
+            min_clearance = self.board.GetDesignSettings().m_MinClearance / 1000000.0
+            passes = distance >= min_clearance
+
+            return {
+                "success": True,
+                "clearanceCheck": {
+                    "item1": ref1,
+                    "item2": ref2,
+                    "distanceMm": round(distance, 4),
+                    "minClearanceMm": round(min_clearance, 4),
+                    "passes": passes,
+                },
+                "note": "Center-to-center distance check. Use run_drc for full DRC.",
+            }
+        except Exception as e:
+            logger.error(f"Error checking clearance: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_add_component_annotation(self, params):
+        """Add a text field annotation to a footprint"""
+        try:
+            if not self.board:
+                return {"success": False, "message": "No board is loaded"}
+
+            reference = params.get("reference")
+            annotation = params.get("annotation")
+            visible = params.get("visible", True)
+
+            if not reference or not annotation:
+                return {"success": False, "message": "Missing 'reference' or 'annotation'"}
+
+            module = self.board.FindFootprintByReference(reference)
+            if not module:
+                return {"success": False, "message": f"Component '{reference}' not found"}
+
+            field_id = module.GetNextFieldId()
+            field = pcbnew.PCB_FIELD(module, field_id, "Annotation")
+            field.SetText(annotation)
+            field.SetVisible(visible)
+            field.SetPosition(module.GetPosition())
+            module.AddField(field)
+
+            return {
+                "success": True,
+                "message": f"Added annotation to {reference}",
+                "field": {"id": field_id, "text": annotation, "visible": visible},
+            }
+        except Exception as e:
+            logger.error(f"Error adding component annotation: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_group_components(self, params):
+        """Group multiple components together on the board"""
+        try:
+            if not self.board:
+                return {"success": False, "message": "No board is loaded"}
+
+            references = params.get("references", [])
+            group_name = params.get("groupName", "Component Group")
+
+            if not references:
+                return {"success": False, "message": "No component references provided"}
+
+            group = pcbnew.PCB_GROUP(self.board)
+            group.SetName(group_name)
+
+            added = []
+            not_found = []
+            for ref in references:
+                module = self.board.FindFootprintByReference(ref)
+                if module:
+                    group.AddItem(module)
+                    added.append(ref)
+                else:
+                    not_found.append(ref)
+
+            if not added:
+                return {"success": False, "message": "None of the specified components were found"}
+
+            self.board.Add(group)
+
+            result = {
+                "success": True,
+                "message": f"Grouped {len(added)} components as '{group_name}'",
+                "group": {"name": group_name, "components": added},
+            }
+            if not_found:
+                result["warnings"] = f"Components not found: {', '.join(not_found)}"
+            return result
+        except Exception as e:
+            logger.error(f"Error grouping components: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_replace_component(self, params):
+        """Replace a component's footprint on the board"""
+        try:
+            if not self.board:
+                return {"success": False, "message": "No board is loaded"}
+
+            reference = params.get("reference")
+            new_footprint = params.get("newFootprint") or params.get("newComponentId")
+            new_value = params.get("newValue")
+
+            if not reference:
+                return {"success": False, "message": "Missing 'reference' parameter"}
+            if not new_footprint:
+                return {"success": False, "message": "Missing 'newFootprint' or 'newComponentId'"}
+
+            old_module = self.board.FindFootprintByReference(reference)
+            if not old_module:
+                return {"success": False, "message": f"Component '{reference}' not found"}
+
+            # Save old properties
+            old_pos = old_module.GetPosition()
+            old_rot = old_module.GetOrientation()
+            old_layer = old_module.GetLayer()
+            old_value = old_module.GetValue()
+
+            # Parse Library:Footprint format
+            if ":" in new_footprint:
+                lib_name, fp_name = new_footprint.split(":", 1)
+            else:
+                return {"success": False, "message": "newFootprint must be in 'Library:Footprint' format"}
+
+            # Find library path
+            lib_table = pcbnew.PROJECT.PcbFootprintLibs(self.board.GetProject())
+            try:
+                lib_row = lib_table.FindRow(lib_name)
+                library_path = lib_row.GetFullURI(True)
+            except Exception:
+                return {"success": False, "message": f"Library '{lib_name}' not found"}
+
+            # Load new footprint
+            new_module = pcbnew.FootprintLoad(library_path, fp_name)
+            if not new_module:
+                return {"success": False, "message": f"Footprint '{fp_name}' not found in library '{lib_name}'"}
+
+            # Apply old properties
+            new_module.SetPosition(old_pos)
+            new_module.SetOrientation(old_rot)
+            new_module.SetLayer(old_layer)
+            new_module.SetReference(reference)
+            new_module.SetValue(new_value if new_value else old_value)
+
+            # Set FPID
+            fpid = pcbnew.LIB_ID(lib_name, fp_name)
+            new_module.SetFPID(fpid)
+
+            # Swap on board
+            self.board.Remove(old_module)
+            self.board.Add(new_module)
+
+            return {
+                "success": True,
+                "message": f"Replaced {reference} with {new_footprint}",
+                "component": {
+                    "reference": reference,
+                    "footprint": new_footprint,
+                    "value": new_module.GetValue(),
+                },
+            }
+        except Exception as e:
+            logger.error(f"Error replacing component: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_netlist(self, params):
+        """Export netlist from schematic using kicad-cli"""
+        try:
+            import subprocess
+
+            output_path = params.get("outputPath")
+            fmt = params.get("format", "kicadsexpr")
+
+            if not output_path:
+                return {"success": False, "message": "Missing 'outputPath' parameter"}
+
+            # Find schematic file
+            board_file = self.board.GetFileName() if self.board else None
+            if not board_file:
+                return {"success": False, "message": "Board must be saved first"}
+
+            sch_file = board_file.replace(".kicad_pcb", ".kicad_sch")
+            if not os.path.exists(sch_file):
+                return {"success": False, "message": f"Schematic file not found: {sch_file}"}
+
+            kicad_cli = self.export_commands._find_kicad_cli()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found"}
+
+            output_path = os.path.abspath(os.path.expanduser(output_path))
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+            cmd = [kicad_cli, "sch", "export", "netlist",
+                   "--output", output_path, "--format", fmt, sch_file]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+            if result.returncode != 0:
+                return {"success": False, "message": "Netlist export failed",
+                        "errorDetails": result.stderr[:500]}
+
+            return {
+                "success": True,
+                "message": f"Exported netlist ({fmt})",
+                "file": output_path,
+                "format": fmt,
+            }
+        except Exception as e:
+            logger.error(f"Error exporting netlist: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_position_file(self, params):
+        """Export pick-and-place position file using kicad-cli"""
+        try:
+            import subprocess
+
+            output_path = params.get("outputPath")
+            fmt = params.get("format", "csv")
+            units = params.get("units", "mm")
+            side = params.get("side", "both")
+
+            if not output_path:
+                return {"success": False, "message": "Missing 'outputPath' parameter"}
+
+            board_file = self.board.GetFileName() if self.board else None
+            if not board_file or not os.path.exists(board_file):
+                return {"success": False, "message": "Board must be saved first"}
+
+            # Save board to ensure latest state
+            self.board.Save(board_file)
+
+            kicad_cli = self.export_commands._find_kicad_cli()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found"}
+
+            output_path = os.path.abspath(os.path.expanduser(output_path))
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+            cmd = [kicad_cli, "pcb", "export", "pos",
+                   "--output", output_path,
+                   "--format", fmt,
+                   "--units", units,
+                   "--side", side,
+                   "--exclude-dnp",
+                   board_file]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+            if result.returncode != 0:
+                return {"success": False, "message": "Position file export failed",
+                        "errorDetails": result.stderr[:500]}
+
+            return {
+                "success": True,
+                "message": f"Exported position file ({fmt})",
+                "file": output_path,
+                "format": fmt,
+                "units": units,
+                "side": side,
+            }
+        except Exception as e:
+            logger.error(f"Error exporting position file: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_vrml(self, params):
+        """Export PCB as VRML 3D model using kicad-cli"""
+        try:
+            import subprocess
+
+            output_path = params.get("outputPath")
+            include_components = params.get("includeComponents", True)
+            use_relative_paths = params.get("useRelativePaths", False)
+
+            if not output_path:
+                return {"success": False, "message": "Missing 'outputPath' parameter"}
+
+            board_file = self.board.GetFileName() if self.board else None
+            if not board_file or not os.path.exists(board_file):
+                return {"success": False, "message": "Board must be saved first"}
+
+            self.board.Save(board_file)
+
+            kicad_cli = self.export_commands._find_kicad_cli()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found"}
+
+            output_path = os.path.abspath(os.path.expanduser(output_path))
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+            cmd = [kicad_cli, "pcb", "export", "vrml",
+                   "--output", output_path,
+                   "--units", "mm",
+                   "--force",
+                   board_file]
+
+            if not include_components:
+                cmd.insert(-1, "--no-unspecified")
+                cmd.insert(-1, "--no-dnp")
+
+            if use_relative_paths:
+                models_dir = os.path.join(os.path.dirname(output_path), "models")
+                cmd.insert(-1, "--models-dir")
+                cmd.insert(-1, models_dir)
+                cmd.insert(-1, "--models-relative")
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+
+            if result.returncode != 0:
+                return {"success": False, "message": "VRML export failed",
+                        "errorDetails": result.stderr[:500]}
+
+            return {
+                "success": True,
+                "message": "Exported VRML file",
+                "file": output_path,
+                "includeComponents": include_components,
+                "useRelativePaths": use_relative_paths,
+            }
+        except Exception as e:
+            logger.error(f"Error exporting VRML: {e}")
             return {"success": False, "message": str(e)}
 
     # =========================================================================
