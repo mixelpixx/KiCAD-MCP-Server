@@ -176,6 +176,7 @@ class ComponentCommands:
             reference = params.get("reference")
             position = params.get("position")
             rotation = params.get("rotation")
+            layer = params.get("layer")
 
             if not reference or not position:
                 return {
@@ -204,6 +205,14 @@ class ComponentCommands:
                 angle = pcbnew.EDA_ANGLE(rotation, pcbnew.DEGREES_T)
                 module.SetOrientation(angle)
 
+            # Flip to target layer if specified
+            if layer:
+                current_layer = self.board.GetLayerName(module.GetLayer())
+                if layer == "B.Cu" and current_layer != "B.Cu":
+                    module.Flip(module.GetPosition(), False)
+                elif layer == "F.Cu" and current_layer != "F.Cu":
+                    module.Flip(module.GetPosition(), False)
+
             return {
                 "success": True,
                 "message": f"Moved component: {reference}",
@@ -214,7 +223,8 @@ class ComponentCommands:
                         "y": position["y"],
                         "unit": position["unit"]
                     },
-                    "rotation": rotation if rotation is not None else module.GetOrientation().AsDegrees()
+                    "rotation": rotation if rotation is not None else module.GetOrientation().AsDegrees(),
+                    "layer": self.board.GetLayerName(module.GetLayer())
                 }
             }
 

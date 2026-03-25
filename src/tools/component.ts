@@ -117,8 +117,12 @@ export function registerComponentTools(
         .number()
         .optional()
         .describe("Optional new rotation in degrees"),
+      layer: z
+        .string()
+        .optional()
+        .describe("Optional target layer (e.g., 'F.Cu', 'B.Cu') - flips component if needed"),
     },
-    async ({ reference, position, rotation }) => {
+    async ({ reference, position, rotation, layer }) => {
       logger.debug(
         `Moving component: ${reference} to ${position.x},${position.y} ${position.unit}`,
       );
@@ -126,6 +130,7 @@ export function registerComponentTools(
         reference,
         position,
         rotation,
+        layer,
       });
 
       return {
