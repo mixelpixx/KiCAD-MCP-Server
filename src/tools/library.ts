@@ -154,12 +154,26 @@ export function registerLibraryTools(
       const result = await callKicadScript("get_footprint_info", args);
       if (result.success && result.info) {
         const info = result.info;
+
+        // pads is a list of {number, type, shape} objects
+        const padsArray: Array<{ number: string; type: string; shape: string }> =
+          Array.isArray(info.pads) ? info.pads : [];
+        const padsSummary = padsArray.length
+          ? `${padsArray.length} pads: ${padsArray.map((p) => p.number).join(", ")}`
+          : "";
+        const padsDetail = padsArray.length
+          ? padsArray
+              .map((p) => `  pad ${p.number}: ${p.type} ${p.shape}`)
+              .join("\n")
+          : "";
+
         const details = [
           `Footprint: ${info.name}`,
           `Library: ${info.library}`,
           info.description ? `Description: ${info.description}` : "",
           info.keywords ? `Keywords: ${info.keywords}` : "",
-          info.pads ? `Number of pads: ${info.pads}` : "",
+          padsSummary,
+          padsDetail,
           info.layers ? `Layers used: ${info.layers.join(", ")}` : "",
           info.courtyard
             ? `Courtyard size: ${info.courtyard.width}mm x ${info.courtyard.height}mm`
