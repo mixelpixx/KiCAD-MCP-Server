@@ -507,7 +507,7 @@ class LibraryCommands:
     def get_footprint_info(self, params: Dict) -> Dict:
         """Get information about a specific footprint"""
         try:
-            footprint_spec = params.get("footprint")
+            footprint_spec = params.get("footprint_name")
             if not footprint_spec:
                 return {"success": False, "message": "Missing footprint parameter"}
 
@@ -525,12 +525,12 @@ class LibraryCommands:
 
                 info = {
                     "library": library_nickname,
-                    "footprint": footprint_name,
+                    "name": footprint_name,
                     "full_name": f"{library_nickname}:{footprint_name}",
                     "library_path": library_path,
                 }
 
-                return {"success": True, "footprint_info": info}
+                return {"success": True, "info": info}
             else:
                 return {
                     "success": False,
