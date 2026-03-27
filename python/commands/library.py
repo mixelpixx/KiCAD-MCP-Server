@@ -507,7 +507,7 @@ class LibraryCommands:
     def get_footprint_info(self, params: Dict) -> Dict:
         """Get information about a specific footprint"""
         try:
-            footprint_spec = params.get("footprint")
+            footprint_spec = params.get("footprint_name")
             if not footprint_spec:
                 return {"success": False, "message": "Missing footprint parameter"}
 
@@ -522,20 +522,35 @@ class LibraryCommands:
                     if path == library_path:
                         library_nickname = nick
                         break
+                    
+            # Minimal info — always returned even if the parser fails
+            info: Dict = {
+                "library": library_nickname,
+                "name": footprint_name,
 
-                info = {
-                    "library": library_nickname,
-                    "footprint": footprint_name,
-                    "full_name": f"{library_nickname}:{footprint_name}",
-                    "library_path": library_path,
-                }
+                "full_name": f"{library_nickname}:{footprint_name}",
+                "library_path": library_path,
+            }
 
-                return {"success": True, "footprint_info": info}
-            else:
-                return {
-                    "success": False,
-                    "message": f"Footprint not found: {footprint_spec}",
-                }
+            # Attempt to enrich with parsed .kicad_mod data
+            try:
+                from parsers.kicad_mod_parser import parse_kicad_mod
+                from pathlib import Path as _Path
+                mod_file = str(_Path(library_path) / f"{footprint_name}.kicad_mod")
+                parsed = parse_kicad_mod(mod_file)
+                if parsed:
+                    # Merge parser output into info; keep our resolved library context
+                    info.update(parsed)
+                    info["name"] = footprint_name        # entry name wins over in-file name
+                    info["library"] = library_nickname
+                    info["full_name"] = f"{library_nickname}:{footprint_name}"
+                    info["library_path"] = library_path
+                else:
+                    logger.warning(f"get_footprint_info: parser returned nothing for {mod_file}, using minimal info")
+            except Exception as parse_err:
+                logger.warning(f"get_footprint_info: parser error ({parse_err}), using minimal info")
+
+            return {"success": True, "info": info}
 
         except Exception as e:
             logger.error(f"Error getting footprint info: {e}")
