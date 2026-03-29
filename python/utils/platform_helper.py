@@ -5,12 +5,12 @@ This module provides helpers for detecting the current platform and
 getting appropriate paths for KiCAD, configuration, logs, etc.
 """
 
+import logging
 import os
 import platform
 import sys
 from pathlib import Path
 from typing import List, Optional
-import logging
 
 logger = logging.getLogger(__name__)
 

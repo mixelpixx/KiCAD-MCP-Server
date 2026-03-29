@@ -7,16 +7,17 @@ and KiCAD's Python API (pcbnew). It receives commands via stdin as
 JSON and returns responses via stdout also as JSON.
 """
 
-import sys
 import json
-import traceback
 import logging
 import os
-from typing import Dict, Any, Optional
+import sys
+import traceback
+from typing import Any, Dict, Optional
+
+from resources.resource_definitions import RESOURCE_DEFINITIONS, handle_resource_read
 
 # Import tool schemas and resource definitions
 from schemas.tool_schemas import TOOL_SCHEMAS
-from resources.resource_definitions import RESOURCE_DEFINITIONS, handle_resource_read
 
 # Configure logging
 log_dir = os.path.join(os.path.expanduser("~"), ".kicad-mcp", "logs")
@@ -80,9 +81,10 @@ utils_dir = os.path.join(os.path.dirname(__file__))
 if utils_dir not in sys.path:
     sys.path.insert(0, utils_dir)
 
+from utils.kicad_process import KiCADProcessManager, check_and_launch_kicad
+
 # Import platform helper and add KiCAD paths
 from utils.platform_helper import PlatformHelper
-from utils.kicad_process import check_and_launch_kicad, KiCADProcessManager
 
 logger.info(f"Detecting KiCAD Python paths for {PlatformHelper.get_platform_name()}...")
 paths_added = PlatformHelper.add_kicad_to_python_path()
@@ -202,27 +204,27 @@ elif KICAD_BACKEND == "ipc" and not USE_IPC_BACKEND:
 # Import command handlers
 try:
     logger.info("Importing command handlers...")
-    from commands.project import ProjectCommands
     from commands.board import BoardCommands
     from commands.component import ComponentCommands
-    from commands.routing import RoutingCommands
-    from commands.design_rules import DesignRuleCommands
-    from commands.export import ExportCommands
-    from commands.schematic import SchematicManager
     from commands.component_schematic import ComponentManager
     from commands.connection_schematic import ConnectionManager
-    from commands.library_schematic import LibraryManager as SchematicLibraryManager
-    from commands.library import (
-        LibraryManager as FootprintLibraryManager,
-        LibraryCommands,
-    )
-    from commands.library_symbol import SymbolLibraryManager, SymbolLibraryCommands
+    from commands.datasheet_manager import DatasheetManager
+    from commands.design_rules import DesignRuleCommands
+    from commands.export import ExportCommands
+    from commands.footprint import FootprintCreator
+    from commands.freerouting import FreeroutingCommands
     from commands.jlcpcb import JLCPCBClient, test_jlcpcb_connection
     from commands.jlcpcb_parts import JLCPCBPartsManager
-    from commands.datasheet_manager import DatasheetManager
-    from commands.footprint import FootprintCreator
+    from commands.library import (
+        LibraryCommands,
+    )
+    from commands.library import LibraryManager as FootprintLibraryManager
+    from commands.library_schematic import LibraryManager as SchematicLibraryManager
+    from commands.library_symbol import SymbolLibraryCommands, SymbolLibraryManager
+    from commands.project import ProjectCommands
+    from commands.routing import RoutingCommands
+    from commands.schematic import SchematicManager
     from commands.symbol_creator import SymbolCreator
-    from commands.freerouting import FreeroutingCommands
 
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
@@ -682,6 +684,7 @@ class KiCADInterface:
         logger.info("Adding component to schematic")
         try:
             from pathlib import Path
+
             from commands.dynamic_symbol_loader import DynamicSymbolLoader
 
             schematic_path = params.get("schematicPath")
@@ -733,8 +736,8 @@ class KiCADInterface:
         """Remove a placed symbol from a schematic using text-based manipulation (no skip writes)"""
         logger.info("Deleting schematic component")
         try:
-            from pathlib import Path
             import re
+            from pathlib import Path
 
             schematic_path = params.get("schematicPath")
             reference = params.get("reference")
@@ -841,8 +844,8 @@ class KiCADInterface:
         """
         logger.info("Editing schematic component")
         try:
-            from pathlib import Path
             import re
+            from pathlib import Path
 
             schematic_path = params.get("schematicPath")
             reference = params.get("reference")
@@ -992,8 +995,8 @@ class KiCADInterface:
         """Return full component info: position and all field values with their (at x y angle) positions."""
         logger.info("Getting schematic component info")
         try:
-            from pathlib import Path
             import re
+            from pathlib import Path
 
             schematic_path = params.get("schematicPath")
             reference = params.get("reference")
@@ -1116,6 +1119,7 @@ class KiCADInterface:
         logger.info("Adding wire to schematic")
         try:
             from pathlib import Path
+
             from commands.wire_manager import WireManager
 
             schematic_path = params.get("schematicPath")
@@ -1239,6 +1243,7 @@ class KiCADInterface:
         logger.info("Adding junction to schematic")
         try:
             from pathlib import Path
+
             from commands.wire_manager import WireManager
 
             schematic_path = params.get("schematicPath")
@@ -1472,6 +1477,7 @@ class KiCADInterface:
         logger.info("Adding net label to schematic")
         try:
             from pathlib import Path
+
             from commands.wire_manager import WireManager
 
             schematic_path = params.get("schematicPath")
@@ -1591,6 +1597,7 @@ class KiCADInterface:
         logger.info("Getting schematic pin locations")
         try:
             from pathlib import Path
+
             from commands.pin_locator import PinLocator
 
             schematic_path = params.get("schematicPath")
@@ -1643,9 +1650,9 @@ class KiCADInterface:
     def _handle_get_schematic_view(self, params):
         """Get a rasterised image of the schematic (SVG export → optional PNG conversion)"""
         logger.info("Getting schematic view")
+        import base64
         import subprocess
         import tempfile
-        import base64
 
         try:
             schematic_path = params.get("schematicPath")
@@ -1734,6 +1741,7 @@ class KiCADInterface:
         logger.info("Listing schematic components")
         try:
             from pathlib import Path
+
             from commands.pin_locator import PinLocator
 
             schematic_path = params.get("schematicPath")
@@ -2185,6 +2193,7 @@ class KiCADInterface:
                 return {"success": False, "message": "schematicPath is required"}
 
             from pathlib import Path
+
             from commands.wire_manager import WireManager
 
             start_point = [start.get("x", 0), start.get("y", 0)]
@@ -2218,6 +2227,7 @@ class KiCADInterface:
                 }
 
             from pathlib import Path
+
             from commands.wire_manager import WireManager
 
             pos_list = None
@@ -2240,9 +2250,9 @@ class KiCADInterface:
     def _handle_export_schematic_svg(self, params):
         """Export schematic to SVG using kicad-cli"""
         logger.info("Exporting schematic SVG")
-        import subprocess
         import glob
         import shutil
+        import subprocess
 
         try:
             schematic_path = params.get("schematicPath")
@@ -2381,9 +2391,9 @@ class KiCADInterface:
     def _handle_run_erc(self, params):
         """Run Electrical Rules Check on a schematic via kicad-cli"""
         logger.info("Running ERC on schematic")
+        import os
         import subprocess
         import tempfile
-        import os
 
         try:
             schematic_path = params.get("schematicPath")
@@ -2619,10 +2629,10 @@ class KiCADInterface:
     def _handle_get_schematic_view_region(self, params):
         """Export a cropped region of the schematic as an image"""
         logger.info("Exporting schematic view region")
+        import base64
+        import os
         import subprocess
         import tempfile
-        import os
-        import base64
 
         try:
             schematic_path = params.get("schematicPath")
@@ -2736,6 +2746,7 @@ class KiCADInterface:
         logger.info("Finding overlapping elements in schematic")
         try:
             from pathlib import Path
+
             from commands.schematic_analysis import find_overlapping_elements
 
             schematic_path = params.get("schematicPath")
@@ -2761,6 +2772,7 @@ class KiCADInterface:
         logger.info("Getting elements in schematic region")
         try:
             from pathlib import Path
+
             from commands.schematic_analysis import get_elements_in_region
 
             schematic_path = params.get("schematicPath")
@@ -2790,6 +2802,7 @@ class KiCADInterface:
         logger.info("Finding wires crossing symbols in schematic")
         try:
             from pathlib import Path
+
             from commands.schematic_analysis import find_wires_crossing_symbols
 
             schematic_path = params.get("schematicPath")
@@ -3009,7 +3022,9 @@ class KiCADInterface:
             zone_count = self.board.GetAreaCount() if hasattr(self.board, "GetAreaCount") else 0
 
             # Run pcbnew zone fill in an isolated subprocess to prevent crashes
-            import subprocess, sys, textwrap
+            import subprocess
+            import sys
+            import textwrap
 
             script = textwrap.dedent(f"""
 import pcbnew, sys
@@ -3437,8 +3452,8 @@ print("ok")
         try:
             from kipy.board_types import BoardSegment
             from kipy.geometry import Vector2
-            from kipy.util.units import from_mm
             from kipy.proto.board.board_types_pb2 import BoardLayer
+            from kipy.util.units import from_mm
 
             board = self.ipc_board_api._get_board()
 
@@ -3488,8 +3503,8 @@ print("ok")
         try:
             from kipy.board_types import BoardCircle
             from kipy.geometry import Vector2
-            from kipy.util.units import from_mm
             from kipy.proto.board.board_types_pb2 import BoardLayer
+            from kipy.util.units import from_mm
 
             board = self.ipc_board_api._get_board()
 

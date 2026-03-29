@@ -15,13 +15,13 @@ Supported SVG elements:
 SVG coordinate system: Y increases downward (same as KiCAD mm), so no Y-flip needed.
 """
 
-import re
-import math
-import uuid
-import os
 import logging
-from typing import List, Tuple, Dict, Any, Optional
+import math
+import os
+import re
+import uuid
 import xml.etree.ElementTree as ET
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("kicad_interface")
 

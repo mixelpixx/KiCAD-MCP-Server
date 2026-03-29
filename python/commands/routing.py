@@ -2,11 +2,12 @@
 Routing-related command implementations for KiCAD interface
 """
 
-import os
-import pcbnew
 import logging
 import math
-from typing import Dict, Any, Optional, List, Tuple
+import os
+from typing import Any, Dict, List, Optional, Tuple
+
+import pcbnew
 
 logger = logging.getLogger("kicad_interface")
 

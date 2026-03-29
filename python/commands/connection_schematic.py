@@ -1,15 +1,16 @@
-from skip import Schematic
-import os
 import logging
+import os
 from pathlib import Path
 from typing import Optional
+
+from skip import Schematic
 
 logger = logging.getLogger(__name__)
 
 # Import new wire and pin managers
 try:
-    from commands.wire_manager import WireManager
     from commands.pin_locator import PinLocator
+    from commands.wire_manager import WireManager
 
     WIRE_MANAGER_AVAILABLE = True
 except ImportError:

@@ -2,10 +2,11 @@
 Board outline command implementations for KiCAD interface
 """
 
-import pcbnew
 import logging
 import math
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
+import pcbnew
 
 logger = logging.getLogger("kicad_interface")
 

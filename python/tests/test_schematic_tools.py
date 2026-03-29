@@ -268,7 +268,8 @@ def _make_handler_under_test(handler_name: str):
     This works because every _handle_* method starts with a params dict check
     before doing any file I/O or heavy imports.
     """
-    import importlib.util, types
+    import importlib.util
+    import types
 
     # We monkey-patch sys.modules to avoid pcbnew/skip side effects
     stubs = {}
@@ -301,8 +302,8 @@ class TestHandlerParamValidation:
 
     def _make_iface_stub(self):
         """Return a stub that exposes only the handler methods under test."""
-        import types
         import importlib
+        import types
 
         # Build a minimal namespace that satisfies the imports inside each handler
         stub_mod = types.ModuleType("_handler_stubs")

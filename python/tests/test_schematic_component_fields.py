@@ -3,8 +3,8 @@ Tests for get_schematic_component and edit_schematic_component fieldPositions su
 """
 
 import re
-import sys
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 

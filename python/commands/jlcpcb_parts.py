@@ -5,13 +5,13 @@ Manages local SQLite database of JLCPCB parts for fast searching
 and component selection.
 """
 
-import os
-import sqlite3
 import json
 import logging
-from pathlib import Path
-from typing import List, Dict, Optional
+import os
+import sqlite3
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
 
 logger = logging.getLogger("kicad_interface")
 

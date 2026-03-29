@@ -4,11 +4,12 @@ Tests for platform_helper utility
 These are unit tests that work on all platforms.
 """
 
-import pytest
-import platform
-from pathlib import Path
-import sys
 import os
+import platform
+import sys
+from pathlib import Path
+
+import pytest
 
 # Add parent directory to path to import utils
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))

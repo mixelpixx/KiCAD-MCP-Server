@@ -2,14 +2,16 @@
 Board-related command implementations for KiCAD interface
 """
 
-import pcbnew
 import logging
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
+import pcbnew
+
+from .layers import BoardLayerCommands
+from .outline import BoardOutlineCommands
 
 # Import specialized modules
 from .size import BoardSizeCommands
-from .layers import BoardLayerCommands
-from .outline import BoardOutlineCommands
 from .view import BoardViewCommands
 
 logger = logging.getLogger("kicad_interface")

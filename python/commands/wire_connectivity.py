@@ -9,6 +9,7 @@ coordinate matching, mirroring KiCad's own connectivity algorithm.
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
+
 from commands.pin_locator import PinLocator
 
 logger = logging.getLogger("kicad_interface")

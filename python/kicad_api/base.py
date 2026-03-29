@@ -4,10 +4,10 @@ Abstract base class for KiCAD API backends
 Defines the interface that all KiCAD backends must implement.
 """
 
+import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional, Dict, Any, List
-import logging
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

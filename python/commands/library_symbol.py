@@ -5,12 +5,12 @@ Handles parsing sym-lib-table files, discovering symbols,
 and providing search functionality for component selection.
 """
 
+import logging
 import os
 import re
-import logging
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
-from dataclasses import dataclass, asdict
 
 logger = logging.getLogger("kicad_interface")
 

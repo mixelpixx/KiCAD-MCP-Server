@@ -6,9 +6,10 @@ jlcsearch service at https://jlcsearch.tscircuit.com/
 """
 
 import logging
-import requests
-from typing import Optional, Dict, List, Callable
 import time
+from typing import Callable, Dict, List, Optional
+
+import requests
 
 logger = logging.getLogger("kicad_interface")
 

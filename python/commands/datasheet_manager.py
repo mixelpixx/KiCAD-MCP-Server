@@ -9,8 +9,8 @@ URL schema: https://www.lcsc.com/datasheet/{LCSC#}.pdf
 No API key required.
 """
 
-import re
 import logging
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
 

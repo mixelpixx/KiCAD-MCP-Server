@@ -6,12 +6,13 @@ kicad-skip's wire API doesn't support creating wires with standard parameters, s
 manipulate the .kicad_sch file directly.
 """
 
-import uuid
 import logging
 import math
 import tempfile
+import uuid
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
+
 import sexpdata
 from sexpdata import Symbol
 
@@ -671,10 +672,9 @@ class WireManager:
 
 if __name__ == "__main__":
     # Test wire creation
-    import sys
-
-    from pathlib import Path
     import shutil
+    import sys
+    from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).parent.parent))
 

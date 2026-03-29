@@ -4,12 +4,12 @@ Backend factory for creating appropriate KiCAD API backend
 Auto-detects available backends and provides fallback mechanism.
 """
 
-import os
 import logging
-from typing import Optional
+import os
 from pathlib import Path
+from typing import Optional
 
-from kicad_api.base import KiCADBackend, APINotAvailableError
+from kicad_api.base import APINotAvailableError, KiCADBackend
 
 logger = logging.getLogger(__name__)
 

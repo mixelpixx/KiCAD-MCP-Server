@@ -7,10 +7,10 @@ on-the-fly using TEXT MANIPULATION (not sexpdata) to preserve file formatting.
 This enables access to all ~10,000+ KiCad symbols dynamically.
 """
 
+import logging
 import os
 import re
 import uuid
-import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 

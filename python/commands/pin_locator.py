@@ -9,7 +9,8 @@ import logging
 import math
 import tempfile
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict
+from typing import Dict, List, Optional, Tuple
+
 import sexpdata
 from sexpdata import Symbol
 from skip import Schematic
@@ -396,12 +397,12 @@ class PinLocator:
 
 if __name__ == "__main__":
     # Test pin location discovery
+    import shutil
     import sys
-
     from pathlib import Path
+
     from commands.component_schematic import ComponentManager
     from commands.schematic import SchematicManager
-    import shutil
 
     sys.path.insert(0, str(Path(__file__).parent.parent))
 

@@ -2,13 +2,14 @@
 Board view command implementations for KiCAD interface
 """
 
-import os
-import pcbnew
-import logging
-from typing import Dict, Any, Optional, List, Tuple
-from PIL import Image
-import io
 import base64
+import io
+import logging
+import os
+from typing import Any, Dict, List, Optional, Tuple
+
+import pcbnew
+from PIL import Image
 
 logger = logging.getLogger("kicad_interface")
 

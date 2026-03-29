@@ -8,12 +8,11 @@ and checking connectivity in KiCad schematic files.
 import logging
 import math
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Any, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import sexpdata
-from sexpdata import Symbol
-
 from commands.pin_locator import PinLocator
+from sexpdata import Symbol
 
 logger = logging.getLogger("kicad_interface")
 

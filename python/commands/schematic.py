@@ -1,8 +1,9 @@
-from skip import Schematic
+import logging
 import os
 import shutil
-import logging
 import uuid
+
+from skip import Schematic
 
 logger = logging.getLogger("kicad_interface")
 

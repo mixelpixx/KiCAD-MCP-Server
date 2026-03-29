@@ -6,11 +6,11 @@ Integration tests parse real .kicad_sch files via sexpdata.
 """
 
 import os
-import sys
 import shutil
+import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import sexpdata
@@ -20,23 +20,23 @@ from sexpdata import Symbol
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from commands.schematic_analysis import (
-    _parse_wires,
-    _parse_labels,
-    _parse_symbols,
-    _load_sexp,
-    _extract_lib_symbols,
-    _parse_lib_symbol_graphics,
-    _transform_local_point,
-    _line_segment_intersects_aabb,
-    _point_in_rect,
-    _distance,
     _aabb_overlap,
     _check_wire_overlap,
     _compute_symbol_bbox_direct,
+    _distance,
+    _extract_lib_symbols,
+    _line_segment_intersects_aabb,
+    _load_sexp,
+    _parse_labels,
+    _parse_lib_symbol_graphics,
+    _parse_symbols,
+    _parse_wires,
+    _point_in_rect,
+    _transform_local_point,
     compute_symbol_bbox,
     find_overlapping_elements,
-    get_elements_in_region,
     find_wires_crossing_symbols,
+    get_elements_in_region,
 )
 
 # ---------------------------------------------------------------------------

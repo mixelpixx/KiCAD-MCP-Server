@@ -5,18 +5,19 @@ Handles authentication and downloading the JLCPCB parts library
 for integration with KiCAD component selection.
 """
 
-import os
-import logging
-import requests
-import time
-import hmac
+import base64
 import hashlib
+import hmac
+import json
+import logging
+import os
 import secrets
 import string
-import base64
-import json
-from typing import Optional, Dict, List, Callable
+import time
 from pathlib import Path
+from typing import Callable, Dict, List, Optional
+
+import requests
 
 logger = logging.getLogger("kicad_interface")
 

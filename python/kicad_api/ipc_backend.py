@@ -18,9 +18,9 @@ import logging
 import os
 import platform
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Callable
+from typing import Any, Callable, Dict, List, Optional
 
-from kicad_api.base import KiCADBackend, BoardAPI, ConnectionError, APINotAvailableError
+from kicad_api.base import APINotAvailableError, BoardAPI, ConnectionError, KiCADBackend
 
 logger = logging.getLogger(__name__)
 
@@ -317,8 +317,8 @@ class IPCBoardAPI(BoardAPI):
         try:
             from kipy.board_types import BoardRectangle
             from kipy.geometry import Vector2
-            from kipy.util.units import from_mm
             from kipy.proto.board.board_types_pb2 import BoardLayer
+            from kipy.util.units import from_mm
 
             board = self._get_board()
 
@@ -655,9 +655,9 @@ class IPCBoardAPI(BoardAPI):
         """
         try:
             from kipy.board_types import Footprint
-            from kipy.geometry import Vector2, Angle
-            from kipy.util.units import from_mm
+            from kipy.geometry import Angle, Vector2
             from kipy.proto.board.board_types_pb2 import BoardLayer
+            from kipy.util.units import from_mm
 
             board = self._get_board()
 
@@ -708,7 +708,7 @@ class IPCBoardAPI(BoardAPI):
     ) -> bool:
         """Move a component to a new position (updates UI immediately)."""
         try:
-            from kipy.geometry import Vector2, Angle
+            from kipy.geometry import Angle, Vector2
             from kipy.util.units import from_mm
 
             board = self._get_board()
@@ -795,8 +795,8 @@ class IPCBoardAPI(BoardAPI):
         try:
             from kipy.board_types import Track
             from kipy.geometry import Vector2
-            from kipy.util.units import from_mm
             from kipy.proto.board.board_types_pb2 import BoardLayer
+            from kipy.util.units import from_mm
 
             board = self._get_board()
 
@@ -863,8 +863,8 @@ class IPCBoardAPI(BoardAPI):
         try:
             from kipy.board_types import Via
             from kipy.geometry import Vector2
-            from kipy.util.units import from_mm
             from kipy.proto.board.board_types_pb2 import ViaType
+            from kipy.util.units import from_mm
 
             board = self._get_board()
 
@@ -925,9 +925,9 @@ class IPCBoardAPI(BoardAPI):
         """Add text to the board."""
         try:
             from kipy.board_types import BoardText
-            from kipy.geometry import Vector2, Angle
-            from kipy.util.units import from_mm
+            from kipy.geometry import Angle, Vector2
             from kipy.proto.board.board_types_pb2 import BoardLayer
+            from kipy.util.units import from_mm
 
             board = self._get_board()
 
@@ -1072,8 +1072,8 @@ class IPCBoardAPI(BoardAPI):
         try:
             from kipy.board_types import Zone, ZoneFillMode, ZoneType
             from kipy.geometry import PolyLine, PolyLineNode, Vector2
-            from kipy.util.units import from_mm
             from kipy.proto.board.board_types_pb2 import BoardLayer
+            from kipy.util.units import from_mm
 
             board = self._get_board()
 

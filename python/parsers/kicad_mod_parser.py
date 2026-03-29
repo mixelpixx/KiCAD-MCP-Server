@@ -15,8 +15,8 @@ KiCad S-expression file format reference:
   https://dev-docs.kicad.org/en/file-formats/sexpr-intro/index.html#_footprint
 """
 
-import re
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 

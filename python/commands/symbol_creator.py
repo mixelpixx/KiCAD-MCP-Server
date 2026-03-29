@@ -12,9 +12,9 @@ KiCAD 9 .kicad_sym format:
   - All coordinates in mm, 2.54mm grid typical for schematic symbols
 """
 
+import logging
 import os
 import re
-import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 

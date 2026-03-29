@@ -2,12 +2,13 @@
 Component-related command implementations for KiCAD interface
 """
 
-import os
-import pcbnew
+import base64
 import logging
 import math
-from typing import Dict, Any, Optional, List, Tuple
-import base64
+import os
+from typing import Any, Dict, List, Optional, Tuple
+
+import pcbnew
 from commands.library import LibraryManager
 
 logger = logging.getLogger("kicad_interface")

@@ -1,8 +1,9 @@
-from skip import Schematic
+import glob
 
 # Symbol class might not be directly importable in the current version
 import os
-import glob
+
+from skip import Schematic
 
 
 class LibraryManager:

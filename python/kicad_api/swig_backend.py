@@ -11,9 +11,9 @@ WARNING: SWIG bindings are deprecated as of KiCAD 9.0
 
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
 
-from kicad_api.base import KiCADBackend, BoardAPI, ConnectionError, APINotAvailableError
+from kicad_api.base import APINotAvailableError, BoardAPI, ConnectionError, KiCADBackend
 
 logger = logging.getLogger(__name__)
 

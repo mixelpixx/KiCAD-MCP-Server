@@ -119,7 +119,8 @@ class TestHandlerDispatch:
     @pytest.fixture(autouse=True)
     def load_handler_map(self):
         # Import only the dispatch table without initialising KiCAD connections
-        import importlib, types
+        import importlib
+        import types
 
         # Patch heavy imports before loading kicad_interface
         for mod in ["pcbnew", "skip"]:
@@ -334,6 +335,7 @@ class TestPinSnapping:
 
         # Re-import so the patched skip.Schematic is used
         import importlib
+
         import kicad_interface
 
         importlib.reload(kicad_interface)

@@ -4,15 +4,15 @@ KiCAD Process Management Utilities
 Detects if KiCAD is running and provides auto-launch functionality.
 """
 
-import os
-import subprocess
-import logging
-import platform
-import time
 import ctypes
+import logging
+import os
+import platform
+import subprocess
+import time
 from ctypes import wintypes
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 

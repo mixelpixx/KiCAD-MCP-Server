@@ -2,11 +2,12 @@
 Project-related command implementations for KiCAD interface
 """
 
-import os
-import pcbnew  # type: ignore
 import logging
+import os
 import shutil
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
+import pcbnew  # type: ignore
 
 logger = logging.getLogger("kicad_interface")
 

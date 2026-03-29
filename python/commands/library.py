@@ -5,12 +5,12 @@ Handles parsing fp-lib-table files, discovering footprints,
 and providing search functionality for component placement.
 """
 
+import glob
+import logging
 import os
 import re
-import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-import glob
 
 logger = logging.getLogger("kicad_interface")
 
@@ -522,8 +522,9 @@ class LibraryCommands:
 
             # Attempt to enrich with parsed .kicad_mod data
             try:
-                from parsers.kicad_mod_parser import parse_kicad_mod
                 from pathlib import Path as _Path
+
+                from parsers.kicad_mod_parser import parse_kicad_mod
 
                 mod_file = str(_Path(library_path) / f"{footprint_name}.kicad_mod")
                 parsed = parse_kicad_mod(mod_file)

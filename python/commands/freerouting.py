@@ -9,13 +9,13 @@ Supports two execution modes:
   - Docker: docker run eclipse-temurin:21-jre (requires Docker)
 """
 
-import os
-import subprocess
-import shutil
-import time
 import logging
+import os
+import shutil
+import subprocess
+import time
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("kicad_interface")
 

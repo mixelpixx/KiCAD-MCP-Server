@@ -2,9 +2,10 @@
 Board size command implementations for KiCAD interface
 """
 
-import pcbnew
 import logging
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
+import pcbnew
 
 logger = logging.getLogger("kicad_interface")
 

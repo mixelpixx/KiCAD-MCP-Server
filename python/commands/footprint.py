@@ -8,9 +8,9 @@ KiCAD 9 .kicad_mod format reference:
   https://dev-docs.kicad.org/en/file-formats/sexpr-footprint/
 """
 
+import logging
 import os
 import re
-import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 

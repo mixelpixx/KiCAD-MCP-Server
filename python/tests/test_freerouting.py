@@ -15,12 +15,11 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from commands.freerouting import (
     FreeroutingCommands,
-    _find_java,
-    _find_docker,
     _docker_available,
+    _find_docker,
+    _find_java,
     _java_version_ok,
 )
 

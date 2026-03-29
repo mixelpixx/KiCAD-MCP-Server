@@ -1,9 +1,10 @@
-from skip import Schematic
+import logging
 import os
 import uuid
-import logging
 from pathlib import Path
 from typing import Optional
+
+from skip import Schematic
 
 logger = logging.getLogger(__name__)
 
@@ -350,9 +351,9 @@ class ComponentManager:
 
 if __name__ == "__main__":
     # Example Usage (for testing)
-    from schematic import (
+    from schematic import (  # Assuming schematic.py is in the same directory
         SchematicManager,
-    )  # Assuming schematic.py is in the same directory
+    )
 
     # Create a new schematic
     test_sch = SchematicManager.create_schematic("ComponentTestSchematic")
