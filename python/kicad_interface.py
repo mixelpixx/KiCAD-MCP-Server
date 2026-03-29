@@ -1283,6 +1283,46 @@ class KiCADInterface:
             logger.error(f"Error listing schematic libraries: {str(e)}")
             return {"success": False, "message": str(e)}
 
+    def _handle_find_unconnected_pins(self, params):
+        """List component pins with no wire/label/power symbol touching them"""
+        logger.info("Finding unconnected pins")
+        try:
+            from commands.schematic_analysis import find_unconnected_pins
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            result = find_unconnected_pins(schematic_path)
+            return {"success": True, **result}
+        except ImportError:
+            return {
+                "success": False,
+                "message": "schematic_analysis module not available",
+            }
+        except Exception as e:
+            logger.error(f"Error finding unconnected pins: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_check_wire_collisions(self, params):
+        """Detect wires passing through component bodies without connecting to pins"""
+        logger.info("Checking wire collisions")
+        try:
+            from commands.schematic_analysis import check_wire_collisions
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            result = check_wire_collisions(schematic_path)
+            return {"success": True, **result}
+        except ImportError:
+            return {
+                "success": False,
+                "message": "schematic_analysis module not available",
+            }
+        except Exception as e:
+            logger.error(f"Error checking wire collisions: {e}")
+            return {"success": False, "message": str(e)}
+
     # ------------------------------------------------------------------ #
     #  Footprint handlers                                                  #
     # ------------------------------------------------------------------ #
@@ -1998,14 +2038,18 @@ class KiCADInterface:
             return {"success": False, "message": str(e)}
 
     def _handle_move_schematic_component(self, params):
-        """Move a schematic component to a new position"""
+        """Move a schematic component to a new position, dragging connected wires."""
         logger.info("Moving schematic component")
         try:
+            import sexpdata as _sexpdata
+            from commands.wire_dragger import WireDragger
+
             schematic_path = params.get("schematicPath")
             reference = params.get("reference")
             position = params.get("position", {})
             new_x = position.get("x")
             new_y = position.get("y")
+            preserve_wires = params.get("preserveWires", True)
 
             if not schematic_path or not reference:
                 return {
@@ -2018,30 +2062,42 @@ class KiCADInterface:
                     "message": "position with x and y is required",
                 }
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            with open(schematic_path, "r", encoding="utf-8") as f:
+                sch_data = _sexpdata.loads(f.read())
 
-            # Find the symbol
-            for symbol in schematic.symbol:
-                if not hasattr(symbol.property, "Reference"):
-                    continue
-                if symbol.property.Reference.value == reference:
-                    old_pos = list(symbol.at.value)
-                    old_position = {"x": float(old_pos[0]), "y": float(old_pos[1])}
+            # Find symbol and record old position
+            found = WireDragger.find_symbol(sch_data, reference)
+            if found is None:
+                return {"success": False, "message": f"Component {reference} not found"}
+            _, old_x, old_y = found[0], found[1], found[2]
+            old_position = {"x": old_x, "y": old_y}
 
-                    # Preserve rotation (third element)
-                    rotation = float(old_pos[2]) if len(old_pos) > 2 else 0
-                    symbol.at.value = [new_x, new_y, rotation]
+            drag_summary = {}
+            if preserve_wires:
+                # Compute pin world positions before and after the move
+                pin_positions = WireDragger.compute_pin_positions(
+                    sch_data, reference, float(new_x), float(new_y)
+                )
+                # Build old→new coordinate map (deduplicate coincident pins)
+                old_to_new = {}
+                for _pin, (old_xy, new_xy) in pin_positions.items():
+                    old_to_new[old_xy] = new_xy
 
-                    SchematicManager.save_schematic(schematic, schematic_path)
-                    return {
-                        "success": True,
-                        "oldPosition": old_position,
-                        "newPosition": {"x": new_x, "y": new_y},
-                    }
+                drag_summary = WireDragger.drag_wires(sch_data, old_to_new)
 
-            return {"success": False, "message": f"Component {reference} not found"}
+            # Update symbol position
+            WireDragger.update_symbol_position(sch_data, reference, float(new_x), float(new_y))
+
+            with open(schematic_path, "w", encoding="utf-8") as f:
+                f.write(_sexpdata.dumps(sch_data))
+
+            return {
+                "success": True,
+                "oldPosition": old_position,
+                "newPosition": {"x": new_x, "y": new_y},
+                "wiresMoved": drag_summary.get("endpoints_moved", 0),
+                "wiresRemoved": drag_summary.get("wires_removed", 0),
+            }
 
         except Exception as e:
             logger.error(f"Error moving schematic component: {e}")
@@ -2074,21 +2130,18 @@ class KiCADInterface:
                     continue
                 if symbol.property.Reference.value == reference:
                     pos = list(symbol.at.value)
-                    pos[2] = angle if len(pos) > 2 else angle
                     while len(pos) < 3:
                         pos.append(0)
                     pos[2] = angle
                     symbol.at.value = pos
 
-                    # Handle mirror if specified
                     if mirror:
                         if hasattr(symbol, "mirror"):
                             symbol.mirror.value = mirror
                         else:
                             logger.warning(
                                 f"Mirror '{mirror}' requested for {reference}, "
-                                f"but symbol does not have a 'mirror' attribute; "
-                                f"mirror not applied"
+                                f"but symbol has no mirror attribute; skipped"
                             )
 
                     SchematicManager.save_schematic(schematic, schematic_path)
