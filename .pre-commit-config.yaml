@@ -7,7 +7,7 @@ repos:
       - id: check-yaml
       - id: check-json
       - id: check-added-large-files
-        args: ['--maxkb=500']
+        args: ["--maxkb=500"]
       - id: check-merge-conflict
 
   - repo: https://github.com/psf/black
@@ -22,3 +22,9 @@ repos:
     hooks:
       - id: isort
         args: [--settings-path=pyproject.toml]
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        exclude: ^(dist/|package-lock\.json|\.venv/|python/)

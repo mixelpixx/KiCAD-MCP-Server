@@ -14,6 +14,7 @@ The schematic workflow was completely broken due to incorrect usage of the kicad
 The kicad-skip library **does not support creating symbols from scratch**. The only way to add symbols is by **cloning existing symbol instances**.
 
 From kicad-skip documentation:
+
 > "symbols: these don't have a new()" because they require complex mappings to library elements, pins, and properties.
 
 ## Solution
@@ -21,6 +22,7 @@ From kicad-skip documentation:
 ### 1. Template-Based Approach
 
 Created a template schematic (`python/templates/template_with_symbols.kicad_sch`) with:
+
 - Complete `lib_symbols` section defining R, C, LED symbols
 - Three template symbol instances placed off-screen at (-100, -110, -120)
 - Template symbols marked as `dnp yes`, `in_bom no`, `on_board no` so they don't interfere
@@ -28,15 +30,18 @@ Created a template schematic (`python/templates/template_with_symbols.kicad_sch`
 ### 2. Updated Files
 
 **python/commands/project.py:**
+
 - Now creates both `.kicad_pcb` AND `.kicad_sch` files
 - Project file includes schematic reference in `sheets` array
 - Copies template schematic with cloneable symbols
 
 **python/commands/schematic.py:**
+
 - Uses template file instead of creating from scratch
 - Proper minimal schematic structure when template unavailable
 
 **python/commands/component_schematic.py:**
+
 - Completely rewritten to use `clone()` API
 - Maps component types to template symbols
 - Proper UUID generation for each cloned symbol
@@ -78,17 +83,20 @@ SchematicManager.save_schematic(sch, result['project']['schematicPath'])
 ## Supported Component Types
 
 Currently supported template symbols:
+
 - `R` - Resistor (maps to `_TEMPLATE_R`)
 - `C` - Capacitor (maps to `_TEMPLATE_C`)
 - `D` or `LED` - LED (maps to `_TEMPLATE_D`)
 
 To add more component types, update:
+
 1. `python/templates/template_with_symbols.kicad_sch` - Add lib_symbol definition and template instance
 2. `python/commands/component_schematic.py` - Add mapping in `TEMPLATE_MAP`
 
 ## Testing
 
 Comprehensive test created at `/tmp/test_schematic_workflow.py`:
+
 - Creates project with schematic
 - Loads schematic
 - Adds R, C, LED components

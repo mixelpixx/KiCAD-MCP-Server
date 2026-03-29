@@ -209,6 +209,7 @@ git commit -m "feat: Add your feature description"
 ```
 
 **Commit Message Convention:**
+
 - `feat:` - New feature
 - `fix:` - Bug fix
 - `docs:` - Documentation changes
@@ -302,6 +303,7 @@ pylint python/
 ```
 
 **Python Style Guidelines:**
+
 - Use type hints for all function signatures
 - Use pathlib.Path for file paths (not os.path)
 - Use descriptive variable names
@@ -309,6 +311,7 @@ pylint python/
 - Follow PEP 8
 
 **Example:**
+
 ```python
 from pathlib import Path
 from typing import List, Optional
@@ -345,6 +348,7 @@ npx eslint src/
 ```
 
 **TypeScript Style Guidelines:**
+
 - Use interfaces for data structures
 - Use async/await for asynchronous code
 - Use descriptive variable names

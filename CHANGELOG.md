@@ -71,6 +71,7 @@ enable developer features:
 ```
 
 **What it does:**
+
 - `export_gerber` automatically copies the current MCP session log into the project's
   `logs/` subdirectory as `mcp_log_<timestamp>.txt`.
 - `snapshot_project` copies the MCP session log into `logs/` at every checkpoint as
@@ -142,9 +143,10 @@ automatically retains a traceable record of which tools were called and in what 
   The comments (`;; PASSIVES`, `;; SEMICONDUCTORS`, `;; INTEGRATED CIRCUITS`, `;; CONNECTORS`,
   `;; POWER/REGULATORS`, `;; MISC`, `;; TEMPLATE INSTANCES (...)`) caused KiCAD 9 to reject
   every schematic created from this template with a hard parse error:
+
   > `Expecting '(' in <file>.kicad_sch, line 8, offset 5`
-  **Action required for existing projects:** delete every line beginning with `;;` from any
-  `.kicad_sch` file created between upstream commit `b98c94b` and this fix.
+  > **Action required for existing projects:** delete every line beginning with `;;` from any
+  > `.kicad_sch` file created between upstream commit `b98c94b` and this fix.
 
 - `add_schematic_component` / `inject_symbol_into_schematic`: symbol definition in
   `lib_symbols` was never refreshed after editing via `create_symbol` / `edit_symbol`.
@@ -214,6 +216,7 @@ automatically retains a traceable record of which tools were called and in what 
 ### New MCP Tools (TypeScript layer – previously Python-only)
 
 **Routing tools:**
+
 - `delete_trace` - Delete traces by UUID, position or net name
 - `query_traces` - Query/filter traces on the board
 - `get_nets_list` - List all nets with net code and class
@@ -223,6 +226,7 @@ automatically retains a traceable record of which tools were called and in what 
 - `refill_zones` - Refill all copper zones ⚠️ SWIG segfault risk, prefer IPC/UI
 
 **Component tools:**
+
 - `get_component_pads` - Get all pad data for a component
 - `get_component_list` - List all components on the board
 - `get_pad_position` - Get absolute position of a specific pad
@@ -246,6 +250,7 @@ automatically retains a traceable record of which tools were called and in what 
 ### New MCP Tools (cont.)
 
 **Datasheet tools:**
+
 - `get_datasheet_url` - Return LCSC datasheet PDF URL and product page URL for a given
   LCSC number (e.g. `C179739` → `https://www.lcsc.com/datasheet/C179739.pdf`).
   No API key required – URL is constructed directly from the LCSC number.
@@ -257,6 +262,7 @@ automatically retains a traceable record of which tools were called and in what 
   Implementation: `python/commands/datasheet_manager.py` (text-based, no `skip` writes)
 
 **Schematic tools:**
+
 - `delete_schematic_component` - Remove a placed symbol from a `.kicad_sch` file by
   reference designator (e.g. `R1`, `U3`).
 
@@ -280,7 +286,7 @@ automatically retains a traceable record of which tools were called and in what 
     direct text manipulation (parenthesis-depth tracking, same approach as PR #40).
     Does not call `component_schematic.py::remove_component()` at all.
   - Error message explicitly guides the user when the wrong tool is used:
-    *"note: this tool removes schematic symbols, use delete_component for PCB footprints"*
+    _"note: this tool removes schematic symbols, use delete_component for PCB footprints"_
 
 ### Additional Bug Fixes
 
@@ -310,6 +316,7 @@ automatically retains a traceable record of which tools were called and in what 
 ### Phase 1: Intelligent Schematic Wiring System - Core Infrastructure
 
 **Major Features:**
+
 - Automatic pin location discovery with rotation support
 - Smart wire routing (direct, orthogonal horizontal/vertical)
 - Net label management (local, global, hierarchical)
@@ -317,24 +324,28 @@ automatically retains a traceable record of which tools were called and in what 
 - Professional right-angle routing
 
 **New Components:**
+
 - `python/commands/wire_manager.py` - S-expression wire creation engine
 - `python/commands/pin_locator.py` - Intelligent pin discovery with rotation
 - Updated `python/commands/connection_schematic.py` - High-level connection API
 - `docs/SCHEMATIC_WIRING_PLAN.md` - Implementation roadmap
 
 **MCP Tools Enhanced:**
+
 - `add_schematic_wire` - Create wires with stroke customization
 - `add_schematic_connection` - Auto-connect pins with routing options (NEW)
 - `add_schematic_net_label` - Add labels with type and orientation control (NEW)
 - `connect_to_net` - Connect pins to named nets (ENHANCED)
 
 **Technical Implementation:**
+
 - Rotation transformation matrix for pin coordinates
 - S-expression injection for guaranteed format compliance
 - Pin definition caching for performance
 - Orthogonal path generation for professional schematics
 
 **Testing:**
+
 - End-to-end integration test: 100% passing
 - MCP handler integration test: 100% passing
 - Pin discovery with rotation: Verified working
@@ -345,6 +356,7 @@ automatically retains a traceable record of which tools were called and in what 
 ### Phase 2: Power Nets & Wire Connectivity - COMPLETE
 
 **Major Features:**
+
 - Power symbol support (VCC, GND, +3V3, +5V, etc.) via dynamic loading
 - Wire graph analysis for net connectivity tracking
 - Geometric wire tracing with tolerance-based point matching
@@ -352,6 +364,7 @@ automatically retains a traceable record of which tools were called and in what 
 - Critical template mapping bug fixes
 
 **Updates:**
+
 - `connect_to_net()` - Migrated to WireManager + PinLocator
 - `get_net_connections()` - Complete rewrite with geometric wire tracing
 - `generate_netlist()` - Now uses wire graph analysis for connectivity
@@ -359,12 +372,14 @@ automatically retains a traceable record of which tools were called and in what 
 - `add_component()` - Fixed template lookup with symbol iteration
 
 **Bug Fixes:**
+
 - CRITICAL: Template mapping after dynamic symbol loading
 - Special character handling in symbol names (+ prefix in +3V3, +5V)
 - Schematic reload synchronization after S-expression injection
 - Multi-format template reference detection
 
 **Wire Graph Analysis Algorithm:**
+
 1. Find all labels matching target net name
 2. Trace wires connected to label positions (point coincidence)
 3. Collect all wire endpoints and polyline segments
@@ -372,6 +387,7 @@ automatically retains a traceable record of which tools were called and in what 
 5. Return accurate component/pin connection pairs
 
 **Technical Implementation:**
+
 - Tolerance-based point matching (0.5mm for grid alignment)
 - Multi-segment wire (polyline) support
 - Rotation-aware pin location matching via PinLocator
@@ -379,6 +395,7 @@ automatically retains a traceable record of which tools were called and in what 
 - Template existence checking via symbol iteration (handles special characters)
 
 **Testing:**
+
 - Power symbols: 4/4 loaded (VCC, GND, +3V3, +5V)
 - Components: 4/4 placed
 - Connections: 8/8 created successfully
@@ -387,11 +404,13 @@ automatically retains a traceable record of which tools were called and in what 
 - Comprehensive integration test: 100% PASSING
 
 **Commits:**
+
 - `c67f400` - Updated connect_to_net to use WireManager
 - `b77f008` - Fixed template mapping bug (critical)
 - `a5a542b` - Implemented wire graph analysis
 
 **Addresses:**
+
 - Issue #26 - Schematic workflow wiring functionality (Phase 2)
 
 ---
@@ -399,6 +418,7 @@ automatically retains a traceable record of which tools were called and in what 
 ### Phase 2: JLCPCB Integration Complete
 
 **Major Features:**
+
 - ✅ Complete JLCPCB parts integration via JLCSearch public API
 - ✅ Access to ~100k JLCPCB parts catalog
 - ✅ Real-time stock and pricing data
@@ -408,11 +428,13 @@ automatically retains a traceable record of which tools were called and in what 
 - ✅ Alternative part suggestions
 
 **New Components:**
+
 - `python/commands/jlcsearch.py` - JLCSearch API client (no auth required)
 - `python/commands/jlcpcb_parts.py` - Enhanced with `import_jlcsearch_parts()`
 - `docs/JLCPCB_INTEGRATION.md` - Comprehensive integration guide
 
 **MCP Tools Available:**
+
 - `download_jlcpcb_database` - Download full parts catalog
 - `search_jlcpcb_parts` - Parametric search with filters
 - `get_jlcpcb_part` - Part details + footprint suggestions
@@ -420,18 +442,21 @@ automatically retains a traceable record of which tools were called and in what 
 - `suggest_jlcpcb_alternatives` - Find similar/cheaper parts
 
 **Technical Improvements:**
+
 - SQLite database with full-text search (FTS5)
 - Package-to-footprint mapping for standard SMD packages
 - Price comparison and cost optimization algorithms
 - HMAC-SHA256 authentication support (for official JLCPCB API)
 
 **Testing:**
+
 - All integration tests passing
 - Database operations validated
 - Live API connectivity confirmed
 - End-to-end MCP tool testing complete
 
 **Documentation:**
+
 - Complete API reference with examples
 - Package mapping tables (0402, 0603, 0805, SOT-23, etc.)
 - Best practices guide
@@ -444,30 +469,36 @@ automatically retains a traceable record of which tools were called and in what 
 ### Phase 1: Schematic Workflow Fix
 
 **Critical Bug Fix:**
+
 - ✅ Fixed completely broken schematic workflow (Issue #26)
 - Created template-based symbol cloning approach
 - All schematic tests now passing
 
 **Root Cause:**
+
 - kicad-skip library limitation: cannot create symbols from scratch, only clone existing ones
 
 **Solution:**
+
 - Template schematic with cloneable R, C, LED symbols
 - Updated `create_project` to create both PCB and schematic
 - Rewrote `add_schematic_component` to use `clone()` API
 - Proper UUID generation and position setting
 
 **Files Modified:**
+
 - `python/commands/project.py` - Now creates schematic files
 - `python/commands/schematic.py` - Uses template approach
 - `python/commands/component_schematic.py` - Complete rewrite
 
 **Files Created:**
+
 - `python/templates/template_with_symbols.kicad_sch`
 - `python/templates/empty.kicad_sch`
 - `docs/SCHEMATIC_WORKFLOW_FIX.md`
 
 **Testing:**
+
 - Created comprehensive test suite
 - All 7 tests passing
 - KiCad CLI validation successful
@@ -479,17 +510,20 @@ automatically retains a traceable record of which tools were called and in what 
 ### Router Pattern & Tool Organization
 
 **Major Architecture Change:**
+
 - Implemented tool router pattern (70% context reduction)
 - 12 direct tools, 47 routed tools in 7 categories
 - Smart tool discovery system
 
 **New Router Tools:**
+
 - `list_tool_categories` - Browse available categories
 - `get_category_tools` - View tools in category
 - `search_tools` - Find tools by keyword
 - `execute_tool` - Run any routed tool
 
 **Benefits:**
+
 - Dramatically reduced AI context usage
 - Maintained full functionality (64 tools)
 - Improved tool discoverability
@@ -502,18 +536,21 @@ automatically retains a traceable record of which tools were called and in what 
 ### IPC Backend Integration
 
 **Experimental Feature:**
+
 - KiCad 9.0 IPC API integration for real-time UI sync
 - Changes appear immediately in KiCad (no manual reload)
 - Hybrid backend: IPC + SWIG fallback
 - 20+ commands with IPC support
 
 **Implementation:**
+
 - Routing operations (interactive push-and-shove)
 - Component placement and modification
 - Zone operations and fills
 - DRC and verification
 
 **Status:**
+
 - Under active development
 - Enable via KiCad: Preferences > Plugins > Enable IPC API Server
 - Automatic fallback to SWIG when IPC unavailable
@@ -525,14 +562,17 @@ automatically retains a traceable record of which tools were called and in what 
 ### Initial JLCPCB Integration (Local Libraries)
 
 **Features:**
+
 - Local JLCPCB symbol library search
 - Integration with KiCad Plugin and Content Manager
 - Search by LCSC part number, manufacturer, description
 
 **Credit:**
+
 - Contributed by [@l3wi](https://github.com/l3wi)
 
 **Components:**
+
 - `python/commands/symbol_library.py`
 - Basic library search functionality
 
@@ -543,6 +583,7 @@ automatically retains a traceable record of which tools were called and in what 
 ### Initial Release
 
 **Core Features:**
+
 - 64 fully-documented MCP tools
 - JSON Schema validation for all tools
 - 8 dynamic resources for project state
@@ -551,6 +592,7 @@ automatically retains a traceable record of which tools were called and in what 
 - Detailed logging
 
 **Tool Categories:**
+
 - Project Management (4 tools)
 - Board Operations (9 tools)
 - Component Management (8 tools)
@@ -562,11 +604,13 @@ automatically retains a traceable record of which tools were called and in what 
 - JLCPCB Integration (5 tools)
 
 **Platform Support:**
+
 - Linux (KiCad 7.x, 8.x, 9.x)
 - Windows (KiCad 9.x)
 - macOS (KiCad 9.x)
 
 **Documentation:**
+
 - Complete README with setup instructions
 - Platform-specific guides
 - Tool reference documentation
@@ -583,9 +627,11 @@ automatically retains a traceable record of which tools were called and in what 
 ## Breaking Changes
 
 ### 2.1.0-alpha
+
 - None (additive changes only)
 
 ### 2.0.0-alpha
+
 - Tool execution now requires router for 47 tools
 - Direct tool access limited to 12 high-frequency tools
 - Schema validation stricter (catches errors earlier)
@@ -593,6 +639,7 @@ automatically retains a traceable record of which tools were called and in what 
 ## Deprecations
 
 ### 2.1.0-alpha
+
 - `docs/JLCPCB_USAGE_GUIDE.md` - Superseded by `docs/JLCPCB_INTEGRATION.md`
 - `docs/JLCPCB_INTEGRATION_PLAN.md` - Implementation complete
 
@@ -601,15 +648,18 @@ automatically retains a traceable record of which tools were called and in what 
 ### Upgrading to 2.1.0-alpha from 2.0.0-alpha
 
 **New Dependencies:**
+
 - No new system dependencies
 - Python packages: `requests` (already in requirements.txt)
 
 **Database Setup:**
+
 1. Run `download_jlcpcb_database` tool (one-time, ~5-10 minutes)
 2. Database created at `data/jlcpcb_parts.db`
 3. Subsequent searches use local database (instant)
 
 **API Changes:**
+
 - All existing tools remain compatible
 - 5 new JLCPCB tools available
 - No breaking changes to existing functionality
@@ -617,11 +667,13 @@ automatically retains a traceable record of which tools were called and in what 
 ### Upgrading to 2.0.0-alpha from 1.0.0
 
 **Router Pattern:**
+
 - Some tools now accessed via `execute_tool` instead of direct calls
 - Use `list_tool_categories` to discover available tools
 - Search with `search_tools` to find specific functionality
 
 **IPC Backend (Optional):**
+
 - Enable in KiCad: Preferences > Plugins > Enable IPC API Server
 - Set `KICAD_BACKEND=ipc` environment variable
 - Falls back to SWIG if unavailable

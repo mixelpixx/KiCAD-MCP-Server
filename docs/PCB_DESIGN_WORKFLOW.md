@@ -25,6 +25,7 @@ Create a new KiCAD project named "LEDBoard" in ~/Projects/
 ```
 
 This uses `create_project` to generate:
+
 - `.kicad_pro` -- project file
 - `.kicad_pcb` -- PCB layout file
 - `.kicad_sch` -- schematic file (with template symbols pre-loaded)
@@ -119,6 +120,7 @@ Align all resistors horizontally.
 ### Route Traces
 
 **Preferred approach -- pad-to-pad routing:**
+
 ```
 Route R1 pad 2 to LED1 pad 1 with 0.3mm trace width.
 ```
@@ -126,6 +128,7 @@ Route R1 pad 2 to LED1 pad 1 with 0.3mm trace width.
 **Tool:** `route_pad_to_pad` -- auto-detects pad positions, nets, and inserts vias when pads are on different layers
 
 **Manual approach:**
+
 ```
 Route a trace from x=15, y=25 to x=25, y=25 on the front copper layer.
 ```
@@ -135,11 +138,13 @@ Route a trace from x=15, y=25 to x=25, y=25 on the front copper layer.
 ### Advanced Routing
 
 **Differential pairs:**
+
 ```
 Route a differential pair for USB_P and USB_N with 0.2mm width and 0.15mm gap.
 ```
 
 **Copper zones:**
+
 ```
 Add a GND copper pour on the bottom layer covering the entire board.
 ```
@@ -149,6 +154,7 @@ Add a GND copper pour on the bottom layer covering the entire board.
 ### Autorouting
 
 For boards with many connections:
+
 ```
 Check if Freerouting is available.
 Autoroute the board using Freerouting.
@@ -246,6 +252,7 @@ Suggest alternatives to part C25804.
 ```
 
 After selecting parts, enrich datasheets:
+
 ```
 Enrich datasheets for all components in the schematic.
 ```

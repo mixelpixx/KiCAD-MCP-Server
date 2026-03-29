@@ -19,10 +19,12 @@ This plan outlines the implementation of complete schematic wiring functionality
 ### What Exists ✅
 
 **Files:**
+
 - `python/commands/connection_schematic.py` - ConnectionManager class with wire/label methods
 - MCP handlers in `kicad_interface.py` for 6 connection-related tools
 
 **MCP Tools (Registered):**
+
 1. `add_schematic_wire` - Add wire between two points
 2. `add_schematic_connection` - Connect two component pins
 3. `add_schematic_net_label` - Add net label
@@ -31,6 +33,7 @@ This plan outlines the implementation of complete schematic wiring functionality
 6. `generate_netlist` - Generate netlist from schematic
 
 **ConnectionManager Methods:**
+
 - `add_wire(schematic, start_point, end_point)` - Add wire between coordinates
 - `add_connection(schematic, source_ref, source_pin, target_ref, target_pin)` - Connect pins
 - `add_net_label(schematic, net_name, position)` - Add label
@@ -42,28 +45,33 @@ This plan outlines the implementation of complete schematic wiring functionality
 ### What's Broken/Missing ❌
 
 **Problem 1: kicad-skip API Uncertainty**
+
 - Code assumes `schematic.wire.append()` exists
 - Code assumes `schematic.label.append()` exists
 - Code assumes pins have `.name` and `.location` attributes
 - **Need to verify what kicad-skip actually supports**
 
 **Problem 2: Pin Location Calculation**
+
 - Current implementation tries to calculate absolute pin positions
 - May not account for symbol rotation
 - May not work with multi-unit symbols
 - Pin numbering vs pin naming confusion
 
 **Problem 3: No Visual Feedback**
+
 - No way to verify wires were created correctly
 - No validation of wire endpoints
 - No checks for overlapping wires or junctions
 
 **Problem 4: Limited Testing**
+
 - No integration tests for wiring functionality
 - No validation with real KiCad schematics
 - User reported `add_schematic_wire` fails
 
 **Problem 5: Missing Features**
+
 - No junction (wire intersection) support
 - No bus support (multi-bit signals)
 - No no-connect flags
@@ -77,11 +85,13 @@ This plan outlines the implementation of complete schematic wiring functionality
 ### Challenge 1: kicad-skip Wire API
 
 **Issue:** The kicad-skip library documentation is sparse. We need to determine:
+
 - Does `schematic.wire` exist?
 - What's the correct API to add wires?
 - How are wires stored in .kicad_sch files?
 
 **S-Expression Format (KiCad 8/9):**
+
 ```lisp
 (wire (pts (xy 100 100) (xy 200 100))
   (stroke (width 0) (type default))
@@ -90,6 +100,7 @@ This plan outlines the implementation of complete schematic wiring functionality
 ```
 
 **Approach:**
+
 1. Examine kicad-skip source code
 2. Test wire creation manually with kicad-skip
 3. Fall back to S-expression manipulation if necessary (similar to dynamic symbol loading)
@@ -102,12 +113,14 @@ This plan outlines the implementation of complete schematic wiring functionality
 Pins are defined within symbol definitions in lib_symbols, with coordinates relative to symbol origin. When symbol is placed, pins move with it.
 
 **Required Information:**
+
 - Symbol position (x, y)
 - Symbol rotation angle
 - Pin offset from symbol origin
 - Pin number/name mapping
 
 **Solution:**
+
 1. Parse symbol definition to find pin definitions
 2. Apply transformation matrix (position + rotation) to pin coordinates
 3. Return absolute pin position in schematic space
@@ -117,6 +130,7 @@ Pins are defined within symbol definitions in lib_symbols, with coordinates rela
 **Issue:** Users don't want to manually specify every wire segment.
 
 **Desired Behavior:**
+
 ```
 User: "Connect R1 pin 1 to C1 pin 1"
 System:
@@ -128,6 +142,7 @@ System:
 ```
 
 **Auto-Routing Options:**
+
 1. **Direct** - Single wire segment (diagonal if needed)
 2. **Orthogonal** - Only horizontal/vertical segments (2 segments)
 3. **Manhattan** - Complex path avoiding components (3+ segments)
@@ -139,11 +154,13 @@ System:
 **Issue:** Labels need to attach to wires, not float in space.
 
 **KiCad Behavior:**
+
 - Labels must touch a wire or pin
 - Labels create electrical connections at their attachment point
 - Multiple labels with same name = connected net
 
 **Implementation:**
+
 - When adding label, find nearest wire endpoint
 - Attach label to that coordinate
 - Or create short wire stub for label attachment
@@ -190,6 +207,7 @@ System:
    - Verify electrical connectivity
 
 **Deliverables:**
+
 - Working `add_schematic_wire` tool
 - Working `add_schematic_connection` tool
 - Pin location discovery working
@@ -197,6 +215,7 @@ System:
 - Documentation updated
 
 **Success Criteria:**
+
 - User can connect two resistor pins with MCP command
 - Wire appears in KiCad schematic viewer
 - Netlist shows electrical connection
@@ -240,6 +259,7 @@ System:
    - Generate and validate netlist
 
 **Deliverables:**
+
 - Working `add_schematic_net_label` tool
 - Working `connect_to_net` tool
 - Working `get_net_connections` tool
@@ -247,6 +267,7 @@ System:
 - Netlist generation working
 
 **Success Criteria:**
+
 - User can label nets VCC, GND
 - Multiple components connect to same net
 - Netlist correctly shows net membership
@@ -284,12 +305,14 @@ System:
    - Sheet connections
 
 **Deliverables:**
+
 - Junction creation
 - No-connect support
 - Smart orthogonal routing
 - Bus and hierarchical label support
 
 **Success Criteria:**
+
 - Wires route cleanly around components
 - Junctions appear at wire intersections
 - Unused pins marked with no-connect
@@ -332,12 +355,14 @@ System:
    - Add to CHANGELOG
 
 **Deliverables:**
+
 - ERC validation
 - Comprehensive test suite
 - Error handling
 - Complete documentation
 
 **Success Criteria:**
+
 - 95%+ test pass rate
 - Users can create functional circuits
 - Clear error messages on failures
@@ -365,11 +390,13 @@ label = schematic.label.new(
 ```
 
 **Pros:**
+
 - Clean, maintainable code
 - Follows library patterns
 - Less likely to break
 
 **Cons:**
+
 - Depends on kicad-skip having these features
 - May be limited in functionality
 
@@ -407,11 +434,13 @@ with open(schematic_path, 'w') as f:
 ```
 
 **Pros:**
+
 - Complete control
 - Can implement any feature
 - Works around library limitations
 
 **Cons:**
+
 - More complex
 - Requires deep KiCad format knowledge
 - More maintenance
@@ -447,6 +476,7 @@ Symbols are stored in `lib_symbols` section:
 ### Step 2: Extract Pin Information
 
 For each pin:
+
 - Number (e.g., "1", "2")
 - Name (e.g., "GND", "VCC", "~" for unnamed)
 - Position relative to symbol origin: `(at x y angle)`
@@ -462,6 +492,7 @@ From symbol instance in schematic:
 ```
 
 Extract:
+
 - Position: `(at 100 100 0)` = x=100, y=100, rotation=0°
 - Reference: "R1"
 
@@ -518,6 +549,7 @@ R1 pin 2        C1 pin 1
 ```
 
 **Algorithm:**
+
 1. Calculate midpoint
 2. Route horizontal to midpoint
 3. Route vertical to target
@@ -540,6 +572,7 @@ Complex multi-segment paths avoiding components.
 ### Unit Tests
 
 Test individual functions:
+
 - `test_add_wire()` - Wire creation
 - `test_get_pin_location()` - Pin discovery
 - `test_add_net_label()` - Label creation
@@ -548,6 +581,7 @@ Test individual functions:
 ### Integration Tests
 
 Test complete workflows:
+
 - `test_connect_two_resistors()` - Wire R1 to R2
 - `test_connect_to_vcc_net()` - Multiple components to VCC
 - `test_generate_netlist()` - Netlist accuracy
@@ -565,6 +599,7 @@ Test complete workflows:
 ## Success Metrics
 
 ### Phase 1 Success:
+
 - [ ] `add_schematic_wire` works (coordinates)
 - [ ] `add_schematic_connection` works (pin to pin)
 - [ ] Wires appear in KiCad schematic
@@ -572,6 +607,7 @@ Test complete workflows:
 - [ ] 3+ integration tests passing
 
 ### Phase 2 Success:
+
 - [ ] Net labels work (VCC, GND, etc.)
 - [ ] Multiple components on same net
 - [ ] `get_net_connections` returns correct results
@@ -579,12 +615,14 @@ Test complete workflows:
 - [ ] 5+ integration tests passing
 
 ### Phase 3 Success:
+
 - [ ] Junctions at wire intersections
 - [ ] Orthogonal routing preferred
 - [ ] No-connect flags on unused pins
 - [ ] 10+ integration tests passing
 
 ### Phase 4 Success:
+
 - [ ] ERC detects errors
 - [ ] 95%+ test coverage
 - [ ] Complete documentation
@@ -594,24 +632,26 @@ Test complete workflows:
 
 ## Risk Assessment
 
-| Risk | Probability | Impact | Mitigation |
-|------|------------|--------|------------|
-| kicad-skip lacks wire API | High | High | Use S-expression fallback |
-| Pin discovery complex | Medium | Medium | Test with multiple symbol types |
-| Rotation math errors | Medium | High | Extensive testing, validation |
-| Performance issues | Low | Medium | Optimize S-expression parsing |
-| KiCad format changes | Low | High | Version detection, compatibility |
+| Risk                      | Probability | Impact | Mitigation                       |
+| ------------------------- | ----------- | ------ | -------------------------------- |
+| kicad-skip lacks wire API | High        | High   | Use S-expression fallback        |
+| Pin discovery complex     | Medium      | Medium | Test with multiple symbol types  |
+| Rotation math errors      | Medium      | High   | Extensive testing, validation    |
+| Performance issues        | Low         | Medium | Optimize S-expression parsing    |
+| KiCad format changes      | Low         | High   | Version detection, compatibility |
 
 ---
 
 ## Dependencies
 
 **Required:**
+
 - kicad-skip >= 0.1.0 (or compatible)
 - sexpdata (already dependency for dynamic loading)
 - Python 3.8+
 
 **Optional:**
+
 - KiCad CLI for validation (`kicad-cli sch export netlist`)
 
 ---
@@ -658,6 +698,7 @@ Test complete workflows:
 **For Issue #26:**
 
 Update users that:
+
 - ✅ Component placement is DONE (with 10,000+ symbols)
 - ⏳ Wire/connection tools are IN PROGRESS
 - 📅 Estimated completion: 2-3 weeks for core functionality

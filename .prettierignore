@@ -1,0 +1,9 @@
+dist/
+node_modules/
+coverage.xml
+htmlcov/
+data/
+*.kicad_*
+python/
+package-lock.json
+.venv/

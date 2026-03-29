@@ -5,10 +5,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-export function registerSchematicTools(
-  server: McpServer,
-  callKicadScript: Function,
-) {
+export function registerSchematicTools(server: McpServer, callKicadScript: Function) {
   // Create schematic tool
   server.tool(
     "create_schematic",
@@ -38,9 +35,7 @@ export function registerSchematicTools(
       schematicPath: z.string().describe("Path to the schematic file"),
       symbol: z
         .string()
-        .describe(
-          "Symbol library:name reference (e.g., Device:R, EDA-MCP:ESP32-C3)",
-        ),
+        .describe("Symbol library:name reference (e.g., Device:R, EDA-MCP:ESP32-C3)"),
       reference: z.string().describe("Component reference (e.g., R1, U1)"),
       value: z.string().optional().describe("Component value"),
       footprint: z
@@ -82,10 +77,7 @@ export function registerSchematicTools(
         },
       };
 
-      const result = await callKicadScript(
-        "add_schematic_component",
-        transformed,
-      );
+      const result = await callKicadScript("add_schematic_component", transformed);
       if (result.success) {
         return {
           content: [
@@ -122,9 +114,7 @@ To remove a footprint from a PCB, use delete_component instead.`,
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       reference: z
         .string()
-        .describe(
-          "Reference designator of the component to remove (e.g. R1, U3)",
-        ),
+        .describe("Reference designator of the component to remove (e.g. R1, U3)"),
     },
     async (args: { schematicPath: string; reference: string }) => {
       const result = await callKicadScript("delete_schematic_component", args);
@@ -162,14 +152,27 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       reference: z.string().describe("Current reference designator of the component (e.g. R1, U3)"),
-      footprint: z.string().optional().describe("New KiCAD footprint string (e.g. Resistor_SMD:R_0603_1608Metric)"),
+      footprint: z
+        .string()
+        .optional()
+        .describe("New KiCAD footprint string (e.g. Resistor_SMD:R_0603_1608Metric)"),
       value: z.string().optional().describe("New value string (e.g. 10k, 100nF)"),
-      newReference: z.string().optional().describe("Rename the reference designator (e.g. R1 → R10)"),
-      fieldPositions: z.record(z.object({
-        x: z.number(),
-        y: z.number(),
-        angle: z.number().optional().default(0),
-      })).optional().describe("Reposition field labels: map of field name to {x, y, angle} (e.g. {\"Reference\": {\"x\": 12.5, \"y\": 17.0}})"),
+      newReference: z
+        .string()
+        .optional()
+        .describe("Rename the reference designator (e.g. R1 → R10)"),
+      fieldPositions: z
+        .record(
+          z.object({
+            x: z.number(),
+            y: z.number(),
+            angle: z.number().optional().default(0),
+          }),
+        )
+        .optional()
+        .describe(
+          'Reposition field labels: map of field name to {x, y, angle} (e.g. {"Reference": {"x": 12.5, "y": 17.0}})',
+        ),
     },
     async (args: {
       schematicPath: string;
@@ -220,20 +223,24 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           : "unknown";
         const fieldLines = Object.entries(result.fields ?? {}).map(
           ([name, f]: [string, any]) =>
-            `  ${name}: "${f.value}" @ (${f.x}, ${f.y}, angle=${f.angle}°)`
+            `  ${name}: "${f.value}" @ (${f.x}, ${f.y}, angle=${f.angle}°)`,
         );
         return {
-          content: [{
-            type: "text",
-            text: `Component ${result.reference} at ${pos}\nFields:\n${fieldLines.join("\n")}`,
-          }],
+          content: [
+            {
+              type: "text",
+              text: `Component ${result.reference} at ${pos}\nFields:\n${fieldLines.join("\n")}`,
+            },
+          ],
         };
       }
       return {
-        content: [{
-          type: "text",
-          text: `Failed to get component: ${result.message || "Unknown error"}`,
-        }],
+        content: [
+          {
+            type: "text",
+            text: `Failed to get component: ${result.message || "Unknown error"}`,
+          },
+        ],
       };
     },
   );
@@ -251,13 +258,8 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       snapToPins: z
         .boolean()
         .optional()
-        .describe(
-          "Snap the first and last waypoints to the nearest pin (default: true)",
-        ),
-      snapTolerance: z
-        .number()
-        .optional()
-        .describe("Maximum snap distance in mm (default: 1.0)"),
+        .describe("Snap the first and last waypoints to the nearest pin (default: true)"),
+      snapTolerance: z.number().optional().describe("Maximum snap distance in mm (default: 1.0)"),
     },
     async (args: {
       schematicPath: string;
@@ -294,10 +296,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     "Place a junction dot at a wire intersection in the schematic. Required at T-branch and X-cross points so KiCAD recognises the electrical connection.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      position: z
-        .array(z.number())
-        .length(2)
-        .describe("Junction position [x, y] in mm"),
+      position: z.array(z.number()).length(2).describe("Junction position [x, y] in mm"),
     },
     async (args: { schematicPath: string; position: number[] }) => {
       const result = await callKicadScript("add_schematic_junction", args);
@@ -329,19 +328,10 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     "Add a net label to the schematic",
     {
       schematicPath: z.string().describe("Path to the schematic file"),
-      netName: z
-        .string()
-        .describe("Name of the net (e.g., VCC, GND, SIGNAL_1)"),
-      position: z
-        .array(z.number())
-        .length(2)
-        .describe("Position [x, y] for the label"),
+      netName: z.string().describe("Name of the net (e.g., VCC, GND, SIGNAL_1)"),
+      position: z.array(z.number()).length(2).describe("Position [x, y] for the label"),
     },
-    async (args: {
-      schematicPath: string;
-      netName: string;
-      position: number[];
-    }) => {
+    async (args: { schematicPath: string; netName: string; position: number[] }) => {
       const result = await callKicadScript("add_schematic_net_label", args);
       if (result.success) {
         return {
@@ -451,9 +441,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     async (args: { schematicPath: string; x: number; y: number }) => {
       const result = await callKicadScript("get_wire_connections", args);
       if (result.success && result.pins) {
-        const pinList = result.pins
-          .map((p: any) => `  - ${p.component}/${p.pin}`)
-          .join("\n");
+        const pinList = result.pins.map((p: any) => `  - ${p.component}/${p.pin}`).join("\n");
         const wireList = (result.wires ?? [])
           .map((w: any) => `  - (${w.start.x},${w.start.y}) → (${w.end.x},${w.end.y})`)
           .join("\n");
@@ -484,9 +472,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     "Returns the exact x/y coordinates of every pin on a schematic component. Use this before add_schematic_net_label to place labels correctly on pin endpoints.",
     {
       schematicPath: z.string().describe("Path to the schematic file"),
-      reference: z
-        .string()
-        .describe("Component reference designator (e.g. U1, R1, J2)"),
+      reference: z.string().describe("Component reference designator (e.g. U1, R1, J2)"),
     },
     async (args: { schematicPath: string; reference: string }) => {
       const result = await callKicadScript("get_schematic_pin_locations", args);
@@ -541,23 +527,16 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       pinOffset?: number;
     }) => {
       const result = await callKicadScript("connect_passthrough", args);
-      if (
-        result.success !== false ||
-        (result.connected && result.connected.length > 0)
-      ) {
+      if (result.success !== false || (result.connected && result.connected.length > 0)) {
         const lines: string[] = [];
         if (result.connected?.length)
           lines.push(
             `Connected (${result.connected.length}): ${result.connected.slice(0, 5).join(", ")}${result.connected.length > 5 ? " ..." : ""}`,
           );
         if (result.failed?.length)
-          lines.push(
-            `Failed (${result.failed.length}): ${result.failed.join(", ")}`,
-          );
+          lines.push(`Failed (${result.failed.length}): ${result.failed.join(", ")}`);
         return {
-          content: [
-            { type: "text", text: result.message + "\n" + lines.join("\n") },
-          ],
+          content: [{ type: "text", text: result.message + "\n" + lines.join("\n") }],
         };
       } else {
         return {
@@ -581,7 +560,10 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       filter: z
         .object({
           libId: z.string().optional().describe("Filter by library ID (e.g., 'Device:R')"),
-          referencePrefix: z.string().optional().describe("Filter by reference prefix (e.g., 'R', 'C', 'U')"),
+          referencePrefix: z
+            .string()
+            .optional()
+            .describe("Filter by reference prefix (e.g., 'R', 'C', 'U')"),
         })
         .optional()
         .describe("Optional filters"),
@@ -640,9 +622,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           };
         }
         const lines = nets.map((n: any) => {
-          const conns = (n.connections || [])
-            .map((c: any) => `${c.component}/${c.pin}`)
-            .join(", ");
+          const conns = (n.connections || []).map((c: any) => `${c.component}/${c.pin}`).join(", ");
           return `  ${n.name}: ${conns || "(no connections)"}`;
         });
         return {
@@ -680,8 +660,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           };
         }
         const lines = wires.map(
-          (w: any) =>
-            `  (${w.start.x}, ${w.start.y}) → (${w.end.x}, ${w.end.y})`,
+          (w: any) => `  (${w.start.x}, ${w.start.y}) → (${w.end.x}, ${w.end.y})`,
         );
         return {
           content: [
@@ -718,8 +697,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           };
         }
         const lines = labels.map(
-          (l: any) =>
-            `  [${l.type}] ${l.name} at (${l.position.x}, ${l.position.y})`,
+          (l: any) => `  [${l.type}] ${l.name} at (${l.position.x}, ${l.position.y})`,
         );
         return {
           content: [
@@ -789,10 +767,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       reference: z.string().describe("Reference designator (e.g., R1, U1)"),
       angle: z.number().describe("Rotation angle in degrees (0, 90, 180, 270)"),
-      mirror: z
-        .enum(["x", "y"])
-        .optional()
-        .describe("Optional mirror axis"),
+      mirror: z.enum(["x", "y"]).optional().describe("Optional mirror axis"),
     },
     async (args: {
       schematicPath: string;
@@ -836,14 +811,10 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         const annotated = result.annotated || [];
         if (annotated.length === 0) {
           return {
-            content: [
-              { type: "text", text: "All components are already annotated." },
-            ],
+            content: [{ type: "text", text: "All components are already annotated." }],
           };
         }
-        const lines = annotated.map(
-          (a: any) => `  ${a.oldReference} → ${a.newReference}`,
-        );
+        const lines = annotated.map((a: any) => `  ${a.oldReference} → ${a.newReference}`);
         return {
           content: [
             {
@@ -871,12 +842,8 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     "Remove a wire from the schematic by start and end coordinates.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      start: z
-        .object({ x: z.number(), y: z.number() })
-        .describe("Wire start position"),
-      end: z
-        .object({ x: z.number(), y: z.number() })
-        .describe("Wire end position"),
+      start: z.object({ x: z.number(), y: z.number() }).describe("Wire start position"),
+      end: z.object({ x: z.number(), y: z.number() }).describe("Wire end position"),
     },
     async (args: {
       schematicPath: string;
@@ -953,16 +920,9 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       outputPath: z.string().describe("Output SVG file path"),
-      blackAndWhite: z
-        .boolean()
-        .optional()
-        .describe("Export in black and white"),
+      blackAndWhite: z.boolean().optional().describe("Export in black and white"),
     },
-    async (args: {
-      schematicPath: string;
-      outputPath: string;
-      blackAndWhite?: boolean;
-    }) => {
+    async (args: { schematicPath: string; outputPath: string; blackAndWhite?: boolean }) => {
       const result = await callKicadScript("export_schematic_svg", args);
       if (result.success) {
         return {
@@ -993,16 +953,9 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       outputPath: z.string().describe("Output PDF file path"),
-      blackAndWhite: z
-        .boolean()
-        .optional()
-        .describe("Export in black and white"),
+      blackAndWhite: z.boolean().optional().describe("Export in black and white"),
     },
-    async (args: {
-      schematicPath: string;
-      outputPath: string;
-      blackAndWhite?: boolean;
-    }) => {
+    async (args: { schematicPath: string; outputPath: string; blackAndWhite?: boolean }) => {
       const result = await callKicadScript("export_schematic_pdf", args);
       if (result.success) {
         return {
@@ -1032,10 +985,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     "Return a rasterized image of the schematic (PNG by default, or SVG). Uses kicad-cli to export SVG, then converts to PNG via cairosvg. Use this for visual feedback after placing or wiring components.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      format: z
-        .enum(["png", "svg"])
-        .optional()
-        .describe("Output format (default: png)"),
+      format: z.enum(["png", "svg"]).optional().describe("Output format (default: png)"),
       width: z.number().optional().describe("Image width in pixels (default: 1200)"),
       height: z.number().optional().describe("Image height in pixels (default: 900)"),
     },
@@ -1086,17 +1036,13 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     "run_erc",
     "Runs the KiCAD Electrical Rules Check (ERC) on a schematic and returns all violations. Use after wiring to verify the schematic before generating a netlist.",
     {
-      schematicPath: z
-        .string()
-        .describe("Path to the .kicad_sch schematic file"),
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
     },
     async (args: { schematicPath: string }) => {
       const result = await callKicadScript("run_erc", args);
       if (result.success) {
         const violations: any[] = result.violations || [];
-        const lines: string[] = [
-          `ERC result: ${violations.length} violation(s)`,
-        ];
+        const lines: string[] = [`ERC result: ${violations.length} violation(s)`];
         if (result.summary?.by_severity) {
           const s = result.summary.by_severity;
           lines.push(
@@ -1183,12 +1129,8 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     "sync_schematic_to_board",
     "Import the schematic netlist into the PCB board — equivalent to pressing F8 in KiCAD (Tools → Update PCB from Schematic). MUST be called after the schematic is complete and before placing or routing components on the PCB. Without this step, the board has no footprints and no net assignments — place_component and route_pad_to_pad will produce an empty, unroutable board.",
     {
-      schematicPath: z
-        .string()
-        .describe("Absolute path to the .kicad_sch schematic file"),
-      boardPath: z
-        .string()
-        .describe("Absolute path to the .kicad_pcb board file"),
+      schematicPath: z.string().describe("Absolute path to the .kicad_sch schematic file"),
+      boardPath: z.string().describe("Absolute path to the .kicad_pcb board file"),
     },
     async (args: { schematicPath: string; boardPath: string }) => {
       const result = await callKicadScript("sync_schematic_to_board", args);
@@ -1218,8 +1160,13 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
     async (args: {
       schematicPath: string;
-      x1: number; y1: number; x2: number; y2: number;
-      format?: string; width?: number; height?: number;
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+      format?: string;
+      width?: number;
+      height?: number;
     }) => {
       const result = await callKicadScript("get_schematic_view_region", args);
       if (result.success && result.imageData) {
@@ -1227,11 +1174,13 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           return { content: [{ type: "text", text: result.imageData }] };
         }
         return {
-          content: [{
-            type: "image",
-            data: result.imageData,
-            mimeType: "image/png",
-          }],
+          content: [
+            {
+              type: "image",
+              data: result.imageData,
+              mimeType: "image/png",
+            },
+          ],
         };
       }
       return {
@@ -1240,14 +1189,18 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
-
   // Find overlapping elements
   server.tool(
     "find_overlapping_elements",
     "Detect spatially overlapping symbols, wires, and labels in the schematic. Finds duplicate power symbols at the same position, collinear overlapping wires, and labels stacked on top of each other.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
-      tolerance: z.number().optional().describe("Distance threshold in mm for label proximity and wire collinearity checks. Symbol overlap uses bounding-box intersection. (default: 0.5)"),
+      tolerance: z
+        .number()
+        .optional()
+        .describe(
+          "Distance threshold in mm for label proximity and wire collinearity checks. Symbol overlap uses bounding-box intersection. (default: 0.5)",
+        ),
     },
     async (args: { schematicPath: string; tolerance?: number }) => {
       const result = await callKicadScript("find_overlapping_elements", args);
@@ -1259,7 +1212,9 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         if (syms.length) {
           lines.push(`\nOverlapping symbols (${syms.length}):`);
           syms.slice(0, 20).forEach((o: any) => {
-            lines.push(`  ${o.element1.reference} ↔ ${o.element2.reference} (${o.distance}mm) [${o.type}]`);
+            lines.push(
+              `  ${o.element1.reference} ↔ ${o.element2.reference} (${o.distance}mm) [${o.type}]`,
+            );
           });
         }
         if (lbls.length) {
@@ -1271,7 +1226,9 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         if (wires.length) {
           lines.push(`\nOverlapping wires (${wires.length}):`);
           wires.slice(0, 20).forEach((o: any) => {
-            lines.push(`  wire @ (${o.wire1.start.x},${o.wire1.start.y})→(${o.wire1.end.x},${o.wire1.end.y}) overlaps with another`);
+            lines.push(
+              `  wire @ (${o.wire1.start.x},${o.wire1.start.y})→(${o.wire1.end.x},${o.wire1.end.y}) overlaps with another`,
+            );
           });
         }
         return { content: [{ type: "text", text: lines.join("\n") }] };
@@ -1293,20 +1250,21 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       x2: z.number().describe("Right X coordinate of the region in mm"),
       y2: z.number().describe("Bottom Y coordinate of the region in mm"),
     },
-    async (args: {
-      schematicPath: string;
-      x1: number; y1: number; x2: number; y2: number;
-    }) => {
+    async (args: { schematicPath: string; x1: number; y1: number; x2: number; y2: number }) => {
       const result = await callKicadScript("get_elements_in_region", args);
       if (result.success) {
         const c = result.counts;
-        const lines = [`Region (${args.x1},${args.y1})→(${args.x2},${args.y2}): ${c.symbols} symbols, ${c.wires} wires, ${c.labels} labels`];
+        const lines = [
+          `Region (${args.x1},${args.y1})→(${args.x2},${args.y2}): ${c.symbols} symbols, ${c.wires} wires, ${c.labels} labels`,
+        ];
         const syms: any[] = result.symbols || [];
         if (syms.length) {
           lines.push("\nSymbols:");
           syms.forEach((s: any) => {
             const pinCount = s.pins ? Object.keys(s.pins).length : 0;
-            lines.push(`  ${s.reference} (${s.libId}) @ (${s.position.x}, ${s.position.y}) [${pinCount} pins]`);
+            lines.push(
+              `  ${s.reference} (${s.libId}) @ (${s.position.x}, ${s.position.y}) [${pinCount} pins]`,
+            );
           });
         }
         const wires: any[] = result.wires || [];
@@ -1346,7 +1304,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         const lines = [`Found ${collisions.length} wire(s) crossing symbols:`];
         collisions.slice(0, 30).forEach((c: any, i: number) => {
           lines.push(
-            `  ${i + 1}. Wire (${c.wire.start.x},${c.wire.start.y})→(${c.wire.end.x},${c.wire.end.y}) crosses ${c.component.reference} (${c.component.libId})`
+            `  ${i + 1}. Wire (${c.wire.start.x},${c.wire.start.y})→(${c.wire.end.x},${c.wire.end.y}) crosses ${c.component.reference} (${c.component.libId})`,
           );
         });
         if (collisions.length > 30) lines.push(`  ... and ${collisions.length - 30} more`);

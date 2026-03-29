@@ -15,45 +15,67 @@ const PinSchema = z.object({
   number: z.union([z.string(), z.number()]).describe("Pin number, e.g. '1', '2', 'A1'"),
   type: z
     .enum([
-      "input", "output", "bidirectional", "tri_state", "passive",
-      "free", "unspecified", "power_in", "power_out",
-      "open_collector", "open_emitter", "no_connect",
+      "input",
+      "output",
+      "bidirectional",
+      "tri_state",
+      "passive",
+      "free",
+      "unspecified",
+      "power_in",
+      "power_out",
+      "open_collector",
+      "open_emitter",
+      "no_connect",
     ])
     .describe("Electrical pin type"),
-  at: z.object({
-    x: z.number().describe("X position in mm"),
-    y: z.number().describe("Y position in mm"),
-    angle: z.number().describe(
-      "Direction the pin wire extends FROM the symbol body: 0=right, 90=up, 180=left, 270=down"
-    ),
-  }).describe("Pin endpoint position (where the wire connects)"),
+  at: z
+    .object({
+      x: z.number().describe("X position in mm"),
+      y: z.number().describe("Y position in mm"),
+      angle: z
+        .number()
+        .describe(
+          "Direction the pin wire extends FROM the symbol body: 0=right, 90=up, 180=left, 270=down",
+        ),
+    })
+    .describe("Pin endpoint position (where the wire connects)"),
   length: z.number().optional().describe("Pin length in mm (default 2.54)"),
   shape: z
-    .enum(["line", "inverted", "clock", "inverted_clock", "input_low",
-           "clock_low", "output_low", "falling_edge_clock", "non_logic"])
+    .enum([
+      "line",
+      "inverted",
+      "clock",
+      "inverted_clock",
+      "input_low",
+      "clock_low",
+      "output_low",
+      "falling_edge_clock",
+      "non_logic",
+    ])
     .optional()
     .describe("Pin graphic shape (default: line)"),
 });
 
 const RectSchema = z.object({
-  x1: z.number(), y1: z.number(),
-  x2: z.number(), y2: z.number(),
+  x1: z.number(),
+  y1: z.number(),
+  x2: z.number(),
+  y2: z.number(),
   width: z.number().optional().describe("Stroke width in mm (default 0.254)"),
-  fill: z.enum(["none", "outline", "background"]).optional()
+  fill: z
+    .enum(["none", "outline", "background"])
+    .optional()
     .describe("Fill type (default: background)"),
 });
 
 const PolylineSchema = z.object({
-  points: z.array(z.object({ x: z.number(), y: z.number() }))
-    .describe("List of XY points in mm"),
+  points: z.array(z.object({ x: z.number(), y: z.number() })).describe("List of XY points in mm"),
   width: z.number().optional().describe("Stroke width in mm (default 0.254)"),
   fill: z.enum(["none", "outline", "background"]).optional(),
 });
 
-export function registerSymbolCreatorTools(
-  server: McpServer,
-  callKicadScript: Function,
-) {
+export function registerSymbolCreatorTools(server: McpServer, callKicadScript: Function) {
   // ── create_symbol ────────────────────────────────────────────────────── //
   server.tool(
     "create_symbol",
@@ -68,14 +90,14 @@ export function registerSymbolCreatorTools(
       "- Pins on bottom: at.y = body_bottom - length, angle=90 (wire goes up)\n" +
       "- Standard pin length: 2.54 mm, standard grid: 2.54 mm",
     {
-      libraryPath: z
-        .string()
-        .describe("Path to the .kicad_sym file (created if missing)"),
+      libraryPath: z.string().describe("Path to the .kicad_sym file (created if missing)"),
       name: z.string().describe("Symbol name, e.g. 'TMC2209', 'MyOpAmp'"),
       referencePrefix: z
         .string()
         .optional()
-        .describe("Schematic reference prefix: 'U' (IC), 'R' (resistor), 'J' (connector), etc. Default: 'U'"),
+        .describe(
+          "Schematic reference prefix: 'U' (IC), 'R' (resistor), 'J' (connector), etc. Default: 'U'",
+        ),
       description: z.string().optional().describe("Human-readable description"),
       keywords: z.string().optional().describe("Space-separated search keywords"),
       datasheet: z.string().optional().describe("Datasheet URL or '~'"),
@@ -161,9 +183,7 @@ export function registerSymbolCreatorTools(
     "Register a .kicad_sym library in KiCAD's sym-lib-table so symbols can be used in schematics. " +
       "Run this after create_symbol when KiCAD shows 'library not found'.",
     {
-      libraryPath: z
-        .string()
-        .describe("Full path to the .kicad_sym file"),
+      libraryPath: z.string().describe("Full path to the .kicad_sym file"),
       libraryName: z
         .string()
         .optional()

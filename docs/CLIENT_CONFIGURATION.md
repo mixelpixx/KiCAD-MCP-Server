@@ -6,11 +6,11 @@ This guide shows how to configure the KiCAD MCP Server with various MCP-compatib
 
 ## Quick Reference
 
-| Client | Config File Location |
-|--------|---------------------|
+| Client             | Config File Location                                                                                                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Claude Desktop** | Linux: `~/.config/Claude/claude_desktop_config.json`<br>macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`<br>Windows: `%APPDATA%\Claude\claude_desktop_config.json` |
-| **Cline (VSCode)** | VSCode Settings → Extensions → Cline → MCP Settings |
-| **Claude Code** | `~/.config/claude-code/mcp_config.json` |
+| **Cline (VSCode)** | VSCode Settings → Extensions → Cline → MCP Settings                                                                                                                                        |
+| **Claude Code**    | `~/.config/claude-code/mcp_config.json`                                                                                                                                                    |
 
 ---
 
@@ -194,11 +194,7 @@ For any MCP-compatible client that supports STDIO transport:
 ```json
 {
   "command": "node",
-  "args": [
-    "/path/to/KiCAD-MCP-Server/dist/index.js",
-    "--config",
-    "/path/to/custom-config.json"
-  ],
+  "args": ["/path/to/KiCAD-MCP-Server/dist/index.js", "--config", "/path/to/custom-config.json"],
   "transport": "stdio"
 }
 ```
@@ -209,19 +205,19 @@ For any MCP-compatible client that supports STDIO transport:
 
 ### Required
 
-| Variable | Description | Example |
-|----------|-------------|---------|
+| Variable     | Description                  | Example                                    |
+| ------------ | ---------------------------- | ------------------------------------------ |
 | `PYTHONPATH` | Path to KiCAD Python modules | `/usr/lib/kicad/lib/python3/dist-packages` |
 
 ### Optional
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `LOG_LEVEL` | Logging verbosity | `info` |
-| `NODE_ENV` | Node environment | `development` |
-| `KICAD_BACKEND` | Force backend (`swig` or `ipc`) | Auto-detect |
-| `KICAD_MCP_DEV` | Enable developer mode (auto-save logs to project) | `0` (disabled) |
-| `FREEROUTING_JAR` | Path to FreeRouting JAR file for autorouting | Not set |
+| Variable          | Description                                       | Default        |
+| ----------------- | ------------------------------------------------- | -------------- |
+| `LOG_LEVEL`       | Logging verbosity                                 | `info`         |
+| `NODE_ENV`        | Node environment                                  | `development`  |
+| `KICAD_BACKEND`   | Force backend (`swig` or `ipc`)                   | Auto-detect    |
+| `KICAD_MCP_DEV`   | Enable developer mode (auto-save logs to project) | `0` (disabled) |
+| `FREEROUTING_JAR` | Path to FreeRouting JAR file for autorouting      | Not set        |
 
 ---
 
@@ -312,6 +308,7 @@ claude-code
 **Error:** `Cannot find module 'pcbnew'`
 
 **Solution:** Verify `PYTHONPATH` is correct:
+
 ```bash
 python3 -c "import sys; sys.path.append('/usr/lib/kicad/lib/python3/dist-packages'); import pcbnew; print(pcbnew.GetBuildVersion())"
 ```
@@ -319,6 +316,7 @@ python3 -c "import sys; sys.path.append('/usr/lib/kicad/lib/python3/dist-package
 **Error:** `ENOENT: no such file or directory`
 
 **Solution:** Check that `dist/index.js` exists:
+
 ```bash
 cd /path/to/KiCAD-MCP-Server
 npm run build
@@ -330,6 +328,7 @@ ls -lh dist/index.js
 **Issue:** Claude Desktop doesn't show KiCAD tools
 
 **Solutions:**
+
 1. Restart Claude Desktop completely (quit, not just close window)
 2. Check config file syntax with `jq`:
    ```bash
@@ -345,6 +344,7 @@ ls -lh dist/index.js
 **Error:** `ModuleNotFoundError: No module named 'kicad_api'`
 
 **Solution:** Server is looking for the wrong Python modules. This is an internal error. Check:
+
 ```bash
 # Verify PYTHONPATH in server config includes both KiCAD and our modules
 "PYTHONPATH": "/usr/lib/kicad/lib/python3/dist-packages:/path/to/KiCAD-MCP-Server/python"
@@ -398,17 +398,14 @@ Then use it:
 ```json
 {
   "command": "node",
-  "args": [
-    "/path/to/dist/index.js",
-    "--config",
-    "/path/to/config/production.json"
-  ]
+  "args": ["/path/to/dist/index.js", "--config", "/path/to/config/production.json"]
 }
 ```
 
 ### Development vs Production
 
 Development (verbose logging):
+
 ```json
 {
   "env": {
@@ -419,6 +416,7 @@ Development (verbose logging):
 ```
 
 Production (minimal logging):
+
 ```json
 {
   "env": {
@@ -473,10 +471,7 @@ Running server in WSL2, client on Windows:
   "mcpServers": {
     "kicad": {
       "command": "wsl",
-      "args": [
-        "node",
-        "/home/user/KiCAD-MCP-Server/dist/index.js"
-      ],
+      "args": ["node", "/home/user/KiCAD-MCP-Server/dist/index.js"],
       "env": {
         "PYTHONPATH": "/usr/lib/kicad/lib/python3/dist-packages"
       }

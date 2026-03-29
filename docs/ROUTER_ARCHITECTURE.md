@@ -71,9 +71,11 @@ These cover the primary workflow (80%+ of use cases):
 ### Routed Categories (8+ categories, 110+ tools)
 
 #### 1. `board` - Board Configuration & Layout (9 tools)
+
 Setup and configuration operations.
 
 **Tools:**
+
 - `add_layer` - Add PCB layer
 - `set_active_layer` - Set active layer
 - `get_layer_list` - List all layers
@@ -85,9 +87,11 @@ Setup and configuration operations.
 - `launch_kicad_ui` - Launch KiCAD UI
 
 #### 2. `component` - Advanced Component Operations (8 tools)
+
 Beyond basic placement.
 
 **Tools:**
+
 - `rotate_component` - Rotate component
 - `delete_component` - Delete component
 - `edit_component` - Edit component properties
@@ -98,9 +102,11 @@ Beyond basic placement.
 - `replace_component` - Replace component with another
 
 #### 3. `export` - File Export & Manufacturing (8 tools)
+
 Generate output files for fabrication and documentation.
 
 **Tools:**
+
 - `export_gerber` - Export Gerber files
 - `export_pdf` - Export PDF
 - `export_svg` - Export SVG
@@ -111,9 +117,11 @@ Generate output files for fabrication and documentation.
 - `export_vrml` - Export VRML 3D model
 
 #### 4. `drc` - Design Rules & Validation (9 tools)
+
 Design rule checking and electrical validation.
 
 **Tools:**
+
 - `set_design_rules` - Configure design rules
 - `get_design_rules` - Get current rules
 - `run_drc` - Run design rule check
@@ -124,9 +132,11 @@ Design rule checking and electrical validation.
 - `get_drc_violations` - Get DRC violations
 
 #### 5. `schematic` - Schematic Operations (9 tools)
+
 Schematic editor operations.
 
 **Tools:**
+
 - `create_schematic` - Create new schematic
 - `add_schematic_component` - Add component to schematic
 - `add_wire` - Add wire connection
@@ -137,18 +147,22 @@ Schematic editor operations.
 - `generate_netlist` - Generate netlist
 
 #### 6. `library` - Footprint Library Access (4 tools)
+
 Search and browse footprint libraries.
 
 **Tools:**
+
 - `list_libraries` - List available libraries
 - `search_footprints` - Search footprints
 - `list_library_footprints` - List library footprints
 - `get_footprint_info` - Get footprint details
 
 #### 7. `routing` - Advanced Routing (3 tools)
+
 Advanced routing operations beyond basic trace routing.
 
 **Tools:**
+
 - `add_via` - Add via
 - `add_copper_pour` - Add copper pour
 
@@ -157,11 +171,13 @@ Advanced routing operations beyond basic trace routing.
 ## Router Tools
 
 ### 1. `list_tool_categories`
+
 **Description:** List all available tool categories with descriptions and tool counts.
 
 **Parameters:** None
 
 **Returns:**
+
 ```json
 {
   "total_categories": 7,
@@ -171,19 +187,22 @@ Advanced routing operations beyond basic trace routing.
       "name": "board",
       "description": "Board configuration: layers, mounting holes, zones, visualization",
       "tool_count": 9
-    },
+    }
     // ... more categories
   ]
 }
 ```
 
 ### 2. `get_category_tools`
+
 **Description:** Get detailed information about all tools in a specific category.
 
 **Parameters:**
+
 - `category` (string) - Category name from `list_tool_categories`
 
 **Returns:**
+
 ```json
 {
   "category": "export",
@@ -192,29 +211,36 @@ Advanced routing operations beyond basic trace routing.
     {
       "name": "export_gerber",
       "description": "Export Gerber files for PCB fabrication",
-      "parameters": { /* zod schema */ }
-    },
+      "parameters": {
+        /* zod schema */
+      }
+    }
     // ... more tools
   ]
 }
 ```
 
 ### 3. `execute_tool`
+
 **Description:** Execute a tool from any category.
 
 **Parameters:**
+
 - `tool_name` (string) - Tool name from `get_category_tools`
 - `params` (object, optional) - Tool parameters
 
 **Returns:** Tool execution result
 
 ### 4. `search_tools`
+
 **Description:** Search for tools by keyword across all categories.
 
 **Parameters:**
+
 - `query` (string) - Search term (e.g., "gerber", "zone", "export")
 
 **Returns:**
+
 ```json
 {
   "query": "export",
@@ -224,7 +250,7 @@ Advanced routing operations beyond basic trace routing.
       "category": "export",
       "tool": "export_gerber",
       "description": "Export Gerber files for PCB fabrication"
-    },
+    }
     // ... more matches
   ]
 }
@@ -261,21 +287,25 @@ Advanced routing operations beyond basic trace routing.
 ## Migration Strategy
 
 ### Phase 1: Create Infrastructure
+
 1. Create `registry.ts` with all tool definitions
 2. Create `router.ts` with router tools
 3. Create `direct.ts` with direct tool list
 
 ### Phase 2: Update Server
+
 1. Modify server registration to use direct + router only
 2. Keep all existing tool handlers intact
 3. Route through `execute_tool`
 
 ### Phase 3: Testing
+
 1. Test direct tools work as before
 2. Test router tools (list/get/execute/search)
 3. Test routed tools via `execute_tool`
 
 ### Phase 4: Optimization (Optional)
+
 1. Add caching for tool lookups
 2. Add tool usage analytics
 3. Implement intelligent tool suggestions

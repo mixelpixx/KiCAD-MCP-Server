@@ -2,31 +2,31 @@
  * Configuration handling for KiCAD MCP server
  */
 
-import { readFile } from 'fs/promises';
-import { existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { z } from 'zod';
-import { logger } from './logger.js';
+import { readFile } from "fs/promises";
+import { existsSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+import { z } from "zod";
+import { logger } from "./logger.js";
 
 // Get the current directory
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Default config location
-const DEFAULT_CONFIG_PATH = join(dirname(__dirname), 'config', 'default-config.json');
+const DEFAULT_CONFIG_PATH = join(dirname(__dirname), "config", "default-config.json");
 
 /**
  * Server configuration schema
  */
 const ConfigSchema = z.object({
-  name: z.string().default('kicad-mcp-server'),
-  version: z.string().default('1.0.0'),
-  description: z.string().default('MCP server for KiCAD PCB design operations'),
+  name: z.string().default("kicad-mcp-server"),
+  version: z.string().default("1.0.0"),
+  description: z.string().default("MCP server for KiCAD PCB design operations"),
   pythonPath: z.string().optional(),
   kicadPath: z.string().optional(),
-  logLevel: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
-  logDir: z.string().optional()
+  logLevel: z.enum(["error", "warn", "info", "debug"]).default("info"),
+  logDir: z.string().optional(),
 });
 
 /**
@@ -52,7 +52,7 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     }
 
     // Read and parse configuration
-    const configData = await readFile(filePath, 'utf-8');
+    const configData = await readFile(filePath, "utf-8");
     const config = JSON.parse(configData);
 
     // Validate configuration

@@ -1,6 +1,6 @@
 # Discussions. Get in here.
-https://github.com/mixelpixx/KiCAD-MCP-Server/discussions/73
 
+https://github.com/mixelpixx/KiCAD-MCP-Server/discussions/73
 
 # KiCAD MCP Server
 
@@ -11,6 +11,7 @@ A Model Context Protocol (MCP) server that enables AI assistants like Claude to 
 The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standard from Anthropic that allows AI assistants to securely connect to external tools and data sources. This implementation provides a standardized bridge between AI assistants and KiCAD, enabling natural language control of PCB design operations.
 
 **Key Capabilities:**
+
 - 122 tools across 16 categories with JSON Schema validation
 - Smart tool discovery with router pattern (reduces AI context by 70%)
 - 8 dynamic resources exposing project state
@@ -24,14 +25,9 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 - Real-time KiCAD UI integration via IPC API (experimental)
 - Comprehensive error handling and logging
 
-
-
 ## Try out Arduino MCP - now you can get Claude to help in the IDE, real time!:
+
 https://github.com/mixelpixx/arduino-ide
-
-
-
-
 
 ## What's New in v2.2.3
 
@@ -80,9 +76,11 @@ See [CHANGELOG](CHANGELOG.md) for the full list of changes in this release.
 ## What's New in v2.1.0
 
 ### Critical Schematic Workflow Fix + Complete Wiring System (Issue #26)
+
 The schematic workflow was completely broken in previous versions - **this is now fixed AND dramatically enhanced!**
 
 **What was broken:**
+
 - `create_project` only created PCB files, no schematics
 - `add_schematic_component` called non-existent API methods
 - Schematics couldn't be created or edited at all
@@ -92,24 +90,27 @@ The schematic workflow was completely broken in previous versions - **this is no
 **Complete Implementation (3 Phases):**
 
 **Phase 1: Component Placement Foundation**
-   - `create_project` now creates both .kicad_pcb and .kicad_sch files
-   - Added pre-configured template schematics with 13 common component types
-   - Rewrote component placement to use proper `clone()` API
+
+- `create_project` now creates both .kicad_pcb and .kicad_sch files
+- Added pre-configured template schematics with 13 common component types
+- Rewrote component placement to use proper `clone()` API
 
 **Phase 2: Dynamic Symbol Loading (BREAKTHROUGH!)**
-   - **Access to ALL ~10,000 KiCad symbols** from standard libraries
-   - Automatic detection and dynamic loading from `.kicad_sym` library files
-   - Zero configuration required - just specify library and symbol name
-   - Seamless integration with existing MCP tools
-   - Full S-expression parsing and injection system
+
+- **Access to ALL ~10,000 KiCad symbols** from standard libraries
+- Automatic detection and dynamic loading from `.kicad_sym` library files
+- Zero configuration required - just specify library and symbol name
+- Seamless integration with existing MCP tools
+- Full S-expression parsing and injection system
 
 **Phase 3: Intelligent Wiring System (NEW in v2.1.0)**
-   - **Automatic pin location discovery** with rotation support (0°, 90°, 180°, 270°)
-   - **Smart wire routing** (direct, orthogonal horizontal-first, orthogonal vertical-first)
-   - **Power symbol support** (VCC, GND, +3V3, +5V, etc.)
-   - **Wire graph analysis** - geometric tracing for net connectivity
-   - **Net label management** (local, global, hierarchical labels)
-   - **Netlist generation** with accurate component/pin connections
+
+- **Automatic pin location discovery** with rotation support (0°, 90°, 180°, 270°)
+- **Smart wire routing** (direct, orthogonal horizontal-first, orthogonal vertical-first)
+- **Power symbol support** (VCC, GND, +3V3, +5V, etc.)
+- **Wire graph analysis** - geometric tracing for net connectivity
+- **Net label management** (local, global, hierarchical labels)
+- **Netlist generation** with accurate component/pin connections
 
 **Technical Architecture:**
 The kicad-skip library cannot create symbols or wires from scratch. We implemented a comprehensive solution:
@@ -126,6 +127,7 @@ The kicad-skip library cannot create symbols or wires from scratch. We implement
 5. **Connectivity Analysis:** Geometric wire tracing to build net connection graphs
 
 **Example - Complete Circuit Creation:**
+
 ```python
 # Load power symbols dynamically
 loader.load_symbol_dynamically(sch_path, "power", "VCC")
@@ -150,6 +152,7 @@ connections = ConnectionManager.get_net_connections(sch, "VCC", sch_path)
 ```
 
 **Test Results:**
+
 - Component placement: 100% passing
 - Dynamic symbol loading: 10,000+ symbols accessible
 - Wire creation: 100% passing (8/8 connections in test circuit)
@@ -160,7 +163,9 @@ connections = ConnectionManager.get_net_connections(sch, "VCC", sch_path)
 See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for the complete schematic tool documentation.
 
 ### IPC Backend (Experimental)
+
 We are currently implementing and testing the KiCAD 9.0 IPC API for real-time UI synchronization:
+
 - Changes made via MCP tools appear immediately in the KiCAD UI
 - No manual reload required when IPC is active
 - Hybrid backend: uses IPC when available, falls back to SWIG API
@@ -169,7 +174,9 @@ We are currently implementing and testing the KiCAD 9.0 IPC API for real-time UI
 Note: IPC features are under active development and testing. Enable IPC in KiCAD via Preferences > Plugins > Enable IPC API Server.
 
 ### Tool Discovery & Router Pattern
+
 We've implemented an intelligent tool router to keep AI context efficient while maintaining full functionality:
+
 - **18 direct tools** always visible for high-frequency operations
 - **65 routed tools** organized into 8 categories (board, component, export, drc, schematic, library, routing, autoroute)
 - **35 additional tools** always visible (symbol/footprint creators, JLCPCB, datasheet, advanced routing)
@@ -183,16 +190,19 @@ We've implemented an intelligent tool router to keep AI context efficient while 
 
 **Usage is seamless:** Just ask naturally - "export gerber files" or "add mounting holes" - and Claude will discover and execute the appropriate tools automatically.
 
-
 ### NEEDS TESTING - REPORT ISSUES
+
 ### JLCPCB Parts Integration (New!)
+
 Complete integration with JLCPCB's parts catalog, providing two complementary approaches for component selection:
 
 **Dual-Mode Architecture:**
+
 1. **Local Symbol Libraries** - Search JLCPCB libraries installed via KiCAD Plugin and Content Manager (contributed by [@l3wi](https://github.com/l3wi))
 2. **JLCPCB API Integration** - Access the complete 2.5M+ parts catalog with real-time pricing and stock data
 
 **Key Features:**
+
 - Real-time pricing with quantity breaks (1+, 10+, 100+, 1000+)
 - Stock availability checking
 - Basic vs Extended library type identification (Basic = free assembly)
@@ -207,7 +217,9 @@ Complete integration with JLCPCB's parts catalog, providing two complementary ap
 See [JLCPCB Usage Guide](docs/JLCPCB_USAGE_GUIDE.md) for detailed setup and usage instructions.
 
 ### Comprehensive Tool Schemas
+
 Every tool now includes complete JSON Schema definitions with:
+
 - Detailed parameter descriptions and constraints
 - Input validation with type checking
 - Required vs. optional parameter specifications
@@ -215,7 +227,9 @@ Every tool now includes complete JSON Schema definitions with:
 - Clear documentation of what each tool does
 
 ### Resources Capability
+
 Access project state without executing tools:
+
 - `kicad://project/current/info` - Project metadata
 - `kicad://project/current/board` - Board properties
 - `kicad://project/current/components` - Component list (JSON)
@@ -226,6 +240,7 @@ Access project state without executing tools:
 - `kicad://board/preview.png` - Board visualization (PNG)
 
 ### Protocol Compliance
+
 - Updated to MCP SDK 1.21.0 (latest)
 - Full JSON-RPC 2.0 support
 - Proper capability negotiation
@@ -238,6 +253,7 @@ The server provides **122 tools** organized into 16 functional categories. With 
 For the complete tool reference with access types (direct/routed/additional), see [Tool Inventory](docs/TOOL_INVENTORY.md).
 
 ### Project Management (5 tools)
+
 - `create_project` - Initialize new KiCAD projects
 - `open_project` - Load existing project files
 - `save_project` - Save current project state
@@ -245,6 +261,7 @@ For the complete tool reference with access types (direct/routed/additional), se
 - `snapshot_project` - Save named checkpoint snapshot
 
 ### Board Operations (12 tools)
+
 - `set_board_size` - Configure PCB dimensions
 - `add_board_outline` - Create board edge (rectangle, circle, polygon, rounded rectangle)
 - `add_layer` - Add custom layers to stack
@@ -259,6 +276,7 @@ For the complete tool reference with access types (direct/routed/additional), se
 - `import_svg_logo` - Import SVG file as PCB silkscreen polygons
 
 ### Component Management (16 tools)
+
 - `place_component` - Place single component with footprint
 - `move_component` - Reposition existing component
 - `rotate_component` - Rotate component by angle
@@ -277,6 +295,7 @@ For the complete tool reference with access types (direct/routed/additional), se
 - `duplicate_component` - Copy existing component
 
 ### Routing (13 tools)
+
 - `add_net` - Create electrical net
 - `route_trace` - Route copper traces between XY points
 - `route_pad_to_pad` - Route between pads with auto-via insertion
@@ -292,9 +311,11 @@ For the complete tool reference with access types (direct/routed/additional), se
 - `copy_routing_pattern` - Replicate routing between component groups
 
 ### Schematic (27 tools)
+
 Complete schematic workflow with dynamic symbol loading (~10,000 symbols) and intelligent wiring.
 
 **Component Operations:**
+
 - `add_schematic_component` - Place symbols from any KiCad library
 - `delete_schematic_component` - Remove component
 - `edit_schematic_component` - Edit properties and fields
@@ -305,6 +326,7 @@ Complete schematic workflow with dynamic symbol loading (~10,000 symbols) and in
 - `annotate_schematic` - Auto-assign reference designators
 
 **Wiring and Connections:**
+
 - `add_wire` - Create wire between points
 - `delete_schematic_wire` - Remove wire segment
 - `add_schematic_connection` - Auto-connect pins with routing
@@ -315,6 +337,7 @@ Complete schematic workflow with dynamic symbol loading (~10,000 symbols) and in
 - `get_schematic_pin_locations` - Get pin locations for component
 
 **Analysis and Export:**
+
 - `get_net_connections` - Trace net connectivity
 - `list_schematic_nets` / `list_schematic_wires` / `list_schematic_labels`
 - `create_schematic` - Create new schematic file
@@ -327,6 +350,7 @@ Complete schematic workflow with dynamic symbol loading (~10,000 symbols) and in
 See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for details and examples.
 
 ### Design Rules / DRC (8 tools)
+
 - `set_design_rules` / `get_design_rules` - Configure and inspect rules
 - `run_drc` - Execute design rule check
 - `get_drc_violations` - Get violation list by severity
@@ -334,6 +358,7 @@ See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for details a
 - `set_layer_constraints` / `check_clearance` - Layer and clearance rules
 
 ### Export (8 tools)
+
 - `export_gerber` - Gerber fabrication files
 - `export_pdf` / `export_svg` - Documentation and vector graphics
 - `export_3d` - 3D models (STEP, STL, VRML, OBJ)
@@ -343,13 +368,16 @@ See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for details a
 - `export_vrml` - VRML 3D model
 
 ### Footprint Libraries (4 tools) and Symbol Libraries (4 tools)
+
 - `list_libraries` / `list_symbol_libraries` - Browse available libraries
 - `search_footprints` / `search_symbols` - Search across all libraries
 - `list_library_footprints` / `list_library_symbols` - Browse specific library
 - `get_footprint_info` / `get_symbol_info` - Detailed information
 
 ### Footprint Creator (4 tools) and Symbol Creator (4 tools)
+
 Create custom components when existing libraries do not have what you need.
+
 - `create_footprint` / `create_symbol` - Build from scratch with pads/pins
 - `edit_footprint_pad` - Modify pad properties
 - `register_footprint_library` / `register_symbol_library` - Register in lib-table
@@ -359,10 +387,12 @@ Create custom components when existing libraries do not have what you need.
 See [Footprint and Symbol Creator Guide](docs/FOOTPRINT_SYMBOL_CREATOR_GUIDE.md) for details.
 
 ### Datasheet Tools (2 tools)
+
 - `enrich_datasheets` - Auto-populate datasheet URLs using LCSC part numbers
 - `get_datasheet_url` - Get LCSC datasheet URL for a component
 
 ### JLCPCB Integration (5 tools)
+
 - `download_jlcpcb_database` - Download 2.5M+ parts catalog (one-time setup)
 - `search_jlcpcb_parts` - Search with parametric filters
 - `get_jlcpcb_part` - Detailed part info with pricing
@@ -370,6 +400,7 @@ See [Footprint and Symbol Creator Guide](docs/FOOTPRINT_SYMBOL_CREATOR_GUIDE.md)
 - `suggest_jlcpcb_alternatives` - Find cheaper or in-stock alternatives
 
 ### Freerouting Autorouter (4 tools)
+
 - `autoroute` - Run Freerouting autorouter (DSN export, route, SES import)
 - `export_dsn` / `import_ses` - Manual Specctra DSN/SES workflow
 - `check_freerouting` - Verify Java and Freerouting availability
@@ -377,6 +408,7 @@ See [Footprint and Symbol Creator Guide](docs/FOOTPRINT_SYMBOL_CREATOR_GUIDE.md)
 See [Freerouting Guide](docs/FREEROUTING_GUIDE.md) for setup and usage.
 
 ### UI Management (2 tools)
+
 - `check_kicad_ui` - Check if KiCAD is running
 - `launch_kicad_ui` - Launch KiCAD application
 
@@ -385,6 +417,7 @@ See [Freerouting Guide](docs/FREEROUTING_GUIDE.md) for setup and usage.
 ### Required Software
 
 **KiCAD 9.0 or Higher**
+
 - Download from [kicad.org/download](https://www.kicad.org/download/)
 - Must include Python module (pcbnew)
 - Verify installation:
@@ -393,10 +426,12 @@ See [Freerouting Guide](docs/FREEROUTING_GUIDE.md) for setup and usage.
   ```
 
 **Node.js 18 or Higher**
+
 - Download from [nodejs.org](https://nodejs.org/)
 - Verify: `node --version` and `npm --version`
 
 **Python 3.10 or Higher**
+
 - Usually included with KiCAD
 - Required packages (auto-installed):
   - kicad-python (kipy) >= 0.5.0 (IPC API support, optional but recommended)
@@ -410,11 +445,13 @@ See [Freerouting Guide](docs/FREEROUTING_GUIDE.md) for setup and usage.
 
 **MCP Client**
 Choose one:
+
 - [Claude Desktop](https://claude.ai/download) - Official Anthropic desktop app
 - [Claude Code](https://docs.claude.com/claude-code) - Official CLI tool
 - [Cline](https://github.com/cline/cline) - VSCode extension
 
 ### Supported Platforms
+
 - **Linux** (Ubuntu 22.04+, Fedora, Arch) - Primary platform, fully tested
 - **Windows 10/11** - Fully supported with automated setup
 - **macOS** - Experimental support
@@ -447,6 +484,7 @@ python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"
 ### Windows 10/11
 
 **Automated Setup (Recommended):**
+
 ```powershell
 git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd KiCAD-MCP-Server
@@ -454,6 +492,7 @@ cd KiCAD-MCP-Server
 ```
 
 The script will:
+
 - Detect KiCAD installation
 - Verify prerequisites
 - Install dependencies
@@ -497,10 +536,12 @@ npm run build
 ### Claude Desktop
 
 Edit configuration file:
+
 - **Linux/macOS:** `~/.config/Claude/claude_desktop_config.json`
 - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
 **Configuration:**
+
 ```json
 {
   "mcpServers": {
@@ -517,6 +558,7 @@ Edit configuration file:
 ```
 
 **Platform-specific PYTHONPATH:**
+
 - **Linux:** `/usr/lib/kicad/lib/python3/dist-packages`
 - **Windows:** `C:\Program Files\KiCad\9.0\lib\python3\dist-packages`
 - **macOS:** `/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages`
@@ -553,6 +595,7 @@ If you see "Python executable not found: python3", you can manually specify the 
 ```
 
 To find your Python path:
+
 ```bash
 which python3  # Example output: /usr/bin/python3
 python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"  # Verify pcbnew access
@@ -575,12 +618,14 @@ The JLCPCB integration provides two modes that can be used independently or toge
 **Mode 1: JLCSearch Public API (Recommended - No Setup Required)**
 
 The easiest way to access JLCPCB's parts catalog:
+
 - No API credentials needed
 - No JLCPCB account required
 - Access to 2.5M+ parts with pricing and stock data
 - Download time: 40-60 minutes for full catalog (100-part batches due to API limit)
 
 To download the database:
+
 ```
 Ask Claude: "Download the JLCPCB parts database"
 ```
@@ -590,6 +635,7 @@ This creates a local SQLite database at `data/jlcpcb_parts.db` (3-5 GB for full 
 **Mode 2: Local Symbol Libraries (No Setup Required)**
 
 Install JLCPCB libraries via KiCAD's Plugin and Content Manager:
+
 1. Open KiCAD
 2. Go to Tools > Plugin and Content Manager
 3. Search for "JLCPCB" or "JLC"
@@ -609,12 +655,14 @@ For users with JLCPCB enterprise accounts and order history:
 2. **Configure Environment Variables**
 
    Add to your shell profile (`~/.bashrc`, `~/.zshrc`, or `~/.profile`):
+
    ```bash
    export JLCPCB_API_KEY="your_app_key_here"
    export JLCPCB_API_SECRET="your_app_secret_here"
    ```
 
    Or create a `.env` file in the project root:
+
    ```
    JLCPCB_API_KEY=your_app_key_here
    JLCPCB_API_SECRET=your_app_secret_here
@@ -753,6 +801,7 @@ How many Basic parts are available?
 ## Architecture
 
 ### MCP Protocol Layer
+
 - **JSON-RPC 2.0 Transport:** Bi-directional communication via STDIO
 - **Protocol Version:** MCP 2025-06-18
 - **Capabilities:** Tools (122), Resources (8)
@@ -760,6 +809,7 @@ How many Basic parts are available?
 - **Error Handling:** Standard JSON-RPC error codes
 
 ### TypeScript Server (`src/`)
+
 - Implements MCP protocol specification
 - Manages Python subprocess lifecycle
 - Handles message routing and validation
@@ -770,6 +820,7 @@ How many Basic parts are available?
   - Reduces AI context usage by 70% while maintaining full functionality
 
 ### Python Interface (`python/`)
+
 - **kicad_interface.py:** Main entry point, MCP message handler, command routing
 - **kicad_api/:** Backend implementations
   - `base.py` - Abstract base classes for backends
@@ -792,6 +843,7 @@ How many Basic parts are available?
   - `jlcpcb_parts.py` - JLCPCB parts database manager
 
 ### KiCAD Integration
+
 - **pcbnew API (SWIG):** Direct Python bindings to KiCAD for file operations
 - **IPC API (kipy):** Real-time communication with running KiCAD instance (experimental)
 - **Hybrid Backend:** Automatically uses IPC when available, falls back to SWIG
@@ -845,6 +897,7 @@ npm run format
 **Symptoms:** MCP server doesn't show up in Claude Desktop or Cline
 
 **Solutions:**
+
 1. Verify build completed: `ls dist/index.js`
 2. Check configuration paths are absolute
 3. Restart MCP client completely
@@ -855,6 +908,7 @@ npm run format
 **Symptoms:** `ModuleNotFoundError: No module named 'pcbnew'`
 
 **Solutions:**
+
 1. Verify KiCAD installation: `python3 -c "import pcbnew"`
 2. Check PYTHONPATH in configuration matches your KiCAD installation
 3. Ensure KiCAD was installed with Python support
@@ -864,6 +918,7 @@ npm run format
 **Symptoms:** Tools fail with unclear errors
 
 **Solutions:**
+
 1. Check server logs: `~/.kicad-mcp/logs/kicad_interface.log`
 2. Verify a project is loaded before running board operations
 3. Ensure file paths are absolute, not relative
@@ -874,6 +929,7 @@ npm run format
 **Symptoms:** Server fails to start on Windows
 
 **Solutions:**
+
 1. Run automated diagnostics: `.\setup-windows.ps1`
 2. Verify Python path uses double backslashes: `C:\\Program Files\\KiCad\\9.0`
 3. Check Windows Event Viewer for Node.js errors
@@ -897,6 +953,7 @@ npm run format
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
 **Working Features (122 tools):**
+
 - Project management with snapshot checkpointing
 - Complete board design (outline, layers, zones, mounting holes, text, SVG logos)
 - Component placement with arrays, alignment, and duplication
@@ -915,6 +972,7 @@ See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix a
 - Full MCP 2025-06-18 protocol compliance
 
 **IPC Backend (Experimental):**
+
 - Real-time UI synchronization via KiCAD 9.0 IPC API
 - 21 IPC-enabled commands with automatic SWIG fallback
 - Hybrid footprint loading (SWIG for library access, IPC for placement)
@@ -929,6 +987,7 @@ See [ROADMAP.md](docs/ROADMAP.md) for planned features.
 We are actively developing new features. Your feedback directly shapes development priorities.
 
 **Share your ideas:**
+
 1. [Open a feature request](https://github.com/mixelpixx/KiCAD-MCP-Server/issues/new?labels=enhancement&template=feature_request.md)
 2. [Join the discussion](https://github.com/mixelpixx/KiCAD-MCP-Server/discussions)
 3. Star the repo if you find it useful

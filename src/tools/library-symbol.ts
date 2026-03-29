@@ -3,8 +3,8 @@
  * Provides search/browse access to local KiCad symbol libraries
  */
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 
 export function registerSymbolLibraryTools(server: McpServer, callKicadScript: Function) {
   // List available symbol libraries
@@ -19,20 +19,20 @@ export function registerSymbolLibraryTools(server: McpServer, callKicadScript: F
           content: [
             {
               type: "text",
-              text: `Found ${result.count} symbol libraries:\n${result.libraries.join('\n')}`
-            }
-          ]
+              text: `Found ${result.count} symbol libraries:\n${result.libraries.join("\n")}`,
+            },
+          ],
         };
       }
       return {
         content: [
           {
             type: "text",
-            text: `Failed to list symbol libraries: ${result.message || 'Unknown error'}`
-          }
-        ]
+            text: `Failed to list symbol libraries: ${result.message || "Unknown error"}`,
+          },
+        ],
       };
-    }
+    },
   );
 
   // Search for symbols across all libraries
@@ -45,12 +45,12 @@ Use this to find components already in your local libraries (e.g., JLCPCB-KiCad-
 
 Returns symbol references that can be used directly in schematics.`,
     {
-      query: z.string()
-        .describe("Search query (e.g., 'ESP32', 'STM32F103', 'C8734' for LCSC ID)"),
-      library: z.string().optional()
+      query: z.string().describe("Search query (e.g., 'ESP32', 'STM32F103', 'C8734' for LCSC ID)"),
+      library: z
+        .string()
+        .optional()
         .describe("Optional: filter to specific library name pattern (e.g., 'JLCPCB')"),
-      limit: z.number().optional().default(20)
-        .describe("Maximum number of results to return")
+      limit: z.number().optional().default(20).describe("Maximum number of results to return"),
     },
     async (args: { query: string; library?: string; limit?: number }) => {
       const result = await callKicadScript("search_symbols", args);
@@ -60,38 +60,40 @@ Returns symbol references that can be used directly in schematics.`,
             content: [
               {
                 type: "text",
-                text: `No symbols found matching "${args.query}"${args.library ? ` in libraries matching "${args.library}"` : ''}`
-              }
-            ]
+                text: `No symbols found matching "${args.query}"${args.library ? ` in libraries matching "${args.library}"` : ""}`,
+              },
+            ],
           };
         }
 
-        const symbolList = result.symbols.map((s: any) => {
-          const parts = [`${s.full_ref}`];
-          if (s.lcsc_id) parts.push(`LCSC: ${s.lcsc_id}`);
-          if (s.description) parts.push(s.description);
-          else if (s.value) parts.push(s.value);
-          return parts.join(' | ');
-        }).join('\n');
+        const symbolList = result.symbols
+          .map((s: any) => {
+            const parts = [`${s.full_ref}`];
+            if (s.lcsc_id) parts.push(`LCSC: ${s.lcsc_id}`);
+            if (s.description) parts.push(s.description);
+            else if (s.value) parts.push(s.value);
+            return parts.join(" | ");
+          })
+          .join("\n");
 
         return {
           content: [
             {
               type: "text",
-              text: `Found ${result.count} symbols matching "${args.query}":\n\n${symbolList}`
-            }
-          ]
+              text: `Found ${result.count} symbols matching "${args.query}":\n\n${symbolList}`,
+            },
+          ],
         };
       }
       return {
         content: [
           {
             type: "text",
-            text: `Failed to search symbols: ${result.message || 'Unknown error'}`
-          }
-        ]
+            text: `Failed to search symbols: ${result.message || "Unknown error"}`,
+          },
+        ],
       };
-    }
+    },
   );
 
   // List symbols in a specific library
@@ -99,36 +101,37 @@ Returns symbol references that can be used directly in schematics.`,
     "list_library_symbols",
     "List all symbols in a specific KiCAD symbol library",
     {
-      library: z.string()
-        .describe("Library name (e.g., 'Device', 'PCM_JLCPCB-MCUs')")
+      library: z.string().describe("Library name (e.g., 'Device', 'PCM_JLCPCB-MCUs')"),
     },
     async (args: { library: string }) => {
       const result = await callKicadScript("list_library_symbols", args);
       if (result.success && result.symbols) {
-        const symbolList = result.symbols.map((s: any) => {
-          const parts = [`  - ${s.name}`];
-          if (s.lcsc_id) parts.push(`(LCSC: ${s.lcsc_id})`);
-          return parts.join(' ');
-        }).join('\n');
+        const symbolList = result.symbols
+          .map((s: any) => {
+            const parts = [`  - ${s.name}`];
+            if (s.lcsc_id) parts.push(`(LCSC: ${s.lcsc_id})`);
+            return parts.join(" ");
+          })
+          .join("\n");
 
         return {
           content: [
             {
               type: "text",
-              text: `Library "${args.library}" contains ${result.count} symbols:\n${symbolList}`
-            }
-          ]
+              text: `Library "${args.library}" contains ${result.count} symbols:\n${symbolList}`,
+            },
+          ],
         };
       }
       return {
         content: [
           {
             type: "text",
-            text: `Failed to list symbols in library ${args.library}: ${result.message || 'Unknown error'}`
-          }
-        ]
+            text: `Failed to list symbols in library ${args.library}: ${result.message || "Unknown error"}`,
+          },
+        ],
       };
-    }
+    },
   );
 
   // Get detailed information about a specific symbol
@@ -136,8 +139,9 @@ Returns symbol references that can be used directly in schematics.`,
     "get_symbol_info",
     "Get detailed information about a specific symbol",
     {
-      symbol: z.string()
-        .describe("Symbol specification (e.g., 'Device:R' or 'PCM_JLCPCB-MCUs:STM32F103C8T6')")
+      symbol: z
+        .string()
+        .describe("Symbol specification (e.g., 'Device:R' or 'PCM_JLCPCB-MCUs:STM32F103C8T6')"),
     },
     async (args: { symbol: string }) => {
       const result = await callKicadScript("get_symbol_info", args);
@@ -145,34 +149,36 @@ Returns symbol references that can be used directly in schematics.`,
         const info = result.symbol_info;
         const details = [
           `Symbol: ${info.full_ref}`,
-          info.value ? `Value: ${info.value}` : '',
-          info.description ? `Description: ${info.description}` : '',
-          info.lcsc_id ? `LCSC: ${info.lcsc_id}` : '',
-          info.manufacturer ? `Manufacturer: ${info.manufacturer}` : '',
-          info.mpn ? `MPN: ${info.mpn}` : '',
-          info.footprint ? `Footprint: ${info.footprint}` : '',
-          info.category ? `Category: ${info.category}` : '',
-          info.lib_class ? `Class: ${info.lib_class}` : '',
-          info.datasheet ? `Datasheet: ${info.datasheet}` : '',
-        ].filter(line => line).join('\n');
+          info.value ? `Value: ${info.value}` : "",
+          info.description ? `Description: ${info.description}` : "",
+          info.lcsc_id ? `LCSC: ${info.lcsc_id}` : "",
+          info.manufacturer ? `Manufacturer: ${info.manufacturer}` : "",
+          info.mpn ? `MPN: ${info.mpn}` : "",
+          info.footprint ? `Footprint: ${info.footprint}` : "",
+          info.category ? `Category: ${info.category}` : "",
+          info.lib_class ? `Class: ${info.lib_class}` : "",
+          info.datasheet ? `Datasheet: ${info.datasheet}` : "",
+        ]
+          .filter((line) => line)
+          .join("\n");
 
         return {
           content: [
             {
               type: "text",
-              text: details
-            }
-          ]
+              text: details,
+            },
+          ],
         };
       }
       return {
         content: [
           {
             type: "text",
-            text: `Failed to get symbol info: ${result.message || 'Unknown error'}`
-          }
-        ]
+            text: `Failed to get symbol info: ${result.message || "Unknown error"}`,
+          },
+        ],
       };
-    }
+    },
   );
 }

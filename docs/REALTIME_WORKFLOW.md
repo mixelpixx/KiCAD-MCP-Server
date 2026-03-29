@@ -36,6 +36,7 @@ The MCP server uses KiCAD's Python API (`pcbnew` module) to read and write `.kic
 **Use case:** Claude places components via MCP, human sees them in KiCAD UI
 
 1. **Claude places components** via MCP tools:
+
    ```python
    # MCP internally uses:
    board = pcbnew.LoadBoard('project.kicad_pcb')
@@ -51,6 +52,7 @@ The MCP server uses KiCAD's Python API (`pcbnew` module) to read and write `.kic
    - Components appear instantly ✅
 
 **Example:**
+
 ```
 User: "Place a 10k resistor at position 30, 30mm"
 Claude: [uses place_component MCP tool]
@@ -74,6 +76,7 @@ User: [opens KiCAD UI]
    - KiCAD writes changes to `.kicad_pcb` file
 
 3. **Claude reads changes** via MCP tools:
+
    ```python
    # MCP internally uses:
    board = pcbnew.LoadBoard('project.kicad_pcb')
@@ -88,6 +91,7 @@ User: [opens KiCAD UI]
    - New traces and nets
 
 **Example:**
+
 ```
 User: "I moved R1 to a new position, can you see it?"
 Claude: [uses get_board_info MCP tool]
@@ -100,11 +104,13 @@ Claude: [uses get_board_info MCP tool]
 ### Test 1: MCP→UI (Verified ✅)
 
 **Setup:**
+
 - Created new board via MCP (100x80mm)
 - Placed R1 (10k resistor) at (30, 30) mm
 - Placed D1 (RED LED) at (50, 30) mm
 
 **Result:**
+
 - Opened KiCAD PCB editor
 - Both components visible at correct positions ✅
 - All properties (reference, value, rotation) correct ✅
@@ -112,10 +118,12 @@ Claude: [uses get_board_info MCP tool]
 ### Test 2: UI→MCP (Verified ✅)
 
 **Setup:**
+
 - User moved R1 from (30, 30) mm to (59.175, 49.0) mm in UI
 - User saved file (Ctrl+S)
 
 **Result:**
+
 - MCP read board via `get_board_info`
 - New position detected correctly ✅
 - D1 position unchanged (as expected) ✅
@@ -136,11 +144,13 @@ Claude: [uses get_board_info MCP tool]
 ### MCP Tools for Collaboration
 
 **Reading board state:**
+
 - `get_board_info` - Get all components and their positions
 - `get_project_info` - Get project metadata
 - `list_components` - List all components (if implemented)
 
 **Modifying board:**
+
 - `place_component` - Add new components
 - `add_trace` - Add copper traces
 - `add_via` - Add vias
@@ -188,6 +198,7 @@ Claude: [uses get_board_info MCP tool]
 ### For AI-Human Collaboration
 
 1. **Establish Turn-Taking:**
+
    ```
    User: "I'm going to add some components, one sec"
    [User edits in UI]
@@ -201,6 +212,7 @@ Claude: [uses get_board_info MCP tool]
    - Claude: Always read fresh before making decisions
 
 3. **Communicate Changes:**
+
    ```
    Claude: "I'm placing R1-R4 now..."
    [MCP places components]
@@ -215,6 +227,7 @@ Claude: [uses get_board_info MCP tool]
 ### Workflow Patterns
 
 **Pattern 1: AI Does Layout, Human Reviews**
+
 ```
 1. Claude places all components via MCP
 2. Claude routes critical traces via MCP
@@ -225,6 +238,7 @@ Claude: [uses get_board_info MCP tool]
 ```
 
 **Pattern 2: Human Sketches, AI Refines**
+
 ```
 1. Human places major components in UI
 2. Saves → Claude reads layout
@@ -235,6 +249,7 @@ Claude: [uses get_board_info MCP tool]
 ```
 
 **Pattern 3: Pair Programming Style**
+
 ```
 User: "Place a 10k pull-up resistor on pin 3"
 Claude: [places R1 at calculated position]
@@ -276,6 +291,7 @@ Claude: [places D1]
 ### Long-Term Vision
 
 **Fully Real-Time Collaboration:**
+
 - Both AI and human see changes instantly
 - No manual save/reload required
 - Conflict detection and resolution
@@ -283,6 +299,7 @@ Claude: [places D1]
 - Chat/comment system for design discussion
 
 **Example Future Workflow:**
+
 ```
 [Claude and human both have board open]
 Claude: [starts placing R1]
@@ -299,6 +316,7 @@ Claude: "Good position for D1! I'll route them now"
 ### File Format
 
 KiCAD uses S-expression format (`.kicad_pcb`):
+
 ```lisp
 (kicad_pcb (version 20240108) (generator "pcbnew")
   (footprint "Resistor_SMD:R_0603_1608Metric"
@@ -314,11 +332,13 @@ KiCAD uses S-expression format (`.kicad_pcb`):
 ### Sync Mechanism
 
 **Current (File-based):**
+
 1. MCP: `pcbnew.SaveBoard(path, board)` → writes file
 2. UI: File → Revert → reads file
 3. Latency: ~1-5 seconds (manual)
 
 **Future (IPC-based):**
+
 1. MCP: `kicad.AddFootprint(...)` → sends IPC command
 2. KiCAD: Receives command → updates internal state
 3. UI: Automatically refreshes display
@@ -355,6 +375,7 @@ pcbnew.SaveBoard('project.kicad_pcb', board)
 **Cause:** UI hasn't reloaded the file
 
 **Solution:**
+
 1. File → Revert (or Ctrl+R if configured)
 2. Or close PCB editor and reopen
 3. Or restart KiCAD
@@ -364,6 +385,7 @@ pcbnew.SaveBoard('project.kicad_pcb', board)
 **Cause:** File not saved
 
 **Solution:**
+
 1. Save file: Ctrl+S or File → Save
 2. Verify save: Check file modification time
 3. Ask Claude to read board again
@@ -373,6 +395,7 @@ pcbnew.SaveBoard('project.kicad_pcb', board)
 **Cause:** File overwritten by other party
 
 **Solution:**
+
 1. Always save before asking MCP to make changes
 2. Don't edit while MCP is working
 3. Take turns to avoid conflicts
@@ -382,6 +405,7 @@ pcbnew.SaveBoard('project.kicad_pcb', board)
 **Cause:** Unit conversion error or coordinate system mismatch
 
 **Solution:**
+
 1. Check KiCAD units (View → Switch Units)
 2. MCP uses millimeters internally
 3. Report issue if positions consistently wrong
@@ -410,6 +434,7 @@ The KiCAD MCP Server successfully enables paired circuit board design between AI
 ## Changelog
 
 **2025-11-01 - v2.1.0-alpha**
+
 - ✅ Tested MCP→UI workflow (placing components via MCP, viewing in UI)
 - ✅ Tested UI→MCP workflow (editing in UI, reading via MCP)
 - ✅ Documented best practices and limitations

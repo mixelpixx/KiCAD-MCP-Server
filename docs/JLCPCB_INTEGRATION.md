@@ -98,14 +98,17 @@ footprints = db.map_package_to_footprint("0603")
 ### JLCSearchClient
 
 #### `search_resistors(resistance, package, limit)`
+
 Search for resistors by value and package.
 
 **Parameters:**
+
 - `resistance` (int, optional): Resistance in ohms
 - `package` (str, optional): Package size ("0402", "0603", "0805", etc.)
 - `limit` (int): Maximum results (default: 100)
 
 **Returns:** List of resistor dicts with fields:
+
 - `lcsc`: LCSC number (integer)
 - `mfr`: Manufacturer part number
 - `package`: Package size
@@ -117,9 +120,11 @@ Search for resistors by value and package.
 - `price1`: Unit price in USD
 
 #### `search_capacitors(capacitance, package, limit)`
+
 Search for capacitors by value and package.
 
 **Parameters:**
+
 - `capacitance` (float, optional): Capacitance in farads (e.g., 1e-7 for 100nF)
 - `package` (str, optional): Package size
 - `limit` (int): Maximum results
@@ -127,9 +132,11 @@ Search for capacitors by value and package.
 **Returns:** List of capacitor dicts
 
 #### `search_components(category, limit, offset, **filters)`
+
 General component search.
 
 **Parameters:**
+
 - `category` (str): "resistors", "capacitors", "components", etc.
 - `limit` (int): Maximum results
 - `offset` (int): Pagination offset
@@ -138,9 +145,11 @@ General component search.
 **Returns:** List of component dicts
 
 #### `download_all_components(callback, batch_size)`
+
 Download entire JLCPCB parts catalog.
 
 **Parameters:**
+
 - `callback` (callable, optional): Progress callback(parts_count, status_msg)
 - `batch_size` (int): Parts per batch (default: 1000)
 
@@ -151,16 +160,20 @@ Download entire JLCPCB parts catalog.
 ### JLCPCBPartsManager
 
 #### `import_jlcsearch_parts(parts, progress_callback)`
+
 Import parts from JLCSearch into local SQLite database.
 
 **Parameters:**
+
 - `parts` (list): List of part dicts from JLCSearchClient
 - `progress_callback` (callable, optional): Progress updates
 
 #### `search_parts(query, category, package, library_type, manufacturer, in_stock, limit)`
+
 Search local database with filters.
 
 **Parameters:**
+
 - `query` (str, optional): Free-text search
 - `category` (str, optional): Category filter
 - `package` (str, optional): Package filter
@@ -172,17 +185,21 @@ Search local database with filters.
 **Returns:** List of matching parts
 
 #### `get_part_info(lcsc_number)`
+
 Get detailed part information.
 
 **Parameters:**
+
 - `lcsc_number` (str): LCSC part number (e.g., "C25804")
 
 **Returns:** Part dict or None
 
 #### `get_database_stats()`
+
 Get database statistics.
 
 **Returns:** Dict with:
+
 - `total_parts`: Total parts count
 - `basic_parts`: Basic library count
 - `extended_parts`: Extended library count
@@ -190,9 +207,11 @@ Get database statistics.
 - `db_path`: Database file path
 
 #### `map_package_to_footprint(package)`
+
 Map JLCPCB package to KiCad footprints.
 
 **Parameters:**
+
 - `package` (str): JLCPCB package name
 
 **Returns:** List of KiCad footprint library references
@@ -238,22 +257,23 @@ CREATE TABLE components (
 
 ## Package to Footprint Mappings
 
-| JLCPCB Package | KiCad Footprints |
-|----------------|------------------|
-| 0402 | Resistor_SMD:R_0402_1005Metric<br>Capacitor_SMD:C_0402_1005Metric<br>LED_SMD:LED_0402_1005Metric |
-| 0603 | Resistor_SMD:R_0603_1608Metric<br>Capacitor_SMD:C_0603_1608Metric<br>LED_SMD:LED_0603_1608Metric |
-| 0805 | Resistor_SMD:R_0805_2012Metric<br>Capacitor_SMD:C_0805_2012Metric |
-| 1206 | Resistor_SMD:R_1206_3216Metric<br>Capacitor_SMD:C_1206_3216Metric |
-| SOT-23 | Package_TO_SOT_SMD:SOT-23<br>Package_TO_SOT_SMD:SOT-23-3 |
-| SOT-23-5 | Package_TO_SOT_SMD:SOT-23-5 |
-| SOT-23-6 | Package_TO_SOT_SMD:SOT-23-6 |
-| SOT-223 | Package_TO_SOT_SMD:SOT-223 |
-| SOIC-8 | Package_SO:SOIC-8_3.9x4.9mm_P1.27mm |
-| QFN-20 | Package_DFN_QFN:QFN-20-1EP_4x4mm_P0.5mm_EP2.5x2.5mm |
+| JLCPCB Package | KiCad Footprints                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------------ |
+| 0402           | Resistor_SMD:R_0402_1005Metric<br>Capacitor_SMD:C_0402_1005Metric<br>LED_SMD:LED_0402_1005Metric |
+| 0603           | Resistor_SMD:R_0603_1608Metric<br>Capacitor_SMD:C_0603_1608Metric<br>LED_SMD:LED_0603_1608Metric |
+| 0805           | Resistor_SMD:R_0805_2012Metric<br>Capacitor_SMD:C_0805_2012Metric                                |
+| 1206           | Resistor_SMD:R_1206_3216Metric<br>Capacitor_SMD:C_1206_3216Metric                                |
+| SOT-23         | Package_TO_SOT_SMD:SOT-23<br>Package_TO_SOT_SMD:SOT-23-3                                         |
+| SOT-23-5       | Package_TO_SOT_SMD:SOT-23-5                                                                      |
+| SOT-23-6       | Package_TO_SOT_SMD:SOT-23-6                                                                      |
+| SOT-223        | Package_TO_SOT_SMD:SOT-223                                                                       |
+| SOIC-8         | Package_SO:SOIC-8_3.9x4.9mm_P1.27mm                                                              |
+| QFN-20         | Package_DFN_QFN:QFN-20-1EP_4x4mm_P0.5mm_EP2.5x2.5mm                                              |
 
 ## Best Practices
 
 ### 1. Always Use Basic Library Parts First
+
 Basic library parts have **no assembly fee** ($0/part), while Extended parts cost **$3/part**.
 
 ```python
@@ -262,6 +282,7 @@ basic_parts = [p for p in results if p['is_basic']]
 ```
 
 ### 2. Check Stock Availability
+
 Ensure sufficient stock before committing to a design.
 
 ```python
@@ -270,6 +291,7 @@ high_stock = [p for p in results if p['stock'] > 1000]
 ```
 
 ### 3. Compare Prices
+
 Even within Basic library, prices vary significantly.
 
 ```python
@@ -278,9 +300,11 @@ cheapest = min(results, key=lambda x: x.get('price1', 999))
 ```
 
 ### 4. Use Standardized Packages
+
 Stick to common packages (0402, 0603, 0805) for better availability and pricing.
 
 ### 5. Cache Database Locally
+
 Download the full parts database once and search locally for faster results.
 
 ```python
@@ -296,23 +320,29 @@ results = db.search_parts(...)
 ## Troubleshooting
 
 ### API Rate Limiting
+
 JLCSearch is a community service. If you hit rate limits:
+
 - Add delays between requests (`time.sleep(0.1)`)
 - Use the local database instead of repeated API calls
 - Download the full database once and work offline
 
 ### Missing Data
+
 JLCSearch may not have all fields that official JLCPCB API provides:
+
 - No datasheets (use manufacturer website)
 - Limited category information
 - No solder joint count
 
 ### Stock Discrepancies
+
 Stock levels are updated periodically but may lag real-time JLCPCB data by a few hours.
 
 ## Official JLCPCB API (Alternative)
 
 The project also includes an implementation of the official JLCPCB API with HMAC-SHA256 authentication. However, this requires:
+
 1. API approval from JLCPCB (not all applications are approved)
 2. APP_ID, ACCESS_KEY, and SECRET_KEY credentials
 3. Previous order history with JLCPCB

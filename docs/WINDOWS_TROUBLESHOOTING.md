@@ -12,6 +12,7 @@ This guide helps diagnose and fix common issues when setting up KiCAD MCP Server
 ```
 
 This script will:
+
 - Detect your KiCAD installation
 - Verify all prerequisites
 - Install dependencies
@@ -34,12 +35,15 @@ If the automated setup fails, continue with the manual troubleshooting below.
 **Solution:**
 
 1. **Check the log file** (this has the actual error):
+
    ```
    %USERPROFILE%\.kicad-mcp\logs\kicad_interface.log
    ```
+
    Open in Notepad and look at the last 50-100 lines.
 
 2. **Test pcbnew import manually:**
+
    ```powershell
    & "C:\Program Files\KiCad\9.0\bin\python.exe" -c "import pcbnew; print(pcbnew.GetBuildVersion())"
    ```
@@ -73,6 +77,7 @@ If the automated setup fails, continue with the manual troubleshooting below.
 **Solution:**
 
 1. **Check if KiCAD is installed:**
+
    ```powershell
    Test-Path "C:\Program Files\KiCad\9.0"
    ```
@@ -99,6 +104,7 @@ If the automated setup fails, continue with the manual troubleshooting below.
 **Solution:**
 
 1. **Check if Node.js is installed:**
+
    ```powershell
    node --version
    npm --version
@@ -124,6 +130,7 @@ If the automated setup fails, continue with the manual troubleshooting below.
 **Solution:**
 
 1. **Clean and reinstall dependencies:**
+
    ```powershell
    Remove-Item node_modules -Recurse -Force
    Remove-Item package-lock.json -Force
@@ -132,6 +139,7 @@ If the automated setup fails, continue with the manual troubleshooting below.
    ```
 
 2. **Check Node.js version:**
+
    ```powershell
    node --version  # Should be v18.0.0 or higher
    ```
@@ -152,11 +160,13 @@ If the automated setup fails, continue with the manual troubleshooting below.
 **Solution:**
 
 1. **Install with KiCAD's Python:**
+
    ```powershell
    & "C:\Program Files\KiCad\9.0\bin\python.exe" -m pip install -r requirements.txt
    ```
 
 2. **If pip is not available:**
+
    ```powershell
    # Download get-pip.py
    Invoke-WebRequest -Uri https://bootstrap.pypa.io/get-pip.py -OutFile get-pip.py
@@ -197,6 +207,7 @@ If the automated setup fails, continue with the manual troubleshooting below.
 **Symptom:** Config file paths not working
 
 **Common mistakes:**
+
 ```json
 // ❌ Wrong - single backslashes
 "args": ["C:\Users\Name\KiCAD-MCP-Server\dist\index.js"]
@@ -224,6 +235,7 @@ If the automated setup fails, continue with the manual troubleshooting below.
 KiCAD MCP requires Python 3.10+. KiCAD 9.0 includes Python 3.11, which is perfect.
 
 **Always use KiCAD's bundled Python:**
+
 ```json
 {
   "mcpServers": {
@@ -315,6 +327,7 @@ print('SUCCESS!')
 ```
 
 Expected output:
+
 ```
 Python version: 3.11.x ...
 pcbnew version: 9.0.0
@@ -364,6 +377,7 @@ Should show successful initialization with no errors.
 ### Enable Verbose Logging
 
 Add to your MCP config:
+
 ```json
 {
   "env": {
@@ -412,9 +426,11 @@ if ($process.HasExited) {
 If none of the above solutions work:
 
 1. **Run the diagnostic script:**
+
    ```powershell
    .\setup-windows.ps1
    ```
+
    Copy the entire output.
 
 2. **Collect log files:**
@@ -437,12 +453,14 @@ If none of the above solutions work:
 1. **File paths are case-insensitive** but should match actual casing for best results
 
 2. **Long path support** may be needed for deeply nested projects:
+
    ```powershell
    # Enable long paths (requires admin)
    New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
    ```
 
 3. **Windows Defender** may slow down file operations. Add exclusion:
+
    ```
    Settings → Windows Security → Virus & threat protection → Exclusions
    Add: C:\Users\YourName\KiCAD-MCP-Server

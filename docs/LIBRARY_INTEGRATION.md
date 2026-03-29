@@ -7,6 +7,7 @@
 ## Overview
 
 The KiCAD MCP Server includes full library integration for both footprints and symbols, enabling:
+
 - ✅ Automatic discovery of all installed KiCAD footprint libraries
 - ✅ Automatic discovery of KiCAD symbol libraries (including project-local)
 - ✅ Search and browse footprints/symbols across all libraries
@@ -45,6 +46,7 @@ The library system automatically discovers both footprint and symbol libraries:
 ### Supported Formats
 
 **Library:Footprint format (recommended):**
+
 ```json
 {
   "componentId": "Resistor_SMD:R_0603_1608Metric"
@@ -52,6 +54,7 @@ The library system automatically discovers both footprint and symbol libraries:
 ```
 
 **Footprint-only format (searches all libraries):**
+
 ```json
 {
   "componentId": "R_0603_1608Metric"
@@ -67,6 +70,7 @@ List all available footprint libraries.
 **Parameters:** None
 
 **Returns:**
+
 ```json
 {
   "success": true,
@@ -80,14 +84,16 @@ List all available footprint libraries.
 Search for footprints matching a pattern.
 
 **Parameters:**
+
 ```json
 {
-  "pattern": "*0603*",  // Supports wildcards
-  "limit": 20           // Optional, default: 20
+  "pattern": "*0603*", // Supports wildcards
+  "limit": 20 // Optional, default: 20
 }
 ```
 
 **Returns:**
+
 ```json
 {
   "success": true,
@@ -107,6 +113,7 @@ Search for footprints matching a pattern.
 List all footprints in a specific library.
 
 **Parameters:**
+
 ```json
 {
   "library": "Resistor_SMD"
@@ -114,6 +121,7 @@ List all footprints in a specific library.
 ```
 
 **Returns:**
+
 ```json
 {
   "success": true,
@@ -128,6 +136,7 @@ List all footprints in a specific library.
 Get detailed information about a specific footprint.
 
 **Parameters:**
+
 ```json
 {
   "footprint": "Resistor_SMD:R_0603_1608Metric"
@@ -135,6 +144,7 @@ Get detailed information about a specific footprint.
 ```
 
 **Returns:**
+
 ```json
 {
   "success": true,
@@ -153,8 +163,8 @@ The `place_component` tool now uses the library system:
 
 ```json
 {
-  "componentId": "Resistor_SMD:R_0603_1608Metric",  // Library:Footprint format
-  "position": {"x": 50, "y": 40, "unit": "mm"},
+  "componentId": "Resistor_SMD:R_0603_1608Metric", // Library:Footprint format
+  "position": { "x": 50, "y": 40, "unit": "mm" },
   "reference": "R1",
   "value": "10k",
   "rotation": 0,
@@ -163,6 +173,7 @@ The `place_component` tool now uses the library system:
 ```
 
 **Features:**
+
 - ✅ Automatic footprint discovery across all libraries
 - ✅ Helpful error messages with suggestions
 - ✅ Supports KiCAD 9.0 API (EDA_ANGLE, GetFPIDAsString)
@@ -170,6 +181,7 @@ The `place_component` tool now uses the library system:
 ## Example Usage (Claude Code)
 
 **Search for a resistor footprint:**
+
 ```
 User: "Find me a 0603 resistor footprint"
 
@@ -178,6 +190,7 @@ Claude: [uses search_footprints tool with pattern "*R_0603*"]
 ```
 
 **Place a component:**
+
 ```
 User: "Place a 10k 0603 resistor at 50,40mm"
 
@@ -186,6 +199,7 @@ Claude: [uses place_component with "Resistor_SMD:R_0603_1608Metric"]
 ```
 
 **List available capacitors:**
+
 ```
 User: "What capacitor footprints are available?"
 
@@ -223,18 +237,22 @@ The system automatically detects KiCAD installations, but you can add custom lib
 The library integration includes full KiCAD 9.0 API support:
 
 ### Fixed API Changes:
+
 1. ✅ `SetOrientation()` → now uses `EDA_ANGLE(degrees, DEGREES_T)`
 2. ✅ `GetOrientation()` → returns `EDA_ANGLE`, call `.AsDegrees()`
 3. ✅ `GetFootprintName()` → now `GetFPIDAsString()`
 
 ### Example Fixes:
+
 **Old (KiCAD 8.0):**
+
 ```python
 module.SetOrientation(90 * 10)  # Decidegrees
 rotation = module.GetOrientation() / 10
 ```
 
 **New (KiCAD 9.0):**
+
 ```python
 angle = pcbnew.EDA_ANGLE(90, pcbnew.DEGREES_T)
 module.SetOrientation(angle)
@@ -248,6 +266,7 @@ rotation = module.GetOrientation().AsDegrees()
 **Location:** `python/commands/library.py`
 
 **Key Methods:**
+
 - `_load_libraries()` - Parse fp-lib-table files
 - `_parse_fp_lib_table()` - S-expression parser
 - `_resolve_uri()` - Handle environment variables
@@ -256,6 +275,7 @@ rotation = module.GetOrientation().AsDegrees()
 - `list_footprints()` - List library contents
 
 **Performance:**
+
 - Libraries loaded once at startup
 - Footprint lists cached on first access
 - Fast search using Python regex
@@ -281,6 +301,7 @@ rotation = module.GetOrientation().AsDegrees()
 ## Testing
 
 **Test Coverage:**
+
 - ✅ Library path discovery (Linux/Windows/macOS)
 - ✅ fp-lib-table parsing
 - ✅ Environment variable resolution
@@ -289,6 +310,7 @@ rotation = module.GetOrientation().AsDegrees()
 - ✅ Error handling and suggestions
 
 **Verified With:**
+
 - KiCAD 9.0.5 on Ubuntu 24.04
 - 153 standard libraries (8,000+ footprints)
 - pcbnew Python API
@@ -316,6 +338,7 @@ rotation = module.GetOrientation().AsDegrees()
 **Cause:** fp-lib-table not found or empty
 
 **Solution:**
+
 1. Verify KiCAD is installed
 2. Open KiCAD and ensure libraries are configured
 3. Check `~/.config/kicad/9.0/fp-lib-table` exists
@@ -325,6 +348,7 @@ rotation = module.GetOrientation().AsDegrees()
 **Cause:** Footprint doesn't exist or library not loaded
 
 **Solution:**
+
 1. Use `search_footprints` to find similar footprints
 2. Check library name is correct
 3. Verify library is in fp-lib-table
@@ -334,6 +358,7 @@ rotation = module.GetOrientation().AsDegrees()
 **Cause:** Corrupt .kicad_mod file or permissions issue
 
 **Solution:**
+
 1. Check file permissions on library directories
 2. Reinstall KiCAD libraries if corrupt
 3. Check logs for detailed error
@@ -348,6 +373,7 @@ rotation = module.GetOrientation().AsDegrees()
 ## Changelog
 
 **2026-03-21 - v2.2.3+**
+
 - ✅ Project-local symbol library support (v2.2.2)
 - ✅ Project-local footprint library support (v2.2.2)
 - ✅ Implemented LibraryManager class

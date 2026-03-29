@@ -18,30 +18,35 @@ The dynamic symbol loading is now **FULLY OPERATIONAL** and accessible through t
 ## What's Working (Core Functionality)
 
 ### ✅ Symbol Extraction
+
 - Parse `.kicad_sym` library files using S-expression parser
 - Extract specific symbol definitions by name
 - Cache parsed libraries for performance
 - Tested with Device.kicad_sym (533 symbols)
 
 ### ✅ S-Expression Manipulation
+
 - Load schematic files as S-expression trees
 - Inject symbol definitions into `lib_symbols` section
 - Preserve schematic structure and formatting
 - Write modified schematics back to disk
 
 ### ✅ Template Instance Creation
+
 - Create offscreen template instances at negative Y coordinates
 - Generate unique UUIDs for each template
 - Set proper properties (Reference, Value, Footprint, Datasheet)
 - Templates marked as: `in_bom: no`, `on_board: no`, `dnp: yes`
 
 ### ✅ Component Cloning
+
 - kicad-skip successfully clones from dynamic templates
 - Components inherit symbol structure from injected definitions
 - Properties can be modified after cloning
 - Full integration with existing ComponentManager
 
 ### ✅ Cross-Platform Library Discovery
+
 - Linux: `/usr/share/kicad/symbols`, `~/.local/share/kicad/*/symbols`
 - Windows: `C:/Program Files/KiCad/*/share/kicad/symbols`
 - macOS: `/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols`
@@ -91,6 +96,7 @@ Results:
 **Class:** `DynamicSymbolLoader`
 
 **Key Methods:**
+
 ```python
 # Library Discovery
 find_kicad_symbol_libraries() -> List[Path]
@@ -109,6 +115,7 @@ load_symbol_dynamically(schematic_path: Path, library: str, symbol: str) -> str
 ```
 
 **Caching:**
+
 - `library_cache`: Parsed library files (path → S-expression data)
 - `symbol_cache`: Extracted symbols (lib:symbol → symbol definition)
 
@@ -117,16 +124,19 @@ load_symbol_dynamically(schematic_path: Path, library: str, symbol: str) -> str
 ## What's NOT Yet Done (Integration Layer)
 
 ### ⏳ MCP Tool Integration
+
 - Need to create `add_schematic_component_dynamic` MCP tool
 - Wire dynamic loader through MCP interface (has schematic path)
 - Update existing `add_schematic_component` to auto-detect and use dynamic loading
 
 ### ⏳ Smart Symbol Discovery
+
 - Automatic library detection from component type
 - Search across all libraries for symbol names
 - Fuzzy matching for symbol names
 
 ### ⏳ Advanced Features
+
 - Multi-unit symbol support (e.g., quad op-amps)
 - Pin configuration handling
 - Custom library registration
@@ -137,21 +147,25 @@ load_symbol_dynamically(schematic_path: Path, library: str, symbol: str) -> str
 ## Technical Challenges Solved
 
 ### Challenge 1: S-Expression Parsing
+
 **Problem:** KiCad files use Lisp-style S-expressions, complex to parse
 **Solution:** Used `sexpdata` library (already a dependency of kicad-skip)
 **Result:** ✅ Robust parsing with proper handling of nested structures
 
 ### Challenge 2: Symbol Structure Complexity
+
 **Problem:** Symbols have complex nested structure with multiple sub-symbols
 **Solution:** Extract entire symbol tree as-is, inject without modification
 **Result:** ✅ Preserves all symbol details (graphics, pins, properties)
 
 ### Challenge 3: kicad-skip Integration
+
 **Problem:** kicad-skip can only clone existing symbols, can't create from scratch
 **Solution:** Inject symbol into lib_symbols, create template instance, then clone
 **Result:** ✅ Seamless integration, kicad-skip unaware of dynamic loading
 
 ### Challenge 4: Schematic File Path Access
+
 **Problem:** kicad-skip Schematic object doesn't expose file path
 **Solution:** Pass schematic path explicitly at MCP interface layer
 **Result:** ⏳ Workaround identified, integration pending
@@ -192,7 +206,7 @@ await mcpServer.callTool("add_schematic_component_dynamic", {
   reference: "U1",
   x: 100,
   y: 100,
-  footprint: "Package_QFP:LQFP-48_7x7mm_P0.5mm"
+  footprint: "Package_QFP:LQFP-48_7x7mm_P0.5mm",
 });
 
 // The tool will:
@@ -209,21 +223,22 @@ await mcpServer.callTool("add_schematic_component_dynamic", {
 
 ## Comparison: Before vs After
 
-| Feature | Static Templates (Current) | Dynamic Loading (New) |
-|---------|---------------------------|----------------------|
-| **Available Symbols** | 13 types | ~10,000+ types |
-| **Maintenance** | Manual template updates | Zero maintenance |
-| **Custom Symbols** | Not supported | Fully supported |
-| **3rd Party Libs** | Not supported | Fully supported |
-| **Setup Time** | Pre-created templates | On-demand loading |
-| **Performance** | Instant (pre-loaded) | ~80ms first time, ~30ms cached |
-| **Flexibility** | Limited to template list | Any .kicad_sym file |
+| Feature               | Static Templates (Current) | Dynamic Loading (New)          |
+| --------------------- | -------------------------- | ------------------------------ |
+| **Available Symbols** | 13 types                   | ~10,000+ types                 |
+| **Maintenance**       | Manual template updates    | Zero maintenance               |
+| **Custom Symbols**    | Not supported              | Fully supported                |
+| **3rd Party Libs**    | Not supported              | Fully supported                |
+| **Setup Time**        | Pre-created templates      | On-demand loading              |
+| **Performance**       | Instant (pre-loaded)       | ~80ms first time, ~30ms cached |
+| **Flexibility**       | Limited to template list   | Any .kicad_sym file            |
 
 ---
 
 ## Phase Progress
 
 ### ✅ Phase A: Proof of Concept (COMPLETE)
+
 - [x] Create `DynamicSymbolLoader` class
 - [x] Implement library discovery (Linux paths)
 - [x] Implement symbol indexing
@@ -235,6 +250,7 @@ await mcpServer.callTool("add_schematic_component_dynamic", {
 **Actual Time:** 4 hours! 🎉
 
 ### ⏳ Phase B: Core Functionality (IN PROGRESS)
+
 - [ ] Cross-platform library discovery (Windows, macOS)
 - [ ] Symbol search functionality
 - [ ] Template instance creation automation
@@ -246,6 +262,7 @@ await mcpServer.callTool("add_schematic_component_dynamic", {
 **Progress:** 25% (cross-platform discovery done)
 
 ### ✅ Phase C: MCP Integration (COMPLETE!)
+
 - [x] Integrate dynamic loading into `add_schematic_component` MCP handler
 - [x] Implement save → inject → reload → clone orchestration
 - [x] Add schematic_path parameter throughout component chain
@@ -258,6 +275,7 @@ await mcpServer.callTool("add_schematic_component_dynamic", {
 **Status:** PRODUCTION READY!
 
 **What Works Now:**
+
 - ✅ Users can add ANY symbol from KiCad libraries via MCP interface
 - ✅ Automatic detection and dynamic loading
 - ✅ Seamless fallback to static templates
@@ -265,6 +283,7 @@ await mcpServer.callTool("add_schematic_component_dynamic", {
 - ✅ Compatible with all existing MCP clients
 
 ### ⏸️ Phase D: Advanced Features (PENDING)
+
 - [ ] Multi-unit symbol support (e.g., quad OpAmps)
 - [ ] Custom library registration
 - [ ] Symbol caching and optimization
@@ -299,18 +318,21 @@ await mcpServer.callTool("add_schematic_component_dynamic", {
 ## Success Metrics
 
 ### Phase A Metrics (All Achieved ✅)
+
 - [x] Load symbols from Device.kicad_sym (passives)
 - [x] Support R, C, L, D, LED (5 core types)
 - [x] Cross-platform library discovery
 - [x] Proper error handling
 
 ### Phase B Metrics (Target)
+
 - [ ] Support for all Device.kicad_sym symbols (~500 symbols)
 - [ ] Support for Connector.kicad_sym symbols
 - [ ] Symbol search by name/keyword
 - [ ] Performance: < 1 second per symbol injection
 
 ### Overall Success Criteria
+
 - [ ] Access to all standard libraries (~10,000 symbols)
 - [ ] Works on Linux, Windows, macOS
 - [ ] <100ms latency for cached symbols
@@ -321,13 +343,13 @@ await mcpServer.callTool("add_schematic_component_dynamic", {
 
 ## Risks & Mitigations
 
-| Risk | Status | Mitigation |
-|------|--------|------------|
-| S-expression complexity | ✅ RESOLVED | Used proven sexpdata library |
-| Performance degradation | ✅ RESOLVED | Caching works great (<30ms cached) |
-| KiCad version compatibility | ⚠️ TESTING | Version detection, format validation |
-| Template fallback breaks | ✅ PREVENTED | Maintained static templates in parallel |
-| Integration complexity | ⏳ IN PROGRESS | Clean separation of concerns |
+| Risk                        | Status         | Mitigation                              |
+| --------------------------- | -------------- | --------------------------------------- |
+| S-expression complexity     | ✅ RESOLVED    | Used proven sexpdata library            |
+| Performance degradation     | ✅ RESOLVED    | Caching works great (<30ms cached)      |
+| KiCad version compatibility | ⚠️ TESTING     | Version detection, format validation    |
+| Template fallback breaks    | ✅ PREVENTED   | Maintained static templates in parallel |
+| Integration complexity      | ⏳ IN PROGRESS | Clean separation of concerns            |
 
 ---
 
@@ -353,13 +375,13 @@ await mcpServer.callTool("add_schematic_component_dynamic", {
 
 ### Test Components
 
-| Component | Type | Library | Dynamic? | Result |
-|-----------|------|---------|----------|--------|
-| R1 | Resistor | Device | Yes | ✅ Added successfully |
-| C1 | Capacitor | Device | Yes | ✅ Added successfully |
-| BT1 | Battery | Device | **Yes** | ✅ **Dynamic load + clone** |
-| F1 | Fuse | Device | **Yes** | ✅ **Dynamic load + clone** |
-| T1 | Transformer_1P_1S | Device | **Yes** | ✅ **Dynamic load + clone** |
+| Component | Type              | Library | Dynamic? | Result                      |
+| --------- | ----------------- | ------- | -------- | --------------------------- |
+| R1        | Resistor          | Device  | Yes      | ✅ Added successfully       |
+| C1        | Capacitor         | Device  | Yes      | ✅ Added successfully       |
+| BT1       | Battery           | Device  | **Yes**  | ✅ **Dynamic load + clone** |
+| F1        | Fuse              | Device  | **Yes**  | ✅ **Dynamic load + clone** |
+| T1        | Transformer_1P_1S | Device  | **Yes**  | ✅ **Dynamic load + clone** |
 
 ### Results Summary
 
@@ -375,6 +397,7 @@ await mcpServer.callTool("add_schematic_component_dynamic", {
 ✅ Users can now add **ANY symbol from ~10,000 KiCad symbols** through the MCP interface!
 
 ✅ The system automatically:
+
 1. Detects if symbol needs dynamic loading
 2. Saves current schematic
 3. Injects symbol definition from library

@@ -8,10 +8,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-export function registerDatasheetTools(
-  server: McpServer,
-  callKicadScript: Function,
-) {
+export function registerDatasheetTools(server: McpServer, callKicadScript: Function) {
   // ── enrich_datasheets ──────────────────────────────────────────────────────
   server.tool(
     "enrich_datasheets",
@@ -30,16 +27,12 @@ No API key or internet lookup required – the URL is constructed directly.
 
 Use dry_run=true to preview changes without writing.`,
     {
-      schematic_path: z
-        .string()
-        .describe("Path to the .kicad_sch file to enrich"),
+      schematic_path: z.string().describe("Path to the .kicad_sch file to enrich"),
       dry_run: z
         .boolean()
         .optional()
         .default(false)
-        .describe(
-          "If true, show what would be changed without writing to disk (default: false)",
-        ),
+        .describe("If true, show what would be changed without writing to disk (default: false)"),
     },
     async (args: { schematic_path: string; dry_run?: boolean }) => {
       const result = await callKicadScript("enrich_datasheets", args);
@@ -65,9 +58,7 @@ Use dry_run=true to preview changes without writing.`,
         }
 
         if (result.updated === 0 && !args.dry_run) {
-          lines.push(
-            "\nNo changes needed – all LCSC components already have a Datasheet URL.",
-          );
+          lines.push("\nNo changes needed – all LCSC components already have a Datasheet URL.");
         }
 
         return { content: [{ type: "text", text: lines.join("\n") }] };
@@ -96,9 +87,7 @@ Example: get_datasheet_url("C179739")
     {
       lcsc: z
         .string()
-        .describe(
-          'LCSC part number, with or without "C" prefix (e.g. "C179739" or "179739")',
-        ),
+        .describe('LCSC part number, with or without "C" prefix (e.g. "C179739" or "179739")'),
     },
     async (args: { lcsc: string }) => {
       const result = await callKicadScript("get_datasheet_url", { lcsc: args.lcsc });

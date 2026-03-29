@@ -1,4 +1,5 @@
 # Linux Compatibility Audit Report
+
 **Date:** 2025-10-25
 **Target Platform:** Ubuntu 24.04 LTS (primary), Fedora, Arch (secondary)
 **Current Status:** Windows-optimized, partial Linux support
@@ -10,6 +11,7 @@
 The KiCAD MCP Server was originally developed for Windows and has several compatibility issues preventing smooth operation on Linux. This audit identifies all platform-specific issues and provides remediation priorities.
 
 **Overall Status:** 🟡 **PARTIAL COMPATIBILITY**
+
 - ✅ TypeScript server: Good cross-platform support
 - 🟡 Python interface: Mixed (some hardcoded paths)
 - ❌ Configuration: Windows-specific examples
@@ -20,7 +22,9 @@ The KiCAD MCP Server was originally developed for Windows and has several compat
 ## Critical Issues (P0 - Must Fix)
 
 ### 1. Hardcoded Windows Paths in Config Examples
+
 **File:** `config/claude-desktop-config.json`
+
 ```json
 "cwd": "c:/repo/KiCAD-MCP",
 "PYTHONPATH": "C:/Program Files/KiCad/9.0/lib/python3/dist-packages"
@@ -33,7 +37,9 @@ The KiCAD MCP Server was originally developed for Windows and has several compat
 ---
 
 ### 2. Library Search Paths (Mixed Approach)
+
 **File:** `python/commands/library_schematic.py:16`
+
 ```python
 search_paths = [
     "C:/Program Files/KiCad/*/share/kicad/symbols/*.kicad_sym",  # Windows
@@ -49,7 +55,9 @@ search_paths = [
 ---
 
 ### 3. Python Path Detection
+
 **File:** `python/kicad_interface.py:38-45`
+
 ```python
 kicad_paths = [
     os.path.join(os.path.dirname(sys.executable), 'Lib', 'site-packages'),
@@ -66,9 +74,11 @@ kicad_paths = [
 ## High Priority Issues (P1)
 
 ### 4. Documentation is Windows-Only
+
 **Files:** `README.md`, installation instructions
 
 **Issues:**
+
 - Installation paths reference `C:\Program Files`
 - VSCode settings path is Windows format
 - No Linux-specific troubleshooting
@@ -79,6 +89,7 @@ kicad_paths = [
 ---
 
 ### 5. Missing Python Dependencies Documentation
+
 **File:** None (no requirements.txt)
 
 **Impact:** Users don't know what Python packages to install
@@ -88,6 +99,7 @@ kicad_paths = [
 ---
 
 ### 6. Path Handling Uses os.path Instead of pathlib
+
 **Files:** All Python files (11 files)
 
 **Impact:** Code is less readable and more error-prone
@@ -99,6 +111,7 @@ kicad_paths = [
 ## Medium Priority Issues (P2)
 
 ### 7. No Linux-Specific Testing
+
 **Impact:** Can't verify Linux compatibility
 **Fix:** Add GitHub Actions with Ubuntu runner
 **Priority:** P2
@@ -106,9 +119,11 @@ kicad_paths = [
 ---
 
 ### 8. Log File Paths May Differ
+
 **File:** `src/logger.ts:13`
+
 ```typescript
-const DEFAULT_LOG_DIR = join(os.homedir(), '.kicad-mcp', 'logs');
+const DEFAULT_LOG_DIR = join(os.homedir(), ".kicad-mcp", "logs");
 ```
 
 **Impact:** `.kicad-mcp` is okay for Linux, but best practice is `~/.config/kicad-mcp`
@@ -118,6 +133,7 @@ const DEFAULT_LOG_DIR = join(os.homedir(), '.kicad-mcp', 'logs');
 ---
 
 ### 9. No Bash/Shell Scripts for Linux
+
 **Impact:** Manual setup is harder on Linux
 **Fix:** Create `install.sh` and `run.sh` scripts
 **Priority:** P2
@@ -127,6 +143,7 @@ const DEFAULT_LOG_DIR = join(os.homedir(), '.kicad-mcp', 'logs');
 ## Low Priority Issues (P3)
 
 ### 10. TypeScript Build Uses Windows Conventions
+
 **File:** `package.json`
 
 **Impact:** Works but could be more Linux-friendly
@@ -151,6 +168,7 @@ const DEFAULT_LOG_DIR = join(os.homedir(), '.kicad-mcp', 'logs');
 ### **Week 1 - Critical Fixes (P0)**
 
 1. **Create Platform-Specific Config Templates**
+
    ```bash
    config/
    ├── linux-config.example.json
@@ -159,6 +177,7 @@ const DEFAULT_LOG_DIR = join(os.homedir(), '.kicad-mcp', 'logs');
    ```
 
 2. **Fix Python Path Detection**
+
    ```python
    # Detect platform and set appropriate paths
    import platform
@@ -187,6 +206,7 @@ const DEFAULT_LOG_DIR = join(os.homedir(), '.kicad-mcp', 'logs');
 ### **Week 1 - High Priority (P1)**
 
 4. **Create requirements.txt**
+
    ```txt
    # requirements.txt
    kicad-skip>=0.1.0
@@ -209,6 +229,7 @@ const DEFAULT_LOG_DIR = join(os.homedir(), '.kicad-mcp', 'logs');
 ## Testing Checklist
 
 ### Ubuntu 24.04 LTS Testing
+
 - [ ] Install KiCAD 9.0 from official PPA
 - [ ] Install Node.js 18+ from NodeSource
 - [ ] Clone repository
@@ -220,10 +241,12 @@ const DEFAULT_LOG_DIR = join(os.homedir(), '.kicad-mcp', 'logs');
 - [ ] Test: Export Gerbers
 
 ### Fedora Testing
+
 - [ ] Install KiCAD from Fedora repos
 - [ ] Test same workflow
 
 ### Arch Testing
+
 - [ ] Install KiCAD from AUR
 - [ ] Test same workflow
 
