@@ -3,12 +3,13 @@ Backend factory for creating appropriate KiCAD API backend
 
 Auto-detects available backends and provides fallback mechanism.
 """
-import os
-import logging
-from typing import Optional
-from pathlib import Path
 
-from kicad_api.base import KiCADBackend, APINotAvailableError
+import logging
+import os
+from pathlib import Path
+from typing import Optional
+
+from kicad_api.base import APINotAvailableError, KiCADBackend
 
 logger = logging.getLogger(__name__)
 
@@ -34,16 +35,16 @@ def create_backend(backend_type: Optional[str] = None) -> KiCADBackend:
     """
     # Check environment variable override
     if backend_type is None:
-        backend_type = os.environ.get('KICAD_BACKEND', 'auto').lower()
+        backend_type = os.environ.get("KICAD_BACKEND", "auto").lower()
 
     logger.info(f"Requested backend: {backend_type}")
 
     # Try specific backend if requested
-    if backend_type == 'ipc':
+    if backend_type == "ipc":
         return _create_ipc_backend()
-    elif backend_type == 'swig':
+    elif backend_type == "swig":
         return _create_swig_backend()
-    elif backend_type == 'auto':
+    elif backend_type == "auto":
         return _auto_detect_backend()
     else:
         raise ValueError(f"Unknown backend type: {backend_type}")
@@ -61,13 +62,13 @@ def _create_ipc_backend() -> KiCADBackend:
     """
     try:
         from kicad_api.ipc_backend import IPCBackend
+
         logger.info("Creating IPC backend")
         return IPCBackend()
     except ImportError as e:
         logger.error(f"IPC backend not available: {e}")
         raise APINotAvailableError(
-            "IPC backend requires 'kicad-python' package. "
-            "Install with: pip install kicad-python"
+            "IPC backend requires 'kicad-python' package. " "Install with: pip install kicad-python"
         ) from e
 
 
@@ -83,6 +84,7 @@ def _create_swig_backend() -> KiCADBackend:
     """
     try:
         from kicad_api.swig_backend import SWIGBackend
+
         logger.info("Creating SWIG backend")
         logger.warning(
             "SWIG backend is DEPRECATED and will be removed in KiCAD 10.0. "
@@ -92,8 +94,7 @@ def _create_swig_backend() -> KiCADBackend:
     except ImportError as e:
         logger.error(f"SWIG backend not available: {e}")
         raise APINotAvailableError(
-            "SWIG backend requires 'pcbnew' module. "
-            "Ensure KiCAD Python module is in PYTHONPATH."
+            "SWIG backend requires 'pcbnew' module. " "Ensure KiCAD Python module is in PYTHONPATH."
         ) from e
 
 
@@ -129,8 +130,7 @@ def _auto_detect_backend() -> KiCADBackend:
     try:
         backend = _create_swig_backend()
         logger.warning(
-            "Using deprecated SWIG backend. "
-            "For best results, use IPC API with KiCAD running."
+            "Using deprecated SWIG backend. " "For best results, use IPC API with KiCAD running."
         )
         return backend
     except (ImportError, APINotAvailableError) as e:
@@ -160,22 +160,18 @@ def get_available_backends() -> dict:
     # Check IPC (kicad-python uses 'kipy' module name)
     try:
         import kipy
-        results['ipc'] = {
-            'available': True,
-            'version': getattr(kipy, '__version__', 'unknown')
-        }
+
+        results["ipc"] = {"available": True, "version": getattr(kipy, "__version__", "unknown")}
     except ImportError:
-        results['ipc'] = {'available': False, 'version': None}
+        results["ipc"] = {"available": False, "version": None}
 
     # Check SWIG
     try:
         import pcbnew
-        results['swig'] = {
-            'available': True,
-            'version': pcbnew.GetBuildVersion()
-        }
+
+        results["swig"] = {"available": True, "version": pcbnew.GetBuildVersion()}
     except ImportError:
-        results['swig'] = {'available': False, 'version': None}
+        results["swig"] = {"available": False, "version": None}
 
     return results
 
@@ -183,6 +179,7 @@ def get_available_backends() -> dict:
 if __name__ == "__main__":
     # Quick diagnostic
     import json
+
     print("KiCAD Backend Availability:")
     print(json.dumps(get_available_backends(), indent=2))
 

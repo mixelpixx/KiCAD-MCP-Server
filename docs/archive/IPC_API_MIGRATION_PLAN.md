@@ -12,14 +12,14 @@ The current KiCAD MCP Server uses SWIG-based Python bindings (`import pcbnew`) w
 
 ### Why Migrate?
 
-| SWIG API (Current) | IPC API (Future) |
-|-------------------|------------------|
-| ❌ Deprecated | ✅ Official & Supported |
-| ❌ Will be removed in KiCAD 10.0 | ✅ Long-term stability |
-| ❌ Python-only | ✅ Multi-language (Python, JS, etc.) |
-| ❌ Direct linking | ✅ Inter-process communication |
-| ⚠️ Synchronous only | ✅ Async support |
-| ⚠️ No versioning | ✅ Protocol Buffers versioning |
+| SWIG API (Current)               | IPC API (Future)                     |
+| -------------------------------- | ------------------------------------ |
+| ❌ Deprecated                    | ✅ Official & Supported              |
+| ❌ Will be removed in KiCAD 10.0 | ✅ Long-term stability               |
+| ❌ Python-only                   | ✅ Multi-language (Python, JS, etc.) |
+| ❌ Direct linking                | ✅ Inter-process communication       |
+| ⚠️ Synchronous only              | ✅ Async support                     |
+| ⚠️ No versioning                 | ✅ Protocol Buffers versioning       |
 
 **Decision: Migrate immediately to avoid technical debt**
 
@@ -72,11 +72,13 @@ The current KiCAD MCP Server uses SWIG-based Python bindings (`import pcbnew`) w
 ### Phase 1: Research & Preparation (Days 1-2)
 
 **Goals:**
+
 - Understand kicad-python library
 - Test IPC connection
 - Document API differences
 
 **Tasks:**
+
 ```bash
 # Install kicad-python
 pip install kicad-python>=0.5.0
@@ -93,6 +95,7 @@ EOF
 ```
 
 **Deliverables:**
+
 - [ ] kicad-python installed and tested
 - [ ] Connection test script
 - [ ] API comparison document (SWIG vs IPC)
@@ -104,6 +107,7 @@ EOF
 **Goal:** Create an abstraction layer to support both APIs during transition
 
 **File Structure:**
+
 ```
 python/kicad_api/
 ├── __init__.py
@@ -114,6 +118,7 @@ python/kicad_api/
 ```
 
 **Abstract Interface:**
+
 ```python
 # python/kicad_api/base.py
 from abc import ABC, abstractmethod
@@ -157,6 +162,7 @@ class KiCADBackend(ABC):
 ```
 
 **IPC Implementation:**
+
 ```python
 # python/kicad_api/ipc_backend.py
 from kicad import KiCad
@@ -187,6 +193,7 @@ class IPCBackend(KiCADBackend):
 ```
 
 **Backend Factory:**
+
 ```python
 # python/kicad_api/factory.py
 from typing import Optional
@@ -222,6 +229,7 @@ def create_backend(backend_type: Optional[str] = None) -> KiCADBackend:
 ```
 
 **Deliverables:**
+
 - [ ] Abstract base class defined
 - [ ] IPC backend implemented
 - [ ] SWIG backend (wrapper around existing code)
@@ -262,6 +270,7 @@ def create_backend(backend_type: Optional[str] = None) -> KiCADBackend:
 **Total Estimated Time: 30 hours (~4 days)**
 
 **Migration Template:**
+
 ```python
 # OLD (SWIG)
 import pcbnew
@@ -277,6 +286,7 @@ board_api.set_size(width, height)
 ```
 
 **Deliverables:**
+
 - [ ] project.py migrated
 - [ ] board.py migrated
 - [ ] component.py migrated
@@ -291,6 +301,7 @@ board_api.set_size(width, height)
 **Testing Strategy:**
 
 1. **Unit Tests**
+
    ```python
    @pytest.mark.parametrize("backend_type", ["ipc", "swig"])
    def test_create_project(backend_type):
@@ -311,6 +322,7 @@ board_api.set_size(width, height)
    ```
 
 **Deliverables:**
+
 - [ ] 50+ unit tests passing for IPC backend
 - [ ] Side-by-side comparison tests
 - [ ] Performance benchmarks documented
@@ -321,35 +333,35 @@ board_api.set_size(width, height)
 
 ### Project Operations
 
-| Operation | SWIG | IPC |
-|-----------|------|-----|
+| Operation      | SWIG                 | IPC                      |
+| -------------- | -------------------- | ------------------------ |
 | Create project | Custom file creation | `kicad.create_project()` |
-| Open project | `pcbnew.LoadBoard()` | `kicad.open_project()` |
-| Save project | `board.Save()` | `board.save()` |
+| Open project   | `pcbnew.LoadBoard()` | `kicad.open_project()`   |
+| Save project   | `board.Save()`       | `board.save()`           |
 
 ### Board Operations
 
-| Operation | SWIG | IPC |
-|-----------|------|-----|
-| Get board | `pcbnew.LoadBoard()` | `kicad.get_board()` |
-| Set size | `board.SetBoardSize()` | `board.set_size()` |
+| Operation | SWIG                    | IPC                  |
+| --------- | ----------------------- | -------------------- |
+| Get board | `pcbnew.LoadBoard()`    | `kicad.get_board()`  |
+| Set size  | `board.SetBoardSize()`  | `board.set_size()`   |
 | Add layer | `board.GetLayerCount()` | `board.layers.add()` |
 
 ### Component Operations
 
-| Operation | SWIG | IPC |
-|-----------|------|-----|
-| Place component | `pcbnew.FOOTPRINT()` | `board.add_footprint()` |
-| Move component | `fp.SetPosition()` | `footprint.set_position()` |
+| Operation        | SWIG                  | IPC                        |
+| ---------------- | --------------------- | -------------------------- |
+| Place component  | `pcbnew.FOOTPRINT()`  | `board.add_footprint()`    |
+| Move component   | `fp.SetPosition()`    | `footprint.set_position()` |
 | Rotate component | `fp.SetOrientation()` | `footprint.set_rotation()` |
 
 ### Routing Operations
 
-| Operation | SWIG | IPC |
-|-----------|------|-----|
-| Add net | `board.GetNetCount()` | `board.nets.add()` |
-| Route trace | `pcbnew.PCB_TRACK()` | `board.add_track()` |
-| Add via | `pcbnew.PCB_VIA()` | `board.add_via()` |
+| Operation   | SWIG                  | IPC                 |
+| ----------- | --------------------- | ------------------- |
+| Add net     | `board.GetNetCount()` | `board.nets.add()`  |
+| Route trace | `pcbnew.PCB_TRACK()`  | `board.add_track()` |
+| Add via     | `pcbnew.PCB_VIA()`    | `board.add_via()`   |
 
 ---
 
@@ -378,6 +390,7 @@ export KICAD_BACKEND=ipc  # or 'swig' or 'auto'
 ### User Migration Guide
 
 Create `docs/MIGRATING_TO_IPC.md`:
+
 - How to enable IPC in KiCAD
 - What changes for users
 - Troubleshooting IPC connection issues
@@ -408,14 +421,14 @@ If IPC migration fails:
 
 ## Timeline
 
-| Week | Days | Tasks |
-|------|------|-------|
+| Week       | Days    | Tasks                                           |
+| ---------- | ------- | ----------------------------------------------- |
 | **Week 2** | Mon-Tue | Research, install kicad-python, test connection |
-| | Wed-Thu | Build abstraction layer |
-| | Fri | Port project.py and board.py |
-| **Week 3** | Mon-Tue | Port component.py and routing.py |
-| | Wed | Port design_rules.py and export.py |
-| | Thu-Fri | Testing, validation, documentation |
+|            | Wed-Thu | Build abstraction layer                         |
+|            | Fri     | Port project.py and board.py                    |
+| **Week 3** | Mon-Tue | Port component.py and routing.py                |
+|            | Wed     | Port design_rules.py and export.py              |
+|            | Thu-Fri | Testing, validation, documentation              |
 
 ---
 
@@ -449,11 +462,13 @@ If IPC migration fails:
 ## Next Steps (This Week)
 
 1. **Install kicad-python**
+
    ```bash
    pip install kicad-python
    ```
 
 2. **Test IPC connection**
+
    ```bash
    # Launch KiCAD
    # Enable IPC in preferences
@@ -461,6 +476,7 @@ If IPC migration fails:
    ```
 
 3. **Create abstraction layer structure**
+
    ```bash
    mkdir -p python/kicad_api
    touch python/kicad_api/{__init__,base,ipc_backend,swig_backend,factory}.py

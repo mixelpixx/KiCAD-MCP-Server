@@ -1,21 +1,21 @@
 /**
  * Routing prompts for KiCAD MCP server
- * 
+ *
  * These prompts guide the LLM in providing assistance with routing-related tasks
  * in KiCAD PCB design.
  */
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import { logger } from '../logger.js';
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { logger } from "../logger.js";
 
 /**
  * Register routing prompts with the MCP server
- * 
+ *
  * @param server MCP server instance
  */
 export function registerRoutingPrompts(server: McpServer): void {
-  logger.info('Registering routing prompts');
+  logger.info("Registering routing prompts");
 
   // ------------------------------------------------------
   // Routing Strategy Prompt
@@ -23,7 +23,11 @@ export function registerRoutingPrompts(server: McpServer): void {
   server.prompt(
     "routing_strategy",
     {
-      board_info: z.string().describe("Information about the PCB board, including dimensions, layer stack-up, and components")
+      board_info: z
+        .string()
+        .describe(
+          "Information about the PCB board, including dimensions, layer stack-up, and components",
+        ),
     },
     () => ({
       messages: [
@@ -63,11 +67,11 @@ Consider the following aspects when developing your routing strategy:
    - Plan for layer transitions (vias)
    - Consider impedance control requirements
 
-Provide a comprehensive routing strategy that addresses these aspects, with specific recommendations for this particular board design.`
-          }
-        }
-      ]
-    })
+Provide a comprehensive routing strategy that addresses these aspects, with specific recommendations for this particular board design.`,
+          },
+        },
+      ],
+    }),
   );
 
   // ------------------------------------------------------
@@ -76,7 +80,11 @@ Provide a comprehensive routing strategy that addresses these aspects, with spec
   server.prompt(
     "differential_pair_routing",
     {
-      differential_pairs: z.string().describe("Information about the differential pairs to be routed, including signal names, source and destination components, and speed/frequency requirements")
+      differential_pairs: z
+        .string()
+        .describe(
+          "Information about the differential pairs to be routed, including signal names, source and destination components, and speed/frequency requirements",
+        ),
     },
     () => ({
       messages: [
@@ -115,11 +123,11 @@ When routing differential pairs, follow these best practices:
    - Consider the need for series or parallel termination resistors
    - Place termination components close to the endpoints
 
-Based on the provided information, suggest specific routing approaches for these differential pairs, including recommended trace width, spacing, and any special considerations for this particular design.`
-          }
-        }
-      ]
-    })
+Based on the provided information, suggest specific routing approaches for these differential pairs, including recommended trace width, spacing, and any special considerations for this particular design.`,
+          },
+        },
+      ],
+    }),
   );
 
   // ------------------------------------------------------
@@ -128,7 +136,11 @@ Based on the provided information, suggest specific routing approaches for these
   server.prompt(
     "high_speed_routing",
     {
-      high_speed_signals: z.string().describe("Information about the high-speed signals to be routed, including signal names, source and destination components, and speed/frequency requirements")
+      high_speed_signals: z
+        .string()
+        .describe(
+          "Information about the high-speed signals to be routed, including signal names, source and destination components, and speed/frequency requirements",
+        ),
     },
     () => ({
       messages: [
@@ -168,11 +180,11 @@ When routing high-speed signals, consider these critical factors:
    - Consider transmission line effects
    - Account for capacitive loading from components and vias
 
-Based on the provided information, suggest specific routing approaches for these high-speed signals, including recommended trace width, layer assignment, and any special considerations for this particular design.`
-          }
-        }
-      ]
-    })
+Based on the provided information, suggest specific routing approaches for these high-speed signals, including recommended trace width, layer assignment, and any special considerations for this particular design.`,
+          },
+        },
+      ],
+    }),
   );
 
   // ------------------------------------------------------
@@ -181,7 +193,11 @@ Based on the provided information, suggest specific routing approaches for these
   server.prompt(
     "power_distribution",
     {
-      power_requirements: z.string().describe("Information about the power requirements, including voltage rails, current needs, and components requiring power")
+      power_requirements: z
+        .string()
+        .describe(
+          "Information about the power requirements, including voltage rails, current needs, and components requiring power",
+        ),
     },
     () => ({
       messages: [
@@ -221,11 +237,11 @@ Consider these key aspects of power distribution network design:
    - Keep power and ground planes closely coupled
    - Consider filtering for noise-sensitive circuits
 
-Based on the provided information, suggest a comprehensive power distribution strategy, including specific recommendations for plane usage, trace widths, decoupling, and any special considerations for this particular design.`
-          }
-        }
-      ]
-    })
+Based on the provided information, suggest a comprehensive power distribution strategy, including specific recommendations for plane usage, trace widths, decoupling, and any special considerations for this particular design.`,
+          },
+        },
+      ],
+    }),
   );
 
   // ------------------------------------------------------
@@ -234,7 +250,11 @@ Based on the provided information, suggest a comprehensive power distribution st
   server.prompt(
     "via_usage",
     {
-      board_info: z.string().describe("Information about the PCB board, including layer count, thickness, and design requirements")
+      board_info: z
+        .string()
+        .describe(
+          "Information about the PCB board, including layer count, thickness, and design requirements",
+        ),
     },
     () => ({
       messages: [
@@ -277,12 +297,12 @@ Consider these important aspects of via usage:
    - Via placement to minimize trace length
    - Tenting and plugging options
 
-Based on the provided information, recommend appropriate via strategies for this PCB design, including specific via types, sizes, and placement guidelines.`
-          }
-        }
-      ]
-    })
+Based on the provided information, recommend appropriate via strategies for this PCB design, including specific via types, sizes, and placement guidelines.`,
+          },
+        },
+      ],
+    }),
   );
 
-  logger.info('Routing prompts registered');
+  logger.info("Routing prompts registered");
 }

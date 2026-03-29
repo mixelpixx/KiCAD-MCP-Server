@@ -5,10 +5,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-export function registerRoutingTools(
-  server: McpServer,
-  callKicadScript: Function,
-) {
+export function registerRoutingTools(server: McpServer, callKicadScript: Function) {
   // Add net tool
   server.tool(
     "add_net",
@@ -79,10 +76,7 @@ export function registerRoutingTools(
         })
         .describe("Via position"),
       net: z.string().describe("Net name"),
-      viaType: z
-        .string()
-        .optional()
-        .describe("Via type (through, blind, buried)"),
+      viaType: z.string().optional().describe("Via type (through, blind, buried)"),
     },
     async (args: any) => {
       const result = await callKicadScript("add_via", args);
@@ -130,10 +124,7 @@ export function registerRoutingTools(
     "delete_trace",
     "Delete traces from the PCB. Can delete by UUID, position, or bulk-delete all traces on a net.",
     {
-      traceUuid: z
-        .string()
-        .optional()
-        .describe("UUID of a specific trace to delete"),
+      traceUuid: z.string().optional().describe("UUID of a specific trace to delete"),
       position: z
         .object({
           x: z.number(),
@@ -142,18 +133,9 @@ export function registerRoutingTools(
         })
         .optional()
         .describe("Delete trace nearest to this position"),
-      net: z
-        .string()
-        .optional()
-        .describe("Delete all traces on this net (bulk delete)"),
-      layer: z
-        .string()
-        .optional()
-        .describe("Filter by layer when using net-based deletion"),
-      includeVias: z
-        .boolean()
-        .optional()
-        .describe("Include vias in net-based deletion"),
+      net: z.string().optional().describe("Delete all traces on this net (bulk delete)"),
+      layer: z.string().optional().describe("Filter by layer when using net-based deletion"),
+      includeVias: z.boolean().optional().describe("Include vias in net-based deletion"),
     },
     async (args: any) => {
       const result = await callKicadScript("delete_trace", args);
@@ -209,10 +191,7 @@ export function registerRoutingTools(
         .boolean()
         .optional()
         .describe("Include statistics (track count, total length, etc.)"),
-      unit: z
-        .enum(["mm", "inch"])
-        .optional()
-        .describe("Unit for length measurements"),
+      unit: z.enum(["mm", "inch"]).optional().describe("Unit for length measurements"),
     },
     async (args: any) => {
       const result = await callKicadScript("get_nets_list", args);
@@ -334,9 +313,13 @@ export function registerRoutingTools(
     "PREFERRED tool for pad-to-pad routing. Looks up pad positions automatically, detects the net from the pad, and — critically — if the two pads are on different copper layers (e.g. J1 on F.Cu and J2 on B.Cu) automatically inserts a via at the midpoint so the connection is complete. Always use this instead of route_trace when routing between named component pads.",
     {
       fromRef: z.string().describe("Reference of the source component (e.g. 'U2')"),
-      fromPad: z.union([z.string(), z.number()]).describe("Pad number on the source component (e.g. '6' or 6)"),
+      fromPad: z
+        .union([z.string(), z.number()])
+        .describe("Pad number on the source component (e.g. '6' or 6)"),
       toRef: z.string().describe("Reference of the target component (e.g. 'U1')"),
-      toPad: z.union([z.string(), z.number()]).describe("Pad number on the target component (e.g. '15' or 15)"),
+      toPad: z
+        .union([z.string(), z.number()])
+        .describe("Pad number on the target component (e.g. '15' or 15)"),
       layer: z.string().optional().describe("PCB layer (default: F.Cu)"),
       width: z.number().optional().describe("Trace width in mm (default: board default)"),
       net: z.string().optional().describe("Net name override (default: auto-detected from pad)"),
@@ -362,10 +345,7 @@ export function registerRoutingTools(
         .describe(
           "References of the target components in same order as sourceRefs (e.g. ['U2', 'R2', 'C2'])",
         ),
-      includeVias: z
-        .boolean()
-        .optional()
-        .describe("Also copy vias (default: true)"),
+      includeVias: z.boolean().optional().describe("Also copy vias (default: true)"),
       traceWidth: z
         .number()
         .optional()

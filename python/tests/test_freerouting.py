@@ -15,12 +15,11 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from commands.freerouting import (
     FreeroutingCommands,
-    _find_java,
-    _find_docker,
     _docker_available,
+    _find_docker,
+    _find_java,
     _java_version_ok,
 )
 
@@ -47,9 +46,7 @@ def reset_pcbnew_mock():
 @pytest.fixture
 def mock_board():
     board = MagicMock()
-    board.GetFileName.return_value = (
-        "/tmp/test_project/test.kicad_pcb"
-    )
+    board.GetFileName.return_value = "/tmp/test_project/test.kicad_pcb"
     board.GetTracks.return_value = []
     return board
 
@@ -101,15 +98,14 @@ def _patch_no_runtime():
 
 class TestCheckFreerouting:
     def test_no_java_no_docker(self, cmds):
-        with patch(
-            "commands.freerouting._find_java", return_value=None
-        ), patch(
-            "commands.freerouting._docker_available",
-            return_value=False,
+        with (
+            patch("commands.freerouting._find_java", return_value=None),
+            patch(
+                "commands.freerouting._docker_available",
+                return_value=False,
+            ),
         ):
-            result = cmds.check_freerouting(
-                {"freeroutingJar": "/nonexistent.jar"}
-            )
+            result = cmds.check_freerouting({"freeroutingJar": "/nonexistent.jar"})
         assert result["success"] is True
         assert result["java"]["found"] is False
         assert result["docker"]["available"] is False
@@ -119,48 +115,46 @@ class TestCheckFreerouting:
     def test_java_too_old_docker_available(self, cmds, tmp_path):
         jar = tmp_path / "freerouting.jar"
         jar.touch()
-        with patch(
-            "commands.freerouting._find_java",
-            return_value="/usr/bin/java",
-        ), patch(
-            "commands.freerouting._java_version_ok",
-            return_value=False,
-        ), patch(
-            "commands.freerouting._docker_available",
-            return_value=True,
-        ), patch(
-            "commands.freerouting.subprocess.run"
-        ) as mock_run:
-            mock_run.return_value = MagicMock(
-                stderr='openjdk version "17.0.1"', stdout=""
-            )
-            result = cmds.check_freerouting(
-                {"freeroutingJar": str(jar)}
-            )
+        with (
+            patch(
+                "commands.freerouting._find_java",
+                return_value="/usr/bin/java",
+            ),
+            patch(
+                "commands.freerouting._java_version_ok",
+                return_value=False,
+            ),
+            patch(
+                "commands.freerouting._docker_available",
+                return_value=True,
+            ),
+            patch("commands.freerouting.subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(stderr='openjdk version "17.0.1"', stdout="")
+            result = cmds.check_freerouting({"freeroutingJar": str(jar)})
         assert result["ready"] is True
         assert result["execution_mode"] == "docker"
 
     def test_java_21_direct(self, cmds, tmp_path):
         jar = tmp_path / "freerouting.jar"
         jar.touch()
-        with patch(
-            "commands.freerouting._find_java",
-            return_value="/usr/bin/java",
-        ), patch(
-            "commands.freerouting._java_version_ok",
-            return_value=True,
-        ), patch(
-            "commands.freerouting._docker_available",
-            return_value=False,
-        ), patch(
-            "commands.freerouting.subprocess.run"
-        ) as mock_run:
-            mock_run.return_value = MagicMock(
-                stderr='openjdk version "21.0.1"', stdout=""
-            )
-            result = cmds.check_freerouting(
-                {"freeroutingJar": str(jar)}
-            )
+        with (
+            patch(
+                "commands.freerouting._find_java",
+                return_value="/usr/bin/java",
+            ),
+            patch(
+                "commands.freerouting._java_version_ok",
+                return_value=True,
+            ),
+            patch(
+                "commands.freerouting._docker_available",
+                return_value=False,
+            ),
+            patch("commands.freerouting.subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(stderr='openjdk version "21.0.1"', stdout="")
+            result = cmds.check_freerouting({"freeroutingJar": str(jar)})
         assert result["ready"] is True
         assert result["execution_mode"] == "direct"
 
@@ -198,9 +192,7 @@ class TestExportDsn:
         assert result["path"] == output
 
     def test_export_failure(self, cmds):
-        pcbnew_mock.ExportSpecctraDSN.side_effect = Exception(
-            "DSN error"
-        )
+        pcbnew_mock.ExportSpecctraDSN.side_effect = Exception("DSN error")
         result = cmds.export_dsn({})
         assert result["success"] is False
         assert "DSN error" in result["errorDetails"]
@@ -213,9 +205,7 @@ class TestExportDsn:
 
 class TestImportSes:
     def test_no_board(self, cmds_no_board):
-        result = cmds_no_board.import_ses(
-            {"sesPath": "/tmp/test.ses"}
-        )
+        result = cmds_no_board.import_ses({"sesPath": "/tmp/test.ses"})
         assert result["success"] is False
         assert "No board" in result["message"]
 
@@ -225,9 +215,7 @@ class TestImportSes:
         assert "Missing sesPath" in result["message"]
 
     def test_ses_file_not_found(self, cmds):
-        result = cmds.import_ses(
-            {"sesPath": "/nonexistent/test.ses"}
-        )
+        result = cmds.import_ses({"sesPath": "/nonexistent/test.ses"})
         assert result["success"] is False
         assert "not found" in result["message"]
 
@@ -245,9 +233,7 @@ class TestImportSes:
         ses_file = tmp_path / "test.ses"
         ses_file.write_text("(session test)")
 
-        pcbnew_mock.ImportSpecctraSES.side_effect = Exception(
-            "SES error"
-        )
+        pcbnew_mock.ImportSpecctraSES.side_effect = Exception("SES error")
         result = cmds.import_ses({"sesPath": str(ses_file)})
         assert result["success"] is False
         assert "SES error" in result["errorDetails"]
@@ -268,16 +254,12 @@ class TestAutoroute:
         jar = tmp_path / "freerouting.jar"
         jar.touch()
         with _patch_no_runtime():
-            result = cmds.autoroute(
-                {"freeroutingJar": str(jar)}
-            )
+            result = cmds.autoroute({"freeroutingJar": str(jar)})
         assert result["success"] is False
         assert "No suitable Java runtime" in result["message"]
 
     def test_no_jar(self, cmds):
-        result = cmds.autoroute(
-            {"freeroutingJar": "/nonexistent/freerouting.jar"}
-        )
+        result = cmds.autoroute({"freeroutingJar": "/nonexistent/freerouting.jar"})
         assert result["success"] is False
         assert "JAR not found" in result["message"]
 
@@ -286,21 +268,15 @@ class TestAutoroute:
         jar = tmp_path / "freerouting.jar"
         jar.touch()
 
-        pcbnew_mock.ExportSpecctraDSN.side_effect = Exception(
-            "export fail"
-        )
+        pcbnew_mock.ExportSpecctraDSN.side_effect = Exception("export fail")
 
         with _patch_direct_java():
-            result = cmds.autoroute(
-                {"freeroutingJar": str(jar)}
-            )
+            result = cmds.autoroute({"freeroutingJar": str(jar)})
         assert result["success"] is False
         assert "DSN export failed" in result["message"]
 
     @patch("commands.freerouting.subprocess.run")
-    def test_freerouting_timeout(
-        self, mock_run, cmds, tmp_path
-    ):
+    def test_freerouting_timeout(self, mock_run, cmds, tmp_path):
         import subprocess
 
         jar = tmp_path / "freerouting.jar"
@@ -312,24 +288,19 @@ class TestAutoroute:
         dsn_file = board_dir / "test.dsn"
 
         cmds.board.GetFileName.return_value = str(board_file)
-        pcbnew_mock.ExportSpecctraDSN.side_effect = (
-            lambda b, p: (dsn_file.write_text("(pcb)"), True)[1]
-        )
-        mock_run.side_effect = subprocess.TimeoutExpired(
-            cmd="", timeout=10
-        )
+        pcbnew_mock.ExportSpecctraDSN.side_effect = lambda b, p: (
+            dsn_file.write_text("(pcb)"),
+            True,
+        )[1]
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="", timeout=10)
 
         with _patch_direct_java():
-            result = cmds.autoroute(
-                {"freeroutingJar": str(jar), "timeout": 10}
-            )
+            result = cmds.autoroute({"freeroutingJar": str(jar), "timeout": 10})
         assert result["success"] is False
         assert "timed out" in result["message"]
 
     @patch("commands.freerouting.subprocess.run")
-    def test_full_success_direct(
-        self, mock_run, cmds, tmp_path
-    ):
+    def test_full_success_direct(self, mock_run, cmds, tmp_path):
         jar = tmp_path / "freerouting.jar"
         jar.touch()
         board_dir = tmp_path / "project"
@@ -341,12 +312,11 @@ class TestAutoroute:
 
         cmds.board.GetFileName.return_value = str(board_file)
 
-        pcbnew_mock.ExportSpecctraDSN.side_effect = (
-            lambda b, p: (dsn_file.write_text("(pcb)"), True)[1]
-        )
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="Routing completed", stderr=""
-        )
+        pcbnew_mock.ExportSpecctraDSN.side_effect = lambda b, p: (
+            dsn_file.write_text("(pcb)"),
+            True,
+        )[1]
+        mock_run.return_value = MagicMock(returncode=0, stdout="Routing completed", stderr="")
         ses_file.write_text("(session)")
         pcbnew_mock.ImportSpecctraSES.return_value = True
 
@@ -357,9 +327,7 @@ class TestAutoroute:
         cmds.board.GetTracks.return_value = [track, track, via]
 
         with _patch_direct_java():
-            result = cmds.autoroute(
-                {"freeroutingJar": str(jar)}
-            )
+            result = cmds.autoroute({"freeroutingJar": str(jar)})
 
         assert result["success"] is True
         assert result["mode"] == "direct"
@@ -368,9 +336,7 @@ class TestAutoroute:
         assert "elapsed_seconds" in result
 
     @patch("commands.freerouting.subprocess.run")
-    def test_full_success_docker(
-        self, mock_run, cmds, tmp_path
-    ):
+    def test_full_success_docker(self, mock_run, cmds, tmp_path):
         jar = tmp_path / "freerouting.jar"
         jar.touch()
         board_dir = tmp_path / "project"
@@ -382,24 +348,24 @@ class TestAutoroute:
 
         cmds.board.GetFileName.return_value = str(board_file)
 
-        pcbnew_mock.ExportSpecctraDSN.side_effect = (
-            lambda b, p: (dsn_file.write_text("(pcb)"), True)[1]
-        )
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="Routing completed", stderr=""
-        )
+        pcbnew_mock.ExportSpecctraDSN.side_effect = lambda b, p: (
+            dsn_file.write_text("(pcb)"),
+            True,
+        )[1]
+        mock_run.return_value = MagicMock(returncode=0, stdout="Routing completed", stderr="")
         ses_file.write_text("(session)")
         pcbnew_mock.ImportSpecctraSES.return_value = True
 
         cmds.board.GetTracks.return_value = [MagicMock()]
 
-        with _patch_docker_mode(), patch(
-            "commands.freerouting._find_docker",
-            return_value="/usr/bin/docker",
+        with (
+            _patch_docker_mode(),
+            patch(
+                "commands.freerouting._find_docker",
+                return_value="/usr/bin/docker",
+            ),
         ):
-            result = cmds.autoroute(
-                {"freeroutingJar": str(jar)}
-            )
+            result = cmds.autoroute({"freeroutingJar": str(jar)})
 
         assert result["success"] is True
         assert result["mode"] == "docker"
@@ -409,9 +375,7 @@ class TestAutoroute:
         assert "--rm" in call_args
 
     @patch("commands.freerouting.subprocess.run")
-    def test_freerouting_nonzero_exit(
-        self, mock_run, cmds, tmp_path
-    ):
+    def test_freerouting_nonzero_exit(self, mock_run, cmds, tmp_path):
         jar = tmp_path / "freerouting.jar"
         jar.touch()
         board_dir = tmp_path / "project"
@@ -421,17 +385,14 @@ class TestAutoroute:
         dsn_file = board_dir / "test.dsn"
 
         cmds.board.GetFileName.return_value = str(board_file)
-        pcbnew_mock.ExportSpecctraDSN.side_effect = (
-            lambda b, p: (dsn_file.write_text("(pcb)"), True)[1]
-        )
-        mock_run.return_value = MagicMock(
-            returncode=1, stdout="", stderr="OutOfMemoryError"
-        )
+        pcbnew_mock.ExportSpecctraDSN.side_effect = lambda b, p: (
+            dsn_file.write_text("(pcb)"),
+            True,
+        )[1]
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="OutOfMemoryError")
 
         with _patch_direct_java():
-            result = cmds.autoroute(
-                {"freeroutingJar": str(jar)}
-            )
+            result = cmds.autoroute({"freeroutingJar": str(jar)})
 
         assert result["success"] is False
         assert "exited with code 1" in result["message"]
@@ -451,10 +412,13 @@ class TestFindJava:
             assert _find_java() == "/usr/bin/java"
 
     def test_none_when_not_found(self):
-        with patch(
-            "commands.freerouting.shutil.which",
-            return_value=None,
-        ), patch("os.path.isfile", return_value=False):
+        with (
+            patch(
+                "commands.freerouting.shutil.which",
+                return_value=None,
+            ),
+            patch("os.path.isfile", return_value=False),
+        ):
             assert _find_java() is None
 
 
@@ -462,18 +426,14 @@ class TestFindDocker:
     def test_finds_docker(self):
         with patch(
             "commands.freerouting.shutil.which",
-            side_effect=lambda x: "/usr/bin/docker"
-            if x == "docker"
-            else None,
+            side_effect=lambda x: "/usr/bin/docker" if x == "docker" else None,
         ):
             assert _find_docker() == "/usr/bin/docker"
 
     def test_finds_podman(self):
         with patch(
             "commands.freerouting.shutil.which",
-            side_effect=lambda x: "/usr/bin/podman"
-            if x == "podman"
-            else None,
+            side_effect=lambda x: "/usr/bin/podman" if x == "podman" else None,
         ):
             assert _find_docker() == "/usr/bin/podman"
 
@@ -487,12 +447,13 @@ class TestFindDocker:
 
 class TestDockerAvailable:
     def test_docker_found(self):
-        with patch(
-            "commands.freerouting._find_docker",
-            return_value="/usr/bin/docker",
-        ), patch(
-            "commands.freerouting.subprocess.run"
-        ) as mock_run:
+        with (
+            patch(
+                "commands.freerouting._find_docker",
+                return_value="/usr/bin/docker",
+            ),
+            patch("commands.freerouting.subprocess.run") as mock_run,
+        ):
             mock_run.return_value = MagicMock(returncode=0)
             assert _docker_available() is True
 
@@ -504,33 +465,26 @@ class TestDockerAvailable:
             assert _docker_available() is False
 
     def test_docker_not_running(self):
-        with patch(
-            "commands.freerouting._find_docker",
-            return_value="/usr/bin/docker",
-        ), patch(
-            "commands.freerouting.subprocess.run"
-        ) as mock_run:
+        with (
+            patch(
+                "commands.freerouting._find_docker",
+                return_value="/usr/bin/docker",
+            ),
+            patch("commands.freerouting.subprocess.run") as mock_run,
+        ):
             mock_run.return_value = MagicMock(returncode=1)
             assert _docker_available() is False
 
 
 class TestJavaVersionOk:
     def test_java_21(self):
-        with patch(
-            "commands.freerouting.subprocess.run"
-        ) as mock_run:
-            mock_run.return_value = MagicMock(
-                stderr='openjdk version "21.0.1"', stdout=""
-            )
+        with patch("commands.freerouting.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stderr='openjdk version "21.0.1"', stdout="")
             assert _java_version_ok("/usr/bin/java") is True
 
     def test_java_17(self):
-        with patch(
-            "commands.freerouting.subprocess.run"
-        ) as mock_run:
-            mock_run.return_value = MagicMock(
-                stderr='openjdk version "17.0.18"', stdout=""
-            )
+        with patch("commands.freerouting.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stderr='openjdk version "17.0.18"', stdout="")
             assert _java_version_ok("/usr/bin/java") is False
 
     def test_java_error(self):

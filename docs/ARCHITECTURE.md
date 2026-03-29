@@ -118,10 +118,12 @@ KiCAD-MCP-Server/
 ### Tool Registration
 
 Each tool file exports a `register*Tools(server, callKicadScript)` function that:
+
 - Defines tool name, description, and Zod schema for parameters
 - Registers a handler that calls `callKicadScript(command, args)`
 
 Example from `src/tools/project.ts`:
+
 ```typescript
 server.tool(
   "create_project",
@@ -130,13 +132,14 @@ server.tool(
   async (args) => {
     const result = await callKicadScript("create_project", args);
     return { content: [{ type: "text", text: JSON.stringify(result) }] };
-  }
+  },
 );
 ```
 
 ### Tool Router (`src/tools/router.ts` and `src/tools/registry.ts`)
 
 The router pattern reduces AI context usage:
+
 - `registry.ts` defines tool categories and which tools are "direct" (always visible) vs "routed" (discoverable)
 - `router.ts` provides 4 meta-tools: `list_tool_categories`, `get_category_tools`, `search_tools`, `execute_tool`
 - Routed tools are not registered as individual MCP tools -- they are invoked through `execute_tool`
@@ -144,6 +147,7 @@ The router pattern reduces AI context usage:
 ### Python Subprocess Communication
 
 `callKicadScript(command, args)` in `server.ts`:
+
 1. Spawns `python3 python/kicad_interface.py` (if not already running)
 2. Sends a JSON message: `{"command": "...", "params": {...}}`
 3. Reads the JSON response
@@ -164,6 +168,7 @@ The router pattern reduces AI context usage:
 ### Command Routing
 
 Commands are routed by name to handler methods. The mapping is defined in `kicad_interface.py`. Each handler:
+
 1. Receives a params dict
 2. Calls the appropriate command class method
 3. Returns a result dict with `success`, `message`, and any additional data
@@ -173,12 +178,14 @@ Commands are routed by name to handler methods. The mapping is defined in `kicad
 Two backends for interacting with KiCAD:
 
 **SWIG Backend** (default):
+
 - Direct Python bindings to KiCAD's C++ API via SWIG
 - Operates on files -- loads .kicad_pcb, modifies in memory, saves back
 - Works without KiCAD running
 - Requires manual UI reload to see changes
 
 **IPC Backend** (experimental):
+
 - Communicates with running KiCAD via IPC API socket
 - Changes appear in the UI immediately
 - Requires KiCAD 9.0+ running with IPC enabled
@@ -189,6 +196,7 @@ Two backends for interacting with KiCAD:
 ### Schematic System
 
 Schematic manipulation uses a different stack than PCB operations:
+
 - **kicad-skip** library for reading/modifying schematic files
 - **S-expression parsing** for direct file manipulation (wires, symbols)
 - **DynamicSymbolLoader** for injecting any KiCad symbol into a schematic
@@ -214,7 +222,7 @@ server.tool(
   async (args) => {
     const result = await callKicadScript("my_new_tool", args);
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-  }
+  },
 );
 ```
 
@@ -271,11 +279,13 @@ npm run test:py        # Run Python tests
 ### Python Tests
 
 Located in `python/tests/`. Run with:
+
 ```bash
 pytest python/tests/ -v
 ```
 
 Key test files:
+
 - `test_schematic_tools.py` -- schematic tool tests
 - `test_freerouting.py` -- autorouter tests
 - `test_delete_schematic_component.py` -- component deletion tests
@@ -302,13 +312,13 @@ Key test files:
 
 ## Source Files Reference
 
-| File | Purpose |
-|------|---------|
-| `src/server.ts` | MCP server, subprocess management |
-| `src/tools/registry.ts` | Tool categories and organization |
-| `src/tools/router.ts` | Router meta-tools |
-| `python/kicad_interface.py` | Python entry point, command routing |
-| `python/kicad_api/factory.py` | Backend selection |
-| `python/commands/dynamic_symbol_loader.py` | Symbol injection system |
-| `python/commands/wire_manager.py` | Wire creation engine |
-| `python/commands/pin_locator.py` | Pin position discovery |
+| File                                       | Purpose                             |
+| ------------------------------------------ | ----------------------------------- |
+| `src/server.ts`                            | MCP server, subprocess management   |
+| `src/tools/registry.ts`                    | Tool categories and organization    |
+| `src/tools/router.ts`                      | Router meta-tools                   |
+| `python/kicad_interface.py`                | Python entry point, command routing |
+| `python/kicad_api/factory.py`              | Backend selection                   |
+| `python/commands/dynamic_symbol_loader.py` | Symbol injection system             |
+| `python/commands/wire_manager.py`          | Wire creation engine                |
+| `python/commands/pin_locator.py`           | Pin position discovery              |

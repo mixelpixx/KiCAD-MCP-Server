@@ -32,6 +32,7 @@ curl -L -o ~/.kicad-mcp/freerouting.jar \
 ```
 
 The default location is `~/.kicad-mcp/freerouting.jar`. You can override this with:
+
 - The `freeroutingJar` parameter on any tool call
 - The `FREEROUTING_JAR` environment variable
 
@@ -85,6 +86,7 @@ Verify that prerequisites are installed before running the autorouter.
 **Returns:** Java availability, version, Docker status, JAR location
 
 **Example:**
+
 ```
 Check if Freerouting is ready on my system.
 ```
@@ -102,6 +104,7 @@ Run the full autorouting workflow (export DSN, route, import SES).
 | `timeout` | number | No | 300 | Timeout in seconds |
 
 **Example:**
+
 ```
 Autoroute the current board using Freerouting with a 5-minute timeout.
 ```
@@ -153,6 +156,7 @@ For advanced users or external autorouters:
 ```
 
 This is useful when you want to:
+
 - Use the Freerouting GUI for interactive routing
 - Use a different autorouter that supports DSN/SES
 - Route the board on a different machine
@@ -190,12 +194,14 @@ Install either Java 21+ or Docker/Podman. See the Prerequisites section above.
 ### "Java found but version < 21"
 
 Freerouting 2.x requires Java 21+. Either:
+
 - Upgrade your Java installation
 - Install Docker as a fallback
 
 ### Timeout Errors
 
 For complex boards, increase the timeout:
+
 ```
 Autoroute with timeout 600 and max passes 30.
 ```
@@ -203,6 +209,7 @@ Autoroute with timeout 600 and max passes 30.
 ### Routing Quality
 
 If the autorouter does not route all connections:
+
 - Increase `maxPasses` (default: 20)
 - Check that your design rules allow the autorouter enough clearance
 - Run DRC after autorouting to identify any violations
@@ -211,6 +218,7 @@ If the autorouter does not route all connections:
 ### Docker Permission Errors
 
 If Docker reports permission errors:
+
 ```bash
 # Add your user to the docker group
 sudo usermod -aG docker $USER

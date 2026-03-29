@@ -9,22 +9,20 @@ Supports two execution modes:
   - Docker: docker run eclipse-temurin:21-jre (requires Docker)
 """
 
-import os
-import subprocess
-import shutil
-import time
 import logging
+import os
+import shutil
+import subprocess
+import time
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("kicad_interface")
 
 # Default Freerouting JAR location
 DEFAULT_FREEROUTING_JAR = os.environ.get(
     "FREEROUTING_JAR",
-    os.path.join(
-        os.path.expanduser("~"), ".kicad-mcp", "freerouting.jar"
-    ),
+    os.path.join(os.path.expanduser("~"), ".kicad-mcp", "freerouting.jar"),
 )
 
 DOCKER_IMAGE = "eclipse-temurin:21-jre"
@@ -102,21 +100,36 @@ def _build_freerouting_cmd(
         ses_name = os.path.basename(ses_path)
         jar_name = os.path.basename(jar_path)
         return [
-            docker_exe, "run", "--rm",
-            "-v", f"{jar_path}:/app/{jar_name}:ro",
-            "-v", f"{board_dir}:/work",
+            docker_exe,
+            "run",
+            "--rm",
+            "-v",
+            f"{jar_path}:/app/{jar_name}:ro",
+            "-v",
+            f"{board_dir}:/work",
             DOCKER_IMAGE,
-            "java", "-jar", f"/app/{jar_name}",
-            "-de", f"/work/{dsn_name}",
-            "-do", f"/work/{ses_name}",
-            "-mp", str(passes),
+            "java",
+            "-jar",
+            f"/app/{jar_name}",
+            "-de",
+            f"/work/{dsn_name}",
+            "-do",
+            f"/work/{ses_name}",
+            "-mp",
+            str(passes),
         ]
     else:
         java_exe = _find_java()
         return [
-            java_exe, "-jar", jar_path,
-            "-de", dsn_path, "-do", ses_path,
-            "-mp", str(passes),
+            java_exe,
+            "-jar",
+            jar_path,
+            "-de",
+            dsn_path,
+            "-do",
+            ses_path,
+            "-mp",
+            str(passes),
         ]
 
 
@@ -126,9 +139,7 @@ class FreeroutingCommands:
     def __init__(self, board=None):
         self.board = board
 
-    def _resolve_execution_mode(
-        self, jar_path: str
-    ) -> Dict[str, Any]:
+    def _resolve_execution_mode(self, jar_path: str) -> Dict[str, Any]:
         """Determine how to run Freerouting: direct or docker.
 
         Returns dict with 'mode', 'use_docker', or 'error'.
@@ -152,8 +163,7 @@ class FreeroutingCommands:
         return {
             "mode": "error",
             "error": (
-                "Neither Java 21+ nor Docker found. "
-                "Install one of them to use Freerouting."
+                "Neither Java 21+ nor Docker found. " "Install one of them to use Freerouting."
             ),
         }
 
@@ -190,14 +200,10 @@ class FreeroutingCommands:
             return {
                 "success": False,
                 "message": "No board file path available",
-                "errorDetails": (
-                    "Provide boardPath or open a project first"
-                ),
+                "errorDetails": ("Provide boardPath or open a project first"),
             }
 
-        jar_path = params.get(
-            "freeroutingJar", DEFAULT_FREEROUTING_JAR
-        )
+        jar_path = params.get("freeroutingJar", DEFAULT_FREEROUTING_JAR)
         timeout = params.get("timeout", 300)
         passes = params.get("maxPasses", 20)
 
@@ -238,9 +244,7 @@ class FreeroutingCommands:
                 return {
                     "success": False,
                     "message": "DSN export failed",
-                    "errorDetails": (
-                        f"ExportSpecctraDSN returned: {result}"
-                    ),
+                    "errorDetails": (f"ExportSpecctraDSN returned: {result}"),
                 }
         except Exception as e:
             return {
@@ -260,14 +264,10 @@ class FreeroutingCommands:
         logger.info(f"DSN exported: {dsn_size} bytes")
 
         # Step 2: Run Freerouting
-        cmd = _build_freerouting_cmd(
-            jar_path, dsn_path, ses_path, passes, use_docker
-        )
+        cmd = _build_freerouting_cmd(jar_path, dsn_path, ses_path, passes, use_docker)
 
         mode_label = "docker" if use_docker else "direct"
-        logger.info(
-            f"Running Freerouting ({mode_label}): {' '.join(cmd)}"
-        )
+        logger.info(f"Running Freerouting ({mode_label}): {' '.join(cmd)}")
         start_time = time.time()
 
         try:
@@ -283,10 +283,7 @@ class FreeroutingCommands:
             if proc.returncode != 0:
                 return {
                     "success": False,
-                    "message": (
-                        f"Freerouting exited with code "
-                        f"{proc.returncode}"
-                    ),
+                    "message": (f"Freerouting exited with code " f"{proc.returncode}"),
                     "errorDetails": proc.stderr or proc.stdout,
                     "elapsed_seconds": elapsed,
                     "mode": mode_label,
@@ -294,12 +291,8 @@ class FreeroutingCommands:
         except subprocess.TimeoutExpired:
             return {
                 "success": False,
-                "message": (
-                    f"Freerouting timed out after {timeout}s"
-                ),
-                "errorDetails": (
-                    "Increase timeout or reduce board complexity"
-                ),
+                "message": (f"Freerouting timed out after {timeout}s"),
+                "errorDetails": ("Increase timeout or reduce board complexity"),
             }
         except Exception as e:
             return {
@@ -313,10 +306,7 @@ class FreeroutingCommands:
             return {
                 "success": False,
                 "message": "Freerouting did not produce SES output",
-                "errorDetails": (
-                    f"Expected at: {ses_path}. "
-                    f"Stdout: {proc.stdout[:500]}"
-                ),
+                "errorDetails": (f"Expected at: {ses_path}. " f"Stdout: {proc.stdout[:500]}"),
                 "elapsed_seconds": elapsed,
             }
 
@@ -331,9 +321,7 @@ class FreeroutingCommands:
                 return {
                     "success": False,
                     "message": "SES import failed",
-                    "errorDetails": (
-                        f"ImportSpecctraSES returned: {result}"
-                    ),
+                    "errorDetails": (f"ImportSpecctraSES returned: {result}"),
                     "elapsed_seconds": elapsed,
                 }
         except Exception as e:
@@ -348,9 +336,7 @@ class FreeroutingCommands:
         try:
             self.board.Save(board_path)
         except Exception as e:
-            logger.warning(
-                f"Board save after autoroute failed: {e}"
-            )
+            logger.warning(f"Board save after autoroute failed: {e}")
 
         # Collect stats
         tracks = self.board.GetTracks()
@@ -373,9 +359,7 @@ class FreeroutingCommands:
                 "tracks": track_count,
                 "vias": via_count,
             },
-            "freerouting_stdout": (
-                proc.stdout[:1000] if proc.stdout else ""
-            ),
+            "freerouting_stdout": (proc.stdout[:1000] if proc.stdout else ""),
         }
 
     def export_dsn(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -396,36 +380,26 @@ class FreeroutingCommands:
                 "errorDetails": "Load or create a board first",
             }
 
-        board_path = (
-            params.get("boardPath") or self.board.GetFileName()
-        )
+        board_path = params.get("boardPath") or self.board.GetFileName()
         output_path = params.get("outputPath")
 
         if not output_path:
             if board_path:
-                output_path = (
-                    os.path.splitext(board_path)[0] + ".dsn"
-                )
+                output_path = os.path.splitext(board_path)[0] + ".dsn"
             else:
                 return {
                     "success": False,
                     "message": "No output path",
-                    "errorDetails": (
-                        "Provide outputPath or have a board open"
-                    ),
+                    "errorDetails": ("Provide outputPath or have a board open"),
                 }
 
         try:
-            result = pcbnew.ExportSpecctraDSN(
-                self.board, output_path
-            )
+            result = pcbnew.ExportSpecctraDSN(self.board, output_path)
             if result is not True and result != 0:
                 return {
                     "success": False,
                     "message": "DSN export failed",
-                    "errorDetails": (
-                        f"ExportSpecctraDSN returned: {result}"
-                    ),
+                    "errorDetails": (f"ExportSpecctraDSN returned: {result}"),
                 }
         except Exception as e:
             return {
@@ -434,11 +408,7 @@ class FreeroutingCommands:
                 "errorDetails": str(e),
             }
 
-        file_size = (
-            os.path.getsize(output_path)
-            if os.path.isfile(output_path)
-            else 0
-        )
+        file_size = os.path.getsize(output_path) if os.path.isfile(output_path) else 0
         return {
             "success": True,
             "message": f"Exported DSN to {output_path}",
@@ -469,9 +439,7 @@ class FreeroutingCommands:
             return {
                 "success": False,
                 "message": "Missing sesPath parameter",
-                "errorDetails": (
-                    "Provide the path to the .ses file"
-                ),
+                "errorDetails": ("Provide the path to the .ses file"),
             }
 
         if not os.path.isfile(ses_path):
@@ -482,16 +450,12 @@ class FreeroutingCommands:
             }
 
         try:
-            result = pcbnew.ImportSpecctraSES(
-                self.board, ses_path
-            )
+            result = pcbnew.ImportSpecctraSES(self.board, ses_path)
             if result is not True and result != 0:
                 return {
                     "success": False,
                     "message": "SES import failed",
-                    "errorDetails": (
-                        f"ImportSpecctraSES returned: {result}"
-                    ),
+                    "errorDetails": (f"ImportSpecctraSES returned: {result}"),
                 }
         except Exception as e:
             return {
@@ -500,24 +464,16 @@ class FreeroutingCommands:
                 "errorDetails": str(e),
             }
 
-        board_path = (
-            params.get("boardPath") or self.board.GetFileName()
-        )
+        board_path = params.get("boardPath") or self.board.GetFileName()
         if board_path:
             try:
                 self.board.Save(board_path)
             except Exception as e:
-                logger.warning(
-                    f"Board save after SES import failed: {e}"
-                )
+                logger.warning(f"Board save after SES import failed: {e}")
 
         tracks = self.board.GetTracks()
-        track_count = sum(
-            1 for t in tracks if t.GetClass() != "PCB_VIA"
-        )
-        via_count = sum(
-            1 for t in tracks if t.GetClass() == "PCB_VIA"
-        )
+        track_count = sum(1 for t in tracks if t.GetClass() != "PCB_VIA")
+        via_count = sum(1 for t in tracks if t.GetClass() == "PCB_VIA")
 
         return {
             "success": True,
@@ -528,13 +484,9 @@ class FreeroutingCommands:
             },
         }
 
-    def check_freerouting(
-        self, params: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def check_freerouting(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Check if Freerouting and Java/Docker are available."""
-        jar_path = params.get(
-            "freeroutingJar", DEFAULT_FREEROUTING_JAR
-        )
+        jar_path = params.get("freeroutingJar", DEFAULT_FREEROUTING_JAR)
 
         # Check local Java
         java_exe = _find_java()
@@ -548,11 +500,7 @@ class FreeroutingCommands:
                     text=True,
                     timeout=10,
                 )
-                java_version = (
-                    (proc.stderr or proc.stdout)
-                    .strip()
-                    .split("\n")[0]
-                )
+                java_version = (proc.stderr or proc.stdout).strip().split("\n")[0]
                 java_21_ok = _java_version_ok(java_exe)
             except Exception:
                 pass

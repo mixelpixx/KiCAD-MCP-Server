@@ -1,8 +1,9 @@
-from skip import Schematic
+import logging
 import os
 import shutil
-import logging
 import uuid
+
+from skip import Schematic
 
 logger = logging.getLogger("kicad_interface")
 
@@ -31,31 +32,28 @@ class SchematicManager:
 
                 # Regenerate UUID to ensure uniqueness for each created schematic
                 import re
-                with open(output_path, 'r', encoding='utf-8') as f:
+
+                with open(output_path, "r", encoding="utf-8") as f:
                     content = f.read()
                 new_uuid = str(uuid.uuid4())
                 content = re.sub(
-                    r'\(uuid [0-9a-fA-F-]+\)',
-                    f'(uuid {new_uuid})',
+                    r"\(uuid [0-9a-fA-F-]+\)",
+                    f"(uuid {new_uuid})",
                     content,
-                    count=1  # Only replace first (schematic) UUID
+                    count=1,  # Only replace first (schematic) UUID
                 )
-                with open(output_path, 'w', encoding='utf-8', newline='\n') as f:
+                with open(output_path, "w", encoding="utf-8", newline="\n") as f:
                     f.write(content)
 
                 logger.info(f"Created schematic from template: {output_path}")
             else:
                 # Fallback: create minimal schematic
-                logger.warning(
-                    f"Template not found at {template_path}, creating minimal schematic"
-                )
+                logger.warning(f"Template not found at {template_path}, creating minimal schematic")
                 # Generate unique UUID for this schematic
                 schematic_uuid = str(uuid.uuid4())
                 # Write with explicit UTF-8 encoding and Unix line endings for cross-platform compatibility
                 with open(output_path, "w", encoding="utf-8", newline="\n") as f:
-                    f.write(
-                        '(kicad_sch (version 20250114) (generator "KiCAD-MCP-Server")\n\n'
-                    )
+                    f.write('(kicad_sch (version 20250114) (generator "KiCAD-MCP-Server")\n\n')
                     f.write(f"  (uuid {schematic_uuid})\n\n")
                     f.write('  (paper "A4")\n\n')
                     f.write("  (lib_symbols\n  )\n\n")

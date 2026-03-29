@@ -11,6 +11,7 @@
 ## Overview
 
 Integrate JLCPCB's SMT assembly parts library (~100k+ parts) into the KiCAD MCP server, enabling:
+
 - Component search by specifications (e.g., "10k resistor 0603 1%")
 - Automatic part selection optimized for cost (prefer Basic parts)
 - Real stock and pricing information
@@ -83,12 +84,14 @@ docs/
 **File:** `python/commands/jlcpcb.py`
 
 **Features:**
+
 - Authenticate with JLCPCB API (requires user-provided key/secret)
 - Download parts database (paginated, ~100k parts)
 - Handle rate limiting and retries
 - Save to SQLite database
 
 **API Endpoints:**
+
 ```python
 # Get auth token
 POST https://jlcpcb.com/external/genToken
@@ -104,6 +107,7 @@ Body: { "lastKey": "PAGINATION_KEY" }  # Optional, for next page
 ```
 
 **Database Schema:**
+
 ```sql
 CREATE TABLE components (
     lcsc TEXT PRIMARY KEY,           -- "C12345"
@@ -128,6 +132,7 @@ CREATE INDEX idx_library_type ON components(library_type);
 ```
 
 **Environment Variables:**
+
 ```bash
 # ~/.bashrc or .env
 export JLCPCB_API_KEY="your_key_here"
@@ -135,6 +140,7 @@ export JLCPCB_API_SECRET="your_secret_here"
 ```
 
 **Python Implementation Outline:**
+
 ```python
 class JLCPCBClient:
     def __init__(self, api_key: str, api_secret: str):
@@ -162,6 +168,7 @@ class JLCPCBClient:
 **File:** `python/commands/jlcpcb_parts.py`
 
 **Features:**
+
 - Initialize/load SQLite database
 - Parametric search (resistance, capacitance, voltage, etc.)
 - Filter by library type (Basic/Extended)
@@ -169,6 +176,7 @@ class JLCPCBClient:
 - Map package names to KiCAD footprints
 
 **Python Implementation Outline:**
+
 ```python
 class JLCPCBPartsManager:
     def __init__(self, db_path: str = "data/jlcpcb_parts.db"):
@@ -203,6 +211,7 @@ class JLCPCBPartsManager:
 ```
 
 **Package to Footprint Mapping:**
+
 ```json
 {
   "0402": [
@@ -215,17 +224,9 @@ class JLCPCBPartsManager:
     "Capacitor_SMD:C_0603_1608Metric",
     "LED_SMD:LED_0603_1608Metric"
   ],
-  "0805": [
-    "Resistor_SMD:R_0805_2012Metric",
-    "Capacitor_SMD:C_0805_2012Metric"
-  ],
-  "SOT-23": [
-    "Package_TO_SOT_SMD:SOT-23",
-    "Package_TO_SOT_SMD:SOT-23-3"
-  ],
-  "SOIC-8": [
-    "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
-  ]
+  "0805": ["Resistor_SMD:R_0805_2012Metric", "Capacitor_SMD:C_0805_2012Metric"],
+  "SOT-23": ["Package_TO_SOT_SMD:SOT-23", "Package_TO_SOT_SMD:SOT-23-3"],
+  "SOIC-8": ["Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"]
 }
 ```
 
@@ -238,6 +239,7 @@ class JLCPCBPartsManager:
 **New MCP Tools:**
 
 #### 1. `search_jlcpcb_parts`
+
 Search JLCPCB parts library by specifications.
 
 ```typescript
@@ -280,6 +282,7 @@ Search JLCPCB parts library by specifications.
 ```
 
 **Example Usage:**
+
 ```
 User: "Find me a 10k resistor, 0603 package, JLCPCB basic part"
 Claude: [uses search_jlcpcb_parts]
@@ -291,6 +294,7 @@ Recommended: C58972 (cheapest Basic part with high stock)
 ```
 
 #### 2. `get_jlcpcb_part`
+
 Get detailed information about a specific JLCPCB part.
 
 ```typescript
@@ -311,6 +315,7 @@ Get detailed information about a specific JLCPCB part.
 ```
 
 **Returns:**
+
 ```json
 {
   "lcsc": "C25804",
@@ -322,18 +327,17 @@ Get detailed information about a specific JLCPCB part.
   "library_type": "Basic",
   "stock": 15000,
   "price_breaks": [
-    {"qty": 1, "price": "$0.002"},
-    {"qty": 10, "price": "$0.0018"},
-    {"qty": 100, "price": "$0.0015"}
+    { "qty": 1, "price": "$0.002" },
+    { "qty": 10, "price": "$0.0018" },
+    { "qty": 100, "price": "$0.0015" }
   ],
   "datasheet": "https://datasheet.lcsc.com/...",
-  "kicad_footprints": [
-    "Resistor_SMD:R_0603_1608Metric"
-  ]
+  "kicad_footprints": ["Resistor_SMD:R_0603_1608Metric"]
 }
 ```
 
 #### 3. Enhanced `place_component`
+
 Add JLCPCB integration to existing component placement.
 
 ```typescript
@@ -347,6 +351,7 @@ Add JLCPCB integration to existing component placement.
 ```
 
 **Example:**
+
 ```
 User: "Place a 10k resistor at 50, 40mm using JLCPCB part C25804"
 Claude: [uses place_component with jlcpcb_part="C25804"]
@@ -364,6 +369,7 @@ Claude: [uses place_component with jlcpcb_part="C25804"]
 ### Phase 4: Testing & Documentation (Day 4)
 
 **Testing:**
+
 1. Download JLCPCB database (verify ~100k parts loaded)
 2. Test parametric search (resistors, capacitors, ICs)
 3. Test package mapping (0603 → correct footprints)
@@ -371,6 +377,7 @@ Claude: [uses place_component with jlcpcb_part="C25804"]
 5. Verify BOM export includes LCSC part numbers
 
 **Documentation:**
+
 - User guide: How to get JLCPCB API key
 - Usage examples for each MCP tool
 - Best practices (prefer Basic parts, check stock)
@@ -381,6 +388,7 @@ Claude: [uses place_component with jlcpcb_part="C25804"]
 ## User Workflow Examples
 
 ### Example 1: Find and Place a Resistor
+
 ```
 User: "I need a 10k pull-up resistor, 0603 size, cheapest JLCPCB basic part"
 
@@ -409,6 +417,7 @@ Claude: [uses place_component]
 ```
 
 ### Example 2: Design a Cost-Optimized LED Circuit
+
 ```
 User: "Design an LED circuit with current-limiting resistor, use only JLCPCB basic parts"
 
@@ -428,6 +437,7 @@ Claude: [searches for LED]
 ```
 
 ### Example 3: Check Stock Before Ordering
+
 ```
 User: "I need 100 of part C25804, is there enough stock?"
 
@@ -453,12 +463,14 @@ Claude: [uses get_jlcpcb_part lcsc_number="C25804"]
 **Configure in MCP:**
 
 Option A: Environment variables (recommended)
+
 ```bash
 export JLCPCB_API_KEY="your_app_key"
 export JLCPCB_API_SECRET="your_app_secret"
 ```
 
 Option B: Config file
+
 ```json
 {
   "jlcpcb": {
@@ -470,6 +482,7 @@ Option B: Config file
 ```
 
 **Initial Setup:**
+
 ```
 User: "Download the JLCPCB parts database"
 
@@ -543,11 +556,13 @@ This BOM can be directly uploaded to JLCPCB for assembly!
 **Initial Download:** ~5-10 minutes (108k parts)
 
 **Incremental Updates:**
+
 - Run daily via cron/scheduled task
 - Only fetch parts modified since last update
 - Much faster (~30 seconds)
 
 **Update Command:**
+
 ```python
 # In Python
 jlcpcb_client.update_database(db_path)
@@ -562,6 +577,7 @@ update_jlcpcb_database(force=True)   # Full re-download
 ## Success Metrics
 
 **Implementation Complete When:**
+
 - ✅ Can download/cache full JLCPCB parts database
 - ✅ Parametric search works (resistors, capacitors, ICs)
 - ✅ Package → footprint mapping covers 90%+ of common parts
@@ -570,6 +586,7 @@ update_jlcpcb_database(force=True)   # Full re-download
 - ✅ Documentation complete with examples
 
 **User Experience Goal:**
+
 ```
 User: "Design a board with an ESP32, USB-C connector, and LED,
        use only JLCPCB basic parts under $10 BOM"
@@ -588,6 +605,7 @@ Claude: [searches JLCPCB database]
 ## Future Enhancements
 
 **Post-MVP (v2.1+):**
+
 - LCSC API integration for extended parametric data
 - Digikey/Mouser fallback for non-JLCPCB parts
 - Part substitution suggestions (out of stock → alternatives)

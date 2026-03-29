@@ -2,11 +2,13 @@
 Board size command implementations for KiCAD interface
 """
 
-import pcbnew
 import logging
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-logger = logging.getLogger('kicad_interface')
+import pcbnew
+
+logger = logging.getLogger("kicad_interface")
+
 
 class BoardSizeCommands:
     """Handles board size operations"""
@@ -22,7 +24,7 @@ class BoardSizeCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             width = params.get("width")
@@ -33,41 +35,36 @@ class BoardSizeCommands:
                 return {
                     "success": False,
                     "message": "Missing dimensions",
-                    "errorDetails": "Both width and height are required"
+                    "errorDetails": "Both width and height are required",
                 }
 
             # Create board outline using BoardOutlineCommands
             # This properly creates edge cuts on Edge.Cuts layer
             from commands.board.outline import BoardOutlineCommands
+
             outline_commands = BoardOutlineCommands(self.board)
 
             # Create rectangular outline centered at origin
-            result = outline_commands.add_board_outline({
-                "shape": "rectangle",
-                "centerX": width / 2,      # Center X
-                "centerY": height / 2,     # Center Y
-                "width": width,
-                "height": height,
-                "unit": unit
-            })
+            result = outline_commands.add_board_outline(
+                {
+                    "shape": "rectangle",
+                    "centerX": width / 2,  # Center X
+                    "centerY": height / 2,  # Center Y
+                    "width": width,
+                    "height": height,
+                    "unit": unit,
+                }
+            )
 
             if result.get("success"):
                 return {
                     "success": True,
                     "message": f"Created board outline: {width}x{height} {unit}",
-                    "size": {
-                        "width": width,
-                        "height": height,
-                        "unit": unit
-                    }
+                    "size": {"width": width, "height": height, "unit": unit},
                 }
             else:
                 return result
 
         except Exception as e:
             logger.error(f"Error setting board size: {str(e)}")
-            return {
-                "success": False,
-                "message": "Failed to set board size",
-                "errorDetails": str(e)
-            }
+            return {"success": False, "message": "Failed to set board size", "errorDetails": str(e)}

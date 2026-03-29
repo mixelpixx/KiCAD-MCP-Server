@@ -12,9 +12,9 @@ KiCAD 9 .kicad_sym format:
   - All coordinates in mm, 2.54mm grid typical for schematic symbols
 """
 
+import logging
 import os
 import re
-import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -24,15 +24,31 @@ KICAD9_SYMBOL_LIB_VERSION = "20241209"
 
 # Pin electrical types
 PIN_TYPES = {
-    "input", "output", "bidirectional", "tri_state", "passive",
-    "free", "unspecified", "power_in", "power_out",
-    "open_collector", "open_emitter", "no_connect",
+    "input",
+    "output",
+    "bidirectional",
+    "tri_state",
+    "passive",
+    "free",
+    "unspecified",
+    "power_in",
+    "power_out",
+    "open_collector",
+    "open_emitter",
+    "no_connect",
 }
 
 # Pin graphic shapes
 PIN_SHAPES = {
-    "line", "inverted", "clock", "inverted_clock", "input_low",
-    "clock_low", "output_low", "falling_edge_clock", "non_logic",
+    "line",
+    "inverted",
+    "clock",
+    "inverted_clock",
+    "input_low",
+    "clock_low",
+    "output_low",
+    "falling_edge_clock",
+    "non_logic",
 }
 
 
@@ -125,11 +141,11 @@ class SymbolCreator:
             lib_content = lib_path.read_text(encoding="utf-8")
         else:
             lib_content = (
-                f'(kicad_symbol_lib\n'
-                f'  (version {KICAD9_SYMBOL_LIB_VERSION})\n'
+                f"(kicad_symbol_lib\n"
+                f"  (version {KICAD9_SYMBOL_LIB_VERSION})\n"
                 f'  (generator "kicad-mcp")\n'
                 f'  (generator_version "9.0")\n'
-                f')\n'
+                f")\n"
             )
 
         # Check for duplicate
@@ -209,7 +225,7 @@ class SymbolCreator:
         # Only top-level symbols (not sub-symbols like _0_1 or _1_1)
         names = re.findall(r'^\s*\(symbol "([^"_][^"]*)"', content, re.MULTILINE)
         # Filter out sub-symbols (contain _N_N suffix)
-        symbols = [n for n in names if not re.search(r'_\d+_\d+$', n)]
+        symbols = [n for n in names if not re.search(r"_\d+_\d+$", n)]
         return {
             "success": True,
             "library_path": str(lib_path),
@@ -332,9 +348,9 @@ class SymbolCreator:
         board_str = "yes" if on_board else "no"
 
         lines.append(f'  (symbol "{name}"')
-        lines.append(f'    (exclude_from_sim no)')
-        lines.append(f'    (in_bom {bom_str})')
-        lines.append(f'    (on_board {board_str})')
+        lines.append(f"    (exclude_from_sim no)")
+        lines.append(f"    (in_bom {bom_str})")
+        lines.append(f"    (on_board {board_str})")
 
         # Properties
         lines.extend(_property_block("Reference", reference_prefix, 2.54, 0, visible=True))
@@ -351,15 +367,15 @@ class SymbolCreator:
             lines.extend(_rect_sym_lines(rect))
         for pl in polylines:
             lines.extend(_polyline_lines(pl))
-        lines.append(f'    )')
+        lines.append(f"    )")
 
         # Sub-symbol _1_1: pins
         lines.append(f'    (symbol "{name}_1_1"')
         for pin in pins:
             lines.extend(_pin_lines(pin))
-        lines.append(f'    )')
+        lines.append(f"    )")
 
-        lines.append(f'  )')
+        lines.append(f"  )")
         return "\n".join(lines)
 
     def _remove_symbol(self, content: str, name: str) -> str:
@@ -372,8 +388,9 @@ class SymbolCreator:
         for line in lines:
             stripped = line.strip()
             if not skip:
-                if re.match(rf'^\s*\(symbol "{re.escape(name)}"', line) and \
-                        not re.search(r'_\d+_\d+"', line):
+                if re.match(rf'^\s*\(symbol "{re.escape(name)}"', line) and not re.search(
+                    r'_\d+_\d+"', line
+                ):
                     skip = True
                     depth = stripped.count("(") - stripped.count(")")
                     continue
@@ -390,17 +407,16 @@ class SymbolCreator:
 #  S-Expression helper functions                                       #
 # ------------------------------------------------------------------ #
 
-def _property_block(
-    key: str, value: str, x: float, y: float, visible: bool = True
-) -> List[str]:
+
+def _property_block(key: str, value: str, x: float, y: float, visible: bool = True) -> List[str]:
     hide = "" if visible else "\n      (hide yes)"
     return [
         f'    (property "{_esc(key)}" "{_esc(value)}"',
-        f'      (at {_fmt(x)} {_fmt(y)} 0)',
-        f'      (effects',
-        f'        (font (size 1.27 1.27))',
-        f'      ){hide}',
-        f'    )',
+        f"      (at {_fmt(x)} {_fmt(y)} 0)",
+        f"      (effects",
+        f"        (font (size 1.27 1.27))",
+        f"      ){hide}",
+        f"    )",
     ]
 
 
@@ -412,12 +428,12 @@ def _rect_sym_lines(rect: Dict[str, Any]) -> List[str]:
     w = _fmt(rect.get("width", 0.254))
     fill = rect.get("fill", "background")
     return [
-        f'      (rectangle',
-        f'        (start {x1} {y1})',
-        f'        (end {x2} {y2})',
-        f'        (stroke (width {w}) (type default))',
-        f'        (fill (type {fill}))',
-        f'      )',
+        f"      (rectangle",
+        f"        (start {x1} {y1})",
+        f"        (end {x2} {y2})",
+        f"        (stroke (width {w}) (type default))",
+        f"        (fill (type {fill}))",
+        f"      )",
     ]
 
 
@@ -426,16 +442,16 @@ def _polyline_lines(pl: Dict[str, Any]) -> List[str]:
     w = _fmt(pl.get("width", 0.254))
     fill = pl.get("fill", "none")
     lines = [
-        f'      (polyline',
-        f'        (pts',
+        f"      (polyline",
+        f"        (pts",
     ]
     for pt in pts:
         lines.append(f'          (xy {_fmt(pt["x"])} {_fmt(pt["y"])})')
     lines += [
-        f'        )',
-        f'        (stroke (width {w}) (type default))',
-        f'        (fill (type {fill}))',
-        f'      )',
+        f"        )",
+        f"        (stroke (width {w}) (type default))",
+        f"        (fill (type {fill}))",
+        f"      )",
     ]
     return lines
 
@@ -452,14 +468,14 @@ def _pin_lines(pin: Dict[str, Any]) -> List[str]:
     pin_number = str(pin.get("number", "1"))
 
     return [
-        f'      (pin {ptype} {shape}',
-        f'        (at {x} {y} {angle})',
-        f'        (length {length})',
+        f"      (pin {ptype} {shape}",
+        f"        (at {x} {y} {angle})",
+        f"        (length {length})",
         f'        (name "{_esc(pin_name)}"',
-        f'          (effects (font (size 1.27 1.27)))',
-        f'        )',
+        f"          (effects (font (size 1.27 1.27)))",
+        f"        )",
         f'        (number "{_esc(pin_number)}"',
-        f'          (effects (font (size 1.27 1.27)))',
-        f'        )',
-        f'      )',
+        f"          (effects (font (size 1.27 1.27)))",
+        f"        )",
+        f"      )",
     ]

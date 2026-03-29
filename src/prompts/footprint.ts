@@ -23,10 +23,7 @@ export function registerFootprintPrompts(server: McpServer): void {
         .describe(
           "Component description, e.g. 'SOT-23 NPN transistor' or '2-pin JST XH 2.5mm connector'",
         ),
-      libraryPath: z
-        .string()
-        .optional()
-        .describe("Target .pretty library path (optional)"),
+      libraryPath: z.string().optional().describe("Target .pretty library path (optional)"),
     },
     () => ({
       messages: [
@@ -107,9 +104,7 @@ Now create the footprint for: {{component}}`,
   server.prompt(
     "footprint_ipc_checklist",
     {
-      footprintPath: z
-        .string()
-        .describe("Path to the .kicad_mod file to review"),
+      footprintPath: z.string().describe("Path to the .kicad_mod file to review"),
     },
     () => ({
       messages: [

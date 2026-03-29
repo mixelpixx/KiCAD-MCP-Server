@@ -2,11 +2,12 @@
 Routing-related command implementations for KiCAD interface
 """
 
-import os
-import pcbnew
 import logging
 import math
-from typing import Dict, Any, Optional, List, Tuple
+import os
+from typing import Any, Dict, List, Optional, Tuple
+
+import pcbnew
 
 logger = logging.getLogger("kicad_interface")
 
@@ -149,9 +150,9 @@ class RoutingCommands:
             # KiCAD 9 SWIG. Use footprint.GetLayer() instead — it always reflects
             # the actual placed layer after Flip().
             fp_start = footprints[from_ref]
-            fp_end   = footprints[to_ref]
+            fp_end = footprints[to_ref]
             start_layer = self.board.GetLayerName(fp_start.GetLayer())
-            end_layer   = self.board.GetLayerName(fp_end.GetLayer())
+            end_layer = self.board.GetLayerName(fp_end.GetLayer())
             copper_layers = {"F.Cu", "B.Cu"}
             needs_via = (
                 start_layer in copper_layers
@@ -168,24 +169,34 @@ class RoutingCommands:
                 via_y = (start_pos.y + end_pos.y) / 2 / scale
 
                 # Trace on start layer: start_pad → via
-                r1 = self.route_trace({
-                    "start": {"x": start_pos.x / scale, "y": start_pos.y / scale, "unit": "mm"},
-                    "end":   {"x": via_x, "y": via_y, "unit": "mm"},
-                    "layer": start_layer, "width": width, "net": net,
-                })
+                r1 = self.route_trace(
+                    {
+                        "start": {"x": start_pos.x / scale, "y": start_pos.y / scale, "unit": "mm"},
+                        "end": {"x": via_x, "y": via_y, "unit": "mm"},
+                        "layer": start_layer,
+                        "width": width,
+                        "net": net,
+                    }
+                )
                 # Via connecting both layers
-                self.add_via({
-                    "position": {"x": via_x, "y": via_y, "unit": "mm"},
-                    "net": net,
-                    "from_layer": start_layer,
-                    "to_layer": end_layer,
-                })
+                self.add_via(
+                    {
+                        "position": {"x": via_x, "y": via_y, "unit": "mm"},
+                        "net": net,
+                        "from_layer": start_layer,
+                        "to_layer": end_layer,
+                    }
+                )
                 # Trace on end layer: via → end_pad
-                r2 = self.route_trace({
-                    "start": {"x": via_x, "y": via_y, "unit": "mm"},
-                    "end":   {"x": end_pos.x / scale, "y": end_pos.y / scale, "unit": "mm"},
-                    "layer": end_layer, "width": width, "net": net,
-                })
+                r2 = self.route_trace(
+                    {
+                        "start": {"x": via_x, "y": via_y, "unit": "mm"},
+                        "end": {"x": end_pos.x / scale, "y": end_pos.y / scale, "unit": "mm"},
+                        "layer": end_layer,
+                        "width": width,
+                        "net": net,
+                    }
+                )
                 success = r1.get("success") and r2.get("success")
                 result = {
                     "success": success,
@@ -195,21 +206,28 @@ class RoutingCommands:
                 }
             else:
                 # Same layer — direct trace
-                result = self.route_trace({
-                    "start": {"x": start_pos.x / scale, "y": start_pos.y / scale, "unit": "mm"},
-                    "end":   {"x": end_pos.x / scale, "y": end_pos.y / scale, "unit": "mm"},
-                    "layer": layer if layer else start_layer,
-                    "width": width, "net": net,
-                })
+                result = self.route_trace(
+                    {
+                        "start": {"x": start_pos.x / scale, "y": start_pos.y / scale, "unit": "mm"},
+                        "end": {"x": end_pos.x / scale, "y": end_pos.y / scale, "unit": "mm"},
+                        "layer": layer if layer else start_layer,
+                        "width": width,
+                        "net": net,
+                    }
+                )
 
             if result.get("success"):
                 result["fromPad"] = {
-                    "ref": from_ref, "pad": from_pad,
-                    "x": start_pos.x / scale, "y": start_pos.y / scale,
+                    "ref": from_ref,
+                    "pad": from_pad,
+                    "x": start_pos.x / scale,
+                    "y": start_pos.y / scale,
                 }
                 result["toPad"] = {
-                    "ref": to_ref, "pad": to_pad,
-                    "x": end_pos.x / scale, "y": end_pos.y / scale,
+                    "ref": to_ref,
+                    "pad": to_pad,
+                    "x": end_pos.x / scale,
+                    "y": end_pos.y / scale,
                 }
 
             return result
@@ -352,21 +370,15 @@ class RoutingCommands:
             via = pcbnew.PCB_VIA(self.board)
 
             # Set position
-            scale = (
-                1000000 if position["unit"] == "mm" else 25400000
-            )  # mm or inch to nm
+            scale = 1000000 if position["unit"] == "mm" else 25400000  # mm or inch to nm
             x_nm = int(position["x"] * scale)
             y_nm = int(position["y"] * scale)
             via.SetPosition(pcbnew.VECTOR2I(x_nm, y_nm))
 
             # Set size and drill (default to board's current via settings)
             design_settings = self.board.GetDesignSettings()
-            via.SetWidth(
-                int(size * 1000000) if size else design_settings.GetCurrentViaSize()
-            )
-            via.SetDrill(
-                int(drill * 1000000) if drill else design_settings.GetCurrentViaDrill()
-            )
+            via.SetWidth(int(size * 1000000) if size else design_settings.GetCurrentViaSize())
+            via.SetDrill(int(drill * 1000000) if drill else design_settings.GetCurrentViaDrill())
 
             # Set layers
             from_id = self.board.GetLayerID(from_layer)
@@ -500,9 +512,7 @@ class RoutingCommands:
 
             # Find track by position
             if position:
-                scale = (
-                    1000000 if position["unit"] == "mm" else 25400000
-                )  # mm or inch to nm
+                scale = 1000000 if position["unit"] == "mm" else 25400000  # mm or inch to nm
                 x_nm = int(position["x"] * scale)
                 y_nm = int(position["y"] * scale)
                 point = pcbnew.VECTOR2I(x_nm, y_nm)
@@ -940,9 +950,7 @@ class RoutingCommands:
                 else:
                     traces_to_copy.append(track)
 
-            filter_method = (
-                "net-based" if use_net_filter else "geometric (pads have no nets)"
-            )
+            filter_method = "net-based" if use_net_filter else "geometric (pads have no nets)"
             logger.info(
                 f"copy_routing_pattern: {len(traces_to_copy)} traces, "
                 f"{len(vias_to_copy)} vias selected via {filter_method}"
@@ -958,9 +966,7 @@ class RoutingCommands:
 
                 # Create new track
                 new_track = pcbnew.PCB_TRACK(self.board)
-                new_track.SetStart(
-                    pcbnew.VECTOR2I(start.x + offset_x, start.y + offset_y)
-                )
+                new_track.SetStart(pcbnew.VECTOR2I(start.x + offset_x, start.y + offset_y))
                 new_track.SetEnd(pcbnew.VECTOR2I(end.x + offset_x, end.y + offset_y))
                 new_track.SetLayer(track.GetLayer())
 
@@ -1320,15 +1326,11 @@ class RoutingCommands:
             pos_start = pcbnew.VECTOR2I(
                 int(start_point.x + offset_x), int(start_point.y + offset_y)
             )
-            pos_end = pcbnew.VECTOR2I(
-                int(end_point.x + offset_x), int(end_point.y + offset_y)
-            )
+            pos_end = pcbnew.VECTOR2I(int(end_point.x + offset_x), int(end_point.y + offset_y))
             neg_start = pcbnew.VECTOR2I(
                 int(start_point.x - offset_x), int(start_point.y - offset_y)
             )
-            neg_end = pcbnew.VECTOR2I(
-                int(end_point.x - offset_x), int(end_point.y - offset_y)
-            )
+            neg_end = pcbnew.VECTOR2I(int(end_point.x - offset_x), int(end_point.y - offset_y))
 
             # Create positive trace
             pos_track = pcbnew.PCB_TRACK(self.board)
@@ -1395,9 +1397,7 @@ class RoutingCommands:
                     return pad.GetPosition()
         raise ValueError("Invalid point specification")
 
-    def _point_to_track_distance(
-        self, point: pcbnew.VECTOR2I, track: pcbnew.PCB_TRACK
-    ) -> float:
+    def _point_to_track_distance(self, point: pcbnew.VECTOR2I, track: pcbnew.PCB_TRACK) -> float:
         """Calculate distance from point to track segment"""
         start = track.GetStart()
         end = track.GetEnd()

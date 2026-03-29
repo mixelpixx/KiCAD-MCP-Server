@@ -15,13 +15,13 @@ Supported SVG elements:
 SVG coordinate system: Y increases downward (same as KiCAD mm), so no Y-flip needed.
 """
 
-import re
-import math
-import uuid
-import os
 import logging
-from typing import List, Tuple, Dict, Any, Optional
+import math
+import os
+import re
+import uuid
 import xml.etree.ElementTree as ET
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("kicad_interface")
 
@@ -34,9 +34,7 @@ Polygon = List[Point]
 # ---------------------------------------------------------------------------
 # SVG path tokenizer
 # ---------------------------------------------------------------------------
-_TOKEN_RE = re.compile(
-    r"([MmZzLlHhVvCcSsQqTtAa])|([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)"
-)
+_TOKEN_RE = re.compile(r"([MmZzLlHhVvCcSsQqTtAa])|([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)")
 
 
 def _tokenize_path(d: str) -> List[str]:
@@ -57,9 +55,9 @@ def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
     """
     polygons: List[Polygon] = []
     current: Polygon = []
-    cx, cy = 0.0, 0.0   # current point
-    sx, sy = 0.0, 0.0   # subpath start
-    last_ctrl = None      # last bezier control point (for S/T commands)
+    cx, cy = 0.0, 0.0  # current point
+    sx, sy = 0.0, 0.0  # subpath start
+    last_ctrl = None  # last bezier control point (for S/T commands)
     last_cmd = ""
 
     i = 0
@@ -73,13 +71,15 @@ def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
         i += n
         return vals
 
-    def cubic_bezier_points(p0: Point, p1: Point, p2: Point, p3: Point, steps: int = 16) -> List[Point]:
+    def cubic_bezier_points(
+        p0: Point, p1: Point, p2: Point, p3: Point, steps: int = 16
+    ) -> List[Point]:
         pts = []
         for k in range(1, steps + 1):
             t = k / steps
             mt = 1 - t
-            x = mt**3*p0[0] + 3*mt**2*t*p1[0] + 3*mt*t**2*p2[0] + t**3*p3[0]
-            y = mt**3*p0[1] + 3*mt**2*t*p1[1] + 3*mt*t**2*p2[1] + t**3*p3[1]
+            x = mt**3 * p0[0] + 3 * mt**2 * t * p1[0] + 3 * mt * t**2 * p2[0] + t**3 * p3[0]
+            y = mt**3 * p0[1] + 3 * mt**2 * t * p1[1] + 3 * mt * t**2 * p2[1] + t**3 * p3[1]
             pts.append((x, y))
         return pts
 
@@ -88,13 +88,23 @@ def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
         for k in range(1, steps + 1):
             t = k / steps
             mt = 1 - t
-            x = mt**2*p0[0] + 2*mt*t*p1[0] + t**2*p2[0]
-            y = mt**2*p0[1] + 2*mt*t*p1[1] + t**2*p2[1]
+            x = mt**2 * p0[0] + 2 * mt * t * p1[0] + t**2 * p2[0]
+            y = mt**2 * p0[1] + 2 * mt * t * p1[1] + t**2 * p2[1]
             pts.append((x, y))
         return pts
 
-    def arc_points(x1: float, y1: float, rx: float, ry: float, phi_deg: float,
-                   large_arc: int, sweep: int, x2: float, y2: float, steps: int = 20) -> List[Point]:
+    def arc_points(
+        x1: float,
+        y1: float,
+        rx: float,
+        ry: float,
+        phi_deg: float,
+        large_arc: int,
+        sweep: int,
+        x2: float,
+        y2: float,
+        steps: int = 20,
+    ) -> List[Point]:
         """Approximate SVG arc as polygon points (endpoint parameterization → centre)."""
         if rx == 0 or ry == 0:
             return [(x2, y2)]
@@ -104,13 +114,13 @@ def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
         x1p = cos_phi * dx + sin_phi * dy
         y1p = -sin_phi * dx + cos_phi * dy
         rx, ry = abs(rx), abs(ry)
-        lam = (x1p / rx)**2 + (y1p / ry)**2
+        lam = (x1p / rx) ** 2 + (y1p / ry) ** 2
         if lam > 1:
             lam = math.sqrt(lam)
             rx *= lam
             ry *= lam
-        num = max(0.0, (rx*ry)**2 - (rx*y1p)**2 - (ry*x1p)**2)
-        den = (rx*y1p)**2 + (ry*x1p)**2
+        num = max(0.0, (rx * ry) ** 2 - (rx * y1p) ** 2 - (ry * x1p) ** 2)
+        den = (rx * y1p) ** 2 + (ry * x1p) ** 2
         sq = math.sqrt(num / den) if den != 0 else 0
         if large_arc == sweep:
             sq = -sq
@@ -120,8 +130,10 @@ def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
         cy_ = sin_phi * cxp + cos_phi * cyp + (y1 + y2) / 2
 
         def angle(ux, uy, vx, vy):
-            a = math.acos(max(-1, min(1, (ux*vx + uy*vy) / (math.hypot(ux, uy) * math.hypot(vx, vy)))))
-            if ux*vy - uy*vx < 0:
+            a = math.acos(
+                max(-1, min(1, (ux * vx + uy * vy) / (math.hypot(ux, uy) * math.hypot(vx, vy))))
+            )
+            if ux * vy - uy * vx < 0:
                 a = -a
             return a
 
@@ -144,8 +156,9 @@ def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
     # --- main loop ---
     while i < len(tokens):
         tok = tokens[i]
-        if tok.lstrip('+-').replace('.', '', 1).replace('e', '', 1).replace('E', '', 1).lstrip('+-').isdigit() or \
-           re.match(r'^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$', tok):
+        if tok.lstrip("+-").replace(".", "", 1).replace("e", "", 1).replace("E", "", 1).lstrip(
+            "+-"
+        ).isdigit() or re.match(r"^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$", tok):
             # implicit repeat of last command
             pass
         else:
@@ -155,7 +168,7 @@ def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
 
         rel = cmd.islower()
 
-        if cmd in ('M', 'm'):
+        if cmd in ("M", "m"):
             x, y = consume(2)
             if rel:
                 cx, cy = cx + x, cy + y
@@ -166,9 +179,9 @@ def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
             current = [(cx, cy)]
             sx, sy = cx, cy
             # subsequent coordinates are implicit L/l
-            cmd = 'l' if rel else 'L'
+            cmd = "l" if rel else "L"
 
-        elif cmd in ('L', 'l'):
+        elif cmd in ("L", "l"):
             x, y = consume(2)
             if rel:
                 cx, cy = cx + x, cy + y
@@ -176,36 +189,46 @@ def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
                 cx, cy = x, y
             current.append((cx, cy))
 
-        elif cmd in ('H', 'h'):
-            x = float(tokens[i]); i += 1
+        elif cmd in ("H", "h"):
+            x = float(tokens[i])
+            i += 1
             cx = cx + x if rel else x
             current.append((cx, cy))
 
-        elif cmd in ('V', 'v'):
-            y = float(tokens[i]); i += 1
+        elif cmd in ("V", "v"):
+            y = float(tokens[i])
+            i += 1
             cy = cy + y if rel else y
             current.append((cx, cy))
 
-        elif cmd in ('Z', 'z'):
+        elif cmd in ("Z", "z"):
             current.append((sx, sy))  # close
             polygons.append(current)
             current = []
             cx, cy = sx, sy
 
-        elif cmd in ('C', 'c'):
+        elif cmd in ("C", "c"):
             x1, y1, x2, y2, x, y = consume(6)
             if rel:
-                x1 += cx; y1 += cy; x2 += cx; y2 += cy; x += cx; y += cy
+                x1 += cx
+                y1 += cy
+                x2 += cx
+                y2 += cy
+                x += cx
+                y += cy
             pts = cubic_bezier_points((cx, cy), (x1, y1), (x2, y2), (x, y))
             current.extend(pts)
             last_ctrl = (x2, y2)
             cx, cy = x, y
 
-        elif cmd in ('S', 's'):
+        elif cmd in ("S", "s"):
             x2, y2, x, y = consume(4)
             if rel:
-                x2 += cx; y2 += cy; x += cx; y += cy
-            if last_ctrl and last_cmd in ('C', 'c', 'S', 's'):
+                x2 += cx
+                y2 += cy
+                x += cx
+                y += cy
+            if last_ctrl and last_cmd in ("C", "c", "S", "s"):
                 x1 = 2 * cx - last_ctrl[0]
                 y1 = 2 * cy - last_ctrl[1]
             else:
@@ -215,20 +238,24 @@ def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
             last_ctrl = (x2, y2)
             cx, cy = x, y
 
-        elif cmd in ('Q', 'q'):
+        elif cmd in ("Q", "q"):
             x1, y1, x, y = consume(4)
             if rel:
-                x1 += cx; y1 += cy; x += cx; y += cy
+                x1 += cx
+                y1 += cy
+                x += cx
+                y += cy
             pts = quad_bezier_points((cx, cy), (x1, y1), (x, y))
             current.extend(pts)
             last_ctrl = (x1, y1)
             cx, cy = x, y
 
-        elif cmd in ('T', 't'):
+        elif cmd in ("T", "t"):
             x, y = consume(2)
             if rel:
-                x += cx; y += cy
-            if last_ctrl and last_cmd in ('Q', 'q', 'T', 't'):
+                x += cx
+                y += cy
+            if last_ctrl and last_cmd in ("Q", "q", "T", "t"):
                 x1 = 2 * cx - last_ctrl[0]
                 y1 = 2 * cy - last_ctrl[1]
             else:
@@ -238,11 +265,12 @@ def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
             last_ctrl = (x1, y1)
             cx, cy = x, y
 
-        elif cmd in ('A', 'a'):
+        elif cmd in ("A", "a"):
             rx, ry, phi, large, sweep, x, y = consume(7)
             large, sweep = int(large), int(sweep)
             if rel:
-                x += cx; y += cy
+                x += cx
+                y += cy
             pts = arc_points(cx, cy, rx, ry, phi, large, sweep, x, y)
             current.extend(pts)
             cx, cy = x, y
@@ -264,48 +292,45 @@ def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
 # ---------------------------------------------------------------------------
 def _parse_transform(transform_str: str) -> List[List[float]]:
     """Parse SVG transform attribute, return list of 3×3 matrix rows [a,b,c; d,e,f; 0,0,1]."""
+
     def identity():
         return [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
 
     def mat_mul(A, B):
-        return [
-            [sum(A[r][k] * B[k][c] for k in range(3)) for c in range(3)]
-            for r in range(3)
-        ]
+        return [[sum(A[r][k] * B[k][c] for k in range(3)) for c in range(3)] for r in range(3)]
 
     result = identity()
     for m in re.finditer(
-        r'(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)',
-        transform_str
+        r"(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)", transform_str
     ):
         func = m.group(1)
-        args = [float(v) for v in re.split(r'[\s,]+', m.group(2).strip()) if v]
+        args = [float(v) for v in re.split(r"[\s,]+", m.group(2).strip()) if v]
         mat = identity()
-        if func == 'matrix' and len(args) == 6:
+        if func == "matrix" and len(args) == 6:
             a, b, c, d, e, f = args
             mat = [[a, c, e], [b, d, f], [0, 0, 1]]
-        elif func == 'translate':
+        elif func == "translate":
             tx = args[0]
             ty = args[1] if len(args) > 1 else 0
             mat = [[1, 0, tx], [0, 1, ty], [0, 0, 1]]
-        elif func == 'scale':
+        elif func == "scale":
             sx = args[0]
             sy = args[1] if len(args) > 1 else sx
             mat = [[sx, 0, 0], [0, sy, 0], [0, 0, 1]]
-        elif func == 'rotate':
+        elif func == "rotate":
             angle = math.radians(args[0])
             cos, sin = math.cos(angle), math.sin(angle)
             if len(args) == 3:
                 cx_, cy_ = args[1], args[2]
                 t1 = [[1, 0, cx_], [0, 1, cy_], [0, 0, 1]]
-                r  = [[cos, -sin, 0], [sin, cos, 0], [0, 0, 1]]
+                r = [[cos, -sin, 0], [sin, cos, 0], [0, 0, 1]]
                 t2 = [[1, 0, -cx_], [0, 1, -cy_], [0, 0, 1]]
                 mat = mat_mul(mat_mul(t1, r), t2)
             else:
                 mat = [[cos, -sin, 0], [sin, cos, 0], [0, 0, 1]]
-        elif func == 'skewX':
+        elif func == "skewX":
             mat = [[1, math.tan(math.radians(args[0])), 0], [0, 1, 0], [0, 0, 1]]
-        elif func == 'skewY':
+        elif func == "skewY":
             mat = [[1, 0, 0], [math.tan(math.radians(args[0])), 1, 0], [0, 0, 1]]
         result = mat_mul(result, mat)
     return result
@@ -321,25 +346,22 @@ def _apply_transform(pts: List[Point], mat: List[List[float]]) -> List[Point]:
 
 
 def _mat_mul(A, B):
-    return [
-        [sum(A[r][k] * B[k][c] for k in range(3)) for c in range(3)]
-        for r in range(3)
-    ]
+    return [[sum(A[r][k] * B[k][c] for k in range(3)) for c in range(3)] for r in range(3)]
 
 
 # ---------------------------------------------------------------------------
 # SVG element → polygon extractor
 # ---------------------------------------------------------------------------
-SVG_NS = re.compile(r'\{[^}]+\}')
+SVG_NS = re.compile(r"\{[^}]+\}")
 
 
 def _tag(el: ET.Element) -> str:
-    return SVG_NS.sub('', el.tag)
+    return SVG_NS.sub("", el.tag)
 
 
 def _get_attr(el: ET.Element, name: str, default: Optional[str] = None) -> Optional[str]:
     for key in el.attrib:
-        if SVG_NS.sub('', key) == name:
+        if SVG_NS.sub("", key) == name:
             return el.attrib[key]
     return default
 
@@ -351,13 +373,13 @@ def _identity():
 def _extract_polygons_from_element(el: ET.Element, parent_mat: List[List[float]]) -> List[Polygon]:
     """Recursively extract all polygons from an SVG element tree."""
     tag = _tag(el)
-    display = _get_attr(el, 'display', 'inline')
-    visibility = _get_attr(el, 'visibility', 'visible')
-    if display == 'none' or visibility == 'hidden':
+    display = _get_attr(el, "display", "inline")
+    visibility = _get_attr(el, "visibility", "visible")
+    if display == "none" or visibility == "hidden":
         return []
 
     # Accumulate transform
-    transform_str = _get_attr(el, 'transform', '')
+    transform_str = _get_attr(el, "transform", "")
     if transform_str:
         local_mat = _parse_transform(transform_str)
         mat = _mat_mul(parent_mat, local_mat)
@@ -366,65 +388,73 @@ def _extract_polygons_from_element(el: ET.Element, parent_mat: List[List[float]]
 
     result: List[Polygon] = []
 
-    if tag == 'g' or tag == 'svg':
+    if tag == "g" or tag == "svg":
         for child in el:
             result.extend(_extract_polygons_from_element(child, mat))
 
-    elif tag == 'path':
-        d = _get_attr(el, 'd', '')
+    elif tag == "path":
+        d = _get_attr(el, "d", "")
         if d:
             tokens = _tokenize_path(d)
             polygons = _parse_path_tokens(tokens)
             for poly in polygons:
                 result.append(_apply_transform(poly, mat))
 
-    elif tag == 'rect':
-        x = float(_get_attr(el, 'x', '0') or 0)
-        y = float(_get_attr(el, 'y', '0') or 0)
-        w = float(_get_attr(el, 'width', '0') or 0)
-        h = float(_get_attr(el, 'height', '0') or 0)
+    elif tag == "rect":
+        x = float(_get_attr(el, "x", "0") or 0)
+        y = float(_get_attr(el, "y", "0") or 0)
+        w = float(_get_attr(el, "width", "0") or 0)
+        h = float(_get_attr(el, "height", "0") or 0)
         if w > 0 and h > 0:
             pts = [(x, y), (x + w, y), (x + w, y + h), (x, y + h), (x, y)]
             result.append(_apply_transform(pts, mat))
 
-    elif tag == 'circle':
-        cx_ = float(_get_attr(el, 'cx', '0') or 0)
-        cy_ = float(_get_attr(el, 'cy', '0') or 0)
-        r = float(_get_attr(el, 'r', '0') or 0)
+    elif tag == "circle":
+        cx_ = float(_get_attr(el, "cx", "0") or 0)
+        cy_ = float(_get_attr(el, "cy", "0") or 0)
+        r = float(_get_attr(el, "r", "0") or 0)
         if r > 0:
             steps = 36
-            pts = [(cx_ + r * math.cos(2 * math.pi * k / steps),
-                    cy_ + r * math.sin(2 * math.pi * k / steps))
-                   for k in range(steps + 1)]
+            pts = [
+                (
+                    cx_ + r * math.cos(2 * math.pi * k / steps),
+                    cy_ + r * math.sin(2 * math.pi * k / steps),
+                )
+                for k in range(steps + 1)
+            ]
             result.append(_apply_transform(pts, mat))
 
-    elif tag == 'ellipse':
-        cx_ = float(_get_attr(el, 'cx', '0') or 0)
-        cy_ = float(_get_attr(el, 'cy', '0') or 0)
-        rx = float(_get_attr(el, 'rx', '0') or 0)
-        ry = float(_get_attr(el, 'ry', '0') or 0)
+    elif tag == "ellipse":
+        cx_ = float(_get_attr(el, "cx", "0") or 0)
+        cy_ = float(_get_attr(el, "cy", "0") or 0)
+        rx = float(_get_attr(el, "rx", "0") or 0)
+        ry = float(_get_attr(el, "ry", "0") or 0)
         if rx > 0 and ry > 0:
             steps = 36
-            pts = [(cx_ + rx * math.cos(2 * math.pi * k / steps),
-                    cy_ + ry * math.sin(2 * math.pi * k / steps))
-                   for k in range(steps + 1)]
+            pts = [
+                (
+                    cx_ + rx * math.cos(2 * math.pi * k / steps),
+                    cy_ + ry * math.sin(2 * math.pi * k / steps),
+                )
+                for k in range(steps + 1)
+            ]
             result.append(_apply_transform(pts, mat))
 
-    elif tag in ('polygon', 'polyline'):
-        points_str = _get_attr(el, 'points', '')
+    elif tag in ("polygon", "polyline"):
+        points_str = _get_attr(el, "points", "")
         if points_str:
-            nums = [float(v) for v in re.split(r'[\s,]+', points_str.strip()) if v]
+            nums = [float(v) for v in re.split(r"[\s,]+", points_str.strip()) if v]
             pts = [(nums[k], nums[k + 1]) for k in range(0, len(nums) - 1, 2)]
-            if tag == 'polygon' and pts:
+            if tag == "polygon" and pts:
                 pts.append(pts[0])  # close
             if pts:
                 result.append(_apply_transform(pts, mat))
 
-    elif tag == 'line':
-        x1 = float(_get_attr(el, 'x1', '0') or 0)
-        y1 = float(_get_attr(el, 'y1', '0') or 0)
-        x2 = float(_get_attr(el, 'x2', '0') or 0)
-        y2 = float(_get_attr(el, 'y2', '0') or 0)
+    elif tag == "line":
+        x1 = float(_get_attr(el, "x1", "0") or 0)
+        y1 = float(_get_attr(el, "y1", "0") or 0)
+        x2 = float(_get_attr(el, "x2", "0") or 0)
+        y2 = float(_get_attr(el, "y2", "0") or 0)
         pts = [(x1, y1), (x2, y2)]
         result.append(_apply_transform(pts, mat))
 
@@ -453,20 +483,24 @@ def _build_gr_poly(points: List[Point], layer: str, stroke_width: float, filled:
             row = []
     fill_str = "yes" if filled else "none"
     uid = str(uuid.uuid4())
-    lines = [
-        "\t(gr_poly",
-        "\t\t(pts",
-    ] + pts_lines + [
-        "\t\t)",
-        "\t\t(stroke",
-        f"\t\t\t(width {stroke_width:.4f})",
-        "\t\t\t(type solid)",
-        "\t\t)",
-        f"\t\t(fill {fill_str})",
-        f'\t\t(layer "{layer}")',
-        f'\t\t(uuid "{uid}")',
-        "\t)",
-    ]
+    lines = (
+        [
+            "\t(gr_poly",
+            "\t\t(pts",
+        ]
+        + pts_lines
+        + [
+            "\t\t)",
+            "\t\t(stroke",
+            f"\t\t\t(width {stroke_width:.4f})",
+            "\t\t\t(type solid)",
+            "\t\t)",
+            f"\t\t(fill {fill_str})",
+            f'\t\t(layer "{layer}")',
+            f'\t\t(uuid "{uid}")',
+            "\t)",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -510,15 +544,15 @@ def import_svg_to_pcb(
         root = tree.getroot()
 
         # Determine SVG viewport
-        vb = _get_attr(root, 'viewBox')
+        vb = _get_attr(root, "viewBox")
         if vb:
-            parts = [float(v) for v in re.split(r'[\s,]+', vb.strip()) if v]
+            parts = [float(v) for v in re.split(r"[\s,]+", vb.strip()) if v]
             svg_x0, svg_y0, svg_w, svg_h = parts[0], parts[1], parts[2], parts[3]
         else:
-            w_str = _get_attr(root, 'width', '100') or '100'
-            h_str = _get_attr(root, 'height', '100') or '100'
-            svg_w = float(re.sub(r'[^\d.]', '', w_str) or 100)
-            svg_h = float(re.sub(r'[^\d.]', '', h_str) or 100)
+            w_str = _get_attr(root, "width", "100") or "100"
+            h_str = _get_attr(root, "height", "100") or "100"
+            svg_w = float(re.sub(r"[^\d.]", "", w_str) or 100)
+            svg_h = float(re.sub(r"[^\d.]", "", h_str) or 100)
             svg_x0, svg_y0 = 0.0, 0.0
 
         if svg_w == 0 or svg_h == 0:
@@ -569,7 +603,10 @@ def import_svg_to_pcb(
         insert_block = "\n" + "\n".join(gr_lines) + "\n"
         last_paren = pcb_content.rfind(")")
         if last_paren == -1:
-            return {"success": False, "message": "PCB file format error: no closing parenthesis found"}
+            return {
+                "success": False,
+                "message": "PCB file format error: no closing parenthesis found",
+            }
 
         new_content = pcb_content[:last_paren] + insert_block + pcb_content[last_paren:]
 
@@ -597,5 +634,6 @@ def import_svg_to_pcb(
     except Exception as e:
         logger.error(f"SVG import failed: {e}")
         import traceback
+
         logger.error(traceback.format_exc())
         return {"success": False, "message": str(e)}

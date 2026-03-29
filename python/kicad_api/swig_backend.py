@@ -8,16 +8,12 @@ WARNING: SWIG bindings are deprecated as of KiCAD 9.0
          and will be removed in KiCAD 10.0.
          Please migrate to IPC backend.
 """
+
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
 
-from kicad_api.base import (
-    KiCADBackend,
-    BoardAPI,
-    ConnectionError,
-    APINotAvailableError
-)
+from kicad_api.base import APINotAvailableError, BoardAPI, ConnectionError, KiCADBackend
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +44,7 @@ class SWIGBackend(KiCADBackend):
         """
         try:
             import pcbnew
+
             self._pcbnew = pcbnew
             version = pcbnew.GetBuildVersion()
             logger.info(f"✓ Connected to pcbnew (SWIG): {version}")
@@ -191,7 +188,7 @@ class SWIGBoardAPI(BoardAPI):
         x: float,
         y: float,
         rotation: float = 0,
-        layer: str = "F.Cu"
+        layer: str = "F.Cu",
     ) -> bool:
         """Place component using existing implementation"""
         from commands.component import ComponentCommands
@@ -202,7 +199,7 @@ class SWIGBoardAPI(BoardAPI):
                 position={"x": x, "y": y, "unit": "mm"},
                 reference=reference,
                 rotation=rotation,
-                layer=layer
+                layer=layer,
             )
             return result.get("success", False)
         except Exception as e:

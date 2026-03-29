@@ -9,8 +9,8 @@ URL schema: https://www.lcsc.com/datasheet/{LCSC#}.pdf
 No API key required.
 """
 
-import re
 import logging
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -81,9 +81,7 @@ class DatasheetManager:
         return lib_sym_start, lib_sym_end
 
     @staticmethod
-    def _process_symbol_block(
-        lines: List[str], block_start: int, block_end: int
-    ) -> Optional[Dict]:
+    def _process_symbol_block(lines: List[str], block_start: int, block_end: int) -> Optional[Dict]:
         """
         Extract LCSC and Datasheet info from a placed symbol block.
 
@@ -114,9 +112,7 @@ class DatasheetManager:
             "datasheet_value": datasheet_current,
         }
 
-    def enrich_schematic(
-        self, schematic_path: Path, dry_run: bool = False
-    ) -> Dict:
+    def enrich_schematic(self, schematic_path: Path, dry_run: bool = False) -> Dict:
         """
         Scan a .kicad_sch file and fill in missing LCSC datasheet URLs.
 
@@ -223,9 +219,7 @@ class DatasheetManager:
                         no_lcsc += 1
                     elif ds_value not in EMPTY_DATASHEET_VALUES:
                         already_set += 1
-                        logger.debug(
-                            f"Symbol {reference}: Datasheet already set to {ds_value!r}"
-                        )
+                        logger.debug(f"Symbol {reference}: Datasheet already set to {ds_value!r}")
                     else:
                         url = LCSC_DATASHEET_URL.format(lcsc=lcsc_norm)
                         if not dry_run:
@@ -256,9 +250,7 @@ class DatasheetManager:
         if not dry_run and updated > 0:
             with open(schematic_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(new_lines))
-            logger.info(
-                f"Saved {schematic_path.name}: {updated} datasheet URLs written"
-            )
+            logger.info(f"Saved {schematic_path.name}: {updated} datasheet URLs written")
 
         return {
             "success": True,

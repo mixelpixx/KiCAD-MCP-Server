@@ -8,12 +8,11 @@ and checking connectivity in KiCad schematic files.
 import logging
 import math
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Any, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import sexpdata
-from sexpdata import Symbol
-
 from commands.pin_locator import PinLocator
+from sexpdata import Symbol
 
 logger = logging.getLogger("kicad_interface")
 
@@ -169,28 +168,16 @@ def _parse_lib_symbol_graphics(symbol_def: list) -> List[Tuple[float, float]]:
             for sub in sexp[1:]:
                 if isinstance(sub, list) and len(sub) > 0 and sub[0] == Symbol("pts"):
                     for pt in sub[1:]:
-                        if (
-                            isinstance(pt, list)
-                            and len(pt) >= 3
-                            and pt[0] == Symbol("xy")
-                        ):
+                        if isinstance(pt, list) and len(pt) >= 3 and pt[0] == Symbol("xy"):
                             points.append((float(pt[1]), float(pt[2])))
 
         elif tag == Symbol("circle"):
             # (circle (center x y) (radius r) ...)
             cx, cy, r = 0.0, 0.0, 0.0
             for sub in sexp[1:]:
-                if (
-                    isinstance(sub, list)
-                    and len(sub) >= 3
-                    and sub[0] == Symbol("center")
-                ):
+                if isinstance(sub, list) and len(sub) >= 3 and sub[0] == Symbol("center"):
                     cx, cy = float(sub[1]), float(sub[2])
-                elif (
-                    isinstance(sub, list)
-                    and len(sub) >= 2
-                    and sub[0] == Symbol("radius")
-                ):
+                elif isinstance(sub, list) and len(sub) >= 2 and sub[0] == Symbol("radius"):
                     r = float(sub[1])
             if r > 0:
                 points.extend(
@@ -212,11 +199,7 @@ def _parse_lib_symbol_graphics(symbol_def: list) -> List[Tuple[float, float]]:
             for sub in sexp[1:]:
                 if isinstance(sub, list) and len(sub) > 0 and sub[0] == Symbol("pts"):
                     for pt in sub[1:]:
-                        if (
-                            isinstance(pt, list)
-                            and len(pt) >= 3
-                            and pt[0] == Symbol("xy")
-                        ):
+                        if isinstance(pt, list) and len(pt) >= 3 and pt[0] == Symbol("xy"):
                             points.append((float(pt[1]), float(pt[2])))
 
         else:
@@ -243,11 +226,7 @@ def _extract_lib_symbols(sexp_data: list) -> Dict[str, Dict]:
     """
     lib_symbols_section = None
     for item in sexp_data:
-        if (
-            isinstance(item, list)
-            and len(item) > 0
-            and item[0] == Symbol("lib_symbols")
-        ):
+        if isinstance(item, list) and len(item) > 0 and item[0] == Symbol("lib_symbols"):
             lib_symbols_section = item
             break
 
@@ -465,9 +444,7 @@ def _compute_symbol_bbox_direct(
 # ---------------------------------------------------------------------------
 
 
-def find_overlapping_elements(
-    schematic_path: Path, tolerance: float = 0.5
-) -> Dict[str, Any]:
+def find_overlapping_elements(schematic_path: Path, tolerance: float = 0.5) -> Dict[str, Any]:
     """
     Detect spatially overlapping symbols, wires, and labels.
 
@@ -490,9 +467,7 @@ def find_overlapping_elements(
 
     # --- Symbol-symbol overlap using bounding-box intersection (O(n²)) ---
     non_template_symbols = [
-        s
-        for s in symbols
-        if not s["reference"].startswith("_TEMPLATE") and s["reference"]
+        s for s in symbols if not s["reference"].startswith("_TEMPLATE") and s["reference"]
     ]
 
     # Pre-compute bounding boxes for all non-template symbols
@@ -503,9 +478,7 @@ def find_overlapping_elements(
         graphics_points = lib_data.get("graphics_points", [])
         bbox = None
         if pin_defs:
-            bbox = _compute_symbol_bbox_direct(
-                sym, pin_defs, graphics_points=graphics_points
-            )
+            bbox = _compute_symbol_bbox_direct(sym, pin_defs, graphics_points=graphics_points)
         symbol_bboxes.append((sym, bbox))
 
     for i in range(len(symbol_bboxes)):
@@ -706,9 +679,7 @@ def get_elements_in_region(
         if (
             _point_in_rect(s[0], s[1], min_x, min_y, max_x, max_y)
             or _point_in_rect(e[0], e[1], min_x, min_y, max_x, max_y)
-            or _line_segment_intersects_aabb(
-                s[0], s[1], e[0], e[1], min_x, min_y, max_x, max_y
-            )
+            or _line_segment_intersects_aabb(s[0], s[1], e[0], e[1], min_x, min_y, max_x, max_y)
         ):
             region_wires.append(
                 {
@@ -877,15 +848,11 @@ def find_wires_crossing_symbols(schematic_path: Path) -> List[Dict[str, Any]]:
                     ux, uy = dx / length, dy / length
                     if start_at_pin:
                         nsx, nsy = sx + ux * nudge, sy + uy * nudge
-                        if not _line_segment_intersects_aabb(
-                            nsx, nsy, ex, ey, bx1, by1, bx2, by2
-                        ):
+                        if not _line_segment_intersects_aabb(nsx, nsy, ex, ey, bx1, by1, bx2, by2):
                             continue  # Wire terminates at pin from outside
                     else:
                         nex, ney = ex - ux * nudge, ey - uy * nudge
-                        if not _line_segment_intersects_aabb(
-                            sx, sy, nex, ney, bx1, by1, bx2, by2
-                        ):
+                        if not _line_segment_intersects_aabb(sx, sy, nex, ney, bx1, by1, bx2, by2):
                             continue  # Wire terminates at pin from outside
 
             sym = sd["sym"]

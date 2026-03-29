@@ -10,6 +10,7 @@
 ## Completed Milestones
 
 ### v1.0.0 - Core Foundation (October 2025)
+
 - [x] MCP protocol implementation (JSON-RPC 2.0, MCP 2025-06-18)
 - [x] Project management (create, open, save)
 - [x] Board operations (size, outline, layers, mounting holes, text)
@@ -21,12 +22,14 @@
 - [x] UI auto-launch and detection
 
 ### v2.0.0-alpha - Router and IPC (November-December 2025)
+
 - [x] Tool router pattern -- 70% AI context reduction
 - [x] IPC backend for real-time KiCAD UI synchronization (21 commands)
 - [x] Hybrid SWIG/IPC backend with automatic fallback
 - [x] Comprehensive Windows support with automated setup
 
 ### v2.1.0-alpha - Schematics and JLCPCB (January 2026)
+
 - [x] Complete schematic workflow fix (Issue #26)
 - [x] Dynamic symbol loading -- access to all ~10,000 KiCad symbols
 - [x] Intelligent wiring system with pin discovery and smart routing
@@ -36,6 +39,7 @@
 - [x] Local symbol library search (contributor: @l3wi)
 
 ### v2.2.0 through v2.2.3 - Routing, Creators, Autorouting (February-March 2026)
+
 - [x] 13 new routing/component tools (delete/query/modify traces, arrays, alignment)
 - [x] route_pad_to_pad with auto-via insertion for cross-layer connections
 - [x] copy_routing_pattern for trace replication
@@ -57,12 +61,14 @@
 ## Current Focus: v2.3+
 
 ### Documentation Overhaul (In Progress)
+
 - [ ] Per-feature documentation for all 122 tools
 - [ ] Architecture guide for contributors
 - [ ] End-to-end PCB design workflow guide
 - [ ] Documentation index
 
 ### Quality and Stability
+
 - [ ] Expand test coverage across all tool categories
 - [ ] Performance profiling for large boards
 - [ ] Update package.json version to match CHANGELOG
@@ -72,24 +78,28 @@
 ## Planned Features
 
 ### Supplier Integration
+
 - [ ] Digikey API integration
 - [ ] Mouser API integration
 - [ ] Smart BOM management with real-time pricing
 - [ ] Cost optimization across suppliers
 
 ### Design Patterns and Templates
+
 - [ ] Circuit patterns library (voltage regulators, USB, microcontrollers)
 - [ ] Board templates (Arduino shields, RPi HATs, Feather wings)
 - [ ] Auto-suggest trace widths by current
 - [ ] Impedance-controlled trace support
 
 ### Advanced Capabilities
+
 - [ ] Panelization support
 - [ ] Multi-board project management
 - [ ] High-speed design helpers (length matching, via stitching)
 - [ ] SPICE simulation integration
 
 ### Community and Education
+
 - [ ] Example project gallery with tutorials
 - [ ] Video walkthrough series
 - [ ] Interactive beginner tutorials
@@ -111,4 +121,4 @@ Check [CONTRIBUTING.md](../CONTRIBUTING.md) for details.
 
 ---
 
-*Maintained by: KiCAD MCP Team and community contributors*
+_Maintained by: KiCAD MCP Team and community contributors_

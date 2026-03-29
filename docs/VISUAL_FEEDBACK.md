@@ -15,6 +15,7 @@ This document explains how to see changes made by the MCP server in the KiCAD UI
 ### Setup
 
 1. **Open your project in KiCAD PCB Editor**
+
    ```bash
    pcbnew /tmp/kicad_test_project/New_Project.kicad_pcb
    ```
@@ -77,12 +78,14 @@ Claude MCP → IPC Socket → Running KiCAD → Instant UI Update
    - Restart KiCAD
 
 2. **Install kicad-python** (Already installed ✓)
+
    ```bash
    pip install kicad-python
    ```
 
 3. **Configure MCP Server**
    Add to your MCP config:
+
    ```json
    {
      "env": {
@@ -97,14 +100,14 @@ Claude MCP → IPC Socket → Running KiCAD → Instant UI Update
 
 ### Current IPC Status
 
-| Feature | Status |
-|---------|--------|
-| Connection to KiCAD | ✅ Working |
-| Version checking | ✅ Working |
-| Project operations | ⏳ Week 2-3 |
-| Board operations | ⏳ Week 2-3 |
+| Feature              | Status      |
+| -------------------- | ----------- |
+| Connection to KiCAD  | ✅ Working  |
+| Version checking     | ✅ Working  |
+| Project operations   | ⏳ Week 2-3 |
+| Board operations     | ⏳ Week 2-3 |
 | Component operations | ⏳ Week 2-3 |
-| Routing operations | ⏳ Week 2-3 |
+| Routing operations   | ⏳ Week 2-3 |
 
 ---
 
@@ -124,6 +127,7 @@ This will print a message each time the MCP server saves changes.
 ## 💡 Tips for Best Experience
 
 ### 1. Side-by-Side Windows
+
 ```
 ┌──────────────────┬──────────────────┐
 │  Claude Code     │   KiCAD PCB      │
@@ -134,16 +138,20 @@ This will print a message each time the MCP server saves changes.
 ```
 
 ### 2. Quick Reload Workflow
+
 - Keep KiCAD focused in one window
 - Make changes via Claude in another
 - Press Alt+Tab → Click "Reload" → See changes
 - Repeat
 
 ### 3. Save Frequently
+
 The MCP server auto-saves after each operation, so changes are immediately available for reload.
 
 ### 4. Verify Before Complex Operations
+
 For complex changes (multiple components, routing, etc.):
+
 1. Make the change
 2. Reload in KiCAD
 3. Verify it looks correct
@@ -167,6 +175,7 @@ For complex changes (multiple components, routing, etc.):
 
 **Cause:** KiCAD has the file open exclusively
 **Solution:**
+
 - KiCAD should allow external modifications
 - If not, close the file in KiCAD, let MCP make changes, then reopen
 

@@ -3,10 +3,11 @@ Abstract base class for KiCAD API backends
 
 Defines the interface that all KiCAD backends must implement.
 """
+
+import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional, Dict, Any, List
-import logging
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,7 @@ class KiCADBackend(ABC):
 
     # Board Operations
     @abstractmethod
-    def get_board(self) -> 'BoardAPI':
+    def get_board(self) -> "BoardAPI":
         """
         Get board API for current project
 
@@ -167,7 +168,7 @@ class BoardAPI(ABC):
         x: float,
         y: float,
         rotation: float = 0,
-        layer: str = "F.Cu"
+        layer: str = "F.Cu",
     ) -> bool:
         """
         Place a component on the board
@@ -194,7 +195,7 @@ class BoardAPI(ABC):
         end_y: float,
         width: float = 0.25,
         layer: str = "F.Cu",
-        net_name: Optional[str] = None
+        net_name: Optional[str] = None,
     ) -> bool:
         """
         Add a track (trace) to the board
@@ -220,7 +221,7 @@ class BoardAPI(ABC):
         diameter: float = 0.8,
         drill: float = 0.4,
         net_name: Optional[str] = None,
-        via_type: str = "through"
+        via_type: str = "through",
     ) -> bool:
         """
         Add a via to the board
@@ -275,14 +276,17 @@ class BoardAPI(ABC):
 
 class BackendError(Exception):
     """Base exception for backend errors"""
+
     pass
 
 
 class ConnectionError(BackendError):
     """Raised when connection to KiCAD fails"""
+
     pass
 
 
 class APINotAvailableError(BackendError):
     """Raised when required API is not available"""
+
     pass

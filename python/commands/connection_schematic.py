@@ -1,15 +1,16 @@
-from skip import Schematic
-import os
 import logging
+import os
 from pathlib import Path
 from typing import Optional
+
+from skip import Schematic
 
 logger = logging.getLogger(__name__)
 
 # Import new wire and pin managers
 try:
-    from commands.wire_manager import WireManager
     from commands.pin_locator import PinLocator
+    from commands.wire_manager import WireManager
 
     WIRE_MANAGER_AVAILABLE = True
 except ImportError:
@@ -48,9 +49,7 @@ class ConnectionManager:
                 logger.error("Schematic does not have label collection")
                 return None
 
-            label = schematic.label.append(
-                text=net_name, at={"x": position[0], "y": position[1]}
-            )
+            label = schematic.label.append(text=net_name, at={"x": position[0], "y": position[1]})
             logger.info(f"Added net label '{net_name}' at {position}")
             return label
         except Exception as e:
@@ -58,9 +57,7 @@ class ConnectionManager:
             return None
 
     @staticmethod
-    def connect_to_net(
-        schematic_path: Path, component_ref: str, pin_name: str, net_name: str
-    ):
+    def connect_to_net(schematic_path: Path, component_ref: str, pin_name: str, net_name: str):
         """
         Connect a component pin to a named net using a wire stub and label
 
@@ -93,9 +90,7 @@ class ConnectionManager:
             # Stub direction follows the pin's outward angle from the PinLocator
             pin_angle_deg = getattr(locator, "_last_pin_angle", 0)
             try:
-                pin_angle_deg = (
-                    locator.get_pin_angle(schematic_path, component_ref, pin_name) or 0
-                )
+                pin_angle_deg = locator.get_pin_angle(schematic_path, component_ref, pin_name) or 0
             except Exception:
                 pin_angle_deg = 0
             import math as _math
@@ -172,9 +167,7 @@ class ConnectionManager:
         connected = []
         failed = []
 
-        for pin_num in sorted(
-            src_pins.keys(), key=lambda x: int(x) if x.isdigit() else 0
-        ):
+        for pin_num in sorted(src_pins.keys(), key=lambda x: int(x) if x.isdigit() else 0):
             try:
                 net_name = (
                     f"{net_prefix}_{int(pin_num) + pin_offset}"
@@ -200,15 +193,11 @@ class ConnectionManager:
                     failed.append(f"{target_ref}/{pin_num} (pin not found)")
                     continue
 
-                connected.append(
-                    f"{source_ref}/{pin_num} <-> {target_ref}/{pin_num} [{net_name}]"
-                )
+                connected.append(f"{source_ref}/{pin_num} <-> {target_ref}/{pin_num} [{net_name}]")
             except Exception as e:
                 failed.append(f"{source_ref}/{pin_num}: {e}")
 
-        logger.info(
-            f"connect_passthrough: {len(connected)} connected, {len(failed)} failed"
-        )
+        logger.info(f"connect_passthrough: {len(connected)} connected, {len(failed)} failed")
         return {"connected": connected, "failed": failed}
 
     @staticmethod
@@ -256,9 +245,7 @@ class ConnectionManager:
                 logger.info(f"No labels found for net '{net_name}'")
                 return connections
 
-            logger.debug(
-                f"Found {len(net_label_positions)} labels for net '{net_name}'"
-            )
+            logger.debug(f"Found {len(net_label_positions)} labels for net '{net_name}'")
 
             # 2. Find all wires connected to these label positions
             if not hasattr(schematic, "wire"):
@@ -272,9 +259,7 @@ class ConnectionManager:
                     wire_points = []
                     for point in wire.pts.xy:
                         if hasattr(point, "value"):
-                            wire_points.append(
-                                [float(point.value[0]), float(point.value[1])]
-                            )
+                            wire_points.append([float(point.value[0]), float(point.value[1])])
 
                     # Check if any wire point touches a label
                     wire_connected = False
@@ -334,18 +319,14 @@ class ConnectionManager:
                         # Check each pin
                         for pin_num, pin_data in pins.items():
                             # Get pin location
-                            pin_loc = locator.get_pin_location(
-                                schematic_path, ref, pin_num
-                            )
+                            pin_loc = locator.get_pin_location(schematic_path, ref, pin_num)
                             if not pin_loc:
                                 continue
 
                             # Check if pin coincides with any wire point
                             for wire_pt in connected_wire_points:
                                 if points_coincide(pin_loc, list(wire_pt)):
-                                    connections.append(
-                                        {"component": ref, "pin": pin_num}
-                                    )
+                                    connections.append({"component": ref, "pin": pin_num})
                                     break  # Pin found, no need to check more wire points
 
                     except Exception as e:
@@ -364,9 +345,7 @@ class ConnectionManager:
 
                     # Check if symbol is near any wire point (within 10mm)
                     for wire_pt in connected_wire_points:
-                        dist = (
-                            (symbol_x - wire_pt[0]) ** 2 + (symbol_y - wire_pt[1]) ** 2
-                        ) ** 0.5
+                        dist = ((symbol_x - wire_pt[0]) ** 2 + (symbol_y - wire_pt[1]) ** 2) ** 0.5
                         if dist < 10.0:  # 10mm proximity threshold
                             connections.append({"component": ref, "pin": "unknown"})
                             break  # Only add once per component
@@ -419,9 +398,7 @@ class ConnectionManager:
                     component_info = {
                         "reference": symbol.property.Reference.value,
                         "value": (
-                            symbol.property.Value.value
-                            if hasattr(symbol.property, "Value")
-                            else ""
+                            symbol.property.Value.value if hasattr(symbol.property, "Value") else ""
                         ),
                         "footprint": (
                             symbol.property.Footprint.value
@@ -444,9 +421,7 @@ class ConnectionManager:
                         schematic, net_name, schematic_path
                     )
                     if connections:
-                        netlist["nets"].append(
-                            {"name": net_name, "connections": connections}
-                        )
+                        netlist["nets"].append({"name": net_name, "connections": connections})
 
             logger.info(
                 f"Generated netlist with {len(netlist['nets'])} nets and {len(netlist['components'])} components"

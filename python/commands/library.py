@@ -5,12 +5,12 @@ Handles parsing fp-lib-table files, discovering footprints,
 and providing search functionality for component placement.
 """
 
+import glob
+import logging
 import os
 import re
-import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-import glob
 
 logger = logging.getLogger("kicad_interface")
 
@@ -116,9 +116,7 @@ class LibraryManager:
                     self.libraries[nickname] = resolved_uri
                     logger.debug(f"  Found library: {nickname} -> {resolved_uri}")
                 else:
-                    logger.warning(
-                        f"  Could not resolve URI for library {nickname}: {uri}"
-                    )
+                    logger.warning(f"  Could not resolve URI for library {nickname}: {uri}")
 
         except Exception as e:
             logger.error(f"Error parsing fp-lib-table at {table_path}: {e}")
@@ -221,12 +219,7 @@ class LibraryManager:
             / "9.0"
             / "kicad_common.json",  # macOS
             Path.home() / ".config" / "kicad" / "9.0" / "kicad_common.json",  # Linux
-            Path.home()
-            / "AppData"
-            / "Roaming"
-            / "kicad"
-            / "9.0"
-            / "kicad_common.json",  # Windows
+            Path.home() / "AppData" / "Roaming" / "kicad" / "9.0" / "kicad_common.json",  # Windows
         ]
 
         for config_path in kicad_common_paths:
@@ -352,9 +345,7 @@ class LibraryManager:
             for library_nickname, library_path in self.libraries.items():
                 fp_file = Path(library_path) / f"{footprint_name}.kicad_mod"
                 if fp_file.exists():
-                    logger.info(
-                        f"Found footprint {footprint_name} in library {library_nickname}"
-                    )
+                    logger.info(f"Found footprint {footprint_name} in library {library_nickname}")
                     return (library_path, footprint_name)
 
             logger.warning(f"Footprint not found in any library: {footprint_name}")
@@ -461,9 +452,7 @@ class LibraryCommands:
             # Filter by library if specified
             if library_filter:
                 results = [
-                    r
-                    for r in results
-                    if r.get("library", "").lower() == library_filter.lower()
+                    r for r in results if r.get("library", "").lower() == library_filter.lower()
                 ]
                 results = results[:limit]
 
@@ -522,33 +511,38 @@ class LibraryCommands:
                     if path == library_path:
                         library_nickname = nick
                         break
-                    
+
             # Minimal info — always returned even if the parser fails
             info: Dict = {
                 "library": library_nickname,
                 "name": footprint_name,
-
                 "full_name": f"{library_nickname}:{footprint_name}",
                 "library_path": library_path,
             }
 
             # Attempt to enrich with parsed .kicad_mod data
             try:
-                from parsers.kicad_mod_parser import parse_kicad_mod
                 from pathlib import Path as _Path
+
+                from parsers.kicad_mod_parser import parse_kicad_mod
+
                 mod_file = str(_Path(library_path) / f"{footprint_name}.kicad_mod")
                 parsed = parse_kicad_mod(mod_file)
                 if parsed:
                     # Merge parser output into info; keep our resolved library context
                     info.update(parsed)
-                    info["name"] = footprint_name        # entry name wins over in-file name
+                    info["name"] = footprint_name  # entry name wins over in-file name
                     info["library"] = library_nickname
                     info["full_name"] = f"{library_nickname}:{footprint_name}"
                     info["library_path"] = library_path
                 else:
-                    logger.warning(f"get_footprint_info: parser returned nothing for {mod_file}, using minimal info")
+                    logger.warning(
+                        f"get_footprint_info: parser returned nothing for {mod_file}, using minimal info"
+                    )
             except Exception as parse_err:
-                logger.warning(f"get_footprint_info: parser error ({parse_err}), using minimal info")
+                logger.warning(
+                    f"get_footprint_info: parser error ({parse_err}), using minimal info"
+                )
 
             return {"success": True, "info": info}
 

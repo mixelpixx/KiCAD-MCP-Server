@@ -10,7 +10,7 @@ Each tool includes:
 - outputSchema: Optional JSON Schema for return values (structured content)
 """
 
-from typing import Dict, Any
+from typing import Any, Dict
 
 # =============================================================================
 # PROJECT TOOLS

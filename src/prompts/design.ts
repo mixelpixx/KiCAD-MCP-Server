@@ -1,21 +1,21 @@
 /**
  * Design prompts for KiCAD MCP server
- * 
+ *
  * These prompts guide the LLM in providing assistance with general PCB design tasks
  * in KiCAD.
  */
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import { logger } from '../logger.js';
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { logger } from "../logger.js";
 
 /**
  * Register design prompts with the MCP server
- * 
+ *
  * @param server MCP server instance
  */
 export function registerDesignPrompts(server: McpServer): void {
-  logger.info('Registering design prompts');
+  logger.info("Registering design prompts");
 
   // ------------------------------------------------------
   // PCB Layout Review Prompt
@@ -23,7 +23,11 @@ export function registerDesignPrompts(server: McpServer): void {
   server.prompt(
     "pcb_layout_review",
     {
-      pcb_design_info: z.string().describe("Information about the current PCB design, including board dimensions, layer stack-up, component placement, and routing details")
+      pcb_design_info: z
+        .string()
+        .describe(
+          "Information about the current PCB design, including board dimensions, layer stack-up, component placement, and routing details",
+        ),
     },
     () => ({
       messages: [
@@ -71,11 +75,11 @@ When reviewing the PCB layout, consider these key areas:
    - Silkscreen clarity and usefulness
    - Solder mask considerations
 
-Based on the provided information, identify potential issues and suggest specific improvements to enhance the PCB design.`
-          }
-        }
-      ]
-    })
+Based on the provided information, identify potential issues and suggest specific improvements to enhance the PCB design.`,
+          },
+        },
+      ],
+    }),
   );
 
   // ------------------------------------------------------
@@ -84,7 +88,11 @@ Based on the provided information, identify potential issues and suggest specifi
   server.prompt(
     "layer_stackup_planning",
     {
-      design_requirements: z.string().describe("Information about the PCB design requirements, including signal types, speed/frequency, power requirements, and any special considerations")
+      design_requirements: z
+        .string()
+        .describe(
+          "Information about the PCB design requirements, including signal types, speed/frequency, power requirements, and any special considerations",
+        ),
     },
     () => ({
       messages: [
@@ -128,11 +136,11 @@ When planning a PCB layer stack-up, consider these important factors:
    - Thermal properties
    - Mechanical stability
 
-Based on the provided requirements, recommend an appropriate layer stack-up, including the number of layers, their arrangement, material specifications, and thickness parameters. Explain the rationale behind your recommendations.`
-          }
-        }
-      ]
-    })
+Based on the provided requirements, recommend an appropriate layer stack-up, including the number of layers, their arrangement, material specifications, and thickness parameters. Explain the rationale behind your recommendations.`,
+          },
+        },
+      ],
+    }),
   );
 
   // ------------------------------------------------------
@@ -141,7 +149,11 @@ Based on the provided requirements, recommend an appropriate layer stack-up, inc
   server.prompt(
     "design_rule_development",
     {
-      project_requirements: z.string().describe("Information about the PCB project requirements, including technology, speed/frequency, manufacturing capabilities, and any special considerations")
+      project_requirements: z
+        .string()
+        .describe(
+          "Information about the PCB project requirements, including technology, speed/frequency, manufacturing capabilities, and any special considerations",
+        ),
     },
     () => ({
       messages: [
@@ -185,11 +197,11 @@ When developing PCB design rules, consider these key areas:
    - Thermal relief parameters
    - Teardrop specifications
 
-Based on the provided project requirements, recommend a comprehensive set of design rules that will ensure signal integrity, manufacturability, and reliability of the PCB. Provide specific values where appropriate and explain the rationale behind critical rules.`
-          }
-        }
-      ]
-    })
+Based on the provided project requirements, recommend a comprehensive set of design rules that will ensure signal integrity, manufacturability, and reliability of the PCB. Provide specific values where appropriate and explain the rationale behind critical rules.`,
+          },
+        },
+      ],
+    }),
   );
 
   // ------------------------------------------------------
@@ -198,7 +210,11 @@ Based on the provided project requirements, recommend a comprehensive set of des
   server.prompt(
     "component_selection_guidance",
     {
-      circuit_requirements: z.string().describe("Information about the circuit requirements, including functionality, performance needs, operating environment, and any special considerations")
+      circuit_requirements: z
+        .string()
+        .describe(
+          "Information about the circuit requirements, including functionality, performance needs, operating environment, and any special considerations",
+        ),
     },
     () => ({
       messages: [
@@ -246,11 +262,11 @@ When selecting components for a PCB design, consider these important factors:
    - RoHS/REACH compliance
    - Special handling requirements
 
-Based on the provided circuit requirements, recommend appropriate component types, packages, and specific considerations for this design. Provide guidance on critical component selections and explain the rationale behind your recommendations.`
-          }
-        }
-      ]
-    })
+Based on the provided circuit requirements, recommend appropriate component types, packages, and specific considerations for this design. Provide guidance on critical component selections and explain the rationale behind your recommendations.`,
+          },
+        },
+      ],
+    }),
   );
 
   // ------------------------------------------------------
@@ -259,8 +275,16 @@ Based on the provided circuit requirements, recommend appropriate component type
   server.prompt(
     "pcb_design_optimization",
     {
-      design_info: z.string().describe("Information about the current PCB design, including board dimensions, layer stack-up, component placement, and routing details"),
-      optimization_goals: z.string().describe("Specific goals for optimization, such as performance improvement, cost reduction, size reduction, or manufacturability enhancement")
+      design_info: z
+        .string()
+        .describe(
+          "Information about the current PCB design, including board dimensions, layer stack-up, component placement, and routing details",
+        ),
+      optimization_goals: z
+        .string()
+        .describe(
+          "Specific goals for optimization, such as performance improvement, cost reduction, size reduction, or manufacturability enhancement",
+        ),
     },
     () => ({
       messages: [
@@ -310,12 +334,12 @@ When optimizing a PCB design, consider these key areas based on the stated goals
    - Alternative packaging approaches
    - Connector and interface optimization
 
-Based on the provided information and optimization goals, suggest specific, actionable improvements to the PCB design. Prioritize your recommendations based on their potential impact and implementation feasibility.`
-          }
-        }
-      ]
-    })
+Based on the provided information and optimization goals, suggest specific, actionable improvements to the PCB design. Prioritize your recommendations based on their potential impact and implementation feasibility.`,
+          },
+        },
+      ],
+    }),
   );
 
-  logger.info('Design prompts registered');
+  logger.info("Design prompts registered");
 }

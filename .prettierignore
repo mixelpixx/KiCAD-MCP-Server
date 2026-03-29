@@ -1,0 +1,4 @@
+coverage.xml
+htmlcov/
+data/
+*.kicad_*

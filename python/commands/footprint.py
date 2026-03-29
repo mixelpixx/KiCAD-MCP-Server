@@ -8,15 +8,15 @@ KiCAD 9 .kicad_mod format reference:
   https://dev-docs.kicad.org/en/file-formats/sexpr-footprint/
 """
 
+import logging
 import os
 import re
-import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("kicad_interface")
 
-KICAD9_FORMAT_VERSION = "20250114"   # .kicad_sch schematic files
+KICAD9_FORMAT_VERSION = "20250114"  # .kicad_sch schematic files
 KICAD9_FOOTPRINT_VERSION = "20241229"  # .kicad_mod footprint files
 
 
@@ -106,7 +106,7 @@ class FootprintCreator:
 
         # ---- header ----
         lines.append(f'(footprint "{name}"')
-        lines.append(f'  (version {KICAD9_FOOTPRINT_VERSION})')
+        lines.append(f"  (version {KICAD9_FOOTPRINT_VERSION})")
         lines.append(f'  (generator "kicad-mcp")')
         lines.append(f'  (generator_version "9.0")')
         lines.append(f'  (layer "F.Cu")')
@@ -122,25 +122,21 @@ class FootprintCreator:
         val_x = value_position.get("x", 0.0) if value_position else 0.0
         val_y = value_position.get("y", 1.27) if value_position else 1.27
 
-        lines.append(
-            f'  (property "Reference" "REF**" (at {_fmt(ref_x)} {_fmt(ref_y)} 0)'
-        )
+        lines.append(f'  (property "Reference" "REF**" (at {_fmt(ref_x)} {_fmt(ref_y)} 0)')
         lines.append(f'    (layer "F.SilkS")')
         lines.append(f'    (uuid "{_new_uuid()}")')
-        lines.append(f'    (effects (font (size 1 1) (thickness 0.15)))')
-        lines.append(f'  )')
-        lines.append(
-            f'  (property "Value" "{_esc(name)}" (at {_fmt(val_x)} {_fmt(val_y)} 0)'
-        )
+        lines.append(f"    (effects (font (size 1 1) (thickness 0.15)))")
+        lines.append(f"  )")
+        lines.append(f'  (property "Value" "{_esc(name)}" (at {_fmt(val_x)} {_fmt(val_y)} 0)')
         lines.append(f'    (layer "F.Fab")')
         lines.append(f'    (uuid "{_new_uuid()}")')
-        lines.append(f'    (effects (font (size 1 1) (thickness 0.15)))')
-        lines.append(f'  )')
+        lines.append(f"    (effects (font (size 1 1) (thickness 0.15)))")
+        lines.append(f"  )")
         lines.append(f'  (property "Datasheet" "" (at 0 0 0)')
         lines.append(f'    (layer "F.Fab")')
         lines.append(f'    (uuid "{_new_uuid()}")')
-        lines.append(f'    (effects (font (size 1 1) (thickness 0.15)))')
-        lines.append(f'  )')
+        lines.append(f"    (effects (font (size 1 1) (thickness 0.15)))")
+        lines.append(f"  )")
         lines.append("")
 
         # ---- courtyard ----
@@ -217,33 +213,32 @@ class FootprintCreator:
             changes = []
             if size:
                 new_size = f'(size {_fmt(size["w"])} {_fmt(size["h"])})'
-                block, n = re.subn(r'\(size\s+[\d.]+\s+[\d.]+\)', new_size, block)
+                block, n = re.subn(r"\(size\s+[\d.]+\s+[\d.]+\)", new_size, block)
                 if n:
                     changes.append(f"size→{new_size}")
             if at:
                 angle = at.get("angle", 0)
                 new_at = f'(at {_fmt(at["x"])} {_fmt(at["y"])} {_fmt(angle)})'
-                block, n = re.subn(r'\(at\s+[-\d.]+\s+[-\d.]+(?:\s+[-\d.]+)?\)', new_at, block)
+                block, n = re.subn(r"\(at\s+[-\d.]+\s+[-\d.]+(?:\s+[-\d.]+)?\)", new_at, block)
                 if n:
                     changes.append(f"at→{new_at}")
             if drill is not None:
                 if isinstance(drill, (int, float)):
-                    new_drill = f'(drill {_fmt(drill)})'
+                    new_drill = f"(drill {_fmt(drill)})"
                 else:
                     new_drill = f'(drill oval {_fmt(drill["w"])} {_fmt(drill["h"])})'
-                block, n = re.subn(r'\(drill(?:\s+oval)?\s+[-\d.]+(?:\s+[-\d.]+)?\)', new_drill, block)
+                block, n = re.subn(
+                    r"\(drill(?:\s+oval)?\s+[-\d.]+(?:\s+[-\d.]+)?\)", new_drill, block
+                )
                 if n:
                     changes.append(f"drill→{new_drill}")
                 else:
                     # Insert drill before closing paren of pad block
-                    block = block.rstrip().rstrip(')') + f'\n    {new_drill}\n  )'
+                    block = block.rstrip().rstrip(")") + f"\n    {new_drill}\n  )"
                     changes.append(f"drill (inserted)→{new_drill}")
             if shape:
                 block, n = re.subn(
-                    r'(pad\s+"[^"]*"\s+\w+\s+)\w+',
-                    lambda m: m.group(1) + shape,
-                    block,
-                    count=1
+                    r'(pad\s+"[^"]*"\s+\w+\s+)\w+', lambda m: m.group(1) + shape, block, count=1
                 )
                 if n:
                     changes.append(f"shape→{shape}")
@@ -280,7 +275,7 @@ class FootprintCreator:
         if not updated:
             return {
                 "success": False,
-                "error": f"Pad \"{pad_number}\" not found or no changes made in {footprint_path}",
+                "error": f'Pad "{pad_number}" not found or no changes made in {footprint_path}',
             }
 
         path.write_text("\n".join(result_lines), encoding="utf-8")
@@ -429,6 +424,7 @@ class FootprintCreator:
 #  Internal helpers                                                    #
 # ------------------------------------------------------------------ #
 
+
 def _esc(s: str) -> str:
     """Escape double-quotes inside S-Expression string values."""
     return s.replace('"', '\\"')
@@ -436,6 +432,7 @@ def _esc(s: str) -> str:
 
 def _new_uuid() -> str:
     import uuid
+
     return str(uuid.uuid4())
 
 
@@ -445,8 +442,8 @@ _DEFAULT_THT_LAYERS = ["*.Cu", "*.Mask"]
 
 def _pad_lines(pad: Dict[str, Any]) -> List[str]:
     number = str(pad.get("number", "1"))
-    ptype = pad.get("type", "smd").lower()          # smd | thru_hole | np_thru_hole
-    shape = pad.get("shape", "rect").lower()         # rect | circle | oval | roundrect
+    ptype = pad.get("type", "smd").lower()  # smd | thru_hole | np_thru_hole
+    shape = pad.get("shape", "rect").lower()  # rect | circle | oval | roundrect
     at = pad.get("at", {"x": 0.0, "y": 0.0})
     size = pad.get("size", {"w": 1.0, "h": 1.0})
     drill = pad.get("drill", None)
@@ -462,7 +459,9 @@ def _pad_lines(pad: Dict[str, Any]) -> List[str]:
     sh = _fmt(size.get("h", 1.0))
 
     if layers is None:
-        layers = _DEFAULT_THT_LAYERS if ptype in ("thru_hole", "np_thru_hole") else _DEFAULT_SMD_LAYERS
+        layers = (
+            _DEFAULT_THT_LAYERS if ptype in ("thru_hole", "np_thru_hole") else _DEFAULT_SMD_LAYERS
+        )
     layers_str = " ".join(f'"{l}"' for l in layers)
 
     lines = [f'  (pad "{number}" {ptype} {shape}']
@@ -494,13 +493,13 @@ def _rect_lines(rect: Dict[str, Any], layer: str, default_width: float = 0.05) -
     y2 = _fmt(rect.get("y2", 1.0))
     w = _fmt(rect.get("width", default_width))
     return [
-        f'  (fp_rect',
-        f'    (start {x1} {y1})',
-        f'    (end {x2} {y2})',
-        f'    (stroke (width {w}) (type default))',
-        f'    (fill none)',
+        f"  (fp_rect",
+        f"    (start {x1} {y1})",
+        f"    (end {x2} {y2})",
+        f"    (stroke (width {w}) (type default))",
+        f"    (fill none)",
         f'    (layer "{layer}")',
         f'    (uuid "{_new_uuid()}")',
-        f'  )',
+        f"  )",
         "",
     ]

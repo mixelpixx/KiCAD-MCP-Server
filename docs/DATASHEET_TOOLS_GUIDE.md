@@ -15,6 +15,7 @@ Scans a KiCAD schematic and fills in missing Datasheet URLs for components that 
 **How it works:**
 
 For every placed symbol that has:
+
 - An LCSC property set (e.g., `(property "LCSC" "C123456")`)
 - An empty or missing Datasheet field
 
@@ -24,23 +25,26 @@ The URL is then visible in KiCAD's footprint browser, symbol properties dialog, 
 
 **Parameters:**
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `schematic_path` | string | Yes | -- | Path to the .kicad_sch file to enrich |
-| `dry_run` | boolean | No | false | Preview changes without writing to disk |
+| Parameter        | Type    | Required | Default | Description                             |
+| ---------------- | ------- | -------- | ------- | --------------------------------------- |
+| `schematic_path` | string  | Yes      | --      | Path to the .kicad_sch file to enrich   |
+| `dry_run`        | boolean | No       | false   | Preview changes without writing to disk |
 
 **Returns:**
+
 - Number of components updated
 - Number already set (skipped)
 - Number without LCSC number
 - Details of each updated component (reference, LCSC number, URL)
 
 **Example:**
+
 ```
 Enrich datasheets for all components in ~/Projects/MyBoard/MyBoard.kicad_sch
 ```
 
 Use `dry_run=true` to preview what would change:
+
 ```
 Preview datasheet enrichment for ~/Projects/MyBoard/MyBoard.kicad_sch with dry run enabled.
 ```
@@ -53,15 +57,17 @@ Get the LCSC datasheet URL for a single component by LCSC number.
 
 **Parameters:**
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `lcsc` | string | Yes | LCSC part number, with or without "C" prefix (e.g., "C179739" or "179739") |
+| Parameter | Type   | Required | Description                                                                |
+| --------- | ------ | -------- | -------------------------------------------------------------------------- |
+| `lcsc`    | string | Yes      | LCSC part number, with or without "C" prefix (e.g., "C179739" or "179739") |
 
 **Returns:**
+
 - Datasheet PDF URL
 - Product page URL
 
 **Example:**
+
 ```
 Get the datasheet URL for LCSC part C179739.
 ```

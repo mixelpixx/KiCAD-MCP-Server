@@ -8,6 +8,7 @@ Covers:
     (tested by calling _handle_* methods on a lightweight stub that avoids
     importing the full kicad_interface module).
 """
+
 import shutil
 import tempfile
 from pathlib import Path
@@ -43,9 +44,7 @@ _WIRE_SCH = """\
 
 def _write_temp_sch(content: str) -> Path:
     """Write *content* to a temp file and return its Path."""
-    tmp = tempfile.NamedTemporaryFile(
-        suffix=".kicad_sch", delete=False, mode="w", encoding="utf-8"
-    )
+    tmp = tempfile.NamedTemporaryFile(suffix=".kicad_sch", delete=False, mode="w", encoding="utf-8")
     tmp.write(content)
     tmp.close()
     return Path(tmp.name)
@@ -66,9 +65,7 @@ class TestDeleteWireUnit:
         self.WireManager = WireManager
 
     def test_nonexistent_file_returns_false(self, tmp_path):
-        result = self.WireManager.delete_wire(
-            tmp_path / "nope.kicad_sch", [0, 0], [10, 10]
-        )
+        result = self.WireManager.delete_wire(tmp_path / "nope.kicad_sch", [0, 0], [10, 10])
         assert result is False
 
     def test_no_matching_wire_returns_false(self, tmp_path):
@@ -100,9 +97,7 @@ class TestDeleteLabelUnit:
         self.WireManager = WireManager
 
     def test_nonexistent_file_returns_false(self, tmp_path):
-        result = self.WireManager.delete_label(
-            tmp_path / "nope.kicad_sch", "VCC"
-        )
+        result = self.WireManager.delete_label(tmp_path / "nope.kicad_sch", "VCC")
         assert result is False
 
     def test_missing_label_returns_false(self, tmp_path):
@@ -114,9 +109,7 @@ class TestDeleteLabelUnit:
     def test_position_kwarg_accepted(self, tmp_path):
         sch = tmp_path / "test.kicad_sch"
         shutil.copy(EMPTY_SCH, sch)
-        result = self.WireManager.delete_label(
-            sch, "VCC", position=[10.0, 20.0], tolerance=0.5
-        )
+        result = self.WireManager.delete_label(sch, "VCC", position=[10.0, 20.0], tolerance=0.5)
         assert result is False
 
 
@@ -145,9 +138,7 @@ class TestDeleteWireIntegration:
         wire_items = [
             item
             for item in data
-            if isinstance(item, list)
-            and item
-            and item[0] == sexpdata.Symbol("wire")
+            if isinstance(item, list) and item and item[0] == sexpdata.Symbol("wire")
         ]
         assert wire_items == [], "Wire should have been removed from the file"
 
@@ -165,18 +156,14 @@ class TestDeleteWireIntegration:
         sch.write_text(_WIRE_SCH, encoding="utf-8")
 
         # Coordinates differ by 0.3 mm — within default tolerance of 0.5
-        result = self.WireManager.delete_wire(
-            sch, [10.3, 20.3], [30.3, 20.3], tolerance=0.5
-        )
+        result = self.WireManager.delete_wire(sch, [10.3, 20.3], [30.3, 20.3], tolerance=0.5)
         assert result is True
 
     def test_outside_tolerance_no_delete(self, tmp_path):
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_WIRE_SCH, encoding="utf-8")
 
-        result = self.WireManager.delete_wire(
-            sch, [10.0, 20.0], [30.0, 20.0], tolerance=0.0
-        )
+        result = self.WireManager.delete_wire(sch, [10.0, 20.0], [30.0, 20.0], tolerance=0.0)
         # tolerance=0.0 means exact float equality — may still match on most
         # platforms, but the key thing is that a *distant* miss is rejected
         sch2 = tmp_path / "test2.kicad_sch"
@@ -200,9 +187,7 @@ class TestDeleteWireIntegration:
         labels = [
             item
             for item in data
-            if isinstance(item, list)
-            and item
-            and item[0] == sexpdata.Symbol("label")
+            if isinstance(item, list) and item and item[0] == sexpdata.Symbol("label")
         ]
         assert len(labels) == 1
 
@@ -230,9 +215,7 @@ class TestDeleteLabelIntegration:
         labels = [
             item
             for item in data
-            if isinstance(item, list)
-            and item
-            and item[0] == sexpdata.Symbol("label")
+            if isinstance(item, list) and item and item[0] == sexpdata.Symbol("label")
         ]
         assert labels == [], "Label should have been removed"
 
@@ -247,9 +230,7 @@ class TestDeleteLabelIntegration:
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_WIRE_SCH, encoding="utf-8")
 
-        result = self.WireManager.delete_label(
-            sch, "VCC", position=[99.0, 99.0], tolerance=0.5
-        )
+        result = self.WireManager.delete_label(sch, "VCC", position=[99.0, 99.0], tolerance=0.5)
         assert result is False
 
     def test_wire_preserved_after_label_deletion(self, tmp_path):
@@ -260,9 +241,7 @@ class TestDeleteLabelIntegration:
         wires = [
             item
             for item in data
-            if isinstance(item, list)
-            and item
-            and item[0] == sexpdata.Symbol("wire")
+            if isinstance(item, list) and item and item[0] == sexpdata.Symbol("wire")
         ]
         assert len(wires) == 1
 
@@ -289,7 +268,8 @@ def _make_handler_under_test(handler_name: str):
     This works because every _handle_* method starts with a params dict check
     before doing any file I/O or heavy imports.
     """
-    import importlib.util, types
+    import importlib.util
+    import types
 
     # We monkey-patch sys.modules to avoid pcbnew/skip side effects
     stubs = {}
@@ -322,8 +302,8 @@ class TestHandlerParamValidation:
 
     def _make_iface_stub(self):
         """Return a stub that exposes only the handler methods under test."""
-        import types
         import importlib
+        import types
 
         # Build a minimal namespace that satisfies the imports inside each handler
         stub_mod = types.ModuleType("_handler_stubs")
@@ -387,9 +367,7 @@ class TestHandlerParamValidation:
         params = {}
         schematic_path = params.get("schematicPath")
         result = (
-            {"success": False, "message": "schematicPath is required"}
-            if not schematic_path
-            else {}
+            {"success": False, "message": "schematicPath is required"} if not schematic_path else {}
         )
         assert result["success"] is False
 

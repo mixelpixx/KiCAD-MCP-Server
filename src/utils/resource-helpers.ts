@@ -11,11 +11,13 @@
  */
 export function createJsonResponse(data: any, uri?: string) {
   return {
-    contents: [{
-      uri: uri || "data:application/json",
-      mimeType: "application/json",
-      text: JSON.stringify(data, null, 2)
-    }]
+    contents: [
+      {
+        uri: uri || "data:application/json",
+        mimeType: "application/json",
+        text: JSON.stringify(data, null, 2),
+      },
+    ],
   };
 }
 
@@ -28,14 +30,16 @@ export function createJsonResponse(data: any, uri?: string) {
  * @returns MCP resource response object
  */
 export function createBinaryResponse(data: Buffer | string, mimeType: string, uri?: string) {
-  const blob = typeof data === 'string' ? data : data.toString('base64');
+  const blob = typeof data === "string" ? data : data.toString("base64");
 
   return {
-    contents: [{
-      uri: uri || `data:${mimeType}`,
-      mimeType: mimeType,
-      blob: blob
-    }]
+    contents: [
+      {
+        uri: uri || `data:${mimeType}`,
+        mimeType: mimeType,
+        blob: blob,
+      },
+    ],
   };
 }
 
@@ -49,13 +53,19 @@ export function createBinaryResponse(data: Buffer | string, mimeType: string, ur
  */
 export function createErrorResponse(error: string, details?: string, uri?: string) {
   return {
-    contents: [{
-      uri: uri || "data:application/json",
-      mimeType: "application/json",
-      text: JSON.stringify({
-        error,
-        details
-      }, null, 2)
-    }]
+    contents: [
+      {
+        uri: uri || "data:application/json",
+        mimeType: "application/json",
+        text: JSON.stringify(
+          {
+            error,
+            details,
+          },
+          null,
+          2,
+        ),
+      },
+    ],
   };
 }

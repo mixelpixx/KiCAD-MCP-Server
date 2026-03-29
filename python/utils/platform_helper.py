@@ -4,12 +4,13 @@ Platform detection and path utilities for cross-platform compatibility
 This module provides helpers for detecting the current platform and
 getting appropriate paths for KiCAD, configuration, logs, etc.
 """
+
+import logging
 import os
 import platform
 import sys
 from pathlib import Path
 from typing import List, Optional
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -74,19 +75,23 @@ class PlatformHelper:
 
             # Also check based on Python version
             py_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-            candidates.extend([
-                Path(f"/usr/lib/python{py_version}/dist-packages/kicad"),
-                Path(f"/usr/local/lib/python{py_version}/dist-packages/kicad"),
-            ])
+            candidates.extend(
+                [
+                    Path(f"/usr/lib/python{py_version}/dist-packages/kicad"),
+                    Path(f"/usr/local/lib/python{py_version}/dist-packages/kicad"),
+                ]
+            )
 
             # Check system Python dist-packages (modern KiCAD 9+ on Ubuntu/Debian)
             # This is where pcbnew.py typically lives on modern systems
-            candidates.extend([
-                Path(f"/usr/lib/python3/dist-packages"),
-                Path(f"/usr/lib/python{py_version}/dist-packages"),
-                Path(f"/usr/local/lib/python3/dist-packages"),
-                Path(f"/usr/local/lib/python{py_version}/dist-packages"),
-            ])
+            candidates.extend(
+                [
+                    Path(f"/usr/lib/python3/dist-packages"),
+                    Path(f"/usr/lib/python{py_version}/dist-packages"),
+                    Path(f"/usr/local/lib/python3/dist-packages"),
+                    Path(f"/usr/local/lib/python{py_version}/dist-packages"),
+                ]
+            )
 
             paths = [p for p in candidates if p.exists()]
 
@@ -102,7 +107,17 @@ class PlatformHelper:
             for kicad_app in kicad_app_paths:
                 if kicad_app.exists():
                     for version in ["3.9", "3.10", "3.11", "3.12", "3.13"]:
-                        path = kicad_app / "Contents" / "Frameworks" / "Python.framework" / "Versions" / version / "lib" / f"python{version}" / "site-packages"
+                        path = (
+                            kicad_app
+                            / "Contents"
+                            / "Frameworks"
+                            / "Python.framework"
+                            / "Versions"
+                            / version
+                            / "lib"
+                            / f"python{version}"
+                            / "site-packages"
+                        )
                         if path.exists():
                             paths.append(path)
 
@@ -110,7 +125,7 @@ class PlatformHelper:
             homebrew_paths = [
                 Path("/opt/homebrew/lib/python3.12/site-packages"),  # Apple Silicon
                 Path("/opt/homebrew/lib/python3.11/site-packages"),
-                Path("/usr/local/lib/python3.12/site-packages"),     # Intel Mac
+                Path("/usr/local/lib/python3.12/site-packages"),  # Intel Mac
                 Path("/usr/local/lib/python3.11/site-packages"),
             ]
             for hp in homebrew_paths:
@@ -161,7 +176,10 @@ class PlatformHelper:
             patterns = [
                 "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym",
                 "/Applications/KiCAD/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym",
-                str(Path.home() / "Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym"),
+                str(
+                    Path.home()
+                    / "Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym"
+                ),
             ]
 
         # Add user library paths for all platforms
@@ -301,6 +319,7 @@ def detect_platform() -> dict:
 if __name__ == "__main__":
     # Quick test/diagnostic
     import json
+
     info = detect_platform()
     print("Platform Information:")
     print(json.dumps(info, indent=2))

@@ -106,27 +106,27 @@ export const toolCategories: ToolCategory[] = [
         inputSchema: {
           type: "object",
           properties: {
-            output_dir: { 
-              type: "string", 
-              description: "Output directory path" 
+            output_dir: {
+              type: "string",
+              description: "Output directory path",
             },
-            layers: { 
-              type: "array", 
+            layers: {
+              type: "array",
               items: { type: "string" },
-              description: "Layers to export (default: all copper + silkscreen + mask)"
+              description: "Layers to export (default: all copper + silkscreen + mask)",
             },
             format: {
               type: "string",
               enum: ["rs274x", "x2"],
-              description: "Gerber format version"
-            }
+              description: "Gerber format version",
+            },
           },
-          required: ["output_dir"]
+          required: ["output_dir"],
         },
         handler: async (params) => {
           // Your implementation
           return { success: true, files: ["..."] };
-        }
+        },
       },
       {
         name: "export_drill",
@@ -135,24 +135,31 @@ export const toolCategories: ToolCategory[] = [
           type: "object",
           properties: {
             output_dir: { type: "string" },
-            format: { type: "string", enum: ["excellon", "excellon2"] }
+            format: { type: "string", enum: ["excellon", "excellon2"] },
           },
-          required: ["output_dir"]
+          required: ["output_dir"],
         },
-        handler: async (params) => { /* ... */ }
+        handler: async (params) => {
+          /* ... */
+        },
       },
       {
         name: "export_bom",
         description: "Export bill of materials as CSV or XML",
-        inputSchema: { /* ... */ },
-        handler: async (params) => { /* ... */ }
+        inputSchema: {
+          /* ... */
+        },
+        handler: async (params) => {
+          /* ... */
+        },
       },
       // ... more export tools
-    ]
+    ],
   },
   {
     name: "drc",
-    description: "Design rule checking: clearance validation, electrical rules, manufacturing constraints",
+    description:
+      "Design rule checking: clearance validation, electrical rules, manufacturing constraints",
     tools: [
       {
         name: "run_drc",
@@ -160,19 +167,23 @@ export const toolCategories: ToolCategory[] = [
         inputSchema: {
           type: "object",
           properties: {
-            report_all: { 
-              type: "boolean", 
-              description: "Report all violations or stop at first" 
-            }
-          }
+            report_all: {
+              type: "boolean",
+              description: "Report all violations or stop at first",
+            },
+          },
         },
-        handler: async (params) => { /* ... */ }
+        handler: async (params) => {
+          /* ... */
+        },
       },
       {
         name: "get_drc_errors",
         description: "Get current DRC violations without re-running check",
         inputSchema: { type: "object", properties: {} },
-        handler: async (params) => { /* ... */ }
+        handler: async (params) => {
+          /* ... */
+        },
       },
       {
         name: "set_design_rules",
@@ -183,12 +194,14 @@ export const toolCategories: ToolCategory[] = [
             min_clearance: { type: "number", description: "Minimum clearance in mm" },
             min_track_width: { type: "number", description: "Minimum track width in mm" },
             min_via_diameter: { type: "number", description: "Minimum via diameter in mm" },
-            min_via_drill: { type: "number", description: "Minimum via drill size in mm" }
-          }
+            min_via_drill: { type: "number", description: "Minimum via drill size in mm" },
+          },
         },
-        handler: async (params) => { /* ... */ }
-      }
-    ]
+        handler: async (params) => {
+          /* ... */
+        },
+      },
+    ],
   },
   {
     name: "zones",
@@ -208,22 +221,26 @@ export const toolCategories: ToolCategory[] = [
                 type: "object",
                 properties: {
                   x: { type: "number" },
-                  y: { type: "number" }
-                }
+                  y: { type: "number" },
+                },
               },
-              description: "Polygon vertices in mm"
+              description: "Polygon vertices in mm",
             },
-            priority: { type: "number", description: "Fill priority (higher fills first)" }
+            priority: { type: "number", description: "Fill priority (higher fills first)" },
           },
-          required: ["net_name", "layer", "points"]
+          required: ["net_name", "layer", "points"],
         },
-        handler: async (params) => { /* ... */ }
+        handler: async (params) => {
+          /* ... */
+        },
       },
       {
         name: "fill_zones",
         description: "Recalculate and fill all copper zones",
         inputSchema: { type: "object", properties: {} },
-        handler: async (params) => { /* ... */ }
+        handler: async (params) => {
+          /* ... */
+        },
       },
       {
         name: "remove_zone",
@@ -231,13 +248,15 @@ export const toolCategories: ToolCategory[] = [
         inputSchema: {
           type: "object",
           properties: {
-            zone_id: { type: "string", description: "Zone identifier" }
+            zone_id: { type: "string", description: "Zone identifier" },
           },
-          required: ["zone_id"]
+          required: ["zone_id"],
         },
-        handler: async (params) => { /* ... */ }
-      }
-    ]
+        handler: async (params) => {
+          /* ... */
+        },
+      },
+    ],
   },
   // Add more categories...
 ];
@@ -293,7 +312,7 @@ export function searchTools(query: string): Array<{
         matches.push({
           category: category.name,
           tool: tool.name,
-          description: tool.description
+          description: tool.description,
         });
       }
     }
@@ -313,36 +332,31 @@ These are the tools that enable discovery and execution.
 ```typescript
 // src/tools/router.ts
 
-import { 
-  getAllCategories, 
-  getCategory, 
-  getTool, 
-  searchTools 
-} from "./registry.js";
+import { getAllCategories, getCategory, getTool, searchTools } from "./registry.js";
 
 export const routerTools = {
   list_tool_categories: {
     name: "list_tool_categories",
-    description: 
+    description:
       "List all available tool categories. Use this to discover what operations " +
       "are available beyond the basic tools exposed directly.",
     inputSchema: {
       type: "object" as const,
       properties: {},
-      required: []
+      required: [],
     },
     handler: async () => {
       const categories = getAllCategories();
       return {
         total_categories: categories.length,
         total_tools: categories.reduce((sum, c) => sum + c.tools.length, 0),
-        categories: categories.map(c => ({
+        categories: categories.map((c) => ({
           name: c.name,
           description: c.description,
-          tool_count: c.tools.length
-        }))
+          tool_count: c.tools.length,
+        })),
       };
-    }
+    },
   },
 
   get_category_tools: {
@@ -356,29 +370,29 @@ export const routerTools = {
       properties: {
         category: {
           type: "string",
-          description: "Category name from list_tool_categories"
-        }
+          description: "Category name from list_tool_categories",
+        },
       },
-      required: ["category"]
+      required: ["category"],
     },
     handler: async (params: { category: string }) => {
       const category = getCategory(params.category);
       if (!category) {
         return {
           error: `Unknown category: ${params.category}`,
-          available_categories: getAllCategories().map(c => c.name)
+          available_categories: getAllCategories().map((c) => c.name),
         };
       }
       return {
         category: category.name,
         description: category.description,
-        tools: category.tools.map(t => ({
+        tools: category.tools.map((t) => ({
           name: t.name,
           description: t.description,
-          parameters: t.inputSchema
-        }))
+          parameters: t.inputSchema,
+        })),
       };
-    }
+    },
   },
 
   execute_tool: {
@@ -391,21 +405,21 @@ export const routerTools = {
       properties: {
         tool_name: {
           type: "string",
-          description: "Tool name (from get_category_tools)"
+          description: "Tool name (from get_category_tools)",
         },
         params: {
           type: "object",
-          description: "Tool parameters (see get_category_tools for schema)"
-        }
+          description: "Tool parameters (see get_category_tools for schema)",
+        },
       },
-      required: ["tool_name"]
+      required: ["tool_name"],
     },
     handler: async (input: { tool_name: string; params?: Record<string, unknown> }) => {
       const entry = getTool(input.tool_name);
       if (!entry) {
         return {
           error: `Unknown tool: ${input.tool_name}`,
-          hint: "Use list_tool_categories and get_category_tools to find available tools"
+          hint: "Use list_tool_categories and get_category_tools to find available tools",
         };
       }
 
@@ -414,16 +428,16 @@ export const routerTools = {
         return {
           tool: input.tool_name,
           category: entry.category,
-          result
+          result,
         };
       } catch (err) {
         return {
           error: `Tool execution failed: ${(err as Error).message}`,
           tool: input.tool_name,
-          category: entry.category
+          category: entry.category,
         };
       }
-    }
+    },
   },
 
   search_tools: {
@@ -436,20 +450,20 @@ export const routerTools = {
       properties: {
         query: {
           type: "string",
-          description: "Search term (e.g., 'gerber', 'zone', 'differential', 'export')"
-        }
+          description: "Search term (e.g., 'gerber', 'zone', 'differential', 'export')",
+        },
       },
-      required: ["query"]
+      required: ["query"],
     },
     handler: async (params: { query: string }) => {
       const matches = searchTools(params.query);
       return {
         query: params.query,
         count: matches.length,
-        matches: matches.slice(0, 20) // Limit results
+        matches: matches.slice(0, 20), // Limit results
       };
-    }
-  }
+    },
+  },
 };
 ```
 
@@ -475,18 +489,18 @@ export const directTools: ToolDefinition[] = [
       properties: {
         name: { type: "string", description: "Project name" },
         path: { type: "string", description: "Directory path for project" },
-        template: { 
-          type: "string", 
+        template: {
+          type: "string",
           description: "Optional template to use",
-          enum: ["blank", "arduino", "raspberry-pi"]
-        }
+          enum: ["blank", "arduino", "raspberry-pi"],
+        },
       },
-      required: ["name", "path"]
+      required: ["name", "path"],
     },
     handler: async (params) => {
       // Implementation
       return { success: true, project_path: `${params.path}/${params.name}` };
-    }
+    },
   },
   {
     name: "open_project",
@@ -494,29 +508,35 @@ export const directTools: ToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        path: { type: "string", description: "Path to project file or directory" }
+        path: { type: "string", description: "Path to project file or directory" },
       },
-      required: ["path"]
+      required: ["path"],
     },
-    handler: async (params) => { /* ... */ }
+    handler: async (params) => {
+      /* ... */
+    },
   },
   {
     name: "save_project",
     description: "Save all project files",
     inputSchema: {
       type: "object",
-      properties: {}
+      properties: {},
     },
-    handler: async (params) => { /* ... */ }
+    handler: async (params) => {
+      /* ... */
+    },
   },
   {
     name: "get_project_info",
     description: "Get current project information: path, files, status",
     inputSchema: {
       type: "object",
-      properties: {}
+      properties: {},
     },
-    handler: async (params) => { /* ... */ }
+    handler: async (params) => {
+      /* ... */
+    },
   },
 
   // === PRIMARY OPERATIONS (your core workflow) ===
@@ -530,11 +550,13 @@ export const directTools: ToolDefinition[] = [
         reference: { type: "string", description: "Reference designator (e.g., R1, U1)" },
         x: { type: "number", description: "X position" },
         y: { type: "number", description: "Y position" },
-        rotation: { type: "number", description: "Rotation in degrees", default: 0 }
+        rotation: { type: "number", description: "Rotation in degrees", default: 0 },
       },
-      required: ["type", "reference", "x", "y"]
+      required: ["type", "reference", "x", "y"],
     },
-    handler: async (params) => { /* ... */ }
+    handler: async (params) => {
+      /* ... */
+    },
   },
   {
     name: "move_component",
@@ -544,11 +566,13 @@ export const directTools: ToolDefinition[] = [
       properties: {
         reference: { type: "string", description: "Component reference (e.g., R1)" },
         x: { type: "number", description: "New X position" },
-        y: { type: "number", description: "New Y position" }
+        y: { type: "number", description: "New Y position" },
       },
-      required: ["reference", "x", "y"]
+      required: ["reference", "x", "y"],
     },
-    handler: async (params) => { /* ... */ }
+    handler: async (params) => {
+      /* ... */
+    },
   },
   {
     name: "list_components",
@@ -556,10 +580,12 @@ export const directTools: ToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        filter: { type: "string", description: "Optional filter (e.g., 'R*' for resistors)" }
-      }
+        filter: { type: "string", description: "Optional filter (e.g., 'R*' for resistors)" },
+      },
     },
-    handler: async (params) => { /* ... */ }
+    handler: async (params) => {
+      /* ... */
+    },
   },
 
   // === SECONDARY OPERATIONS (still common) ===
@@ -571,36 +597,42 @@ export const directTools: ToolDefinition[] = [
       properties: {
         start: {
           type: "object",
-          properties: { x: { type: "number" }, y: { type: "number" } }
+          properties: { x: { type: "number" }, y: { type: "number" } },
         },
         end: {
           type: "object",
-          properties: { x: { type: "number" }, y: { type: "number" } }
+          properties: { x: { type: "number" }, y: { type: "number" } },
         },
-        net: { type: "string", description: "Net name" }
+        net: { type: "string", description: "Net name" },
       },
-      required: ["start", "end"]
+      required: ["start", "end"],
     },
-    handler: async (params) => { /* ... */ }
+    handler: async (params) => {
+      /* ... */
+    },
   },
   {
     name: "list_nets",
     description: "List all nets/connections",
     inputSchema: {
       type: "object",
-      properties: {}
+      properties: {},
     },
-    handler: async (params) => { /* ... */ }
+    handler: async (params) => {
+      /* ... */
+    },
   },
   {
     name: "get_info",
     description: "Get general information about current state",
     inputSchema: {
       type: "object",
-      properties: {}
+      properties: {},
     },
-    handler: async (params) => { /* ... */ }
-  }
+    handler: async (params) => {
+      /* ... */
+    },
+  },
 ];
 ```
 
@@ -613,10 +645,7 @@ Wire everything together in your main server file.
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 import { directTools } from "./tools/direct.js";
 import { routerTools } from "./tools/router.js";
@@ -634,14 +663,11 @@ const server = new Server(
     capabilities: {
       tools: {},
     },
-  }
+  },
 );
 
 // Combine all visible tools
-const allVisibleTools = [
-  ...directTools,
-  ...Object.values(routerTools)
-];
+const allVisibleTools = [...directTools, ...Object.values(routerTools)];
 
 // Build a handler map for quick lookup
 const toolHandlers = new Map<string, (params: any) => Promise<any>>();
@@ -656,7 +682,7 @@ for (const tool of Object.values(routerTools)) {
 // List tools handler - returns only direct + router tools
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
-    tools: allVisibleTools.map(tool => ({
+    tools: allVisibleTools.map((tool) => ({
       name: tool.name,
       description: tool.description,
       inputSchema: tool.inputSchema,
@@ -676,9 +702,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           type: "text",
           text: JSON.stringify({
             error: `Unknown tool: ${name}`,
-            hint: "Use list_tool_categories and search_tools to find available tools"
-          })
-        }
+            hint: "Use list_tool_categories and search_tools to find available tools",
+          }),
+        },
       ],
       isError: true,
     };
@@ -690,8 +716,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [
         {
           type: "text",
-          text: JSON.stringify(result, null, 2)
-        }
+          text: JSON.stringify(result, null, 2),
+        },
       ],
     };
   } catch (error) {
@@ -700,9 +726,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         {
           type: "text",
           text: JSON.stringify({
-            error: `Tool execution failed: ${(error as Error).message}`
-          })
-        }
+            error: `Tool execution failed: ${(error as Error).message}`,
+          }),
+        },
       ],
       isError: true,
     };
@@ -734,12 +760,12 @@ Include tools that are:
 
 **Examples by domain:**
 
-| Domain | Direct Tools |
-|--------|-------------|
-| **KiCAD** | create_project, open_project, save_project, add_component, move_component, add_track, list_components, list_nets, get_board_info |
-| **IDA Pro** | open_database, save_database, get_function, list_functions, add_comment, rename, get_xrefs, decompile |
-| **Git** | status, add, commit, push, pull, checkout, branch, log |
-| **Database** | connect, query, list_tables, describe_table |
+| Domain       | Direct Tools                                                                                                                     |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| **KiCAD**    | create_project, open_project, save_project, add_component, move_component, add_track, list_components, list_nets, get_board_info |
+| **IDA Pro**  | open_database, save_database, get_function, list_functions, add_comment, rename, get_xrefs, decompile                            |
+| **Git**      | status, add, commit, push, pull, checkout, branch, log                                                                           |
+| **Database** | connect, query, list_tables, describe_table                                                                                      |
 
 ### Routed Tools (Hidden Behind Router)
 
@@ -753,13 +779,13 @@ Include tools that are:
 
 **Examples:**
 
-| Category | Why Route It |
-|----------|-------------|
-| `export` | Only used at end of workflow |
-| `drc/validation` | Used during review phase |
-| `advanced_*` | Specialty operations |
-| `bulk_*` | Batch operations |
-| `config/settings` | One-time setup |
+| Category          | Why Route It                 |
+| ----------------- | ---------------------------- |
+| `export`          | Only used at end of workflow |
+| `drc/validation`  | Used during review phase     |
+| `advanced_*`      | Specialty operations         |
+| `bulk_*`          | Batch operations             |
+| `config/settings` | One-time setup               |
 
 ---
 
@@ -804,19 +830,19 @@ Include:
 const categories = [
   // Core operations (might be direct tools instead)
   { name: "project", description: "Project lifecycle: create, open, save, close" },
-  
+
   // Domain-specific operations
   { name: "analysis", description: "Analyze and inspect: find patterns, validate, check" },
   { name: "modification", description: "Modify and transform: edit, rename, restructure" },
   { name: "navigation", description: "Navigate and search: find, list, filter, locate" },
-  
+
   // Output operations
   { name: "export", description: "Export and generate: reports, files, documentation" },
   { name: "import", description: "Import from external sources: files, formats, APIs" },
-  
+
   // Configuration
   { name: "config", description: "Configuration and settings: preferences, rules, templates" },
-  
+
   // Advanced/specialized
   { name: "advanced", description: "Advanced operations: batch processing, automation, scripting" },
 ];
@@ -832,18 +858,18 @@ For an IDA Pro MCP server with 100+ tools:
 
 ```typescript
 const directTools = [
-  "open_database",      // Load IDB
-  "save_database",      // Save IDB
-  "get_function",       // Get function by address/name
-  "list_functions",     // List all functions
-  "decompile",          // Decompile function (Hex-Rays)
-  "add_comment",        // Add comment at address
-  "rename",             // Rename address/function
-  "get_xrefs_to",       // Get cross-references to address
-  "get_xrefs_from",     // Get cross-references from address
-  "get_strings",        // List strings
-  "search_bytes",       // Search for byte pattern
-  "get_segments",       // List segments
+  "open_database", // Load IDB
+  "save_database", // Save IDB
+  "get_function", // Get function by address/name
+  "list_functions", // List all functions
+  "decompile", // Decompile function (Hex-Rays)
+  "add_comment", // Add comment at address
+  "rename", // Rename address/function
+  "get_xrefs_to", // Get cross-references to address
+  "get_xrefs_from", // Get cross-references from address
+  "get_strings", // List strings
+  "search_bytes", // Search for byte pattern
+  "get_segments", // List segments
 ];
 ```
 
@@ -854,52 +880,52 @@ const categories = [
   {
     name: "disassembly",
     description: "Disassembly operations: undefine, make code/data, change types",
-    tools: ["make_code", "make_data", "undefine", "set_type", "make_array", "make_struct"]
+    tools: ["make_code", "make_data", "undefine", "set_type", "make_array", "make_struct"],
   },
   {
     name: "functions",
     description: "Function management: create, delete, modify boundaries, set types",
-    tools: ["create_function", "delete_function", "set_func_end", "set_func_type", "add_func_arg"]
+    tools: ["create_function", "delete_function", "set_func_end", "set_func_type", "add_func_arg"],
   },
   {
     name: "types",
     description: "Type system: structs, enums, typedefs, parse headers",
-    tools: ["create_struct", "add_struct_member", "create_enum", "parse_header", "import_types"]
+    tools: ["create_struct", "add_struct_member", "create_enum", "parse_header", "import_types"],
   },
   {
     name: "patching",
     description: "Binary patching: modify bytes, assemble, apply patches",
-    tools: ["patch_bytes", "patch_word", "patch_dword", "assemble", "apply_patches"]
+    tools: ["patch_bytes", "patch_word", "patch_dword", "assemble", "apply_patches"],
   },
   {
     name: "scripting",
     description: "IDAPython scripting: run scripts, evaluate expressions",
-    tools: ["run_script", "eval_python", "get_global", "set_global"]
+    tools: ["run_script", "eval_python", "get_global", "set_global"],
   },
   {
     name: "signatures",
     description: "Signatures and patterns: FLIRT, Lumina, create signatures",
-    tools: ["apply_flirt", "query_lumina", "create_sig", "find_pattern"]
+    tools: ["apply_flirt", "query_lumina", "create_sig", "find_pattern"],
   },
   {
     name: "debugging",
     description: "Debugger control: breakpoints, stepping, memory",
-    tools: ["set_breakpoint", "step_into", "step_over", "read_memory", "write_memory", "get_regs"]
+    tools: ["set_breakpoint", "step_into", "step_over", "read_memory", "write_memory", "get_regs"],
   },
   {
     name: "export",
     description: "Export: ASM listing, pseudocode, database info, reports",
-    tools: ["export_asm", "export_c", "export_json", "generate_report"]
+    tools: ["export_asm", "export_c", "export_json", "generate_report"],
   },
   {
     name: "import",
     description: "Import: symbols, types, comments from external sources",
-    tools: ["import_symbols", "import_pdb", "import_map", "import_comments"]
+    tools: ["import_symbols", "import_pdb", "import_map", "import_comments"],
   },
   {
     name: "analysis",
     description: "Analysis control: reanalyze, find patterns, auto-analysis settings",
-    tools: ["reanalyze", "find_crypto", "find_strings", "analyze_calls", "set_analysis_options"]
+    tools: ["reanalyze", "find_crypto", "find_strings", "analyze_calls", "set_analysis_options"],
   },
 ];
 ```
@@ -962,19 +988,14 @@ Claude: "I've added length tuning meanders to match the trace lengths"
 // tests/router.test.ts
 
 import { describe, it, expect } from "vitest";
-import { 
-  searchTools, 
-  getCategory, 
-  getTool,
-  getAllCategories 
-} from "../src/tools/registry.js";
+import { searchTools, getCategory, getTool, getAllCategories } from "../src/tools/registry.js";
 import { routerTools } from "../src/tools/router.js";
 
 describe("Tool Registry", () => {
   it("should find tools by keyword", () => {
     const results = searchTools("export");
     expect(results.length).toBeGreaterThan(0);
-    expect(results.some(r => r.tool.includes("export"))).toBe(true);
+    expect(results.some((r) => r.tool.includes("export"))).toBe(true);
   });
 
   it("should return category info", () => {
@@ -997,16 +1018,16 @@ describe("Router Tools", () => {
   });
 
   it("get_category_tools returns tools for valid category", async () => {
-    const result = await routerTools.get_category_tools.handler({ 
-      category: "export" 
+    const result = await routerTools.get_category_tools.handler({
+      category: "export",
     });
     expect(result.tools).toBeDefined();
     expect(result.tools.length).toBeGreaterThan(0);
   });
 
   it("get_category_tools returns error for invalid category", async () => {
-    const result = await routerTools.get_category_tools.handler({ 
-      category: "nonexistent" 
+    const result = await routerTools.get_category_tools.handler({
+      category: "nonexistent",
     });
     expect(result.error).toBeDefined();
   });
@@ -1014,7 +1035,7 @@ describe("Router Tools", () => {
   it("execute_tool runs valid tool", async () => {
     const result = await routerTools.execute_tool.handler({
       tool_name: "export_gerber",
-      params: { output_dir: "/tmp/test" }
+      params: { output_dir: "/tmp/test" },
     });
     expect(result.error).toBeUndefined();
   });
@@ -1022,7 +1043,7 @@ describe("Router Tools", () => {
   it("execute_tool returns error for invalid tool", async () => {
     const result = await routerTools.execute_tool.handler({
       tool_name: "nonexistent_tool",
-      params: {}
+      params: {},
     });
     expect(result.error).toBeDefined();
   });
@@ -1141,11 +1162,11 @@ Before shipping your router-based MCP server:
 
 ## Summary
 
-| Before | After |
-|--------|-------|
-| 100 tools visible | 15-18 tools visible |
-| ~60K+ tokens consumed | ~10K tokens consumed |
-| Tool selection confusion | Clear categories |
-| Context starvation | Room for conversation |
+| Before                   | After                 |
+| ------------------------ | --------------------- |
+| 100 tools visible        | 15-18 tools visible   |
+| ~60K+ tokens consumed    | ~10K tokens consumed  |
+| Tool selection confusion | Clear categories      |
+| Context starvation       | Room for conversation |
 
 The router pattern gives you unlimited tool capacity while keeping Claude focused and efficient.

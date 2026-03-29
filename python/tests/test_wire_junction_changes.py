@@ -44,11 +44,7 @@ def _parse_sch(path: Path):
 
 def _find_elements(sch_data, tag: str):
     """Return all top-level S-expression elements with the given tag Symbol."""
-    return [
-        item
-        for item in sch_data
-        if isinstance(item, list) and item and item[0] == Symbol(tag)
-    ]
+    return [item for item in sch_data if isinstance(item, list) and item and item[0] == Symbol(tag)]
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +119,8 @@ class TestHandlerDispatch:
     @pytest.fixture(autouse=True)
     def load_handler_map(self):
         # Import only the dispatch table without initialising KiCAD connections
-        import importlib, types
+        import importlib
+        import types
 
         # Patch heavy imports before loading kicad_interface
         for mod in ["pcbnew", "skip"]:
@@ -188,9 +185,7 @@ class TestHandleAddSchematicWireValidation:
         assert "Schematic path" in result["message"]
 
     def test_missing_waypoints(self):
-        result = self.iface._handle_add_schematic_wire(
-            {"schematicPath": "/tmp/x.kicad_sch"}
-        )
+        result = self.iface._handle_add_schematic_wire({"schematicPath": "/tmp/x.kicad_sch"})
         assert result["success"] is False
         assert "waypoint" in result["message"].lower()
 
@@ -334,14 +329,13 @@ class TestPinSnapping:
             def __init__(self):
                 pass
 
-        skip_mod.Schematic = lambda path: type(
-            "FakeSch", (), {"symbol": [FakeSymbol()]}
-        )()
+        skip_mod.Schematic = lambda path: type("FakeSch", (), {"symbol": [FakeSymbol()]})()
 
         mock_pins.return_value = {"1": [10.0, 20.0], "2": [10.0, 30.0]}
 
         # Re-import so the patched skip.Schematic is used
         import importlib
+
         import kicad_interface
 
         importlib.reload(kicad_interface)
@@ -350,9 +344,7 @@ class TestPinSnapping:
         with patch.object(KiCADInterface, "__init__", lambda self, *a, **kw: None):
             iface = KiCADInterface.__new__(KiCADInterface)
 
-        with patch(
-            "commands.wire_manager.WireManager.add_wire", return_value=True
-        ) as mw:
+        with patch("commands.wire_manager.WireManager.add_wire", return_value=True) as mw:
             result = iface._handle_add_schematic_wire(
                 {
                     "schematicPath": str(self.sch_path),
@@ -371,9 +363,10 @@ class TestPinSnapping:
 
     def test_snap_disabled_passes_original_coords(self):
         """With snapToPins=False the handler should not load PinLocator at all."""
-        with patch(
-            "commands.wire_manager.WireManager.add_wire", return_value=True
-        ) as mw, patch("commands.pin_locator.PinLocator") as mock_locator_cls:
+        with (
+            patch("commands.wire_manager.WireManager.add_wire", return_value=True) as mw,
+            patch("commands.pin_locator.PinLocator") as mock_locator_cls,
+        ):
             result = self.iface._handle_add_schematic_wire(
                 {
                     "schematicPath": str(self.sch_path),
@@ -389,9 +382,7 @@ class TestPinSnapping:
     @patch("commands.wire_manager.WireManager.add_wire", return_value=True)
     def test_snap_miss_leaves_coords_unchanged(self, mock_wire):
         """Point beyond tolerance should not be snapped."""
-        with patch(
-            "commands.wire_manager.WireManager.add_wire", return_value=True
-        ) as mw:
+        with patch("commands.wire_manager.WireManager.add_wire", return_value=True) as mw:
             result = self.iface._handle_add_schematic_wire(
                 {
                     "schematicPath": str(self.sch_path),
@@ -409,9 +400,7 @@ class TestPinSnapping:
     def test_intermediate_waypoints_not_snapped(self, mock_poly):
         """Middle waypoints must remain unchanged even with snapToPins=True."""
         mid = [50.0, 50.0]
-        with patch(
-            "commands.wire_manager.WireManager.add_polyline_wire", return_value=True
-        ) as mp:
+        with patch("commands.wire_manager.WireManager.add_polyline_wire", return_value=True) as mp:
             result = self.iface._handle_add_schematic_wire(
                 {
                     "schematicPath": str(self.sch_path),
@@ -451,9 +440,7 @@ class TestHandleAddSchematicJunction:
         assert "Schematic path" in result["message"]
 
     def test_missing_position(self):
-        result = self.iface._handle_add_schematic_junction(
-            {"schematicPath": "/tmp/x.kicad_sch"}
-        )
+        result = self.iface._handle_add_schematic_junction({"schematicPath": "/tmp/x.kicad_sch"})
         assert result["success"] is False
         assert "Position" in result["message"]
 
@@ -551,9 +538,7 @@ class TestIntegrationWireManager:
         assert ok is True
         data = _parse_sch(sch)
         wires = _find_elements(data, "wire")
-        assert (
-            len(wires) == 3
-        ), f"4 waypoints should produce 3 wire segments, got {len(wires)}"
+        assert len(wires) == 3, f"4 waypoints should produce 3 wire segments, got {len(wires)}"
 
     def test_add_junction_writes_junction_element(self, sch):
         from commands.wire_manager import WireManager
@@ -575,14 +560,10 @@ class TestIntegrationWireManager:
         data = _parse_sch(sch)
         wire = _find_elements(data, "wire")[0]
         pts = [
-            item
-            for item in wire
-            if isinstance(item, list) and item and item[0] == Symbol("pts")
+            item for item in wire if isinstance(item, list) and item and item[0] == Symbol("pts")
         ][0]
         xy_entries = [
-            item
-            for item in pts
-            if isinstance(item, list) and item and item[0] == Symbol("xy")
+            item for item in pts if isinstance(item, list) and item and item[0] == Symbol("xy")
         ]
         assert xy_entries[0][1] == 5.0
         assert xy_entries[0][2] == 7.5
@@ -644,9 +625,7 @@ class TestIntegrationHandlerEndToEnd:
         assert result["success"] is True
         data = _parse_sch(self.sch)
         wires = _find_elements(data, "wire")
-        assert (
-            len(wires) == 3
-        ), f"4 waypoints should produce 3 wire segments, got {len(wires)}"
+        assert len(wires) == 3, f"4 waypoints should produce 3 wire segments, got {len(wires)}"
 
 
 # ---------------------------------------------------------------------------
@@ -812,9 +791,7 @@ class TestMakeWireSexp:
     def test_custom_stroke(self):
         from commands.wire_manager import WireManager
 
-        sexp = WireManager._make_wire_sexp(
-            [0, 0], [5, 0], stroke_width=0.5, stroke_type="dash"
-        )
+        sexp = WireManager._make_wire_sexp([0, 0], [5, 0], stroke_width=0.5, stroke_type="dash")
         parsed = WireManager._parse_wire(sexp)
         assert parsed is not None
         _, _, width, stype = parsed
@@ -922,9 +899,7 @@ class TestBreakWiresAtPoint:
 
         data = [Symbol("kicad_sch")]
         data.append(
-            WireManager._make_wire_sexp(
-                [0, 0], [20, 0], stroke_width=0.5, stroke_type="dash"
-            )
+            WireManager._make_wire_sexp([0, 0], [20, 0], stroke_width=0.5, stroke_type="dash")
         )
         data.append([Symbol("sheet_instances")])
         splits = WireManager._break_wires_at_point(data, [10, 0])
@@ -998,9 +973,7 @@ class TestIntegrationTJunction:
         WireManager.add_junction(sch, [15, 0])
         data = _parse_sch(sch)
         wires = _find_elements(data, "wire")
-        assert (
-            len(wires) == 2
-        ), f"Expected 2 wires after junction split, got {len(wires)}"
+        assert len(wires) == 2, f"Expected 2 wires after junction split, got {len(wires)}"
         junctions = _find_elements(data, "junction")
         assert len(junctions) == 1
 
@@ -1012,9 +985,7 @@ class TestIntegrationTJunction:
         WireManager.add_junction(sch, [20, 0])
         data = _parse_sch(sch)
         wires = _find_elements(data, "wire")
-        assert (
-            len(wires) == 1
-        ), f"Expected 1 wire (no split at endpoint), got {len(wires)}"
+        assert len(wires) == 1, f"Expected 1 wire (no split at endpoint), got {len(wires)}"
 
     def test_polyline_breaks_existing_wire(self, sch):
         """Polyline whose start/end hits mid-wire should break it."""

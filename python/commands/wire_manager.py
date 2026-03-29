@@ -6,12 +6,13 @@ kicad-skip's wire API doesn't support creating wires with standard parameters, s
 manipulate the .kicad_sch file directly.
 """
 
-import uuid
 import logging
 import math
 import tempfile
+import uuid
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
+
 import sexpdata
 from sexpdata import Symbol
 
@@ -76,11 +77,7 @@ class WireManager:
             # Find insertion point (before sheet_instances)
             sheet_instances_index = None
             for i, item in enumerate(sch_data):
-                if (
-                    isinstance(item, list)
-                    and len(item) > 0
-                    and item[0] == _SYM_SHEET_INSTANCES
-                ):
+                if isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SHEET_INSTANCES:
                     sheet_instances_index = i
                     break
 
@@ -146,20 +143,14 @@ class WireManager:
             # KiCAD wire elements only support exactly 2 pts each.
             # Split N waypoints into N-1 individual wire segments.
             wire_sexps = [
-                WireManager._make_wire_sexp(
-                    points[i], points[i + 1], stroke_width, stroke_type
-                )
+                WireManager._make_wire_sexp(points[i], points[i + 1], stroke_width, stroke_type)
                 for i in range(len(points) - 1)
             ]
 
             # Find insertion point
             sheet_instances_index = None
             for i, item in enumerate(sch_data):
-                if (
-                    isinstance(item, list)
-                    and len(item) > 0
-                    and item[0] == _SYM_SHEET_INSTANCES
-                ):
+                if isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SHEET_INSTANCES:
                     sheet_instances_index = i
                     break
 
@@ -235,11 +226,7 @@ class WireManager:
             # Find insertion point
             sheet_instances_index = None
             for i, item in enumerate(sch_data):
-                if (
-                    isinstance(item, list)
-                    and len(item) > 0
-                    and item[0] == _SYM_SHEET_INSTANCES
-                ):
+                if isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SHEET_INSTANCES:
                     sheet_instances_index = i
                     break
 
@@ -274,11 +261,7 @@ class WireManager:
         Parse a wire S-expression item in a single pass.
         Returns ((x1,y1), (x2,y2), stroke_width, stroke_type), or None if not a valid wire.
         """
-        if not (
-            isinstance(wire_item, list)
-            and len(wire_item) >= 2
-            and wire_item[0] == _SYM_WIRE
-        ):
+        if not (isinstance(wire_item, list) and len(wire_item) >= 2 and wire_item[0] == _SYM_WIRE):
             return None
         start = end = None
         stroke_width: float = 0
@@ -379,9 +362,7 @@ class WireManager:
         return splits
 
     @staticmethod
-    def add_junction(
-        schematic_path: Path, position: List[float], diameter: float = 0
-    ) -> bool:
+    def add_junction(schematic_path: Path, position: List[float], diameter: float = 0) -> bool:
         """
         Add a junction (connection dot) to the schematic.
 
@@ -423,11 +404,7 @@ class WireManager:
             # Find insertion point
             sheet_instances_index = None
             for i, item in enumerate(sch_data):
-                if (
-                    isinstance(item, list)
-                    and len(item) > 0
-                    and item[0] == _SYM_SHEET_INSTANCES
-                ):
+                if isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SHEET_INSTANCES:
                     sheet_instances_index = i
                     break
 
@@ -484,11 +461,7 @@ class WireManager:
             # Find insertion point
             sheet_instances_index = None
             for i, item in enumerate(sch_data):
-                if (
-                    isinstance(item, list)
-                    and len(item) > 0
-                    and item[0] == _SYM_SHEET_INSTANCES
-                ):
+                if isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SHEET_INSTANCES:
                     sheet_instances_index = i
                     break
 
@@ -544,9 +517,7 @@ class WireManager:
             ex, ey = end_point
 
             for i, item in enumerate(sch_data):
-                if not (
-                    isinstance(item, list) and len(item) > 0 and item[0] == _SYM_WIRE
-                ):
+                if not (isinstance(item, list) and len(item) > 0 and item[0] == _SYM_WIRE):
                     continue
 
                 # Extract pts from the wire s-expression
@@ -626,9 +597,7 @@ class WireManager:
             sch_data = sexpdata.loads(sch_content)
 
             for i, item in enumerate(sch_data):
-                if not (
-                    isinstance(item, list) and len(item) > 0 and item[0] == _SYM_LABEL
-                ):
+                if not (isinstance(item, list) and len(item) > 0 and item[0] == _SYM_LABEL):
                     continue
 
                 # Second element is the label text
@@ -649,8 +618,7 @@ class WireManager:
                         continue
                     lx, ly = float(at_entry[1]), float(at_entry[2])
                     if not (
-                        abs(lx - position[0]) < tolerance
-                        and abs(ly - position[1]) < tolerance
+                        abs(lx - position[0]) < tolerance and abs(ly - position[1]) < tolerance
                     ):
                         continue
 
@@ -704,10 +672,9 @@ class WireManager:
 
 if __name__ == "__main__":
     # Test wire creation
-    import sys
-
-    from pathlib import Path
     import shutil
+    import sys
+    from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).parent.parent))
 

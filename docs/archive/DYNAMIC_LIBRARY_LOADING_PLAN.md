@@ -5,12 +5,14 @@
 Replace the template-based schematic workflow with dynamic symbol loading from KiCad's installed symbol libraries. This would eliminate the 13-component limitation and provide access to ALL KiCad symbols (~10,000+ symbols from standard libraries).
 
 **Current Status (Option 1):**
+
 - ✅ Template-based approach working
 - ✅ 13 component types supported
 - ❌ Limited symbol variety
 - ❌ Requires manual template updates for new types
 
 **Proposed (Option 2):**
+
 - 🎯 Dynamic loading from `.kicad_sym` library files
 - 🎯 Access to ~10,000+ KiCad symbols
 - 🎯 No template maintenance required
@@ -23,6 +25,7 @@ Replace the template-based schematic workflow with dynamic symbol loading from K
 ### kicad-skip Library Limitation
 
 **Core Issue:** kicad-skip **cannot create symbols from scratch**. It can only:
+
 1. Clone existing symbols from a loaded schematic
 2. Modify properties of cloned symbols
 
@@ -62,20 +65,24 @@ KiCad symbol libraries are S-expression files containing symbol definitions:
 ### Standard KiCad Library Locations
 
 **Linux:**
+
 - System libraries: `/usr/share/kicad/symbols/`
 - User libraries: `~/.local/share/kicad/8.0/symbols/` or `~/.config/kicad/8.0/symbols/`
 
 **Windows:**
+
 - System libraries: `C:\Program Files\KiCad\9.0\share\kicad\symbols\`
 - User libraries: `%APPDATA%\kicad\8.0\symbols\`
 
 **macOS:**
+
 - System libraries: `/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/`
 - User libraries: `~/Library/Preferences/kicad/8.0/symbols/`
 
 ### Standard Library Files
 
 Common libraries (each containing 50-500 symbols):
+
 - `Device.kicad_sym` - Passives (R, C, L, D, LED, Crystal, etc.)
 - `Connector.kicad_sym` - Connectors (headers, USB, etc.)
 - `Connector_Generic.kicad_sym` - Generic connectors
@@ -96,6 +103,7 @@ Common libraries (each containing 50-500 symbols):
 **Goal:** Build an index of all available symbols and their locations
 
 **Implementation:**
+
 ```python
 class SymbolLibraryManager:
     def __init__(self):
@@ -288,16 +296,19 @@ def add_schematic_component_dynamic(params):
 ## Advantages Over Template Approach
 
 ### ✅ Unlimited Symbol Access
+
 - Access to ~10,000+ standard KiCad symbols
 - Support for custom user libraries
 - Support for 3rd-party libraries (JLCPCB, Espressif, etc.)
 
 ### ✅ No Maintenance Required
+
 - Template doesn't need updates for new component types
 - Automatically supports new KiCad library additions
 - Works with custom symbol libraries
 
 ### ✅ Better User Experience
+
 ```
 User: "Add an STM32F103C8T6 microcontroller at position 100,100"
 AI: *Searches symbol index*
@@ -309,6 +320,7 @@ AI: *Searches symbol index*
 ```
 
 ### ✅ Flexible Symbol Search
+
 ```python
 # Find all resistors
 symbols = lib_manager.search_symbols(query="resistor")
@@ -327,6 +339,7 @@ symbols = lib_manager.search_symbols(query="STM32", library="MCU_ST_STM32F1")
 **Problem:** Directly manipulating S-expression data is error-prone
 
 **Mitigation:**
+
 - Use `sexpdata` library (already a dependency)
 - Create helper functions for common operations
 - Add comprehensive validation and error handling
@@ -337,6 +350,7 @@ symbols = lib_manager.search_symbols(query="STM32", library="MCU_ST_STM32F1")
 **Problem:** Loading/reloading schematics after injection could be slow
 
 **Mitigation:**
+
 - **Cache loaded symbols**: Once injected, symbol stays in schematic
 - **Batch injection**: Inject multiple symbols at once
 - **Lazy loading**: Only inject symbols when first used
@@ -346,6 +360,7 @@ symbols = lib_manager.search_symbols(query="STM32", library="MCU_ST_STM32F1")
 **Problem:** Some symbols may have complex pin configurations or multiple units
 
 **Mitigation:**
+
 - Start with simple 2-pin passives (R, C, L)
 - Gradually add support for multi-pin ICs
 - Handle multi-unit symbols (gates, OpAmp sections) explicitly
@@ -356,6 +371,7 @@ symbols = lib_manager.search_symbols(query="STM32", library="MCU_ST_STM32F1")
 **Problem:** KiCad symbol format may change between versions
 
 **Mitigation:**
+
 - Parse KiCad version from library files
 - Version-specific handling if needed
 - Fallback to template approach for unsupported formats
@@ -365,6 +381,7 @@ symbols = lib_manager.search_symbols(query="STM32", library="MCU_ST_STM32F1")
 ## Implementation Phases
 
 ### Phase A: Proof of Concept (1-2 weeks)
+
 - [ ] Create `SymbolLibraryManager` class
 - [ ] Implement library discovery (Linux paths only)
 - [ ] Implement symbol indexing
@@ -373,6 +390,7 @@ symbols = lib_manager.search_symbols(query="STM32", library="MCU_ST_STM32F1")
 - [ ] Test end-to-end with simple components
 
 ### Phase B: Core Functionality (2-3 weeks)
+
 - [ ] Cross-platform library discovery (Windows, macOS)
 - [ ] Symbol search functionality
 - [ ] Template instance creation automation
@@ -381,6 +399,7 @@ symbols = lib_manager.search_symbols(query="STM32", library="MCU_ST_STM32F1")
 - [ ] Unit tests for all operations
 
 ### Phase C: MCP Integration (1 week)
+
 - [ ] Create `add_schematic_component_dynamic` tool
 - [ ] Update `search_symbols` to use library index
 - [ ] Add `list_available_symbols` tool
@@ -388,6 +407,7 @@ symbols = lib_manager.search_symbols(query="STM32", library="MCU_ST_STM32F1")
 - [ ] Documentation and examples
 
 ### Phase D: Advanced Features (2-3 weeks)
+
 - [ ] Multi-unit symbol support (e.g., quad OpAmps)
 - [ ] Custom library registration
 - [ ] Symbol caching and optimization
@@ -428,18 +448,21 @@ def add_schematic_component(params):
 ## Success Criteria
 
 ### Must Have
+
 - [ ] Load symbols from Device.kicad_sym (passives)
 - [ ] Support R, C, L, D, LED (5 core types)
 - [ ] Cross-platform library discovery
 - [ ] Proper error handling
 
 ### Should Have
+
 - [ ] Support for all Device.kicad_sym symbols (~50 symbols)
 - [ ] Support for Connector.kicad_sym symbols
 - [ ] Symbol search by name/keyword
 - [ ] Performance: < 1 second per symbol injection
 
 ### Nice to Have
+
 - [ ] Support for all standard libraries (~10,000 symbols)
 - [ ] Multi-unit symbol support
 - [ ] Custom library registration
@@ -449,13 +472,13 @@ def add_schematic_component(params):
 
 ## Risk Assessment
 
-| Risk | Probability | Impact | Mitigation |
-|------|-------------|--------|------------|
-| S-expression parsing complexity | High | High | Use proven `sexpdata` library, extensive testing |
-| Performance degradation | Medium | Medium | Implement caching, lazy loading |
-| KiCad version incompatibility | Low | High | Version detection, format validation |
-| Template fallback breaks | Low | Medium | Maintain template approach in parallel |
-| User confusion | Medium | Low | Clear documentation, gradual rollout |
+| Risk                            | Probability | Impact | Mitigation                                       |
+| ------------------------------- | ----------- | ------ | ------------------------------------------------ |
+| S-expression parsing complexity | High        | High   | Use proven `sexpdata` library, extensive testing |
+| Performance degradation         | Medium      | Medium | Implement caching, lazy loading                  |
+| KiCad version incompatibility   | Low         | High   | Version detection, format validation             |
+| Template fallback breaks        | Low         | Medium | Maintain template approach in parallel           |
+| User confusion                  | Medium      | Low    | Clear documentation, gradual rollout             |
 
 ---
 
@@ -469,6 +492,7 @@ Dynamic library loading is **feasible and highly beneficial** for the schematic 
 4. **Enable true "natural language PCB design"**
 
 **Recommendation:**
+
 - ✅ **Keep Option 1 (expanded template) for immediate use**
 - ✅ **Implement Option 2 (dynamic loading) over 6-8 weeks**
 - ✅ **Maintain template fallback for compatibility**

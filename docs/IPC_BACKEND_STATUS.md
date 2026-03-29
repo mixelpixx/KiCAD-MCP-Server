@@ -15,45 +15,46 @@ This feature is experimental and under active testing. The server uses a hybrid 
 
 ## Key Differences
 
-| Feature | SWIG | IPC |
-|---------|------|-----|
-| UI Updates | Manual reload required | Immediate (when working) |
-| Undo/Redo | Not supported | Transaction support |
-| API Stability | Deprecated in KiCAD 9 | Official, versioned |
-| Connection | File-based | Live socket connection |
-| KiCAD Required | No (file operations) | Yes (must be running) |
+| Feature        | SWIG                   | IPC                      |
+| -------------- | ---------------------- | ------------------------ |
+| UI Updates     | Manual reload required | Immediate (when working) |
+| Undo/Redo      | Not supported          | Transaction support      |
+| API Stability  | Deprecated in KiCAD 9  | Official, versioned      |
+| Connection     | File-based             | Live socket connection   |
+| KiCAD Required | No (file operations)   | Yes (must be running)    |
 
 ## Implemented IPC Commands
 
 The following MCP commands have IPC handlers:
 
-| Command | IPC Handler | Status |
-|---------|-------------|--------|
-| `route_trace` | `_ipc_route_trace` | Implemented |
-| `add_via` | `_ipc_add_via` | Implemented |
-| `add_net` | `_ipc_add_net` | Implemented |
-| `delete_trace` | `_ipc_delete_trace` | Falls back to SWIG |
-| `get_nets_list` | `_ipc_get_nets_list` | Implemented |
-| `add_copper_pour` | `_ipc_add_copper_pour` | Implemented |
-| `refill_zones` | `_ipc_refill_zones` | Implemented |
-| `add_text` | `_ipc_add_text` | Implemented |
-| `add_board_text` | `_ipc_add_text` | Implemented |
-| `set_board_size` | `_ipc_set_board_size` | Implemented |
-| `get_board_info` | `_ipc_get_board_info` | Implemented |
-| `add_board_outline` | `_ipc_add_board_outline` | Implemented |
-| `add_mounting_hole` | `_ipc_add_mounting_hole` | Implemented |
-| `get_layer_list` | `_ipc_get_layer_list` | Implemented |
-| `place_component` | `_ipc_place_component` | Implemented (hybrid) |
-| `move_component` | `_ipc_move_component` | Implemented |
-| `rotate_component` | `_ipc_rotate_component` | Implemented |
-| `delete_component` | `_ipc_delete_component` | Implemented |
-| `get_component_list` | `_ipc_get_component_list` | Implemented |
-| `get_component_properties` | `_ipc_get_component_properties` | Implemented |
-| `save_project` | `_ipc_save_project` | Implemented |
+| Command                    | IPC Handler                     | Status               |
+| -------------------------- | ------------------------------- | -------------------- |
+| `route_trace`              | `_ipc_route_trace`              | Implemented          |
+| `add_via`                  | `_ipc_add_via`                  | Implemented          |
+| `add_net`                  | `_ipc_add_net`                  | Implemented          |
+| `delete_trace`             | `_ipc_delete_trace`             | Falls back to SWIG   |
+| `get_nets_list`            | `_ipc_get_nets_list`            | Implemented          |
+| `add_copper_pour`          | `_ipc_add_copper_pour`          | Implemented          |
+| `refill_zones`             | `_ipc_refill_zones`             | Implemented          |
+| `add_text`                 | `_ipc_add_text`                 | Implemented          |
+| `add_board_text`           | `_ipc_add_text`                 | Implemented          |
+| `set_board_size`           | `_ipc_set_board_size`           | Implemented          |
+| `get_board_info`           | `_ipc_get_board_info`           | Implemented          |
+| `add_board_outline`        | `_ipc_add_board_outline`        | Implemented          |
+| `add_mounting_hole`        | `_ipc_add_mounting_hole`        | Implemented          |
+| `get_layer_list`           | `_ipc_get_layer_list`           | Implemented          |
+| `place_component`          | `_ipc_place_component`          | Implemented (hybrid) |
+| `move_component`           | `_ipc_move_component`           | Implemented          |
+| `rotate_component`         | `_ipc_rotate_component`         | Implemented          |
+| `delete_component`         | `_ipc_delete_component`         | Implemented          |
+| `get_component_list`       | `_ipc_get_component_list`       | Implemented          |
+| `get_component_properties` | `_ipc_get_component_properties` | Implemented          |
+| `save_project`             | `_ipc_save_project`             | Implemented          |
 
 ### Implemented Backend Features
 
 **Core Connection:**
+
 - Connect to running KiCAD instance
 - Auto-detect socket path (`/tmp/kicad/api.sock`)
 - Version checking and validation
@@ -61,6 +62,7 @@ The following MCP commands have IPC handlers:
 - Change notification callbacks
 
 **Board Operations:**
+
 - Get board reference
 - Get/Set board size
 - List enabled layers
@@ -69,6 +71,7 @@ The following MCP commands have IPC handlers:
 - Add mounting holes
 
 **Component Operations:**
+
 - List all components
 - Place component (hybrid: SWIG for library loading, IPC for placement)
 - Move component
@@ -77,6 +80,7 @@ The following MCP commands have IPC handlers:
 - Get component properties
 
 **Routing Operations:**
+
 - Add track
 - Add via
 - Get all tracks
@@ -84,16 +88,19 @@ The following MCP commands have IPC handlers:
 - Get all nets
 
 **Zone Operations:**
+
 - Add copper pour zones
 - Get zones list
 - Refill zones
 
 **UI Integration:**
+
 - Add text to board
 - Get current selection
 - Clear selection
 
 **Transaction Support:**
+
 - Begin transaction
 - Commit transaction (with description for undo)
 - Rollback transaction
@@ -162,20 +169,24 @@ Run the test script to verify IPC functionality:
 ## Troubleshooting
 
 ### "Connection failed"
+
 - Ensure KiCAD is running
 - Enable IPC API: `Preferences > Plugins > Enable IPC API Server`
 - Check if a board is open
 
 ### "kicad-python not found"
+
 ```bash
 pip install kicad-python
 ```
 
 ### "Version mismatch"
+
 - Update kicad-python: `pip install --upgrade kicad-python`
 - Ensure KiCAD 9.0+ is installed
 
 ### "No board open"
+
 - Open a board in KiCAD's PCB editor before connecting
 
 ## File Structure

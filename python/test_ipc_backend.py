@@ -13,8 +13,9 @@ Prerequisites:
 Usage:
     ./venv/bin/python python/test_ipc_backend.py
 """
-import sys
+
 import os
+import sys
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -23,17 +24,16 @@ import logging
 
 # Set up logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 
 def test_connection():
     """Test basic IPC connection to KiCAD."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 1: IPC Connection")
-    print("="*60)
+    print("=" * 60)
 
     try:
         from kicad_api.ipc_backend import IPCBackend
@@ -64,9 +64,9 @@ def test_connection():
 
 def test_board_access(backend):
     """Test board access and component listing."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 2: Board Access")
-    print("="*60)
+    print("=" * 60)
 
     try:
         board_api = backend.get_board()
@@ -79,11 +79,11 @@ def test_board_access(backend):
         if components:
             print("\n  First 5 components:")
             for comp in components[:5]:
-                ref = comp.get('reference', 'N/A')
-                val = comp.get('value', 'N/A')
-                pos = comp.get('position', {})
-                x = pos.get('x', 0)
-                y = pos.get('y', 0)
+                ref = comp.get("reference", "N/A")
+                val = comp.get("value", "N/A")
+                pos = comp.get("position", {})
+                x = pos.get("x", 0)
+                y = pos.get("y", 0)
                 print(f"    - {ref}: {val} @ ({x:.2f}, {y:.2f}) mm")
 
         return board_api
@@ -95,9 +95,9 @@ def test_board_access(backend):
 
 def test_board_info(board_api):
     """Test getting board information."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 3: Board Information")
-    print("="*60)
+    print("=" * 60)
 
     try:
         # Get board size
@@ -136,28 +136,23 @@ def test_board_info(board_api):
 
 def test_realtime_track(board_api, interactive=False):
     """Test adding a track in real-time (appears immediately in KiCAD UI)."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 4: Real-time Track Addition")
-    print("="*60)
+    print("=" * 60)
 
     print("\nThis test will add a track that appears IMMEDIATELY in KiCAD UI.")
     print("Watch the KiCAD window!")
 
     if interactive:
         response = input("\nProceed with adding a test track? [y/N]: ").strip().lower()
-        if response != 'y':
+        if response != "y":
             print("Skipped track test")
             return False
 
     try:
         # Add a track
         success = board_api.add_track(
-            start_x=100.0,
-            start_y=100.0,
-            end_x=120.0,
-            end_y=100.0,
-            width=0.25,
-            layer="F.Cu"
+            start_x=100.0, start_y=100.0, end_x=120.0, end_y=100.0, width=0.25, layer="F.Cu"
         )
 
         if success:
@@ -175,28 +170,22 @@ def test_realtime_track(board_api, interactive=False):
 
 def test_realtime_via(board_api, interactive=False):
     """Test adding a via in real-time (appears immediately in KiCAD UI)."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 5: Real-time Via Addition")
-    print("="*60)
+    print("=" * 60)
 
     print("\nThis test will add a via that appears IMMEDIATELY in KiCAD UI.")
     print("Watch the KiCAD window!")
 
     if interactive:
         response = input("\nProceed with adding a test via? [y/N]: ").strip().lower()
-        if response != 'y':
+        if response != "y":
             print("Skipped via test")
             return False
 
     try:
         # Add a via
-        success = board_api.add_via(
-            x=120.0,
-            y=100.0,
-            diameter=0.8,
-            drill=0.4,
-            via_type="through"
-        )
+        success = board_api.add_via(x=120.0, y=100.0, diameter=0.8, drill=0.4, via_type="through")
 
         if success:
             print("✓ Via added! Check the KiCAD window - it should appear at (120, 100) mm")
@@ -213,26 +202,20 @@ def test_realtime_via(board_api, interactive=False):
 
 def test_realtime_text(board_api, interactive=False):
     """Test adding text in real-time."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 6: Real-time Text Addition")
-    print("="*60)
+    print("=" * 60)
 
     print("\nThis test will add text that appears IMMEDIATELY in KiCAD UI.")
 
     if interactive:
         response = input("\nProceed with adding test text? [y/N]: ").strip().lower()
-        if response != 'y':
+        if response != "y":
             print("Skipped text test")
             return False
 
     try:
-        success = board_api.add_text(
-            text="MCP Test",
-            x=100.0,
-            y=95.0,
-            layer="F.SilkS",
-            size=1.0
-        )
+        success = board_api.add_text(text="MCP Test", x=100.0, y=95.0, layer="F.SilkS", size=1.0)
 
         if success:
             print("✓ Text added! Check the KiCAD window - should show 'MCP Test' at (100, 95) mm")
@@ -248,9 +231,9 @@ def test_realtime_text(board_api, interactive=False):
 
 def test_selection(board_api, interactive=False):
     """Test getting the current selection from KiCAD UI."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 7: UI Selection")
-    print("="*60)
+    print("=" * 60)
 
     if interactive:
         print("\nSelect some items in KiCAD, then press Enter...")
@@ -274,26 +257,26 @@ def test_selection(board_api, interactive=False):
 
 def run_all_tests(interactive=False):
     """Run all IPC backend tests."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("KiCAD IPC Backend Test Suite")
-    print("="*60)
+    print("=" * 60)
     print("\nThis script tests real-time communication with KiCAD via IPC API.")
     print("Make sure KiCAD is running with a board open.\n")
 
     # Test connection
     backend = test_connection()
     if not backend:
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("TESTS FAILED: Could not connect to KiCAD")
-        print("="*60)
+        print("=" * 60)
         return False
 
     # Test board access
     board_api = test_board_access(backend)
     if not board_api:
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("TESTS FAILED: Could not access board")
-        print("="*60)
+        print("=" * 60)
         return False
 
     # Test board info
@@ -307,9 +290,9 @@ def run_all_tests(interactive=False):
     # Test selection
     test_selection(board_api, interactive)
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TESTS COMPLETE")
-    print("="*60)
+    print("=" * 60)
     print("\nThe IPC backend is working! Changes appear in real-time.")
     print("No manual reload required - this is the power of the IPC API!")
 
@@ -321,9 +304,14 @@ def run_all_tests(interactive=False):
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description='Test KiCAD IPC Backend')
-    parser.add_argument('-i', '--interactive', action='store_true',
-                       help='Run in interactive mode (prompts before modifications)')
+
+    parser = argparse.ArgumentParser(description="Test KiCAD IPC Backend")
+    parser.add_argument(
+        "-i",
+        "--interactive",
+        action="store_true",
+        help="Run in interactive mode (prompts before modifications)",
+    )
     args = parser.parse_args()
 
     success = run_all_tests(interactive=args.interactive)

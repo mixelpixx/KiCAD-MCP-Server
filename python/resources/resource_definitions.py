@@ -5,12 +5,12 @@ Resources follow the MCP 2025-06-18 specification, providing
 read-only access to project data for LLM context.
 """
 
-import json
 import base64
-from typing import Dict, Any, List, Optional
+import json
 import logging
+from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger('kicad_interface')
+logger = logging.getLogger("kicad_interface")
 
 # =============================================================================
 # RESOURCE DEFINITIONS
@@ -21,55 +21,56 @@ RESOURCE_DEFINITIONS = [
         "uri": "kicad://project/current/info",
         "name": "Current Project Information",
         "description": "Metadata about the currently open KiCAD project including paths, name, and status",
-        "mimeType": "application/json"
+        "mimeType": "application/json",
     },
     {
         "uri": "kicad://project/current/board",
         "name": "Board Properties",
         "description": "Comprehensive board information including dimensions, layer count, and design rules",
-        "mimeType": "application/json"
+        "mimeType": "application/json",
     },
     {
         "uri": "kicad://project/current/components",
         "name": "Component List",
         "description": "List of all components on the board with references, footprints, values, and positions",
-        "mimeType": "application/json"
+        "mimeType": "application/json",
     },
     {
         "uri": "kicad://project/current/nets",
         "name": "Electrical Nets",
         "description": "List of all electrical nets and their connections",
-        "mimeType": "application/json"
+        "mimeType": "application/json",
     },
     {
         "uri": "kicad://project/current/layers",
         "name": "Layer Stack",
         "description": "Board layer configuration and properties",
-        "mimeType": "application/json"
+        "mimeType": "application/json",
     },
     {
         "uri": "kicad://project/current/design-rules",
         "name": "Design Rules",
         "description": "Current design rule settings for clearances, track widths, and constraints",
-        "mimeType": "application/json"
+        "mimeType": "application/json",
     },
     {
         "uri": "kicad://project/current/drc-report",
         "name": "DRC Violations",
         "description": "Design Rule Check violations and warnings from last DRC run",
-        "mimeType": "application/json"
+        "mimeType": "application/json",
     },
     {
         "uri": "kicad://board/preview.png",
         "name": "Board Preview Image",
         "description": "2D rendering of the current board state",
-        "mimeType": "image/png"
-    }
+        "mimeType": "image/png",
+    },
 ]
 
 # =============================================================================
 # RESOURCE READ HANDLERS
 # =============================================================================
+
 
 def handle_resource_read(uri: str, interface) -> Dict[str, Any]:
     """
@@ -92,7 +93,7 @@ def handle_resource_read(uri: str, interface) -> Dict[str, Any]:
         "kicad://project/current/layers": _get_layers,
         "kicad://project/current/design-rules": _get_design_rules,
         "kicad://project/current/drc-report": _get_drc_report,
-        "kicad://board/preview.png": _get_board_preview
+        "kicad://board/preview.png": _get_board_preview,
     }
 
     handler = handlers.get(uri)
@@ -102,24 +103,18 @@ def handle_resource_read(uri: str, interface) -> Dict[str, Any]:
         except Exception as e:
             logger.error(f"Error reading resource {uri}: {str(e)}")
             return {
-                "contents": [{
-                    "uri": uri,
-                    "mimeType": "text/plain",
-                    "text": f"Error: {str(e)}"
-                }]
+                "contents": [{"uri": uri, "mimeType": "text/plain", "text": f"Error: {str(e)}"}]
             }
     else:
         return {
-            "contents": [{
-                "uri": uri,
-                "mimeType": "text/plain",
-                "text": f"Unknown resource: {uri}"
-            }]
+            "contents": [{"uri": uri, "mimeType": "text/plain", "text": f"Unknown resource: {uri}"}]
         }
+
 
 # =============================================================================
 # INDIVIDUAL RESOURCE HANDLERS
 # =============================================================================
+
 
 def _get_project_info(interface) -> Dict[str, Any]:
     """Get current project information"""
@@ -127,20 +122,25 @@ def _get_project_info(interface) -> Dict[str, Any]:
 
     if result.get("success"):
         return {
-            "contents": [{
-                "uri": "kicad://project/current/info",
-                "mimeType": "application/json",
-                "text": json.dumps(result.get("project", {}), indent=2)
-            }]
+            "contents": [
+                {
+                    "uri": "kicad://project/current/info",
+                    "mimeType": "application/json",
+                    "text": json.dumps(result.get("project", {}), indent=2),
+                }
+            ]
         }
     else:
         return {
-            "contents": [{
-                "uri": "kicad://project/current/info",
-                "mimeType": "text/plain",
-                "text": "No project currently open"
-            }]
+            "contents": [
+                {
+                    "uri": "kicad://project/current/info",
+                    "mimeType": "text/plain",
+                    "text": "No project currently open",
+                }
+            ]
         }
+
 
 def _get_board_info(interface) -> Dict[str, Any]:
     """Get board properties and metadata"""
@@ -148,20 +148,25 @@ def _get_board_info(interface) -> Dict[str, Any]:
 
     if result.get("success"):
         return {
-            "contents": [{
-                "uri": "kicad://project/current/board",
-                "mimeType": "application/json",
-                "text": json.dumps(result.get("board", {}), indent=2)
-            }]
+            "contents": [
+                {
+                    "uri": "kicad://project/current/board",
+                    "mimeType": "application/json",
+                    "text": json.dumps(result.get("board", {}), indent=2),
+                }
+            ]
         }
     else:
         return {
-            "contents": [{
-                "uri": "kicad://project/current/board",
-                "mimeType": "text/plain",
-                "text": "No board currently loaded"
-            }]
+            "contents": [
+                {
+                    "uri": "kicad://project/current/board",
+                    "mimeType": "text/plain",
+                    "text": "No board currently loaded",
+                }
+            ]
         }
+
 
 def _get_components(interface) -> Dict[str, Any]:
     """Get list of all components"""
@@ -170,23 +175,27 @@ def _get_components(interface) -> Dict[str, Any]:
     if result.get("success"):
         components = result.get("components", [])
         return {
-            "contents": [{
-                "uri": "kicad://project/current/components",
-                "mimeType": "application/json",
-                "text": json.dumps({
-                    "count": len(components),
-                    "components": components
-                }, indent=2)
-            }]
+            "contents": [
+                {
+                    "uri": "kicad://project/current/components",
+                    "mimeType": "application/json",
+                    "text": json.dumps(
+                        {"count": len(components), "components": components}, indent=2
+                    ),
+                }
+            ]
         }
     else:
         return {
-            "contents": [{
-                "uri": "kicad://project/current/components",
-                "mimeType": "application/json",
-                "text": json.dumps({"count": 0, "components": []}, indent=2)
-            }]
+            "contents": [
+                {
+                    "uri": "kicad://project/current/components",
+                    "mimeType": "application/json",
+                    "text": json.dumps({"count": 0, "components": []}, indent=2),
+                }
+            ]
         }
+
 
 def _get_nets(interface) -> Dict[str, Any]:
     """Get list of electrical nets"""
@@ -195,23 +204,25 @@ def _get_nets(interface) -> Dict[str, Any]:
     if result.get("success"):
         nets = result.get("nets", [])
         return {
-            "contents": [{
-                "uri": "kicad://project/current/nets",
-                "mimeType": "application/json",
-                "text": json.dumps({
-                    "count": len(nets),
-                    "nets": nets
-                }, indent=2)
-            }]
+            "contents": [
+                {
+                    "uri": "kicad://project/current/nets",
+                    "mimeType": "application/json",
+                    "text": json.dumps({"count": len(nets), "nets": nets}, indent=2),
+                }
+            ]
         }
     else:
         return {
-            "contents": [{
-                "uri": "kicad://project/current/nets",
-                "mimeType": "application/json",
-                "text": json.dumps({"count": 0, "nets": []}, indent=2)
-            }]
+            "contents": [
+                {
+                    "uri": "kicad://project/current/nets",
+                    "mimeType": "application/json",
+                    "text": json.dumps({"count": 0, "nets": []}, indent=2),
+                }
+            ]
         }
+
 
 def _get_layers(interface) -> Dict[str, Any]:
     """Get layer stack information"""
@@ -220,23 +231,25 @@ def _get_layers(interface) -> Dict[str, Any]:
     if result.get("success"):
         layers = result.get("layers", [])
         return {
-            "contents": [{
-                "uri": "kicad://project/current/layers",
-                "mimeType": "application/json",
-                "text": json.dumps({
-                    "count": len(layers),
-                    "layers": layers
-                }, indent=2)
-            }]
+            "contents": [
+                {
+                    "uri": "kicad://project/current/layers",
+                    "mimeType": "application/json",
+                    "text": json.dumps({"count": len(layers), "layers": layers}, indent=2),
+                }
+            ]
         }
     else:
         return {
-            "contents": [{
-                "uri": "kicad://project/current/layers",
-                "mimeType": "application/json",
-                "text": json.dumps({"count": 0, "layers": []}, indent=2)
-            }]
+            "contents": [
+                {
+                    "uri": "kicad://project/current/layers",
+                    "mimeType": "application/json",
+                    "text": json.dumps({"count": 0, "layers": []}, indent=2),
+                }
+            ]
         }
+
 
 def _get_design_rules(interface) -> Dict[str, Any]:
     """Get design rule settings"""
@@ -244,20 +257,25 @@ def _get_design_rules(interface) -> Dict[str, Any]:
 
     if result.get("success"):
         return {
-            "contents": [{
-                "uri": "kicad://project/current/design-rules",
-                "mimeType": "application/json",
-                "text": json.dumps(result.get("rules", {}), indent=2)
-            }]
+            "contents": [
+                {
+                    "uri": "kicad://project/current/design-rules",
+                    "mimeType": "application/json",
+                    "text": json.dumps(result.get("rules", {}), indent=2),
+                }
+            ]
         }
     else:
         return {
-            "contents": [{
-                "uri": "kicad://project/current/design-rules",
-                "mimeType": "text/plain",
-                "text": "Design rules not available"
-            }]
+            "contents": [
+                {
+                    "uri": "kicad://project/current/design-rules",
+                    "mimeType": "text/plain",
+                    "text": "Design rules not available",
+                }
+            ]
         }
+
 
 def _get_drc_report(interface) -> Dict[str, Any]:
     """Get DRC violations"""
@@ -266,27 +284,34 @@ def _get_drc_report(interface) -> Dict[str, Any]:
     if result.get("success"):
         violations = result.get("violations", [])
         return {
-            "contents": [{
-                "uri": "kicad://project/current/drc-report",
-                "mimeType": "application/json",
-                "text": json.dumps({
-                    "count": len(violations),
-                    "violations": violations
-                }, indent=2)
-            }]
+            "contents": [
+                {
+                    "uri": "kicad://project/current/drc-report",
+                    "mimeType": "application/json",
+                    "text": json.dumps(
+                        {"count": len(violations), "violations": violations}, indent=2
+                    ),
+                }
+            ]
         }
     else:
         return {
-            "contents": [{
-                "uri": "kicad://project/current/drc-report",
-                "mimeType": "application/json",
-                "text": json.dumps({
-                    "count": 0,
-                    "violations": [],
-                    "message": "Run DRC first to get violations"
-                }, indent=2)
-            }]
+            "contents": [
+                {
+                    "uri": "kicad://project/current/drc-report",
+                    "mimeType": "application/json",
+                    "text": json.dumps(
+                        {
+                            "count": 0,
+                            "violations": [],
+                            "message": "Run DRC first to get violations",
+                        },
+                        indent=2,
+                    ),
+                }
+            ]
         }
+
 
 def _get_board_preview(interface) -> Dict[str, Any]:
     """Get board preview as PNG image"""
@@ -296,18 +321,22 @@ def _get_board_preview(interface) -> Dict[str, Any]:
         # Image data should already be base64 encoded
         image_data = result.get("imageData", "")
         return {
-            "contents": [{
-                "uri": "kicad://board/preview.png",
-                "mimeType": "image/png",
-                "blob": image_data  # Base64 encoded PNG
-            }]
+            "contents": [
+                {
+                    "uri": "kicad://board/preview.png",
+                    "mimeType": "image/png",
+                    "blob": image_data,  # Base64 encoded PNG
+                }
+            ]
         }
     else:
         # Return a placeholder message
         return {
-            "contents": [{
-                "uri": "kicad://board/preview.png",
-                "mimeType": "text/plain",
-                "text": "Board preview not available"
-            }]
+            "contents": [
+                {
+                    "uri": "kicad://board/preview.png",
+                    "mimeType": "text/plain",
+                    "text": "Board preview not available",
+                }
+            ]
         }

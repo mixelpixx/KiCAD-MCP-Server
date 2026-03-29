@@ -1,9 +1,10 @@
-from skip import Schematic
+import logging
 import os
 import uuid
-import logging
 from pathlib import Path
 from typing import Optional
+
+from skip import Schematic
 
 logger = logging.getLogger(__name__)
 
@@ -13,9 +14,7 @@ try:
 
     DYNAMIC_LOADING_AVAILABLE = True
 except ImportError:
-    logger.warning(
-        "Dynamic symbol loader not available - falling back to template-only mode"
-    )
+    logger.warning("Dynamic symbol loader not available - falling back to template-only mode")
     DYNAMIC_LOADING_AVAILABLE = False
 
 
@@ -135,32 +134,22 @@ class ComponentManager:
 
         # Check if schematic path is available
         if schematic_path is None:
-            logger.warning(
-                "Dynamic loading requires schematic file path but none was provided"
-            )
+            logger.warning("Dynamic loading requires schematic file path but none was provided")
             fallback = cls.TEMPLATE_MAP.get(comp_type, "_TEMPLATE_R")
             return (fallback, False)
 
         # Determine library name
         if library is None:
             # Default library for common component types
-            library = (
-                "Device"  # Most passives and basic components are in Device library
-            )
+            library = "Device"  # Most passives and basic components are in Device library
 
         try:
-            logger.info(
-                f"Attempting dynamic load: {library}:{comp_type} from {schematic_path}"
-            )
+            logger.info(f"Attempting dynamic load: {library}:{comp_type} from {schematic_path}")
 
             # Use dynamic symbol loader to inject symbol and create template
-            template_ref = loader.load_symbol_dynamically(
-                schematic_path, library, comp_type
-            )
+            template_ref = loader.load_symbol_dynamically(schematic_path, library, comp_type)
 
-            logger.info(
-                f"Successfully loaded symbol dynamically. Template ref: {template_ref}"
-            )
+            logger.info(f"Successfully loaded symbol dynamically. Template ref: {template_ref}")
             # Signal that schematic needs reload to see new template
             return (template_ref, True)
 
@@ -198,9 +187,7 @@ class ComponentManager:
 
             # Get component type and determine template
             comp_type = component_def.get("type", "R")
-            library = component_def.get(
-                "library", None
-            )  # Optional library specification
+            library = component_def.get("library", None)  # Optional library specification
 
             # Get template reference (static or dynamic)
             template_ref, needs_reload = ComponentManager.get_or_create_template(
@@ -209,9 +196,7 @@ class ComponentManager:
 
             # If dynamic loading occurred, reload schematic to see new template
             if needs_reload and schematic_path:
-                logger.info(
-                    f"Reloading schematic after dynamic loading: {schematic_path}"
-                )
+                logger.info(f"Reloading schematic after dynamic loading: {schematic_path}")
                 schematic = SchematicManager.load_schematic(str(schematic_path))
 
             # Find template symbol by reference (handles special characters like +)
@@ -303,9 +288,7 @@ class ComponentManager:
             return False
 
     @staticmethod
-    def update_component(
-        schematic: Schematic, component_ref: str, new_properties: dict
-    ):
+    def update_component(schematic: Schematic, component_ref: str, new_properties: dict):
         """Update component properties by reference designator"""
         try:
             symbol_to_update = None
@@ -368,9 +351,9 @@ class ComponentManager:
 
 if __name__ == "__main__":
     # Example Usage (for testing)
-    from schematic import (
+    from schematic import (  # Assuming schematic.py is in the same directory
         SchematicManager,
-    )  # Assuming schematic.py is in the same directory
+    )
 
     # Create a new schematic
     test_sch = SchematicManager.create_schematic("ComponentTestSchematic")
@@ -401,19 +384,13 @@ if __name__ == "__main__":
     # Get a component
     retrieved_comp = ComponentManager.get_component(test_sch, "C1")
     if retrieved_comp:
-        print(
-            f"Retrieved component: {retrieved_comp.reference} ({retrieved_comp.value})"
-        )
+        print(f"Retrieved component: {retrieved_comp.reference} ({retrieved_comp.value})")
 
     # Update a component
-    ComponentManager.update_component(
-        test_sch, "R1", {"value": "20k", "Tolerance": "5%"}
-    )
+    ComponentManager.update_component(test_sch, "R1", {"value": "20k", "Tolerance": "5%"})
 
     # Search components
-    matching_comps = ComponentManager.search_components(
-        test_sch, "100"
-    )  # Search by position
+    matching_comps = ComponentManager.search_components(test_sch, "100")  # Search by position
     print(f"Search results for '100': {[c.reference for c in matching_comps]}")
 
     # Get all components
@@ -423,9 +400,7 @@ if __name__ == "__main__":
     # Remove a component
     ComponentManager.remove_component(test_sch, "D1")
     all_comps_after_remove = ComponentManager.get_all_components(test_sch)
-    print(
-        f"Components after removing D1: {[c.reference for c in all_comps_after_remove]}"
-    )
+    print(f"Components after removing D1: {[c.reference for c in all_comps_after_remove]}")
 
     # Save the schematic (optional)
     # SchematicManager.save_schematic(test_sch, "component_test.kicad_sch")

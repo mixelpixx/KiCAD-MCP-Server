@@ -7,16 +7,17 @@ and KiCAD's Python API (pcbnew). It receives commands via stdin as
 JSON and returns responses via stdout also as JSON.
 """
 
-import sys
 import json
-import traceback
 import logging
 import os
-from typing import Dict, Any, Optional
+import sys
+import traceback
+from typing import Any, Dict, Optional
+
+from resources.resource_definitions import RESOURCE_DEFINITIONS, handle_resource_read
 
 # Import tool schemas and resource definitions
 from schemas.tool_schemas import TOOL_SCHEMAS
-from resources.resource_definitions import RESOURCE_DEFINITIONS, handle_resource_read
 
 # Configure logging
 log_dir = os.path.join(os.path.expanduser("~"), ".kicad-mcp", "logs")
@@ -52,9 +53,7 @@ if sys.platform == "win32":
             # List versions
             try:
                 versions = [
-                    d
-                    for d in os.listdir(base_path)
-                    if os.path.isdir(os.path.join(base_path, d))
+                    d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))
                 ]
                 logger.info(f"  Versions found: {', '.join(versions)}")
                 for version in versions:
@@ -82,9 +81,10 @@ utils_dir = os.path.join(os.path.dirname(__file__))
 if utils_dir not in sys.path:
     sys.path.insert(0, utils_dir)
 
+from utils.kicad_process import KiCADProcessManager, check_and_launch_kicad
+
 # Import platform helper and add KiCAD paths
 from utils.platform_helper import PlatformHelper
-from utils.kicad_process import check_and_launch_kicad, KiCADProcessManager
 
 logger.info(f"Detecting KiCAD Python paths for {PlatformHelper.get_platform_name()}...")
 paths_added = PlatformHelper.add_kicad_to_python_path()
@@ -92,9 +92,7 @@ paths_added = PlatformHelper.add_kicad_to_python_path()
 if paths_added:
     logger.info("Successfully added KiCAD Python paths to sys.path")
 else:
-    logger.warning(
-        "No KiCAD Python paths found - attempting to import pcbnew from system path"
-    )
+    logger.warning("No KiCAD Python paths found - attempting to import pcbnew from system path")
 
 logger.info(f"Current Python path: {sys.path}")
 
@@ -206,27 +204,27 @@ elif KICAD_BACKEND == "ipc" and not USE_IPC_BACKEND:
 # Import command handlers
 try:
     logger.info("Importing command handlers...")
-    from commands.project import ProjectCommands
     from commands.board import BoardCommands
     from commands.component import ComponentCommands
-    from commands.routing import RoutingCommands
-    from commands.design_rules import DesignRuleCommands
-    from commands.export import ExportCommands
-    from commands.schematic import SchematicManager
     from commands.component_schematic import ComponentManager
     from commands.connection_schematic import ConnectionManager
-    from commands.library_schematic import LibraryManager as SchematicLibraryManager
-    from commands.library import (
-        LibraryManager as FootprintLibraryManager,
-        LibraryCommands,
-    )
-    from commands.library_symbol import SymbolLibraryManager, SymbolLibraryCommands
+    from commands.datasheet_manager import DatasheetManager
+    from commands.design_rules import DesignRuleCommands
+    from commands.export import ExportCommands
+    from commands.footprint import FootprintCreator
+    from commands.freerouting import FreeroutingCommands
     from commands.jlcpcb import JLCPCBClient, test_jlcpcb_connection
     from commands.jlcpcb_parts import JLCPCBPartsManager
-    from commands.datasheet_manager import DatasheetManager
-    from commands.footprint import FootprintCreator
+    from commands.library import (
+        LibraryCommands,
+    )
+    from commands.library import LibraryManager as FootprintLibraryManager
+    from commands.library_schematic import LibraryManager as SchematicLibraryManager
+    from commands.library_symbol import SymbolLibraryCommands, SymbolLibraryManager
+    from commands.project import ProjectCommands
+    from commands.routing import RoutingCommands
+    from commands.schematic import SchematicManager
     from commands.symbol_creator import SymbolCreator
-    from commands.freerouting import FreeroutingCommands
 
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
@@ -434,9 +432,7 @@ class KiCADInterface:
             "check_freerouting": self.freerouting_commands.check_freerouting,
         }
 
-        logger.info(
-            f"KiCAD interface initialized (backend: {'IPC' if self.use_ipc else 'SWIG'})"
-        )
+        logger.info(f"KiCAD interface initialized (backend: {'IPC' if self.use_ipc else 'SWIG'})")
 
     # Commands that can be handled via IPC for real-time updates
     IPC_CAPABLE_COMMANDS = {
@@ -475,11 +471,7 @@ class KiCADInterface:
 
         try:
             # Check if we can use IPC for this command (real-time UI sync)
-            if (
-                self.use_ipc
-                and self.ipc_board_api
-                and command in self.IPC_CAPABLE_COMMANDS
-            ):
+            if self.use_ipc and self.ipc_board_api and command in self.IPC_CAPABLE_COMMANDS:
                 ipc_handler_name = self.IPC_CAPABLE_COMMANDS[command]
                 ipc_handler = getattr(self, ipc_handler_name, None)
 
@@ -602,9 +594,7 @@ class KiCADInterface:
             # - TypeScript tools use: name, path
             # - Python schema uses: filename, title
             # - Legacy uses: projectName, path, metadata
-            project_name = (
-                params.get("projectName") or params.get("name") or params.get("title")
-            )
+            project_name = params.get("projectName") or params.get("name") or params.get("title")
 
             # Handle filename parameter - it may contain full path
             filename = params.get("filename")
@@ -665,13 +655,9 @@ class KiCADInterface:
         board_path = params.get("boardPath")
         if board_path:
             board_path_norm = str(Path(board_path).resolve())
-            current_board_file = (
-                str(Path(self.board.GetFileName()).resolve()) if self.board else ""
-            )
+            current_board_file = str(Path(self.board.GetFileName()).resolve()) if self.board else ""
             if board_path_norm != current_board_file:
-                logger.info(
-                    f"boardPath differs from current board — reloading: {board_path}"
-                )
+                logger.info(f"boardPath differs from current board — reloading: {board_path}")
                 try:
                     self.board = pcbnew.LoadBoard(board_path)
                     self._update_command_handlers()
@@ -689,9 +675,7 @@ class KiCADInterface:
                 self._current_project_path = project_path
                 local_lib = FootprintLibraryManager(project_path=project_path)
                 self.component_commands = ComponentCommands(self.board, local_lib)
-                logger.info(
-                    f"Reloaded FootprintLibraryManager with project_path={project_path}"
-                )
+                logger.info(f"Reloaded FootprintLibraryManager with project_path={project_path}")
 
         return self.component_commands.place_component(params)
 
@@ -700,6 +684,7 @@ class KiCADInterface:
         logger.info("Adding component to schematic")
         try:
             from pathlib import Path
+
             from commands.dynamic_symbol_loader import DynamicSymbolLoader
 
             schematic_path = params.get("schematicPath")
@@ -751,8 +736,8 @@ class KiCADInterface:
         """Remove a placed symbol from a schematic using text-based manipulation (no skip writes)"""
         logger.info("Deleting schematic component")
         try:
-            from pathlib import Path
             import re
+            from pathlib import Path
 
             schematic_path = params.get("schematicPath")
             reference = params.get("reference")
@@ -788,9 +773,7 @@ class KiCADInterface:
 
             # Skip lib_symbols section
             lib_sym_pos = content.find("(lib_symbols")
-            lib_sym_end = (
-                find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
-            )
+            lib_sym_end = find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
 
             # Find ALL placed symbol blocks matching the reference (handles duplicates).
             # Use content-string search so multi-line KiCAD format is handled correctly:
@@ -840,9 +823,7 @@ class KiCADInterface:
                 f.write(content)
 
             deleted_count = len(blocks_to_delete)
-            logger.info(
-                f"Deleted {deleted_count} instance(s) of {reference} from {sch_file.name}"
-            )
+            logger.info(f"Deleted {deleted_count} instance(s) of {reference} from {sch_file.name}")
             return {
                 "success": True,
                 "reference": reference,
@@ -863,8 +844,8 @@ class KiCADInterface:
         """
         logger.info("Editing schematic component")
         try:
-            from pathlib import Path
             import re
+            from pathlib import Path
 
             schematic_path = params.get("schematicPath")
             reference = params.get("reference")
@@ -918,9 +899,7 @@ class KiCADInterface:
 
             # Skip lib_symbols section
             lib_sym_pos = content.find("(lib_symbols")
-            lib_sym_end = (
-                find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
-            )
+            lib_sym_end = find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
 
             # Find placed symbol blocks that match the reference
             # Search for (symbol (lib_id "...") ... (property "Reference" "<ref>" ...) ...)
@@ -1016,8 +995,8 @@ class KiCADInterface:
         """Return full component info: position and all field values with their (at x y angle) positions."""
         logger.info("Getting schematic component info")
         try:
-            from pathlib import Path
             import re
+            from pathlib import Path
 
             schematic_path = params.get("schematicPath")
             reference = params.get("reference")
@@ -1052,9 +1031,7 @@ class KiCADInterface:
 
             # Skip lib_symbols section
             lib_sym_pos = content.find("(lib_symbols")
-            lib_sym_end = (
-                find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
-            )
+            lib_sym_end = find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
 
             # Find the placed symbol block for this reference
             block_start = block_end = None
@@ -1142,6 +1119,7 @@ class KiCADInterface:
         logger.info("Adding wire to schematic")
         try:
             from pathlib import Path
+
             from commands.wire_manager import WireManager
 
             schematic_path = params.get("schematicPath")
@@ -1215,9 +1193,7 @@ class KiCADInterface:
                 match = find_nearest_pin(points[-1], snap_tolerance)
                 if match:
                     ref, pin_num, coords = match
-                    logger.info(
-                        f"Snapped end point {points[-1]} -> {coords} (pin {ref}/{pin_num})"
-                    )
+                    logger.info(f"Snapped end point {points[-1]} -> {coords} (pin {ref}/{pin_num})")
                     snapped_info.append(
                         f"end snapped to {ref}/{pin_num} at [{coords[0]}, {coords[1]}]"
                     )
@@ -1267,6 +1243,7 @@ class KiCADInterface:
         logger.info("Adding junction to schematic")
         try:
             from pathlib import Path
+
             from commands.wire_manager import WireManager
 
             schematic_path = params.get("schematicPath")
@@ -1312,9 +1289,7 @@ class KiCADInterface:
 
     def _handle_create_footprint(self, params):
         """Create a new .kicad_mod footprint file in a .pretty library."""
-        logger.info(
-            f"create_footprint: {params.get('name')} in {params.get('libraryPath')}"
-        )
+        logger.info(f"create_footprint: {params.get('name')} in {params.get('libraryPath')}")
         try:
             creator = FootprintCreator()
             return creator.create_footprint(
@@ -1358,9 +1333,7 @@ class KiCADInterface:
         logger.info("list_footprint_libraries")
         try:
             creator = FootprintCreator()
-            return creator.list_footprint_libraries(
-                search_paths=params.get("searchPaths")
-            )
+            return creator.list_footprint_libraries(search_paths=params.get("searchPaths"))
         except Exception as e:
             logger.error(f"list_footprint_libraries error: {e}")
             return {"success": False, "error": str(e)}
@@ -1387,9 +1360,7 @@ class KiCADInterface:
 
     def _handle_create_symbol(self, params):
         """Create a new symbol in a .kicad_sym library."""
-        logger.info(
-            f"create_symbol: {params.get('name')} in {params.get('libraryPath')}"
-        )
+        logger.info(f"create_symbol: {params.get('name')} in {params.get('libraryPath')}")
         try:
             creator = SymbolCreator()
             return creator.create_symbol(
@@ -1413,9 +1384,7 @@ class KiCADInterface:
 
     def _handle_delete_symbol(self, params):
         """Delete a symbol from a .kicad_sym library."""
-        logger.info(
-            f"delete_symbol: {params.get('name')} from {params.get('libraryPath')}"
-        )
+        logger.info(f"delete_symbol: {params.get('name')} from {params.get('libraryPath')}")
         try:
             creator = SymbolCreator()
             return creator.delete_symbol(
@@ -1508,6 +1477,7 @@ class KiCADInterface:
         logger.info("Adding net label to schematic")
         try:
             from pathlib import Path
+
             from commands.wire_manager import WireManager
 
             schematic_path = params.get("schematicPath")
@@ -1627,6 +1597,7 @@ class KiCADInterface:
         logger.info("Getting schematic pin locations")
         try:
             from pathlib import Path
+
             from commands.pin_locator import PinLocator
 
             schematic_path = params.get("schematicPath")
@@ -1663,8 +1634,7 @@ class KiCADInterface:
                 if pin_num in pins_def:
                     entry["name"] = pins_def[pin_num].get("name", pin_num)
                     entry["angle"] = (
-                        locator.get_pin_angle(Path(schematic_path), reference, pin_num)
-                        or 0
+                        locator.get_pin_angle(Path(schematic_path), reference, pin_num) or 0
                     )
                 result[pin_num] = entry
 
@@ -1680,9 +1650,9 @@ class KiCADInterface:
     def _handle_get_schematic_view(self, params):
         """Get a rasterised image of the schematic (SVG export → optional PNG conversion)"""
         logger.info("Getting schematic view")
+        import base64
         import subprocess
         import tempfile
-        import base64
 
         try:
             schematic_path = params.get("schematicPath")
@@ -1747,9 +1717,7 @@ class KiCADInterface:
                         "message": "cairosvg not installed — returning SVG instead of PNG. Install with: pip install cairosvg",
                     }
 
-                png_data = svg2png(
-                    url=svg_path, output_width=width, output_height=height
-                )
+                png_data = svg2png(url=svg_path, output_width=width, output_height=height)
 
                 return {
                     "success": True,
@@ -1773,6 +1741,7 @@ class KiCADInterface:
         logger.info("Listing schematic components")
         try:
             from pathlib import Path
+
             from commands.pin_locator import PinLocator
 
             schematic_path = params.get("schematicPath")
@@ -1814,15 +1783,9 @@ class KiCADInterface:
                 if ref_prefix_filter and not ref.startswith(ref_prefix_filter):
                     continue
 
-                value = (
-                    symbol.property.Value.value
-                    if hasattr(symbol.property, "Value")
-                    else ""
-                )
+                value = symbol.property.Value.value if hasattr(symbol.property, "Value") else ""
                 footprint = (
-                    symbol.property.Footprint.value
-                    if hasattr(symbol.property, "Footprint")
-                    else ""
+                    symbol.property.Footprint.value if hasattr(symbol.property, "Footprint") else ""
                 )
                 position = symbol.at.value if hasattr(symbol, "at") else [0, 0, 0]
                 uuid_val = symbol.uuid.value if hasattr(symbol, "uuid") else ""
@@ -1849,9 +1812,7 @@ class KiCADInterface:
                                 "position": {"x": coords[0], "y": coords[1]},
                             }
                             if pin_num in pins_def:
-                                pin_info["name"] = pins_def[pin_num].get(
-                                    "name", pin_num
-                                )
+                                pin_info["name"] = pins_def[pin_num].get("name", pin_num)
                             pin_list.append(pin_info)
                         comp["pins"] = pin_list
                 except Exception:
@@ -2016,9 +1977,7 @@ class KiCADInterface:
                     if not ref.startswith("#PWR"):
                         continue
                     value = (
-                        symbol.property.Value.value
-                        if hasattr(symbol.property, "Value")
-                        else ref
+                        symbol.property.Value.value if hasattr(symbol.property, "Value") else ref
                     )
                     pos = symbol.at.value if hasattr(symbol, "at") else [0, 0, 0]
                     labels.append(
@@ -2234,14 +2193,13 @@ class KiCADInterface:
                 return {"success": False, "message": "schematicPath is required"}
 
             from pathlib import Path
+
             from commands.wire_manager import WireManager
 
             start_point = [start.get("x", 0), start.get("y", 0)]
             end_point = [end.get("x", 0), end.get("y", 0)]
 
-            deleted = WireManager.delete_wire(
-                Path(schematic_path), start_point, end_point
-            )
+            deleted = WireManager.delete_wire(Path(schematic_path), start_point, end_point)
             if deleted:
                 return {"success": True}
             else:
@@ -2269,6 +2227,7 @@ class KiCADInterface:
                 }
 
             from pathlib import Path
+
             from commands.wire_manager import WireManager
 
             pos_list = None
@@ -2291,9 +2250,9 @@ class KiCADInterface:
     def _handle_export_schematic_svg(self, params):
         """Export schematic to SVG using kicad-cli"""
         logger.info("Exporting schematic SVG")
-        import subprocess
         import glob
         import shutil
+        import subprocess
 
         try:
             schematic_path = params.get("schematicPath")
@@ -2432,9 +2391,9 @@ class KiCADInterface:
     def _handle_run_erc(self, params):
         """Run Electrical Rules Check on a schematic via kicad-cli"""
         logger.info("Running ERC on schematic")
+        import os
         import subprocess
         import tempfile
-        import os
 
         try:
             schematic_path = params.get("schematicPath")
@@ -2453,9 +2412,7 @@ class KiCADInterface:
                     "errorDetails": "Install KiCAD 8.0+ or add kicad-cli to PATH.",
                 }
 
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".json", delete=False
-            ) as tmp:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
                 json_output = tmp.name
 
             try:
@@ -2471,9 +2428,7 @@ class KiCADInterface:
                 ]
                 logger.info(f"Running ERC command: {' '.join(cmd)}")
 
-                result = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=120
-                )
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
                 if result.returncode != 0:
                     logger.error(f"ERC command failed: {result.stderr}")
@@ -2542,9 +2497,7 @@ class KiCADInterface:
             if not schematic:
                 return {"success": False, "message": "Failed to load schematic"}
 
-            netlist = ConnectionManager.generate_netlist(
-                schematic, schematic_path=schematic_path
-            )
+            netlist = ConnectionManager.generate_netlist(schematic, schematic_path=schematic_path)
             return {"success": True, "netlist": netlist}
         except Exception as e:
             logger.error(f"Error generating netlist: {str(e)}")
@@ -2599,9 +2552,7 @@ class KiCADInterface:
             if not schematic:
                 return {"success": False, "message": "Failed to load schematic"}
 
-            netlist = ConnectionManager.generate_netlist(
-                schematic, schematic_path=schematic_path
-            )
+            netlist = ConnectionManager.generate_netlist(schematic, schematic_path=schematic_path)
 
             # Build (reference, pad_number) -> net_name map
             pad_net_map = {}  # {(ref, pin_str): net_name}
@@ -2678,10 +2629,10 @@ class KiCADInterface:
     def _handle_get_schematic_view_region(self, params):
         """Export a cropped region of the schematic as an image"""
         logger.info("Exporting schematic view region")
+        import base64
+        import os
         import subprocess
         import tempfile
-        import os
-        import base64
 
         try:
             schematic_path = params.get("schematicPath")
@@ -2795,6 +2746,7 @@ class KiCADInterface:
         logger.info("Finding overlapping elements in schematic")
         try:
             from pathlib import Path
+
             from commands.schematic_analysis import find_overlapping_elements
 
             schematic_path = params.get("schematicPath")
@@ -2820,6 +2772,7 @@ class KiCADInterface:
         logger.info("Getting elements in schematic region")
         try:
             from pathlib import Path
+
             from commands.schematic_analysis import get_elements_in_region
 
             schematic_path = params.get("schematicPath")
@@ -2849,6 +2802,7 @@ class KiCADInterface:
         logger.info("Finding wires crossing symbols in schematic")
         try:
             from pathlib import Path
+
             from commands.schematic_analysis import find_wires_crossing_symbols
 
             schematic_path = params.get("schematicPath")
@@ -2890,9 +2844,7 @@ class KiCADInterface:
                     "message": "Missing required parameters: pcbPath, svgPath",
                 }
 
-            result = import_svg_to_pcb(
-                pcb_path, svg_path, x, y, width, layer, stroke_width, filled
-            )
+            result = import_svg_to_pcb(pcb_path, svg_path, x, y, width, layer, stroke_width, filled)
 
             # import_svg_to_pcb writes gr_poly entries directly to the .kicad_pcb file,
             # bypassing the pcbnew in-memory board object.  Any subsequent board.Save()
@@ -2950,9 +2902,7 @@ class KiCADInterface:
 
             prompt_file = None
             if prompt_text:
-                prompt_filename = (
-                    f"PROMPT_step{step}_{ts}.md" if step else f"PROMPT_{ts}.md"
-                )
+                prompt_filename = f"PROMPT_step{step}_{ts}.md" if step else f"PROMPT_{ts}.md"
                 prompt_file = logs_dir / prompt_filename
                 prompt_file.write_text(prompt_text, encoding="utf-8")
                 logger.info(f"Prompt saved: {prompt_file}")
@@ -2962,9 +2912,7 @@ class KiCADInterface:
 
             system = platform.system()
             if system == "Windows":
-                mcp_log_dir = os.path.join(
-                    os.environ.get("APPDATA", ""), "Claude", "logs"
-                )
+                mcp_log_dir = os.path.join(os.environ.get("APPDATA", ""), "Claude", "logs")
             elif system == "Darwin":
                 mcp_log_dir = os.path.expanduser("~/Library/Logs/Claude")
             else:
@@ -2979,15 +2927,11 @@ class KiCADInterface:
                     if "Initializing server" in line:
                         session_start = i
                 session_lines = all_lines[session_start:]
-                log_filename = (
-                    f"mcp_log_step{step}_{ts}.txt" if step else f"mcp_log_{ts}.txt"
-                )
+                log_filename = f"mcp_log_step{step}_{ts}.txt" if step else f"mcp_log_{ts}.txt"
                 mcp_log_dest = logs_dir / log_filename
                 with open(mcp_log_dest, "w", encoding="utf-8") as f:
                     f.writelines(session_lines)
-                logger.info(
-                    f"MCP session log saved: {mcp_log_dest} ({len(session_lines)} lines)"
-                )
+                logger.info(f"MCP session log saved: {mcp_log_dest} ({len(session_lines)} lines)")
 
             base_name = Path(project_dir).name
             suffix_parts = [p for p in [f"step{step}" if step else "", label, ts] if p]
@@ -2996,9 +2940,7 @@ class KiCADInterface:
             snapshots_base.mkdir(exist_ok=True)
             snapshot_dir = str(snapshots_base / snapshot_name)
 
-            shutil.copytree(
-                project_dir, snapshot_dir, ignore=shutil.ignore_patterns("snapshots")
-            )
+            shutil.copytree(project_dir, snapshot_dir, ignore=shutil.ignore_patterns("snapshots"))
             logger.info(f"Project snapshot saved: {snapshot_dir}")
             return {
                 "success": True,
@@ -3077,12 +3019,12 @@ class KiCADInterface:
                 }
             self.board.Save(board_path)
 
-            zone_count = (
-                self.board.GetAreaCount() if hasattr(self.board, "GetAreaCount") else 0
-            )
+            zone_count = self.board.GetAreaCount() if hasattr(self.board, "GetAreaCount") else 0
 
             # Run pcbnew zone fill in an isolated subprocess to prevent crashes
-            import subprocess, sys, textwrap
+            import subprocess
+            import sys
+            import textwrap
 
             script = textwrap.dedent(f"""
 import pcbnew, sys
@@ -3117,11 +3059,7 @@ print("ok")
                         "success": False,
                         "message": "Zone fill failed in subprocess — zones are defined and will fill when opened in KiCAD (press B). Continuing is safe.",
                         "zoneCount": zone_count,
-                        "details": (
-                            result.stderr[:300]
-                            if result.stderr
-                            else result.stdout[:300]
-                        ),
+                        "details": (result.stderr[:300] if result.stderr else result.stdout[:300]),
                     }
             except subprocess.TimeoutExpired:
                 logger.warning("Zone fill subprocess timed out after 60s")
@@ -3151,16 +3089,8 @@ print("ok")
             net = params.get("net")
 
             # Handle both dict format and direct x/y
-            start_x = (
-                start.get("x", 0)
-                if isinstance(start, dict)
-                else params.get("startX", 0)
-            )
-            start_y = (
-                start.get("y", 0)
-                if isinstance(start, dict)
-                else params.get("startY", 0)
-            )
+            start_x = start.get("x", 0) if isinstance(start, dict) else params.get("startX", 0)
+            start_y = start.get("y", 0) if isinstance(start, dict) else params.get("startY", 0)
             end_x = end.get("x", 0) if isinstance(end, dict) else params.get("endX", 0)
             end_y = end.get("y", 0) if isinstance(end, dict) else params.get("endY", 0)
 
@@ -3177,9 +3107,7 @@ print("ok")
             return {
                 "success": success,
                 "message": (
-                    "Added trace (visible in KiCAD UI)"
-                    if success
-                    else "Failed to add trace"
+                    "Added trace (visible in KiCAD UI)" if success else "Failed to add trace"
                 ),
                 "trace": {
                     "start": {"x": start_x, "y": start_y, "unit": "mm"},
@@ -3197,16 +3125,8 @@ print("ok")
         """IPC handler for add_via - adds via with real-time UI update"""
         try:
             position = params.get("position", {})
-            x = (
-                position.get("x", 0)
-                if isinstance(position, dict)
-                else params.get("x", 0)
-            )
-            y = (
-                position.get("y", 0)
-                if isinstance(position, dict)
-                else params.get("y", 0)
-            )
+            x = position.get("x", 0) if isinstance(position, dict) else params.get("x", 0)
+            y = position.get("y", 0) if isinstance(position, dict) else params.get("y", 0)
 
             size = params.get("size", 0.8)
             drill = params.get("drill", 0.4)
@@ -3220,11 +3140,7 @@ print("ok")
 
             return {
                 "success": success,
-                "message": (
-                    "Added via (visible in KiCAD UI)"
-                    if success
-                    else "Failed to add via"
-                ),
+                "message": ("Added via (visible in KiCAD UI)" if success else "Failed to add via"),
                 "via": {
                     "position": {"x": x, "y": y, "unit": "mm"},
                     "size": size,
@@ -3271,9 +3187,7 @@ print("ok")
             # Convert points format if needed (handle both {x, y} and {x, y, unit})
             formatted_points = []
             for point in points:
-                formatted_points.append(
-                    {"x": point.get("x", 0), "y": point.get("y", 0)}
-                )
+                formatted_points.append({"x": point.get("x", 0), "y": point.get("y", 0)})
 
             success = self.ipc_board_api.add_zone(
                 points=formatted_points,
@@ -3315,9 +3229,7 @@ print("ok")
             return {
                 "success": success,
                 "message": (
-                    "Zones refilled (visible in KiCAD UI)"
-                    if success
-                    else "Failed to refill zones"
+                    "Zones refilled (visible in KiCAD UI)" if success else "Failed to refill zones"
                 ),
             }
         except Exception as e:
@@ -3329,16 +3241,8 @@ print("ok")
         try:
             text = params.get("text", "")
             position = params.get("position", {})
-            x = (
-                position.get("x", 0)
-                if isinstance(position, dict)
-                else params.get("x", 0)
-            )
-            y = (
-                position.get("y", 0)
-                if isinstance(position, dict)
-                else params.get("y", 0)
-            )
+            x = position.get("x", 0) if isinstance(position, dict) else params.get("x", 0)
+            y = position.get("y", 0) if isinstance(position, dict) else params.get("y", 0)
             layer = params.get("layer", "F.SilkS")
             size = params.get("size", 1.0)
             rotation = params.get("rotation", 0)
@@ -3412,16 +3316,8 @@ print("ok")
             reference = params.get("reference", params.get("componentId", ""))
             footprint = params.get("footprint", "")
             position = params.get("position", {})
-            x = (
-                position.get("x", 0)
-                if isinstance(position, dict)
-                else params.get("x", 0)
-            )
-            y = (
-                position.get("y", 0)
-                if isinstance(position, dict)
-                else params.get("y", 0)
-            )
+            x = position.get("x", 0) if isinstance(position, dict) else params.get("x", 0)
+            y = position.get("y", 0) if isinstance(position, dict) else params.get("y", 0)
             rotation = params.get("rotation", 0)
             layer = params.get("layer", "F.Cu")
             value = params.get("value", "")
@@ -3460,16 +3356,8 @@ print("ok")
         try:
             reference = params.get("reference", params.get("componentId", ""))
             position = params.get("position", {})
-            x = (
-                position.get("x", 0)
-                if isinstance(position, dict)
-                else params.get("x", 0)
-            )
-            y = (
-                position.get("y", 0)
-                if isinstance(position, dict)
-                else params.get("y", 0)
-            )
+            x = position.get("x", 0) if isinstance(position, dict) else params.get("x", 0)
+            y = position.get("y", 0) if isinstance(position, dict) else params.get("y", 0)
             rotation = params.get("rotation")
 
             success = self.ipc_board_api.move_component(
@@ -3534,9 +3422,7 @@ print("ok")
         """IPC handler for delete_trace - Note: IPC doesn't support direct trace deletion yet"""
         # IPC API doesn't have a direct delete track method
         # Fall back to SWIG for this operation
-        logger.info(
-            "delete_trace: Falling back to SWIG (IPC doesn't support trace deletion)"
-        )
+        logger.info("delete_trace: Falling back to SWIG (IPC doesn't support trace deletion)")
         return self.routing_commands.delete_trace(params)
 
     def _ipc_get_nets_list(self, params):
@@ -3566,8 +3452,8 @@ print("ok")
         try:
             from kipy.board_types import BoardSegment
             from kipy.geometry import Vector2
-            from kipy.util.units import from_mm
             from kipy.proto.board.board_types_pb2 import BoardLayer
+            from kipy.util.units import from_mm
 
             board = self.ipc_board_api._get_board()
 
@@ -3594,9 +3480,7 @@ print("ok")
                 segment.start = Vector2.from_xy(
                     from_mm(start.get("x", 0)), from_mm(start.get("y", 0))
                 )
-                segment.end = Vector2.from_xy(
-                    from_mm(end.get("x", 0)), from_mm(end.get("y", 0))
-                )
+                segment.end = Vector2.from_xy(from_mm(end.get("x", 0)), from_mm(end.get("y", 0)))
                 segment.layer = BoardLayer.BL_Edge_Cuts
                 segment.attributes.stroke.width = from_mm(width)
 
@@ -3619,8 +3503,8 @@ print("ok")
         try:
             from kipy.board_types import BoardCircle
             from kipy.geometry import Vector2
-            from kipy.util.units import from_mm
             from kipy.proto.board.board_types_pb2 import BoardLayer
+            from kipy.util.units import from_mm
 
             board = self.ipc_board_api._get_board()
 
@@ -3731,9 +3615,7 @@ print("ok")
             "success": True,
             "backend": "ipc" if self.use_ipc else "swig",
             "realtime_sync": self.use_ipc,
-            "ipc_connected": (
-                self.ipc_backend.is_connected() if self.ipc_backend else False
-            ),
+            "ipc_connected": (self.ipc_backend.is_connected() if self.ipc_backend else False),
             "version": self.ipc_backend.get_version() if self.ipc_backend else "N/A",
             "message": (
                 "Using IPC backend with real-time UI sync"
@@ -3760,9 +3642,7 @@ print("ok")
             return {
                 "success": success,
                 "message": (
-                    "Track added (visible in KiCAD UI)"
-                    if success
-                    else "Failed to add track"
+                    "Track added (visible in KiCAD UI)" if success else "Failed to add track"
                 ),
                 "realtime": True,
             }
@@ -3786,11 +3666,7 @@ print("ok")
             )
             return {
                 "success": success,
-                "message": (
-                    "Via added (visible in KiCAD UI)"
-                    if success
-                    else "Failed to add via"
-                ),
+                "message": ("Via added (visible in KiCAD UI)" if success else "Failed to add via"),
                 "realtime": True,
             }
         except Exception as e:
@@ -3814,9 +3690,7 @@ print("ok")
             return {
                 "success": success,
                 "message": (
-                    "Text added (visible in KiCAD UI)"
-                    if success
-                    else "Failed to add text"
+                    "Text added (visible in KiCAD UI)" if success else "Failed to add text"
                 ),
                 "realtime": True,
             }
@@ -3979,9 +3853,7 @@ print("ok")
                 return {"success": False, "message": f"Part not found: {lcsc_number}"}
 
             # Get suggested KiCAD footprints
-            footprints = self.jlcpcb_parts.map_package_to_footprint(
-                part.get("package", "")
-            )
+            footprints = self.jlcpcb_parts.map_package_to_footprint(part.get("package", ""))
 
             return {"success": True, "part": part, "footprints": footprints}
 
@@ -4013,9 +3885,7 @@ print("ok")
             reference_price = None
             if original_part and original_part.get("price_breaks"):
                 try:
-                    reference_price = float(
-                        original_part["price_breaks"][0].get("price", 0)
-                    )
+                    reference_price = float(original_part["price_breaks"][0].get("price", 0))
                 except:
                     pass
 
@@ -4141,9 +4011,7 @@ def main():
                                 tools.append(tool_def)
                             else:
                                 # Fallback for tools without schemas
-                                logger.warning(
-                                    f"No schema defined for tool: {cmd_name}"
-                                )
+                                logger.warning(f"No schema defined for tool: {cmd_name}")
                                 tools.append(
                                     {
                                         "name": cmd_name,
@@ -4172,11 +4040,7 @@ def main():
                         response = {
                             "jsonrpc": "2.0",
                             "id": request_id,
-                            "result": {
-                                "content": [
-                                    {"type": "text", "text": json.dumps(result)}
-                                ]
-                            },
+                            "result": {"content": [{"type": "text", "text": json.dumps(result)}]},
                         }
                     elif method == "resources/list":
                         logger.info("Handling MCP resources/list")
@@ -4201,9 +4065,7 @@ def main():
                             }
                         else:
                             # Read the resource
-                            resource_data = handle_resource_read(
-                                resource_uri, interface
-                            )
+                            resource_data = handle_resource_read(resource_uri, interface)
 
                             response = {
                                 "jsonrpc": "2.0",

@@ -3,15 +3,16 @@ KiCAD Process Management Utilities
 
 Detects if KiCAD is running and provides auto-launch functionality.
 """
-import os
-import subprocess
-import logging
-import platform
-import time
+
 import ctypes
+import logging
+import os
+import platform
+import subprocess
+import time
 from ctypes import wintypes
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,9 @@ class KiCADProcessManager:
             try:
                 ulong_ptr = wintypes.ULONG_PTR  # type: ignore[attr-defined]
             except AttributeError:
-                ulong_ptr = ctypes.c_ulonglong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_ulong
+                ulong_ptr = (
+                    ctypes.c_ulonglong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_ulong
+                )
 
             class PROCESSENTRY32W(ctypes.Structure):
                 _fields_ = [
@@ -58,11 +61,13 @@ class KiCADProcessManager:
 
             if Process32FirstW(snapshot, ctypes.byref(entry)):
                 while True:
-                    processes.append({
-                        "pid": str(entry.th32ProcessID),
-                        "name": entry.szExeFile,
-                        "command": entry.szExeFile
-                    })
+                    processes.append(
+                        {
+                            "pid": str(entry.th32ProcessID),
+                            "name": entry.szExeFile,
+                            "command": entry.szExeFile,
+                        }
+                    )
                     if not Process32NextW(snapshot, ctypes.byref(entry)):
                         break
 
@@ -87,27 +92,21 @@ class KiCADProcessManager:
                 # Check for actual pcbnew/kicad binaries (not python scripts)
                 # Use exact process name matching to avoid matching our own kicad_interface.py
                 result = subprocess.run(
-                    ["pgrep", "-x", "pcbnew|kicad"],
-                    capture_output=True,
-                    text=True
+                    ["pgrep", "-x", "pcbnew|kicad"], capture_output=True, text=True
                 )
                 if result.returncode == 0:
                     return True
                 # Also check with -f for full path matching, but exclude our script
                 result = subprocess.run(
-                    ["pgrep", "-f", "/pcbnew|/kicad"],
-                    capture_output=True,
-                    text=True
+                    ["pgrep", "-f", "/pcbnew|/kicad"], capture_output=True, text=True
                 )
                 # Double-check it's not our own process
                 if result.returncode == 0:
-                    pids = result.stdout.strip().split('\n')
+                    pids = result.stdout.strip().split("\n")
                     for pid in pids:
                         try:
                             cmdline = subprocess.run(
-                                ["ps", "-p", pid, "-o", "command="],
-                                capture_output=True,
-                                text=True
+                                ["ps", "-p", pid, "-o", "command="], capture_output=True, text=True
                             )
                             if "kicad_interface.py" not in cmdline.stdout:
                                 return True
@@ -117,9 +116,7 @@ class KiCADProcessManager:
 
             elif system == "Darwin":  # macOS
                 result = subprocess.run(
-                    ["pgrep", "-f", "KiCad|pcbnew"],
-                    capture_output=True,
-                    text=True
+                    ["pgrep", "-f", "KiCad|pcbnew"], capture_output=True, text=True
                 )
                 return result.returncode == 0
 
@@ -157,7 +154,7 @@ class KiCADProcessManager:
                 text=True,
                 encoding="mbcs" if system == "Windows" else None,
                 errors="ignore" if system == "Windows" else None,
-                timeout=5 if system == "Windows" else None
+                timeout=5 if system == "Windows" else None,
             )
             if result.returncode == 0:
                 path = result.stdout.strip().split("\n")[0]
@@ -232,7 +229,7 @@ class KiCADProcessManager:
                     cmd,
                     creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
+                    stderr=subprocess.DEVNULL,
                 )
             else:
                 # Unix: Use nohup or start in background
@@ -240,7 +237,7 @@ class KiCADProcessManager:
                     cmd,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    start_new_session=True
+                    start_new_session=True,
                 )
 
             # Wait for process to start
@@ -275,23 +272,25 @@ class KiCADProcessManager:
 
         try:
             if system in ["Linux", "Darwin"]:
-                result = subprocess.run(
-                    ["ps", "aux"],
-                    capture_output=True,
-                    text=True
-                )
+                result = subprocess.run(["ps", "aux"], capture_output=True, text=True)
                 for line in result.stdout.split("\n"):
                     # Only match actual KiCAD binaries, not our MCP server processes
-                    if ("pcbnew" in line.lower() or "kicad" in line.lower()) and "kicad_interface.py" not in line and "grep" not in line:
+                    if (
+                        ("pcbnew" in line.lower() or "kicad" in line.lower())
+                        and "kicad_interface.py" not in line
+                        and "grep" not in line
+                    ):
                         # More specific check: must have /pcbnew or /kicad in the path
                         if "/pcbnew" in line or "/kicad" in line or "KiCad.app" in line:
                             parts = line.split()
                             if len(parts) >= 11:
-                                processes.append({
-                                    "pid": parts[1],
-                                    "name": parts[10],
-                                    "command": " ".join(parts[10:])
-                                })
+                                processes.append(
+                                    {
+                                        "pid": parts[1],
+                                        "name": parts[10],
+                                        "command": " ".join(parts[10:]),
+                                    }
+                                )
 
             elif system == "Windows":
                 for proc in KiCADProcessManager._windows_list_processes():
@@ -303,6 +302,7 @@ class KiCADProcessManager:
             logger.error(f"Error getting process info: {e}")
 
         return processes
+
 
 def check_and_launch_kicad(project_path: Optional[Path] = None, auto_launch: bool = True) -> dict:
     """
@@ -325,7 +325,7 @@ def check_and_launch_kicad(project_path: Optional[Path] = None, auto_launch: boo
             "running": True,
             "launched": False,
             "processes": processes,
-            "message": "KiCAD is already running"
+            "message": "KiCAD is already running",
         }
 
     if not auto_launch:
@@ -333,7 +333,7 @@ def check_and_launch_kicad(project_path: Optional[Path] = None, auto_launch: boo
             "running": False,
             "launched": False,
             "processes": [],
-            "message": "KiCAD is not running (auto-launch disabled)"
+            "message": "KiCAD is not running (auto-launch disabled)",
         }
 
     # Try to launch
@@ -345,5 +345,5 @@ def check_and_launch_kicad(project_path: Optional[Path] = None, auto_launch: boo
         "launched": success,
         "processes": manager.get_process_info() if success else [],
         "message": "KiCAD launched successfully" if success else "Failed to launch KiCAD",
-        "project": str(project_path) if project_path else None
+        "project": str(project_path) if project_path else None,
     }
