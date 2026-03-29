@@ -418,12 +418,12 @@ if __name__ == "__main__":
     # Test pin location discovery
     import sys
 
-    sys.path.insert(0, "/home/chris/MCP/KiCAD-MCP-Server/python")
-
     from pathlib import Path
     from commands.component_schematic import ComponentManager
     from commands.schematic import SchematicManager
     import shutil
+
+    sys.path.insert(0, str(Path(__file__).parent.parent))
 
     print("=" * 80)
     print("PIN LOCATOR TEST")
@@ -431,8 +431,10 @@ if __name__ == "__main__":
 
     # Create test schematic with components (cross-platform temp directory)
     test_path = Path(tempfile.gettempdir()) / "test_pin_locator.kicad_sch"
-    template_path = Path(
-        "/home/chris/MCP/KiCAD-MCP-Server/python/templates/template_with_symbols_expanded.kicad_sch"
+    template_path = (
+        Path(__file__).parent.parent
+        / "templates"
+        / "template_with_symbols_expanded.kicad_sch"
     )
 
     shutil.copy(template_path, test_path)
