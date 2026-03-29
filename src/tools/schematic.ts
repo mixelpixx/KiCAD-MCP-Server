@@ -717,6 +717,56 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
+  // Move a placed symbol, dragging connected wires
+  server.tool(
+    "move_schematic_component",
+    "Move a placed symbol to a new position in the schematic. By default (preserveWires=true) wire endpoints touching the component's pins are stretched to follow the new position.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      reference: z.string().describe("Reference designator (e.g., R1, U1)"),
+      position: z
+        .object({ x: z.number(), y: z.number() })
+        .describe("New position in schematic mm coordinates"),
+      preserveWires: z
+        .boolean()
+        .optional()
+        .describe("Stretch connected wire endpoints to follow the move (default true)"),
+    },
+    async (args: {
+      schematicPath: string;
+      reference: string;
+      position: { x: number; y: number };
+      preserveWires?: boolean;
+    }) => {
+      const result = await callKicadScript("move_schematic_component", args);
+      if (result.success) {
+        const moved = result.wiresMoved ?? 0;
+        const removed = result.wiresRemoved ?? 0;
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Moved ${args.reference} from (${result.oldPosition.x}, ${result.oldPosition.y}) ` +
+                `to (${result.newPosition.x}, ${result.newPosition.y})` +
+                (moved > 0 ? `, ${moved} wire endpoint(s) updated` : "") +
+                (removed > 0 ? `, ${removed} zero-length wire(s) removed` : ""),
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Failed to move component: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
   // Rotate schematic component
   server.tool(
     "rotate_schematic_component",
@@ -1079,56 +1129,6 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           ],
         };
       }
-    },
-  );
-
-  // Move a placed symbol, dragging connected wires
-  server.tool(
-    "move_schematic_component",
-    "Move a placed symbol to a new position in the schematic. By default (preserveWires=true) wire endpoints touching the component's pins are stretched to follow the new position.",
-    {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      reference: z.string().describe("Reference designator (e.g., R1, U1)"),
-      position: z
-        .object({ x: z.number(), y: z.number() })
-        .describe("New position in schematic mm coordinates"),
-      preserveWires: z
-        .boolean()
-        .optional()
-        .describe("Stretch connected wire endpoints to follow the move (default true)"),
-    },
-    async (args: {
-      schematicPath: string;
-      reference: string;
-      position: { x: number; y: number };
-      preserveWires?: boolean;
-    }) => {
-      const result = await callKicadScript("move_schematic_component", args);
-      if (result.success) {
-        const moved = result.wiresMoved ?? 0;
-        const removed = result.wiresRemoved ?? 0;
-        return {
-          content: [
-            {
-              type: "text",
-              text:
-                `Moved ${args.reference} from (${result.oldPosition.x}, ${result.oldPosition.y}) ` +
-                `to (${result.newPosition.x}, ${result.newPosition.y})` +
-                (moved > 0 ? `, ${moved} wire endpoint(s) updated` : "") +
-                (removed > 0 ? `, ${removed} zero-length wire(s) removed` : ""),
-            },
-          ],
-        };
-      }
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Failed to move component: ${result.message || "Unknown error"}`,
-          },
-        ],
-        isError: true,
-      };
     },
   );
 
