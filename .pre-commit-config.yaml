@@ -44,3 +44,12 @@ repos:
         args: [--config-file=pyproject.toml]
         pass_filenames: false
         additional_dependencies: []
+
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: npx eslint --fix
+        language: node
+        types: [ts]
+        files: ^src/
