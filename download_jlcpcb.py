@@ -9,11 +9,12 @@ The cache.sqlite3 file contains all JLCPCB parts with stock, pricing,
 and category data. We then convert it into the format expected by the
 KiCad MCP server's JLCPCBPartsManager.
 """
-import os
-import sys
-import subprocess
-import sqlite3
+
 import json
+import os
+import sqlite3
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -40,8 +41,7 @@ def download_files():
         url = f"{BASE_URL}/{part}"
         print(f"  Downloading {part}...")
         result = subprocess.run(
-            ["curl", "-L", "-o", str(dest), "--progress-bar", url],
-            capture_output=False
+            ["curl", "-L", "-o", str(dest), "--progress-bar", url], capture_output=False
         )
         if result.returncode != 0:
             print(f"  ERROR downloading {part}")
@@ -62,7 +62,8 @@ def extract_database():
         try:
             result = subprocess.run(
                 [cmd, "x", "-y", "-o" + str(CACHE_DIR), str(CACHE_DIR / "cache.zip")],
-                capture_output=True, text=True
+                capture_output=True,
+                text=True,
             )
             if result.returncode == 0:
                 print(f"Extracted with {cmd}")
@@ -88,9 +89,9 @@ def convert_to_mcp_format():
     src.row_factory = sqlite3.Row
 
     # Check schema
-    tables = [r[0] for r in src.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    ).fetchall()]
+    tables = [
+        r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    ]
     print(f"  Source tables: {tables}")
 
     # Find the main components table
@@ -115,7 +116,7 @@ def convert_to_mcp_format():
 
     # Create target DB in MCP format
     dst = sqlite3.connect(str(TARGET_DB))
-    dst.execute('''
+    dst.execute("""
         CREATE TABLE components (
             lcsc TEXT PRIMARY KEY,
             category TEXT,
@@ -131,12 +132,12 @@ def convert_to_mcp_format():
             price_json TEXT,
             last_updated INTEGER
         )
-    ''')
-    dst.execute('CREATE INDEX idx_category ON components(category, subcategory)')
-    dst.execute('CREATE INDEX idx_package ON components(package)')
-    dst.execute('CREATE INDEX idx_manufacturer ON components(manufacturer)')
-    dst.execute('CREATE INDEX idx_library_type ON components(library_type)')
-    dst.execute('CREATE INDEX idx_mfr_part ON components(mfr_part)')
+    """)
+    dst.execute("CREATE INDEX idx_category ON components(category, subcategory)")
+    dst.execute("CREATE INDEX idx_package ON components(package)")
+    dst.execute("CREATE INDEX idx_manufacturer ON components(manufacturer)")
+    dst.execute("CREATE INDEX idx_library_type ON components(library_type)")
+    dst.execute("CREATE INDEX idx_mfr_part ON components(mfr_part)")
 
     # Map source columns to our schema
     # jlcparts schema varies but commonly has:
@@ -150,81 +151,103 @@ def convert_to_mcp_format():
         row_dict = dict(row)
 
         # Adapt column names (jlcparts uses various schemas)
-        lcsc = row_dict.get('lcsc') or row_dict.get('LCSC_Part') or row_dict.get('lcsc_id')
+        lcsc = row_dict.get("lcsc") or row_dict.get("LCSC_Part") or row_dict.get("lcsc_id")
         if lcsc is None:
             continue
         if isinstance(lcsc, int):
             lcsc = f"C{lcsc}"
-        elif not str(lcsc).startswith('C'):
+        elif not str(lcsc).startswith("C"):
             lcsc = f"C{lcsc}"
 
-        mfr_part = row_dict.get('mfr') or row_dict.get('MFR_Part') or row_dict.get('mfr_part') or ''
-        package = row_dict.get('package') or row_dict.get('Package') or ''
-        manufacturer = row_dict.get('manufacturer') or row_dict.get('Manufacturer') or ''
-        description = row_dict.get('description') or row_dict.get('Description') or ''
-        stock = row_dict.get('stock') or row_dict.get('Stock') or 0
-        category = row_dict.get('category') or row_dict.get('First Category') or ''
-        subcategory = row_dict.get('subcategory') or row_dict.get('Second Category') or ''
-        datasheet = row_dict.get('datasheet') or row_dict.get('url') or ''
+        mfr_part = row_dict.get("mfr") or row_dict.get("MFR_Part") or row_dict.get("mfr_part") or ""
+        package = row_dict.get("package") or row_dict.get("Package") or ""
+        manufacturer = row_dict.get("manufacturer") or row_dict.get("Manufacturer") or ""
+        description = row_dict.get("description") or row_dict.get("Description") or ""
+        stock = row_dict.get("stock") or row_dict.get("Stock") or 0
+        category = row_dict.get("category") or row_dict.get("First Category") or ""
+        subcategory = row_dict.get("subcategory") or row_dict.get("Second Category") or ""
+        datasheet = row_dict.get("datasheet") or row_dict.get("url") or ""
 
         # Library type
-        is_basic = row_dict.get('basic') or row_dict.get('is_basic') or row_dict.get('Basic')
-        is_preferred = row_dict.get('preferred') or row_dict.get('is_preferred') or row_dict.get('Preferred')
+        is_basic = row_dict.get("basic") or row_dict.get("is_basic") or row_dict.get("Basic")
+        is_preferred = (
+            row_dict.get("preferred") or row_dict.get("is_preferred") or row_dict.get("Preferred")
+        )
         if is_basic:
-            lib_type = 'Basic'
+            lib_type = "Basic"
         elif is_preferred:
-            lib_type = 'Preferred'
+            lib_type = "Preferred"
         else:
-            lib_type = 'Extended'
+            lib_type = "Extended"
 
         # Price
-        price = row_dict.get('price') or row_dict.get('Price') or 0
+        price = row_dict.get("price") or row_dict.get("Price") or 0
         price_json = json.dumps([{"qty": 1, "price": price}] if price else [])
 
-        batch.append((
-            str(lcsc), category, subcategory, mfr_part, package,
-            0, manufacturer, lib_type, description,
-            datasheet, int(stock) if stock else 0, price_json, now
-        ))
+        batch.append(
+            (
+                str(lcsc),
+                category,
+                subcategory,
+                mfr_part,
+                package,
+                0,
+                manufacturer,
+                lib_type,
+                description,
+                datasheet,
+                int(stock) if stock else 0,
+                price_json,
+                now,
+            )
+        )
 
         if len(batch) >= 10000:
-            dst.executemany('''
+            dst.executemany(
+                """
                 INSERT OR REPLACE INTO components
                 (lcsc, category, subcategory, mfr_part, package,
                  solder_joints, manufacturer, library_type, description,
                  datasheet, stock, price_json, last_updated)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', batch)
+            """,
+                batch,
+            )
             count += len(batch)
             batch = []
             if count % 100000 == 0:
                 print(f"  Converted {count:,} parts...")
 
     if batch:
-        dst.executemany('''
+        dst.executemany(
+            """
             INSERT OR REPLACE INTO components
             (lcsc, category, subcategory, mfr_part, package,
              solder_joints, manufacturer, library_type, description,
              datasheet, stock, price_json, last_updated)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', batch)
+        """,
+            batch,
+        )
         count += len(batch)
 
     # Build FTS index
     print(f"  Building full-text search index...")
-    dst.execute('''
+    dst.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS components_fts USING fts5(
             lcsc, description, mfr_part, manufacturer,
             content=components
         )
-    ''')
+    """)
     dst.execute("INSERT INTO components_fts(components_fts) VALUES('rebuild')")
     dst.commit()
 
     # Stats
     total = dst.execute("SELECT COUNT(*) FROM components").fetchone()[0]
     basic = dst.execute("SELECT COUNT(*) FROM components WHERE library_type='Basic'").fetchone()[0]
-    extended = dst.execute("SELECT COUNT(*) FROM components WHERE library_type='Extended'").fetchone()[0]
+    extended = dst.execute(
+        "SELECT COUNT(*) FROM components WHERE library_type='Extended'"
+    ).fetchone()[0]
 
     dst.close()
     src.close()

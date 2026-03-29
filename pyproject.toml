@@ -18,7 +18,10 @@ warn_unused_configs = true
 ignore_missing_imports = true
 check_untyped_defs = false
 disallow_untyped_defs = false
+explicit_package_bases = true
+mypy_path = "."
 disable_error_code = [
+    "import-untyped",
     "arg-type",
     "attr-defined",
     "union-attr",
