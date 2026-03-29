@@ -10,10 +10,10 @@ from .design_rules import DesignRuleCommands
 from .export import ExportCommands
 
 __all__ = [
-    'ProjectCommands',
-    'BoardCommands',
-    'ComponentCommands',
-    'RoutingCommands',
-    'DesignRuleCommands',
-    'ExportCommands'
+    "ProjectCommands",
+    "BoardCommands",
+    "ComponentCommands",
+    "RoutingCommands",
+    "DesignRuleCommands",
+    "ExportCommands",
 ]

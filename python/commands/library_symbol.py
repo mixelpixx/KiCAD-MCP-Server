@@ -12,26 +12,27 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from dataclasses import dataclass, asdict
 
-logger = logging.getLogger('kicad_interface')
+logger = logging.getLogger("kicad_interface")
 
 
 @dataclass
 class SymbolInfo:
     """Information about a symbol in a library"""
-    name: str               # Symbol name (without library prefix)
-    library: str            # Library nickname
-    full_ref: str           # "Library:SymbolName"
-    value: str = ""         # Value property
-    description: str = ""   # Description property
-    footprint: str = ""     # Footprint reference if present
-    lcsc_id: str = ""       # LCSC property if present
+
+    name: str  # Symbol name (without library prefix)
+    library: str  # Library nickname
+    full_ref: str  # "Library:SymbolName"
+    value: str = ""  # Value property
+    description: str = ""  # Description property
+    footprint: str = ""  # Footprint reference if present
+    lcsc_id: str = ""  # LCSC property if present
     manufacturer: str = ""  # Manufacturer property
-    mpn: str = ""           # Part/MPN property
-    category: str = ""      # Category property
-    datasheet: str = ""     # Datasheet URL
-    stock: str = ""         # Stock (from JLCPCB libs)
-    price: str = ""         # Price (from JLCPCB libs)
-    lib_class: str = ""     # Basic/Preferred/Extended
+    mpn: str = ""  # Part/MPN property
+    category: str = ""  # Category property
+    datasheet: str = ""  # Datasheet URL
+    stock: str = ""  # Stock (from JLCPCB libs)
+    price: str = ""  # Price (from JLCPCB libs)
+    lib_class: str = ""  # Basic/Preferred/Extended
 
 
 class SymbolLibraryManager:
@@ -107,7 +108,7 @@ class SymbolLibraryManager:
         )
         """
         try:
-            with open(table_path, 'r', encoding='utf-8') as f:
+            with open(table_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
             # Simple regex-based parser for lib entries
@@ -155,25 +156,25 @@ class SymbolLibraryManager:
 
         # Common KiCAD environment variables
         env_vars = {
-            'KICAD10_SYMBOL_DIR': self._find_kicad_symbol_dir(),
-            'KICAD9_SYMBOL_DIR': self._find_kicad_symbol_dir(),
-            'KICAD8_SYMBOL_DIR': self._find_kicad_symbol_dir(),
-            'KICAD_SYMBOL_DIR': self._find_kicad_symbol_dir(),
-            'KICAD10_3RD_PARTY': self._find_3rd_party_dir(),
-            'KICAD9_3RD_PARTY': self._find_3rd_party_dir(),
-            'KICAD8_3RD_PARTY': self._find_3rd_party_dir(),
-            'KISYSSYM': self._find_kicad_symbol_dir(),
+            "KICAD10_SYMBOL_DIR": self._find_kicad_symbol_dir(),
+            "KICAD9_SYMBOL_DIR": self._find_kicad_symbol_dir(),
+            "KICAD8_SYMBOL_DIR": self._find_kicad_symbol_dir(),
+            "KICAD_SYMBOL_DIR": self._find_kicad_symbol_dir(),
+            "KICAD10_3RD_PARTY": self._find_3rd_party_dir(),
+            "KICAD9_3RD_PARTY": self._find_3rd_party_dir(),
+            "KICAD8_3RD_PARTY": self._find_3rd_party_dir(),
+            "KISYSSYM": self._find_kicad_symbol_dir(),
         }
 
         # Project directory
         if self.project_path:
-            env_vars['KIPRJMOD'] = str(self.project_path)
+            env_vars["KIPRJMOD"] = str(self.project_path)
 
         # Replace environment variables
         for var, value in env_vars.items():
             if value:
-                resolved = resolved.replace(f'${{{var}}}', value)
-                resolved = resolved.replace(f'${var}', value)
+                resolved = resolved.replace(f"${{{var}}}", value)
+                resolved = resolved.replace(f"${var}", value)
 
         # Expand ~ to home directory
         resolved = os.path.expanduser(resolved)
@@ -199,10 +200,10 @@ class SymbolLibraryManager:
         ]
 
         # Check environment variable
-        if 'KICAD9_SYMBOL_DIR' in os.environ:
-            possible_paths.insert(0, os.environ['KICAD9_SYMBOL_DIR'])
-        if 'KICAD8_SYMBOL_DIR' in os.environ:
-            possible_paths.insert(0, os.environ['KICAD8_SYMBOL_DIR'])
+        if "KICAD9_SYMBOL_DIR" in os.environ:
+            possible_paths.insert(0, os.environ["KICAD9_SYMBOL_DIR"])
+        if "KICAD8_SYMBOL_DIR" in os.environ:
+            possible_paths.insert(0, os.environ["KICAD8_SYMBOL_DIR"])
 
         for path in possible_paths:
             if os.path.isdir(path):
@@ -219,12 +220,12 @@ class SymbolLibraryManager:
         ]
 
         # Check environment variable
-        if 'KICAD10_3RD_PARTY' in os.environ:
-            possible_paths.insert(0, os.environ['KICAD10_3RD_PARTY'])
-        if 'KICAD9_3RD_PARTY' in os.environ:
-            possible_paths.insert(0, os.environ['KICAD9_3RD_PARTY'])
-        if 'KICAD8_3RD_PARTY' in os.environ:
-            possible_paths.insert(0, os.environ['KICAD8_3RD_PARTY'])
+        if "KICAD10_3RD_PARTY" in os.environ:
+            possible_paths.insert(0, os.environ["KICAD10_3RD_PARTY"])
+        if "KICAD9_3RD_PARTY" in os.environ:
+            possible_paths.insert(0, os.environ["KICAD9_3RD_PARTY"])
+        if "KICAD8_3RD_PARTY" in os.environ:
+            possible_paths.insert(0, os.environ["KICAD8_3RD_PARTY"])
 
         for path in possible_paths:
             if os.path.isdir(path):
@@ -246,7 +247,7 @@ class SymbolLibraryManager:
         symbols = []
 
         try:
-            with open(library_path, 'r', encoding='utf-8') as f:
+            with open(library_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
             # Find all top-level symbol definitions
@@ -261,7 +262,7 @@ class SymbolLibraryManager:
                 symbol_name = match.group(1)
 
                 # Skip sub-symbols (they contain _0_, _1_, etc. suffixes)
-                if re.search(r'_\d+_\d+$', symbol_name):
+                if re.search(r"_\d+_\d+$", symbol_name):
                     continue
 
                 # Find the start position of this symbol
@@ -280,17 +281,17 @@ class SymbolLibraryManager:
                     name=symbol_name,
                     library=library_name,
                     full_ref=f"{library_name}:{symbol_name}",
-                    value=properties.get('Value', ''),
-                    description=properties.get('Description', ''),
-                    footprint=properties.get('Footprint', ''),
-                    lcsc_id=properties.get('LCSC', ''),
-                    manufacturer=properties.get('Manufacturer', ''),
-                    mpn=properties.get('Part', properties.get('MPN', '')),
-                    category=properties.get('Category', ''),
-                    datasheet=properties.get('Datasheet', ''),
-                    stock=properties.get('Stock', ''),
-                    price=properties.get('Price', ''),
-                    lib_class=properties.get('Class', ''),
+                    value=properties.get("Value", ""),
+                    description=properties.get("Description", ""),
+                    footprint=properties.get("Footprint", ""),
+                    lcsc_id=properties.get("LCSC", ""),
+                    manufacturer=properties.get("Manufacturer", ""),
+                    mpn=properties.get("Part", properties.get("MPN", "")),
+                    category=properties.get("Category", ""),
+                    datasheet=properties.get("Datasheet", ""),
+                    stock=properties.get("Stock", ""),
+                    price=properties.get("Price", ""),
+                    lib_class=properties.get("Class", ""),
                 )
 
                 symbols.append(symbol_info)
@@ -351,7 +352,9 @@ class SymbolLibraryManager:
 
         return symbols
 
-    def search_symbols(self, query: str, limit: int = 20, library_filter: Optional[str] = None) -> List[SymbolInfo]:
+    def search_symbols(
+        self, query: str, limit: int = 20, library_filter: Optional[str] = None
+    ) -> List[SymbolInfo]:
         """
         Search for symbols matching a query
 
@@ -370,7 +373,9 @@ class SymbolLibraryManager:
         libraries_to_search = self.libraries.keys()
         if library_filter:
             filter_lower = library_filter.lower()
-            libraries_to_search = [lib for lib in libraries_to_search if filter_lower in lib.lower()]
+            libraries_to_search = [
+                lib for lib in libraries_to_search if filter_lower in lib.lower()
+            ]
 
         for library_nickname in libraries_to_search:
             symbols = self.list_symbols(library_nickname)
@@ -495,17 +500,13 @@ class SymbolLibraryCommands:
         """List all available symbol libraries"""
         try:
             libraries = self.library_manager.list_libraries()
-            return {
-                "success": True,
-                "libraries": libraries,
-                "count": len(libraries)
-            }
+            return {"success": True, "libraries": libraries, "count": len(libraries)}
         except Exception as e:
             logger.error(f"Error listing symbol libraries: {e}")
             return {
                 "success": False,
                 "message": "Failed to list symbol libraries",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def search_symbols(self, params: Dict) -> Dict:
@@ -513,10 +514,7 @@ class SymbolLibraryCommands:
         try:
             query = params.get("query", "")
             if not query:
-                return {
-                    "success": False,
-                    "message": "Missing query parameter"
-                }
+                return {"success": False, "message": "Missing query parameter"}
 
             limit = params.get("limit", 20)
             library_filter = params.get("library")
@@ -527,25 +525,18 @@ class SymbolLibraryCommands:
                 "success": True,
                 "symbols": [asdict(s) for s in results],
                 "count": len(results),
-                "query": query
+                "query": query,
             }
         except Exception as e:
             logger.error(f"Error searching symbols: {e}")
-            return {
-                "success": False,
-                "message": "Failed to search symbols",
-                "errorDetails": str(e)
-            }
+            return {"success": False, "message": "Failed to search symbols", "errorDetails": str(e)}
 
     def list_library_symbols(self, params: Dict) -> Dict:
         """List all symbols in a specific library"""
         try:
             library = params.get("library")
             if not library:
-                return {
-                    "success": False,
-                    "message": "Missing library parameter"
-                }
+                return {"success": False, "message": "Missing library parameter"}
 
             # Check if library exists in sym-lib-table
             if library not in self.library_manager.libraries:
@@ -554,10 +545,10 @@ class SymbolLibraryCommands:
                     "success": False,
                     "message": f"Library '{library}' not found in sym-lib-table",
                     "errorDetails": f"Library '{library}' is not registered in your KiCad symbol library table. "
-                                   f"Found {len(available_libs)} libraries. "
-                                   f"Please add this library to your sym-lib-table file, or use one of the available libraries.",
+                    f"Found {len(available_libs)} libraries. "
+                    f"Please add this library to your sym-lib-table file, or use one of the available libraries.",
                     "available_libraries_count": len(available_libs),
-                    "suggestion": "Use 'list_symbol_libraries' to see all available libraries"
+                    "suggestion": "Use 'list_symbol_libraries' to see all available libraries",
                 }
 
             symbols = self.library_manager.list_symbols(library)
@@ -566,14 +557,14 @@ class SymbolLibraryCommands:
                 "success": True,
                 "library": library,
                 "symbols": [asdict(s) for s in symbols],
-                "count": len(symbols)
+                "count": len(symbols),
             }
         except Exception as e:
             logger.error(f"Error listing library symbols: {e}")
             return {
                 "success": False,
                 "message": "Failed to list library symbols",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def get_symbol_info(self, params: Dict) -> Dict:
@@ -581,34 +572,25 @@ class SymbolLibraryCommands:
         try:
             symbol_spec = params.get("symbol")
             if not symbol_spec:
-                return {
-                    "success": False,
-                    "message": "Missing symbol parameter"
-                }
+                return {"success": False, "message": "Missing symbol parameter"}
 
             result = self.library_manager.find_symbol(symbol_spec)
 
             if result:
-                return {
-                    "success": True,
-                    "symbol_info": asdict(result)
-                }
+                return {"success": True, "symbol_info": asdict(result)}
             else:
-                return {
-                    "success": False,
-                    "message": f"Symbol not found: {symbol_spec}"
-                }
+                return {"success": False, "message": f"Symbol not found: {symbol_spec}"}
 
         except Exception as e:
             logger.error(f"Error getting symbol info: {e}")
             return {
                 "success": False,
                 "message": "Failed to get symbol info",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Test the symbol library manager
     import json
 

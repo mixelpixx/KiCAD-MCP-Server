@@ -12,7 +12,8 @@ from .layers import BoardLayerCommands
 from .outline import BoardOutlineCommands
 from .view import BoardViewCommands
 
-logger = logging.getLogger('kicad_interface')
+logger = logging.getLogger("kicad_interface")
+
 
 class BoardCommands:
     """Handles board-related KiCAD operations"""

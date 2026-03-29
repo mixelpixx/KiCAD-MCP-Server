@@ -95,9 +95,7 @@ def _parse_virtual_connections(schematic, schematic_path):
         locator = PinLocator()
         for symbol in schematic.symbol:
             try:
-                if not hasattr(symbol, "property") or not hasattr(
-                    symbol.property, "Reference"
-                ):
+                if not hasattr(symbol, "property") or not hasattr(symbol.property, "Reference"):
                     continue
                 ref = symbol.property.Reference.value
                 if not ref.startswith("#PWR"):
@@ -194,9 +192,7 @@ def _find_pins_on_net(
     ref = None
     for symbol in schematic.symbol:
         try:
-            if not hasattr(symbol, "property") or not hasattr(
-                symbol.property, "Reference"
-            ):
+            if not hasattr(symbol, "property") or not hasattr(symbol.property, "Reference"):
                 continue
             ref = symbol.property.Reference.value
             if ref.startswith("_TEMPLATE"):
@@ -241,9 +237,7 @@ def get_wire_connections(
 
     adjacency, iu_to_wires = _build_adjacency(all_wires)
 
-    point_to_label, label_to_points = _parse_virtual_connections(
-        schematic, schematic_path
-    )
+    point_to_label, label_to_points = _parse_virtual_connections(schematic, schematic_path)
 
     visited, net_points = _find_connected_wires(
         x_mm,

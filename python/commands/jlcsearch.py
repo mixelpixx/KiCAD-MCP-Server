@@ -10,7 +10,7 @@ import requests
 from typing import Optional, Dict, List, Callable
 import time
 
-logger = logging.getLogger('kicad_interface')
+logger = logging.getLogger("kicad_interface")
 
 
 class JLCSearchClient:
@@ -28,11 +28,7 @@ class JLCSearchClient:
         pass
 
     def search_components(
-        self,
-        category: str = "components",
-        limit: int = 100,
-        offset: int = 0,
-        **filters
+        self, category: str = "components", limit: int = 100, offset: int = 0, **filters
     ) -> List[Dict]:
         """
         Search components in JLCSearch database
@@ -48,11 +44,7 @@ class JLCSearchClient:
         """
         url = f"{self.BASE_URL}/{category}/list.json"
 
-        params = {
-            "limit": limit,
-            "offset": offset,
-            **filters
-        }
+        params = {"limit": limit, "offset": offset, **filters}
 
         try:
             response = requests.get(url, params=params, timeout=30)
@@ -71,7 +63,9 @@ class JLCSearchClient:
             logger.error(f"Failed to search JLCSearch: {e}")
             raise Exception(f"JLCSearch API request failed: {e}")
 
-    def search_resistors(self, resistance: Optional[int] = None, package: Optional[str] = None, limit: int = 100) -> List[Dict]:
+    def search_resistors(
+        self, resistance: Optional[int] = None, package: Optional[str] = None, limit: int = 100
+    ) -> List[Dict]:
         """
         Search for resistors
 
@@ -100,7 +94,9 @@ class JLCSearchClient:
 
         return self.search_components("resistors", limit=limit, **filters)
 
-    def search_capacitors(self, capacitance: Optional[float] = None, package: Optional[str] = None, limit: int = 100) -> List[Dict]:
+    def search_capacitors(
+        self, capacitance: Optional[float] = None, package: Optional[str] = None, limit: int = 100
+    ) -> List[Dict]:
         """
         Search for capacitors
 
@@ -141,9 +137,7 @@ class JLCSearchClient:
             return None
 
     def download_all_components(
-        self,
-        callback: Optional[Callable[[int, str], None]] = None,
-        batch_size: int = 100
+        self, callback: Optional[Callable[[int, str], None]] = None, batch_size: int = 100
     ) -> List[Dict]:
         """
         Download all components from jlcsearch database
@@ -165,11 +159,7 @@ class JLCSearchClient:
 
         while True:
             try:
-                batch = self.search_components(
-                    "components",
-                    limit=batch_size,
-                    offset=offset
-                )
+                batch = self.search_components("components", limit=batch_size, offset=offset)
 
                 # Stop if no results returned (end of catalog)
                 if not batch or len(batch) == 0:
@@ -219,7 +209,7 @@ def test_jlcsearch_connection() -> bool:
         return False
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Test the JLCSearch client
     logging.basicConfig(level=logging.INFO)
 

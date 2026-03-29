@@ -265,18 +265,14 @@ class TestCoreLogic:
     def test_find_connected_wires_no_wire_at_point(self):
         wires = [[(0, 0), (10_000, 0)]]
         adjacency, iu_to_wires = _build_adjacency(wires)
-        visited, net_points = _find_connected_wires(
-            5.0, 0.0, wires, iu_to_wires, adjacency
-        )
+        visited, net_points = _find_connected_wires(5.0, 0.0, wires, iu_to_wires, adjacency)
         assert visited is None
         assert net_points is None
 
     def test_find_connected_wires_single_wire(self):
         wires = [[(0, 0), (10_000, 0)]]
         adjacency, iu_to_wires = _build_adjacency(wires)
-        visited, net_points = _find_connected_wires(
-            0.0, 0.0, wires, iu_to_wires, adjacency
-        )
+        visited, net_points = _find_connected_wires(0.0, 0.0, wires, iu_to_wires, adjacency)
         assert visited == {0}
         assert (0, 0) in net_points
         assert (10_000, 0) in net_points
@@ -289,9 +285,7 @@ class TestCoreLogic:
             [(20_000, 0), (30_000, 0)],
         ]
         adjacency, iu_to_wires = _build_adjacency(wires)
-        visited, net_points = _find_connected_wires(
-            0.0, 0.0, wires, iu_to_wires, adjacency
-        )
+        visited, net_points = _find_connected_wires(0.0, 0.0, wires, iu_to_wires, adjacency)
         assert visited == {0, 1, 2}
 
     def test_find_connected_wires_does_not_cross_gap(self):

@@ -22,9 +22,7 @@ class ProjectCommands:
         """Create a new KiCAD project"""
         try:
             # Accept both 'name' (from MCP tool) and 'projectName' (legacy)
-            project_name = params.get("name") or params.get(
-                "projectName", "New_Project"
-            )
+            project_name = params.get("name") or params.get("projectName", "New_Project")
             path = params.get("path", os.getcwd())
             template = params.get("template")
 
@@ -101,9 +99,7 @@ class ProjectCommands:
 
                 schematic_uuid = str(uuid_module.uuid4())
                 with open(schematic_path, "w", encoding="utf-8", newline="\n") as f:
-                    f.write(
-                        '(kicad_sch (version 20250114) (generator "KiCAD-MCP-Server")\n\n'
-                    )
+                    f.write('(kicad_sch (version 20250114) (generator "KiCAD-MCP-Server")\n\n')
                     f.write(f"  (uuid {schematic_uuid})\n\n")
                     f.write('  (paper "A4")\n\n')
                     f.write("  (lib_symbols\n  )\n\n")
@@ -207,9 +203,7 @@ class ProjectCommands:
                 "success": True,
                 "message": f"Saved project to: {self.board.GetFileName()}",
                 "project": {
-                    "name": os.path.splitext(
-                        os.path.basename(self.board.GetFileName())
-                    )[0],
+                    "name": os.path.splitext(os.path.basename(self.board.GetFileName()))[0],
                     "path": self.board.GetFileName(),
                 },
             }

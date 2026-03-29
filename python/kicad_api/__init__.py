@@ -23,5 +23,5 @@ Usage:
 from kicad_api.factory import create_backend
 from kicad_api.base import KiCADBackend
 
-__all__ = ['create_backend', 'KiCADBackend']
-__version__ = '2.0.0-alpha.1'
+__all__ = ["create_backend", "KiCADBackend"]
+__version__ = "2.0.0-alpha.1"

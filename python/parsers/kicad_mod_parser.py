@@ -27,6 +27,7 @@ logger = logging.getLogger("kicad_interface")
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def parse_kicad_mod(file_path: str) -> Optional[Dict[str, Any]]:
     """
     Parse a .kicad_mod file and return a dict whose keys match the fields
@@ -56,7 +57,7 @@ def parse_kicad_mod(file_path: str) -> Optional[Dict[str, Any]]:
     m = re.search(r'^\s*\(footprint\s+"((?:[^"\\]|\\.)*)"', content, re.MULTILINE)
     if not m:
         # Older / unquoted format
-        m = re.search(r'^\s*\(footprint\s+(\S+)', content, re.MULTILINE)
+        m = re.search(r"^\s*\(footprint\s+(\S+)", content, re.MULTILINE)
     result["name"] = _unescape(m.group(1)) if m else path.stem
     logger.debug(f"parse_kicad_mod: name={result['name']!r}")
 
@@ -78,7 +79,7 @@ def parse_kicad_mod(file_path: str) -> Optional[Dict[str, Any]]:
     # Attributes: (attr TYPE [board_only] [exclude_from_pos_files] [exclude_from_bom])
     # TYPE is smd | through_hole (no quotes)
     # ------------------------------------------------------------------
-    m = re.search(r'\(attr\s+([^)]+)\)', content)
+    m = re.search(r"\(attr\s+([^)]+)\)", content)
     if m:
         tokens = m.group(1).split()
         result["attributes"] = {
@@ -107,7 +108,7 @@ def parse_kicad_mod(file_path: str) -> Optional[Dict[str, Any]]:
     layers: set = set()
     for m in re.finditer(r'\(layer\s+"([^"]+)"\)', content):
         layers.add(m.group(1))
-    for m in re.finditer(r'\(layers\s+([^)]+)\)', content):
+    for m in re.finditer(r"\(layers\s+([^)]+)\)", content):
         for lyr in re.findall(r'"([^"]+)"', m.group(1)):
             layers.add(lyr)
     result["layers"] = sorted(layers)
@@ -128,6 +129,7 @@ def parse_kicad_mod(file_path: str) -> Optional[Dict[str, Any]]:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _extract_pads(content: str) -> List[Dict[str, Any]]:
     """
     Parse all (pad …) blocks and return a list of pad objects.
@@ -147,8 +149,8 @@ def _extract_pads(content: str) -> List[Dict[str, Any]]:
     # KiCad 6+ quoted format: (pad "NUMBER" TYPE SHAPE …)
     quoted_pattern = re.compile(
         r'\(pad\s+"([^"]*)"\s+'
-        r'(thru_hole|smd|np_thru_hole|connect)\s+'
-        r'(rect|circle|oval|roundrect|trapezoid|custom)\b'
+        r"(thru_hole|smd|np_thru_hole|connect)\s+"
+        r"(rect|circle|oval|roundrect|trapezoid|custom)\b"
     )
     for m in quoted_pattern.finditer(content):
         number, ptype, shape = m.group(1), m.group(2), m.group(3)
@@ -159,9 +161,9 @@ def _extract_pads(content: str) -> List[Dict[str, Any]]:
     if not pads:
         # Older / unquoted format: (pad NUMBER TYPE SHAPE …)
         unquoted_pattern = re.compile(
-            r'\(pad\s+(\S+)\s+'
-            r'(thru_hole|smd|np_thru_hole|connect)\s+'
-            r'(rect|circle|oval|roundrect|trapezoid|custom)\b'
+            r"\(pad\s+(\S+)\s+"
+            r"(thru_hole|smd|np_thru_hole|connect)\s+"
+            r"(rect|circle|oval|roundrect|trapezoid|custom)\b"
         )
         for m in unquoted_pattern.finditer(content):
             number, ptype, shape = m.group(1), m.group(2), m.group(3)
@@ -183,7 +185,7 @@ def _extract_blocks(content: str, token: str) -> List[str]:
     parenthesis depth.  This correctly handles nested parens inside blocks.
     """
     blocks: List[str] = []
-    pattern = re.compile(r'\(' + re.escape(token) + r'\b')
+    pattern = re.compile(r"\(" + re.escape(token) + r"\b")
 
     for match in pattern.finditer(content):
         start = match.start()
@@ -191,9 +193,9 @@ def _extract_blocks(content: str, token: str) -> List[str]:
         i = start
         while i < len(content):
             ch = content[i]
-            if ch == '(':
+            if ch == "(":
                 depth += 1
-            elif ch == ')':
+            elif ch == ")":
                 depth -= 1
                 if depth == 0:
                     blocks.append(content[start : i + 1])
@@ -219,8 +221,8 @@ def _extract_courtyard(content: str) -> Optional[Dict[str, float]]:
     for block in _extract_blocks(content, "fp_rect"):
         if "F.CrtYd" not in block:
             continue
-        s = re.search(r'\(start\s+([-\d.]+)\s+([-\d.]+)\)', block)
-        e = re.search(r'\(end\s+([-\d.]+)\s+([-\d.]+)\)', block)
+        s = re.search(r"\(start\s+([-\d.]+)\s+([-\d.]+)\)", block)
+        e = re.search(r"\(end\s+([-\d.]+)\s+([-\d.]+)\)", block)
         if s and e:
             xs += [float(s.group(1)), float(e.group(1))]
             ys += [float(s.group(2)), float(e.group(2))]
@@ -234,7 +236,7 @@ def _extract_courtyard(content: str) -> Optional[Dict[str, float]]:
         for block in _extract_blocks(content, "fp_line"):
             if "F.CrtYd" not in block:
                 continue
-            for m in re.finditer(r'\((?:start|end)\s+([-\d.]+)\s+([-\d.]+)\)', block):
+            for m in re.finditer(r"\((?:start|end)\s+([-\d.]+)\s+([-\d.]+)\)", block):
                 xs.append(float(m.group(1)))
                 ys.append(float(m.group(2)))
 

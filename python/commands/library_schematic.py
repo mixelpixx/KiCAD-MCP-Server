@@ -1,7 +1,9 @@
 from skip import Schematic
+
 # Symbol class might not be directly importable in the current version
 import os
 import glob
+
 
 class LibraryManager:
     """Manage symbol libraries"""
@@ -14,9 +16,11 @@ class LibraryManager:
             # This would need to be configured for the specific environment
             search_paths = [
                 "C:/Program Files/KiCad/*/share/kicad/symbols/*.kicad_sym",  # Windows path pattern
-                "/usr/share/kicad/symbols/*.kicad_sym",                      # Linux path pattern
+                "/usr/share/kicad/symbols/*.kicad_sym",  # Linux path pattern
                 "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym",  # macOS path pattern
-                os.path.expanduser("~/Documents/KiCad/*/symbols/*.kicad_sym")  # User libraries pattern
+                os.path.expanduser(
+                    "~/Documents/KiCad/*/symbols/*.kicad_sym"
+                ),  # User libraries pattern
             ]
 
         libraries = []
@@ -30,7 +34,9 @@ class LibraryManager:
 
         # Extract library names from paths
         library_names = [os.path.splitext(os.path.basename(lib))[0] for lib in libraries]
-        print(f"Found {len(library_names)} libraries: {', '.join(library_names[:10])}{'...' if len(library_names) > 10 else ''}")
+        print(
+            f"Found {len(library_names)} libraries: {', '.join(library_names[:10])}{'...' if len(library_names) > 10 else ''}"
+        )
 
         # Return both full paths and library names
         return {"paths": libraries, "names": library_names}
@@ -47,7 +53,9 @@ class LibraryManager:
             # A potential approach would be to load the library file using KiCAD's Python API
             # or by parsing the library file format.
             # KiCAD symbol libraries are .kicad_sym files which are S-expression format
-            print(f"Attempted to list symbols in library {library_path}. This requires advanced implementation.")
+            print(
+                f"Attempted to list symbols in library {library_path}. This requires advanced implementation."
+            )
             return []
         except Exception as e:
             print(f"Error listing symbols in library {library_path}: {e}")
@@ -59,7 +67,9 @@ class LibraryManager:
         try:
             # Similar to list_library_symbols, this might require a more direct approach
             # using KiCAD's Python API or by parsing the symbol library.
-            print(f"Attempted to get details for symbol {symbol_name} in library {library_path}. This requires advanced implementation.")
+            print(
+                f"Attempted to get details for symbol {symbol_name} in library {library_path}. This requires advanced implementation."
+            )
             return {}
         except Exception as e:
             print(f"Error getting symbol details for {symbol_name} in {library_path}: {e}")
@@ -78,7 +88,9 @@ class LibraryManager:
             libraries = LibraryManager.list_available_libraries(search_paths)
 
             results = []
-            print(f"Searched for symbols matching '{query}'. This requires advanced implementation.")
+            print(
+                f"Searched for symbols matching '{query}'. This requires advanced implementation."
+            )
             return results
         except Exception as e:
             print(f"Error searching for symbols matching '{query}': {e}")
@@ -119,7 +131,8 @@ class LibraryManager:
         # Default fallback
         return {"library": "Device", "symbol": "R"}
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # Example Usage (for testing)
     # List available libraries
     libraries = LibraryManager.list_available_libraries()

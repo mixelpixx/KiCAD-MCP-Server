@@ -5,6 +5,7 @@ Key regression: the handler previously used a line-by-line regex that required
 `(symbol` and `(lib_id` to appear on the *same* line.  KiCAD's file writer puts
 them on *separate* lines, so every real-world delete returned "not found".
 """
+
 import re
 import sys
 import tempfile
@@ -17,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 TEMPLATE_SCH = Path(__file__).parent.parent / "templates" / "empty.kicad_sch"
 
 # Inline format (single line) – matches what tests previously used
-PLACED_RESISTOR_INLINE = '''\
+PLACED_RESISTOR_INLINE = """\
   (symbol (lib_id "Device:R") (at 50 50 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
     (uuid "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
@@ -34,11 +35,11 @@ PLACED_RESISTOR_INLINE = '''\
       (effects (font (size 1.27 1.27)) hide)
     )
   )
-'''
+"""
 
 # Multi-line format – as KiCAD's own file writer produces it.
 # (symbol and (lib_id are on separate lines, which broke the old regex.
-PLACED_RESISTOR_MULTILINE = '''\
+PLACED_RESISTOR_MULTILINE = """\
 \t(symbol
 \t\t(lib_id "Device:R")
 \t\t(at 50 50 0)
@@ -64,10 +65,10 @@ PLACED_RESISTOR_MULTILINE = '''\
 \t\t\t)
 \t\t)
 \t)
-'''
+"""
 
 # Multi-line power symbol – the exact scenario that was reported as broken.
-PLACED_POWER_SYMBOL_MULTILINE = '''\
+PLACED_POWER_SYMBOL_MULTILINE = """\
 \t(symbol
 \t\t(lib_id "power:VCC")
 \t\t(at 365.6 38.1 0)
@@ -94,7 +95,7 @@ PLACED_POWER_SYMBOL_MULTILINE = '''\
 \t\t\t)
 \t\t)
 \t)
-'''
+"""
 
 
 def _make_test_schematic(tmp_path: Path, extra_block: str = "") -> Path:
@@ -111,6 +112,7 @@ def _make_test_schematic(tmp_path: Path, extra_block: str = "") -> Path:
 # ---------------------------------------------------------------------------
 # Unit tests – regression proof for the old regex vs the new approach
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.unit
 class TestDeleteDetectionRegex:
@@ -154,10 +156,12 @@ class TestDeleteDetectionRegex:
 # Integration tests – real file I/O using the handler
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 class TestDeleteSchematicComponentIntegration:
     def _get_handler(self):
         from kicad_interface import KiCADInterface
+
         iface = KiCADInterface.__new__(KiCADInterface)
         return iface._handle_delete_schematic_component
 

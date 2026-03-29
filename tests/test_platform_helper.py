@@ -3,6 +3,7 @@ Tests for platform_helper utility
 
 These are unit tests that work on all platforms.
 """
+
 import pytest
 import platform
 from pathlib import Path
@@ -176,6 +177,7 @@ class TestKiCADPathDetection:
         PlatformHelper.add_kicad_to_python_path()
         try:
             import pcbnew
+
             # If we get here, pcbnew is available
             assert pcbnew is not None
             version = pcbnew.GetBuildVersion()

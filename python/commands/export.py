@@ -105,22 +105,16 @@ class ExportCommands:
                     ]
 
                     try:
-                        result = subprocess.run(
-                            cmd, capture_output=True, text=True, timeout=60
-                        )
+                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                         if result.returncode == 0:
                             # Get list of generated drill files
                             for file in os.listdir(output_dir):
                                 if file.endswith((".drl", ".cnc")):
                                     drill_files.append(file)
                         else:
-                            logger.warning(
-                                f"Drill file generation failed: {result.stderr}"
-                            )
+                            logger.warning(f"Drill file generation failed: {result.stderr}")
                     except Exception as drill_error:
-                        logger.warning(
-                            f"Could not generate drill files: {str(drill_error)}"
-                        )
+                        logger.warning(f"Could not generate drill files: {str(drill_error)}")
                 else:
                     logger.warning("kicad-cli not available for drill file generation")
 
@@ -236,9 +230,7 @@ class ExportCommands:
             # Get the actual output filename that was created
             board_name = os.path.splitext(os.path.basename(self.board.GetFileName()))[0]
             actual_filename = f"{board_name}-{base_name}.pdf"
-            actual_output_path = os.path.join(
-                os.path.dirname(output_path), actual_filename
-            )
+            actual_output_path = os.path.join(os.path.dirname(output_path), actual_filename)
 
             return {
                 "success": True,
@@ -395,9 +387,7 @@ class ExportCommands:
                 if not include_components:
                     cmd.append("--no-components")
                 if include_copper:
-                    cmd.extend(
-                        ["--include-tracks", "--include-pads", "--include-zones"]
-                    )
+                    cmd.extend(["--include-tracks", "--include-pads", "--include-zones"])
                 if include_silkscreen:
                     cmd.append("--include-silkscreen")
                 if include_solder_mask:
@@ -696,6 +686,7 @@ class ExportCommands:
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         from pathlib import Path
+
         logs_dir = Path(project_dir) / "logs"
         logs_dir.mkdir(exist_ok=True)
         dest = str(logs_dir / f"mcp_log_{timestamp}.txt")

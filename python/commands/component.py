@@ -10,12 +10,15 @@ from typing import Dict, Any, Optional, List, Tuple
 import base64
 from commands.library import LibraryManager
 
-logger = logging.getLogger('kicad_interface')
+logger = logging.getLogger("kicad_interface")
+
 
 class ComponentCommands:
     """Handles component-related KiCAD operations"""
 
-    def __init__(self, board: Optional[pcbnew.BOARD] = None, library_manager: Optional[LibraryManager] = None):
+    def __init__(
+        self, board: Optional[pcbnew.BOARD] = None, library_manager: Optional[LibraryManager] = None
+    ):
         """Initialize with optional board instance and library manager"""
         self.board = board
         self.library_manager = library_manager or LibraryManager()
@@ -27,7 +30,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             # Get parameters
@@ -43,7 +46,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Missing parameters",
-                    "errorDetails": "componentId and position are required"
+                    "errorDetails": "componentId and position are required",
                 }
 
             # Find footprint using library manager
@@ -55,13 +58,14 @@ class ComponentCommands:
                 suggestions = self.library_manager.search_footprints(f"*{component_id}*", limit=5)
                 suggestion_text = ""
                 if suggestions:
-                    suggestion_text = "\n\nDid you mean one of these?\n" + \
-                                    "\n".join([f"  - {s['full_name']}" for s in suggestions])
+                    suggestion_text = "\n\nDid you mean one of these?\n" + "\n".join(
+                        [f"  - {s['full_name']}" for s in suggestions]
+                    )
 
                 return {
                     "success": False,
                     "message": "Footprint not found",
-                    "errorDetails": f"Could not find footprint: {component_id}{suggestion_text}"
+                    "errorDetails": f"Could not find footprint: {component_id}{suggestion_text}",
                 }
 
             library_path, footprint_name = footprint_result
@@ -78,7 +82,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Internal error",
-                    "errorDetails": "Could not determine library nickname"
+                    "errorDetails": "Could not determine library nickname",
                 }
 
             # Load the footprint
@@ -87,7 +91,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Failed to load footprint",
-                    "errorDetails": f"Could not load footprint from {library_path}/{footprint_name}"
+                    "errorDetails": f"Could not load footprint from {library_path}/{footprint_name}",
                 }
 
             # Set position
@@ -145,14 +149,10 @@ class ComponentCommands:
                 "component": {
                     "reference": module.GetReference(),
                     "value": module.GetValue(),
-                    "position": {
-                        "x": position["x"],
-                        "y": position["y"],
-                        "unit": position["unit"]
-                    },
+                    "position": {"x": position["x"], "y": position["y"], "unit": position["unit"]},
                     "rotation": rotation,
-                    "layer": layer
-                }
+                    "layer": layer,
+                },
             }
 
         except Exception as e:
@@ -160,7 +160,7 @@ class ComponentCommands:
             return {
                 "success": False,
                 "message": "Failed to place component",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def move_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -170,7 +170,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             reference = params.get("reference")
@@ -182,7 +182,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Missing parameters",
-                    "errorDetails": "reference and position are required"
+                    "errorDetails": "reference and position are required",
                 }
 
             # Find the component
@@ -191,7 +191,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Component not found",
-                    "errorDetails": f"Could not find component: {reference}"
+                    "errorDetails": f"Could not find component: {reference}",
                 }
 
             # Set new position
@@ -218,23 +218,17 @@ class ComponentCommands:
                 "message": f"Moved component: {reference}",
                 "component": {
                     "reference": reference,
-                    "position": {
-                        "x": position["x"],
-                        "y": position["y"],
-                        "unit": position["unit"]
-                    },
-                    "rotation": rotation if rotation is not None else module.GetOrientation().AsDegrees(),
-                    "layer": self.board.GetLayerName(module.GetLayer())
-                }
+                    "position": {"x": position["x"], "y": position["y"], "unit": position["unit"]},
+                    "rotation": (
+                        rotation if rotation is not None else module.GetOrientation().AsDegrees()
+                    ),
+                    "layer": self.board.GetLayerName(module.GetLayer()),
+                },
             }
 
         except Exception as e:
             logger.error(f"Error moving component: {str(e)}")
-            return {
-                "success": False,
-                "message": "Failed to move component",
-                "errorDetails": str(e)
-            }
+            return {"success": False, "message": "Failed to move component", "errorDetails": str(e)}
 
     def rotate_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Rotate an existing component"""
@@ -243,7 +237,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             reference = params.get("reference")
@@ -253,7 +247,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Missing parameters",
-                    "errorDetails": "reference and angle are required"
+                    "errorDetails": "reference and angle are required",
                 }
 
             # Find the component
@@ -262,7 +256,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Component not found",
-                    "errorDetails": f"Could not find component: {reference}"
+                    "errorDetails": f"Could not find component: {reference}",
                 }
 
             # Set rotation
@@ -272,10 +266,7 @@ class ComponentCommands:
             return {
                 "success": True,
                 "message": f"Rotated component: {reference}",
-                "component": {
-                    "reference": reference,
-                    "rotation": angle
-                }
+                "component": {"reference": reference, "rotation": angle},
             }
 
         except Exception as e:
@@ -283,7 +274,7 @@ class ComponentCommands:
             return {
                 "success": False,
                 "message": "Failed to rotate component",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def delete_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -293,7 +284,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             reference = params.get("reference")
@@ -301,7 +292,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Missing reference",
-                    "errorDetails": "reference parameter is required"
+                    "errorDetails": "reference parameter is required",
                 }
 
             # Find the component
@@ -310,23 +301,20 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Component not found",
-                    "errorDetails": f"Could not find component: {reference}"
+                    "errorDetails": f"Could not find component: {reference}",
                 }
 
             # Remove from board
             self.board.Remove(module)
 
-            return {
-                "success": True,
-                "message": f"Deleted component: {reference}"
-            }
+            return {"success": True, "message": f"Deleted component: {reference}"}
 
         except Exception as e:
             logger.error(f"Error deleting component: {str(e)}")
             return {
                 "success": False,
                 "message": "Failed to delete component",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def edit_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -336,7 +324,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             reference = params.get("reference")
@@ -348,7 +336,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Missing reference",
-                    "errorDetails": "reference parameter is required"
+                    "errorDetails": "reference parameter is required",
                 }
 
             # Find the component
@@ -357,7 +345,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Component not found",
-                    "errorDetails": f"Could not find component: {reference}"
+                    "errorDetails": f"Could not find component: {reference}",
                 }
 
             # Update properties
@@ -385,17 +373,13 @@ class ComponentCommands:
                 "component": {
                     "reference": new_reference or reference,
                     "value": value or module.GetValue(),
-                    "footprint": footprint or module.GetFPIDAsString()
-                }
+                    "footprint": footprint or module.GetFPIDAsString(),
+                },
             }
 
         except Exception as e:
             logger.error(f"Error editing component: {str(e)}")
-            return {
-                "success": False,
-                "message": "Failed to edit component",
-                "errorDetails": str(e)
-            }
+            return {"success": False, "message": "Failed to edit component", "errorDetails": str(e)}
 
     def get_component_properties(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get detailed properties of a component"""
@@ -404,7 +388,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             reference = params.get("reference")
@@ -412,7 +396,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Missing reference",
-                    "errorDetails": "reference parameter is required"
+                    "errorDetails": "reference parameter is required",
                 }
 
             # Find the component
@@ -421,7 +405,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Component not found",
-                    "errorDetails": f"Could not find component: {reference}"
+                    "errorDetails": f"Could not find component: {reference}",
                 }
 
             # Get position in mm
@@ -435,19 +419,15 @@ class ComponentCommands:
                     "reference": module.GetReference(),
                     "value": module.GetValue(),
                     "footprint": module.GetFPIDAsString(),
-                    "position": {
-                        "x": x_mm,
-                        "y": y_mm,
-                        "unit": "mm"
-                    },
+                    "position": {"x": x_mm, "y": y_mm, "unit": "mm"},
                     "rotation": module.GetOrientation().AsDegrees(),
                     "layer": self.board.GetLayerName(module.GetLayer()),
                     "attributes": {
                         "smd": module.GetAttributes() & pcbnew.FP_SMD,
                         "through_hole": module.GetAttributes() & pcbnew.FP_THROUGH_HOLE,
-                        "board_only": module.GetAttributes() & pcbnew.FP_BOARD_ONLY
-                    }
-                }
+                        "board_only": module.GetAttributes() & pcbnew.FP_BOARD_ONLY,
+                    },
+                },
             }
 
         except Exception as e:
@@ -455,7 +435,7 @@ class ComponentCommands:
             return {
                 "success": False,
                 "message": "Failed to get component properties",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def get_component_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -465,7 +445,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             components = []
@@ -474,30 +454,25 @@ class ComponentCommands:
                 x_mm = pos.x / 1000000
                 y_mm = pos.y / 1000000
 
-                components.append({
-                    "reference": module.GetReference(),
-                    "value": module.GetValue(),
-                    "footprint": module.GetFPIDAsString(),
-                    "position": {
-                        "x": x_mm,
-                        "y": y_mm,
-                        "unit": "mm"
-                    },
-                    "rotation": module.GetOrientation().AsDegrees(),
-                    "layer": self.board.GetLayerName(module.GetLayer())
-                })
+                components.append(
+                    {
+                        "reference": module.GetReference(),
+                        "value": module.GetValue(),
+                        "footprint": module.GetFPIDAsString(),
+                        "position": {"x": x_mm, "y": y_mm, "unit": "mm"},
+                        "rotation": module.GetOrientation().AsDegrees(),
+                        "layer": self.board.GetLayerName(module.GetLayer()),
+                    }
+                )
 
-            return {
-                "success": True,
-                "components": components
-            }
+            return {"success": True, "components": components}
 
         except Exception as e:
             logger.error(f"Error getting component list: {str(e)}")
             return {
                 "success": False,
                 "message": "Failed to get component list",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def find_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -507,7 +482,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             # Get search parameters
@@ -519,7 +494,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Missing search criteria",
-                    "errorDetails": "At least one of reference, value, or footprint pattern is required"
+                    "errorDetails": "At least one of reference, value, or footprint pattern is required",
                 }
 
             matches = []
@@ -539,31 +514,25 @@ class ComponentCommands:
 
                 if match:
                     pos = module.GetPosition()
-                    matches.append({
-                        "reference": module.GetReference(),
-                        "value": module.GetValue(),
-                        "footprint": module.GetFPIDAsString(),
-                        "position": {
-                            "x": pos.x / 1000000,
-                            "y": pos.y / 1000000,
-                            "unit": "mm"
-                        },
-                        "rotation": module.GetOrientation().AsDegrees(),
-                        "layer": self.board.GetLayerName(module.GetLayer())
-                    })
+                    matches.append(
+                        {
+                            "reference": module.GetReference(),
+                            "value": module.GetValue(),
+                            "footprint": module.GetFPIDAsString(),
+                            "position": {"x": pos.x / 1000000, "y": pos.y / 1000000, "unit": "mm"},
+                            "rotation": module.GetOrientation().AsDegrees(),
+                            "layer": self.board.GetLayerName(module.GetLayer()),
+                        }
+                    )
 
-            return {
-                "success": True,
-                "matchCount": len(matches),
-                "components": matches
-            }
+            return {"success": True, "matchCount": len(matches), "components": matches}
 
         except Exception as e:
             logger.error(f"Error finding components: {str(e)}")
             return {
                 "success": False,
                 "message": "Failed to find components",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def get_component_pads(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -573,7 +542,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             reference = params.get("reference")
@@ -581,7 +550,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Missing reference",
-                    "errorDetails": "reference parameter is required"
+                    "errorDetails": "reference parameter is required",
                 }
 
             # Find the component
@@ -590,7 +559,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Component not found",
-                    "errorDetails": f"Could not find component: {reference}"
+                    "errorDetails": f"Could not find component: {reference}",
                 }
 
             pads = []
@@ -606,7 +575,7 @@ class ComponentCommands:
                     pcbnew.PAD_SHAPE_TRAPEZOID: "trapezoid",
                     pcbnew.PAD_SHAPE_ROUNDRECT: "roundrect",
                     pcbnew.PAD_SHAPE_CHAMFERED_RECT: "chamfered_rect",
-                    pcbnew.PAD_SHAPE_CUSTOM: "custom"
+                    pcbnew.PAD_SHAPE_CUSTOM: "custom",
                 }
                 shape = shape_map.get(pad.GetShape(), "unknown")
 
@@ -615,29 +584,25 @@ class ComponentCommands:
                     pcbnew.PAD_ATTRIB_PTH: "through_hole",
                     pcbnew.PAD_ATTRIB_SMD: "smd",
                     pcbnew.PAD_ATTRIB_CONN: "connector",
-                    pcbnew.PAD_ATTRIB_NPTH: "npth"
+                    pcbnew.PAD_ATTRIB_NPTH: "npth",
                 }
                 pad_type = type_map.get(pad.GetAttribute(), "unknown")
 
-                pads.append({
-                    "name": pad.GetName(),
-                    "number": pad.GetNumber(),
-                    "position": {
-                        "x": pos.x / 1000000,
-                        "y": pos.y / 1000000,
-                        "unit": "mm"
-                    },
-                    "net": pad.GetNetname(),
-                    "netCode": pad.GetNetCode(),
-                    "shape": shape,
-                    "type": pad_type,
-                    "size": {
-                        "x": size.x / 1000000,
-                        "y": size.y / 1000000,
-                        "unit": "mm"
-                    },
-                    "drillSize": pad.GetDrillSize().x / 1000000 if pad.GetDrillSize().x > 0 else None
-                })
+                pads.append(
+                    {
+                        "name": pad.GetName(),
+                        "number": pad.GetNumber(),
+                        "position": {"x": pos.x / 1000000, "y": pos.y / 1000000, "unit": "mm"},
+                        "net": pad.GetNetname(),
+                        "netCode": pad.GetNetCode(),
+                        "shape": shape,
+                        "type": pad_type,
+                        "size": {"x": size.x / 1000000, "y": size.y / 1000000, "unit": "mm"},
+                        "drillSize": (
+                            pad.GetDrillSize().x / 1000000 if pad.GetDrillSize().x > 0 else None
+                        ),
+                    }
+                )
 
             # Get component position for reference
             comp_pos = module.GetPosition()
@@ -648,10 +613,10 @@ class ComponentCommands:
                 "componentPosition": {
                     "x": comp_pos.x / 1000000,
                     "y": comp_pos.y / 1000000,
-                    "unit": "mm"
+                    "unit": "mm",
                 },
                 "padCount": len(pads),
-                "pads": pads
+                "pads": pads,
             }
 
         except Exception as e:
@@ -659,7 +624,7 @@ class ComponentCommands:
             return {
                 "success": False,
                 "message": "Failed to get component pads",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def get_pad_position(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -669,7 +634,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             reference = params.get("reference")
@@ -679,13 +644,13 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Missing reference",
-                    "errorDetails": "reference parameter is required"
+                    "errorDetails": "reference parameter is required",
                 }
             if not pad_name:
                 return {
                     "success": False,
                     "message": "Missing pad identifier",
-                    "errorDetails": "padName or padNumber parameter is required"
+                    "errorDetails": "padName or padNumber parameter is required",
                 }
 
             # Find the component
@@ -694,7 +659,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Component not found",
-                    "errorDetails": f"Could not find component: {reference}"
+                    "errorDetails": f"Could not find component: {reference}",
                 }
 
             # Find the specific pad
@@ -705,7 +670,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Pad not found",
-                    "errorDetails": f"Pad '{pad_name}' not found on {reference}. Available pads: {', '.join(available_pads)}"
+                    "errorDetails": f"Pad '{pad_name}' not found on {reference}. Available pads: {', '.join(available_pads)}",
                 }
 
             pos = pad.GetPosition()
@@ -715,18 +680,10 @@ class ComponentCommands:
                 "success": True,
                 "reference": reference,
                 "padName": pad.GetNumber(),
-                "position": {
-                    "x": pos.x / 1000000,
-                    "y": pos.y / 1000000,
-                    "unit": "mm"
-                },
+                "position": {"x": pos.x / 1000000, "y": pos.y / 1000000, "unit": "mm"},
                 "net": pad.GetNetname(),
                 "netCode": pad.GetNetCode(),
-                "size": {
-                    "x": size.x / 1000000,
-                    "y": size.y / 1000000,
-                    "unit": "mm"
-                }
+                "size": {"x": size.x / 1000000, "y": size.y / 1000000, "unit": "mm"},
             }
 
         except Exception as e:
@@ -734,7 +691,7 @@ class ComponentCommands:
             return {
                 "success": False,
                 "message": "Failed to get pad position",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def place_component_array(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -744,7 +701,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             component_id = params.get("componentId")
@@ -757,7 +714,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Missing parameters",
-                    "errorDetails": "componentId and count are required"
+                    "errorDetails": "componentId and count are required",
                 }
 
             if pattern == "grid":
@@ -773,14 +730,14 @@ class ComponentCommands:
                     return {
                         "success": False,
                         "message": "Missing grid parameters",
-                        "errorDetails": "For grid pattern, startPosition, rows, columns, spacingX, and spacingY are required"
+                        "errorDetails": "For grid pattern, startPosition, rows, columns, spacingX, and spacingY are required",
                     }
 
                 if rows * columns != count:
                     return {
                         "success": False,
                         "message": "Invalid grid parameters",
-                        "errorDetails": "rows * columns must equal count"
+                        "errorDetails": "rows * columns must equal count",
                     }
 
                 placed_components = self._place_grid_array(
@@ -793,7 +750,7 @@ class ComponentCommands:
                     reference_prefix,
                     value,
                     rotation,
-                    layer
+                    layer,
                 )
 
             elif pattern == "circular":
@@ -808,7 +765,7 @@ class ComponentCommands:
                     return {
                         "success": False,
                         "message": "Missing circular parameters",
-                        "errorDetails": "For circular pattern, center, radius, and angleStep are required"
+                        "errorDetails": "For circular pattern, center, radius, and angleStep are required",
                     }
 
                 placed_components = self._place_circular_array(
@@ -821,20 +778,20 @@ class ComponentCommands:
                     reference_prefix,
                     value,
                     rotation_offset,
-                    layer
+                    layer,
                 )
 
             else:
                 return {
                     "success": False,
                     "message": "Invalid pattern",
-                    "errorDetails": "Pattern must be 'grid' or 'circular'"
+                    "errorDetails": "Pattern must be 'grid' or 'circular'",
                 }
 
             return {
                 "success": True,
                 "message": f"Placed {count} components in {pattern} pattern",
-                "components": placed_components
+                "components": placed_components,
             }
 
         except Exception as e:
@@ -842,7 +799,7 @@ class ComponentCommands:
             return {
                 "success": False,
                 "message": "Failed to place component array",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def align_components(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -852,7 +809,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             references = params.get("references", [])
@@ -864,7 +821,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Missing references",
-                    "errorDetails": "At least two component references are required"
+                    "errorDetails": "At least two component references are required",
                 }
 
             # Find all referenced components
@@ -875,7 +832,7 @@ class ComponentCommands:
                     return {
                         "success": False,
                         "message": "Component not found",
-                        "errorDetails": f"Could not find component: {ref}"
+                        "errorDetails": f"Could not find component: {ref}",
                     }
                 components.append(module)
 
@@ -890,36 +847,34 @@ class ComponentCommands:
                     return {
                         "success": False,
                         "message": "Missing edge parameter",
-                        "errorDetails": "Edge parameter is required for edge alignment"
+                        "errorDetails": "Edge parameter is required for edge alignment",
                     }
                 self._align_components_to_edge(components, edge)
             else:
                 return {
                     "success": False,
                     "message": "Invalid alignment option",
-                    "errorDetails": "Alignment must be 'horizontal', 'vertical', or 'edge'"
+                    "errorDetails": "Alignment must be 'horizontal', 'vertical', or 'edge'",
                 }
 
             # Prepare result data
             aligned_components = []
             for module in components:
                 pos = module.GetPosition()
-                aligned_components.append({
-                    "reference": module.GetReference(),
-                    "position": {
-                        "x": pos.x / 1000000,
-                        "y": pos.y / 1000000,
-                        "unit": "mm"
-                    },
-                    "rotation": module.GetOrientation().AsDegrees()
-                })
+                aligned_components.append(
+                    {
+                        "reference": module.GetReference(),
+                        "position": {"x": pos.x / 1000000, "y": pos.y / 1000000, "unit": "mm"},
+                        "rotation": module.GetOrientation().AsDegrees(),
+                    }
+                )
 
             return {
                 "success": True,
                 "message": f"Aligned {len(components)} components",
                 "alignment": alignment,
                 "distribution": distribution,
-                "components": aligned_components
+                "components": aligned_components,
             }
 
         except Exception as e:
@@ -927,7 +882,7 @@ class ComponentCommands:
             return {
                 "success": False,
                 "message": "Failed to align components",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def duplicate_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -937,7 +892,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             reference = params.get("reference")
@@ -949,7 +904,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Missing parameters",
-                    "errorDetails": "reference and newReference are required"
+                    "errorDetails": "reference and newReference are required",
                 }
 
             # Find the source component
@@ -958,7 +913,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Component not found",
-                    "errorDetails": f"Could not find component: {reference}"
+                    "errorDetails": f"Could not find component: {reference}",
                 }
 
             # Check if new reference already exists
@@ -966,7 +921,7 @@ class ComponentCommands:
                 return {
                     "success": False,
                     "message": "Reference already exists",
-                    "errorDetails": f"A component with reference {new_reference} already exists"
+                    "errorDetails": f"A component with reference {new_reference} already exists",
                 }
 
             # Create new footprint with the same properties
@@ -1014,14 +969,10 @@ class ComponentCommands:
                     "reference": new_reference,
                     "value": new_module.GetValue(),
                     "footprint": new_module.GetFPIDAsString(),
-                    "position": {
-                        "x": pos.x / 1000000,
-                        "y": pos.y / 1000000,
-                        "unit": "mm"
-                    },
+                    "position": {"x": pos.x / 1000000, "y": pos.y / 1000000, "unit": "mm"},
                     "rotation": new_module.GetOrientation().AsDegrees(),
-                    "layer": self.board.GetLayerName(new_module.GetLayer())
-                }
+                    "layer": self.board.GetLayerName(new_module.GetLayer()),
+                },
             }
 
         except Exception as e:
@@ -1029,12 +980,22 @@ class ComponentCommands:
             return {
                 "success": False,
                 "message": "Failed to duplicate component",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
-    def _place_grid_array(self, component_id: str, start_position: Dict[str, Any],
-                       rows: int, columns: int, spacing_x: float, spacing_y: float,
-                       reference_prefix: str, value: str, rotation: float, layer: str) -> List[Dict[str, Any]]:
+    def _place_grid_array(
+        self,
+        component_id: str,
+        start_position: Dict[str, Any],
+        rows: int,
+        columns: int,
+        spacing_x: float,
+        spacing_y: float,
+        reference_prefix: str,
+        value: str,
+        rotation: float,
+        layer: str,
+    ) -> List[Dict[str, Any]]:
         """Place components in a grid pattern and return the list of placed components"""
         placed = []
 
@@ -1058,24 +1019,35 @@ class ComponentCommands:
                 component_reference = f"{reference_prefix}{index}"
 
                 # Place component
-                result = self.place_component({
-                    "componentId": component_id,
-                    "position": {"x": x, "y": y, "unit": unit},
-                    "reference": component_reference,
-                    "value": value,
-                    "rotation": rotation,
-                    "layer": layer
-                })
+                result = self.place_component(
+                    {
+                        "componentId": component_id,
+                        "position": {"x": x, "y": y, "unit": unit},
+                        "reference": component_reference,
+                        "value": value,
+                        "rotation": rotation,
+                        "layer": layer,
+                    }
+                )
 
                 if result["success"]:
                     placed.append(result["component"])
 
         return placed
 
-    def _place_circular_array(self, component_id: str, center: Dict[str, Any],
-                          radius: float, count: int, angle_start: float,
-                          angle_step: float, reference_prefix: str,
-                          value: str, rotation_offset: float, layer: str) -> List[Dict[str, Any]]:
+    def _place_circular_array(
+        self,
+        component_id: str,
+        center: Dict[str, Any],
+        radius: float,
+        count: int,
+        angle_start: float,
+        angle_step: float,
+        reference_prefix: str,
+        value: str,
+        rotation_offset: float,
+        layer: str,
+    ) -> List[Dict[str, Any]]:
         """Place components in a circular pattern and return the list of placed components"""
         placed = []
 
@@ -1098,22 +1070,25 @@ class ComponentCommands:
             component_rotation = angle + rotation_offset
 
             # Place component
-            result = self.place_component({
-                "componentId": component_id,
-                "position": {"x": x, "y": y, "unit": unit},
-                "reference": component_reference,
-                "value": value,
-                "rotation": component_rotation,
-                "layer": layer
-            })
+            result = self.place_component(
+                {
+                    "componentId": component_id,
+                    "position": {"x": x, "y": y, "unit": unit},
+                    "reference": component_reference,
+                    "value": value,
+                    "rotation": component_rotation,
+                    "layer": layer,
+                }
+            )
 
             if result["success"]:
                 placed.append(result["component"])
 
         return placed
 
-    def _align_components_horizontally(self, components: List[pcbnew.FOOTPRINT],
-                                   distribution: str, spacing: Optional[float]) -> None:
+    def _align_components_horizontally(
+        self, components: List[pcbnew.FOOTPRINT], distribution: str, spacing: Optional[float]
+    ) -> None:
         """Align components horizontally and optionally distribute them"""
         if not components:
             return
@@ -1157,8 +1132,9 @@ class ComponentCommands:
                 x_current += spacing_nm
                 components[i].SetPosition(pcbnew.VECTOR2I(x_current, pos.y))
 
-    def _align_components_vertically(self, components: List[pcbnew.FOOTPRINT],
-                                 distribution: str, spacing: Optional[float]) -> None:
+    def _align_components_vertically(
+        self, components: List[pcbnew.FOOTPRINT], distribution: str, spacing: Optional[float]
+    ) -> None:
         """Align components vertically and optionally distribute them"""
         if not components:
             return

@@ -117,11 +117,7 @@ class PinLocator:
             # Find lib_symbols section
             lib_symbols = None
             for item in sch_data:
-                if (
-                    isinstance(item, list)
-                    and len(item) > 0
-                    and item[0] == Symbol("lib_symbols")
-                ):
+                if isinstance(item, list) and len(item) > 0 and item[0] == Symbol("lib_symbols"):
                     lib_symbols = item
                     break
 
@@ -131,11 +127,7 @@ class PinLocator:
 
             # Find the specific symbol definition
             for item in lib_symbols[1:]:  # Skip 'lib_symbols' itself
-                if (
-                    isinstance(item, list)
-                    and len(item) > 1
-                    and item[0] == Symbol("symbol")
-                ):
+                if isinstance(item, list) and len(item) > 1 and item[0] == Symbol("symbol"):
                     symbol_name = str(item[1]).strip('"')
                     if symbol_name == lib_id:
                         # Found the symbol, parse pins
@@ -220,20 +212,14 @@ class PinLocator:
             symbol_at = target_symbol.at.value
             symbol_rotation = float(symbol_at[2]) if len(symbol_at) > 2 else 0.0
 
-            lib_id = (
-                target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
-            )
+            lib_id = target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
             if not lib_id:
                 return None
 
             pins = self.get_symbol_pins(schematic_path, lib_id)
             if pin_number not in pins:
                 matched_num = next(
-                    (
-                        num
-                        for num, data in pins.items()
-                        if data.get("name") == pin_number
-                    ),
+                    (num for num, data in pins.items() if data.get("name") == pin_number),
                     None,
                 )
                 if matched_num:
@@ -290,9 +276,7 @@ class PinLocator:
             symbol_rotation = float(symbol_at[2]) if len(symbol_at) > 2 else 0.0
 
             # Get symbol lib_id
-            lib_id = (
-                target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
-            )
+            lib_id = target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
             if not lib_id:
                 logger.error(f"Symbol {symbol_reference} has no lib_id")
                 return None
@@ -311,11 +295,7 @@ class PinLocator:
             if pin_number not in pins:
                 # Try matching by pin name (e.g. "VCC1", "SDA", "GND")
                 matched_num = next(
-                    (
-                        num
-                        for num, data in pins.items()
-                        if data.get("name") == pin_number
-                    ),
+                    (num for num, data in pins.items() if data.get("name") == pin_number),
                     None,
                 )
                 if matched_num:
@@ -336,26 +316,18 @@ class PinLocator:
             pin_rel_x = pin_data["x"]
             pin_rel_y = pin_data["y"]
 
-            logger.debug(
-                f"Pin {pin_number} relative position: ({pin_rel_x}, {pin_rel_y})"
-            )
+            logger.debug(f"Pin {pin_number} relative position: ({pin_rel_x}, {pin_rel_y})")
 
             # Apply symbol rotation to pin position
             if symbol_rotation != 0:
-                pin_rel_x, pin_rel_y = self.rotate_point(
-                    pin_rel_x, pin_rel_y, symbol_rotation
-                )
-                logger.debug(
-                    f"After rotation {symbol_rotation}°: ({pin_rel_x}, {pin_rel_y})"
-                )
+                pin_rel_x, pin_rel_y = self.rotate_point(pin_rel_x, pin_rel_y, symbol_rotation)
+                logger.debug(f"After rotation {symbol_rotation}°: ({pin_rel_x}, {pin_rel_y})")
 
             # Calculate absolute position
             abs_x = symbol_x + pin_rel_x
             abs_y = symbol_y + pin_rel_y
 
-            logger.info(
-                f"Pin {symbol_reference}/{pin_number} located at ({abs_x}, {abs_y})"
-            )
+            logger.info(f"Pin {symbol_reference}/{pin_number} located at ({abs_x}, {abs_y})")
             return [abs_x, abs_y]
 
         except Exception as e:
@@ -397,9 +369,7 @@ class PinLocator:
                 return {}
 
             # Get lib_id
-            lib_id = (
-                target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
-            )
+            lib_id = target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
             if not lib_id:
                 logger.error(f"Symbol {symbol_reference} has no lib_id")
                 return {}
@@ -412,9 +382,7 @@ class PinLocator:
             # Calculate location for each pin
             result = {}
             for pin_num in pins.keys():
-                location = self.get_pin_location(
-                    schematic_path, symbol_reference, pin_num
-                )
+                location = self.get_pin_location(schematic_path, symbol_reference, pin_num)
                 if location:
                     result[pin_num] = location
 
@@ -444,9 +412,7 @@ if __name__ == "__main__":
     # Create test schematic with components (cross-platform temp directory)
     test_path = Path(tempfile.gettempdir()) / "test_pin_locator.kicad_sch"
     template_path = (
-        Path(__file__).parent.parent
-        / "templates"
-        / "template_with_symbols_expanded.kicad_sch"
+        Path(__file__).parent.parent / "templates" / "template_with_symbols_expanded.kicad_sch"
     )
 
     shutil.copy(template_path, test_path)
