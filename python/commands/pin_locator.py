@@ -220,14 +220,20 @@ class PinLocator:
             symbol_at = target_symbol.at.value
             symbol_rotation = float(symbol_at[2]) if len(symbol_at) > 2 else 0.0
 
-            lib_id = target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
+            lib_id = (
+                target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
+            )
             if not lib_id:
                 return None
 
             pins = self.get_symbol_pins(schematic_path, lib_id)
             if pin_number not in pins:
                 matched_num = next(
-                    (num for num, data in pins.items() if data.get("name") == pin_number),
+                    (
+                        num
+                        for num, data in pins.items()
+                        if data.get("name") == pin_number
+                    ),
                     None,
                 )
                 if matched_num:
@@ -305,11 +311,17 @@ class PinLocator:
             if pin_number not in pins:
                 # Try matching by pin name (e.g. "VCC1", "SDA", "GND")
                 matched_num = next(
-                    (num for num, data in pins.items() if data.get("name") == pin_number),
+                    (
+                        num
+                        for num, data in pins.items()
+                        if data.get("name") == pin_number
+                    ),
                     None,
                 )
                 if matched_num:
-                    logger.debug(f"Resolved pin name '{pin_number}' to pin number '{matched_num}' on {symbol_reference}")
+                    logger.debug(
+                        f"Resolved pin name '{pin_number}' to pin number '{matched_num}' on {symbol_reference}"
+                    )
                     pin_number = matched_num
                 else:
                     logger.error(
