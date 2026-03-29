@@ -161,37 +161,15 @@ preserves the component's position and UUID.
 Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_component.`,
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      reference: z
-        .string()
-        .describe(
-          "Current reference designator of the component (e.g. R1, U3)",
-        ),
-      footprint: z
-        .string()
-        .optional()
-        .describe(
-          "New KiCAD footprint string (e.g. Resistor_SMD:R_0603_1608Metric)",
-        ),
-      value: z
-        .string()
-        .optional()
-        .describe("New value string (e.g. 10k, 100nF)"),
-      newReference: z
-        .string()
-        .optional()
-        .describe("Rename the reference designator (e.g. R1 → R10)"),
-      fieldPositions: z
-        .record(
-          z.object({
-            x: z.number(),
-            y: z.number(),
-            angle: z.number().optional().default(0),
-          }),
-        )
-        .optional()
-        .describe(
-          'Reposition field labels: map of field name to {x, y, angle} (e.g. {"Reference": {"x": 12.5, "y": 17.0}})',
-        ),
+      reference: z.string().describe("Current reference designator of the component (e.g. R1, U3)"),
+      footprint: z.string().optional().describe("New KiCAD footprint string (e.g. Resistor_SMD:R_0603_1608Metric)"),
+      value: z.string().optional().describe("New value string (e.g. 10k, 100nF)"),
+      newReference: z.string().optional().describe("Rename the reference designator (e.g. R1 → R10)"),
+      fieldPositions: z.record(z.object({
+        x: z.number(),
+        y: z.number(),
+        angle: z.number().optional().default(0),
+      })).optional().describe("Reposition field labels: map of field name to {x, y, angle} (e.g. {\"Reference\": {\"x\": 12.5, \"y\": 17.0}})"),
     },
     async (args: {
       schematicPath: string;
@@ -232,9 +210,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     "Get full component info from a schematic: position, field values, and each field's label position (at x/y/angle). Use this to inspect or prepare repositioning of Reference/Value labels.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      reference: z
-        .string()
-        .describe("Component reference designator (e.g. R1, U1)"),
+      reference: z.string().describe("Component reference designator (e.g. R1, U1)"),
     },
     async (args: { schematicPath: string; reference: string }) => {
       const result = await callKicadScript("get_schematic_component", args);
@@ -244,24 +220,20 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           : "unknown";
         const fieldLines = Object.entries(result.fields ?? {}).map(
           ([name, f]: [string, any]) =>
-            `  ${name}: "${f.value}" @ (${f.x}, ${f.y}, angle=${f.angle}°)`,
+            `  ${name}: "${f.value}" @ (${f.x}, ${f.y}, angle=${f.angle}°)`
         );
         return {
-          content: [
-            {
-              type: "text",
-              text: `Component ${result.reference} at ${pos}\nFields:\n${fieldLines.join("\n")}`,
-            },
-          ],
+          content: [{
+            type: "text",
+            text: `Component ${result.reference} at ${pos}\nFields:\n${fieldLines.join("\n")}`,
+          }],
         };
       }
       return {
-        content: [
-          {
-            type: "text",
-            text: `Failed to get component: ${result.message || "Unknown error"}`,
-          },
-        ],
+        content: [{
+          type: "text",
+          text: `Failed to get component: ${result.message || "Unknown error"}`,
+        }],
       };
     },
   );
@@ -608,14 +580,8 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       filter: z
         .object({
-          libId: z
-            .string()
-            .optional()
-            .describe("Filter by library ID (e.g., 'Device:R')"),
-          referencePrefix: z
-            .string()
-            .optional()
-            .describe("Filter by reference prefix (e.g., 'R', 'C', 'U')"),
+          libId: z.string().optional().describe("Filter by library ID (e.g., 'Device:R')"),
+          referencePrefix: z.string().optional().describe("Filter by reference prefix (e.g., 'R', 'C', 'U')"),
         })
         .optional()
         .describe("Optional filters"),
@@ -629,9 +595,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         const comps = result.components || [];
         if (comps.length === 0) {
           return {
-            content: [
-              { type: "text", text: "No components found in schematic." },
-            ],
+            content: [{ type: "text", text: "No components found in schematic." }],
           };
         }
         const lines = comps.map(
@@ -692,10 +656,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       }
       return {
         content: [
-          {
-            type: "text",
-            text: `Failed to list nets: ${result.message || "Unknown error"}`,
-          },
+          { type: "text", text: `Failed to list nets: ${result.message || "Unknown error"}` },
         ],
         isError: true,
       };
@@ -733,10 +694,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       }
       return {
         content: [
-          {
-            type: "text",
-            text: `Failed to list wires: ${result.message || "Unknown error"}`,
-          },
+          { type: "text", text: `Failed to list wires: ${result.message || "Unknown error"}` },
         ],
         isError: true,
       };
@@ -774,10 +732,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       }
       return {
         content: [
-          {
-            type: "text",
-            text: `Failed to list labels: ${result.message || "Unknown error"}`,
-          },
+          { type: "text", text: `Failed to list labels: ${result.message || "Unknown error"}` },
         ],
         isError: true,
       };
@@ -834,7 +789,10 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       reference: z.string().describe("Reference designator (e.g., R1, U1)"),
       angle: z.number().describe("Rotation angle in degrees (0, 90, 180, 270)"),
-      mirror: z.enum(["x", "y"]).optional().describe("Optional mirror axis"),
+      mirror: z
+        .enum(["x", "y"])
+        .optional()
+        .describe("Optional mirror axis"),
     },
     async (args: {
       schematicPath: string;
@@ -1078,14 +1036,8 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         .enum(["png", "svg"])
         .optional()
         .describe("Output format (default: png)"),
-      width: z
-        .number()
-        .optional()
-        .describe("Image width in pixels (default: 1200)"),
-      height: z
-        .number()
-        .optional()
-        .describe("Image height in pixels (default: 900)"),
+      width: z.number().optional().describe("Image width in pixels (default: 1200)"),
+      height: z.number().optional().describe("Image height in pixels (default: 900)"),
     },
     async (args: {
       schematicPath: string;
@@ -1255,35 +1207,19 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     "get_schematic_view_region",
     "Export a cropped region of the schematic as an image (PNG or SVG). Specify bounding box coordinates in schematic mm. Useful for zooming into a specific area to inspect wiring or layout.",
     {
-      schematicPath: z
-        .string()
-        .describe("Path to the .kicad_sch schematic file"),
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
       x1: z.number().describe("Left X coordinate of the region in mm"),
       y1: z.number().describe("Top Y coordinate of the region in mm"),
       x2: z.number().describe("Right X coordinate of the region in mm"),
       y2: z.number().describe("Bottom Y coordinate of the region in mm"),
-      format: z
-        .enum(["png", "svg"])
-        .optional()
-        .describe("Output image format (default: png)"),
-      width: z
-        .number()
-        .optional()
-        .describe("Output image width in pixels (default: 800)"),
-      height: z
-        .number()
-        .optional()
-        .describe("Output image height in pixels (default: 600)"),
+      format: z.enum(["png", "svg"]).optional().describe("Output image format (default: png)"),
+      width: z.number().optional().describe("Output image width in pixels (default: 800)"),
+      height: z.number().optional().describe("Output image height in pixels (default: 600)"),
     },
     async (args: {
       schematicPath: string;
-      x1: number;
-      y1: number;
-      x2: number;
-      y2: number;
-      format?: string;
-      width?: number;
-      height?: number;
+      x1: number; y1: number; x2: number; y2: number;
+      format?: string; width?: number; height?: number;
     }) => {
       const result = await callKicadScript("get_schematic_view_region", args);
       if (result.success && result.imageData) {
@@ -1291,40 +1227,27 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           return { content: [{ type: "text", text: result.imageData }] };
         }
         return {
-          content: [
-            {
-              type: "image",
-              data: result.imageData,
-              mimeType: "image/png",
-            },
-          ],
+          content: [{
+            type: "image",
+            data: result.imageData,
+            mimeType: "image/png",
+          }],
         };
       }
       return {
-        content: [
-          {
-            type: "text",
-            text: `Failed: ${result.message || "Unknown error"}`,
-          },
-        ],
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
       };
     },
   );
+
 
   // Find overlapping elements
   server.tool(
     "find_overlapping_elements",
     "Detect spatially overlapping symbols, wires, and labels in the schematic. Finds duplicate power symbols at the same position, collinear overlapping wires, and labels stacked on top of each other.",
     {
-      schematicPath: z
-        .string()
-        .describe("Path to the .kicad_sch schematic file"),
-      tolerance: z
-        .number()
-        .optional()
-        .describe(
-          "Distance threshold in mm for label proximity and wire collinearity checks. Symbol overlap uses bounding-box intersection. (default: 0.5)",
-        ),
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+      tolerance: z.number().optional().describe("Distance threshold in mm for label proximity and wire collinearity checks. Symbol overlap uses bounding-box intersection. (default: 0.5)"),
     },
     async (args: { schematicPath: string; tolerance?: number }) => {
       const result = await callKicadScript("find_overlapping_elements", args);
@@ -1336,36 +1259,25 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         if (syms.length) {
           lines.push(`\nOverlapping symbols (${syms.length}):`);
           syms.slice(0, 20).forEach((o: any) => {
-            lines.push(
-              `  ${o.element1.reference} ↔ ${o.element2.reference} (${o.distance}mm) [${o.type}]`,
-            );
+            lines.push(`  ${o.element1.reference} ↔ ${o.element2.reference} (${o.distance}mm) [${o.type}]`);
           });
         }
         if (lbls.length) {
           lines.push(`\nOverlapping labels (${lbls.length}):`);
           lbls.slice(0, 20).forEach((o: any) => {
-            lines.push(
-              `  "${o.element1.name}" ↔ "${o.element2.name}" (${o.distance}mm)`,
-            );
+            lines.push(`  "${o.element1.name}" ↔ "${o.element2.name}" (${o.distance}mm)`);
           });
         }
         if (wires.length) {
           lines.push(`\nOverlapping wires (${wires.length}):`);
           wires.slice(0, 20).forEach((o: any) => {
-            lines.push(
-              `  wire @ (${o.wire1.start.x},${o.wire1.start.y})→(${o.wire1.end.x},${o.wire1.end.y}) overlaps with another`,
-            );
+            lines.push(`  wire @ (${o.wire1.start.x},${o.wire1.start.y})→(${o.wire1.end.x},${o.wire1.end.y}) overlaps with another`);
           });
         }
         return { content: [{ type: "text", text: lines.join("\n") }] };
       }
       return {
-        content: [
-          {
-            type: "text",
-            text: `Failed: ${result.message || "Unknown error"}`,
-          },
-        ],
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
       };
     },
   );
@@ -1375,9 +1287,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     "get_elements_in_region",
     "List all symbols, wires, and labels within a rectangular region of the schematic. Useful for understanding what is in a specific area before modifying it.",
     {
-      schematicPath: z
-        .string()
-        .describe("Path to the .kicad_sch schematic file"),
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
       x1: z.number().describe("Left X coordinate of the region in mm"),
       y1: z.number().describe("Top Y coordinate of the region in mm"),
       x2: z.number().describe("Right X coordinate of the region in mm"),
@@ -1385,56 +1295,39 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
     async (args: {
       schematicPath: string;
-      x1: number;
-      y1: number;
-      x2: number;
-      y2: number;
+      x1: number; y1: number; x2: number; y2: number;
     }) => {
       const result = await callKicadScript("get_elements_in_region", args);
       if (result.success) {
         const c = result.counts;
-        const lines = [
-          `Region (${args.x1},${args.y1})→(${args.x2},${args.y2}): ${c.symbols} symbols, ${c.wires} wires, ${c.labels} labels`,
-        ];
+        const lines = [`Region (${args.x1},${args.y1})→(${args.x2},${args.y2}): ${c.symbols} symbols, ${c.wires} wires, ${c.labels} labels`];
         const syms: any[] = result.symbols || [];
         if (syms.length) {
           lines.push("\nSymbols:");
           syms.forEach((s: any) => {
             const pinCount = s.pins ? Object.keys(s.pins).length : 0;
-            lines.push(
-              `  ${s.reference} (${s.libId}) @ (${s.position.x}, ${s.position.y}) [${pinCount} pins]`,
-            );
+            lines.push(`  ${s.reference} (${s.libId}) @ (${s.position.x}, ${s.position.y}) [${pinCount} pins]`);
           });
         }
         const wires: any[] = result.wires || [];
         if (wires.length) {
           lines.push(`\nWires (${wires.length}):`);
           wires.slice(0, 30).forEach((w: any) => {
-            lines.push(
-              `  (${w.start.x},${w.start.y}) → (${w.end.x},${w.end.y})`,
-            );
+            lines.push(`  (${w.start.x},${w.start.y}) → (${w.end.x},${w.end.y})`);
           });
-          if (wires.length > 30)
-            lines.push(`  ... and ${wires.length - 30} more`);
+          if (wires.length > 30) lines.push(`  ... and ${wires.length - 30} more`);
         }
         const labels: any[] = result.labels || [];
         if (labels.length) {
           lines.push(`\nLabels (${labels.length}):`);
           labels.forEach((l: any) => {
-            lines.push(
-              `  "${l.name}" [${l.type}] @ (${l.position.x}, ${l.position.y})`,
-            );
+            lines.push(`  "${l.name}" [${l.type}] @ (${l.position.x}, ${l.position.y})`);
           });
         }
         return { content: [{ type: "text", text: lines.join("\n") }] };
       }
       return {
-        content: [
-          {
-            type: "text",
-            text: `Failed: ${result.message || "Unknown error"}`,
-          },
-        ],
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
       };
     },
   );
@@ -1444,9 +1337,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     "find_wires_crossing_symbols",
     "Find all wires that cross over component symbol bodies. Wires passing over symbols are unacceptable in schematics — they indicate routing mistakes where a wire was drawn across a component instead of around it.",
     {
-      schematicPath: z
-        .string()
-        .describe("Path to the .kicad_sch schematic file"),
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
     },
     async (args: { schematicPath: string }) => {
       const result = await callKicadScript("find_wires_crossing_symbols", args);
@@ -1455,20 +1346,14 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         const lines = [`Found ${collisions.length} wire(s) crossing symbols:`];
         collisions.slice(0, 30).forEach((c: any, i: number) => {
           lines.push(
-            `  ${i + 1}. Wire (${c.wire.start.x},${c.wire.start.y})→(${c.wire.end.x},${c.wire.end.y}) crosses ${c.component.reference} (${c.component.libId})`,
+            `  ${i + 1}. Wire (${c.wire.start.x},${c.wire.start.y})→(${c.wire.end.x},${c.wire.end.y}) crosses ${c.component.reference} (${c.component.libId})`
           );
         });
-        if (collisions.length > 30)
-          lines.push(`  ... and ${collisions.length - 30} more`);
+        if (collisions.length > 30) lines.push(`  ... and ${collisions.length - 30} more`);
         return { content: [{ type: "text", text: lines.join("\n") }] };
       }
       return {
-        content: [
-          {
-            type: "text",
-            text: `Failed: ${result.message || "Unknown error"}`,
-          },
-        ],
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
       };
     },
   );
