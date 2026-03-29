@@ -425,6 +425,14 @@ class DynamicSymbolLoader:
     (property "Datasheet" "~" (at {x} {y} 0)
       (effects (font (size 1.27 1.27)) (hide yes))
     )
+    (instances
+      (project "project"
+        (path "/"
+          (reference "{reference}")
+          (unit 1)
+        )
+      )
+    )
   )"""
 
         with open(schematic_path, "r", encoding="utf-8") as f:

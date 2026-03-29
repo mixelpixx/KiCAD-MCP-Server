@@ -6,7 +6,8 @@ All methods operate on in-memory sexpdata lists (no disk I/O).
 
 import logging
 import math
-from typing import Dict, Optional, Tuple
+import uuid
+from typing import Dict, List, Optional, Tuple
 
 import sexpdata
 from sexpdata import Symbol
@@ -27,6 +28,10 @@ _K = {
         "wire",
         "junction",
         "property",
+        "stroke",
+        "width",
+        "type",
+        "uuid",
     ]
 }
 
@@ -309,3 +314,126 @@ class WireDragger:
                         psub[2] += dy
                         break
         return True
+
+    @staticmethod
+    def _make_wire_sexp(x1: float, y1: float, x2: float, y2: float) -> list:
+        """Build a wire s-expression list in KiCAD schematic format."""
+        wire_uuid = str(uuid.uuid4())
+        return [
+            _K["wire"],
+            [_K["pts"], [_K["xy"], x1, y1], [_K["xy"], x2, y2]],
+            [_K["stroke"], [_K["width"], 0], [_K["type"], Symbol("default")]],
+            [_K["uuid"], wire_uuid],
+        ]
+
+    @staticmethod
+    def get_all_stationary_pin_positions(
+        sch_data: list,
+        moved_reference: str,
+    ) -> Dict[Tuple[float, float], str]:
+        """
+        Return a map of {world_xy: reference} for every pin of every symbol
+        in sch_data *except* moved_reference.
+
+        This is used to detect pins of stationary components that coincide
+        with pins of the moved component (touching-pin connections).
+        """
+        sym_k = _K["symbol"]
+        prop_k = _K["property"]
+        result: Dict[Tuple[float, float], str] = {}
+
+        for item in sch_data:
+            if not (isinstance(item, list) and item and item[0] == sym_k):
+                continue
+            # Determine reference
+            ref_val = None
+            for sub in item[1:]:
+                if isinstance(sub, list) and len(sub) >= 3 and sub[0] == prop_k:
+                    if str(sub[1]).strip('"') == "Reference":
+                        ref_val = str(sub[2]).strip('"')
+                        break
+            if ref_val is None or ref_val == moved_reference:
+                continue
+            # Skip template / power symbols whose references start with special chars
+            # but we still want to handle them — no filtering needed here.
+
+            # Find lib_id and position for this symbol
+            found = WireDragger.find_symbol(sch_data, ref_val)
+            if found is None:
+                continue
+            _, sx, sy, rotation, lib_id, mirror_x, mirror_y = found
+            pins = WireDragger.get_pin_defs(sch_data, lib_id)
+            for pin_num, pin in pins.items():
+                wx, wy = WireDragger.pin_world_xy(
+                    pin["x"], pin["y"], sx, sy, rotation, mirror_x, mirror_y
+                )
+                key = (round(wx, 6), round(wy, 6))
+                result[key] = ref_val
+
+        return result
+
+    @staticmethod
+    def synthesize_touching_pin_wires(
+        sch_data: list,
+        moved_reference: str,
+        pin_positions: Dict[str, Tuple[Tuple[float, float], Tuple[float, float]]],
+        eps: float = EPS,
+    ) -> int:
+        """
+        Detect touching-pin connections and synthesize wire segments to bridge gaps
+        created by moving a component.
+
+        For each pin of *moved_reference* whose old world position coincides with
+        a pin of a stationary component:
+          - If the pin moved (old_xy != new_xy), insert a wire from old_xy to new_xy.
+          - If the pin now lands on another stationary pin's position, skip (they touch again).
+          - If old_xy == new_xy, do nothing (no gap was created).
+
+        Modifies sch_data in place.
+        Returns the number of wire segments synthesized.
+        """
+        if not pin_positions:
+            return 0
+
+        stationary_pins = WireDragger.get_all_stationary_pin_positions(sch_data, moved_reference)
+        if not stationary_pins:
+            return 0
+
+        synthesized = 0
+
+        for pin_num, (old_xy, new_xy) in pin_positions.items():
+            # Check if a stationary pin touches this pin's old position
+            touching = any(
+                _coords_match(old_xy[0], old_xy[1], sx, sy, eps) for (sx, sy) in stationary_pins
+            )
+            if not touching:
+                continue
+
+            # The pin has moved — check if it actually separated
+            if _coords_match(old_xy[0], old_xy[1], new_xy[0], new_xy[1], eps):
+                # Pin didn't actually move; no gap
+                continue
+
+            # Check if the pin's new position happens to touch another stationary pin
+            # (component moved into a different touching position — no wire needed)
+            rejoining = any(
+                _coords_match(new_xy[0], new_xy[1], sx, sy, eps) for (sx, sy) in stationary_pins
+            )
+            if rejoining:
+                logger.debug(
+                    f"Pin {moved_reference}/{pin_num} moved from {old_xy} to {new_xy} "
+                    f"and rejoins another stationary pin; no wire synthesized"
+                )
+                continue
+
+            logger.info(
+                f"Synthesizing wire for touching-pin connection: "
+                f"{moved_reference}/{pin_num} moved from {old_xy} to {new_xy}"
+            )
+            wire = WireDragger._make_wire_sexp(old_xy[0], old_xy[1], new_xy[0], new_xy[1])
+            # Insert before the last item (sheet_instances) to keep file tidy,
+            # but appending is also valid — just append.
+            sch_data.append(wire)
+            synthesized += 1
+
+        return synthesized

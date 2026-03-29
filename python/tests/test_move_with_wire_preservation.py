@@ -18,7 +18,7 @@ from sexpdata import Symbol
 # Make python/ importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from commands.wire_dragger import EPS, WireDragger, _rotate
+from commands.wire_dragger import EPS, WireDragger, _coords_match, _rotate
 
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "empty.kicad_sch"
 
@@ -659,3 +659,351 @@ class TestMoveWithWirePreservation:
         )
         assert not result["success"]
         assert "not found" in result.get("message", "").lower()
+
+
+# ---------------------------------------------------------------------------
+# TestSynthesizeTouchingPinWires  (unit)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSynthesizeTouchingPinWires:
+    """Unit tests for WireDragger.synthesize_touching_pin_wires."""
+
+    def _make_two_resistors(self, r1_x, r1_y, r2_x, r2_y):
+        """Build sch_data with R1 and R2, each Device:R."""
+        return _make_sch_data(
+            [
+                _make_symbol("R1", r1_x, r1_y),
+                _make_symbol("R2", r2_x, r2_y),
+            ]
+        )
+
+    def test_no_stationary_symbols_returns_zero(self):
+        """With only the moved component in sch_data, nothing is synthesized."""
+        sch = _make_sch_data([_make_symbol("R1", 0, 0)])
+        pin_positions = WireDragger.compute_pin_positions(sch, "R1", 10, 20)
+        count = WireDragger.synthesize_touching_pin_wires(sch, "R1", pin_positions)
+        assert count == 0
+
+    def test_touching_pin_gap_generates_wire(self):
+        """
+        R1 at (0, 0) pin2 at (0, -3.81).
+        R2 at (0, -7.62) pin1 at (0, -3.81).  ← pins touch
+        Moving R1 to (10, 0) causes pin2 to move to (10, -3.81).
+        A wire from (0, -3.81) to (10, -3.81) should be synthesized.
+        """
+        # R2 pin1 is at (0, -7.62 + 3.81) = (0, -3.81)
+        sch = self._make_two_resistors(0, 0, 0, -7.62)
+
+        # Verify the touching: R1 pin2 old = (0, -3.81), R2 pin1 = (0, -3.81)
+        pin_positions = WireDragger.compute_pin_positions(sch, "R1", 10, 0)
+        old2, new2 = pin_positions["2"]
+        assert abs(old2[0] - 0) < 1e-3 and abs(old2[1] - (-3.81)) < 1e-3
+        assert abs(new2[0] - 10) < 1e-3 and abs(new2[1] - (-3.81)) < 1e-3
+
+        wire_count_before = sum(
+            1 for item in sch if isinstance(item, list) and item and item[0] == _sym("wire")
+        )
+        count = WireDragger.synthesize_touching_pin_wires(sch, "R1", pin_positions)
+        assert count == 1, f"Expected 1 synthesized wire, got {count}"
+
+        wires = [
+            item for item in sch if isinstance(item, list) and item and item[0] == _sym("wire")
+        ]
+        assert len(wires) == wire_count_before + 1
+
+        # The new wire should span (0, -3.81) → (10, -3.81)
+        new_wire = wires[-1]
+        pts = next(s for s in new_wire[1:] if isinstance(s, list) and s and s[0] == _sym("pts"))
+        xys = [p for p in pts[1:] if isinstance(p, list) and len(p) >= 3 and p[0] == _sym("xy")]
+        assert len(xys) == 2
+        endpoints = {
+            (round(float(xys[0][1]), 3), round(float(xys[0][2]), 3)),
+            (round(float(xys[1][1]), 3), round(float(xys[1][2]), 3)),
+        }
+        assert (0.0, -3.81) in endpoints, f"Expected (0, -3.81) in wire endpoints, got {endpoints}"
+        assert (
+            10.0,
+            -3.81,
+        ) in endpoints, f"Expected (10, -3.81) in wire endpoints, got {endpoints}"
+
+    def test_no_wire_when_pin_didnt_move(self):
+        """
+        If old_xy == new_xy for a touching pin (component moved but this pin stayed put),
+        no wire should be synthesized.
+        """
+        # R1 at (0, 0), R2 at (0, -7.62) — pin2 of R1 and pin1 of R2 touch at (0, -3.81)
+        sch = self._make_two_resistors(0, 0, 0, -7.62)
+        # Moving R1 to (0, 0) — effectively no move, same position
+        pin_positions = WireDragger.compute_pin_positions(sch, "R1", 0, 0)
+        count = WireDragger.synthesize_touching_pin_wires(sch, "R1", pin_positions)
+        assert count == 0
+
+    def test_no_wire_when_rejoins_other_stationary_pin(self):
+        """
+        If the moved pin's new position coincides with another stationary pin,
+        no wire should be synthesized (they touch again).
+        """
+        # R1 at (0, 0), R2 at (0, -7.62), R3 at (10, -7.62)
+        # R1 pin2 was touching R2 pin1 at (0, -3.81).
+        # Moving R1 to (10, 0): pin2 lands at (10, -3.81) which is R3 pin1.
+        sch = _make_sch_data(
+            [
+                _make_symbol("R1", 0, 0),
+                _make_symbol("R2", 0, -7.62),
+                _make_symbol("R3", 10, -7.62),
+            ]
+        )
+        pin_positions = WireDragger.compute_pin_positions(sch, "R1", 10, 0)
+        count = WireDragger.synthesize_touching_pin_wires(sch, "R1", pin_positions)
+        assert count == 0, f"Expected 0 synthesized wires (rejoined), got {count}"
+
+    def test_empty_pin_positions_returns_zero(self):
+        sch = _make_sch_data([_make_symbol("R1", 0, 0)])
+        count = WireDragger.synthesize_touching_pin_wires(sch, "R1", {})
+        assert count == 0
+
+    def test_non_touching_pins_not_affected(self):
+        """
+        When R1 and R2 are NOT touching (different positions), no wire is synthesized.
+        """
+        # R1 at (0, 0), R2 at (100, 100) — far apart
+        sch = self._make_two_resistors(0, 0, 100, 100)
+        pin_positions = WireDragger.compute_pin_positions(sch, "R1", 10, 0)
+        count = WireDragger.synthesize_touching_pin_wires(sch, "R1", pin_positions)
+        assert count == 0
+
+
+# ---------------------------------------------------------------------------
+# TestOldToNewCollision  (unit) — regression for the duplicate-pin-position bug
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestOldToNewCollision:
+    """Verify that coincident pins do not silently overwrite each other in old_to_new."""
+
+    def test_handler_logs_warning_on_collision(self, caplog):
+        """
+        When two pins share the same old position, a warning should be logged
+        and the *first* mapping should be kept (not overwritten by the second).
+        """
+        import logging
+
+        # Build a fake pin_positions dict with a deliberate collision
+        pin_positions = {
+            "1": ((0.0, 3.81), (10.0, 23.81)),
+            "2": ((0.0, 3.81), (10.0, 16.19)),  # same old_xy as pin "1"
+        }
+
+        old_to_new = {}
+        with caplog.at_level(logging.WARNING, logger="kicad_interface"):
+            for _pin, (old_xy, new_xy) in pin_positions.items():
+                if old_xy in old_to_new:
+                    import logging as _logging
+
+                    logger_inner = _logging.getLogger("kicad_interface")
+                    logger_inner.warning(
+                        f"move_schematic_component: pin {_pin!r} shares old position {old_xy} "
+                        f"with another pin; keeping first entry, skipping duplicate"
+                    )
+                    continue
+                old_to_new[old_xy] = new_xy
+
+        # Only one entry should exist, and it should be the first one
+        assert len(old_to_new) == 1
+        assert old_to_new[(0.0, 3.81)] == (10.0, 23.81)
+        # Warning should have been logged
+        assert any("skipping duplicate" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# TestTouchingPinIntegration  (integration)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestTouchingPinIntegration:
+    """Integration tests for pin-touching connection wire synthesis."""
+
+    def _make_schematic(self, extra_sexp=""):
+        """Copy empty.kicad_sch to a temp file."""
+        tmp = Path(tempfile.mkdtemp()) / "test.kicad_sch"
+        shutil.copy(TEMPLATE_PATH, tmp)
+        if extra_sexp:
+            content = tmp.read_text(encoding="utf-8")
+            idx = content.rfind(")")
+            content = content[:idx] + "\n" + extra_sexp + "\n)"
+            tmp.write_text(content, encoding="utf-8")
+        return tmp
+
+    def _add_resistor(self, path: Path, ref: str, x: float, y: float, rotation: float = 0) -> Path:
+        import uuid as _uuid
+
+        u = str(_uuid.uuid4())
+        sexp = f"""
+  (symbol (lib_id "Device:R") (at {x} {y} {rotation}) (unit 1)
+    (in_bom yes) (on_board yes) (dnp no)
+    (uuid "{u}")
+    (property "Reference" "{ref}" (at {x + 2.032} {y} 90)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Value" "10k" (at {x} {y} 90)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "Footprint" "" (at {x - 1.778} {y} 90)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "Datasheet" "~" (at {x} {y} 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (pin "1" (uuid "{_uuid.uuid4()}"))
+    (pin "2" (uuid "{_uuid.uuid4()}"))
+    (instances (project "test" (path "/" (reference "{ref}") (unit 1))))
+  )"""
+        content = path.read_text(encoding="utf-8")
+        idx = content.rfind(")")
+        path.write_text(content[:idx] + "\n" + sexp + "\n)", encoding="utf-8")
+        return path
+
+    def _parse_wires(self, path: Path):
+        content = path.read_text(encoding="utf-8")
+        data = sexpdata.loads(content)
+        wires = []
+        for item in data:
+            if not (isinstance(item, list) and item and item[0] == Symbol("wire")):
+                continue
+            pts = next(
+                (s for s in item[1:] if isinstance(s, list) and s and s[0] == Symbol("pts")),
+                None,
+            )
+            if pts is None:
+                continue
+            xys = [
+                p for p in pts[1:] if isinstance(p, list) and len(p) >= 3 and p[0] == Symbol("xy")
+            ]
+            if len(xys) >= 2:
+                wires.append(
+                    (
+                        (float(xys[0][1]), float(xys[0][2])),
+                        (float(xys[-1][1]), float(xys[-1][2])),
+                    )
+                )
+        return wires
+
+    def test_touching_pin_wire_created_on_move(self):
+        """
+        R1 at (100, 100) and R2 at (100, 92.38) share a touching pin:
+          R1 pin2 = (100, 96.19), R2 pin1 = (100, 96.19).
+        Moving R1 to (110, 100) should synthesize a wire from (100, 96.19) to (110, 96.19).
+        """
+        sch = self._make_schematic()
+        # R1 pin2 world position = 100 + (-3.81) = 96.19
+        # R2 pin1 world position = 92.38 + 3.81 = 96.19
+        self._add_resistor(sch, "R1", 100, 100)
+        self._add_resistor(sch, "R2", 100, 92.38)
+
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from kicad_interface import KiCADInterface
+
+        iface = KiCADInterface()
+        result = iface.handle_command(
+            "move_schematic_component",
+            {
+                "schematicPath": str(sch),
+                "reference": "R1",
+                "position": {"x": 110, "y": 100},
+            },
+        )
+        assert result["success"], result.get("message")
+        assert (
+            result.get("wiresSynthesized", 0) >= 1
+        ), f"Expected at least 1 synthesized wire, got {result}"
+
+        wires = self._parse_wires(sch)
+        # There should be a wire bridging the old and new pin2 positions
+        old_pin2 = (100.0, 96.19)
+        new_pin2 = (110.0, 96.19)
+        bridging = [
+            (s, e)
+            for s, e in wires
+            if (
+                (
+                    abs(s[0] - old_pin2[0]) < 0.05
+                    and abs(s[1] - old_pin2[1]) < 0.05
+                    and abs(e[0] - new_pin2[0]) < 0.05
+                    and abs(e[1] - new_pin2[1]) < 0.05
+                )
+                or (
+                    abs(e[0] - old_pin2[0]) < 0.05
+                    and abs(e[1] - old_pin2[1]) < 0.05
+                    and abs(s[0] - new_pin2[0]) < 0.05
+                    and abs(s[1] - new_pin2[1]) < 0.05
+                )
+            )
+        ]
+        assert (
+            len(bridging) >= 1
+        ), f"Expected a bridging wire from {old_pin2} to {new_pin2}, got wires: {wires}"
+
+    def test_no_wire_synthesized_when_no_touching_pins(self):
+        """
+        Two resistors with no pin overlap should not generate any synthesized wires.
+        """
+        sch = self._make_schematic()
+        self._add_resistor(sch, "R1", 100, 100)
+        self._add_resistor(sch, "R2", 150, 150)  # far away
+
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from kicad_interface import KiCADInterface
+
+        iface = KiCADInterface()
+        result = iface.handle_command(
+            "move_schematic_component",
+            {
+                "schematicPath": str(sch),
+                "reference": "R1",
+                "position": {"x": 110, "y": 100},
+            },
+        )
+        assert result["success"], result.get("message")
+        assert result.get("wiresSynthesized", 0) == 0
+
+    def test_existing_wires_still_dragged_with_touching_pins(self):
+        """
+        When R1 has both an explicit wire AND a touching-pin connection,
+        both should be handled: the wire dragged and the touching-pin bridged.
+        """
+        sch = self._make_schematic()
+        # R1 at (100, 100), R2 at (100, 92.38) — pin2 of R1 touches pin1 of R2
+        self._add_resistor(sch, "R1", 100, 100)
+        self._add_resistor(sch, "R2", 100, 92.38)
+
+        # Also add an explicit wire at pin1 of R1 (100, 103.81) going up
+        import uuid as _uuid
+
+        wire_sexp = f"""
+  (wire (pts (xy 100 103.81) (xy 100 115))
+    (stroke (width 0) (type default))
+    (uuid "{_uuid.uuid4()}")
+  )"""
+        content = sch.read_text(encoding="utf-8")
+        idx = content.rfind(")")
+        sch.write_text(content[:idx] + "\n" + wire_sexp + "\n)", encoding="utf-8")
+
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from kicad_interface import KiCADInterface
+
+        iface = KiCADInterface()
+        result = iface.handle_command(
+            "move_schematic_component",
+            {
+                "schematicPath": str(sch),
+                "reference": "R1",
+                "position": {"x": 110, "y": 100},
+            },
+        )
+        assert result["success"], result.get("message")
+        assert result.get("wiresMoved", 0) >= 1, "Expected at least one wire endpoint dragged"
+        assert result.get("wiresSynthesized", 0) >= 1, "Expected at least one touching-pin wire"

@@ -2081,9 +2081,23 @@ class KiCADInterface:
                 # Build old→new coordinate map (deduplicate coincident pins)
                 old_to_new = {}
                 for _pin, (old_xy, new_xy) in pin_positions.items():
+                    if old_xy in old_to_new:
+                        logger.warning(
+                            f"move_schematic_component: pin {_pin!r} of {reference!r} "
+                            f"shares old position {old_xy} with another pin; "
+                            f"keeping first entry, skipping duplicate"
+                        )
+                        continue
                     old_to_new[old_xy] = new_xy
 
                 drag_summary = WireDragger.drag_wires(sch_data, old_to_new)
+
+                # Synthesize wires for touching-pin connections after dragging,
+                # so drag_wires doesn't accidentally move and collapse the new wire.
+                wires_synthesized = WireDragger.synthesize_touching_pin_wires(
+                    sch_data, reference, pin_positions
+                )
+                drag_summary["wires_synthesized"] = wires_synthesized
 
             # Update symbol position
             WireDragger.update_symbol_position(sch_data, reference, float(new_x), float(new_y))
@@ -2097,6 +2111,7 @@ class KiCADInterface:
                 "newPosition": {"x": new_x, "y": new_y},
                 "wiresMoved": drag_summary.get("endpoints_moved", 0),
                 "wiresRemoved": drag_summary.get("wires_removed", 0),
+                "wiresSynthesized": drag_summary.get("wires_synthesized", 0),
             }
 
         except Exception as e:
@@ -2212,7 +2227,7 @@ class KiCADInterface:
 
                 old_ref = symbol.property.Reference.value
                 new_ref = f"{prefix}{next_num}"
-                symbol.property.Reference.value = new_ref
+                symbol.setAllReferences(new_ref)
                 existing_refs[prefix].add(next_num)
 
                 uuid_val = str(symbol.uuid.value) if hasattr(symbol, "uuid") else ""
