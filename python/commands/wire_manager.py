@@ -21,6 +21,8 @@ logger = logging.getLogger("kicad_interface")
 _SYM_WIRE = Symbol("wire")
 _SYM_PTS = Symbol("pts")
 _SYM_XY = Symbol("xy")
+_SYM_AT = Symbol("at")
+_SYM_LABEL = Symbol("label")
 _SYM_STROKE = Symbol("stroke")
 _SYM_WIDTH = Symbol("width")
 _SYM_TYPE = Symbol("type")
@@ -543,20 +545,14 @@ class WireManager:
 
             for i, item in enumerate(sch_data):
                 if not (
-                    isinstance(item, list)
-                    and len(item) > 0
-                    and item[0] == Symbol("wire")
+                    isinstance(item, list) and len(item) > 0 and item[0] == _SYM_WIRE
                 ):
                     continue
 
                 # Extract pts from the wire s-expression
                 pts_list = None
                 for part in item[1:]:
-                    if (
-                        isinstance(part, list)
-                        and len(part) > 0
-                        and part[0] == Symbol("pts")
-                    ):
+                    if isinstance(part, list) and len(part) > 0 and part[0] == _SYM_PTS:
                         pts_list = part
                         break
 
@@ -566,7 +562,7 @@ class WireManager:
                 xy_points = [
                     p
                     for p in pts_list[1:]
-                    if isinstance(p, list) and len(p) >= 3 and p[0] == Symbol("xy")
+                    if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_XY
                 ]
                 if len(xy_points) < 2:
                     continue
@@ -631,9 +627,7 @@ class WireManager:
 
             for i, item in enumerate(sch_data):
                 if not (
-                    isinstance(item, list)
-                    and len(item) > 0
-                    and item[0] == Symbol("label")
+                    isinstance(item, list) and len(item) > 0 and item[0] == _SYM_LABEL
                 ):
                     continue
 
@@ -647,9 +641,7 @@ class WireManager:
                         (
                             p
                             for p in item[1:]
-                            if isinstance(p, list)
-                            and len(p) >= 3
-                            and p[0] == Symbol("at")
+                            if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_AT
                         ),
                         None,
                     )
