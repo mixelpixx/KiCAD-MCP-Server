@@ -28,3 +28,10 @@ repos:
     hooks:
       - id: prettier
         exclude: ^(dist/|package-lock\.json|\.venv/|python/)
+
+  - repo: https://github.com/pycqa/flake8
+    rev: "7.3.0"
+    hooks:
+      - id: flake8
+        files: ^python/
+        args: [--config=.flake8]
