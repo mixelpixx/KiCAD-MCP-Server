@@ -717,48 +717,6 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
-  // Move schematic component
-  server.tool(
-    "move_schematic_component",
-    "Move a placed symbol to a new position in the schematic.",
-    {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      reference: z.string().describe("Reference designator (e.g., R1, U1)"),
-      position: z
-        .object({
-          x: z.number(),
-          y: z.number(),
-        })
-        .describe("New position"),
-    },
-    async (args: {
-      schematicPath: string;
-      reference: string;
-      position: { x: number; y: number };
-    }) => {
-      const result = await callKicadScript("move_schematic_component", args);
-      if (result.success) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Moved ${args.reference} from (${result.oldPosition.x}, ${result.oldPosition.y}) to (${result.newPosition.x}, ${result.newPosition.y})`,
-            },
-          ],
-        };
-      }
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Failed to move component: ${result.message || "Unknown error"}`,
-          },
-        ],
-        isError: true,
-      };
-    },
-  );
-
   // Rotate schematic component
   server.tool(
     "rotate_schematic_component",
