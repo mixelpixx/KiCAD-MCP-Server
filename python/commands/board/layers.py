@@ -65,7 +65,7 @@ class BoardLayerCommands:
             # Set layer properties
             layer_stack.SetLayerName(layer_id, name)
             layer_stack.SetLayerType(layer_id, self._get_layer_type(layer_type))
-            
+
             # Enable the layer
             self.board.SetLayerEnabled(layer_id, True)
 
@@ -168,7 +168,7 @@ class BoardLayerCommands:
                 "message": "Failed to get layer list",
                 "errorDetails": str(e)
             }
-    
+
     def _get_layer_type(self, type_name: str) -> int:
         """Convert layer type name to KiCAD layer type constant"""
         type_map = {

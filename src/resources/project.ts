@@ -1,6 +1,6 @@
 /**
  * Project resources for KiCAD MCP server
- * 
+ *
  * These resources provide information about the KiCAD project
  * to the LLM, enabling better context-aware assistance.
  */
@@ -13,7 +13,7 @@ type CommandFunction = (command: string, params: Record<string, unknown>) => Pro
 
 /**
  * Register project resources with the MCP server
- * 
+ *
  * @param server MCP server instance
  * @param callKicadScript Function to call KiCAD script commands
  */
@@ -29,7 +29,7 @@ export function registerProjectResources(server: McpServer, callKicadScript: Com
     async (uri) => {
       logger.debug('Retrieving project information');
       const result = await callKicadScript("get_project_info", {});
-      
+
       if (!result.success) {
         logger.error(`Failed to retrieve project information: ${result.errorDetails}`);
         return {
@@ -43,7 +43,7 @@ export function registerProjectResources(server: McpServer, callKicadScript: Com
           }]
         };
       }
-      
+
       logger.debug('Successfully retrieved project information');
       return {
         contents: [{
@@ -64,7 +64,7 @@ export function registerProjectResources(server: McpServer, callKicadScript: Com
     async (uri) => {
       logger.debug('Retrieving project properties');
       const result = await callKicadScript("get_project_properties", {});
-      
+
       if (!result.success) {
         logger.error(`Failed to retrieve project properties: ${result.errorDetails}`);
         return {
@@ -78,7 +78,7 @@ export function registerProjectResources(server: McpServer, callKicadScript: Com
           }]
         };
       }
-      
+
       logger.debug('Successfully retrieved project properties');
       return {
         contents: [{
@@ -99,7 +99,7 @@ export function registerProjectResources(server: McpServer, callKicadScript: Com
     async (uri) => {
       logger.debug('Retrieving project files');
       const result = await callKicadScript("get_project_files", {});
-      
+
       if (!result.success) {
         logger.error(`Failed to retrieve project files: ${result.errorDetails}`);
         return {
@@ -113,7 +113,7 @@ export function registerProjectResources(server: McpServer, callKicadScript: Com
           }]
         };
       }
-      
+
       logger.debug(`Successfully retrieved ${result.files?.length || 0} project files`);
       return {
         contents: [{
@@ -134,7 +134,7 @@ export function registerProjectResources(server: McpServer, callKicadScript: Com
     async (uri) => {
       logger.debug('Retrieving project status');
       const result = await callKicadScript("get_project_status", {});
-      
+
       if (!result.success) {
         logger.error(`Failed to retrieve project status: ${result.errorDetails}`);
         return {
@@ -148,7 +148,7 @@ export function registerProjectResources(server: McpServer, callKicadScript: Com
           }]
         };
       }
-      
+
       logger.debug('Successfully retrieved project status');
       return {
         contents: [{
@@ -168,7 +168,7 @@ export function registerProjectResources(server: McpServer, callKicadScript: Com
     "kicad://project/summary",
     async (uri) => {
       logger.debug('Generating project summary');
-      
+
       // Get project info
       const infoResult = await callKicadScript("get_project_info", {});
       if (!infoResult.success) {
@@ -184,7 +184,7 @@ export function registerProjectResources(server: McpServer, callKicadScript: Com
           }]
         };
       }
-      
+
       // Get board info
       const boardResult = await callKicadScript("get_board_info", {});
       if (!boardResult.success) {
@@ -200,7 +200,7 @@ export function registerProjectResources(server: McpServer, callKicadScript: Com
           }]
         };
       }
-      
+
       // Get component list
       const componentsResult = await callKicadScript("get_component_list", {});
       if (!componentsResult.success) {
@@ -216,7 +216,7 @@ export function registerProjectResources(server: McpServer, callKicadScript: Com
           }]
         };
       }
-      
+
       // Combine all information into a summary
       const summary = {
         project: infoResult.project,
@@ -230,7 +230,7 @@ export function registerProjectResources(server: McpServer, callKicadScript: Com
           types: countComponentTypes(componentsResult.components || [])
         }
       };
-      
+
       logger.debug('Successfully generated project summary');
       return {
         contents: [{
@@ -250,11 +250,11 @@ export function registerProjectResources(server: McpServer, callKicadScript: Com
  */
 function countComponentTypes(components: any[]): Record<string, number> {
   const typeCounts: Record<string, number> = {};
-  
+
   for (const component of components) {
     const type = component.value?.split(' ')[0] || 'Unknown';
     typeCounts[type] = (typeCounts[type] || 0) + 1;
   }
-  
+
   return typeCounts;
 }

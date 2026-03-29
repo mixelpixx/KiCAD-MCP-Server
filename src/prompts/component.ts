@@ -1,6 +1,6 @@
 /**
  * Component prompts for KiCAD MCP server
- * 
+ *
  * These prompts guide the LLM in providing assistance with component-related tasks
  * in KiCAD PCB design.
  */
@@ -11,7 +11,7 @@ import { logger } from '../logger.js';
 
 /**
  * Register component prompts with the MCP server
- * 
+ *
  * @param server MCP server instance
  */
 export function registerComponentPrompts(server: McpServer): void {

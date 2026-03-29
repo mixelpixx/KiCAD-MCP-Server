@@ -90,7 +90,7 @@ class BoardViewCommands:
 
             # Create plot controller
             plotter = pcbnew.PLOT_CONTROLLER(self.board)
-            
+
             # Set up plot options
             plot_opts = plotter.GetPlotOptions()
             plot_opts.SetOutputDirectory(os.path.dirname(self.board.GetFileName()))
@@ -100,7 +100,7 @@ class BoardViewCommands:
             plot_opts.SetPlotFrameRef(False)
             plot_opts.SetPlotValue(True)
             plot_opts.SetPlotReference(True)
-            
+
             # Plot to SVG first (for vector output)
             # Note: KiCAD 9.0 prepends the project name to the filename, so we use GetPlotFileName() to get the actual path
             plotter.OpenPlotfile("temp_view", pcbnew.PLOT_FORMAT_SVG, "Temporary View")
@@ -139,7 +139,7 @@ class BoardViewCommands:
                 from cairosvg import svg2png
                 png_data = svg2png(url=temp_svg, output_width=width, output_height=height)
                 os.remove(temp_svg)
-                
+
                 if format == "jpg":
                     # Convert PNG to JPG
                     img = Image.open(io.BytesIO(png_data))
@@ -165,7 +165,7 @@ class BoardViewCommands:
                 "message": "Failed to get board 2D view",
                 "errorDetails": str(e)
             }
-    
+
     def _get_layer_type_name(self, type_id: int) -> str:
         """Convert KiCAD layer type constant to name"""
         type_map = {

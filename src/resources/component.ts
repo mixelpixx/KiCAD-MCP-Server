@@ -1,6 +1,6 @@
 /**
  * Component resources for KiCAD MCP server
- * 
+ *
  * These resources provide information about components on the PCB
  * to the LLM, enabling better context-aware assistance.
  */
@@ -13,7 +13,7 @@ type CommandFunction = (command: string, params: Record<string, unknown>) => Pro
 
 /**
  * Register component resources with the MCP server
- * 
+ *
  * @param server MCP server instance
  * @param callKicadScript Function to call KiCAD script commands
  */
@@ -29,7 +29,7 @@ export function registerComponentResources(server: McpServer, callKicadScript: C
     async (uri) => {
       logger.debug('Retrieving component list');
       const result = await callKicadScript("get_component_list", {});
-      
+
       if (!result.success) {
         logger.error(`Failed to retrieve component list: ${result.errorDetails}`);
         return {
@@ -43,7 +43,7 @@ export function registerComponentResources(server: McpServer, callKicadScript: C
           }]
         };
       }
-      
+
       logger.debug(`Successfully retrieved ${result.components?.length || 0} components`);
       return {
         contents: [{
@@ -69,7 +69,7 @@ export function registerComponentResources(server: McpServer, callKicadScript: C
       const result = await callKicadScript("get_component_properties", {
         reference
       });
-      
+
       if (!result.success) {
         logger.error(`Failed to retrieve component details: ${result.errorDetails}`);
         return {
@@ -83,7 +83,7 @@ export function registerComponentResources(server: McpServer, callKicadScript: C
           }]
         };
       }
-      
+
       logger.debug(`Successfully retrieved details for component: ${reference}`);
       return {
         contents: [{
@@ -109,7 +109,7 @@ export function registerComponentResources(server: McpServer, callKicadScript: C
       const result = await callKicadScript("get_component_connections", {
         reference
       });
-      
+
       if (!result.success) {
         logger.error(`Failed to retrieve component connections: ${result.errorDetails}`);
         return {
@@ -123,7 +123,7 @@ export function registerComponentResources(server: McpServer, callKicadScript: C
           }]
         };
       }
-      
+
       logger.debug(`Successfully retrieved connections for component: ${reference}`);
       return {
         contents: [{
@@ -144,7 +144,7 @@ export function registerComponentResources(server: McpServer, callKicadScript: C
     async (uri) => {
       logger.debug('Retrieving component placement information');
       const result = await callKicadScript("get_component_placement", {});
-      
+
       if (!result.success) {
         logger.error(`Failed to retrieve component placement: ${result.errorDetails}`);
         return {
@@ -158,7 +158,7 @@ export function registerComponentResources(server: McpServer, callKicadScript: C
           }]
         };
       }
-      
+
       logger.debug('Successfully retrieved component placement information');
       return {
         contents: [{
@@ -179,7 +179,7 @@ export function registerComponentResources(server: McpServer, callKicadScript: C
     async (uri) => {
       logger.debug('Retrieving component groups');
       const result = await callKicadScript("get_component_groups", {});
-      
+
       if (!result.success) {
         logger.error(`Failed to retrieve component groups: ${result.errorDetails}`);
         return {
@@ -193,7 +193,7 @@ export function registerComponentResources(server: McpServer, callKicadScript: C
           }]
         };
       }
-      
+
       logger.debug(`Successfully retrieved ${result.groups?.length || 0} component groups`);
       return {
         contents: [{
@@ -219,7 +219,7 @@ export function registerComponentResources(server: McpServer, callKicadScript: C
       const result = await callKicadScript("get_component_visualization", {
         reference
       });
-      
+
       if (!result.success) {
         logger.error(`Failed to generate component visualization: ${result.errorDetails}`);
         return {
@@ -233,7 +233,7 @@ export function registerComponentResources(server: McpServer, callKicadScript: C
           }]
         };
       }
-      
+
       logger.debug(`Successfully generated visualization for component: ${reference}`);
       return {
         contents: [{

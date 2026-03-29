@@ -1,6 +1,6 @@
 /**
  * Design rules tools for KiCAD MCP server
- * 
+ *
  * These tools handle design rule checking and configuration
  */
 
@@ -13,13 +13,13 @@ type CommandFunction = (command: string, params: Record<string, unknown>) => Pro
 
 /**
  * Register design rule tools with the MCP server
- * 
+ *
  * @param server MCP server instance
  * @param callKicadScript Function to call KiCAD script commands
  */
 export function registerDesignRuleTools(server: McpServer, callKicadScript: CommandFunction): void {
   logger.info('Registering design rule tools');
-  
+
   // ------------------------------------------------------
   // Set Design Rules Tool
   // ------------------------------------------------------
@@ -44,7 +44,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
     async (params) => {
       logger.debug('Setting design rules');
       const result = await callKicadScript("set_design_rules", params);
-      
+
       return {
         content: [{
           type: "text",
@@ -63,7 +63,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
     async () => {
       logger.debug('Getting design rules');
       const result = await callKicadScript("get_design_rules", {});
-      
+
       return {
         content: [{
           type: "text",
@@ -84,7 +84,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
     async ({ reportPath }) => {
       logger.debug('Running DRC check');
       const result = await callKicadScript("run_drc", { reportPath });
-      
+
       return {
         content: [{
           type: "text",
@@ -127,7 +127,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
         diff_pair_gap,
         nets
       });
-      
+
       return {
         content: [{
           type: "text",
@@ -152,7 +152,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
         net,
         netClass
       });
-      
+
       return {
         content: [{
           type: "text",
@@ -183,7 +183,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
         minViaDiameter,
         minViaDrill
       });
-      
+
       return {
         content: [{
           type: "text",
@@ -226,7 +226,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
         item1,
         item2
       });
-      
+
       return {
         content: [{
           type: "text",
@@ -247,7 +247,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
     async ({ severity }) => {
       logger.debug('Getting DRC violations');
       const result = await callKicadScript("get_drc_violations", { severity });
-      
+
       return {
         content: [{
           type: "text",

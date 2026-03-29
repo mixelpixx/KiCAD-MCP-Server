@@ -1,6 +1,6 @@
 /**
  * Design prompts for KiCAD MCP server
- * 
+ *
  * These prompts guide the LLM in providing assistance with general PCB design tasks
  * in KiCAD.
  */
@@ -11,7 +11,7 @@ import { logger } from '../logger.js';
 
 /**
  * Register design prompts with the MCP server
- * 
+ *
  * @param server MCP server instance
  */
 export function registerDesignPrompts(server: McpServer): void {

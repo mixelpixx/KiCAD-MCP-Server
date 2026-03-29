@@ -1,6 +1,6 @@
 /**
  * Board resources for KiCAD MCP server
- * 
+ *
  * These resources provide information about the PCB board
  * to the LLM, enabling better context-aware assistance.
  */
@@ -15,7 +15,7 @@ type CommandFunction = (command: string, params: Record<string, unknown>) => Pro
 
 /**
  * Register board resources with the MCP server
- * 
+ *
  * @param server MCP server instance
  * @param callKicadScript Function to call KiCAD script commands
  */
@@ -31,7 +31,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
     async (uri) => {
       logger.debug('Retrieving board information');
       const result = await callKicadScript("get_board_info", {});
-      
+
       if (!result.success) {
         logger.error(`Failed to retrieve board information: ${result.errorDetails}`);
         return {
@@ -45,7 +45,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
           }]
         };
       }
-      
+
       logger.debug('Successfully retrieved board information');
       return {
         contents: [{
@@ -66,7 +66,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
     async (uri) => {
       logger.debug('Retrieving layer list');
       const result = await callKicadScript("get_layer_list", {});
-      
+
       if (!result.success) {
         logger.error(`Failed to retrieve layer list: ${result.errorDetails}`);
         return {
@@ -80,7 +80,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
           }]
         };
       }
-      
+
       logger.debug(`Successfully retrieved ${result.layers?.length || 0} layers`);
       return {
         contents: [{
@@ -107,10 +107,10 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
     }),
     async (uri, params) => {
       const unit = params.unit || 'mm';
-      
+
       logger.debug(`Retrieving board extents in ${unit}`);
       const result = await callKicadScript("get_board_extents", { unit });
-      
+
       if (!result.success) {
         logger.error(`Failed to retrieve board extents: ${result.errorDetails}`);
         return {
@@ -124,7 +124,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
           }]
         };
       }
-      
+
       logger.debug('Successfully retrieved board extents');
       return {
         contents: [{
@@ -156,7 +156,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
       const height = params.height ? parseInt(params.height as string) : undefined;
       // Handle layers parameter - could be string or array
       const layers = typeof params.layers === 'string' ? params.layers.split(',') : params.layers;
-      
+
       logger.debug('Retrieving 2D board view');
       const result = await callKicadScript("get_board_2d_view", {
         layers,
@@ -164,7 +164,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
         height,
         format
       });
-      
+
       if (!result.success) {
         logger.error(`Failed to retrieve 2D board view: ${result.errorDetails}`);
         return {
@@ -178,9 +178,9 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
           }]
         };
       }
-      
+
       logger.debug('Successfully retrieved 2D board view');
-      
+
       if (format === 'svg') {
         return {
           contents: [{
@@ -219,14 +219,14 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
       const angle = params.angle || 'isometric';
       const width = params.width ? parseInt(params.width as string) : undefined;
       const height = params.height ? parseInt(params.height as string) : undefined;
-      
+
       logger.debug(`Retrieving 3D board view from ${angle} angle`);
       const result = await callKicadScript("get_board_3d_view", {
         width,
         height,
         angle
       });
-      
+
       if (!result.success) {
         logger.error(`Failed to retrieve 3D board view: ${result.errorDetails}`);
         return {
@@ -240,7 +240,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
           }]
         };
       }
-      
+
       logger.debug('Successfully retrieved 3D board view');
       return {
         contents: [{
@@ -260,7 +260,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
     "kicad://board/statistics",
     async (uri) => {
       logger.debug('Generating board statistics');
-      
+
       // Get board info
       const boardResult = await callKicadScript("get_board_info", {});
       if (!boardResult.success) {
@@ -276,7 +276,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
           }]
         };
       }
-      
+
       // Get component list
       const componentsResult = await callKicadScript("get_component_list", {});
       if (!componentsResult.success) {
@@ -292,7 +292,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
           }]
         };
       }
-      
+
       // Get nets list
       const netsResult = await callKicadScript("get_nets_list", {});
       if (!netsResult.success) {
@@ -308,7 +308,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
           }]
         };
       }
-      
+
       // Combine all information into statistics
       const statistics = {
         board: {
@@ -324,7 +324,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
           count: netsResult.nets?.length || 0
         }
       };
-      
+
       logger.debug('Successfully generated board statistics');
       return {
         contents: [{
@@ -344,11 +344,11 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
  */
 function countComponentTypes(components: any[]): Record<string, number> {
   const typeCounts: Record<string, number> = {};
-  
+
   for (const component of components) {
     const type = component.value?.split(' ')[0] || 'Unknown';
     typeCounts[type] = (typeCounts[type] || 0) + 1;
   }
-  
+
   return typeCounts;
 }

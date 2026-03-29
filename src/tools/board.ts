@@ -1,6 +1,6 @@
 /**
  * Board management tools for KiCAD MCP server
- * 
+ *
  * These tools handle board setup, layer management, and board properties
  */
 
@@ -13,13 +13,13 @@ type CommandFunction = (command: string, params: Record<string, unknown>) => Pro
 
 /**
  * Register board management tools with the MCP server
- * 
+ *
  * @param server MCP server instance
  * @param callKicadScript Function to call KiCAD script commands
  */
 export function registerBoardTools(server: McpServer, callKicadScript: CommandFunction): void {
   logger.info('Registering board management tools');
-  
+
   // ------------------------------------------------------
   // Set Board Size Tool
   // ------------------------------------------------------
@@ -37,7 +37,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
         height,
         unit
       });
-      
+
       return {
         content: [{
           type: "text",
@@ -70,7 +70,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
         position,
         number
       });
-      
+
       return {
         content: [{
           type: "text",
@@ -91,7 +91,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
     async ({ layer }) => {
       logger.debug(`Setting active layer to: ${layer}`);
       const result = await callKicadScript("set_active_layer", { layer });
-      
+
       return {
         content: [{
           type: "text",
@@ -110,7 +110,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
     async () => {
       logger.debug('Getting board information');
       const result = await callKicadScript("get_board_info", {});
-      
+
       return {
         content: [{
           type: "text",
@@ -129,7 +129,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
     async () => {
       logger.debug('Getting layer list');
       const result = await callKicadScript("get_layer_list", {});
-      
+
       return {
         content: [{
           type: "text",
@@ -205,7 +205,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
         diameter,
         padDiameter
       });
-      
+
       return {
         content: [{
           type: "text",
@@ -244,7 +244,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
         rotation,
         style
       });
-      
+
       return {
         content: [{
           type: "text",
@@ -284,7 +284,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
         minWidth,
         padConnection
       });
-      
+
       return {
         content: [{
           type: "text",
@@ -305,7 +305,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
     async ({ unit }) => {
       logger.debug('Getting board extents');
       const result = await callKicadScript("get_board_extents", { unit });
-      
+
       return {
         content: [{
           type: "text",
@@ -334,7 +334,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
         height,
         format
       });
-      
+
       return {
         content: [{
           type: "text",
@@ -382,4 +382,3 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
     },
   );
 }
-

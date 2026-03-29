@@ -106,12 +106,12 @@ export const toolCategories: ToolCategory[] = [
         inputSchema: {
           type: "object",
           properties: {
-            output_dir: { 
-              type: "string", 
-              description: "Output directory path" 
+            output_dir: {
+              type: "string",
+              description: "Output directory path"
             },
-            layers: { 
-              type: "array", 
+            layers: {
+              type: "array",
               items: { type: "string" },
               description: "Layers to export (default: all copper + silkscreen + mask)"
             },
@@ -160,9 +160,9 @@ export const toolCategories: ToolCategory[] = [
         inputSchema: {
           type: "object",
           properties: {
-            report_all: { 
-              type: "boolean", 
-              description: "Report all violations or stop at first" 
+            report_all: {
+              type: "boolean",
+              description: "Report all violations or stop at first"
             }
           }
         },
@@ -313,17 +313,17 @@ These are the tools that enable discovery and execution.
 ```typescript
 // src/tools/router.ts
 
-import { 
-  getAllCategories, 
-  getCategory, 
-  getTool, 
-  searchTools 
+import {
+  getAllCategories,
+  getCategory,
+  getTool,
+  searchTools
 } from "./registry.js";
 
 export const routerTools = {
   list_tool_categories: {
     name: "list_tool_categories",
-    description: 
+    description:
       "List all available tool categories. Use this to discover what operations " +
       "are available beyond the basic tools exposed directly.",
     inputSchema: {
@@ -475,8 +475,8 @@ export const directTools: ToolDefinition[] = [
       properties: {
         name: { type: "string", description: "Project name" },
         path: { type: "string", description: "Directory path for project" },
-        template: { 
-          type: "string", 
+        template: {
+          type: "string",
           description: "Optional template to use",
           enum: ["blank", "arduino", "raspberry-pi"]
         }
@@ -804,19 +804,19 @@ Include:
 const categories = [
   // Core operations (might be direct tools instead)
   { name: "project", description: "Project lifecycle: create, open, save, close" },
-  
+
   // Domain-specific operations
   { name: "analysis", description: "Analyze and inspect: find patterns, validate, check" },
   { name: "modification", description: "Modify and transform: edit, rename, restructure" },
   { name: "navigation", description: "Navigate and search: find, list, filter, locate" },
-  
+
   // Output operations
   { name: "export", description: "Export and generate: reports, files, documentation" },
   { name: "import", description: "Import from external sources: files, formats, APIs" },
-  
+
   // Configuration
   { name: "config", description: "Configuration and settings: preferences, rules, templates" },
-  
+
   // Advanced/specialized
   { name: "advanced", description: "Advanced operations: batch processing, automation, scripting" },
 ];
@@ -962,11 +962,11 @@ Claude: "I've added length tuning meanders to match the trace lengths"
 // tests/router.test.ts
 
 import { describe, it, expect } from "vitest";
-import { 
-  searchTools, 
-  getCategory, 
+import {
+  searchTools,
+  getCategory,
   getTool,
-  getAllCategories 
+  getAllCategories
 } from "../src/tools/registry.js";
 import { routerTools } from "../src/tools/router.js";
 
@@ -997,16 +997,16 @@ describe("Router Tools", () => {
   });
 
   it("get_category_tools returns tools for valid category", async () => {
-    const result = await routerTools.get_category_tools.handler({ 
-      category: "export" 
+    const result = await routerTools.get_category_tools.handler({
+      category: "export"
     });
     expect(result.tools).toBeDefined();
     expect(result.tools.length).toBeGreaterThan(0);
   });
 
   it("get_category_tools returns error for invalid category", async () => {
-    const result = await routerTools.get_category_tools.handler({ 
-      category: "nonexistent" 
+    const result = await routerTools.get_category_tools.handler({
+      category: "nonexistent"
     });
     expect(result.error).toBeDefined();
   });

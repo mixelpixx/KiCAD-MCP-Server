@@ -1,6 +1,6 @@
 /**
  * Resources index for KiCAD MCP server
- * 
+ *
  * Exports all resource registration functions
  */
 

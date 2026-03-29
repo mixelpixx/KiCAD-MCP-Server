@@ -26,12 +26,12 @@ class KiCADServer {
     // Set absolute path to the Python KiCAD interface script
     // Using a hardcoded path to avoid cwd() issues when running from Cline
     this.kicadScriptPath = 'c:/repo/KiCAD-MCP/python/kicad_interface.py';
-    
+
     // Check if script exists
     if (!existsSync(this.kicadScriptPath)) {
       throw new Error(`KiCAD interface script not found: ${this.kicadScriptPath}`);
     }
-    
+
     // Initialize the server
     this.server = new Server(
       {
@@ -46,7 +46,7 @@ class KiCADServer {
         }
       }
     );
-    
+
     // Initialize handler with direct pass-through to Python KiCAD interface
     // We don't register TypeScript tools since we'll handle everything in Python
 
@@ -96,7 +96,7 @@ class KiCADServer {
             properties: {}
           }
         },
-        
+
         // Board tools
         {
           name: 'set_board_size',
@@ -129,7 +129,7 @@ class KiCADServer {
             }
           }
         },
-        
+
         // Component tools
         {
           name: 'place_component',
@@ -147,7 +147,7 @@ class KiCADServer {
             required: ['componentId', 'position']
           }
         },
-        
+
         // Routing tools
         {
           name: 'add_net',
@@ -176,7 +176,7 @@ class KiCADServer {
             required: ['start', 'end']
           }
         },
-        
+
         // Schematic tools
         {
           name: 'create_schematic',
@@ -209,8 +209,8 @@ class KiCADServer {
             type: 'object',
             properties: {
               schematicPath: { type: 'string', description: 'Path to the schematic file' },
-              component: { 
-                type: 'object', 
+              component: {
+                type: 'object',
                 description: 'Component definition',
                 properties: {
                   type: { type: 'string', description: 'Component type (e.g., R, C, LED)' },
@@ -235,15 +235,15 @@ class KiCADServer {
             type: 'object',
             properties: {
               schematicPath: { type: 'string', description: 'Path to the schematic file' },
-              startPoint: { 
-                type: 'array', 
+              startPoint: {
+                type: 'array',
                 description: 'Starting point coordinates [x, y]',
                 items: { type: 'number' },
                 minItems: 2,
                 maxItems: 2
               },
-              endPoint: { 
-                type: 'array', 
+              endPoint: {
+                type: 'array',
                 description: 'Ending point coordinates [x, y]',
                 items: { type: 'number' },
                 minItems: 2,
@@ -259,8 +259,8 @@ class KiCADServer {
           inputSchema: {
             type: 'object',
             properties: {
-              searchPaths: { 
-                type: 'array', 
+              searchPaths: {
+                type: 'array',
                 description: 'Optional search paths for libraries',
                 items: { type: 'string' }
               }
@@ -286,7 +286,7 @@ class KiCADServer {
     this.server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
       const toolName = request.params.name;
       const args = request.params.arguments || {};
-      
+
       // Pass all commands directly to KiCAD Python interface
       try {
         return await this.callKicadScript(toolName, args);
@@ -300,11 +300,11 @@ class KiCADServer {
   async start() {
     try {
       console.error('Starting KiCAD MCP server...');
-      
+
       // Start the Python process for KiCAD scripting
       console.error(`Starting Python process with script: ${this.kicadScriptPath}`);
       const pythonExe = 'C:\\Program Files\\KiCad\\9.0\\bin\\python.exe';
-      
+
       console.error(`Using Python executable: ${pythonExe}`);
       this.pythonProcess = spawn(pythonExe, [this.kicadScriptPath], {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -313,30 +313,30 @@ class KiCADServer {
           PYTHONPATH: 'C:/Program Files/KiCad/9.0/lib/python3/dist-packages'
         }
       });
-      
+
       // Listen for process exit
       this.pythonProcess.on('exit', (code, signal) => {
         console.error(`Python process exited with code ${code} and signal ${signal}`);
         this.pythonProcess = null;
       });
-      
+
       // Listen for process errors
       this.pythonProcess.on('error', (err) => {
         console.error(`Python process error: ${err.message}`);
       });
-      
+
       // Set up error logging for stderr
       if (this.pythonProcess.stderr) {
         this.pythonProcess.stderr.on('data', (data: Buffer) => {
           console.error(`Python stderr: ${data.toString()}`);
         });
       }
-      
+
       // Connect to transport
       const transport = new StdioServerTransport();
       await this.server.connect(transport);
       console.error('KiCAD MCP server running');
-      
+
       // Keep the process running
       process.on('SIGINT', () => {
         if (this.pythonProcess) {
@@ -345,7 +345,7 @@ class KiCADServer {
         this.server.close().catch(console.error);
         process.exit(0);
       });
-      
+
     } catch (error: unknown) {
       if (error instanceof Error) {
         console.error('Failed to start MCP server:', error.message);
@@ -364,73 +364,73 @@ class KiCADServer {
         reject(new Error("Python process for KiCAD scripting is not running"));
         return;
       }
-      
+
       // Add request to queue
       this.requestQueue.push({
         request: { command, params },
         resolve,
         reject
       });
-      
+
       // Process the queue if not already processing
       if (!this.processingRequest) {
         this.processNextRequest();
       }
     });
   }
-  
+
   private processNextRequest(): void {
     // If no more requests or already processing, return
     if (this.requestQueue.length === 0 || this.processingRequest) {
       return;
     }
-    
+
     // Set processing flag
     this.processingRequest = true;
-    
+
     // Get the next request
     const { request, resolve, reject } = this.requestQueue.shift()!;
-    
+
     try {
       console.error(`Processing KiCAD command: ${request.command}`);
-      
+
       // Format the command and parameters as JSON
       const requestStr = JSON.stringify(request);
-      
+
       // Set up response handling
       let responseData = '';
-      
+
       // Clear any previous listeners
       if (this.pythonProcess?.stdout) {
         this.pythonProcess.stdout.removeAllListeners('data');
       }
-      
+
       // Set up new listeners
       if (this.pythonProcess?.stdout) {
         this.pythonProcess.stdout.on('data', (data: Buffer) => {
           const chunk = data.toString();
           console.error(`Received data chunk: ${chunk.length} bytes`);
           responseData += chunk;
-          
+
           // Check if we have a complete response
           try {
             // Try to parse the response as JSON
             const result = JSON.parse(responseData);
-            
+
             // If we get here, we have a valid JSON response
             console.error(`Completed KiCAD command: ${request.command} with result: ${JSON.stringify(result)}`);
-            
+
             // Reset processing flag
             this.processingRequest = false;
-            
+
             // Process next request if any
             setTimeout(() => this.processNextRequest(), 0);
-            
+
             // Clear listeners
             if (this.pythonProcess?.stdout) {
               this.pythonProcess.stdout.removeAllListeners('data');
             }
-            
+
             // Resolve with the expected MCP tool response format
             if (result.success) {
               resolve({
@@ -457,38 +457,38 @@ class KiCADServer {
           }
         });
       }
-      
+
       // Set a timeout
       const timeout = setTimeout(() => {
         console.error(`Command timeout: ${request.command}`);
-        
+
         // Clear listeners
         if (this.pythonProcess?.stdout) {
           this.pythonProcess.stdout.removeAllListeners('data');
         }
-        
+
         // Reset processing flag
         this.processingRequest = false;
-        
+
         // Process next request
         setTimeout(() => this.processNextRequest(), 0);
-        
+
         // Reject the promise
         reject(new Error(`Command timeout: ${request.command}`));
       }, 30000); // 30 seconds timeout
-      
+
       // Write the request to the Python process
       console.error(`Sending request: ${requestStr}`);
       this.pythonProcess?.stdin?.write(requestStr + '\n');
     } catch (error) {
       console.error(`Error processing request: ${error}`);
-      
+
       // Reset processing flag
       this.processingRequest = false;
-      
+
       // Process next request
       setTimeout(() => this.processNextRequest(), 0);
-      
+
       // Reject the promise
       reject(error);
     }

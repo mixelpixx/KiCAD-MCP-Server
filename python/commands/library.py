@@ -522,7 +522,7 @@ class LibraryCommands:
                     if path == library_path:
                         library_nickname = nick
                         break
-                    
+
             # Minimal info — always returned even if the parser fails
             info: Dict = {
                 "library": library_nickname,

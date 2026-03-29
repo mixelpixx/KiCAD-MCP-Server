@@ -1,6 +1,6 @@
 /**
  * Library resources for KiCAD MCP server
- * 
+ *
  * These resources provide information about KiCAD component libraries
  * to the LLM, enabling better context-aware assistance.
  */
@@ -14,7 +14,7 @@ type CommandFunction = (command: string, params: Record<string, unknown>) => Pro
 
 /**
  * Register library resources with the MCP server
- * 
+ *
  * @param server MCP server instance
  * @param callKicadScript Function to call KiCAD script commands
  */
@@ -39,7 +39,7 @@ export function registerLibraryResources(server: McpServer, callKicadScript: Com
       const limit = Number(params.limit) || undefined;
 
       logger.debug(`Retrieving component library${filter ? ` with filter: ${filter}` : ''}${library ? ` from library: ${library}` : ''}`);
-      
+
       const result = await callKicadScript("get_component_library", {
         filter,
         library,
@@ -117,7 +117,7 @@ export function registerLibraryResources(server: McpServer, callKicadScript: Com
     async (uri, params) => {
       const { componentId, library } = params;
       logger.debug(`Retrieving details for component: ${componentId}${library ? ` from library: ${library}` : ''}`);
-      
+
       const result = await callKicadScript("get_component_details", {
         componentId,
         library
@@ -159,7 +159,7 @@ export function registerLibraryResources(server: McpServer, callKicadScript: Com
     async (uri, params) => {
       const { componentId, footprint } = params;
       logger.debug(`Retrieving footprint for component: ${componentId}${footprint ? ` (${footprint})` : ''}`);
-      
+
       const result = await callKicadScript("get_component_footprint", {
         componentId,
         footprint
@@ -201,7 +201,7 @@ export function registerLibraryResources(server: McpServer, callKicadScript: Com
     async (uri, params) => {
       const { componentId } = params;
       logger.debug(`Retrieving symbol for component: ${componentId}`);
-      
+
       const result = await callKicadScript("get_component_symbol", {
         componentId
       });
@@ -255,7 +255,7 @@ export function registerLibraryResources(server: McpServer, callKicadScript: Com
     async (uri, params) => {
       const { componentId, footprint } = params;
       logger.debug(`Retrieving 3D model for component: ${componentId}${footprint ? ` (${footprint})` : ''}`);
-      
+
       const result = await callKicadScript("get_component_3d_model", {
         componentId,
         footprint

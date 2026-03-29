@@ -18,7 +18,7 @@ const DEFAULT_LOG_DIR = join(os.homedir(), '.kicad-mcp', 'logs');
 class Logger {
   private logLevel: LogLevel = 'info';
   private logDir: string = DEFAULT_LOG_DIR;
-  
+
   /**
    * Set the log level
    * @param level Log level to set
@@ -26,20 +26,20 @@ class Logger {
   setLogLevel(level: LogLevel): void {
     this.logLevel = level;
   }
-  
+
   /**
    * Set the log directory
    * @param dir Directory to store log files
    */
   setLogDir(dir: string): void {
     this.logDir = dir;
-    
+
     // Ensure log directory exists
     if (!existsSync(this.logDir)) {
       mkdirSync(this.logDir, { recursive: true });
     }
   }
-  
+
   /**
    * Log an error message
    * @param message Message to log
@@ -47,7 +47,7 @@ class Logger {
   error(message: string): void {
     this.log('error', message);
   }
-  
+
   /**
    * Log a warning message
    * @param message Message to log
@@ -57,7 +57,7 @@ class Logger {
       this.log('warn', message);
     }
   }
-  
+
   /**
    * Log an info message
    * @param message Message to log
@@ -67,7 +67,7 @@ class Logger {
       this.log('info', message);
     }
   }
-  
+
   /**
    * Log a debug message
    * @param message Message to log
@@ -77,7 +77,7 @@ class Logger {
       this.log('debug', message);
     }
   }
-  
+
   /**
    * Log a message with the specified level
    * @param level Log level
@@ -93,14 +93,14 @@ class Logger {
     // Log to console.error (stderr) only - stdout is reserved for MCP protocol
     // All log levels go to stderr to avoid corrupting STDIO MCP transport
     console.error(formattedMessage);
-    
+
     // Log to file
     try {
       // Ensure log directory exists
       if (!existsSync(this.logDir)) {
         mkdirSync(this.logDir, { recursive: true });
       }
-      
+
       const logFile = join(this.logDir, `kicad-mcp-${new Date().toISOString().split('T')[0]}.log`);
       appendFileSync(logFile, formattedMessage + '\n');
     } catch (error) {

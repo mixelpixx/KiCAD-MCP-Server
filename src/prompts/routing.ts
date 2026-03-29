@@ -1,6 +1,6 @@
 /**
  * Routing prompts for KiCAD MCP server
- * 
+ *
  * These prompts guide the LLM in providing assistance with routing-related tasks
  * in KiCAD PCB design.
  */
@@ -11,7 +11,7 @@ import { logger } from '../logger.js';
 
 /**
  * Register routing prompts with the MCP server
- * 
+ *
  * @param server MCP server instance
  */
 export function registerRoutingPrompts(server: McpServer): void {

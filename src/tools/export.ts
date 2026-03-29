@@ -1,6 +1,6 @@
 /**
  * Export tools for KiCAD MCP server
- * 
+ *
  * These tools handle exporting PCB data to various formats
  */
 
@@ -13,13 +13,13 @@ type CommandFunction = (command: string, params: Record<string, unknown>) => Pro
 
 /**
  * Register export tools with the MCP server
- * 
+ *
  * @param server MCP server instance
  * @param callKicadScript Function to call KiCAD script commands
  */
 export function registerExportTools(server: McpServer, callKicadScript: CommandFunction): void {
   logger.info('Registering export tools');
-  
+
   // ------------------------------------------------------
   // Export Gerber Tool
   // ------------------------------------------------------
@@ -43,7 +43,7 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
         generateMapFile,
         useAuxOrigin
       });
-      
+
       return {
         content: [{
           type: "text",
@@ -74,7 +74,7 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
         frameReference,
         pageSize
       });
-      
+
       return {
         content: [{
           type: "text",
@@ -103,7 +103,7 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
         blackAndWhite,
         includeComponents
       });
-      
+
       return {
         content: [{
           type: "text",
@@ -136,7 +136,7 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
         includeSolderMask,
         includeSilkscreen
       });
-      
+
       return {
         content: [{
           type: "text",
@@ -165,7 +165,7 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
         groupByValue,
         includeAttributes
       });
-      
+
       return {
         content: [{
           type: "text",
@@ -190,7 +190,7 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
         outputPath,
         format
       });
-      
+
       return {
         content: [{
           type: "text",
@@ -219,7 +219,7 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
         units,
         side
       });
-      
+
       return {
         content: [{
           type: "text",
@@ -246,7 +246,7 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
         includeComponents,
         useRelativePaths
       });
-      
+
       return {
         content: [{
           type: "text",

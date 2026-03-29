@@ -1,0 +1,4 @@
+[project]
+name = "kicad-mcp-server"
+version = "2.1.0"
+requires-python = ">=3.10"
