@@ -278,13 +278,13 @@ class ComponentManager:
 
             if symbol_to_remove:
                 schematic.symbol._elements.remove(symbol_to_remove)
-                print(f"Removed component {component_ref} from schematic.")
+                logger.info(f"Removed component {component_ref} from schematic.")
                 return True
             else:
-                print(f"Component with reference {component_ref} not found.")
+                logger.warning(f"Component with reference {component_ref} not found.")
                 return False
         except Exception as e:
-            print(f"Error removing component {component_ref}: {e}")
+            logger.error(f"Error removing component {component_ref}: {e}")
             return False
 
     @staticmethod
@@ -302,15 +302,14 @@ class ComponentManager:
                     if key in symbol_to_update.property:
                         symbol_to_update.property[key].value = value
                     else:
-                        # Add as a new property if it doesn't exist
                         symbol_to_update.property.append(key, value)
-                print(f"Updated properties for component {component_ref}.")
+                logger.info(f"Updated properties for component {component_ref}.")
                 return True
             else:
-                print(f"Component with reference {component_ref} not found.")
+                logger.warning(f"Component with reference {component_ref} not found.")
                 return False
         except Exception as e:
-            print(f"Error updating component {component_ref}: {e}")
+            logger.error(f"Error updating component {component_ref}: {e}")
             return False
 
     @staticmethod
@@ -318,9 +317,9 @@ class ComponentManager:
         """Get a component by reference designator"""
         for symbol in schematic.symbol:
             if symbol.reference == component_ref:
-                print(f"Found component with reference {component_ref}.")
+                logger.debug(f"Found component with reference {component_ref}.")
                 return symbol
-        print(f"Component with reference {component_ref} not found.")
+        logger.warning(f"Component with reference {component_ref} not found.")
         return None
 
     @staticmethod
@@ -339,13 +338,13 @@ class ComponentManager:
                 )
             ):
                 matching_components.append(symbol)
-        print(f"Found {len(matching_components)} components matching query '{query}'.")
+        logger.debug(f"Found {len(matching_components)} components matching query '{query}'.")
         return matching_components
 
     @staticmethod
     def get_all_components(schematic: Schematic):
         """Get all components in schematic"""
-        print(f"Retrieving all {len(schematic.symbol)} components.")
+        logger.debug(f"Retrieving all {len(schematic.symbol)} components.")
         return list(schematic.symbol)
 
 
