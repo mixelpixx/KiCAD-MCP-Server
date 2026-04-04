@@ -4024,8 +4024,29 @@ print("ok")
             }
 
 
+def _write_response(response_fd, response):
+    """Write a JSON response to the original stdout fd.
+
+    All response output goes through this function so that stray C-level
+    writes from pcbnew (warnings, diagnostics) never corrupt the JSON
+    framing seen by the TypeScript host.
+    """
+    payload = json.dumps(response) + "\n"
+    os.write(response_fd, payload.encode("utf-8"))
+
+
 def main():
     """Main entry point"""
+    # --- Redirect stdout so pcbnew C++ noise never reaches the TS host ---
+    # Save the real stdout fd for our exclusive JSON response channel.
+    _response_fd = os.dup(1)
+    # Point fd 1 (C-level stdout) at stderr so that any printf / std::cout
+    # output from pcbnew or other C extensions is visible in logs but does
+    # NOT corrupt the JSON stream the TypeScript side is parsing.
+    os.dup2(2, 1)
+    # Also redirect Python-level stdout to stderr for the same reason.
+    sys.stdout = sys.stderr
+
     logger.info("Starting KiCAD interface...")
     interface = KiCADInterface()
 
@@ -4167,10 +4188,9 @@ def main():
                         # Handle command
                         response = interface.handle_command(command, params)
 
-                # Send response
+                # Send response via the clean fd (immune to pcbnew stdout noise)
                 logger.debug(f"Sending response: {response}")
-                print(json.dumps(response))
-                sys.stdout.flush()
+                _write_response(_response_fd, response)
 
             except json.JSONDecodeError as e:
                 logger.error(f"Invalid JSON input: {str(e)}")
@@ -4179,8 +4199,7 @@ def main():
                     "message": "Invalid JSON input",
                     "errorDetails": str(e),
                 }
-                print(json.dumps(response))
-                sys.stdout.flush()
+                _write_response(_response_fd, response)
 
     except KeyboardInterrupt:
         logger.info("KiCAD interface stopped")
