@@ -35,14 +35,3 @@ disable_error_code = [
     "return-value",
     "operator",
 ]
-
-[[tool.mypy.overrides]]
-module = [
-    "pcbnew",
-    "pcbnew.*",
-    "skip",
-    "skip.*",
-    "sexpdata",
-    "sexpdata.*",
-]
-ignore_missing_imports = true
