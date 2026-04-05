@@ -522,6 +522,9 @@ export class KiCADMcpServer {
         "export_pdf",
         "export_3d",
         "sync_schematic_to_board",
+        "list_schematic_nets",
+        "list_schematic_labels",
+        "get_schematic_view",
       ];
       if (longRunningCommands.includes(command)) {
         commandTimeout = 600000; // 10 minutes for long operations
