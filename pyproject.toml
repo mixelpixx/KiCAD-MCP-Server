@@ -44,11 +44,5 @@ module = [
     "skip.*",
     "sexpdata",
     "sexpdata.*",
-    "cairosvg",
-    "cairosvg.*",
-    "kipy",
-    "kipy.*",
-    "schematic",
-    "schematic.*",
 ]
 ignore_missing_imports = true
