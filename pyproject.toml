@@ -23,15 +23,20 @@ disable_error_code = [
     "arg-type",
     "attr-defined",
     "union-attr",
-    "call-arg",
-    "assignment",
     "var-annotated",
-    "annotation-unchecked",
     "index",
-    "has-type",
-    "dict-item",
-    "misc",
-    "list-item",
-    "return-value",
-    "operator",
 ]
+
+[[tool.mypy.overrides]]
+module = [
+    "pcbnew",
+    "cairosvg",
+    "sexpdata",
+    "skip",
+    "kipy",
+    "kipy.*",
+    "schematic",
+    "PIL",
+    "PIL.*",
+]
+ignore_missing_imports = true

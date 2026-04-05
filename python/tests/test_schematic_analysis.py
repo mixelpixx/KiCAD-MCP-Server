@@ -130,42 +130,42 @@ def _make_led_sexp(ref: str, x: float, y: float, rotation: float = 0) -> str:
 class TestGeometryHelpers:
     """Test low-level geometry utilities."""
 
-    def test_point_in_rect_inside(self):
+    def test_point_in_rect_inside(self) -> None:
         assert _point_in_rect(5, 5, 0, 0, 10, 10) is True
 
-    def test_point_in_rect_outside(self):
+    def test_point_in_rect_outside(self) -> None:
         assert _point_in_rect(15, 5, 0, 0, 10, 10) is False
 
-    def test_point_in_rect_boundary(self):
+    def test_point_in_rect_boundary(self) -> None:
         assert _point_in_rect(0, 0, 0, 0, 10, 10) is True
 
-    def test_distance_zero(self):
+    def test_distance_zero(self) -> None:
         assert _distance((0, 0), (0, 0)) == 0
 
-    def test_distance_unit(self):
+    def test_distance_unit(self) -> None:
         assert abs(_distance((0, 0), (3, 4)) - 5.0) < 1e-9
 
-    def test_aabb_intersection_crossing(self):
+    def test_aabb_intersection_crossing(self) -> None:
         # Line from (0,5) to (10,5) should intersect box (2,2)-(8,8)
         assert _line_segment_intersects_aabb(0, 5, 10, 5, 2, 2, 8, 8) is True
 
-    def test_aabb_intersection_miss(self):
+    def test_aabb_intersection_miss(self) -> None:
         # Line from (0,0) to (10,0) should miss box (2,2)-(8,8)
         assert _line_segment_intersects_aabb(0, 0, 10, 0, 2, 2, 8, 8) is False
 
-    def test_aabb_intersection_inside(self):
+    def test_aabb_intersection_inside(self) -> None:
         # Line entirely inside the box
         assert _line_segment_intersects_aabb(3, 3, 7, 7, 2, 2, 8, 8) is True
 
-    def test_aabb_intersection_diagonal(self):
+    def test_aabb_intersection_diagonal(self) -> None:
         # Diagonal line crossing through box
         assert _line_segment_intersects_aabb(0, 0, 10, 10, 2, 2, 8, 8) is True
 
-    def test_aabb_intersection_parallel_outside(self):
+    def test_aabb_intersection_parallel_outside(self) -> None:
         # Horizontal line above the box
         assert _line_segment_intersects_aabb(0, 9, 10, 9, 2, 2, 8, 8) is False
 
-    def test_aabb_intersection_touching_edge(self):
+    def test_aabb_intersection_touching_edge(self) -> None:
         # Line ending exactly at box edge
         assert _line_segment_intersects_aabb(0, 2, 2, 2, 2, 2, 8, 8) is True
 
@@ -178,7 +178,7 @@ class TestGeometryHelpers:
 class TestSexpParsers:
     """Test S-expression parsing functions with synthetic data."""
 
-    def test_parse_wires_basic(self):
+    def test_parse_wires_basic(self) -> None:
         sexp = sexpdata.loads("""(kicad_sch
             (wire (pts (xy 10 20) (xy 30 40))
                 (stroke (width 0) (type default))
@@ -189,11 +189,11 @@ class TestSexpParsers:
         assert wires[0]["start"] == (10.0, 20.0)
         assert wires[0]["end"] == (30.0, 40.0)
 
-    def test_parse_wires_empty(self):
+    def test_parse_wires_empty(self) -> None:
         sexp = sexpdata.loads("(kicad_sch)")
         assert _parse_wires(sexp) == []
 
-    def test_parse_labels_both_types(self):
+    def test_parse_labels_both_types(self) -> None:
         sexp = sexpdata.loads("""(kicad_sch
             (label "VCC" (at 10 20 0))
             (global_label "GND" (at 30 40 0))
@@ -205,7 +205,7 @@ class TestSexpParsers:
         assert labels[1]["name"] == "GND"
         assert labels[1]["type"] == "global_label"
 
-    def test_parse_symbols(self):
+    def test_parse_symbols(self) -> None:
         sexp = sexpdata.loads("""(kicad_sch
             (symbol (lib_id "Device:R") (at 100 100 0)
                 (property "Reference" "R1" (at 0 0 0)))
@@ -228,20 +228,20 @@ class TestSexpParsers:
 class TestAABBOverlap:
     """Test AABB overlap helper."""
 
-    def test_overlapping_boxes(self):
+    def test_overlapping_boxes(self) -> None:
         assert _aabb_overlap((0, 0, 10, 10), (5, 5, 15, 15)) is True
 
-    def test_non_overlapping_boxes(self):
+    def test_non_overlapping_boxes(self) -> None:
         assert _aabb_overlap((0, 0, 10, 10), (20, 20, 30, 30)) is False
 
-    def test_touching_boxes_no_overlap(self):
+    def test_touching_boxes_no_overlap(self) -> None:
         # Touching edges are not overlapping (strict inequality)
         assert _aabb_overlap((0, 0, 10, 10), (10, 0, 20, 10)) is False
 
-    def test_contained_box(self):
+    def test_contained_box(self) -> None:
         assert _aabb_overlap((0, 0, 20, 20), (5, 5, 15, 15)) is True
 
-    def test_overlap_one_axis_only(self):
+    def test_overlap_one_axis_only(self) -> None:
         # Overlap in X but not Y
         assert _aabb_overlap((0, 0, 10, 10), (5, 15, 15, 25)) is False
 
@@ -249,12 +249,12 @@ class TestAABBOverlap:
 class TestFindOverlappingElements:
     """Test overlapping detection logic."""
 
-    def test_no_overlaps_in_empty_schematic(self):
+    def test_no_overlaps_in_empty_schematic(self) -> None:
         tmp = _make_temp_schematic()
         result = find_overlapping_elements(tmp, tolerance=0.5)
         assert result["totalOverlaps"] == 0
 
-    def test_overlapping_symbols_detected(self):
+    def test_overlapping_symbols_detected(self) -> None:
         # Two resistors at nearly the same position — bboxes fully overlap
         extra = _make_resistor_sexp("R1", 100, 100) + _make_resistor_sexp("R2", 100.1, 100)
         tmp = _make_temp_schematic(extra)
@@ -262,13 +262,13 @@ class TestFindOverlappingElements:
         assert result["totalOverlaps"] >= 1
         assert len(result["overlappingSymbols"]) >= 1
 
-    def test_well_separated_symbols_not_flagged(self):
+    def test_well_separated_symbols_not_flagged(self) -> None:
         extra = _make_resistor_sexp("R1", 100, 100) + _make_resistor_sexp("R2", 200, 200)
         tmp = _make_temp_schematic(extra)
         result = find_overlapping_elements(tmp, tolerance=0.5)
         assert result["totalOverlaps"] == 0
 
-    def test_collinear_wire_overlap(self):
+    def test_collinear_wire_overlap(self) -> None:
         extra = """
         (wire (pts (xy 10 50) (xy 30 50))
             (stroke (width 0) (type default))
@@ -281,7 +281,7 @@ class TestFindOverlappingElements:
         result = find_overlapping_elements(tmp, tolerance=0.5)
         assert len(result["overlappingWires"]) >= 1
 
-    def test_overlapping_bodies_different_centers(self):
+    def test_overlapping_bodies_different_centers(self) -> None:
         """Two resistors whose bodies overlap even though centers are ~5mm apart.
 
         Device:R pins are at y ±3.81 relative to center, so the body spans
@@ -299,7 +299,7 @@ class TestFindOverlappingElements:
         )
         assert len(result["overlappingSymbols"]) >= 1
 
-    def test_adjacent_resistors_no_overlap(self):
+    def test_adjacent_resistors_no_overlap(self) -> None:
         """Two vertical resistors side by side should not overlap.
 
         R pins at y ±3.81, but different X positions far enough apart.
@@ -309,7 +309,7 @@ class TestFindOverlappingElements:
         result = find_overlapping_elements(tmp, tolerance=0.5)
         assert result["totalOverlaps"] == 0
 
-    def test_resistor_and_led_overlapping_bodies(self):
+    def test_resistor_and_led_overlapping_bodies(self) -> None:
         """A resistor and an LED placed close enough that bodies overlap.
 
         LED pins at x ±3.81, R pins at y ±3.81. Place LED at same position
@@ -324,7 +324,7 @@ class TestFindOverlappingElements:
 class TestGetElementsInRegion:
     """Test region query logic."""
 
-    def test_elements_inside_region_found(self):
+    def test_elements_inside_region_found(self) -> None:
         extra = """
         (symbol (lib_id "Device:R") (at 50 50 0)
             (property "Reference" "R1" (at 0 0 0))
@@ -340,7 +340,7 @@ class TestGetElementsInRegion:
         assert result["counts"]["wires"] >= 1
         assert result["counts"]["labels"] >= 1
 
-    def test_elements_outside_region_excluded(self):
+    def test_elements_outside_region_excluded(self) -> None:
         extra = """
         (symbol (lib_id "Device:R") (at 200 200 0)
             (property "Reference" "R1" (at 0 0 0))
@@ -354,7 +354,7 @@ class TestGetElementsInRegion:
 class TestComputeSymbolBbox:
     """Test bounding box computation."""
 
-    def test_returns_none_for_unknown_symbol(self):
+    def test_returns_none_for_unknown_symbol(self) -> None:
         tmp = _make_temp_schematic()
         from commands.pin_locator import PinLocator
 
@@ -372,7 +372,7 @@ class TestComputeSymbolBbox:
 class TestIntegrationFindWiresCrossingSymbols:
     """Integration test for wire crossing symbol detection."""
 
-    def test_wire_not_touching_pins_is_collision(self):
+    def test_wire_not_touching_pins_is_collision(self) -> None:
         """A wire passing through a component bbox without pin contact → collision."""
         # LED D1 at (100,100) → pin 1 at (96.19, 100), pin 2 at (103.81, 100)
         # Vertical wire from (100, 95) to (100, 105) crosses through the body
@@ -387,7 +387,7 @@ class TestIntegrationFindWiresCrossingSymbols:
         d1_collisions = [c for c in result if c["component"]["reference"] == "D1"]
         assert len(d1_collisions) >= 1
 
-    def test_unannotated_duplicates_not_over_reported(self):
+    def test_unannotated_duplicates_not_over_reported(self) -> None:
         """
         Regression: two components with the same unannotated reference ("R?") at
         different positions should each produce independent bounding boxes.
@@ -417,7 +417,7 @@ class TestIntegrationFindWiresCrossingSymbols:
             "likely caused by reference-lookup always returning the first 'R?'"
         )
 
-    def test_wire_starting_at_pin_passing_through_body(self):
+    def test_wire_starting_at_pin_passing_through_body(self) -> None:
         """A wire that starts at a pin but continues through the component body
         must be flagged — this is the core bug where the old suppression logic
         treated any wire touching a pin as a valid connection."""
@@ -435,7 +435,7 @@ class TestIntegrationFindWiresCrossingSymbols:
             len(d1_crossings) >= 1
         ), "Wire starting at pin but passing through body must be detected"
 
-    def test_wire_terminating_at_pin_from_outside(self):
+    def test_wire_terminating_at_pin_from_outside(self) -> None:
         """A wire that arrives at a pin from outside the component body
         is a valid connection and must NOT be flagged."""
         # LED D1 at (100,100) → pin 1 at (96.19, 100)
@@ -450,7 +450,7 @@ class TestIntegrationFindWiresCrossingSymbols:
         d1_crossings = [c for c in result if c["component"]["reference"] == "D1"]
         assert len(d1_crossings) == 0, "Wire terminating at pin from outside should not be flagged"
 
-    def test_wire_shorts_component_pins_detected_as_collision(self):
+    def test_wire_shorts_component_pins_detected_as_collision(self) -> None:
         """Regression: a wire connecting pin1→pin2 of the same component
         must be reported even though both endpoints land on pins."""
         r_sexp = _make_resistor_sexp("R_short", 100.0, 100.0)
@@ -472,7 +472,7 @@ class TestIntegrationFindWiresCrossingSymbols:
 class TestIntegrationGetElementsInRegion:
     """Integration test for region query."""
 
-    def test_region_returns_pin_data(self):
+    def test_region_returns_pin_data(self) -> None:
         """Symbols in region should include pin position data."""
         extra = _make_resistor_sexp("R1", 100, 100)
         tmp = _make_temp_schematic(extra)
@@ -482,7 +482,7 @@ class TestIntegrationGetElementsInRegion:
         assert "pins" in sym
         assert len(sym["pins"]) == 2  # Resistor has 2 pins
 
-    def test_wire_passing_through_region_included(self):
+    def test_wire_passing_through_region_included(self) -> None:
         """A wire that passes through a region (no endpoints inside) should be included."""
         extra = """
         (wire (pts (xy 0 50) (xy 100 50))
@@ -493,7 +493,7 @@ class TestIntegrationGetElementsInRegion:
         result = get_elements_in_region(tmp, 40, 40, 60, 60)
         assert result["counts"]["wires"] == 1
 
-    def test_wire_outside_region_excluded(self):
+    def test_wire_outside_region_excluded(self) -> None:
         """A wire entirely outside a region should not be included."""
         extra = """
         (wire (pts (xy 0 0) (xy 10 0))
@@ -513,48 +513,48 @@ class TestIntegrationGetElementsInRegion:
 class TestCheckWireOverlap:
     """Test wire overlap detection for horizontal, vertical, and diagonal cases."""
 
-    def test_horizontal_overlap(self):
+    def test_horizontal_overlap(self) -> None:
         w1 = {"start": (10, 50), "end": (30, 50)}
         w2 = {"start": (20, 50), "end": (40, 50)}
         result = _check_wire_overlap(w1, w2, 0.5)
         assert result is not None
         assert result["type"] == "collinear_overlap"
 
-    def test_vertical_overlap(self):
+    def test_vertical_overlap(self) -> None:
         w1 = {"start": (50, 10), "end": (50, 30)}
         w2 = {"start": (50, 20), "end": (50, 40)}
         result = _check_wire_overlap(w1, w2, 0.5)
         assert result is not None
         assert result["type"] == "collinear_overlap"
 
-    def test_diagonal_overlap(self):
+    def test_diagonal_overlap(self) -> None:
         w1 = {"start": (0, 0), "end": (20, 20)}
         w2 = {"start": (10, 10), "end": (30, 30)}
         result = _check_wire_overlap(w1, w2, 0.5)
         assert result is not None
         assert result["type"] == "collinear_overlap"
 
-    def test_horizontal_no_overlap(self):
+    def test_horizontal_no_overlap(self) -> None:
         w1 = {"start": (10, 50), "end": (20, 50)}
         w2 = {"start": (30, 50), "end": (40, 50)}
         result = _check_wire_overlap(w1, w2, 0.5)
         assert result is None
 
-    def test_parallel_offset_no_overlap(self):
+    def test_parallel_offset_no_overlap(self) -> None:
         """Two parallel wires offset perpendicularly should not overlap."""
         w1 = {"start": (0, 0), "end": (20, 20)}
         w2 = {"start": (0, 5), "end": (20, 25)}
         result = _check_wire_overlap(w1, w2, 0.5)
         assert result is None
 
-    def test_non_parallel_no_overlap(self):
+    def test_non_parallel_no_overlap(self) -> None:
         """Two wires at different angles should not overlap."""
         w1 = {"start": (0, 0), "end": (10, 10)}
         w2 = {"start": (0, 0), "end": (10, 0)}
         result = _check_wire_overlap(w1, w2, 0.5)
         assert result is None
 
-    def test_zero_length_segment(self):
+    def test_zero_length_segment(self) -> None:
         w1 = {"start": (10, 10), "end": (10, 10)}
         w2 = {"start": (10, 10), "end": (20, 20)}
         result = _check_wire_overlap(w1, w2, 0.5)
@@ -565,7 +565,7 @@ class TestCheckWireOverlap:
 class TestIntegrationDiagonalWireOverlap:
     """Integration tests for diagonal collinear wire overlap detection."""
 
-    def test_diagonal_collinear_wire_overlap(self):
+    def test_diagonal_collinear_wire_overlap(self) -> None:
         """Two 45-degree wires that overlap should be detected."""
         extra = """
         (wire (pts (xy 0 0) (xy 20 20))
@@ -579,7 +579,7 @@ class TestIntegrationDiagonalWireOverlap:
         result = find_overlapping_elements(tmp, tolerance=0.5)
         assert len(result["overlappingWires"]) >= 1
 
-    def test_diagonal_parallel_no_overlap(self):
+    def test_diagonal_parallel_no_overlap(self) -> None:
         """Two parallel 45-degree wires that are offset should not overlap."""
         extra = """
         (wire (pts (xy 0 0) (xy 20 20))
@@ -593,7 +593,7 @@ class TestIntegrationDiagonalWireOverlap:
         result = find_overlapping_elements(tmp, tolerance=0.5)
         assert len(result["overlappingWires"]) == 0
 
-    def test_diagonal_non_collinear_no_overlap(self):
+    def test_diagonal_non_collinear_no_overlap(self) -> None:
         """Two wires at different angles crossing should not be flagged as collinear overlap."""
         extra = """
         (wire (pts (xy 0 0) (xy 20 20))
@@ -616,7 +616,7 @@ class TestIntegrationDiagonalWireOverlap:
 class TestExtractLibSymbols:
     """Test _extract_lib_symbols helper."""
 
-    def test_extracts_pins_from_lib_symbols(self):
+    def test_extracts_pins_from_lib_symbols(self) -> None:
         sexp = sexpdata.loads("""(kicad_sch
             (lib_symbols
                 (symbol "Device:R"
@@ -636,19 +636,19 @@ class TestExtractLibSymbols:
         assert "2" in pins
         assert pins["1"]["y"] == pytest.approx(3.81)
 
-    def test_empty_schematic_returns_empty(self):
+    def test_empty_schematic_returns_empty(self) -> None:
         sexp = sexpdata.loads("(kicad_sch)")
         result = _extract_lib_symbols(sexp)
         assert result == {}
 
-    def test_no_lib_symbols_section(self):
+    def test_no_lib_symbols_section(self) -> None:
         sexp = sexpdata.loads("""(kicad_sch
             (wire (pts (xy 0 0) (xy 10 10)))
         )""")
         result = _extract_lib_symbols(sexp)
         assert result == {}
 
-    def test_extract_includes_graphics_points(self):
+    def test_extract_includes_graphics_points(self) -> None:
         """_extract_lib_symbols should return graphics_points from body shapes."""
         sexp = sexpdata.loads("""(kicad_sch
             (lib_symbols
@@ -688,7 +688,7 @@ class TestExtractLibSymbols:
 class TestParseLibSymbolGraphics:
     """Test graphics extraction from lib_symbol definitions."""
 
-    def test_rectangle(self):
+    def test_rectangle(self) -> None:
         sexp = sexpdata.loads("""(symbol "Device:R"
             (symbol "Device:R_0_1"
                 (rectangle (start -1.016 -2.54) (end 1.016 2.54)
@@ -699,7 +699,7 @@ class TestParseLibSymbolGraphics:
         assert (-1.016, -2.54) in pts
         assert (1.016, 2.54) in pts
 
-    def test_polyline(self):
+    def test_polyline(self) -> None:
         sexp = sexpdata.loads("""(symbol "Device:C"
             (symbol "Device:C_0_1"
                 (polyline
@@ -710,7 +710,7 @@ class TestParseLibSymbolGraphics:
         assert (-2.032, -0.762) in pts
         assert (2.032, -0.762) in pts
 
-    def test_circle(self):
+    def test_circle(self) -> None:
         sexp = sexpdata.loads("""(symbol "Test:Circle"
             (symbol "Test:Circle_0_1"
                 (circle (center 0 0) (radius 5)
@@ -721,7 +721,7 @@ class TestParseLibSymbolGraphics:
         assert (-5.0, -5.0) in pts
         assert (5.0, 5.0) in pts
 
-    def test_arc(self):
+    def test_arc(self) -> None:
         sexp = sexpdata.loads("""(symbol "Test:Arc"
             (symbol "Test:Arc_0_1"
                 (arc (start 1 0) (mid 0 1) (end -1 0)
@@ -732,7 +732,7 @@ class TestParseLibSymbolGraphics:
         assert (0.0, 1.0) in pts
         assert (-1.0, 0.0) in pts
 
-    def test_no_graphics(self):
+    def test_no_graphics(self) -> None:
         sexp = sexpdata.loads("""(symbol "Test:Empty"
             (symbol "Test:Empty_1_1"
                 (pin passive line (at 0 0 0) (length 1.27)
@@ -750,24 +750,24 @@ class TestParseLibSymbolGraphics:
 class TestTransformLocalPoint:
     """Test local→absolute coordinate transform."""
 
-    def test_no_transform(self):
+    def test_no_transform(self) -> None:
         # ly is negated (lib y-up → schematic y-down)
         x, y = _transform_local_point(1.0, 2.0, 100.0, 200.0, 0, False, False)
         assert x == pytest.approx(101.0)
         assert y == pytest.approx(198.0)
 
-    def test_mirror_x(self):
+    def test_mirror_x(self) -> None:
         # y-negate then mirror_x cancel out → net ly unchanged
         x, y = _transform_local_point(1.0, 2.0, 0.0, 0.0, 0, True, False)
         assert x == pytest.approx(1.0)
         assert y == pytest.approx(2.0)
 
-    def test_mirror_y(self):
+    def test_mirror_y(self) -> None:
         x, y = _transform_local_point(1.0, 2.0, 0.0, 0.0, 0, False, True)
         assert x == pytest.approx(-1.0)
         assert y == pytest.approx(-2.0)
 
-    def test_rotation_90(self):
+    def test_rotation_90(self) -> None:
         # ly=0 negated is still 0, then rotate lx=1 by 90°
         x, y = _transform_local_point(1.0, 0.0, 0.0, 0.0, 90, False, False)
         assert x == pytest.approx(0.0, abs=1e-9)
@@ -782,7 +782,7 @@ class TestTransformLocalPoint:
 class TestComputeSymbolBboxWithGraphics:
     """Test that bounding box computation uses graphics points when available."""
 
-    def test_resistor_bbox_from_graphics(self):
+    def test_resistor_bbox_from_graphics(self) -> None:
         """Device:R rectangle is (-1.016, -2.54) to (1.016, 2.54) in local coords.
         Pins at (0, ±3.81). Placed at (100, 100) with no rotation.
         Bbox should span from pin-to-pin in Y and use rectangle width in X."""
@@ -823,7 +823,7 @@ class TestComputeSymbolBboxWithGraphics:
         assert min_y == pytest.approx(100 - 3.81)
         assert max_y == pytest.approx(100 + 3.81)
 
-    def test_fallback_without_graphics(self):
+    def test_fallback_without_graphics(self) -> None:
         """Without graphics_points, should use the old degenerate expansion."""
         sym = {
             "x": 100.0,
@@ -858,7 +858,7 @@ class TestComputeSymbolBboxWithGraphics:
         assert min_x == pytest.approx(100 - 1.5)
         assert max_x == pytest.approx(100 + 1.5)
 
-    def test_rotated_symbol_graphics(self):
+    def test_rotated_symbol_graphics(self) -> None:
         """Graphics points should be rotated along with the symbol."""
         sym = {
             "x": 100.0,
@@ -902,7 +902,7 @@ class TestComputeSymbolBboxWithGraphics:
 class TestIntegrationGraphicsBbox:
     """Integration tests verifying graphics-based bbox from real template data."""
 
-    def test_resistor_bbox_uses_rectangle(self):
+    def test_resistor_bbox_uses_rectangle(self) -> None:
         """The template's Device:R has a rectangle body.
         Verify that the bbox for a placed resistor uses the actual
         rectangle width rather than the degenerate 1.5mm expansion."""
@@ -925,7 +925,7 @@ class TestIntegrationGraphicsBbox:
         # Rectangle is ±1.016 in X, NOT ±1.5 from degenerate expansion
         assert max_x - min_x == pytest.approx(2 * 1.016, abs=0.01)
 
-    def test_led_bbox_uses_polyline(self):
+    def test_led_bbox_uses_polyline(self) -> None:
         """The template's Device:LED uses polylines for its body.
         Verify that the bbox uses polyline extents."""
         extra = _make_led_sexp("D1", 100, 100)

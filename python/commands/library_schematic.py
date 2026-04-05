@@ -3,6 +3,7 @@ import logging
 
 # Symbol class might not be directly importable in the current version
 import os
+from typing import Any, Dict, List, Optional
 
 from skip import Schematic
 
@@ -13,7 +14,7 @@ class LibraryManager:
     """Manage symbol libraries"""
 
     @staticmethod
-    def list_available_libraries(search_paths=None):
+    def list_available_libraries(search_paths: Optional[List[str]] = None) -> Dict[str, List[str]]:
         """List all available symbol libraries"""
         if search_paths is None:
             # Default library paths based on common KiCAD installations
@@ -46,7 +47,7 @@ class LibraryManager:
         return {"paths": libraries, "names": library_names}
 
     @staticmethod
-    def list_library_symbols(library_path):
+    def list_library_symbols(library_path: str) -> List[Any]:
         """List all symbols in a library"""
         try:
             # kicad-skip doesn't provide a direct way to simply list symbols in a library
@@ -66,7 +67,7 @@ class LibraryManager:
             return []
 
     @staticmethod
-    def get_symbol_details(library_path, symbol_name):
+    def get_symbol_details(library_path: str, symbol_name: str) -> Dict[str, Any]:
         """Get detailed information about a symbol"""
         try:
             # Similar to list_library_symbols, this might require a more direct approach
@@ -80,7 +81,7 @@ class LibraryManager:
             return {}
 
     @staticmethod
-    def search_symbols(query, search_paths=None):
+    def search_symbols(query: str, search_paths: Optional[List[str]] = None) -> List[Any]:
         """Search for symbols matching criteria"""
         try:
             # This would typically involve:
@@ -101,7 +102,9 @@ class LibraryManager:
             return []
 
     @staticmethod
-    def get_default_symbol_for_component_type(component_type, search_paths=None):
+    def get_default_symbol_for_component_type(
+        component_type: str, search_paths: Optional[List[str]] = None
+    ) -> Dict[str, str]:
         """Get a recommended default symbol for a given component type"""
         # This method provides a simplified way to get a symbol for common component types
         # It's useful when the user doesn't specify a particular library/symbol

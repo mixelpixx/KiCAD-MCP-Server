@@ -12,6 +12,7 @@ Covers:
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -59,22 +60,22 @@ def _write_temp_sch(content: str) -> Path:
 class TestDeleteWireUnit:
     """Unit-level tests for WireManager.delete_wire."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         from commands.wire_manager import WireManager
 
         self.WireManager = WireManager
 
-    def test_nonexistent_file_returns_false(self, tmp_path):
+    def test_nonexistent_file_returns_false(self, tmp_path: Any) -> None:
         result = self.WireManager.delete_wire(tmp_path / "nope.kicad_sch", [0, 0], [10, 10])
         assert result is False
 
-    def test_no_matching_wire_returns_false(self, tmp_path):
+    def test_no_matching_wire_returns_false(self, tmp_path: Any) -> None:
         sch = tmp_path / "test.kicad_sch"
         shutil.copy(EMPTY_SCH, sch)
         result = self.WireManager.delete_wire(sch, [99, 99], [100, 100])
         assert result is False
 
-    def test_tolerance_argument_accepted(self, tmp_path):
+    def test_tolerance_argument_accepted(self, tmp_path: Any) -> None:
         """Ensure the tolerance kwarg doesn't raise a TypeError."""
         sch = tmp_path / "test.kicad_sch"
         shutil.copy(EMPTY_SCH, sch)
@@ -91,22 +92,22 @@ class TestDeleteWireUnit:
 class TestDeleteLabelUnit:
     """Unit-level tests for WireManager.delete_label."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         from commands.wire_manager import WireManager
 
         self.WireManager = WireManager
 
-    def test_nonexistent_file_returns_false(self, tmp_path):
+    def test_nonexistent_file_returns_false(self, tmp_path: Any) -> None:
         result = self.WireManager.delete_label(tmp_path / "nope.kicad_sch", "VCC")
         assert result is False
 
-    def test_missing_label_returns_false(self, tmp_path):
+    def test_missing_label_returns_false(self, tmp_path: Any) -> None:
         sch = tmp_path / "test.kicad_sch"
         shutil.copy(EMPTY_SCH, sch)
         result = self.WireManager.delete_label(sch, "NONEXISTENT")
         assert result is False
 
-    def test_position_kwarg_accepted(self, tmp_path):
+    def test_position_kwarg_accepted(self, tmp_path: Any) -> None:
         sch = tmp_path / "test.kicad_sch"
         shutil.copy(EMPTY_SCH, sch)
         result = self.WireManager.delete_label(sch, "VCC", position=[10.0, 20.0], tolerance=0.5)
@@ -122,12 +123,12 @@ class TestDeleteLabelUnit:
 class TestDeleteWireIntegration:
     """Integration tests that read/write real .kicad_sch files."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         from commands.wire_manager import WireManager
 
         self.WireManager = WireManager
 
-    def test_exact_match_deletes_wire(self, tmp_path):
+    def test_exact_match_deletes_wire(self, tmp_path: Any) -> None:
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_WIRE_SCH, encoding="utf-8")
 
@@ -142,7 +143,7 @@ class TestDeleteWireIntegration:
         ]
         assert wire_items == [], "Wire should have been removed from the file"
 
-    def test_reverse_direction_match_deletes_wire(self, tmp_path):
+    def test_reverse_direction_match_deletes_wire(self, tmp_path: Any) -> None:
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_WIRE_SCH, encoding="utf-8")
 
@@ -151,7 +152,7 @@ class TestDeleteWireIntegration:
 
         assert result is True
 
-    def test_within_tolerance_deletes_wire(self, tmp_path):
+    def test_within_tolerance_deletes_wire(self, tmp_path: Any) -> None:
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_WIRE_SCH, encoding="utf-8")
 
@@ -159,7 +160,7 @@ class TestDeleteWireIntegration:
         result = self.WireManager.delete_wire(sch, [10.3, 20.3], [30.3, 20.3], tolerance=0.5)
         assert result is True
 
-    def test_outside_tolerance_no_delete(self, tmp_path):
+    def test_outside_tolerance_no_delete(self, tmp_path: Any) -> None:
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_WIRE_SCH, encoding="utf-8")
 
@@ -171,14 +172,14 @@ class TestDeleteWireIntegration:
         result2 = self.WireManager.delete_wire(sch2, [10.6, 20.0], [30.0, 20.0], tolerance=0.5)
         assert result2 is False, "Coordinate differs by 0.6 mm — outside 0.5 mm tolerance"
 
-    def test_file_is_valid_sexp_after_deletion(self, tmp_path):
+    def test_file_is_valid_sexp_after_deletion(self, tmp_path: Any) -> None:
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_WIRE_SCH, encoding="utf-8")
         self.WireManager.delete_wire(sch, [10.0, 20.0], [30.0, 20.0])
         # Must parse without exception
         sexpdata.loads(sch.read_text(encoding="utf-8"))
 
-    def test_label_preserved_after_wire_deletion(self, tmp_path):
+    def test_label_preserved_after_wire_deletion(self, tmp_path: Any) -> None:
         """Deleting a wire must not remove unrelated elements."""
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_WIRE_SCH, encoding="utf-8")
@@ -199,12 +200,12 @@ class TestDeleteWireIntegration:
 
 @pytest.mark.integration
 class TestDeleteLabelIntegration:
-    def setup_method(self):
+    def setup_method(self) -> None:
         from commands.wire_manager import WireManager
 
         self.WireManager = WireManager
 
-    def test_deletes_label_by_name(self, tmp_path):
+    def test_deletes_label_by_name(self, tmp_path: Any) -> None:
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_WIRE_SCH, encoding="utf-8")
 
@@ -219,21 +220,21 @@ class TestDeleteLabelIntegration:
         ]
         assert labels == [], "Label should have been removed"
 
-    def test_deletes_label_with_matching_position(self, tmp_path):
+    def test_deletes_label_with_matching_position(self, tmp_path: Any) -> None:
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_WIRE_SCH, encoding="utf-8")
 
         result = self.WireManager.delete_label(sch, "VCC", position=[50.0, 50.0])
         assert result is True
 
-    def test_position_mismatch_no_delete(self, tmp_path):
+    def test_position_mismatch_no_delete(self, tmp_path: Any) -> None:
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_WIRE_SCH, encoding="utf-8")
 
         result = self.WireManager.delete_label(sch, "VCC", position=[99.0, 99.0], tolerance=0.5)
         assert result is False
 
-    def test_wire_preserved_after_label_deletion(self, tmp_path):
+    def test_wire_preserved_after_label_deletion(self, tmp_path: Any) -> None:
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_WIRE_SCH, encoding="utf-8")
         self.WireManager.delete_label(sch, "VCC")
@@ -245,7 +246,7 @@ class TestDeleteLabelIntegration:
         ]
         assert len(wires) == 1
 
-    def test_file_is_valid_sexp_after_deletion(self, tmp_path):
+    def test_file_is_valid_sexp_after_deletion(self, tmp_path: Any) -> None:
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_WIRE_SCH, encoding="utf-8")
         self.WireManager.delete_label(sch, "VCC")
@@ -260,7 +261,7 @@ class TestDeleteLabelIntegration:
 # Each handler is extracted as a standalone function for testing.
 
 
-def _make_handler_under_test(handler_name: str):
+def _make_handler_under_test(handler_name: str) -> None:
     """
     Return the unbound handler method from kicad_interface by importing only
     that method's source via exec, bypassing module-level side effects.
@@ -300,7 +301,7 @@ class TestHandlerParamValidation:
     that satisfy the dependency chain up to the first parameter-check branch.
     """
 
-    def _make_iface_stub(self):
+    def _make_iface_stub(self) -> Any:
         """Return a stub that exposes only the handler methods under test."""
         import importlib
         import types
@@ -316,7 +317,7 @@ class TestHandlerParamValidation:
 
     # --- delete_schematic_wire ---
 
-    def test_delete_wire_missing_schematic_path(self):
+    def test_delete_wire_missing_schematic_path(self) -> None:
         from commands.wire_manager import WireManager
 
         with patch.object(WireManager, "delete_wire", return_value=False):
@@ -325,7 +326,7 @@ class TestHandlerParamValidation:
             schematic_path = params.get("schematicPath")
             assert schematic_path is None
             # Handler should short-circuit before calling WireManager
-            result = (
+            result: dict[str, Any] = (
                 {"success": False, "message": "schematicPath is required"}
                 if not schematic_path
                 else {}
@@ -335,7 +336,7 @@ class TestHandlerParamValidation:
 
     # --- delete_schematic_net_label ---
 
-    def test_delete_label_missing_net_name(self):
+    def test_delete_label_missing_net_name(self) -> None:
         params = {"schematicPath": "/some/file.kicad_sch"}
         net_name = params.get("netName")
         result = (
@@ -348,7 +349,7 @@ class TestHandlerParamValidation:
         )
         assert result["success"] is False
 
-    def test_delete_label_missing_schematic_path(self):
+    def test_delete_label_missing_schematic_path(self) -> None:
         params = {"netName": "VCC"}
         schematic_path = params.get("schematicPath")
         result = (
@@ -363,7 +364,7 @@ class TestHandlerParamValidation:
 
     # --- list_schematic_components ---
 
-    def test_list_components_missing_path(self):
+    def test_list_components_missing_path(self) -> None:
         params = {}
         schematic_path = params.get("schematicPath")
         result = (
@@ -373,7 +374,7 @@ class TestHandlerParamValidation:
 
     # --- list_schematic_nets ---
 
-    def test_list_nets_missing_path(self):
+    def test_list_nets_missing_path(self) -> None:
         params = {}
         result = (
             {"success": False, "message": "schematicPath is required"}
@@ -384,7 +385,7 @@ class TestHandlerParamValidation:
 
     # --- list_schematic_wires ---
 
-    def test_list_wires_missing_path(self):
+    def test_list_wires_missing_path(self) -> None:
         params = {}
         result = (
             {"success": False, "message": "schematicPath is required"}
@@ -395,7 +396,7 @@ class TestHandlerParamValidation:
 
     # --- list_schematic_labels ---
 
-    def test_list_labels_missing_path(self):
+    def test_list_labels_missing_path(self) -> None:
         params = {}
         result = (
             {"success": False, "message": "schematicPath is required"}
@@ -406,7 +407,7 @@ class TestHandlerParamValidation:
 
     # --- move_schematic_component ---
 
-    def test_move_component_missing_reference(self):
+    def test_move_component_missing_reference(self) -> None:
         params = {
             "schematicPath": "/some/file.kicad_sch",
             "position": {"x": 10, "y": 20},
@@ -421,7 +422,7 @@ class TestHandlerParamValidation:
         )
         assert result["success"] is False
 
-    def test_move_component_missing_position(self):
+    def test_move_component_missing_position(self) -> None:
         params = {
             "schematicPath": "/some/file.kicad_sch",
             "reference": "R1",
@@ -438,7 +439,7 @@ class TestHandlerParamValidation:
 
     # --- rotate_schematic_component ---
 
-    def test_rotate_component_missing_reference(self):
+    def test_rotate_component_missing_reference(self) -> None:
         params = {"schematicPath": "/some/file.kicad_sch"}
         result = (
             {
@@ -452,7 +453,7 @@ class TestHandlerParamValidation:
 
     # --- annotate_schematic ---
 
-    def test_annotate_missing_path(self):
+    def test_annotate_missing_path(self) -> None:
         params = {}
         result = (
             {"success": False, "message": "schematicPath is required"}
@@ -463,7 +464,7 @@ class TestHandlerParamValidation:
 
     # --- export_schematic_svg ---
 
-    def test_export_svg_missing_output_path(self):
+    def test_export_svg_missing_output_path(self) -> None:
         params = {"schematicPath": "/some/file.kicad_sch"}
         result = (
             {

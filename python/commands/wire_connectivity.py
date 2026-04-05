@@ -8,7 +8,7 @@ coordinate matching, mirroring KiCad's own connectivity algorithm.
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from commands.pin_locator import PinLocator
 
@@ -22,7 +22,7 @@ def _to_iu(x_mm: float, y_mm: float) -> Tuple[int, int]:
     return (round(x_mm * _IU_PER_MM), round(y_mm * _IU_PER_MM))
 
 
-def _parse_wires(schematic) -> List[List[Tuple[int, int]]]:
+def _parse_wires(schematic: Any) -> List[List[Tuple[int, int]]]:
     """Extract wire endpoints from a schematic object as IU tuples."""
     all_wires = []
     for wire in schematic.wire:
@@ -67,7 +67,9 @@ def _build_adjacency(
     return adjacency, iu_to_wires
 
 
-def _parse_virtual_connections(schematic, schematic_path):
+def _parse_virtual_connections(
+    schematic: Any, schematic_path: Any
+) -> Tuple[Dict[Tuple[int, int], str], Dict[str, List[Tuple[int, int]]]]:
     """Return virtual connectivity from net labels and power symbols.
 
     Returns a tuple of:
@@ -175,8 +177,8 @@ def _find_connected_wires(
 
 def _find_pins_on_net(
     net_points: Set[Tuple[int, int]],
-    schematic_path,
-    schematic,
+    schematic_path: Any,
+    schematic: Any,
 ) -> List[Dict]:
     """Find component pins that land on net points using exact IU matching.
 
@@ -216,7 +218,7 @@ def _find_pins_on_net(
 
 
 def get_wire_connections(
-    schematic, schematic_path: str, x_mm: float, y_mm: float
+    schematic: Any, schematic_path: str, x_mm: float, y_mm: float
 ) -> Optional[Dict]:
     """Find all component pins reachable from a point via connected wires, net labels, and power symbols.
 
