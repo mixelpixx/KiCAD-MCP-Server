@@ -11,7 +11,7 @@ import math
 import tempfile
 import uuid
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import sexpdata
 from sexpdata import Symbol
@@ -255,7 +255,7 @@ class WireManager:
 
     @staticmethod
     def _parse_wire(
-        wire_item,
+        wire_item: Any,
     ) -> Optional[Tuple[Tuple[float, float], Tuple[float, float], float, str]]:
         """
         Parse a wire S-expression item in a single pass.

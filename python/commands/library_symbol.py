@@ -55,7 +55,7 @@ class SymbolLibraryManager:
         self.symbol_cache: Dict[str, List[SymbolInfo]] = {}  # library -> [SymbolInfo]
         self._load_libraries()
 
-    def _load_libraries(self):
+    def _load_libraries(self) -> None:
         """Load libraries from sym-lib-table files"""
         # Load global libraries
         global_table = self._get_global_sym_lib_table()
@@ -98,7 +98,7 @@ class SymbolLibraryManager:
 
         return None
 
-    def _parse_sym_lib_table(self, table_path: Path):
+    def _parse_sym_lib_table(self, table_path: Path) -> None:
         """
         Parse sym-lib-table file
 
@@ -370,7 +370,7 @@ class SymbolLibraryManager:
         query_lower = query.lower()
 
         # Determine which libraries to search
-        libraries_to_search = self.libraries.keys()
+        libraries_to_search: list[str] = list(self.libraries.keys())
         if library_filter:
             filter_lower = library_filter.lower()
             libraries_to_search = [

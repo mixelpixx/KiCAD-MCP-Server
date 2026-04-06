@@ -127,7 +127,7 @@ class BoardAPI(ABC):
         pass
 
     @abstractmethod
-    def get_size(self) -> Dict[str, float]:
+    def get_size(self) -> Dict[str, Any]:
         """
         Get current board size
 
@@ -169,6 +169,7 @@ class BoardAPI(ABC):
         y: float,
         rotation: float = 0,
         layer: str = "F.Cu",
+        value: str = "",
     ) -> bool:
         """
         Place a component on the board

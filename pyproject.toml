@@ -15,25 +15,28 @@ line_length = 100
 python_version = "3.10"
 warn_return_any = false
 warn_unused_configs = true
-ignore_missing_imports = true
 check_untyped_defs = false
 disallow_untyped_defs = false
 explicit_package_bases = true
-mypy_path = "."
+mypy_path = ".:python"
 disable_error_code = [
-    "import-untyped",
     "arg-type",
     "attr-defined",
     "union-attr",
-    "call-arg",
-    "assignment",
     "var-annotated",
-    "annotation-unchecked",
     "index",
-    "has-type",
-    "dict-item",
-    "misc",
-    "list-item",
-    "return-value",
-    "operator",
 ]
+
+[[tool.mypy.overrides]]
+module = [
+    "pcbnew",
+    "cairosvg",
+    "sexpdata",
+    "skip",
+    "kipy",
+    "kipy.*",
+    "schematic",
+    "PIL",
+    "PIL.*",
+]
+ignore_missing_imports = true

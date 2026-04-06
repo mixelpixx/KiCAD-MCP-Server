@@ -115,7 +115,7 @@ class RoutingCommands:
                         "errorDetails": f"'{ref}' does not exist on the board",
                     }
 
-            def find_pad(ref: str, pad_num: str):
+            def find_pad(ref: str, pad_num: str) -> Any:
                 fp = footprints[ref]
                 for pad in fp.Pads():
                     if pad.GetNumber() == pad_num:

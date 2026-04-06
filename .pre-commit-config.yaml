@@ -46,7 +46,9 @@ repos:
         files: ^python/
         exclude: ^python/commands/board\.py$
         args: [--config-file=pyproject.toml]
-        additional_dependencies: []
+        additional_dependencies:
+          - types-requests
+          - pytest
 
   - repo: local
     hooks:

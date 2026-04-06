@@ -10,6 +10,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -29,20 +30,20 @@ EMPTY_SCH = TEMPLATES_DIR / "empty.kicad_sch"
 # ---------------------------------------------------------------------------
 
 
-def _make_temp_sch():
+def _make_temp_sch() -> Any:
     """Copy the empty schematic template to a temp file and return the Path."""
     tmp = Path(tempfile.mkdtemp()) / "test.kicad_sch"
     shutil.copy(EMPTY_SCH, tmp)
     return tmp
 
 
-def _parse_sch(path: Path):
+def _parse_sch(path: Path) -> Any:
     """Parse a .kicad_sch file and return the S-expression list."""
     with open(path, "r", encoding="utf-8") as f:
         return sexpdata.loads(f.read())
 
 
-def _find_elements(sch_data, tag: str):
+def _find_elements(sch_data: Any, tag: str) -> Any:
     """Return all top-level S-expression elements with the given tag Symbol."""
     return [item for item in sch_data if isinstance(item, list) and item and item[0] == Symbol(tag)]
 
@@ -56,22 +57,22 @@ class TestSchemas:
     """Verify tool_schemas.py reflects the new API."""
 
     @pytest.fixture(autouse=True)
-    def load_schemas(self):
+    def load_schemas(self) -> Any:
         from schemas.tool_schemas import SCHEMATIC_TOOLS
 
         self.tools = {t["name"]: t for t in SCHEMATIC_TOOLS}
 
-    def test_add_schematic_wire_has_waypoints(self):
+    def test_add_schematic_wire_has_waypoints(self) -> None:
         schema = self.tools["add_schematic_wire"]["inputSchema"]
         assert "waypoints" in schema["properties"], "waypoints must be a property"
         assert "waypoints" in schema["required"]
 
-    def test_add_schematic_wire_has_schematic_path(self):
+    def test_add_schematic_wire_has_schematic_path(self) -> None:
         schema = self.tools["add_schematic_wire"]["inputSchema"]
         assert "schematicPath" in schema["properties"]
         assert "schematicPath" in schema["required"]
 
-    def test_add_schematic_wire_has_snap_params(self):
+    def test_add_schematic_wire_has_snap_params(self) -> None:
         schema = self.tools["add_schematic_wire"]["inputSchema"]
         props = schema["properties"]
         assert "snapToPins" in props
@@ -79,28 +80,28 @@ class TestSchemas:
         assert "snapTolerance" in props
         assert props["snapTolerance"]["type"] == "number"
 
-    def test_add_schematic_wire_no_old_point_params(self):
+    def test_add_schematic_wire_no_old_point_params(self) -> None:
         schema = self.tools["add_schematic_wire"]["inputSchema"]
         props = schema["properties"]
         assert "startPoint" not in props, "startPoint should be removed"
         assert "endPoint" not in props, "endPoint should be removed"
 
-    def test_add_schematic_connection_removed(self):
+    def test_add_schematic_connection_removed(self) -> None:
         assert (
             "add_schematic_connection" not in self.tools
         ), "add_schematic_connection must not appear in SCHEMATIC_TOOLS"
 
-    def test_add_schematic_junction_present(self):
+    def test_add_schematic_junction_present(self) -> None:
         assert "add_schematic_junction" in self.tools
 
-    def test_add_schematic_junction_schema(self):
+    def test_add_schematic_junction_schema(self) -> None:
         schema = self.tools["add_schematic_junction"]["inputSchema"]
         props = schema["properties"]
         assert "schematicPath" in props
         assert "position" in props
         assert set(schema["required"]) >= {"schematicPath", "position"}
 
-    def test_add_schematic_junction_position_is_array(self):
+    def test_add_schematic_junction_position_is_array(self) -> None:
         schema = self.tools["add_schematic_junction"]["inputSchema"]
         pos = schema["properties"]["position"]
         assert pos["type"] == "array"
@@ -117,7 +118,7 @@ class TestHandlerDispatch:
     """Verify KiCADInterface registers the right tool handlers."""
 
     @pytest.fixture(autouse=True)
-    def load_handler_map(self):
+    def load_handler_map(self) -> Any:
         # Import only the dispatch table without initialising KiCAD connections
         import importlib
         import types
@@ -141,18 +142,18 @@ class TestHandlerDispatch:
             }
         self.handlers = obj._tool_handlers
 
-    def test_add_schematic_wire_registered(self):
+    def test_add_schematic_wire_registered(self) -> None:
         from kicad_interface import KiCADInterface
 
         # Just verify the class has the handler method
         assert hasattr(KiCADInterface, "_handle_add_schematic_wire")
 
-    def test_add_schematic_junction_registered(self):
+    def test_add_schematic_junction_registered(self) -> None:
         from kicad_interface import KiCADInterface
 
         assert hasattr(KiCADInterface, "_handle_add_schematic_junction")
 
-    def test_add_schematic_connection_not_present(self):
+    def test_add_schematic_connection_not_present(self) -> None:
         from kicad_interface import KiCADInterface
 
         assert not hasattr(
@@ -169,7 +170,7 @@ class TestHandleAddSchematicWireValidation:
     """Unit tests for _handle_add_schematic_wire validation paths (no disk I/O)."""
 
     @pytest.fixture(autouse=True)
-    def handler(self):
+    def handler(self) -> Any:
         import types
 
         for mod in ["pcbnew", "skip"]:
@@ -179,17 +180,17 @@ class TestHandleAddSchematicWireValidation:
         with patch.object(KiCADInterface, "__init__", lambda self, *a, **kw: None):
             self.iface = KiCADInterface.__new__(KiCADInterface)
 
-    def test_missing_schematic_path(self):
+    def test_missing_schematic_path(self) -> None:
         result = self.iface._handle_add_schematic_wire({"waypoints": [[0, 0], [10, 0]]})
         assert result["success"] is False
         assert "Schematic path" in result["message"]
 
-    def test_missing_waypoints(self):
+    def test_missing_waypoints(self) -> None:
         result = self.iface._handle_add_schematic_wire({"schematicPath": "/tmp/x.kicad_sch"})
         assert result["success"] is False
         assert "waypoint" in result["message"].lower()
 
-    def test_single_waypoint_rejected(self):
+    def test_single_waypoint_rejected(self) -> None:
         result = self.iface._handle_add_schematic_wire(
             {
                 "schematicPath": "/tmp/x.kicad_sch",
@@ -209,7 +210,7 @@ class TestHandleAddSchematicWireRouting:
     """Unit tests verifying add_wire vs add_polyline_wire dispatch, no pin snapping."""
 
     @pytest.fixture(autouse=True)
-    def setup(self):
+    def setup(self) -> Any:
         import types
 
         for mod in ["pcbnew", "skip"]:
@@ -224,7 +225,7 @@ class TestHandleAddSchematicWireRouting:
         shutil.rmtree(self.sch_path.parent, ignore_errors=True)
 
     @patch("commands.wire_manager.WireManager.add_wire", return_value=True)
-    def test_two_waypoints_calls_add_wire(self, mock_add_wire):
+    def test_two_waypoints_calls_add_wire(self, mock_add_wire: Any) -> None:
         result = self.iface._handle_add_schematic_wire(
             {
                 "schematicPath": str(self.sch_path),
@@ -239,7 +240,7 @@ class TestHandleAddSchematicWireRouting:
         assert args[2] == [30.0, 20.0]
 
     @patch("commands.wire_manager.WireManager.add_polyline_wire", return_value=True)
-    def test_four_waypoints_calls_add_polyline_wire(self, mock_poly):
+    def test_four_waypoints_calls_add_polyline_wire(self, mock_poly: Any) -> None:
         result = self.iface._handle_add_schematic_wire(
             {
                 "schematicPath": str(self.sch_path),
@@ -250,7 +251,7 @@ class TestHandleAddSchematicWireRouting:
         assert result["success"] is True
         mock_poly.assert_called_once()
 
-    def test_points_key_without_waypoints_is_rejected(self):
+    def test_points_key_without_waypoints_is_rejected(self) -> None:
         """'points' key alone (without 'waypoints') is rejected — no fallback."""
         result = self.iface._handle_add_schematic_wire(
             {
@@ -263,7 +264,7 @@ class TestHandleAddSchematicWireRouting:
         assert "waypoint" in result["message"].lower()
 
     @patch("commands.wire_manager.WireManager.add_wire", return_value=False)
-    def test_failure_response(self, _):
+    def test_failure_response(self, _: Any) -> None:
         result = self.iface._handle_add_schematic_wire(
             {
                 "schematicPath": str(self.sch_path),
@@ -283,18 +284,18 @@ class TestPinSnapping:
     """Verify pin snapping logic snaps endpoints correctly."""
 
     @pytest.fixture(autouse=True)
-    def setup(self):
+    def setup(self) -> Any:
         import types
 
         # Provide a minimal skip.Schematic stub so the handler can import it
         skip_mod = types.ModuleType("skip")
 
         class FakeSchematic:
-            def __init__(self, path):
+            def __init__(self, path: Any) -> None:
                 pass
 
             @property
-            def symbol(self):
+            def symbol(self) -> list[Any]:
                 return []  # no symbols → no pins in snapping loop
 
         skip_mod.Schematic = FakeSchematic
@@ -312,7 +313,7 @@ class TestPinSnapping:
 
     @patch("commands.wire_manager.WireManager.add_wire", return_value=True)
     @patch("commands.pin_locator.PinLocator.get_all_symbol_pins")
-    def test_start_point_snapped_within_tolerance(self, mock_pins, mock_wire):
+    def test_start_point_snapped_within_tolerance(self, mock_pins: Any, mock_wire: Any) -> None:
         """First waypoint within tolerance of a pin should be snapped to pin coords."""
         # get_all_symbol_pins won't be called because symbol list is empty in fixture.
         # Instead we patch find_nearest_pin indirectly by providing all_pins via the
@@ -326,7 +327,7 @@ class TestPinSnapping:
                 class Reference:
                     value = "R1"
 
-            def __init__(self):
+            def __init__(self) -> None:
                 pass
 
         skip_mod.Schematic = lambda path: type("FakeSch", (), {"symbol": [FakeSymbol()]})()
@@ -361,7 +362,7 @@ class TestPinSnapping:
                 ], f"Start should snap to [10.0, 20.0], got {called_start}"
             # If it failed due to stub issues, just verify no exception
 
-    def test_snap_disabled_passes_original_coords(self):
+    def test_snap_disabled_passes_original_coords(self) -> None:
         """With snapToPins=False the handler should not load PinLocator at all."""
         with (
             patch("commands.wire_manager.WireManager.add_wire", return_value=True) as mw,
@@ -380,7 +381,7 @@ class TestPinSnapping:
             assert called_start == [1.0, 2.0]
 
     @patch("commands.wire_manager.WireManager.add_wire", return_value=True)
-    def test_snap_miss_leaves_coords_unchanged(self, mock_wire):
+    def test_snap_miss_leaves_coords_unchanged(self, mock_wire: Any) -> None:
         """Point beyond tolerance should not be snapped."""
         with patch("commands.wire_manager.WireManager.add_wire", return_value=True) as mw:
             result = self.iface._handle_add_schematic_wire(
@@ -397,7 +398,7 @@ class TestPinSnapping:
             assert "snapped" not in result.get("message", "")
 
     @patch("commands.wire_manager.WireManager.add_polyline_wire", return_value=True)
-    def test_intermediate_waypoints_not_snapped(self, mock_poly):
+    def test_intermediate_waypoints_not_snapped(self, mock_poly: Any) -> None:
         """Middle waypoints must remain unchanged even with snapToPins=True."""
         mid = [50.0, 50.0]
         with patch("commands.wire_manager.WireManager.add_polyline_wire", return_value=True) as mp:
@@ -424,7 +425,7 @@ class TestPinSnapping:
 class TestHandleAddSchematicJunction:
 
     @pytest.fixture(autouse=True)
-    def setup(self):
+    def setup(self) -> Any:
         import types
 
         for mod in ["pcbnew", "skip"]:
@@ -434,18 +435,18 @@ class TestHandleAddSchematicJunction:
         with patch.object(KiCADInterface, "__init__", lambda self, *a, **kw: None):
             self.iface = KiCADInterface.__new__(KiCADInterface)
 
-    def test_missing_schematic_path(self):
+    def test_missing_schematic_path(self) -> None:
         result = self.iface._handle_add_schematic_junction({"position": [10.0, 20.0]})
         assert result["success"] is False
         assert "Schematic path" in result["message"]
 
-    def test_missing_position(self):
+    def test_missing_position(self) -> None:
         result = self.iface._handle_add_schematic_junction({"schematicPath": "/tmp/x.kicad_sch"})
         assert result["success"] is False
         assert "Position" in result["message"]
 
     @patch("commands.wire_manager.WireManager.add_junction", return_value=True)
-    def test_success(self, mock_jct):
+    def test_success(self, mock_jct: Any) -> None:
         sch = _make_temp_sch()
         try:
             result = self.iface._handle_add_schematic_junction(
@@ -461,7 +462,7 @@ class TestHandleAddSchematicJunction:
             shutil.rmtree(sch.parent, ignore_errors=True)
 
     @patch("commands.wire_manager.WireManager.add_junction", return_value=False)
-    def test_failure(self, _):
+    def test_failure(self, _: Any) -> None:
         sch = _make_temp_sch()
         try:
             result = self.iface._handle_add_schematic_junction(
@@ -483,21 +484,21 @@ class TestHandleAddSchematicJunction:
 
 class TestConnectionManagerOrphanedMethodsRemoved:
 
-    def test_add_wire_removed(self):
+    def test_add_wire_removed(self) -> None:
         from commands.connection_schematic import ConnectionManager
 
         assert not hasattr(
             ConnectionManager, "add_wire"
         ), "ConnectionManager.add_wire should have been removed"
 
-    def test_add_connection_removed(self):
+    def test_add_connection_removed(self) -> None:
         from commands.connection_schematic import ConnectionManager
 
         assert not hasattr(
             ConnectionManager, "add_connection"
         ), "ConnectionManager.add_connection should have been removed"
 
-    def test_get_pin_location_removed(self):
+    def test_get_pin_location_removed(self) -> None:
         from commands.connection_schematic import ConnectionManager
 
         assert not hasattr(
@@ -515,12 +516,12 @@ class TestIntegrationWireManager:
     """Integration tests using real schematic files and WireManager."""
 
     @pytest.fixture(autouse=True)
-    def sch(self):
+    def sch(self) -> Any:
         path = _make_temp_sch()
         yield path
         shutil.rmtree(path.parent, ignore_errors=True)
 
-    def test_add_wire_writes_wire_element(self, sch):
+    def test_add_wire_writes_wire_element(self, sch: Any) -> None:
         from commands.wire_manager import WireManager
 
         ok = WireManager.add_wire(sch, [10.0, 10.0], [30.0, 10.0])
@@ -529,7 +530,7 @@ class TestIntegrationWireManager:
         wires = _find_elements(data, "wire")
         assert len(wires) == 1
 
-    def test_add_polyline_wire_creates_segments(self, sch):
+    def test_add_polyline_wire_creates_segments(self, sch: Any) -> None:
         """N waypoints should produce N-1 individual 2-point wire segments."""
         from commands.wire_manager import WireManager
 
@@ -540,7 +541,7 @@ class TestIntegrationWireManager:
         wires = _find_elements(data, "wire")
         assert len(wires) == 3, f"4 waypoints should produce 3 wire segments, got {len(wires)}"
 
-    def test_add_junction_writes_junction_element(self, sch):
+    def test_add_junction_writes_junction_element(self, sch: Any) -> None:
         from commands.wire_manager import WireManager
 
         ok = WireManager.add_junction(sch, [25.4, 25.4])
@@ -553,7 +554,7 @@ class TestIntegrationWireManager:
         assert at[1] == 25.4
         assert at[2] == 25.4
 
-    def test_wire_endpoint_coordinates_match(self, sch):
+    def test_wire_endpoint_coordinates_match(self, sch: Any) -> None:
         from commands.wire_manager import WireManager
 
         WireManager.add_wire(sch, [5.0, 7.5], [15.0, 7.5])
@@ -576,7 +577,7 @@ class TestIntegrationHandlerEndToEnd:
     """Integration tests for KiCADInterface handlers writing to real schematic files."""
 
     @pytest.fixture(autouse=True)
-    def setup(self):
+    def setup(self) -> Any:
         import types
 
         for mod in ["pcbnew", "skip"]:
@@ -589,7 +590,7 @@ class TestIntegrationHandlerEndToEnd:
         yield
         shutil.rmtree(self.sch.parent, ignore_errors=True)
 
-    def test_junction_handler_writes_junction(self):
+    def test_junction_handler_writes_junction(self) -> None:
         result = self.iface._handle_add_schematic_junction(
             {
                 "schematicPath": str(self.sch),
@@ -601,7 +602,7 @@ class TestIntegrationHandlerEndToEnd:
         junctions = _find_elements(data, "junction")
         assert len(junctions) == 1
 
-    def test_wire_handler_two_points_writes_wire(self):
+    def test_wire_handler_two_points_writes_wire(self) -> None:
         result = self.iface._handle_add_schematic_wire(
             {
                 "schematicPath": str(self.sch),
@@ -614,7 +615,7 @@ class TestIntegrationHandlerEndToEnd:
         wires = _find_elements(data, "wire")
         assert len(wires) == 1
 
-    def test_wire_handler_four_points_creates_three_segments(self):
+    def test_wire_handler_four_points_creates_three_segments(self) -> None:
         result = self.iface._handle_add_schematic_wire(
             {
                 "schematicPath": str(self.sch),
@@ -638,64 +639,64 @@ class TestPointStrictlyOnWire:
     """Unit tests for WireManager._point_strictly_on_wire geometry helper."""
 
     @staticmethod
-    def _fn(px, py, x1, y1, x2, y2, eps=1e-6):
+    def _fn(px: Any, py: Any, x1: Any, y1: Any, x2: Any, y2: Any, eps: Any = 1e-6) -> Any:
         from commands.wire_manager import WireManager
 
         return WireManager._point_strictly_on_wire(px, py, x1, y1, x2, y2, eps)
 
-    def test_horizontal_midpoint(self):
+    def test_horizontal_midpoint(self) -> None:
         assert self._fn(5, 0, 0, 0, 10, 0) is True
 
-    def test_vertical_midpoint(self):
+    def test_vertical_midpoint(self) -> None:
         assert self._fn(0, 5, 0, 0, 0, 10) is True
 
-    def test_horizontal_at_start_endpoint(self):
+    def test_horizontal_at_start_endpoint(self) -> None:
         """Point at wire start should NOT be strictly on wire."""
         assert self._fn(0, 0, 0, 0, 10, 0) is False
 
-    def test_horizontal_at_end_endpoint(self):
+    def test_horizontal_at_end_endpoint(self) -> None:
         """Point at wire end should NOT be strictly on wire."""
         assert self._fn(10, 0, 0, 0, 10, 0) is False
 
-    def test_vertical_at_start_endpoint(self):
+    def test_vertical_at_start_endpoint(self) -> None:
         assert self._fn(0, 0, 0, 0, 0, 10) is False
 
-    def test_vertical_at_end_endpoint(self):
+    def test_vertical_at_end_endpoint(self) -> None:
         assert self._fn(0, 10, 0, 0, 0, 10) is False
 
-    def test_point_off_horizontal_wire(self):
+    def test_point_off_horizontal_wire(self) -> None:
         """Point above a horizontal wire."""
         assert self._fn(5, 1, 0, 0, 10, 0) is False
 
-    def test_point_off_vertical_wire(self):
+    def test_point_off_vertical_wire(self) -> None:
         """Point to the right of a vertical wire."""
         assert self._fn(1, 5, 0, 0, 0, 10) is False
 
-    def test_point_beyond_horizontal_wire(self):
+    def test_point_beyond_horizontal_wire(self) -> None:
         """Point collinear but past the end of a horizontal wire."""
         assert self._fn(15, 0, 0, 0, 10, 0) is False
 
-    def test_point_beyond_vertical_wire(self):
+    def test_point_beyond_vertical_wire(self) -> None:
         """Point collinear but past the end of a vertical wire."""
         assert self._fn(0, 15, 0, 0, 0, 10) is False
 
-    def test_diagonal_wire_always_false(self):
+    def test_diagonal_wire_always_false(self) -> None:
         """Only horizontal/vertical wires are handled; diagonal → False."""
         assert self._fn(5, 5, 0, 0, 10, 10) is False
 
-    def test_reversed_horizontal_endpoints(self):
+    def test_reversed_horizontal_endpoints(self) -> None:
         """Wire endpoints reversed (x2 < x1) should still work."""
         assert self._fn(5, 0, 10, 0, 0, 0) is True
 
-    def test_reversed_vertical_endpoints(self):
+    def test_reversed_vertical_endpoints(self) -> None:
         """Wire endpoints reversed (y2 < y1) should still work."""
         assert self._fn(0, 5, 0, 10, 0, 0) is True
 
-    def test_near_endpoint_within_epsilon(self):
+    def test_near_endpoint_within_epsilon(self) -> None:
         """Point within epsilon of endpoint should NOT be considered strictly on wire."""
         assert self._fn(1e-7, 0, 0, 0, 10, 0) is False
 
-    def test_zero_length_wire(self):
+    def test_zero_length_wire(self) -> None:
         """Degenerate wire with same start/end — nothing is strictly between."""
         assert self._fn(5, 5, 5, 5, 5, 5) is False
 
@@ -710,12 +711,12 @@ class TestParseWire:
     """Unit tests for WireManager._parse_wire S-expression parser."""
 
     @staticmethod
-    def _fn(item):
+    def _fn(item: Any) -> Any:
         from commands.wire_manager import WireManager
 
         return WireManager._parse_wire(item)
 
-    def test_valid_wire(self):
+    def test_valid_wire(self) -> None:
         wire = [
             Symbol("wire"),
             [Symbol("pts"), [Symbol("xy"), 10.0, 20.0], [Symbol("xy"), 30.0, 20.0]],
@@ -734,28 +735,28 @@ class TestParseWire:
         assert width == 0
         assert stype == "default"
 
-    def test_non_wire_element_returns_none(self):
+    def test_non_wire_element_returns_none(self) -> None:
         junction = [Symbol("junction"), [Symbol("at"), 10, 20]]
         assert TestParseWire._fn(junction) is None
 
-    def test_non_list_returns_none(self):
+    def test_non_list_returns_none(self) -> None:
         assert TestParseWire._fn("not a list") is None
 
-    def test_empty_list_returns_none(self):
+    def test_empty_list_returns_none(self) -> None:
         assert TestParseWire._fn([]) is None
 
-    def test_wire_with_no_pts_returns_none(self):
+    def test_wire_with_no_pts_returns_none(self) -> None:
         wire = [Symbol("wire"), [Symbol("stroke"), [Symbol("width"), 0]]]
         assert TestParseWire._fn(wire) is None
 
-    def test_wire_with_only_one_xy_returns_none(self):
+    def test_wire_with_only_one_xy_returns_none(self) -> None:
         wire = [
             Symbol("wire"),
             [Symbol("pts"), [Symbol("xy"), 10.0, 20.0]],
         ]
         assert TestParseWire._fn(wire) is None
 
-    def test_wire_without_stroke_uses_defaults(self):
+    def test_wire_without_stroke_uses_defaults(self) -> None:
         wire = [
             Symbol("wire"),
             [Symbol("pts"), [Symbol("xy"), 0, 0], [Symbol("xy"), 10, 0]],
@@ -776,7 +777,7 @@ class TestParseWire:
 class TestMakeWireSexp:
     """Unit tests for WireManager._make_wire_sexp builder."""
 
-    def test_produces_valid_parseable_wire(self):
+    def test_produces_valid_parseable_wire(self) -> None:
         from commands.wire_manager import WireManager
 
         sexp = WireManager._make_wire_sexp([10, 20], [30, 20])
@@ -788,7 +789,7 @@ class TestMakeWireSexp:
         assert width == 0
         assert stype == "default"
 
-    def test_custom_stroke(self):
+    def test_custom_stroke(self) -> None:
         from commands.wire_manager import WireManager
 
         sexp = WireManager._make_wire_sexp([0, 0], [5, 0], stroke_width=0.5, stroke_type="dash")
@@ -798,7 +799,7 @@ class TestMakeWireSexp:
         assert width == 0.5
         assert stype == "dash"
 
-    def test_has_uuid(self):
+    def test_has_uuid(self) -> None:
         from commands.wire_manager import WireManager
 
         sexp = WireManager._make_wire_sexp([0, 0], [10, 0])
@@ -807,7 +808,7 @@ class TestMakeWireSexp:
         assert uuid_entry[0] == Symbol("uuid")
         assert isinstance(uuid_entry[1], str) and len(uuid_entry[1]) > 0
 
-    def test_two_calls_produce_different_uuids(self):
+    def test_two_calls_produce_different_uuids(self) -> None:
         from commands.wire_manager import WireManager
 
         sexp1 = WireManager._make_wire_sexp([0, 0], [10, 0])
@@ -825,7 +826,7 @@ class TestBreakWiresAtPoint:
     """Unit tests for WireManager._break_wires_at_point T-junction logic."""
 
     @staticmethod
-    def _make_sch_data_with_wires(wire_coords):
+    def _make_sch_data_with_wires(wire_coords: Any) -> list[Any]:
         """Build a minimal sch_data list with wire elements and a sheet_instances marker."""
         from commands.wire_manager import WireManager
 
@@ -835,7 +836,7 @@ class TestBreakWiresAtPoint:
         data.append([Symbol("sheet_instances")])
         return data
 
-    def test_split_horizontal_wire_at_midpoint(self):
+    def test_split_horizontal_wire_at_midpoint(self) -> None:
         from commands.wire_manager import WireManager
 
         data = self._make_sch_data_with_wires([([0, 0], [20, 0])])
@@ -851,7 +852,7 @@ class TestBreakWiresAtPoint:
         endpoints = {c for pair in coords for c in pair}
         assert (10.0, 0.0) in endpoints
 
-    def test_split_vertical_wire_at_midpoint(self):
+    def test_split_vertical_wire_at_midpoint(self) -> None:
         from commands.wire_manager import WireManager
 
         data = self._make_sch_data_with_wires([([5, 0], [5, 30])])
@@ -860,7 +861,7 @@ class TestBreakWiresAtPoint:
         wires = _find_elements(data, "wire")
         assert len(wires) == 2
 
-    def test_no_split_at_wire_endpoint(self):
+    def test_no_split_at_wire_endpoint(self) -> None:
         """Point at existing endpoint should not trigger a split."""
         from commands.wire_manager import WireManager
 
@@ -870,7 +871,7 @@ class TestBreakWiresAtPoint:
         wires = _find_elements(data, "wire")
         assert len(wires) == 1
 
-    def test_no_split_point_not_on_wire(self):
+    def test_no_split_point_not_on_wire(self) -> None:
         from commands.wire_manager import WireManager
 
         data = self._make_sch_data_with_wires([([0, 0], [20, 0])])
@@ -879,7 +880,7 @@ class TestBreakWiresAtPoint:
         wires = _find_elements(data, "wire")
         assert len(wires) == 1
 
-    def test_split_multiple_wires_at_same_point(self):
+    def test_split_multiple_wires_at_same_point(self) -> None:
         """Two crossing wires at (10, 10) — both should be split."""
         from commands.wire_manager import WireManager
 
@@ -894,7 +895,7 @@ class TestBreakWiresAtPoint:
         wires = _find_elements(data, "wire")
         assert len(wires) == 4  # each wire split into 2
 
-    def test_split_preserves_stroke_properties(self):
+    def test_split_preserves_stroke_properties(self) -> None:
         from commands.wire_manager import WireManager
 
         data = [Symbol("kicad_sch")]
@@ -910,7 +911,7 @@ class TestBreakWiresAtPoint:
             assert parsed[2] == 0.5, "stroke_width should be preserved"
             assert parsed[3] == "dash", "stroke_type should be preserved"
 
-    def test_no_split_on_diagonal_wire(self):
+    def test_no_split_on_diagonal_wire(self) -> None:
         """Diagonal wires are not handled by _point_strictly_on_wire → no split."""
         from commands.wire_manager import WireManager
 
@@ -918,7 +919,7 @@ class TestBreakWiresAtPoint:
         splits = WireManager._break_wires_at_point(data, [5, 5])
         assert splits == 0
 
-    def test_empty_sch_data(self):
+    def test_empty_sch_data(self) -> None:
         from commands.wire_manager import WireManager
 
         data = [Symbol("kicad_sch"), [Symbol("sheet_instances")]]
@@ -936,12 +937,12 @@ class TestIntegrationTJunction:
     """Integration tests for T-junction wire breaking during add_wire/add_junction."""
 
     @pytest.fixture(autouse=True)
-    def sch(self):
+    def sch(self) -> Any:
         path = _make_temp_sch()
         yield path
         shutil.rmtree(path.parent, ignore_errors=True)
 
-    def test_add_wire_breaks_existing_horizontal_wire(self, sch):
+    def test_add_wire_breaks_existing_horizontal_wire(self, sch: Any) -> None:
         """Adding a vertical wire whose endpoint is mid-horizontal-wire should split it."""
         from commands.wire_manager import WireManager
 
@@ -954,7 +955,7 @@ class TestIntegrationTJunction:
         # Original horizontal wire should be split into 2, plus the new vertical = 3 total
         assert len(wires) == 3, f"Expected 3 wires (split + new), got {len(wires)}"
 
-    def test_add_wire_does_not_break_at_shared_endpoint(self, sch):
+    def test_add_wire_does_not_break_at_shared_endpoint(self, sch: Any) -> None:
         """Wire connecting at an existing endpoint should not trigger a split."""
         from commands.wire_manager import WireManager
 
@@ -965,7 +966,7 @@ class TestIntegrationTJunction:
         wires = _find_elements(data, "wire")
         assert len(wires) == 2, f"Expected 2 wires (no split), got {len(wires)}"
 
-    def test_add_junction_breaks_wire(self, sch):
+    def test_add_junction_breaks_wire(self, sch: Any) -> None:
         """Adding a junction mid-wire should split that wire."""
         from commands.wire_manager import WireManager
 
@@ -977,7 +978,7 @@ class TestIntegrationTJunction:
         junctions = _find_elements(data, "junction")
         assert len(junctions) == 1
 
-    def test_add_junction_at_wire_endpoint_no_split(self, sch):
+    def test_add_junction_at_wire_endpoint_no_split(self, sch: Any) -> None:
         """Junction at wire endpoint should not split it."""
         from commands.wire_manager import WireManager
 
@@ -987,7 +988,7 @@ class TestIntegrationTJunction:
         wires = _find_elements(data, "wire")
         assert len(wires) == 1, f"Expected 1 wire (no split at endpoint), got {len(wires)}"
 
-    def test_polyline_breaks_existing_wire(self, sch):
+    def test_polyline_breaks_existing_wire(self, sch: Any) -> None:
         """Polyline whose start/end hits mid-wire should break it."""
         from commands.wire_manager import WireManager
 
@@ -999,7 +1000,7 @@ class TestIntegrationTJunction:
         # 2 from split + 2 polyline segments = 4
         assert len(wires) == 4, f"Expected 4 wires, got {len(wires)}"
 
-    def test_polyline_two_points_same_as_add_wire(self, sch):
+    def test_polyline_two_points_same_as_add_wire(self, sch: Any) -> None:
         """Polyline with exactly 2 points should produce 1 wire segment."""
         from commands.wire_manager import WireManager
 

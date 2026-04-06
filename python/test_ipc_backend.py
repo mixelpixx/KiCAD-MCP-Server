@@ -16,6 +16,7 @@ Usage:
 
 import os
 import sys
+from typing import Any, Optional
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -29,7 +30,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def test_connection():
+def test_connection() -> Optional[Any]:
     """Test basic IPC connection to KiCAD."""
     print("\n" + "=" * 60)
     print("TEST 1: IPC Connection")
@@ -62,7 +63,7 @@ def test_connection():
         return None
 
 
-def test_board_access(backend):
+def test_board_access(backend: Any) -> Optional[Any]:
     """Test board access and component listing."""
     print("\n" + "=" * 60)
     print("TEST 2: Board Access")
@@ -93,7 +94,7 @@ def test_board_access(backend):
         return None
 
 
-def test_board_info(board_api):
+def test_board_info(board_api: Any) -> bool:
     """Test getting board information."""
     print("\n" + "=" * 60)
     print("TEST 3: Board Information")
@@ -134,7 +135,7 @@ def test_board_info(board_api):
         return False
 
 
-def test_realtime_track(board_api, interactive=False):
+def test_realtime_track(board_api: Any, interactive: bool = False) -> bool:
     """Test adding a track in real-time (appears immediately in KiCAD UI)."""
     print("\n" + "=" * 60)
     print("TEST 4: Real-time Track Addition")
@@ -168,7 +169,7 @@ def test_realtime_track(board_api, interactive=False):
         return False
 
 
-def test_realtime_via(board_api, interactive=False):
+def test_realtime_via(board_api: Any, interactive: bool = False) -> bool:
     """Test adding a via in real-time (appears immediately in KiCAD UI)."""
     print("\n" + "=" * 60)
     print("TEST 5: Real-time Via Addition")
@@ -200,7 +201,7 @@ def test_realtime_via(board_api, interactive=False):
         return False
 
 
-def test_realtime_text(board_api, interactive=False):
+def test_realtime_text(board_api: Any, interactive: bool = False) -> bool:
     """Test adding text in real-time."""
     print("\n" + "=" * 60)
     print("TEST 6: Real-time Text Addition")
@@ -229,7 +230,7 @@ def test_realtime_text(board_api, interactive=False):
         return False
 
 
-def test_selection(board_api, interactive=False):
+def test_selection(board_api: Any, interactive: bool = False) -> bool:
     """Test getting the current selection from KiCAD UI."""
     print("\n" + "=" * 60)
     print("TEST 7: UI Selection")
@@ -255,7 +256,7 @@ def test_selection(board_api, interactive=False):
         return False
 
 
-def run_all_tests(interactive=False):
+def run_all_tests(interactive: bool = False) -> bool:
     """Run all IPC backend tests."""
     print("\n" + "=" * 60)
     print("KiCAD IPC Backend Test Suite")

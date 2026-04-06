@@ -9,6 +9,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -32,7 +33,7 @@ def _sym(name: str) -> Symbol:
     return Symbol(name)
 
 
-def _make_wire(x1, y1, x2, y2):
+def _make_wire(x1: Any, y1: Any, x2: Any, y2: Any) -> Any:
     return [
         _sym("wire"),
         [_sym("pts"), [_sym("xy"), x1, y1], [_sym("xy"), x2, y2]],
@@ -41,7 +42,7 @@ def _make_wire(x1, y1, x2, y2):
     ]
 
 
-def _make_junction(x, y):
+def _make_junction(x: Any, y: Any) -> Any:
     return [
         _sym("junction"),
         [_sym("at"), x, y],
@@ -51,7 +52,9 @@ def _make_junction(x, y):
     ]
 
 
-def _make_symbol(ref, x, y, rotation=0, lib_id="Device:R", mirror=None):
+def _make_symbol(
+    ref: Any, x: Any, y: Any, rotation: Any = 0, lib_id: str = "Device:R", mirror: Any = None
+) -> Any:
     """Build a minimal placed-symbol s-expression."""
     item = [
         _sym("symbol"),
@@ -66,7 +69,7 @@ def _make_symbol(ref, x, y, rotation=0, lib_id="Device:R", mirror=None):
     return item
 
 
-def _make_lib_symbol_r():
+def _make_lib_symbol_r() -> Any:
     """Minimal Device:R lib_symbols entry — pins at (0, 3.81) and (0, -3.81)."""
     return [
         _sym("symbol"),
@@ -112,7 +115,7 @@ def _make_lib_symbol_r():
     ]
 
 
-def _make_sch_data(extra_items=None):
+def _make_sch_data(extra_items: Any = None) -> Any:
     """Build a minimal sch_data list with lib_symbols and sheet_instances."""
     data = [
         _sym("kicad_sch"),
@@ -133,20 +136,20 @@ def _make_sch_data(extra_items=None):
 
 @pytest.mark.unit
 class TestRotatePoint:
-    def test_zero_rotation(self):
+    def test_zero_rotation(self) -> None:
         assert _rotate(1.0, 2.0, 0) == (1.0, 2.0)
 
-    def test_90_degrees(self):
+    def test_90_degrees(self) -> None:
         rx, ry = _rotate(1.0, 0.0, 90)
         assert abs(rx - 0.0) < 1e-9
         assert abs(ry - 1.0) < 1e-9
 
-    def test_180_degrees(self):
+    def test_180_degrees(self) -> None:
         rx, ry = _rotate(1.0, 0.0, 180)
         assert abs(rx - (-1.0)) < 1e-9
         assert abs(ry - 0.0) < 1e-9
 
-    def test_270_degrees(self):
+    def test_270_degrees(self) -> None:
         rx, ry = _rotate(0.0, 1.0, 270)
         assert abs(rx - 1.0) < 1e-6
         assert abs(ry - 0.0) < 1e-6
@@ -159,11 +162,11 @@ class TestRotatePoint:
 
 @pytest.mark.unit
 class TestFindSymbol:
-    def test_returns_none_for_missing_reference(self):
+    def test_returns_none_for_missing_reference(self) -> None:
         sch = _make_sch_data([_make_symbol("R1", 10, 20)])
         assert WireDragger.find_symbol(sch, "R99") is None
 
-    def test_returns_item_and_position(self):
+    def test_returns_item_and_position(self) -> None:
         sch = _make_sch_data([_make_symbol("R1", 10.5, 20.5, rotation=90)])
         result = WireDragger.find_symbol(sch, "R1")
         assert result is not None
@@ -175,14 +178,14 @@ class TestFindSymbol:
         assert mirror_x is False
         assert mirror_y is False
 
-    def test_detects_mirror_x(self):
+    def test_detects_mirror_x(self) -> None:
         sch = _make_sch_data([_make_symbol("R1", 0, 0, mirror="x")])
         result = WireDragger.find_symbol(sch, "R1")
         assert result is not None
         assert result[5] is True  # mirror_x
         assert result[6] is False  # mirror_y
 
-    def test_detects_mirror_y(self):
+    def test_detects_mirror_y(self) -> None:
         sch = _make_sch_data([_make_symbol("R1", 0, 0, mirror="y")])
         result = WireDragger.find_symbol(sch, "R1")
         assert result is not None
@@ -197,7 +200,7 @@ class TestFindSymbol:
 
 @pytest.mark.unit
 class TestComputePinPositions:
-    def test_resistor_at_origin_no_rotation(self):
+    def test_resistor_at_origin_no_rotation(self) -> None:
         """Device:R at (0, 0) rot=0 — pins at (0, 3.81) and (0, -3.81)."""
         sch = _make_sch_data([_make_symbol("R1", 0, 0)])
         positions = WireDragger.compute_pin_positions(sch, "R1", 10, 20)
@@ -216,7 +219,7 @@ class TestComputePinPositions:
         assert abs(new2[0] - 10) < 1e-4
         assert abs(new2[1] - 16.19) < 1e-4
 
-    def test_resistor_rotated_90(self):
+    def test_resistor_rotated_90(self) -> None:
         """Device:R at (100, 100) rot=90 — pins should be at (100+3.81, 100) and (100-3.81, 100)."""
         sch = _make_sch_data([_make_symbol("R1", 100, 100, rotation=90)])
         positions = WireDragger.compute_pin_positions(sch, "R1", 100, 100)
@@ -229,12 +232,12 @@ class TestComputePinPositions:
         assert abs(old1[0] - 96.19) < 1e-3
         assert abs(old1[1] - 100) < 1e-3
 
-    def test_returns_empty_for_missing_component(self):
+    def test_returns_empty_for_missing_component(self) -> None:
         sch = _make_sch_data()
         result = WireDragger.compute_pin_positions(sch, "MISSING", 0, 0)
         assert result == {}
 
-    def test_delta_is_consistent(self):
+    def test_delta_is_consistent(self) -> None:
         """new_xy - old_xy should equal (new_x - old_x, new_y - old_y) for any rotation."""
         sch = _make_sch_data([_make_symbol("R1", 50, 50, rotation=45)])
         positions = WireDragger.compute_pin_positions(sch, "R1", 60, 70)
@@ -252,13 +255,13 @@ class TestComputePinPositions:
 
 @pytest.mark.unit
 class TestDragWires:
-    def test_no_wires_returns_zero_counts(self):
+    def test_no_wires_returns_zero_counts(self) -> None:
         sch = _make_sch_data()
         result = WireDragger.drag_wires(sch, {(0.0, 0.0): (10.0, 10.0)})
         assert result["endpoints_moved"] == 0
         assert result["wires_removed"] == 0
 
-    def test_wire_start_endpoint_moved(self):
+    def test_wire_start_endpoint_moved(self) -> None:
         wire = _make_wire(0, 3.81, 0, 10)
         sch = _make_sch_data([wire])
         result = WireDragger.drag_wires(sch, {(0.0, 3.81): (10.0, 23.81)})
@@ -271,7 +274,7 @@ class TestDragWires:
         assert abs(xy1[1] - 10.0) < EPS
         assert abs(xy1[2] - 23.81) < EPS
 
-    def test_wire_end_endpoint_moved(self):
+    def test_wire_end_endpoint_moved(self) -> None:
         wire = _make_wire(0, 10, 0, -3.81)
         sch = _make_sch_data([wire])
         result = WireDragger.drag_wires(sch, {(0.0, -3.81): (10.0, 16.19)})
@@ -282,7 +285,7 @@ class TestDragWires:
         assert abs(xy2[1] - 10.0) < EPS
         assert abs(xy2[2] - 16.19) < EPS
 
-    def test_zero_length_wire_removed(self):
+    def test_zero_length_wire_removed(self) -> None:
         """When both endpoints of a wire are moved to the same point, wire is deleted."""
         wire = _make_wire(0, 3.81, 0, -3.81)
         sch = _make_sch_data([wire])
@@ -298,7 +301,7 @@ class TestDragWires:
         wires_remaining = [i for i in sch if isinstance(i, list) and i and i[0] == Symbol("wire")]
         assert len(wires_remaining) == 0
 
-    def test_unrelated_wire_not_touched(self):
+    def test_unrelated_wire_not_touched(self) -> None:
         """A wire whose endpoints don't match any old pin is not changed."""
         wire = _make_wire(50, 50, 60, 50)
         sch = _make_sch_data([wire])
@@ -311,7 +314,7 @@ class TestDragWires:
         assert abs(xy1[1] - 50.0) < EPS
         assert abs(xy1[2] - 50.0) < EPS
 
-    def test_both_endpoints_on_moved_component(self):
+    def test_both_endpoints_on_moved_component(self) -> None:
         """Wire connecting two pins of same component — both endpoints shift together."""
         wire = _make_wire(0, 3.81, 0, -3.81)
         sch = _make_sch_data([wire])
@@ -325,7 +328,7 @@ class TestDragWires:
         assert result["endpoints_moved"] == 2
         assert result["wires_removed"] == 0
 
-    def test_junction_moved_with_endpoint(self):
+    def test_junction_moved_with_endpoint(self) -> None:
         junction = _make_junction(0, 3.81)
         sch = _make_sch_data([junction])
         WireDragger.drag_wires(sch, {(0.0, 3.81): (10.0, 23.81)})
@@ -336,7 +339,7 @@ class TestDragWires:
         assert abs(at_sub[1] - 10.0) < EPS
         assert abs(at_sub[2] - 23.81) < EPS
 
-    def test_junction_at_unrelated_position_not_touched(self):
+    def test_junction_at_unrelated_position_not_touched(self) -> None:
         junction = _make_junction(99, 99)
         sch = _make_sch_data([junction])
         WireDragger.drag_wires(sch, {(0.0, 3.81): (10.0, 23.81)})
@@ -355,7 +358,7 @@ class TestDragWires:
 
 @pytest.mark.unit
 class TestUpdateSymbolPosition:
-    def test_updates_position(self):
+    def test_updates_position(self) -> None:
         sch = _make_sch_data([_make_symbol("R1", 10, 20)])
         result = WireDragger.update_symbol_position(sch, "R1", 30, 40)
         assert result is True
@@ -363,17 +366,17 @@ class TestUpdateSymbolPosition:
         assert abs(found[1] - 30) < EPS
         assert abs(found[2] - 40) < EPS
 
-    def test_returns_false_for_missing(self):
+    def test_returns_false_for_missing(self) -> None:
         sch = _make_sch_data()
         assert WireDragger.update_symbol_position(sch, "MISSING", 0, 0) is False
 
-    def test_preserves_rotation(self):
+    def test_preserves_rotation(self) -> None:
         sch = _make_sch_data([_make_symbol("R1", 10, 20, rotation=90)])
         WireDragger.update_symbol_position(sch, "R1", 30, 40)
         found = WireDragger.find_symbol(sch, "R1")
         assert abs(found[3] - 90) < EPS  # rotation preserved
 
-    def test_property_labels_follow_symbol_move(self):
+    def test_property_labels_follow_symbol_move(self) -> None:
         """Property (at ...) positions must shift by the same delta as the symbol."""
         sym = _make_symbol("R1", 100, 80)
         sch = _make_sch_data([sym])
@@ -421,7 +424,7 @@ class TestUpdateSymbolPosition:
 class TestMoveWithWirePreservation:
     """Integration tests using a real .kicad_sch file."""
 
-    def _make_schematic(self, extra_sexp=""):
+    def _make_schematic(self, extra_sexp: Any = "") -> Any:
         """Copy empty.kicad_sch to a temp file and optionally append content."""
         tmp = Path(tempfile.mkdtemp()) / "test.kicad_sch"
         shutil.copy(TEMPLATE_PATH, tmp)
@@ -462,7 +465,7 @@ class TestMoveWithWirePreservation:
         path.write_text(content[:idx] + "\n" + sexp + "\n)", encoding="utf-8")
         return path
 
-    def _add_wire(self, path: Path, x1, y1, x2, y2) -> Path:
+    def _add_wire(self, path: Path, x1: float, y1: float, x2: float, y2: float) -> Path:
         """Append a wire to the schematic file."""
         import uuid
 
@@ -476,7 +479,7 @@ class TestMoveWithWirePreservation:
         path.write_text(content[:idx] + "\n" + wire_sexp + "\n)", encoding="utf-8")
         return path
 
-    def _parse_wires(self, path: Path):
+    def _parse_wires(self, path: Path) -> Any:
         """Return list of ((x1,y1),(x2,y2)) for every wire in the file."""
         content = path.read_text(encoding="utf-8")
         data = sexpdata.loads(content)
@@ -502,7 +505,7 @@ class TestMoveWithWirePreservation:
                 )
         return wires
 
-    def _get_symbol_pos(self, path: Path, ref: str):
+    def _get_symbol_pos(self, path: Path, ref: str) -> Any:
         content = path.read_text(encoding="utf-8")
         data = sexpdata.loads(content)
         found = WireDragger.find_symbol(data, ref)
@@ -510,7 +513,7 @@ class TestMoveWithWirePreservation:
             return None
         return found[1], found[2]
 
-    def test_symbol_position_updated(self):
+    def test_symbol_position_updated(self) -> None:
         sch = self._make_schematic()
         self._add_resistor(sch, "R1", 100, 100)
         # Call handler directly
@@ -531,7 +534,7 @@ class TestMoveWithWirePreservation:
         assert abs(pos[0] - 120) < EPS
         assert abs(pos[1] - 130) < EPS
 
-    def test_connected_wire_endpoint_follows_pin(self):
+    def test_connected_wire_endpoint_follows_pin(self) -> None:
         """Wire endpoint at pin 1 of R1 should move with the component."""
         sch = self._make_schematic()
         # R1 at (100, 100) — pin 1 at (100, 103.81)
@@ -563,7 +566,7 @@ class TestMoveWithWirePreservation:
             abs(ep[0] - new_pin1[0]) < 0.01 and abs(ep[1] - new_pin1[1]) < 0.01 for ep in endpoints
         ), f"Expected pin endpoint near {new_pin1}, got {endpoints}"
 
-    def test_unrelated_wire_unchanged(self):
+    def test_unrelated_wire_unchanged(self) -> None:
         """A wire not connected to R1 must not be modified."""
         sch = self._make_schematic()
         self._add_resistor(sch, "R1", 100, 100)
@@ -586,7 +589,7 @@ class TestMoveWithWirePreservation:
         unrelated = [(s, e) for s, e in wires if abs(s[0] - 50) < 0.01 and abs(s[1] - 50) < 0.01]
         assert len(unrelated) == 1
 
-    def test_no_zero_length_wires_after_move(self):
+    def test_no_zero_length_wires_after_move(self) -> None:
         """No zero-length wires should appear in the file after a move."""
         sch = self._make_schematic()
         self._add_resistor(sch, "R1", 100, 100)
@@ -612,7 +615,7 @@ class TestMoveWithWirePreservation:
                 abs(start[0] - end[0]) < EPS and abs(start[1] - end[1]) < EPS
             ), f"Zero-length wire found at {start}"
 
-    def test_preserve_wires_false_skips_wire_update(self):
+    def test_preserve_wires_false_skips_wire_update(self) -> None:
         """preserveWires=False should move the symbol but leave wires alone."""
         sch = self._make_schematic()
         self._add_resistor(sch, "R1", 100, 100)
@@ -643,7 +646,7 @@ class TestMoveWithWirePreservation:
             abs(ep[0] - old_pin1[0]) < 0.01 and abs(ep[1] - old_pin1[1]) < 0.01 for ep in endpoints
         ), f"Wire should still be at {old_pin1}, got {endpoints}"
 
-    def test_missing_component_returns_error(self):
+    def test_missing_component_returns_error(self) -> None:
         sch = self._make_schematic()
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from kicad_interface import KiCADInterface
@@ -670,7 +673,7 @@ class TestMoveWithWirePreservation:
 class TestSynthesizeTouchingPinWires:
     """Unit tests for WireDragger.synthesize_touching_pin_wires."""
 
-    def _make_two_resistors(self, r1_x, r1_y, r2_x, r2_y):
+    def _make_two_resistors(self, r1_x: Any, r1_y: Any, r2_x: Any, r2_y: Any) -> Any:
         """Build sch_data with R1 and R2, each Device:R."""
         return _make_sch_data(
             [
@@ -679,14 +682,14 @@ class TestSynthesizeTouchingPinWires:
             ]
         )
 
-    def test_no_stationary_symbols_returns_zero(self):
+    def test_no_stationary_symbols_returns_zero(self) -> None:
         """With only the moved component in sch_data, nothing is synthesized."""
         sch = _make_sch_data([_make_symbol("R1", 0, 0)])
         pin_positions = WireDragger.compute_pin_positions(sch, "R1", 10, 20)
         count = WireDragger.synthesize_touching_pin_wires(sch, "R1", pin_positions)
         assert count == 0
 
-    def test_touching_pin_gap_generates_wire(self):
+    def test_touching_pin_gap_generates_wire(self) -> None:
         """
         R1 at (0, 0) pin2 at (0, -3.81).
         R2 at (0, -7.62) pin1 at (0, -3.81).  ← pins touch
@@ -728,7 +731,7 @@ class TestSynthesizeTouchingPinWires:
             -3.81,
         ) in endpoints, f"Expected (10, -3.81) in wire endpoints, got {endpoints}"
 
-    def test_no_wire_when_pin_didnt_move(self):
+    def test_no_wire_when_pin_didnt_move(self) -> None:
         """
         If old_xy == new_xy for a touching pin (component moved but this pin stayed put),
         no wire should be synthesized.
@@ -740,7 +743,7 @@ class TestSynthesizeTouchingPinWires:
         count = WireDragger.synthesize_touching_pin_wires(sch, "R1", pin_positions)
         assert count == 0
 
-    def test_no_wire_when_rejoins_other_stationary_pin(self):
+    def test_no_wire_when_rejoins_other_stationary_pin(self) -> None:
         """
         If the moved pin's new position coincides with another stationary pin,
         no wire should be synthesized (they touch again).
@@ -759,12 +762,12 @@ class TestSynthesizeTouchingPinWires:
         count = WireDragger.synthesize_touching_pin_wires(sch, "R1", pin_positions)
         assert count == 0, f"Expected 0 synthesized wires (rejoined), got {count}"
 
-    def test_empty_pin_positions_returns_zero(self):
+    def test_empty_pin_positions_returns_zero(self) -> None:
         sch = _make_sch_data([_make_symbol("R1", 0, 0)])
         count = WireDragger.synthesize_touching_pin_wires(sch, "R1", {})
         assert count == 0
 
-    def test_non_touching_pins_not_affected(self):
+    def test_non_touching_pins_not_affected(self) -> None:
         """
         When R1 and R2 are NOT touching (different positions), no wire is synthesized.
         """
@@ -784,7 +787,7 @@ class TestSynthesizeTouchingPinWires:
 class TestOldToNewCollision:
     """Verify that coincident pins do not silently overwrite each other in old_to_new."""
 
-    def test_handler_logs_warning_on_collision(self, caplog):
+    def test_handler_logs_warning_on_collision(self, caplog: Any) -> None:
         """
         When two pins share the same old position, a warning should be logged
         and the *first* mapping should be kept (not overwritten by the second).
@@ -827,7 +830,7 @@ class TestOldToNewCollision:
 class TestTouchingPinIntegration:
     """Integration tests for pin-touching connection wire synthesis."""
 
-    def _make_schematic(self, extra_sexp=""):
+    def _make_schematic(self, extra_sexp: Any = "") -> Any:
         """Copy empty.kicad_sch to a temp file."""
         tmp = Path(tempfile.mkdtemp()) / "test.kicad_sch"
         shutil.copy(TEMPLATE_PATH, tmp)
@@ -867,7 +870,7 @@ class TestTouchingPinIntegration:
         path.write_text(content[:idx] + "\n" + sexp + "\n)", encoding="utf-8")
         return path
 
-    def _parse_wires(self, path: Path):
+    def _parse_wires(self, path: Path) -> Any:
         content = path.read_text(encoding="utf-8")
         data = sexpdata.loads(content)
         wires = []
@@ -892,7 +895,7 @@ class TestTouchingPinIntegration:
                 )
         return wires
 
-    def test_touching_pin_wire_created_on_move(self):
+    def test_touching_pin_wire_created_on_move(self) -> None:
         """
         R1 at (100, 100) and R2 at (100, 92.38) share a touching pin:
           R1 pin2 = (100, 96.19), R2 pin1 = (100, 96.19).
@@ -947,7 +950,7 @@ class TestTouchingPinIntegration:
             len(bridging) >= 1
         ), f"Expected a bridging wire from {old_pin2} to {new_pin2}, got wires: {wires}"
 
-    def test_no_wire_synthesized_when_no_touching_pins(self):
+    def test_no_wire_synthesized_when_no_touching_pins(self) -> None:
         """
         Two resistors with no pin overlap should not generate any synthesized wires.
         """
@@ -970,7 +973,7 @@ class TestTouchingPinIntegration:
         assert result["success"], result.get("message")
         assert result.get("wiresSynthesized", 0) == 0
 
-    def test_existing_wires_still_dragged_with_touching_pins(self):
+    def test_existing_wires_still_dragged_with_touching_pins(self) -> None:
         """
         When R1 has both an explicit wire AND a touching-pin connection,
         both should be handled: the wire dragged and the touching-pin bridged.

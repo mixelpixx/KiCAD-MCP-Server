@@ -10,6 +10,7 @@ import re
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -121,32 +122,32 @@ class TestDeleteDetectionRegex:
     OLD_PATTERN = re.compile(r"^\s*\(symbol\s+\(lib_id\s+\"", re.MULTILINE)
     NEW_PATTERN = re.compile(r'\(symbol\s+\(lib_id\s+"')
 
-    def test_old_regex_fails_on_multiline_format(self):
+    def test_old_regex_fails_on_multiline_format(self) -> None:
         """Regression: old line-by-line regex must NOT match the multi-line format."""
         # The old code used re.match on individual lines; simulate that here.
         lines = PLACED_RESISTOR_MULTILINE.split("\n")
         matches = [l for l in lines if re.match(r"\s*\(symbol\s+\(lib_id\s+\"", l)]
         assert matches == [], "Old regex should not match multi-line KiCAD format"
 
-    def test_old_regex_matches_inline_format(self):
+    def test_old_regex_matches_inline_format(self) -> None:
         """Old regex did work on single-line (inline) format."""
         lines = PLACED_RESISTOR_INLINE.split("\n")
         matches = [l for l in lines if re.match(r"\s*\(symbol\s+\(lib_id\s+\"", l)]
         assert len(matches) == 1
 
-    def test_new_pattern_matches_multiline_format(self):
+    def test_new_pattern_matches_multiline_format(self) -> None:
         """New content-string pattern must find blocks in multi-line format."""
         assert self.NEW_PATTERN.search(PLACED_RESISTOR_MULTILINE) is not None
 
-    def test_new_pattern_matches_inline_format(self):
+    def test_new_pattern_matches_inline_format(self) -> None:
         """New content-string pattern also works on inline format."""
         assert self.NEW_PATTERN.search(PLACED_RESISTOR_INLINE) is not None
 
-    def test_new_pattern_matches_power_symbol_multiline(self):
+    def test_new_pattern_matches_power_symbol_multiline(self) -> None:
         """New pattern must find #PWR030 power symbol in multi-line format."""
         assert self.NEW_PATTERN.search(PLACED_POWER_SYMBOL_MULTILINE) is not None
 
-    def test_reference_extraction_from_multiline_block(self):
+    def test_reference_extraction_from_multiline_block(self) -> None:
         """Reference property can be found inside a multi-line block."""
         ref_pattern = re.compile(r'\(property\s+"Reference"\s+"#PWR030"')
         assert ref_pattern.search(PLACED_POWER_SYMBOL_MULTILINE) is not None
@@ -159,49 +160,49 @@ class TestDeleteDetectionRegex:
 
 @pytest.mark.integration
 class TestDeleteSchematicComponentIntegration:
-    def _get_handler(self):
+    def _get_handler(self) -> Any:
         from kicad_interface import KiCADInterface
 
         iface = KiCADInterface.__new__(KiCADInterface)
         return iface._handle_delete_schematic_component
 
-    def test_delete_inline_format_succeeds(self, tmp_path):
+    def test_delete_inline_format_succeeds(self, tmp_path: Any) -> None:
         sch = _make_test_schematic(tmp_path, PLACED_RESISTOR_INLINE)
         result = self._get_handler()({"schematicPath": str(sch), "reference": "R1"})
         assert result["success"] is True
         assert result["deleted_count"] == 1
 
-    def test_delete_multiline_format_succeeds(self, tmp_path):
+    def test_delete_multiline_format_succeeds(self, tmp_path: Any) -> None:
         """Regression: must succeed when KiCAD writes (symbol and (lib_id on separate lines."""
         sch = _make_test_schematic(tmp_path, PLACED_RESISTOR_MULTILINE)
         result = self._get_handler()({"schematicPath": str(sch), "reference": "R2"})
         assert result["success"] is True
         assert result["deleted_count"] == 1
 
-    def test_delete_power_symbol_multiline_succeeds(self, tmp_path):
+    def test_delete_power_symbol_multiline_succeeds(self, tmp_path: Any) -> None:
         """Regression: #PWR030 multi-line power symbol must be deletable."""
         sch = _make_test_schematic(tmp_path, PLACED_POWER_SYMBOL_MULTILINE)
         result = self._get_handler()({"schematicPath": str(sch), "reference": "#PWR030"})
         assert result["success"] is True
         assert result["deleted_count"] == 1
 
-    def test_component_absent_after_delete(self, tmp_path):
+    def test_component_absent_after_delete(self, tmp_path: Any) -> None:
         sch = _make_test_schematic(tmp_path, PLACED_POWER_SYMBOL_MULTILINE)
         self._get_handler()({"schematicPath": str(sch), "reference": "#PWR030"})
         remaining = sch.read_text(encoding="utf-8")
         assert '"#PWR030"' not in remaining
 
-    def test_unknown_reference_returns_failure(self, tmp_path):
+    def test_unknown_reference_returns_failure(self, tmp_path: Any) -> None:
         sch = _make_test_schematic(tmp_path, PLACED_RESISTOR_INLINE)
         result = self._get_handler()({"schematicPath": str(sch), "reference": "U99"})
         assert result["success"] is False
         assert "not found" in result["message"]
 
-    def test_missing_schematic_path_returns_failure(self, tmp_path):
+    def test_missing_schematic_path_returns_failure(self, tmp_path: Any) -> None:
         result = self._get_handler()({"reference": "R1"})
         assert result["success"] is False
 
-    def test_missing_reference_returns_failure(self, tmp_path):
+    def test_missing_reference_returns_failure(self, tmp_path: Any) -> None:
         sch = _make_test_schematic(tmp_path)
         result = self._get_handler()({"schematicPath": str(sch)})
         assert result["success"] is False

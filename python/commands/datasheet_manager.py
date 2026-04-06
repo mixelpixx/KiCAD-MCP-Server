@@ -12,7 +12,7 @@ No API key required.
 import logging
 import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger("kicad_interface")
 
@@ -49,7 +49,7 @@ class DatasheetManager:
         return None
 
     @staticmethod
-    def _find_lib_symbols_range(lines: List[str]):
+    def _find_lib_symbols_range(lines: List[str]) -> Tuple[Optional[int], Optional[int]]:
         """
         Find the line range of the (lib_symbols ...) section.
         Returns (start, end) line indices or (None, None) if not found.
