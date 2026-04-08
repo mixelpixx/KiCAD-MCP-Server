@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -86,7 +87,7 @@ class TestGetSchematicComponentParsing:
             }
         return fields
 
-    def _parse_comp_pos(self, block_text: str):
+    def _parse_comp_pos(self, block_text: str) -> Any:
         """Mirrors the regex used to extract symbol position."""
         m = re.search(
             r'\(symbol\s+\(lib_id\s+"[^"]*"\s*\)\s+\(at\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s*\)',
@@ -100,7 +101,7 @@ class TestGetSchematicComponentParsing:
             }
         return None
 
-    def test_parses_reference_field(self):
+    def test_parses_reference_field(self) -> None:
         fields = self._parse_fields(PLACED_RESISTOR_BLOCK)
         assert "Reference" in fields
         assert fields["Reference"]["value"] == "R1"
@@ -108,25 +109,25 @@ class TestGetSchematicComponentParsing:
         assert fields["Reference"]["y"] == pytest.approx(47.46)
         assert fields["Reference"]["angle"] == pytest.approx(0.0)
 
-    def test_parses_value_field(self):
+    def test_parses_value_field(self) -> None:
         fields = self._parse_fields(PLACED_RESISTOR_BLOCK)
         assert "Value" in fields
         assert fields["Value"]["value"] == "10k"
         assert fields["Value"]["x"] == pytest.approx(51.27)
         assert fields["Value"]["y"] == pytest.approx(52.54)
 
-    def test_parses_all_four_standard_fields(self):
+    def test_parses_all_four_standard_fields(self) -> None:
         fields = self._parse_fields(PLACED_RESISTOR_BLOCK)
         assert set(fields.keys()) >= {"Reference", "Value", "Footprint", "Datasheet"}
 
-    def test_parses_component_position(self):
+    def test_parses_component_position(self) -> None:
         pos = self._parse_comp_pos(PLACED_RESISTOR_BLOCK)
         assert pos is not None
         assert pos["x"] == pytest.approx(50.0)
         assert pos["y"] == pytest.approx(50.0)
         assert pos["angle"] == pytest.approx(0.0)
 
-    def test_field_position_regex_replaces_correctly(self):
+    def test_field_position_regex_replaces_correctly(self) -> None:
         """Mirrors the regex used in _handle_edit_schematic_component for fieldPositions."""
         field_name = "Reference"
         new_x, new_y, new_angle = 99.0, 88.0, 0
@@ -144,7 +145,7 @@ class TestGetSchematicComponentParsing:
         # Value should be unchanged
         assert fields["Value"]["x"] == pytest.approx(51.27)
 
-    def test_field_position_regex_preserves_value(self):
+    def test_field_position_regex_preserves_value(self) -> None:
         """Replacing position must not change the field value string."""
         block = PLACED_RESISTOR_BLOCK
         block = re.sub(
@@ -166,16 +167,16 @@ class TestGetSchematicComponentIntegration:
     """Integration tests: write a real .kicad_sch and call the handler."""
 
     @pytest.fixture
-    def sch_with_r1(self, tmp_path):
+    def sch_with_r1(self, tmp_path: Any) -> Any:
         return _make_test_schematic(tmp_path, PLACED_RESISTOR_BLOCK)
 
-    def _get_interface(self):
+    def _get_interface(self) -> Any:
         """Lazily import KiCADInterface to avoid pcbnew import at collection time."""
         from kicad_interface import KiCADInterface
 
         return KiCADInterface()
 
-    def test_get_returns_success(self, sch_with_r1):
+    def test_get_returns_success(self, sch_with_r1: Any) -> None:
         iface = self._get_interface()
         result = iface.handle_command(
             "get_schematic_component",
@@ -186,7 +187,7 @@ class TestGetSchematicComponentIntegration:
         )
         assert result["success"] is True
 
-    def test_get_returns_correct_reference(self, sch_with_r1):
+    def test_get_returns_correct_reference(self, sch_with_r1: Any) -> None:
         iface = self._get_interface()
         result = iface.handle_command(
             "get_schematic_component",
@@ -197,7 +198,7 @@ class TestGetSchematicComponentIntegration:
         )
         assert result["reference"] == "R1"
 
-    def test_get_returns_component_position(self, sch_with_r1):
+    def test_get_returns_component_position(self, sch_with_r1: Any) -> None:
         iface = self._get_interface()
         result = iface.handle_command(
             "get_schematic_component",
@@ -210,7 +211,7 @@ class TestGetSchematicComponentIntegration:
         assert result["position"]["x"] == pytest.approx(50.0)
         assert result["position"]["y"] == pytest.approx(50.0)
 
-    def test_get_returns_reference_field_position(self, sch_with_r1):
+    def test_get_returns_reference_field_position(self, sch_with_r1: Any) -> None:
         iface = self._get_interface()
         result = iface.handle_command(
             "get_schematic_component",
@@ -224,7 +225,7 @@ class TestGetSchematicComponentIntegration:
         assert ref_field["x"] == pytest.approx(51.27)
         assert ref_field["y"] == pytest.approx(47.46)
 
-    def test_get_returns_value_field(self, sch_with_r1):
+    def test_get_returns_value_field(self, sch_with_r1: Any) -> None:
         iface = self._get_interface()
         result = iface.handle_command(
             "get_schematic_component",
@@ -238,7 +239,7 @@ class TestGetSchematicComponentIntegration:
         assert val_field["x"] == pytest.approx(51.27)
         assert val_field["y"] == pytest.approx(52.54)
 
-    def test_get_unknown_reference_returns_failure(self, sch_with_r1):
+    def test_get_unknown_reference_returns_failure(self, sch_with_r1: Any) -> None:
         iface = self._get_interface()
         result = iface.handle_command(
             "get_schematic_component",
@@ -250,7 +251,7 @@ class TestGetSchematicComponentIntegration:
         assert result["success"] is False
         assert "R99" in result["message"]
 
-    def test_get_missing_path_returns_failure(self):
+    def test_get_missing_path_returns_failure(self) -> None:
         iface = self._get_interface()
         result = iface.handle_command(
             "get_schematic_component",
@@ -266,15 +267,15 @@ class TestEditSchematicComponentFieldPositions:
     """Integration tests for the new fieldPositions parameter."""
 
     @pytest.fixture
-    def sch_with_r1(self, tmp_path):
+    def sch_with_r1(self, tmp_path: Any) -> Any:
         return _make_test_schematic(tmp_path, PLACED_RESISTOR_BLOCK)
 
-    def _get_interface(self):
+    def _get_interface(self) -> Any:
         from kicad_interface import KiCADInterface
 
         return KiCADInterface()
 
-    def test_reposition_reference_label(self, sch_with_r1):
+    def test_reposition_reference_label(self, sch_with_r1: Any) -> None:
         iface = self._get_interface()
         result = iface.handle_command(
             "edit_schematic_component",
@@ -297,7 +298,7 @@ class TestEditSchematicComponentFieldPositions:
         assert get_result["fields"]["Reference"]["x"] == pytest.approx(99.0)
         assert get_result["fields"]["Reference"]["y"] == pytest.approx(88.0)
 
-    def test_reposition_does_not_change_value(self, sch_with_r1):
+    def test_reposition_does_not_change_value(self, sch_with_r1: Any) -> None:
         iface = self._get_interface()
         iface.handle_command(
             "edit_schematic_component",
@@ -318,7 +319,7 @@ class TestEditSchematicComponentFieldPositions:
         assert get_result["fields"]["Value"]["x"] == pytest.approx(51.27)
         assert get_result["fields"]["Value"]["y"] == pytest.approx(52.54)
 
-    def test_reposition_multiple_fields(self, sch_with_r1):
+    def test_reposition_multiple_fields(self, sch_with_r1: Any) -> None:
         iface = self._get_interface()
         result = iface.handle_command(
             "edit_schematic_component",
@@ -343,7 +344,7 @@ class TestEditSchematicComponentFieldPositions:
         assert get_result["fields"]["Reference"]["x"] == pytest.approx(10.0)
         assert get_result["fields"]["Value"]["y"] == pytest.approx(30.0)
 
-    def test_fieldpositions_alone_is_valid(self, sch_with_r1):
+    def test_fieldpositions_alone_is_valid(self, sch_with_r1: Any) -> None:
         """fieldPositions without value/footprint/newReference should succeed."""
         iface = self._get_interface()
         result = iface.handle_command(
@@ -356,7 +357,7 @@ class TestEditSchematicComponentFieldPositions:
         )
         assert result["success"] is True
 
-    def test_no_params_still_fails(self, sch_with_r1):
+    def test_no_params_still_fails(self, sch_with_r1: Any) -> None:
         """Providing no update params should return an error."""
         iface = self._get_interface()
         result = iface.handle_command(

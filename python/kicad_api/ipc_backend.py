@@ -40,10 +40,10 @@ class IPCBackend(KiCADBackend):
     without requiring manual reload.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._kicad = None
         self._connected = False
-        self._version = None
+        self._version: Optional[str] = None
         self._on_change_callbacks: List[Callable] = []
 
     def connect(self, socket_path: Optional[str] = None) -> bool:
@@ -257,13 +257,13 @@ class IPCBoardAPI(BoardAPI):
     Uses transactions for proper undo/redo support.
     """
 
-    def __init__(self, kicad_instance, notify_callback: Callable):
+    def __init__(self, kicad_instance: Any, notify_callback: Callable) -> None:
         self._kicad = kicad_instance
         self._board = None
         self._notify = notify_callback
         self._current_commit = None
 
-    def _get_board(self):
+    def _get_board(self) -> Any:
         """Get board instance, connecting if needed."""
         if self._board is None:
             try:
@@ -350,7 +350,7 @@ class IPCBoardAPI(BoardAPI):
             logger.error(f"Failed to set board size: {e}")
             return False
 
-    def get_size(self) -> Dict[str, float]:
+    def get_size(self) -> Dict[str, Any]:
         """Get current board size from bounding box."""
         try:
             board = self._get_board()
@@ -490,7 +490,7 @@ class IPCBoardAPI(BoardAPI):
             logger.error(f"Failed to place component: {e}")
             return False
 
-    def _load_footprint_from_library(self, footprint_path: str):
+    def _load_footprint_from_library(self, footprint_path: str) -> Any:
         """
         Load a footprint from the library using pcbnew SWIG API.
 
@@ -546,7 +546,14 @@ class IPCBoardAPI(BoardAPI):
             return None
 
     def _place_loaded_footprint(
-        self, loaded_fp, reference: str, x: float, y: float, rotation: float, layer: str, value: str
+        self,
+        loaded_fp: Any,
+        reference: str,
+        x: float,
+        y: float,
+        rotation: float,
+        layer: str,
+        value: str,
     ) -> bool:
         """
         Place a loaded pcbnew footprint onto the board.

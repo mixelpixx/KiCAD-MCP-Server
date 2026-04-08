@@ -238,7 +238,10 @@ class FootprintCreator:
                     changes.append(f"drill (inserted)→{new_drill}")
             if shape:
                 block, n = re.subn(
-                    r'(pad\s+"[^"]*"\s+\w+\s+)\w+', lambda m: m.group(1) + shape, block, count=1
+                    r'(pad\s+"[^"]*"\s+\w+\s+)\w+',
+                    lambda m: str(m.group(1)) + shape,
+                    block,
+                    count=1,
                 )
                 if n:
                     changes.append(f"shape→{shape}")

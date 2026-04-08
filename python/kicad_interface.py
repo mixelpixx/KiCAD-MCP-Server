@@ -12,6 +12,7 @@ import logging
 import os
 import sys
 import traceback
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from resources.resource_definitions import RESOURCE_DEFINITIONS, handle_resource_read
@@ -241,7 +242,7 @@ except ImportError as e:
 class KiCADInterface:
     """Main interface class to handle KiCAD operations"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the interface and command handlers"""
         self.board = None
         self.project_filename = None
@@ -560,7 +561,7 @@ class KiCADInterface:
         "connect_passthrough",
     }
 
-    def _auto_save_board(self):
+    def _auto_save_board(self) -> None:
         """Save board to disk after SWIG mutations.
         Called automatically after every board-mutating SWIG command so that
         data is not lost if Claude hits the context limit before save_project.
@@ -574,7 +575,7 @@ class KiCADInterface:
         except Exception as e:
             logger.warning(f"Auto-save failed: {e}")
 
-    def _update_command_handlers(self):
+    def _update_command_handlers(self) -> None:
         """Update board reference in all command handlers"""
         logger.debug("Updating board reference in command handlers")
         self.project_commands.board = self.board
@@ -586,7 +587,7 @@ class KiCADInterface:
         self.freerouting_commands.board = self.board
 
     # Schematic command handlers
-    def _handle_create_schematic(self, params):
+    def _handle_create_schematic(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new schematic"""
         logger.info("Creating schematic")
         try:
@@ -624,7 +625,7 @@ class KiCADInterface:
             logger.error(f"Error creating schematic: {str(e)}")
             return {"success": False, "message": str(e)}
 
-    def _handle_load_schematic(self, params):
+    def _handle_load_schematic(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Load an existing schematic"""
         logger.info("Loading schematic")
         try:
@@ -645,7 +646,7 @@ class KiCADInterface:
             logger.error(f"Error loading schematic: {str(e)}")
             return {"success": False, "message": str(e)}
 
-    def _handle_place_component(self, params):
+    def _handle_place_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Place a component on the PCB, with project-local fp-lib-table support.
         If boardPath is given and differs from the currently loaded board, the
         board is reloaded from boardPath before placing — prevents silent failures
@@ -680,7 +681,7 @@ class KiCADInterface:
 
         return self.component_commands.place_component(params)
 
-    def _handle_add_schematic_component(self, params):
+    def _handle_add_schematic_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add a component to a schematic using text-based injection (no sexpdata)"""
         logger.info("Adding component to schematic")
         try:
@@ -733,7 +734,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_delete_schematic_component(self, params):
+    def _handle_delete_schematic_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Remove a placed symbol from a schematic using text-based manipulation (no skip writes)"""
         logger.info("Deleting schematic component")
         try:
@@ -758,7 +759,7 @@ class KiCADInterface:
             with open(sch_file, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            def find_matching_paren(s, start):
+            def find_matching_paren(s: str, start: int) -> int:
                 """Find the closing paren matching the opening paren at start."""
                 depth = 0
                 i = start
@@ -839,7 +840,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_edit_schematic_component(self, params):
+    def _handle_edit_schematic_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Update properties of a placed symbol in a schematic (footprint, value, reference).
         Uses text-based in-place editing – preserves position, UUID and all other fields.
         """
@@ -884,7 +885,7 @@ class KiCADInterface:
             with open(sch_file, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            def find_matching_paren(s, start):
+            def find_matching_paren(s: str, start: int) -> int:
                 """Find the position of the closing paren matching the opening paren at start."""
                 depth = 0
                 i = start
@@ -929,7 +930,7 @@ class KiCADInterface:
                     break
                 search_start = end + 1
 
-            if block_start is None:
+            if block_start is None or block_end is None:
                 return {
                     "success": False,
                     "message": f"Component '{reference}' not found in schematic",
@@ -992,7 +993,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_get_schematic_component(self, params):
+    def _handle_get_schematic_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return full component info: position and all field values with their (at x y angle) positions."""
         logger.info("Getting schematic component info")
         try:
@@ -1017,7 +1018,7 @@ class KiCADInterface:
             with open(sch_file, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            def find_matching_paren(s, start):
+            def find_matching_paren(s: str, start: int) -> int:
                 depth = 0
                 i = start
                 while i < len(s):
@@ -1059,7 +1060,7 @@ class KiCADInterface:
                     break
                 search_start = end + 1
 
-            if block_start is None:
+            if block_start is None or block_end is None:
                 return {
                     "success": False,
                     "message": f"Component '{reference}' not found in schematic",
@@ -1115,7 +1116,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_add_schematic_wire(self, params):
+    def _handle_add_schematic_wire(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add a wire to a schematic using WireManager, with optional pin snapping"""
         logger.info("Adding wire to schematic")
         try:
@@ -1165,7 +1166,7 @@ class KiCADInterface:
                     for pin_num, coords in pin_locs.items():
                         all_pins.append((ref, pin_num, coords))
 
-                def find_nearest_pin(point, tolerance):
+                def find_nearest_pin(point: Any, tolerance: Any) -> Any:
                     """Find the nearest pin within tolerance of a point."""
                     best = None
                     best_dist = tolerance
@@ -1239,7 +1240,7 @@ class KiCADInterface:
                 "errorDetails": traceback.format_exc(),
             }
 
-    def _handle_add_schematic_junction(self, params):
+    def _handle_add_schematic_junction(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add a junction (connection dot) to a schematic using WireManager"""
         logger.info("Adding junction to schematic")
         try:
@@ -1272,19 +1273,19 @@ class KiCADInterface:
                 "errorDetails": traceback.format_exc(),
             }
 
-    def _handle_list_schematic_libraries(self, params):
+    def _handle_list_schematic_libraries(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """List available symbol libraries"""
         logger.info("Listing schematic libraries")
         try:
             search_paths = params.get("searchPaths")
 
-            libraries = LibraryManager.list_available_libraries(search_paths)
+            libraries = SchematicLibraryManager.list_available_libraries(search_paths)
             return {"success": True, "libraries": libraries}
         except Exception as e:
             logger.error(f"Error listing schematic libraries: {str(e)}")
             return {"success": False, "message": str(e)}
 
-    def _handle_find_unconnected_pins(self, params):
+    def _handle_find_unconnected_pins(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """List component pins with no wire/label/power symbol touching them"""
         logger.info("Finding unconnected pins")
         try:
@@ -1304,7 +1305,7 @@ class KiCADInterface:
             logger.error(f"Error finding unconnected pins: {e}")
             return {"success": False, "message": str(e)}
 
-    def _handle_check_wire_collisions(self, params):
+    def _handle_check_wire_collisions(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Detect wires passing through component bodies without connecting to pins"""
         logger.info("Checking wire collisions")
         try:
@@ -1328,7 +1329,7 @@ class KiCADInterface:
     #  Footprint handlers                                                  #
     # ------------------------------------------------------------------ #
 
-    def _handle_create_footprint(self, params):
+    def _handle_create_footprint(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new .kicad_mod footprint file in a .pretty library."""
         logger.info(f"create_footprint: {params.get('name')} in {params.get('libraryPath')}")
         try:
@@ -1350,7 +1351,7 @@ class KiCADInterface:
             logger.error(f"create_footprint error: {e}")
             return {"success": False, "error": str(e)}
 
-    def _handle_edit_footprint_pad(self, params):
+    def _handle_edit_footprint_pad(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Edit an existing pad in a .kicad_mod file."""
         logger.info(
             f"edit_footprint_pad: pad {params.get('padNumber')} in {params.get('footprintPath')}"
@@ -1369,7 +1370,7 @@ class KiCADInterface:
             logger.error(f"edit_footprint_pad error: {e}")
             return {"success": False, "error": str(e)}
 
-    def _handle_list_footprint_libraries(self, params):
+    def _handle_list_footprint_libraries(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """List .pretty footprint libraries and their contents."""
         logger.info("list_footprint_libraries")
         try:
@@ -1379,7 +1380,7 @@ class KiCADInterface:
             logger.error(f"list_footprint_libraries error: {e}")
             return {"success": False, "error": str(e)}
 
-    def _handle_register_footprint_library(self, params):
+    def _handle_register_footprint_library(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Register a .pretty library in KiCAD's fp-lib-table."""
         logger.info(f"register_footprint_library: {params.get('libraryPath')}")
         try:
@@ -1399,7 +1400,7 @@ class KiCADInterface:
     #  Symbol creator handlers                                             #
     # ------------------------------------------------------------------ #
 
-    def _handle_create_symbol(self, params):
+    def _handle_create_symbol(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new symbol in a .kicad_sym library."""
         logger.info(f"create_symbol: {params.get('name')} in {params.get('libraryPath')}")
         try:
@@ -1423,7 +1424,7 @@ class KiCADInterface:
             logger.error(f"create_symbol error: {e}")
             return {"success": False, "error": str(e)}
 
-    def _handle_delete_symbol(self, params):
+    def _handle_delete_symbol(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Delete a symbol from a .kicad_sym library."""
         logger.info(f"delete_symbol: {params.get('name')} from {params.get('libraryPath')}")
         try:
@@ -1436,7 +1437,7 @@ class KiCADInterface:
             logger.error(f"delete_symbol error: {e}")
             return {"success": False, "error": str(e)}
 
-    def _handle_list_symbols_in_library(self, params):
+    def _handle_list_symbols_in_library(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """List all symbols in a .kicad_sym file."""
         logger.info(f"list_symbols_in_library: {params.get('libraryPath')}")
         try:
@@ -1448,7 +1449,7 @@ class KiCADInterface:
             logger.error(f"list_symbols_in_library error: {e}")
             return {"success": False, "error": str(e)}
 
-    def _handle_register_symbol_library(self, params):
+    def _handle_register_symbol_library(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Register a .kicad_sym library in KiCAD's sym-lib-table."""
         logger.info(f"register_symbol_library: {params.get('libraryPath')}")
         try:
@@ -1464,7 +1465,7 @@ class KiCADInterface:
             logger.error(f"register_symbol_library error: {e}")
             return {"success": False, "error": str(e)}
 
-    def _handle_export_schematic_pdf(self, params):
+    def _handle_export_schematic_pdf(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Export schematic to PDF"""
         logger.info("Exporting schematic to PDF")
         try:
@@ -1513,7 +1514,7 @@ class KiCADInterface:
             logger.error(f"Error exporting schematic to PDF: {str(e)}")
             return {"success": False, "message": str(e)}
 
-    def _handle_add_schematic_net_label(self, params):
+    def _handle_add_schematic_net_label(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add a net label to schematic using WireManager"""
         logger.info("Adding net label to schematic")
         try:
@@ -1559,7 +1560,7 @@ class KiCADInterface:
                 "errorDetails": traceback.format_exc(),
             }
 
-    def _handle_connect_to_net(self, params):
+    def _handle_connect_to_net(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Connect a component pin to a named net using wire stub and label"""
         logger.info("Connecting component pin to net")
         try:
@@ -1596,7 +1597,7 @@ class KiCADInterface:
                 "errorDetails": traceback.format_exc(),
             }
 
-    def _handle_connect_passthrough(self, params):
+    def _handle_connect_passthrough(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Connect all pins of source connector to matching pins of target connector"""
         logger.info("Connecting passthrough between two connectors")
         try:
@@ -1633,7 +1634,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_get_schematic_pin_locations(self, params):
+    def _handle_get_schematic_pin_locations(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return exact pin endpoint coordinates for a schematic component"""
         logger.info("Getting schematic pin locations")
         try:
@@ -1688,7 +1689,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_get_schematic_view(self, params):
+    def _handle_get_schematic_view(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get a rasterised image of the schematic (SVG export → optional PNG conversion)"""
         logger.info("Getting schematic view")
         import base64
@@ -1777,7 +1778,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_list_schematic_components(self, params):
+    def _handle_list_schematic_components(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """List all components in a schematic"""
         logger.info("Listing schematic components")
         try:
@@ -1870,7 +1871,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_list_schematic_nets(self, params):
+    def _handle_list_schematic_nets(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """List all nets in a schematic with their connections"""
         logger.info("Listing schematic nets")
         try:
@@ -1916,7 +1917,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_list_schematic_wires(self, params):
+    def _handle_list_schematic_wires(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """List all wires in a schematic"""
         logger.info("Listing schematic wires")
         try:
@@ -1959,7 +1960,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_list_schematic_labels(self, params):
+    def _handle_list_schematic_labels(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """List all net labels and power flags in a schematic"""
         logger.info("Listing schematic labels")
         try:
@@ -2038,7 +2039,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_move_schematic_component(self, params):
+    def _handle_move_schematic_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Move a schematic component to a new position, dragging connected wires."""
         logger.info("Moving schematic component")
         try:
@@ -2122,7 +2123,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_rotate_schematic_component(self, params):
+    def _handle_rotate_schematic_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Rotate a schematic component"""
         logger.info("Rotating schematic component")
         try:
@@ -2172,7 +2173,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_annotate_schematic(self, params):
+    def _handle_annotate_schematic(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Annotate unannotated components in schematic (R? -> R1, R2, ...)"""
         logger.info("Annotating schematic")
         try:
@@ -2250,7 +2251,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_delete_schematic_wire(self, params):
+    def _handle_delete_schematic_wire(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Delete a wire from the schematic matching start/end points"""
         logger.info("Deleting schematic wire")
         try:
@@ -2281,7 +2282,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_delete_schematic_net_label(self, params):
+    def _handle_delete_schematic_net_label(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Delete a net label from the schematic"""
         logger.info("Deleting schematic net label")
         try:
@@ -2316,7 +2317,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_export_schematic_svg(self, params):
+    def _handle_export_schematic_svg(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Export schematic to SVG using kicad-cli"""
         logger.info("Exporting schematic SVG")
         import glob
@@ -2390,7 +2391,7 @@ class KiCADInterface:
             logger.error(f"Error exporting schematic SVG: {e}")
             return {"success": False, "message": str(e)}
 
-    def _handle_get_net_connections(self, params):
+    def _handle_get_net_connections(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get all connections for a named net"""
         logger.info("Getting net connections")
         try:
@@ -2410,7 +2411,7 @@ class KiCADInterface:
             logger.error(f"Error getting net connections: {str(e)}")
             return {"success": False, "message": str(e)}
 
-    def _handle_get_wire_connections(self, params):
+    def _handle_get_wire_connections(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Find all component pins reachable from a point via connected wires"""
         logger.info("Getting wire connections")
         try:
@@ -2457,7 +2458,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_run_erc(self, params):
+    def _handle_run_erc(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Run Electrical Rules Check on a schematic via kicad-cli"""
         logger.info("Running ERC on schematic")
         import os
@@ -2553,7 +2554,7 @@ class KiCADInterface:
             logger.error(f"Error running ERC: {str(e)}")
             return {"success": False, "message": str(e)}
 
-    def _handle_generate_netlist(self, params):
+    def _handle_generate_netlist(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Generate netlist from schematic"""
         logger.info("Generating netlist from schematic")
         try:
@@ -2572,7 +2573,7 @@ class KiCADInterface:
             logger.error(f"Error generating netlist: {str(e)}")
             return {"success": False, "message": str(e)}
 
-    def _handle_sync_schematic_to_board(self, params):
+    def _handle_sync_schematic_to_board(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Sync schematic netlist to PCB board (equivalent to KiCAD F8 'Update PCB from Schematic').
         Reads net connections from the schematic and assigns them to the matching pads in the PCB.
         """
@@ -2695,7 +2696,7 @@ class KiCADInterface:
     # Schematic analysis tools (read-only)
     # ===================================================================
 
-    def _handle_get_schematic_view_region(self, params):
+    def _handle_get_schematic_view_region(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Export a cropped region of the schematic as an image"""
         logger.info("Exporting schematic view region")
         import base64
@@ -2810,7 +2811,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_find_overlapping_elements(self, params):
+    def _handle_find_overlapping_elements(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Detect spatially overlapping symbols, wires, and labels"""
         logger.info("Finding overlapping elements in schematic")
         try:
@@ -2836,7 +2837,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_get_elements_in_region(self, params):
+    def _handle_get_elements_in_region(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """List all wires, labels, and symbols within a rectangular region"""
         logger.info("Getting elements in schematic region")
         try:
@@ -2866,7 +2867,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_find_wires_crossing_symbols(self, params):
+    def _handle_find_wires_crossing_symbols(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Find wires that cross over component symbol bodies"""
         logger.info("Finding wires crossing symbols in schematic")
         try:
@@ -2892,7 +2893,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_import_svg_logo(self, params):
+    def _handle_import_svg_logo(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Import an SVG file as PCB graphic polygons on the silkscreen"""
         logger.info("Importing SVG logo into PCB")
         try:
@@ -2939,7 +2940,7 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    def _handle_snapshot_project(self, params):
+    def _handle_snapshot_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Copy the entire project folder to a snapshot directory for checkpoint/resume."""
         import shutil
         from datetime import datetime
@@ -3023,7 +3024,7 @@ class KiCADInterface:
             logger.error(f"snapshot_project error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _handle_check_kicad_ui(self, params):
+    def _handle_check_kicad_ui(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Check if KiCAD UI is running"""
         logger.info("Checking if KiCAD UI is running")
         try:
@@ -3041,7 +3042,7 @@ class KiCADInterface:
             logger.error(f"Error checking KiCAD UI status: {str(e)}")
             return {"success": False, "message": str(e)}
 
-    def _handle_launch_kicad_ui(self, params):
+    def _handle_launch_kicad_ui(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Launch KiCAD UI"""
         logger.info("Launching KiCAD UI")
         try:
@@ -3060,7 +3061,7 @@ class KiCADInterface:
             logger.error(f"Error launching KiCAD UI: {str(e)}")
             return {"success": False, "message": str(e)}
 
-    def _handle_refill_zones(self, params):
+    def _handle_refill_zones(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Refill all copper pour zones on the board.
 
         pcbnew.ZONE_FILLER.Fill() can cause a C++ access violation (0xC0000005)
@@ -3147,7 +3148,7 @@ print("ok")
     # These methods are called automatically when IPC is available
     # =========================================================================
 
-    def _ipc_route_trace(self, params):
+    def _ipc_route_trace(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for route_trace - adds track with real-time UI update"""
         try:
             # Extract parameters matching the existing route_trace interface
@@ -3190,7 +3191,7 @@ print("ok")
             logger.error(f"IPC route_trace error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _ipc_add_via(self, params):
+    def _ipc_add_via(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for add_via - adds via with real-time UI update"""
         try:
             position = params.get("position", {})
@@ -3223,7 +3224,7 @@ print("ok")
             logger.error(f"IPC add_via error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _ipc_add_net(self, params):
+    def _ipc_add_net(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for add_net"""
         # Note: Net creation via IPC is limited - nets are typically created
         # when components are placed. Return success for compatibility.
@@ -3235,7 +3236,7 @@ print("ok")
             "net": {"name": name},
         }
 
-    def _ipc_add_copper_pour(self, params):
+    def _ipc_add_copper_pour(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for add_copper_pour - adds zone with real-time UI update"""
         try:
             layer = params.get("layer", "F.Cu")
@@ -3290,7 +3291,7 @@ print("ok")
             logger.error(f"IPC add_copper_pour error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _ipc_refill_zones(self, params):
+    def _ipc_refill_zones(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for refill_zones - refills all zones with real-time UI update"""
         try:
             success = self.ipc_board_api.refill_zones()
@@ -3305,7 +3306,7 @@ print("ok")
             logger.error(f"IPC refill_zones error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _ipc_add_text(self, params):
+    def _ipc_add_text(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for add_text/add_board_text - adds text with real-time UI update"""
         try:
             text = params.get("text", "")
@@ -3332,7 +3333,7 @@ print("ok")
             logger.error(f"IPC add_text error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _ipc_set_board_size(self, params):
+    def _ipc_set_board_size(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for set_board_size"""
         try:
             width = params.get("width", 100)
@@ -3354,7 +3355,7 @@ print("ok")
             logger.error(f"IPC set_board_size error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _ipc_get_board_info(self, params):
+    def _ipc_get_board_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for get_board_info"""
         try:
             size = self.ipc_board_api.get_size()
@@ -3379,7 +3380,7 @@ print("ok")
             logger.error(f"IPC get_board_info error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _ipc_place_component(self, params):
+    def _ipc_place_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for place_component - places component with real-time UI update"""
         try:
             reference = params.get("reference", params.get("componentId", ""))
@@ -3420,7 +3421,7 @@ print("ok")
             logger.error(f"IPC place_component error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _ipc_move_component(self, params):
+    def _ipc_move_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for move_component - moves component with real-time UI update"""
         try:
             reference = params.get("reference", params.get("componentId", ""))
@@ -3445,7 +3446,7 @@ print("ok")
             logger.error(f"IPC move_component error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _ipc_delete_component(self, params):
+    def _ipc_delete_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for delete_component - deletes component with real-time UI update"""
         try:
             reference = params.get("reference", params.get("componentId", ""))
@@ -3464,7 +3465,7 @@ print("ok")
             logger.error(f"IPC delete_component error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _ipc_get_component_list(self, params):
+    def _ipc_get_component_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for get_component_list"""
         try:
             components = self.ipc_board_api.list_components()
@@ -3474,7 +3475,7 @@ print("ok")
             logger.error(f"IPC get_component_list error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _ipc_save_project(self, params):
+    def _ipc_save_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for save_project"""
         try:
             success = self.ipc_board_api.save()
@@ -3487,14 +3488,14 @@ print("ok")
             logger.error(f"IPC save_project error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _ipc_delete_trace(self, params):
+    def _ipc_delete_trace(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for delete_trace - Note: IPC doesn't support direct trace deletion yet"""
         # IPC API doesn't have a direct delete track method
         # Fall back to SWIG for this operation
         logger.info("delete_trace: Falling back to SWIG (IPC doesn't support trace deletion)")
         return self.routing_commands.delete_trace(params)
 
-    def _ipc_get_nets_list(self, params):
+    def _ipc_get_nets_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for get_nets_list - gets nets with real-time data"""
         try:
             nets = self.ipc_board_api.get_nets()
@@ -3504,7 +3505,7 @@ print("ok")
             logger.error(f"IPC get_nets_list error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _ipc_add_board_outline(self, params):
+    def _ipc_add_board_outline(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for add_board_outline - adds board edge with real-time UI update.
         Rounded rectangles are delegated to the SWIG path because the IPC BoardSegment
         type cannot represent arcs; the SWIG path writes directly to the .kicad_pcb file
@@ -3567,7 +3568,7 @@ print("ok")
             logger.error(f"IPC add_board_outline error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _ipc_add_mounting_hole(self, params):
+    def _ipc_add_mounting_hole(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for add_mounting_hole - adds mounting hole with real-time UI update"""
         try:
             from kipy.board_types import BoardCircle
@@ -3602,7 +3603,7 @@ print("ok")
             logger.error(f"IPC add_mounting_hole error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _ipc_get_layer_list(self, params):
+    def _ipc_get_layer_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for get_layer_list - gets enabled layers"""
         try:
             layers = self.ipc_board_api.get_enabled_layers()
@@ -3612,7 +3613,7 @@ print("ok")
             logger.error(f"IPC get_layer_list error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _ipc_rotate_component(self, params):
+    def _ipc_rotate_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for rotate_component - rotates component with real-time UI update"""
         try:
             reference = params.get("reference", params.get("componentId", ""))
@@ -3654,7 +3655,7 @@ print("ok")
             logger.error(f"IPC rotate_component error: {e}")
             return {"success": False, "message": str(e)}
 
-    def _ipc_get_component_properties(self, params):
+    def _ipc_get_component_properties(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for get_component_properties - gets detailed component info"""
         try:
             reference = params.get("reference", params.get("componentId", ""))
@@ -3678,7 +3679,7 @@ print("ok")
     # Legacy IPC command handlers (explicit ipc_* commands)
     # =========================================================================
 
-    def _handle_get_backend_info(self, params):
+    def _handle_get_backend_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get information about the current backend"""
         return {
             "success": True,
@@ -3693,7 +3694,7 @@ print("ok")
             ),
         }
 
-    def _handle_ipc_add_track(self, params):
+    def _handle_ipc_add_track(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add a track using IPC backend (real-time)"""
         if not self.use_ipc or not self.ipc_board_api:
             return {"success": False, "message": "IPC backend not available"}
@@ -3719,7 +3720,7 @@ print("ok")
             logger.error(f"Error adding track via IPC: {e}")
             return {"success": False, "message": str(e)}
 
-    def _handle_ipc_add_via(self, params):
+    def _handle_ipc_add_via(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add a via using IPC backend (real-time)"""
         if not self.use_ipc or not self.ipc_board_api:
             return {"success": False, "message": "IPC backend not available"}
@@ -3742,7 +3743,7 @@ print("ok")
             logger.error(f"Error adding via via IPC: {e}")
             return {"success": False, "message": str(e)}
 
-    def _handle_ipc_add_text(self, params):
+    def _handle_ipc_add_text(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add text using IPC backend (real-time)"""
         if not self.use_ipc or not self.ipc_board_api:
             return {"success": False, "message": "IPC backend not available"}
@@ -3767,7 +3768,7 @@ print("ok")
             logger.error(f"Error adding text via IPC: {e}")
             return {"success": False, "message": str(e)}
 
-    def _handle_ipc_list_components(self, params):
+    def _handle_ipc_list_components(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """List components using IPC backend"""
         if not self.use_ipc or not self.ipc_board_api:
             return {"success": False, "message": "IPC backend not available"}
@@ -3779,7 +3780,7 @@ print("ok")
             logger.error(f"Error listing components via IPC: {e}")
             return {"success": False, "message": str(e)}
 
-    def _handle_ipc_get_tracks(self, params):
+    def _handle_ipc_get_tracks(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get tracks using IPC backend"""
         if not self.use_ipc or not self.ipc_board_api:
             return {"success": False, "message": "IPC backend not available"}
@@ -3791,7 +3792,7 @@ print("ok")
             logger.error(f"Error getting tracks via IPC: {e}")
             return {"success": False, "message": str(e)}
 
-    def _handle_ipc_get_vias(self, params):
+    def _handle_ipc_get_vias(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get vias using IPC backend"""
         if not self.use_ipc or not self.ipc_board_api:
             return {"success": False, "message": "IPC backend not available"}
@@ -3803,7 +3804,7 @@ print("ok")
             logger.error(f"Error getting vias via IPC: {e}")
             return {"success": False, "message": str(e)}
 
-    def _handle_ipc_save_board(self, params):
+    def _handle_ipc_save_board(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Save board using IPC backend"""
         if not self.use_ipc or not self.ipc_board_api:
             return {"success": False, "message": "IPC backend not available"}
@@ -3820,7 +3821,7 @@ print("ok")
 
     # JLCPCB API handlers
 
-    def _handle_download_jlcpcb_database(self, params):
+    def _handle_download_jlcpcb_database(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Download JLCPCB parts database from JLCSearch API"""
         try:
             force = params.get("force", False)
@@ -3871,7 +3872,7 @@ print("ok")
                 "message": f"Failed to download database: {str(e)}",
             }
 
-    def _handle_search_jlcpcb_parts(self, params):
+    def _handle_search_jlcpcb_parts(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Search JLCPCB parts database"""
         try:
             query = params.get("query")
@@ -3910,7 +3911,7 @@ print("ok")
             logger.error(f"Error searching JLCPCB parts: {e}", exc_info=True)
             return {"success": False, "message": f"Search failed: {str(e)}"}
 
-    def _handle_get_jlcpcb_part(self, params):
+    def _handle_get_jlcpcb_part(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get detailed information for a specific JLCPCB part"""
         try:
             lcsc_number = params.get("lcsc_number")
@@ -3930,7 +3931,7 @@ print("ok")
             logger.error(f"Error getting JLCPCB part: {e}", exc_info=True)
             return {"success": False, "message": f"Failed to get part info: {str(e)}"}
 
-    def _handle_get_jlcpcb_database_stats(self, params):
+    def _handle_get_jlcpcb_database_stats(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get statistics about JLCPCB database"""
         try:
             stats = self.jlcpcb_parts.get_database_stats()
@@ -3940,7 +3941,7 @@ print("ok")
             logger.error(f"Error getting database stats: {e}", exc_info=True)
             return {"success": False, "message": f"Failed to get stats: {str(e)}"}
 
-    def _handle_suggest_jlcpcb_alternatives(self, params):
+    def _handle_suggest_jlcpcb_alternatives(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Suggest alternative JLCPCB parts"""
         try:
             lcsc_number = params.get("lcsc_number")
@@ -3981,7 +3982,7 @@ print("ok")
                 "message": f"Failed to suggest alternatives: {str(e)}",
             }
 
-    def _handle_enrich_datasheets(self, params):
+    def _handle_enrich_datasheets(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Enrich schematic Datasheet fields from LCSC numbers"""
         try:
             from pathlib import Path
@@ -3999,7 +4000,7 @@ print("ok")
                 "message": f"Failed to enrich datasheets: {str(e)}",
             }
 
-    def _handle_get_datasheet_url(self, params):
+    def _handle_get_datasheet_url(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return LCSC datasheet and product URLs for a part number"""
         try:
             lcsc = params.get("lcsc", "")
@@ -4025,8 +4026,29 @@ print("ok")
             }
 
 
-def main():
+def _write_response(response_fd: Any, response: Any) -> None:
+    """Write a JSON response to the original stdout fd.
+
+    All response output goes through this function so that stray C-level
+    writes from pcbnew (warnings, diagnostics) never corrupt the JSON
+    framing seen by the TypeScript host.
+    """
+    payload = json.dumps(response) + "\n"
+    os.write(response_fd, payload.encode("utf-8"))
+
+
+def main() -> None:
     """Main entry point"""
+    # --- Redirect stdout so pcbnew C++ noise never reaches the TS host ---
+    # Save the real stdout fd for our exclusive JSON response channel.
+    _response_fd = os.dup(1)
+    # Point fd 1 (C-level stdout) at stderr so that any printf / std::cout
+    # output from pcbnew or other C extensions is visible in logs but does
+    # NOT corrupt the JSON stream the TypeScript side is parsing.
+    os.dup2(2, 1)
+    # Also redirect Python-level stdout to stderr for the same reason.
+    sys.stdout = sys.stderr
+
     logger.info("Starting KiCAD interface...")
     interface = KiCADInterface()
 
@@ -4168,10 +4190,9 @@ def main():
                         # Handle command
                         response = interface.handle_command(command, params)
 
-                # Send response
+                # Send response via the clean fd (immune to pcbnew stdout noise)
                 logger.debug(f"Sending response: {response}")
-                print(json.dumps(response))
-                sys.stdout.flush()
+                _write_response(_response_fd, response)
 
             except json.JSONDecodeError as e:
                 logger.error(f"Invalid JSON input: {str(e)}")
@@ -4180,8 +4201,7 @@ def main():
                     "message": "Invalid JSON input",
                     "errorDetails": str(e),
                 }
-                print(json.dumps(response))
-                sys.stdout.flush()
+                _write_response(_response_fd, response)
 
     except KeyboardInterrupt:
         logger.info("KiCAD interface stopped")

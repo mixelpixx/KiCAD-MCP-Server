@@ -516,7 +516,16 @@ export class KiCADMcpServer {
       // Determine timeout based on command type
       // DRC and export operations need longer timeouts for large boards
       let commandTimeout = 30000; // Default 30 seconds
-      const longRunningCommands = ["run_drc", "export_gerber", "export_pdf", "export_3d"];
+      const longRunningCommands = [
+        "run_drc",
+        "export_gerber",
+        "export_pdf",
+        "export_3d",
+        "sync_schematic_to_board",
+        "list_schematic_nets",
+        "list_schematic_labels",
+        "get_schematic_view",
+      ];
       if (longRunningCommands.includes(command)) {
         commandTimeout = 600000; // 10 minutes for long operations
         logger.info(`Using extended timeout (${commandTimeout / 1000}s) for command: ${command}`);
@@ -550,7 +559,21 @@ export class KiCADMcpServer {
   }
 
   /**
-   * Try to parse a complete JSON response from the buffer
+   * Try to parse a complete JSON response from the buffer.
+   *
+   * Responses from the Python side are single-line JSON terminated by '\n'
+   * (written via _write_response).  The buffer may also contain non-JSON
+   * preamble lines (e.g. C-level warnings from pcbnew that leaked to the
+   * response fd before the redirect took effect).
+   *
+   * Strategy:
+   *  1. Fast path: JSON.parse(buffer) — works for clean, complete responses
+   *     (JSON.parse tolerates trailing whitespace/newlines).
+   *  2. If that fails and the buffer has no '\n' yet, the response line is
+   *     still arriving in chunks — keep collecting.
+   *  3. If the buffer has '\n', split into lines and search from the END for
+   *     a parseable JSON line.  This avoids prematurely resolving with a
+   *     truncated JSON object when a large response is still chunking in.
    */
   private tryParseResponse(): void {
     if (!this.currentRequestHandler) {
@@ -564,37 +587,83 @@ export class KiCADMcpServer {
       return;
     }
 
+    let result: any;
+
+    // Fast path: try to parse the response as JSON.  Handles the common
+    // case of a clean, complete JSON response (possibly with trailing \n).
     try {
-      // Try to parse the response as JSON
-      const result = JSON.parse(this.responseBuffer);
-
-      // If we get here, we have a valid JSON response
-      logger.debug(
-        `Completed KiCAD command with result: ${result.success ? "success" : "failure"}`,
-      );
-
-      // Clear the timeout since we got a response
-      if (this.currentRequestHandler.timeoutHandle) {
-        clearTimeout(this.currentRequestHandler.timeoutHandle);
+      result = JSON.parse(this.responseBuffer);
+    } catch {
+      // Direct parse failed.  Either the response is still arriving in
+      // chunks, or the buffer has non-JSON preamble from pcbnew.
+      //
+      // The Python side writes each response as a single line of JSON
+      // terminated by \n.  We use the newline as the completion signal:
+      // if there is no \n in the buffer yet, the JSON line is still
+      // being assembled from chunks — keep collecting.
+      if (!this.responseBuffer.includes("\n")) {
+        return;
       }
 
-      // Get the handler before clearing
-      const handler = this.currentRequestHandler;
+      // Buffer contains newline(s).  Split into lines and look for a
+      // complete JSON object, searching from the END so that preamble
+      // lines (which may themselves contain '{') are skipped.
+      const lines = this.responseBuffer.split("\n");
+      let jsonLineIndex = -1;
 
-      // Clear state
-      this.responseBuffer = "";
-      this.currentRequestHandler = null;
-      this.processingRequest = false;
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i].trim();
+        if (line.length === 0) continue;
+        if (!line.startsWith("{")) continue;
 
-      // Resolve the promise with the result
-      handler.resolve(result);
+        try {
+          result = JSON.parse(line);
+          jsonLineIndex = i;
+          break;
+        } catch {
+          // Looks like JSON but doesn't parse — could be an incomplete
+          // final line still being chunked.  Keep collecting.
+          continue;
+        }
+      }
 
-      // Process next request if any
-      setTimeout(() => this.processNextRequest(), 0);
-    } catch (e) {
-      // Not a complete JSON yet, keep collecting data
-      // This is normal for large responses that come in chunks
+      if (jsonLineIndex < 0) {
+        // No parseable JSON line found yet.  Either only preamble has
+        // arrived, or the JSON line is split across the last \n boundary
+        // and is still incomplete.  Keep collecting.
+        return;
+      }
+
+      // Log any preceding non-JSON lines as preamble
+      const preambleLines = lines.slice(0, jsonLineIndex).filter((l) => l.trim().length > 0);
+      if (preambleLines.length > 0) {
+        logger.warn(
+          `Stripped non-JSON preamble from Python response: ${preambleLines.join(" | ")}`,
+        );
+      }
     }
+
+    // If we get here, we have a valid JSON response
+    logger.debug(`Completed KiCAD command with result: ${result.success ? "success" : "failure"}`);
+
+    // Clear the timeout since we got a response
+    if (this.currentRequestHandler.timeoutHandle) {
+      clearTimeout(this.currentRequestHandler.timeoutHandle);
+    }
+
+    // Get the handler before clearing
+    const handler = this.currentRequestHandler;
+
+    // Clear state
+    this.responseBuffer = "";
+    this.currentRequestHandler = null;
+    this.processingRequest = false;
+
+    // Resolve the promise with the result
+    handler.resolve(result);
+
+    // Process next request if any
+    setTimeout(() => this.processNextRequest(), 0);
   }
 
   /**

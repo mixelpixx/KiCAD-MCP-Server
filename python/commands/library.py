@@ -35,7 +35,7 @@ class LibraryManager:
         self.footprint_cache: Dict[str, List[str]] = {}  # library -> [footprint names]
         self._load_libraries()
 
-    def _load_libraries(self):
+    def _load_libraries(self) -> None:
         """Load libraries from fp-lib-table files"""
         # Load global libraries
         global_table = self._get_global_fp_lib_table()
@@ -78,7 +78,7 @@ class LibraryManager:
 
         return None
 
-    def _parse_fp_lib_table(self, table_path: Path):
+    def _parse_fp_lib_table(self, table_path: Path) -> None:
         """
         Parse fp-lib-table file
 

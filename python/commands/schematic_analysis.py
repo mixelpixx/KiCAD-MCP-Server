@@ -782,7 +782,7 @@ def find_wires_crossing_symbols(schematic_path: Path) -> List[Dict[str, Any]]:
     collisions = []
 
     # Pre-compute per-symbol data
-    symbol_data = []
+    symbol_data: List[Dict[str, Any]] = []
     for sym in symbols:
         ref = sym["reference"]
         if sym["is_power"] or ref.startswith("_TEMPLATE") or not ref:

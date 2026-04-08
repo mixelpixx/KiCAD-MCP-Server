@@ -72,7 +72,7 @@ RESOURCE_DEFINITIONS = [
 # =============================================================================
 
 
-def handle_resource_read(uri: str, interface) -> Dict[str, Any]:
+def handle_resource_read(uri: str, interface: Any) -> Dict[str, Any]:
     """
     Handle reading a resource by URI
 
@@ -116,7 +116,7 @@ def handle_resource_read(uri: str, interface) -> Dict[str, Any]:
 # =============================================================================
 
 
-def _get_project_info(interface) -> Dict[str, Any]:
+def _get_project_info(interface: Any) -> Dict[str, Any]:
     """Get current project information"""
     result = interface.project_commands.get_project_info({})
 
@@ -142,7 +142,7 @@ def _get_project_info(interface) -> Dict[str, Any]:
         }
 
 
-def _get_board_info(interface) -> Dict[str, Any]:
+def _get_board_info(interface: Any) -> Dict[str, Any]:
     """Get board properties and metadata"""
     result = interface.board_commands.get_board_info({})
 
@@ -168,7 +168,7 @@ def _get_board_info(interface) -> Dict[str, Any]:
         }
 
 
-def _get_components(interface) -> Dict[str, Any]:
+def _get_components(interface: Any) -> Dict[str, Any]:
     """Get list of all components"""
     result = interface.component_commands.get_component_list({})
 
@@ -197,7 +197,7 @@ def _get_components(interface) -> Dict[str, Any]:
         }
 
 
-def _get_nets(interface) -> Dict[str, Any]:
+def _get_nets(interface: Any) -> Dict[str, Any]:
     """Get list of electrical nets"""
     result = interface.routing_commands.get_nets_list({})
 
@@ -224,7 +224,7 @@ def _get_nets(interface) -> Dict[str, Any]:
         }
 
 
-def _get_layers(interface) -> Dict[str, Any]:
+def _get_layers(interface: Any) -> Dict[str, Any]:
     """Get layer stack information"""
     result = interface.board_commands.get_layer_list({})
 
@@ -251,7 +251,7 @@ def _get_layers(interface) -> Dict[str, Any]:
         }
 
 
-def _get_design_rules(interface) -> Dict[str, Any]:
+def _get_design_rules(interface: Any) -> Dict[str, Any]:
     """Get design rule settings"""
     result = interface.design_rule_commands.get_design_rules({})
 
@@ -277,7 +277,7 @@ def _get_design_rules(interface) -> Dict[str, Any]:
         }
 
 
-def _get_drc_report(interface) -> Dict[str, Any]:
+def _get_drc_report(interface: Any) -> Dict[str, Any]:
     """Get DRC violations"""
     result = interface.design_rule_commands.get_drc_violations({})
 
@@ -313,7 +313,7 @@ def _get_drc_report(interface) -> Dict[str, Any]:
         }
 
 
-def _get_board_preview(interface) -> Dict[str, Any]:
+def _get_board_preview(interface: Any) -> Dict[str, Any]:
     """Get board preview as PNG image"""
     result = interface.board_commands.get_board_2d_view({"width": 800, "height": 600})
 

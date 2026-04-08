@@ -157,9 +157,9 @@ class KiCADProcessManager:
                 timeout=5 if system == "Windows" else None,
             )
             if result.returncode == 0:
-                path = result.stdout.strip().split("\n")[0]
-                logger.info(f"Found KiCAD executable: {path}")
-                return Path(path)
+                exe_path = result.stdout.strip().split("\n")[0]
+                logger.info(f"Found KiCAD executable: {exe_path}")
+                return Path(exe_path)
 
         # Platform-specific default paths
         if system == "Linux":

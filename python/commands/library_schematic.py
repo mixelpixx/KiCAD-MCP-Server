@@ -1,16 +1,20 @@
 import glob
+import logging
 
 # Symbol class might not be directly importable in the current version
 import os
+from typing import Any, Dict, List, Optional
 
 from skip import Schematic
+
+logger = logging.getLogger(__name__)
 
 
 class LibraryManager:
     """Manage symbol libraries"""
 
     @staticmethod
-    def list_available_libraries(search_paths=None):
+    def list_available_libraries(search_paths: Optional[List[str]] = None) -> Dict[str, List[str]]:
         """List all available symbol libraries"""
         if search_paths is None:
             # Default library paths based on common KiCAD installations
@@ -31,11 +35,11 @@ class LibraryManager:
                 matching_libs = glob.glob(path_pattern, recursive=True)
                 libraries.extend(matching_libs)
             except Exception as e:
-                print(f"Error searching for libraries at {path_pattern}: {e}")
+                logger.error(f"Error searching for libraries at {path_pattern}: {e}")
 
         # Extract library names from paths
         library_names = [os.path.splitext(os.path.basename(lib))[0] for lib in libraries]
-        print(
+        logger.info(
             f"Found {len(library_names)} libraries: {', '.join(library_names[:10])}{'...' if len(library_names) > 10 else ''}"
         )
 
@@ -43,7 +47,7 @@ class LibraryManager:
         return {"paths": libraries, "names": library_names}
 
     @staticmethod
-    def list_library_symbols(library_path):
+    def list_library_symbols(library_path: str) -> List[Any]:
         """List all symbols in a library"""
         try:
             # kicad-skip doesn't provide a direct way to simply list symbols in a library
@@ -54,30 +58,30 @@ class LibraryManager:
             # A potential approach would be to load the library file using KiCAD's Python API
             # or by parsing the library file format.
             # KiCAD symbol libraries are .kicad_sym files which are S-expression format
-            print(
+            logger.warning(
                 f"Attempted to list symbols in library {library_path}. This requires advanced implementation."
             )
             return []
         except Exception as e:
-            print(f"Error listing symbols in library {library_path}: {e}")
+            logger.error(f"Error listing symbols in library {library_path}: {e}")
             return []
 
     @staticmethod
-    def get_symbol_details(library_path, symbol_name):
+    def get_symbol_details(library_path: str, symbol_name: str) -> Dict[str, Any]:
         """Get detailed information about a symbol"""
         try:
             # Similar to list_library_symbols, this might require a more direct approach
             # using KiCAD's Python API or by parsing the symbol library.
-            print(
+            logger.warning(
                 f"Attempted to get details for symbol {symbol_name} in library {library_path}. This requires advanced implementation."
             )
             return {}
         except Exception as e:
-            print(f"Error getting symbol details for {symbol_name} in {library_path}: {e}")
+            logger.error(f"Error getting symbol details for {symbol_name} in {library_path}: {e}")
             return {}
 
     @staticmethod
-    def search_symbols(query, search_paths=None):
+    def search_symbols(query: str, search_paths: Optional[List[str]] = None) -> List[Any]:
         """Search for symbols matching criteria"""
         try:
             # This would typically involve:
@@ -89,16 +93,18 @@ class LibraryManager:
             libraries = LibraryManager.list_available_libraries(search_paths)
 
             results = []
-            print(
+            logger.warning(
                 f"Searched for symbols matching '{query}'. This requires advanced implementation."
             )
             return results
         except Exception as e:
-            print(f"Error searching for symbols matching '{query}': {e}")
+            logger.error(f"Error searching for symbols matching '{query}': {e}")
             return []
 
     @staticmethod
-    def get_default_symbol_for_component_type(component_type, search_paths=None):
+    def get_default_symbol_for_component_type(
+        component_type: str, search_paths: Optional[List[str]] = None
+    ) -> Dict[str, str]:
         """Get a recommended default symbol for a given component type"""
         # This method provides a simplified way to get a symbol for common component types
         # It's useful when the user doesn't specify a particular library/symbol

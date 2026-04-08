@@ -7,7 +7,7 @@ jlcsearch service at https://jlcsearch.tscircuit.com/
 
 import logging
 import time
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import requests
 
@@ -24,12 +24,12 @@ class JLCSearchClient:
 
     BASE_URL = "https://jlcsearch.tscircuit.com"
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize JLCSearch API client"""
         pass
 
     def search_components(
-        self, category: str = "components", limit: int = 100, offset: int = 0, **filters
+        self, category: str = "components", limit: int = 100, offset: int = 0, **filters: Dict
     ) -> List[Dict]:
         """
         Search components in JLCSearch database
@@ -87,7 +87,7 @@ class JLCSearchClient:
             - stock: Available stock
             - price1: Price per unit
         """
-        filters = {}
+        filters: Dict[str, Any] = {}
         if resistance is not None:
             filters["resistance"] = resistance
         if package:
@@ -109,7 +109,7 @@ class JLCSearchClient:
         Returns:
             List of capacitor dicts
         """
-        filters = {}
+        filters: Dict[str, Any] = {}
         if capacitance is not None:
             filters["capacitance"] = capacitance
         if package:

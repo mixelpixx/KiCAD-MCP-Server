@@ -1,7 +1,7 @@
 import logging
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from skip import Schematic
 
@@ -25,14 +25,14 @@ class ConnectionManager:
     _pin_locator = None
 
     @classmethod
-    def get_pin_locator(cls):
+    def get_pin_locator(cls) -> Any:
         """Get or create pin locator instance"""
         if cls._pin_locator is None and WIRE_MANAGER_AVAILABLE:
             cls._pin_locator = PinLocator()
         return cls._pin_locator
 
     @staticmethod
-    def add_net_label(schematic: Schematic, net_name: str, position: list):
+    def add_net_label(schematic: Schematic, net_name: str, position: list) -> Any:
         """
         Add a net label to the schematic
 
@@ -57,7 +57,9 @@ class ConnectionManager:
             return None
 
     @staticmethod
-    def connect_to_net(schematic_path: Path, component_ref: str, pin_name: str, net_name: str):
+    def connect_to_net(
+        schematic_path: Path, component_ref: str, pin_name: str, net_name: str
+    ) -> bool:
         """
         Connect a component pin to a named net using a wire stub and label
 
@@ -132,7 +134,7 @@ class ConnectionManager:
         target_ref: str,
         net_prefix: str = "PIN",
         pin_offset: int = 0,
-    ):
+    ) -> Dict[str, List[str]]:
         """
         Connect all pins of source_ref to matching pins of target_ref via shared net labels.
         Useful for passthrough adapters: J1 pin N <-> J2 pin N on net {net_prefix}_{N}.
@@ -203,7 +205,7 @@ class ConnectionManager:
     @staticmethod
     def get_net_connections(
         schematic: Schematic, net_name: str, schematic_path: Optional[Path] = None
-    ):
+    ) -> List[Dict]:
         """
         Get all connections for a named net using wire graph analysis
 
@@ -221,7 +223,7 @@ class ConnectionManager:
             connections = []
             tolerance = 0.5  # 0.5mm tolerance for point coincidence (grid spacing consideration)
 
-            def points_coincide(p1, p2):
+            def points_coincide(p1: Any, p2: Any) -> bool:
                 """Check if two points are the same (within tolerance)"""
                 if not p1 or not p2:
                     return False
@@ -324,8 +326,8 @@ class ConnectionManager:
                                 continue
 
                             # Check if pin coincides with any wire point
-                            for wire_pt in connected_wire_points:
-                                if points_coincide(pin_loc, list(wire_pt)):
+                            for wire_pt_tup in connected_wire_points:
+                                if points_coincide(pin_loc, list(wire_pt_tup)):
                                     connections.append({"component": ref, "pin": pin_num})
                                     break  # Pin found, no need to check more wire points
 
@@ -344,8 +346,10 @@ class ConnectionManager:
                     symbol_y = float(symbol_pos[1])
 
                     # Check if symbol is near any wire point (within 10mm)
-                    for wire_pt in connected_wire_points:
-                        dist = ((symbol_x - wire_pt[0]) ** 2 + (symbol_y - wire_pt[1]) ** 2) ** 0.5
+                    for wire_pt_tup in connected_wire_points:
+                        dist = (
+                            (symbol_x - wire_pt_tup[0]) ** 2 + (symbol_y - wire_pt_tup[1]) ** 2
+                        ) ** 0.5
                         if dist < 10.0:  # 10mm proximity threshold
                             connections.append({"component": ref, "pin": "unknown"})
                             break  # Only add once per component
@@ -361,7 +365,9 @@ class ConnectionManager:
             return []
 
     @staticmethod
-    def generate_netlist(schematic: Schematic, schematic_path: Optional[Path] = None):
+    def generate_netlist(
+        schematic: Schematic, schematic_path: Optional[Path] = None
+    ) -> Dict[str, Any]:
         """
         Generate a netlist from the schematic
 

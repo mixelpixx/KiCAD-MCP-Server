@@ -2,7 +2,7 @@ import logging
 import os
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from skip import Schematic
 
@@ -25,7 +25,7 @@ class ComponentManager:
     _dynamic_loader = None
 
     @classmethod
-    def get_dynamic_loader(cls):
+    def get_dynamic_loader(cls) -> Any:
         """Get or create dynamic symbol loader instance"""
         if cls._dynamic_loader is None and DYNAMIC_LOADING_AVAILABLE:
             cls._dynamic_loader = DynamicSymbolLoader()
@@ -86,7 +86,7 @@ class ComponentManager:
         """
 
         # Helper function to check if template exists in schematic
-        def template_exists(schematic, template_ref):
+        def template_exists(schematic: Any, template_ref: str) -> bool:
             """Check if template exists by iterating symbols (handles special characters)"""
             for symbol in schematic.symbol:
                 if (
@@ -165,7 +165,7 @@ class ComponentManager:
     @staticmethod
     def add_component(
         schematic: Schematic, component_def: dict, schematic_path: Optional[Path] = None
-    ):
+    ) -> Any:
         """
         Add a component to the schematic by cloning from template
 
@@ -265,7 +265,7 @@ class ComponentManager:
             raise
 
     @staticmethod
-    def remove_component(schematic: Schematic, component_ref: str):
+    def remove_component(schematic: Schematic, component_ref: str) -> bool:
         """Remove a component from the schematic by reference designator"""
         try:
             # kicad-skip doesn't have a direct remove_symbol method by reference.
@@ -278,17 +278,17 @@ class ComponentManager:
 
             if symbol_to_remove:
                 schematic.symbol._elements.remove(symbol_to_remove)
-                print(f"Removed component {component_ref} from schematic.")
+                logger.info(f"Removed component {component_ref} from schematic.")
                 return True
             else:
-                print(f"Component with reference {component_ref} not found.")
+                logger.warning(f"Component with reference {component_ref} not found.")
                 return False
         except Exception as e:
-            print(f"Error removing component {component_ref}: {e}")
+            logger.error(f"Error removing component {component_ref}: {e}")
             return False
 
     @staticmethod
-    def update_component(schematic: Schematic, component_ref: str, new_properties: dict):
+    def update_component(schematic: Schematic, component_ref: str, new_properties: dict) -> bool:
         """Update component properties by reference designator"""
         try:
             symbol_to_update = None
@@ -302,29 +302,28 @@ class ComponentManager:
                     if key in symbol_to_update.property:
                         symbol_to_update.property[key].value = value
                     else:
-                        # Add as a new property if it doesn't exist
                         symbol_to_update.property.append(key, value)
-                print(f"Updated properties for component {component_ref}.")
+                logger.info(f"Updated properties for component {component_ref}.")
                 return True
             else:
-                print(f"Component with reference {component_ref} not found.")
+                logger.warning(f"Component with reference {component_ref} not found.")
                 return False
         except Exception as e:
-            print(f"Error updating component {component_ref}: {e}")
+            logger.error(f"Error updating component {component_ref}: {e}")
             return False
 
     @staticmethod
-    def get_component(schematic: Schematic, component_ref: str):
+    def get_component(schematic: Schematic, component_ref: str) -> Any:
         """Get a component by reference designator"""
         for symbol in schematic.symbol:
             if symbol.reference == component_ref:
-                print(f"Found component with reference {component_ref}.")
+                logger.debug(f"Found component with reference {component_ref}.")
                 return symbol
-        print(f"Component with reference {component_ref} not found.")
+        logger.warning(f"Component with reference {component_ref} not found.")
         return None
 
     @staticmethod
-    def search_components(schematic: Schematic, query: str):
+    def search_components(schematic: Schematic, query: str) -> List[Any]:
         """Search for components matching criteria (basic implementation)"""
         # This is a basic search, could be expanded to use regex or more complex logic
         matching_components = []
@@ -339,13 +338,13 @@ class ComponentManager:
                 )
             ):
                 matching_components.append(symbol)
-        print(f"Found {len(matching_components)} components matching query '{query}'.")
+        logger.debug(f"Found {len(matching_components)} components matching query '{query}'.")
         return matching_components
 
     @staticmethod
-    def get_all_components(schematic: Schematic):
+    def get_all_components(schematic: Schematic) -> List[Any]:
         """Get all components in schematic"""
-        print(f"Retrieving all {len(schematic.symbol)} components.")
+        logger.debug(f"Retrieving all {len(schematic.symbol)} components.")
         return list(schematic.symbol)
 
 

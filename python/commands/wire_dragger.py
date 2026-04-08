@@ -7,7 +7,7 @@ All methods operate on in-memory sexpdata lists (no disk I/O).
 import logging
 import math
 import uuid
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import sexpdata
 from sexpdata import Symbol
@@ -55,7 +55,7 @@ class WireDragger:
     """Pure-logic helpers for wire-endpoint dragging during component moves."""
 
     @staticmethod
-    def find_symbol(sch_data: list, reference: str):
+    def find_symbol(sch_data: list, reference: str) -> Any:
         """
         Find a placed symbol by reference designator.
 
@@ -218,7 +218,7 @@ class WireDragger:
         junction_k = _K["junction"]
         at_k = _K["at"]
 
-        def find_new(x: float, y: float):
+        def find_new(x: float, y: float) -> Optional[Tuple[float, float]]:
             for (ox, oy), (nx, ny) in old_to_new.items():
                 if _coords_match(x, y, ox, oy, eps):
                     return nx, ny

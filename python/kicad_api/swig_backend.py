@@ -26,7 +26,7 @@ class SWIGBackend(KiCADBackend):
     for compatibility during migration period.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._connected = False
         self._pcbnew = None
         logger.warning(
@@ -98,7 +98,7 @@ class SWIGBackend(KiCADBackend):
         from commands.project import ProjectCommands
 
         try:
-            result = ProjectCommands.open_project(str(path))
+            result = ProjectCommands().open_project({"filename": str(path)})
             return result
         except Exception as e:
             logger.error(f"Failed to open project: {e}")
@@ -112,8 +112,10 @@ class SWIGBackend(KiCADBackend):
         from commands.project import ProjectCommands
 
         try:
-            path_str = str(path) if path else None
-            result = ProjectCommands.save_project(path_str)
+            params: Dict[str, Any] = {}
+            if path:
+                params["filename"] = str(path)
+            result = ProjectCommands().save_project(params)
             return result
         except Exception as e:
             logger.error(f"Failed to save project: {e}")
@@ -137,7 +139,7 @@ class SWIGBackend(KiCADBackend):
 class SWIGBoardAPI(BoardAPI):
     """Board API implementation wrapping SWIG/pcbnew"""
 
-    def __init__(self, pcbnew_module):
+    def __init__(self, pcbnew_module: Any) -> None:
         self.pcbnew = pcbnew_module
         self._board = None
 
@@ -146,13 +148,15 @@ class SWIGBoardAPI(BoardAPI):
         from commands.board import BoardCommands
 
         try:
-            result = BoardCommands.set_board_size(width, height, unit)
+            result = BoardCommands(board=self._board).set_board_size(
+                {"width": width, "height": height, "unit": unit}
+            )
             return result.get("success", False)
         except Exception as e:
             logger.error(f"Failed to set board size: {e}")
             return False
 
-    def get_size(self) -> Dict[str, float]:
+    def get_size(self) -> Dict[str, Any]:
         """Get board size"""
         # TODO: Implement using existing SWIG code
         raise NotImplementedError("get_size not yet wrapped")
@@ -173,7 +177,7 @@ class SWIGBoardAPI(BoardAPI):
         from commands.component import ComponentCommands
 
         try:
-            result = ComponentCommands.get_component_list()
+            result = ComponentCommands(board=self._board).get_component_list({})
             if result.get("success"):
                 return result.get("components", [])
             return []
@@ -189,17 +193,20 @@ class SWIGBoardAPI(BoardAPI):
         y: float,
         rotation: float = 0,
         layer: str = "F.Cu",
+        value: str = "",
     ) -> bool:
         """Place component using existing implementation"""
         from commands.component import ComponentCommands
 
         try:
-            result = ComponentCommands.place_component(
-                component_id=footprint,
-                position={"x": x, "y": y, "unit": "mm"},
-                reference=reference,
-                rotation=rotation,
-                layer=layer,
+            result = ComponentCommands(board=self._board).place_component(
+                {
+                    "componentId": footprint,
+                    "position": {"x": x, "y": y, "unit": "mm"},
+                    "reference": reference,
+                    "rotation": rotation,
+                    "layer": layer,
+                }
             )
             return result.get("success", False)
         except Exception as e:

@@ -2,6 +2,7 @@ import logging
 import os
 import shutil
 import uuid
+from typing import Any, Optional
 
 from skip import Schematic
 
@@ -12,7 +13,7 @@ class SchematicManager:
     """Core schematic operations using kicad-skip"""
 
     @staticmethod
-    def create_schematic(name, path=None, metadata=None):
+    def create_schematic(name: str, path: Optional[str] = None, metadata: Optional[Any] = None) -> Any:
         """Create a new empty schematic from template"""
         try:
             # Determine template path (use template_with_symbols for component cloning support)
@@ -71,7 +72,7 @@ class SchematicManager:
             raise
 
     @staticmethod
-    def load_schematic(file_path):
+    def load_schematic(file_path: str) -> Optional[Any]:
         """Load an existing schematic"""
         if not os.path.exists(file_path):
             logger.error(f"Schematic file not found at {file_path}")
@@ -85,7 +86,7 @@ class SchematicManager:
             return None
 
     @staticmethod
-    def save_schematic(schematic, file_path):
+    def save_schematic(schematic: Any, file_path: str) -> bool:
         """Save a schematic to file"""
         try:
             # kicad-skip uses write method, not save
@@ -97,7 +98,7 @@ class SchematicManager:
             return False
 
     @staticmethod
-    def get_schematic_metadata(schematic):
+    def get_schematic_metadata(schematic: Any) -> dict[str, Any]:
         """Extract metadata from schematic"""
         # kicad-skip doesn't expose a direct metadata object on Schematic.
         # We can return basic info like version and generator.

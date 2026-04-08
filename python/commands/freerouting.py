@@ -95,6 +95,8 @@ def _build_freerouting_cmd(
     """Build the command to run Freerouting."""
     if use_docker:
         docker_exe = _find_docker()
+        if docker_exe is None:
+            raise RuntimeError("Docker/Podman executable not found")
         board_dir = os.path.dirname(dsn_path)
         dsn_name = os.path.basename(dsn_path)
         ses_name = os.path.basename(ses_path)
@@ -120,6 +122,8 @@ def _build_freerouting_cmd(
         ]
     else:
         java_exe = _find_java()
+        if java_exe is None:
+            raise RuntimeError("Java executable not found")
         return [
             java_exe,
             "-jar",
@@ -136,7 +140,7 @@ def _build_freerouting_cmd(
 class FreeroutingCommands:
     """Handles Freerouting autoroute operations."""
 
-    def __init__(self, board=None):
+    def __init__(self, board: Any = None) -> None:
         self.board = board
 
     def _resolve_execution_mode(self, jar_path: str) -> Dict[str, Any]:

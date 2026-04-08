@@ -129,7 +129,7 @@ def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
         cx_ = cos_phi * cxp - sin_phi * cyp + (x1 + x2) / 2
         cy_ = sin_phi * cxp + cos_phi * cyp + (y1 + y2) / 2
 
-        def angle(ux, uy, vx, vy):
+        def angle(ux: float, uy: float, vx: float, vy: float) -> float:
             a = math.acos(
                 max(-1, min(1, (ux * vx + uy * vy) / (math.hypot(ux, uy) * math.hypot(vx, vy))))
             )
@@ -293,10 +293,10 @@ def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
 def _parse_transform(transform_str: str) -> List[List[float]]:
     """Parse SVG transform attribute, return list of 3×3 matrix rows [a,b,c; d,e,f; 0,0,1]."""
 
-    def identity():
+    def identity() -> List[List[float]]:
         return [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
 
-    def mat_mul(A, B):
+    def mat_mul(A: List[List[float]], B: List[List[float]]) -> List[List[float]]:
         return [[sum(A[r][k] * B[k][c] for k in range(3)) for c in range(3)] for r in range(3)]
 
     result = identity()
@@ -345,7 +345,7 @@ def _apply_transform(pts: List[Point], mat: List[List[float]]) -> List[Point]:
     return out
 
 
-def _mat_mul(A, B):
+def _mat_mul(A: List[List[float]], B: List[List[float]]) -> List[List[float]]:
     return [[sum(A[r][k] * B[k][c] for k in range(3)) for c in range(3)] for r in range(3)]
 
 
@@ -366,7 +366,7 @@ def _get_attr(el: ET.Element, name: str, default: Optional[str] = None) -> Optio
     return default
 
 
-def _identity():
+def _identity() -> List[List[float]]:
     return [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
 
 

@@ -9,7 +9,7 @@ import logging
 import math
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import sexpdata
 from sexpdata import Symbol
@@ -21,7 +21,7 @@ logger = logging.getLogger("kicad_interface")
 class PinLocator:
     """Locate pins on symbol instances in KiCad schematics"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize pin locator with empty cache"""
         self.pin_definition_cache = {}  # Cache: "lib_id:symbol_name" -> pin_data
         self._schematic_cache: Dict[str, object] = {}  # Cache: path -> loaded Schematic
@@ -41,9 +41,9 @@ class PinLocator:
                 "2": {"x": 0, "y": -3.81, "angle": 90, "length": 1.27, "name": "~", "type": "passive"}
             }
         """
-        pins = {}
+        pins: Dict[str, Dict[str, Any]] = {}
 
-        def extract_pins_recursive(sexp):
+        def extract_pins_recursive(sexp: Any) -> None:
             """Recursively search for pin definitions"""
             if not isinstance(sexp, list):
                 return
