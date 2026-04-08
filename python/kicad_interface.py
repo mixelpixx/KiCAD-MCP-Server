@@ -614,7 +614,8 @@ class KiCADInterface:
                     "message": "Schematic name is required. Provide 'name', 'projectName', or 'filename' parameter.",
                 }
 
-            schematic = SchematicManager.create_schematic(project_name, metadata)
+            sch_path = path if path and path != "." else None
+            schematic = SchematicManager.create_schematic(project_name, path=sch_path, metadata=metadata)
             file_path = f"{path}/{project_name}.kicad_sch"
             success = SchematicManager.save_schematic(schematic, file_path)
 
