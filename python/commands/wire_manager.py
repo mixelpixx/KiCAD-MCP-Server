@@ -306,49 +306,26 @@ class WireManager:
             True if successful, False otherwise
         """
         try:
-            # Read schematic
-            with open(schematic_path, "r", encoding="utf-8") as f:
-                sch_content = f.read()
+            from skip import Schematic
+            from sexpdata import Symbol as SexpSymbol
 
-            sch_data = sexpdata.loads(sch_content)
+            schematic = Schematic(str(schematic_path))
 
-            # Create label S-expression
-            # Format: (label "TEXT" (at x y angle) (effects (font (size 1.27 1.27))))
-            label_sexp = [
-                Symbol(label_type),
-                text,
-                [Symbol("at"), position[0], position[1], orientation],
-                [Symbol("fields_autoplaced"), Symbol("yes")],
-                [
-                    Symbol("effects"),
-                    [Symbol("font"), [Symbol("size"), 1.27, 1.27]],
-                    [Symbol("justify"), Symbol("left"), Symbol("bottom")],
-                ],
-                [Symbol("uuid"), str(uuid.uuid4())],
-            ]
+            existing_labels = list(schematic.label)
+            if not existing_labels:
+                logger.warning("No existing labels to clone from; falling back to sexpdata")
+                raise RuntimeError("no existing labels")
 
-            # Find insertion point
-            sheet_instances_index = None
-            for i, item in enumerate(sch_data):
-                if isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SHEET_INSTANCES:
-                    sheet_instances_index = i
-                    break
+            new_label = existing_labels[0].clone()
+            new_label.value = text
+            new_label.at.value = [position[0], position[1], orientation]
 
-            if sheet_instances_index is None:
-                # Sub-sheets in hierarchical designs don't have (sheet_instances).
-                # Fall back to appending before the final closing paren of (kicad_sch ...).
-                sheet_instances_index = len(sch_data)
+            # justify: left for 0°/90°, right for 180°/270° (matches KiCAD convention)
+            justify_val = "right" if orientation in (180, 270) else "left"
+            new_label.effects.justify._tree[1] = SexpSymbol(justify_val)
 
-            # Insert label
-            sch_data.insert(sheet_instances_index, label_sexp)
-            logger.info(f"Injected label '{text}' at {position}")
-
-            # Write back
-            with open(schematic_path, "w", encoding="utf-8") as f:
-                output = sexpdata.dumps(sch_data)
-                f.write(output)
-
-            logger.info(f"Successfully added label to {schematic_path.name}")
+            schematic.write(str(schematic_path))
+            logger.info(f"Successfully added label '{text}' to {schematic_path.name}")
             return True
 
         except Exception as e:
