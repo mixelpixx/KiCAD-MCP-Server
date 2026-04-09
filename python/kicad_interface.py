@@ -2122,87 +2122,6 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
-    @staticmethod
-    def _apply_mirror_to_symbol_sexp(
-        schematic_path: str,
-        reference: str,
-        mirror: Optional[str],
-    ) -> bool:
-        """
-        Apply or remove (mirror x/y) on a placed symbol instance by direct
-        S-expression manipulation of the .kicad_sch file.
-
-        KiCad stores mirroring as a sibling token to (at ...):
-            (symbol ... (at x y rot) (mirror x) ...)
-        kicad-skip has no API for this, so we patch the raw text.
-
-        Args:
-            schematic_path: Absolute path to .kicad_sch file
-            reference:      Reference designator, e.g. "Q1"
-            mirror:         "x", "y", or None (None removes any existing mirror)
-
-        Returns:
-            True on success, False if symbol not found.
-        """
-        import re
-
-        with open(schematic_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        def find_symbol_block(text: str, ref: str):
-            """Return (start, end) indices of the symbol block for ref."""
-            i = 0
-            n = len(text)
-            while i < n:
-                idx = text.find("(symbol ", i)
-                if idx == -1:
-                    break
-                depth = 0
-                j = idx
-                while j < n:
-                    if text[j] == "(":
-                        depth += 1
-                    elif text[j] == ")":
-                        depth -= 1
-                        if depth == 0:
-                            block = text[idx : j + 1]
-                            ref_pattern = (
-                                r'\(property\s+"Reference"\s+"' + re.escape(ref) + r'"'
-                            )
-                            if re.search(ref_pattern, block):
-                                return idx, j + 1
-                            break
-                    j += 1
-                i = idx + 1
-            return None, None
-
-        start, end = find_symbol_block(content, reference)
-        if start is None:
-            logger.warning(f"Symbol '{reference}' not found in {schematic_path}")
-            return False
-
-        block = content[start:end]
-
-        # Remove any existing (mirror ...) from block
-        block = re.sub(r"\s*\(mirror\s+[xy]\)", "", block)
-
-        # Insert new mirror token right after the (at ...) token
-        if mirror in ("x", "y"):
-            block = re.sub(
-                r"(\(at\s+[\d\.\-]+\s+[\d\.\-]+\s+[\d\.\-]+\))",
-                r"\1" + f" (mirror {mirror})",
-                block,
-                count=1,
-            )
-
-        new_content = content[:start] + block + content[end:]
-
-        with open(schematic_path, "w", encoding="utf-8", newline="\n") as f:
-            f.write(new_content)
-
-        logger.info(f"Applied mirror={mirror!r} to symbol '{reference}' in {schematic_path}")
-        return True
-
     def _handle_rotate_schematic_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Rotate a schematic component"""
         logger.info("Rotating schematic component")
@@ -2210,7 +2129,7 @@ class KiCADInterface:
             schematic_path = params.get("schematicPath")
             reference = params.get("reference")
             angle = params.get("angle", 0)
-            mirror = params.get("mirror")  # "x", "y", or None
+            mirror = params.get("mirror")
 
             if not schematic_path or not reference:
                 return {
@@ -2232,26 +2151,17 @@ class KiCADInterface:
                     pos[2] = angle
                     symbol.at.value = pos
 
+                    if mirror:
+                        if hasattr(symbol, "mirror"):
+                            symbol.mirror.value = mirror
+                        else:
+                            logger.warning(
+                                f"Mirror '{mirror}' requested for {reference}, "
+                                f"but symbol has no mirror attribute; skipped"
+                            )
+
                     SchematicManager.save_schematic(schematic, schematic_path)
-
-                    # Apply mirror via direct S-expression manipulation
-                    # (kicad-skip has no API for setting mirror on a placed symbol)
-                    if mirror is not None:
-                        success = KiCADInterface._apply_mirror_to_symbol_sexp(
-                            schematic_path, reference, mirror
-                        )
-                        if not success:
-                            return {
-                                "success": False,
-                                "message": f"Rotation applied but mirror failed for '{reference}'",
-                            }
-
-                    return {
-                        "success": True,
-                        "reference": reference,
-                        "angle": angle,
-                        "mirror": mirror,
-                    }
+                    return {"success": True, "reference": reference, "angle": angle}
 
             return {"success": False, "message": f"Component {reference} not found"}
 
