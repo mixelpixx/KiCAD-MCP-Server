@@ -198,6 +198,81 @@ class WireDragger:
         return result
 
     @staticmethod
+    def compute_pin_positions_for_rotation(
+        sch_data: list,
+        reference: str,
+        new_rotation: float,
+        new_mirror_x: bool,
+        new_mirror_y: bool,
+    ) -> Dict[str, Tuple[Tuple[float, float], Tuple[float, float]]]:
+        """
+        Compute world pin positions before and after a rotation/mirror change.
+
+        The symbol stays at the same (x, y); only the rotation and mirror state change.
+        Returns {pin_num: (old_world_xy, new_world_xy)}.
+        """
+        found = WireDragger.find_symbol(sch_data, reference)
+        if found is None:
+            return {}
+        _, sym_x, sym_y, old_rotation, lib_id, old_mirror_x, old_mirror_y = found
+
+        pins = WireDragger.get_pin_defs(sch_data, lib_id)
+        result: Dict[str, Tuple] = {}
+        for pin_num, pin in pins.items():
+            px, py = pin["x"], pin["y"]
+            old_wx, old_wy = WireDragger.pin_world_xy(
+                px, py, sym_x, sym_y, old_rotation, old_mirror_x, old_mirror_y
+            )
+            new_wx, new_wy = WireDragger.pin_world_xy(
+                px, py, sym_x, sym_y, new_rotation, new_mirror_x, new_mirror_y
+            )
+            result[pin_num] = (
+                (round(old_wx, 6), round(old_wy, 6)),
+                (round(new_wx, 6), round(new_wy, 6)),
+            )
+        return result
+
+    @staticmethod
+    def update_symbol_rotation_mirror(
+        sch_data: list,
+        reference: str,
+        new_rotation: float,
+        new_mirror: Optional[str],
+    ) -> bool:
+        """
+        Update the rotation in (at x y rot) and the (mirror x/y) token for a symbol.
+
+        new_mirror: "x", "y", or None (removes any existing mirror token).
+        Returns True if the symbol was found and updated.
+        """
+        found = WireDragger.find_symbol(sch_data, reference)
+        if found is None:
+            return False
+        item = found[0]
+        at_k = _K["at"]
+        mirror_k = _K["mirror"]
+
+        # Update rotation in (at x y rot)
+        for sub in item[1:]:
+            if isinstance(sub, list) and sub and sub[0] == at_k and len(sub) >= 4:
+                sub[3] = new_rotation
+                break
+
+        # Remove existing (mirror ...) token(s)
+        to_remove = [
+            i for i, sub in enumerate(item)
+            if isinstance(sub, list) and sub and sub[0] == mirror_k
+        ]
+        for i in reversed(to_remove):
+            del item[i]
+
+        # Insert new mirror token if requested
+        if new_mirror in ("x", "y"):
+            item.append([mirror_k, Symbol(new_mirror)])
+
+        return True
+
+    @staticmethod
     def drag_wires(
         sch_data: list,
         old_to_new: Dict[Tuple[float, float], Tuple[float, float]],
