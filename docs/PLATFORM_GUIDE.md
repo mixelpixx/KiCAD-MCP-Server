@@ -483,7 +483,7 @@ bash setup-macos.sh --verify
 
 **3. Claude Config Not Picked Up**
 
-- Default path is `~/.config/Claude/claude_desktop_config.json`
+- Default path is `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Use `--claude-config` flag to point to a different location
 - Fully quit and reopen Claude Desktop after changes
 

@@ -22,7 +22,7 @@ Options:
   --yes                  Do not prompt before writing (only with --apply)
   --name NAME            MCP server name (default: kicad)
   --claude-config PATH   Path to Claude Desktop config file
-                         (default: ~/.config/Claude/claude_desktop_config.json)
+                         (default: ~/Library/Application Support/Claude/claude_desktop_config.json)
 EOF
 }
 
@@ -96,7 +96,7 @@ done
 [[ -n "$SERVER_NAME" ]] || fail "Server name must not be empty"
 
 if [[ -z "$CLAUDE_CONFIG_PATH" ]]; then
-  CLAUDE_CONFIG_PATH="$HOME/.config/Claude/claude_desktop_config.json"
+  CLAUDE_CONFIG_PATH="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
 fi
 
 case "$CLAUDE_CONFIG_PATH" in
@@ -243,7 +243,7 @@ if [[ "$MODE" == "verify" ]]; then
   exit 0
 fi
 
-MERGE_RESULT="$(merge_config)" || {
+MERGE_RESULT="$(merge_config 2>&1)" || {
   echo "$MERGE_RESULT"
   exit 1
 }

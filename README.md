@@ -613,7 +613,7 @@ Specify a custom Claude Desktop configuration file.
 Default:
 
 ```text
-~/.config/Claude/claude_desktop_config.json
+~/Library/Application Support/Claude/claude_desktop_config.json
 ```
 
 Example:
@@ -667,7 +667,8 @@ Use the kicad MCP server to run check_kicad_ui.
 
 Edit configuration file:
 
-- **Linux/macOS:** `~/.config/Claude/claude_desktop_config.json`
+- **Linux:** `~/.config/Claude/claude_desktop_config.json`
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
 **Configuration:**
