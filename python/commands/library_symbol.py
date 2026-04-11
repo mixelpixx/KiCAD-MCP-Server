@@ -592,7 +592,6 @@ class SymbolLibraryCommands:
 
 if __name__ == "__main__":
     # Test the symbol library manager
-    import json
 
     logging.basicConfig(level=logging.INFO)
 

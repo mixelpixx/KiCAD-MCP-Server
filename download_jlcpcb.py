@@ -11,7 +11,6 @@ KiCad MCP server's JLCPCBPartsManager.
 """
 
 import json
-import os
 import sqlite3
 import subprocess
 import sys
@@ -84,7 +83,7 @@ def convert_to_mcp_format():
         print("ERROR: cache.sqlite3 not found")
         return False
 
-    print(f"Reading source database...")
+    print("Reading source database...")
     src = sqlite3.connect(str(source))
     src.row_factory = sqlite3.Row
 
@@ -142,7 +141,7 @@ def convert_to_mcp_format():
     # Map source columns to our schema
     # jlcparts schema varies but commonly has:
     # lcsc, mfr, description, joint, manufacturer, basic, preferred, stock, price, url, etc.
-    print(f"\nConverting parts to MCP format...")
+    print("\nConverting parts to MCP format...")
     now = int(time.time())
     batch = []
     count = 0
@@ -232,7 +231,7 @@ def convert_to_mcp_format():
         count += len(batch)
 
     # Build FTS index
-    print(f"  Building full-text search index...")
+    print("  Building full-text search index...")
     dst.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS components_fts USING fts5(
             lcsc, description, mfr_part, manufacturer,

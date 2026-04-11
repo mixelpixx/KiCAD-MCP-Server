@@ -5,10 +5,9 @@ Resources follow the MCP 2025-06-18 specification, providing
 read-only access to project data for LLM context.
 """
 
-import base64
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 logger = logging.getLogger("kicad_interface")
 

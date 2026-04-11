@@ -18,7 +18,7 @@ KiCad S-expression file format reference:
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("kicad_interface")
 

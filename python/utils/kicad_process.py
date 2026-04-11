@@ -6,7 +6,6 @@ Detects if KiCAD is running and provides auto-launch functionality.
 
 import ctypes
 import logging
-import os
 import platform
 import subprocess
 import time
@@ -110,7 +109,7 @@ class KiCADProcessManager:
                             )
                             if "kicad_interface.py" not in cmdline.stdout:
                                 return True
-                        except:
+                        except Exception:
                             pass
                 return False
 

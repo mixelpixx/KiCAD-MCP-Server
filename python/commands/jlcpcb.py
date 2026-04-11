@@ -14,7 +14,6 @@ import os
 import secrets
 import string
 import time
-from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 import requests
@@ -269,7 +268,7 @@ def test_jlcpcb_connection(
     try:
         client = JLCPCBClient(app_id, access_key, secret_key)
         # Test by fetching first page
-        data = client.fetch_parts_page()
+        client.fetch_parts_page()
         logger.info("JLCPCB API connection test successful")
         return True
     except Exception as e:
@@ -292,7 +291,7 @@ if __name__ == "__main__":
         print(f"✓ Retrieved {len(parts)} parts in first page")
 
         if parts:
-            print(f"\nExample part:")
+            print("\nExample part:")
             part = parts[0]
             print(f"  LCSC: {part.get('componentCode')}")
             print(f"  MFR Part: {part.get('componentModelEn')}")

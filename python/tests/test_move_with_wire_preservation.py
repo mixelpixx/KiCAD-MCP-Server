@@ -9,7 +9,6 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 import sexpdata
@@ -18,7 +17,7 @@ from sexpdata import Symbol
 # Make python/ importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from commands.wire_dragger import EPS, WireDragger, _coords_match, _rotate
+from commands.wire_dragger import EPS, WireDragger, _rotate
 
 TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "empty.kicad_sch"
 
@@ -302,7 +301,6 @@ class TestDragWires:
         """A wire whose endpoints don't match any old pin is not changed."""
         wire = _make_wire(50, 50, 60, 50)
         sch = _make_sch_data([wire])
-        original_start = (50.0, 50.0)
         result = WireDragger.drag_wires(sch, {(0.0, 3.81): (10.0, 23.81)})
         assert result["endpoints_moved"] == 0
         updated = next(i for i in sch if isinstance(i, list) and i and i[0] == Symbol("wire"))

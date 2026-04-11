@@ -494,7 +494,7 @@ if __name__ == "__main__":
     if r1_pin1 and c1_pin1:
         # R1 is not rotated, pins should be at y offset from symbol center
         # C1 is rotated 90°, pins should be at x offset from symbol center
-        print(f"\n  Pin offset analysis:")
+        print("\n  Pin offset analysis:")
         print(f"    R1 (0°):  pin 1 y-offset = {r1_pin1[1] - 100}")
         print(f"    C1 (90°): pin 1 x-offset = {c1_pin1[0] - 150}")
 

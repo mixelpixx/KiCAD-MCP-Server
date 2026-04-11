@@ -225,7 +225,7 @@ if __name__ == "__main__":
         print(f"✓ Found {len(resistors)} resistors")
 
         if resistors:
-            print(f"\nExample resistor:")
+            print("\nExample resistor:")
             r = resistors[0]
             print(f"  LCSC: C{r.get('lcsc')}")
             print(f"  MFR: {r.get('mfr')}")

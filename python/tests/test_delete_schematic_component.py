@@ -8,7 +8,6 @@ them on *separate* lines, so every real-world delete returned "not found".
 
 import re
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -125,13 +124,13 @@ class TestDeleteDetectionRegex:
         """Regression: old line-by-line regex must NOT match the multi-line format."""
         # The old code used re.match on individual lines; simulate that here.
         lines = PLACED_RESISTOR_MULTILINE.split("\n")
-        matches = [l for l in lines if re.match(r"\s*\(symbol\s+\(lib_id\s+\"", l)]
+        matches = [line for line in lines if re.match(r"\s*\(symbol\s+\(lib_id\s+\"", line)]
         assert matches == [], "Old regex should not match multi-line KiCAD format"
 
     def test_old_regex_matches_inline_format(self):
         """Old regex did work on single-line (inline) format."""
         lines = PLACED_RESISTOR_INLINE.split("\n")
-        matches = [l for l in lines if re.match(r"\s*\(symbol\s+\(lib_id\s+\"", l)]
+        matches = [line for line in lines if re.match(r"\s*\(symbol\s+\(lib_id\s+\"", line)]
         assert len(matches) == 1
 
     def test_new_pattern_matches_multiline_format(self):

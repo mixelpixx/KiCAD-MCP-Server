@@ -163,7 +163,7 @@ class TestDeleteWireIntegration:
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_WIRE_SCH, encoding="utf-8")
 
-        result = self.WireManager.delete_wire(sch, [10.0, 20.0], [30.0, 20.0], tolerance=0.0)
+        self.WireManager.delete_wire(sch, [10.0, 20.0], [30.0, 20.0], tolerance=0.0)
         # tolerance=0.0 means exact float equality — may still match on most
         # platforms, but the key thing is that a *distant* miss is rejected
         sch2 = tmp_path / "test2.kicad_sch"
@@ -268,7 +268,6 @@ def _make_handler_under_test(handler_name: str):
     This works because every _handle_* method starts with a params dict check
     before doing any file I/O or heavy imports.
     """
-    import importlib.util
     import types
 
     # We monkey-patch sys.modules to avoid pcbnew/skip side effects
@@ -302,7 +301,6 @@ class TestHandlerParamValidation:
 
     def _make_iface_stub(self):
         """Return a stub that exposes only the handler methods under test."""
-        import importlib
         import types
 
         # Build a minimal namespace that satisfies the imports inside each handler

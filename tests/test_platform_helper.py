@@ -5,7 +5,6 @@ These are unit tests that work on all platforms.
 """
 
 import os
-import platform
 import sys
 from pathlib import Path
 

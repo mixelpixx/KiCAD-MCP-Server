@@ -7,7 +7,6 @@ and component selection.
 
 import json
 import logging
-import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -353,7 +352,7 @@ class JLCPCBPartsManager:
             if part.get("price_json"):
                 try:
                     part["price_breaks"] = json.loads(part["price_json"])
-                except:
+                except Exception:
                     part["price_breaks"] = []
             return part
         return None
@@ -457,7 +456,7 @@ class JLCPCBPartsManager:
             try:
                 prices = json.loads(p.get("price_json", "[]"))
                 price = float(prices[0].get("price", 999)) if prices else 999
-            except:
+            except Exception:
                 price = 999
             stock = p.get("stock", 0)
 
@@ -481,7 +480,7 @@ if __name__ == "__main__":
 
     # Get stats
     stats = manager.get_database_stats()
-    print(f"\nDatabase Statistics:")
+    print("\nDatabase Statistics:")
     print(f"  Total parts: {stats['total_parts']}")
     print(f"  Basic parts: {stats['basic_parts']}")
     print(f"  Extended parts: {stats['extended_parts']}")

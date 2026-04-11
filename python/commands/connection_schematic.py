@@ -1,5 +1,4 @@
 import logging
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -104,7 +103,7 @@ class ConnectionManager:
             # Create wire stub using WireManager
             wire_success = WireManager.add_wire(schematic_path, pin_loc, stub_end)
             if not wire_success:
-                logger.error(f"Failed to create wire stub for net connection")
+                logger.error("Failed to create wire stub for net connection")
                 return False
 
             # Add label at the end of the stub using WireManager

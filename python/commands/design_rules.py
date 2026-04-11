@@ -4,7 +4,7 @@ Design rules command implementations for KiCAD interface
 
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import pcbnew
 
@@ -173,8 +173,6 @@ class DesignRuleCommands:
     def run_drc(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Run Design Rule Check using kicad-cli"""
         import json
-        import platform
-        import shutil
         import subprocess
         import tempfile
 

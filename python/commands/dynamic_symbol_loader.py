@@ -12,7 +12,7 @@ import os
 import re
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
 
 logger = logging.getLogger("kicad_interface")
 
@@ -549,6 +549,6 @@ if __name__ == "__main__":
     if block and "LM2596S-12" in block:
         print(f"   OK: LM2596S-5 includes parent LM2596S-12 ({len(block)} chars)")
     else:
-        print(f"   FAIL: extends not resolved")
+        print("   FAIL: extends not resolved")
 
     print("\nAll tests passed!")

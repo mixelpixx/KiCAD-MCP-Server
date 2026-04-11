@@ -42,7 +42,7 @@ def test_connection():
         print("✓ IPCBackend created")
 
         if backend.connect():
-            print(f"✓ Connected to KiCAD via IPC")
+            print("✓ Connected to KiCAD via IPC")
             print(f"  Version: {backend.get_version()}")
             return backend
         else:

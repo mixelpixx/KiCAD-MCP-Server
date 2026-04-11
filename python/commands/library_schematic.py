@@ -4,7 +4,6 @@ import logging
 # Symbol class might not be directly importable in the current version
 import os
 
-from skip import Schematic
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +88,7 @@ class LibraryManager:
             # 3. Filtering symbols based on the query
 
             # For now, this is a placeholder implementation
-            libraries = LibraryManager.list_available_libraries(search_paths)
+            LibraryManager.list_available_libraries(search_paths)
 
             results = []
             logger.warning(

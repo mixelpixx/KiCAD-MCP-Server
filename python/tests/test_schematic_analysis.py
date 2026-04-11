@@ -5,16 +5,13 @@ Unit tests use mock data / synthetic S-expressions.
 Integration tests parse real .kicad_sch files via sexpdata.
 """
 
-import os
 import shutil
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 import sexpdata
-from sexpdata import Symbol
 
 # Ensure the python/ package is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -59,7 +56,7 @@ def _make_temp_schematic(extra_sexp: str = "") -> Path:
     return tmp
 
 
-import uuid as _uuid
+import uuid as _uuid  # noqa: E402
 
 
 def _make_resistor_sexp(ref: str, x: float, y: float, rotation: float = 0) -> str:

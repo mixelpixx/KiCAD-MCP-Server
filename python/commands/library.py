@@ -5,7 +5,6 @@ Handles parsing fp-lib-table files, discovering footprints,
 and providing search functionality for component placement.
 """
 
-import glob
 import logging
 import os
 import re

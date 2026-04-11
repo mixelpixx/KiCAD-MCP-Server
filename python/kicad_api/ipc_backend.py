@@ -532,7 +532,7 @@ class IPCBoardAPI(BoardAPI):
                         if loaded_fp:
                             logger.info(f"Found footprint '{fp_name}' in library '{lib}'")
                             return loaded_fp
-                    except:
+                    except Exception:
                         continue
 
             logger.warning(f"Footprint '{footprint_path}' not found in any library")
@@ -561,7 +561,6 @@ class IPCBoardAPI(BoardAPI):
 
             # Get the pcbnew board instance
             # We need to get the actual board file path
-            project = board.get_project()
             board_path = None
 
             # Try to get the board path from kipy
@@ -1071,7 +1070,7 @@ class IPCBoardAPI(BoardAPI):
         """
         try:
             from kipy.board_types import Zone, ZoneFillMode, ZoneType
-            from kipy.geometry import PolyLine, PolyLineNode, Vector2
+            from kipy.geometry import PolyLine, PolyLineNode
             from kipy.proto.board.board_types_pb2 import BoardLayer
             from kipy.util.units import from_mm
 
@@ -1154,7 +1153,6 @@ class IPCBoardAPI(BoardAPI):
     def get_zones(self) -> List[Dict[str, Any]]:
         """Get all zones on the board."""
         try:
-            from kipy.util.units import to_mm
 
             board = self._get_board()
             zones = board.get_zones()
@@ -1168,7 +1166,7 @@ class IPCBoardAPI(BoardAPI):
                             "net": zone.net.name if zone.net else "",
                             "priority": zone.priority if hasattr(zone, "priority") else 0,
                             "layers": (
-                                [str(l) for l in zone.layers] if hasattr(zone, "layers") else []
+                                [str(layer) for layer in zone.layers] if hasattr(zone, "layers") else []
                             ),
                             "filled": zone.filled if hasattr(zone, "filled") else False,
                             "id": str(zone.id) if hasattr(zone, "id") else "",

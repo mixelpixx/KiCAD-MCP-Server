@@ -7,9 +7,8 @@ All methods operate on in-memory sexpdata lists (no disk I/O).
 import logging
 import math
 import uuid
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Tuple
 
-import sexpdata
 from sexpdata import Symbol
 
 logger = logging.getLogger("kicad_interface")

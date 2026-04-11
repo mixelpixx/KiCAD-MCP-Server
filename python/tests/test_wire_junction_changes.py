@@ -10,7 +10,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import sexpdata
@@ -119,7 +119,6 @@ class TestHandlerDispatch:
     @pytest.fixture(autouse=True)
     def load_handler_map(self):
         # Import only the dispatch table without initialising KiCAD connections
-        import importlib
         import types
 
         # Patch heavy imports before loading kicad_interface
@@ -317,7 +316,6 @@ class TestPinSnapping:
         # get_all_symbol_pins won't be called because symbol list is empty in fixture.
         # Instead we patch find_nearest_pin indirectly by providing all_pins via the
         # skip.Schematic stub that returns one symbol with a known pin.
-        import types
 
         skip_mod = sys.modules["skip"]
 
@@ -382,7 +380,7 @@ class TestPinSnapping:
     @patch("commands.wire_manager.WireManager.add_wire", return_value=True)
     def test_snap_miss_leaves_coords_unchanged(self, mock_wire):
         """Point beyond tolerance should not be snapped."""
-        with patch("commands.wire_manager.WireManager.add_wire", return_value=True) as mw:
+        with patch("commands.wire_manager.WireManager.add_wire", return_value=True):
             result = self.iface._handle_add_schematic_wire(
                 {
                     "schematicPath": str(self.sch_path),

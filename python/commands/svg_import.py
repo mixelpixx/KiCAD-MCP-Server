@@ -62,7 +62,6 @@ def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
 
     i = 0
     cmd = "M"
-    num_tokens = []
 
     # --- helpers ---
     def consume(n: int) -> List[float]:
@@ -547,13 +546,12 @@ def import_svg_to_pcb(
         vb = _get_attr(root, "viewBox")
         if vb:
             parts = [float(v) for v in re.split(r"[\s,]+", vb.strip()) if v]
-            svg_x0, svg_y0, svg_w, svg_h = parts[0], parts[1], parts[2], parts[3]
+            _, _, svg_w, svg_h = parts[0], parts[1], parts[2], parts[3]
         else:
             w_str = _get_attr(root, "width", "100") or "100"
             h_str = _get_attr(root, "height", "100") or "100"
             svg_w = float(re.sub(r"[^\d.]", "", w_str) or 100)
             svg_h = float(re.sub(r"[^\d.]", "", h_str) or 100)
-            svg_x0, svg_y0 = 0.0, 0.0
 
         if svg_w == 0 or svg_h == 0:
             return {"success": False, "message": "SVG has zero width or height"}

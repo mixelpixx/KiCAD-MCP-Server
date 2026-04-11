@@ -8,7 +8,7 @@ and checking connectivity in KiCad schematic files.
 import logging
 import math
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import sexpdata
 from commands.pin_locator import PinLocator

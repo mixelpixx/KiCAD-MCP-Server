@@ -12,6 +12,7 @@ import logging
 import os
 import sys
 import traceback
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from resources.resource_definitions import RESOURCE_DEFINITIONS, handle_resource_read
@@ -81,10 +82,10 @@ utils_dir = os.path.join(os.path.dirname(__file__))
 if utils_dir not in sys.path:
     sys.path.insert(0, utils_dir)
 
-from utils.kicad_process import KiCADProcessManager, check_and_launch_kicad
+from utils.kicad_process import KiCADProcessManager, check_and_launch_kicad  # noqa: E402
 
 # Import platform helper and add KiCAD paths
-from utils.platform_helper import PlatformHelper
+from utils.platform_helper import PlatformHelper  # noqa: E402
 
 logger.info(f"Detecting KiCAD Python paths for {PlatformHelper.get_platform_name()}...")
 paths_added = PlatformHelper.add_kicad_to_python_path()
@@ -119,7 +120,7 @@ if KICAD_BACKEND in ("auto", "ipc"):
         ipc_backend = IPCBackend()
         if ipc_backend.connect():
             USE_IPC_BACKEND = True
-            logger.info(f"✓ Using IPC backend - real-time UI sync enabled!")
+            logger.info("✓ Using IPC backend - real-time UI sync enabled!")
             logger.info(f"  KiCAD version: {ipc_backend.get_version()}")
         else:
             logger.info("IPC backend available but KiCAD not running with IPC enabled")
@@ -206,21 +207,20 @@ try:
     logger.info("Importing command handlers...")
     from commands.board import BoardCommands
     from commands.component import ComponentCommands
-    from commands.component_schematic import ComponentManager
     from commands.connection_schematic import ConnectionManager
     from commands.datasheet_manager import DatasheetManager
     from commands.design_rules import DesignRuleCommands
     from commands.export import ExportCommands
     from commands.footprint import FootprintCreator
     from commands.freerouting import FreeroutingCommands
-    from commands.jlcpcb import JLCPCBClient, test_jlcpcb_connection
+    from commands.jlcpcb import JLCPCBClient
     from commands.jlcpcb_parts import JLCPCBPartsManager
     from commands.library import (
         LibraryCommands,
     )
     from commands.library import LibraryManager as FootprintLibraryManager
     from commands.library_schematic import LibraryManager as SchematicLibraryManager
-    from commands.library_symbol import SymbolLibraryCommands, SymbolLibraryManager
+    from commands.library_symbol import SymbolLibraryCommands
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
     from commands.schematic import SchematicManager
@@ -1277,7 +1277,7 @@ class KiCADInterface:
         try:
             search_paths = params.get("searchPaths")
 
-            libraries = LibraryManager.list_available_libraries(search_paths)
+            libraries = SchematicLibraryManager.list_available_libraries(search_paths)
             return {"success": True, "libraries": libraries}
         except Exception as e:
             logger.error(f"Error listing schematic libraries: {str(e)}")
@@ -3900,7 +3900,7 @@ print("ok")
                 if part.get("price_json"):
                     try:
                         part["price_breaks"] = json.loads(part["price_json"])
-                    except:
+                    except Exception:
                         part["price_breaks"] = []
 
             return {"success": True, "parts": parts, "count": len(parts)}
@@ -3954,7 +3954,7 @@ print("ok")
             if original_part and original_part.get("price_breaks"):
                 try:
                     reference_price = float(original_part["price_breaks"][0].get("price", 0))
-                except:
+                except Exception:
                     pass
 
             alternatives = self.jlcpcb_parts.suggest_alternatives(lcsc_number, limit)
@@ -3964,7 +3964,7 @@ print("ok")
                 if part.get("price_json"):
                     try:
                         part["price_breaks"] = json.loads(part["price_json"])
-                    except:
+                    except Exception:
                         part["price_breaks"] = []
 
             return {

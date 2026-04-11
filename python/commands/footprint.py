@@ -107,9 +107,9 @@ class FootprintCreator:
         # ---- header ----
         lines.append(f'(footprint "{name}"')
         lines.append(f"  (version {KICAD9_FOOTPRINT_VERSION})")
-        lines.append(f'  (generator "kicad-mcp")')
-        lines.append(f'  (generator_version "9.0")')
-        lines.append(f'  (layer "F.Cu")')
+        lines.append('  (generator "kicad-mcp")')
+        lines.append('  (generator_version "9.0")')
+        lines.append('  (layer "F.Cu")')
         if description:
             lines.append(f'  (descr "{_esc(description)}")')
         if tags:
@@ -123,20 +123,20 @@ class FootprintCreator:
         val_y = value_position.get("y", 1.27) if value_position else 1.27
 
         lines.append(f'  (property "Reference" "REF**" (at {_fmt(ref_x)} {_fmt(ref_y)} 0)')
-        lines.append(f'    (layer "F.SilkS")')
+        lines.append('    (layer "F.SilkS")')
         lines.append(f'    (uuid "{_new_uuid()}")')
-        lines.append(f"    (effects (font (size 1 1) (thickness 0.15)))")
-        lines.append(f"  )")
+        lines.append("    (effects (font (size 1 1) (thickness 0.15)))")
+        lines.append("  )")
         lines.append(f'  (property "Value" "{_esc(name)}" (at {_fmt(val_x)} {_fmt(val_y)} 0)')
-        lines.append(f'    (layer "F.Fab")')
+        lines.append('    (layer "F.Fab")')
         lines.append(f'    (uuid "{_new_uuid()}")')
-        lines.append(f"    (effects (font (size 1 1) (thickness 0.15)))")
-        lines.append(f"  )")
-        lines.append(f'  (property "Datasheet" "" (at 0 0 0)')
-        lines.append(f'    (layer "F.Fab")')
+        lines.append("    (effects (font (size 1 1) (thickness 0.15)))")
+        lines.append("  )")
+        lines.append('  (property "Datasheet" "" (at 0 0 0)')
+        lines.append('    (layer "F.Fab")')
         lines.append(f'    (uuid "{_new_uuid()}")')
-        lines.append(f"    (effects (font (size 1 1) (thickness 0.15)))")
-        lines.append(f"  )")
+        lines.append("    (effects (font (size 1 1) (thickness 0.15)))")
+        lines.append("  )")
         lines.append("")
 
         # ---- courtyard ----
@@ -462,7 +462,7 @@ def _pad_lines(pad: Dict[str, Any]) -> List[str]:
         layers = (
             _DEFAULT_THT_LAYERS if ptype in ("thru_hole", "np_thru_hole") else _DEFAULT_SMD_LAYERS
         )
-    layers_str = " ".join(f'"{l}"' for l in layers)
+    layers_str = " ".join(f'"{layer_name}"' for layer_name in layers)
 
     lines = [f'  (pad "{number}" {ptype} {shape}']
     lines.append(f"    {at_str}")
@@ -482,7 +482,7 @@ def _pad_lines(pad: Dict[str, Any]) -> List[str]:
         lines.append(f"    (roundrect_rratio {_fmt(rr_ratio)})")
 
     lines.append(f'    (uuid "{_new_uuid()}")')
-    lines.append(f"  )")
+    lines.append("  )")
     return lines
 
 
@@ -493,13 +493,13 @@ def _rect_lines(rect: Dict[str, Any], layer: str, default_width: float = 0.05) -
     y2 = _fmt(rect.get("y2", 1.0))
     w = _fmt(rect.get("width", default_width))
     return [
-        f"  (fp_rect",
+        "  (fp_rect",
         f"    (start {x1} {y1})",
         f"    (end {x2} {y2})",
         f"    (stroke (width {w}) (type default))",
-        f"    (fill none)",
+        "    (fill none)",
         f'    (layer "{layer}")',
         f'    (uuid "{_new_uuid()}")',
-        f"  )",
+        "  )",
         "",
     ]

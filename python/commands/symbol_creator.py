@@ -348,7 +348,7 @@ class SymbolCreator:
         board_str = "yes" if on_board else "no"
 
         lines.append(f'  (symbol "{name}"')
-        lines.append(f"    (exclude_from_sim no)")
+        lines.append("    (exclude_from_sim no)")
         lines.append(f"    (in_bom {bom_str})")
         lines.append(f"    (on_board {board_str})")
 
@@ -367,15 +367,15 @@ class SymbolCreator:
             lines.extend(_rect_sym_lines(rect))
         for pl in polylines:
             lines.extend(_polyline_lines(pl))
-        lines.append(f"    )")
+        lines.append("    )")
 
         # Sub-symbol _1_1: pins
         lines.append(f'    (symbol "{name}_1_1"')
         for pin in pins:
             lines.extend(_pin_lines(pin))
-        lines.append(f"    )")
+        lines.append("    )")
 
-        lines.append(f"  )")
+        lines.append("  )")
         return "\n".join(lines)
 
     def _remove_symbol(self, content: str, name: str) -> str:
@@ -413,10 +413,10 @@ def _property_block(key: str, value: str, x: float, y: float, visible: bool = Tr
     return [
         f'    (property "{_esc(key)}" "{_esc(value)}"',
         f"      (at {_fmt(x)} {_fmt(y)} 0)",
-        f"      (effects",
-        f"        (font (size 1.27 1.27))",
+        "      (effects",
+        "        (font (size 1.27 1.27))",
         f"      ){hide}",
-        f"    )",
+        "    )",
     ]
 
 
@@ -428,12 +428,12 @@ def _rect_sym_lines(rect: Dict[str, Any]) -> List[str]:
     w = _fmt(rect.get("width", 0.254))
     fill = rect.get("fill", "background")
     return [
-        f"      (rectangle",
+        "      (rectangle",
         f"        (start {x1} {y1})",
         f"        (end {x2} {y2})",
         f"        (stroke (width {w}) (type default))",
         f"        (fill (type {fill}))",
-        f"      )",
+        "      )",
     ]
 
 
@@ -442,16 +442,16 @@ def _polyline_lines(pl: Dict[str, Any]) -> List[str]:
     w = _fmt(pl.get("width", 0.254))
     fill = pl.get("fill", "none")
     lines = [
-        f"      (polyline",
-        f"        (pts",
+        "      (polyline",
+        "        (pts",
     ]
     for pt in pts:
         lines.append(f'          (xy {_fmt(pt["x"])} {_fmt(pt["y"])})')
     lines += [
-        f"        )",
+        "        )",
         f"        (stroke (width {w}) (type default))",
         f"        (fill (type {fill}))",
-        f"      )",
+        "      )",
     ]
     return lines
 
@@ -472,10 +472,10 @@ def _pin_lines(pin: Dict[str, Any]) -> List[str]:
         f"        (at {x} {y} {angle})",
         f"        (length {length})",
         f'        (name "{_esc(pin_name)}"',
-        f"          (effects (font (size 1.27 1.27)))",
-        f"        )",
+        "          (effects (font (size 1.27 1.27)))",
+        "        )",
         f'        (number "{_esc(pin_number)}"',
-        f"          (effects (font (size 1.27 1.27)))",
-        f"        )",
-        f"      )",
+        "          (effects (font (size 1.27 1.27)))",
+        "        )",
+        "      )",
     ]
