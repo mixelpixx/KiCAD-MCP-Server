@@ -1,22 +1,22 @@
-# Platform Guide: Linux vs Windows
+# Platform Guide: Linux, macOS & Windows
 
-This guide explains the differences between using KiCAD MCP Server on Linux and Windows platforms.
+This guide explains the differences between using KiCAD MCP Server on Linux, macOS, and Windows platforms.
 
-**Last Updated:** 2025-11-05
+**Last Updated:** 2026-04-11
 
 ---
 
 ## Quick Comparison
 
-| Feature                  | Linux                     | Windows                         |
-| ------------------------ | ------------------------- | ------------------------------- |
-| **Primary Support**      | Full (tested extensively) | Community tested                |
-| **Setup Complexity**     | Moderate                  | Easy (automated script)         |
-| **Prerequisites**        | Manual package management | Automated detection             |
-| **KiCAD Python Access**  | System paths              | Bundled with KiCAD              |
-| **Path Separators**      | Forward slash (/)         | Backslash (\\) or forward slash |
-| **Virtual Environments** | Recommended               | Optional                        |
-| **Troubleshooting**      | Standard Linux tools      | PowerShell diagnostics          |
+| Feature                  | Linux                     | Windows                         | macOS                   |
+| ------------------------ | ------------------------- | ------------------------------- | ----------------------- |
+| **Primary Support**      | Full (tested extensively) | Community tested                | Community tested        |
+| **Setup Complexity**     | Moderate                  | Easy (automated script)         | Easy (automated script) |
+| **Prerequisites**        | Manual package management | Automated detection             | Automated detection     |
+| **KiCAD Python Access**  | System paths              | Bundled with KiCAD              | Bundled with KiCAD      |
+| **Path Separators**      | Forward slash (/)         | Backslash (\\) or forward slash | Forward slash (/)       |
+| **Virtual Environments** | Recommended               | Optional                        | Optional                |
+| **Troubleshooting**      | Standard Linux tools      | PowerShell diagnostics          | Bash diagnostics        |
 
 ---
 
@@ -59,6 +59,51 @@ Python: /usr/bin/python3
       "args": ["/home/username/KiCAD-MCP-Server/dist/index.js"],
       "env": {
         "PYTHONPATH": "/usr/lib/kicad/lib/python3/dist-packages"
+      }
+    }
+  }
+}
+```
+
+### macOS Installation
+
+**Advantages:**
+
+- Automated setup script (`setup-macos.sh`) handles detection and configuration
+- KiCAD includes bundled Python (no system Python needed for pcbnew)
+- Prerequisite checks with clear pass/fail output
+- Generates and merges Claude Desktop configuration automatically
+
+**Process:**
+
+1. Install KiCAD 9.0 from the official `.dmg` installer
+2. Install Node.js (e.g. via Homebrew or nvm)
+3. Clone repository
+4. Run `npm install && npm run build`
+5. Run `setup-macos.sh`:
+   - `bash setup-macos.sh --verify` — check prerequisites and detected paths
+   - `bash setup-macos.sh --dry-run` — preview the merged Claude Desktop config
+   - `bash setup-macos.sh --apply` — write the configuration
+
+**Typical paths:**
+
+```bash
+KiCAD Python: /Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3
+KiCAD Libraries: /Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.x/lib/python3.x/site-packages
+Node.js: /usr/local/bin/node  # or via nvm
+```
+
+**Configuration example:**
+
+```json
+{
+  "mcpServers": {
+    "kicad": {
+      "command": "node",
+      "args": ["/Users/username/KiCAD-MCP-Server/dist/index.js"],
+      "env": {
+        "KICAD_PYTHON": "/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3",
+        "PYTHONPATH": "/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.9/lib/python3.9/site-packages"
       }
     }
   }
@@ -130,6 +175,21 @@ export PYTHONPATH=/usr/lib/kicad/lib/python3/dist-packages
 python3 -c "import pcbnew"
 ```
 
+### macOS Paths
+
+- Use forward slashes: `/Users/username/project`
+- Case-insensitive but case-preserving filesystem (APFS default)
+- No drive letters
+- KiCAD paths are inside the `.app` bundle
+
+**Example commands:**
+
+```bash
+cd ~/KiCAD-MCP-Server
+export KICAD_PYTHON=/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3
+"$KICAD_PYTHON" -c "import pcbnew"
+```
+
 ### Windows Paths
 
 - Use backslashes in native commands: `C:\Users\username`
@@ -197,6 +257,27 @@ export PYTHONPATH=/usr/lib/kicad/lib/python3/dist-packages
 
 # Permanent (add to ~/.bashrc or ~/.profile)
 echo 'export PYTHONPATH=/usr/lib/kicad/lib/python3/dist-packages' >> ~/.bashrc
+```
+
+### macOS
+
+**KiCAD Bundled Python:**
+
+- KiCAD bundles Python inside the `.app` framework (versions 3.9–3.12)
+- No system Python installation needed for pcbnew
+- `setup-macos.sh` detects the correct path automatically
+
+**Setup:**
+
+```bash
+# Check KiCAD Python
+/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 --version
+
+# Verify pcbnew module
+/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"
+
+# Or use the setup script to verify everything at once
+bash setup-macos.sh --verify
 ```
 
 ### Windows
@@ -272,6 +353,32 @@ tail -f ~/.kicad-mcp/logs/kicad_interface.log
 
 ```bash
 export PYTHONPATH=/usr/lib/kicad/lib/python3/dist-packages
+node dist/index.js
+```
+
+### macOS
+
+**Check KiCAD installation:**
+
+```bash
+ls /Applications/KiCad/KiCad.app
+```
+
+**Run automated diagnostics:**
+
+```bash
+bash setup-macos.sh --verify
+```
+
+**View logs:**
+
+```bash
+tail -f ~/.kicad-mcp/logs/kicad_interface.log
+```
+
+**Start server manually:**
+
+```bash
 node dist/index.js
 ```
 
@@ -355,6 +462,30 @@ sudo apt-get install python3-wxgtk4.0 python3-cairo
 # Check library linkage
 ldd /usr/lib/kicad/lib/python3/dist-packages/pcbnew.so
 ```
+
+### macOS-Specific Issues
+
+**1. KiCad Python Not Found**
+
+```bash
+# Verify the expected path exists
+ls /Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3
+
+# If installed elsewhere, set the override
+export KICAD_PYTHON=/path/to/your/kicad/python3
+bash setup-macos.sh --verify
+```
+
+**2. pcbnew Import Fails**
+
+- Run `bash setup-macos.sh --verify` — the Prerequisites section will show a ✗ if pcbnew can't be imported
+- Reinstall KiCAD if the bundled Python is corrupted
+
+**3. Claude Config Not Picked Up**
+
+- Default path is `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Use `--claude-config` flag to point to a different location
+- Fully quit and reopen Claude Desktop after changes
 
 ### Windows-Specific Issues
 
@@ -479,6 +610,14 @@ npm test
 4. **Check file permissions** if encountering access errors
 5. **Monitor system logs** with `journalctl` if needed
 
+### macOS
+
+1. **Run `setup-macos.sh --verify` first** — confirms all prerequisites
+2. **Use `--dry-run` before `--apply`** — review the merged config before writing
+3. **Use KiCAD's bundled Python** — don't rely on system or Homebrew Python for pcbnew
+4. **Override with `KICAD_PYTHON` env var** if KiCAD is in a non-standard location
+5. **Check logs** in `~/.kicad-mcp/logs/` when debugging
+
 ### Windows
 
 1. **Run setup-windows.ps1 first** - saves time troubleshooting
@@ -507,6 +646,13 @@ npm test
 4. Update PYTHONPATH to Linux format
 5. Set file permissions: `chmod +x python/kicad_interface.py`
 
+### Moving to/from macOS
+
+1. Clone repository on the target machine
+2. Run `npm install && npm run build`
+3. Run `bash setup-macos.sh --apply` (to macOS) or follow the target platform's setup
+4. No project file changes needed
+
 **KiCAD project files (.kicad_pro, .kicad_pcb) are identical across platforms.**
 
 ---
@@ -519,6 +665,13 @@ npm test
 - Read: [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)
 - Search: GitHub Issues filtered by `linux` label
 - Community: Linux users in Discussions
+
+### macOS Support
+
+- Check: [README.md](../README.md) macOS installation section
+- Run: `bash setup-macos.sh --verify` for automated diagnostics
+- Search: GitHub Issues filtered by `macos` label
+- Community: macOS users in Discussions
 
 ### Windows Support
 
@@ -539,6 +692,12 @@ npm test
 - You're developing or contributing to the project
 - You need maximum performance
 
+**Choose macOS if:**
+
+- You're already using KiCAD on macOS
+- You want automated setup with `setup-macos.sh`
+- You prefer a Unix-based development environment
+
 **Choose Windows if:**
 
 - You want automated setup and diagnostics
@@ -546,16 +705,18 @@ npm test
 - You need detailed troubleshooting guidance
 - You're a KiCAD user new to development tools
 
-**Both platforms work well for PCB design with KiCAD MCP. Choose based on your comfort level and existing development environment.**
+**All platforms work well for PCB design with KiCAD MCP. Choose based on your comfort level and existing development environment.**
 
 ---
 
 **For platform-specific installation instructions, see:**
 
 - Linux: [README.md - Linux Installation](../README.md#linux-ubuntudebian)
+- macOS: [README.md - macOS Installation](../README.md#macos)
 - Windows: [README.md - Windows Installation](../README.md#windows-1011)
 
 **For troubleshooting:**
 
 - Linux: [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)
+- macOS: Run `bash setup-macos.sh --verify`
 - Windows: [WINDOWS_TROUBLESHOOTING.md](./WINDOWS_TROUBLESHOOTING.md)
