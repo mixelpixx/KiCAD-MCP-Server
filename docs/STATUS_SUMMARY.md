@@ -90,9 +90,11 @@ The server automatically selects the best backend:
 
 ### macOS -- Community Supported
 
-- Configuration provided
+- Automated setup script (setup-macos.sh)
+- Auto-detects KiCad Python and pcbnew
+- Generates Claude Desktop configuration
 - Process detection implemented
-- Library paths configured
+- Library paths auto-configured
 - Needs community testing
 
 ---
@@ -170,4 +172,4 @@ The server automatically selects the best backend:
 
 ---
 
-_Last Updated: 2026-03-21_
+_Last Updated: 2026-04-11_
