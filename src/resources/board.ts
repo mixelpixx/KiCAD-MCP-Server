@@ -6,9 +6,7 @@
  */
 
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
 import { logger } from "../logger.js";
-import { createJsonResponse, createBinaryResponse } from "../utils/resource-helpers.js";
 
 // Command function type for KiCAD script calls
 type CommandFunction = (command: string, params: Record<string, unknown>) => Promise<any>;

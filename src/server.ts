@@ -4,7 +4,6 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import express from "express";
 import { spawn, exec, execSync, ChildProcess } from "child_process";
 import { existsSync } from "fs";
 import { join, dirname } from "path";
@@ -26,7 +25,6 @@ import { registerFootprintTools } from "./tools/footprint.js";
 import { registerSymbolCreatorTools } from "./tools/symbol-creator.js";
 import { registerUITools } from "./tools/ui.js";
 import { registerFreeroutingTools } from "./tools/freerouting.js";
-import { registerRouterTools } from "./tools/router.js";
 
 // Import resource registration functions
 import { registerProjectResources } from "./resources/project.js";
@@ -137,7 +135,7 @@ function findPythonExecutable(scriptPath: string): string {
         logger.info(`Resolved system Python via which: ${result}`);
         return result;
       }
-    } catch (e) {
+    } catch {
       logger.warn("Failed to resolve python3 via which command");
     }
 

@@ -6,7 +6,6 @@
  */
 
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
 import { logger } from "../logger.js";
 
 // Command function type for KiCAD script calls
