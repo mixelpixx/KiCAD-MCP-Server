@@ -1902,12 +1902,12 @@ SCHEMATIC_TOOLS = [
                 "gridSize": {
                     "type": "number",
                     "description": (
-                        "Grid spacing in mm. "
-                        "Standard KiCAD schematic grid is 2.54 mm (0.1 inch). "
-                        "Use 1.27 mm for high-density layouts. "
-                        "Defaults to 2.54."
+                        "Grid spacing in mm (default: 1.27 — standard KiCAD schematic grid). "
+                        "Do NOT use 2.54: half of all valid KiCAD pin positions are at odd "
+                        "multiples of 1.27 mm and would be displaced 1.27 mm, breaking "
+                        "connectivity."
                     ),
-                    "default": 2.54,
+                    "default": 1.27,
                 },
                 "elements": {
                     "type": "array",

@@ -3121,7 +3121,7 @@ class KiCADInterface:
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
 
-            grid_size = float(params.get("gridSize", 2.54))
+            grid_size = float(params.get("gridSize", 1.27))
             elements = params.get("elements")  # None → defaults inside snap_to_grid
 
             result = snap_to_grid(Path(schematic_path), grid_size=grid_size, elements=elements)

@@ -4,9 +4,18 @@ Snap-to-grid tool for KiCAD schematics.
 Snaps wire endpoints, junction positions, net labels, and optionally component
 positions to the nearest grid point. Modifies the schematic file in place.
 
-The standard KiCAD eeschema grid is 2.54 mm (0.1 inch). Off-grid coordinates
-cause wires that appear visually connected to fail ERC connectivity checks
-because KiCAD uses exact integer (IU) matching internally.
+The standard KiCAD schematic grid is 50 mil (1.27 mm). Component pins are
+placed at multiples of 1.27 mm relative to the symbol origin, so absolute pin
+coordinates end up as odd multiples of 1.27 mm (e.g. 26.67 mm = 21 × 1.27 mm).
+These are valid on-grid positions that must not be moved.
+
+The coarser 2.54 mm (100-mil) grid is a common mistake: exactly half of all
+valid 1.27 mm positions are not multiples of 2.54 mm and would be displaced by
+1.27 mm — moving labels or wire endpoints off their pins and breaking
+connectivity.
+
+Off-grid coordinates cause wires that appear visually connected to fail ERC
+connectivity checks because KiCAD uses exact integer (IU) matching internally.
 """
 
 import logging
@@ -18,7 +27,7 @@ from sexpdata import Symbol
 
 logger = logging.getLogger("kicad_interface")
 
-_DEFAULT_GRID_MM: float = 2.54
+_DEFAULT_GRID_MM: float = 1.27
 
 # Element type names exposed in the public API
 _VALID_ELEMENTS = frozenset({"wires", "junctions", "labels", "components"})
@@ -91,7 +100,10 @@ def snap_to_grid(
 
     Args:
         schematic_path: Path to the ``.kicad_sch`` file.
-        grid_size:      Grid spacing in mm (default 2.54 mm = 0.1 inch).
+        grid_size:      Grid spacing in mm (default 1.27 mm = 50 mil).
+                        Do NOT use 2.54 mm — half of all valid KiCAD pin
+                        positions fall between 2.54 mm grid lines and would
+                        be displaced 1.27 mm, breaking connectivity.
         elements:       List of element types to snap.  Valid values:
                         ``"wires"``, ``"junctions"``, ``"labels"``,
                         ``"components"``.  Defaults to

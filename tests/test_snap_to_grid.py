@@ -203,7 +203,7 @@ class TestSnapDefaults:
         path = _make_temp_schematic(extra)
         result = snap_to_grid(path)  # defaults: grid=2.54, elements=None
         assert result["snapped"] >= 3
-        assert result["grid_size"] == pytest.approx(2.54)
+        assert result["grid_size"] == pytest.approx(1.27)
 
     def test_idempotent(self):
         path = _make_temp_schematic(_wire_sexp(2.51, 5.03, 7.56, 5.03))
@@ -212,6 +212,23 @@ class TestSnapDefaults:
         snap_to_grid(path, grid_size=2.54)
         content_after_second = path.read_text(encoding="utf-8")
         assert content_after_first == content_after_second
+
+    def test_default_grid_is_1_27mm(self):
+        # Regression: default was 2.54 mm, which displaces valid KiCAD pin
+        # coordinates that fall on the 50-mil (1.27 mm) grid but not on the
+        # 100-mil (2.54 mm) grid — e.g. 26.67 mm = 21 × 1.27 mm.
+        # With the correct 1.27 mm default those coordinates must be left
+        # untouched (snapped == 0, already_on_grid >= 1).
+        # 26.67 / 2.54 == 10.5 → would snap to 25.40 mm (off by 1.27 mm).
+        # 26.67 / 1.27 == 21.0 → already on grid, no move.
+        path = _make_temp_schematic(_wire_sexp(335.28, 26.67, 350.52, 26.67))
+        result = snap_to_grid(path)  # default grid
+        assert result["grid_size"] == pytest.approx(1.27)
+        assert result["snapped"] == 0, (
+            "Wire at valid 50-mil pin coordinates was displaced by default snap — "
+            "default grid must be 1.27 mm, not 2.54 mm"
+        )
+        assert result["already_on_grid"] >= 1
 
     def test_custom_grid(self):
         # 1.27 mm grid — wire at 1.25 should snap to 1.27
