@@ -51,6 +51,7 @@ npm run build
 
 ### Documentation
 
+- [**Full README**](../README.md) — complete documentation
 - [Quick Start (Router Tools)](../docs/ROUTER_QUICK_START.md) — first steps
 - [Tool Inventory](../docs/TOOL_INVENTORY.md) — all available tools
 - [Schematic Tools Reference](../docs/SCHEMATIC_TOOLS_REFERENCE.md)
@@ -110,6 +111,7 @@ npm run build
 
 ### Dokumentation
 
+- [**Vollständige README**](../README.md) — komplette Dokumentation
 - [Schnellstart (Router Tools)](../docs/ROUTER_QUICK_START.md) — erste Schritte
 - [Werkzeug-Übersicht](../docs/TOOL_INVENTORY.md) — alle verfügbaren Werkzeuge
 - [Schaltplan-Werkzeuge](../docs/SCHEMATIC_TOOLS_REFERENCE.md)
