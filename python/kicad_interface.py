@@ -13,7 +13,7 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from resources.resource_definitions import RESOURCE_DEFINITIONS, handle_resource_read
 
@@ -1579,6 +1579,24 @@ class KiCADInterface:
                     ),
                 }
 
+            # Collect existing net names BEFORE adding the new label so we can
+            # detect case-mismatch collisions against pre-existing nets only.
+            existing_net_names: List[str] = []
+            try:
+                pre_schematic = SchematicManager.load_schematic(schematic_path)
+                if pre_schematic is not None:
+                    if hasattr(pre_schematic, "label"):
+                        for lbl in pre_schematic.label:
+                            if hasattr(lbl, "value"):
+                                existing_net_names.append(lbl.value)
+                    if hasattr(pre_schematic, "global_label"):
+                        for lbl in pre_schematic.global_label:
+                            if hasattr(lbl, "value"):
+                                existing_net_names.append(lbl.value)
+            except Exception:
+                # Non-fatal: if we can't read existing nets, skip the warning
+                existing_net_names = []
+
             # Use WireManager for S-expression manipulation
             success = WireManager.add_label(
                 Path(schematic_path),
@@ -1591,6 +1609,15 @@ class KiCADInterface:
             if not success:
                 return {"success": False, "message": "Failed to add net label"}
 
+            # Compute case-mismatch warnings against pre-existing net names.
+            # A collision is: existing name != new name, but lowercases match.
+            new_name_lower = net_name.lower()
+            case_warnings: List[str] = [
+                f"Net '{existing}' already exists — label '{net_name}' may be a case mismatch."
+                for existing in existing_net_names
+                if existing.lower() == new_name_lower and existing != net_name
+            ]
+
             response: Dict[str, Any] = {
                 "success": True,
                 "message": f"Added net label '{net_name}' at {position}",
@@ -1602,6 +1629,8 @@ class KiCADInterface:
                     f"Added net label '{net_name}' at exact pin endpoint "
                     f"{component_ref}/{pin_number} ({position[0]}, {position[1]})"
                 )
+            if case_warnings:
+                response["case_warnings"] = case_warnings
             return response
 
         except Exception as e:
