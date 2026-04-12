@@ -120,15 +120,34 @@ Connect two component pins with a wire. Use this for individual connections betw
 
 Add a net label to the schematic.
 
-| Parameter     | Type   | Required | Description                                |
-| ------------- | ------ | -------- | ------------------------------------------ |
-| schematicPath | string | Yes      | Path to the schematic file                 |
-| netName       | string | Yes      | Name of the net (e.g., VCC, GND, SIGNAL_1) |
-| position      | array  | Yes      | Position [x, y] for the label              |
+**Preferred usage — snap to pin:** supply `componentRef` + `pinNumber` and the label is placed at the exact pin endpoint resolved by `PinLocator`. This guarantees an electrical connection. A 0.01 mm offset is enough to break the connection in KiCad, so this mode eliminates all guesswork.
+
+**Alternative — explicit position:** supply `position [x, y]`. The coordinates must match a pin or wire endpoint exactly; use `get_schematic_pin_locations` first to obtain them.
+
+| Parameter     | Type           | Required | Description                                                            |
+| ------------- | -------------- | -------- | ---------------------------------------------------------------------- |
+| schematicPath | string         | Yes      | Path to the schematic file                                             |
+| netName       | string         | Yes      | Name of the net (e.g., VCC, GND, SIGNAL_1)                             |
+| position      | array [x, y]   | No\*     | Explicit position. Required when `componentRef`/`pinNumber` not given. |
+| componentRef  | string         | No\*     | Component reference to snap to (e.g. U1). Use with `pinNumber`.        |
+| pinNumber     | string\|number | No\*     | Pin number or name (e.g. `"1"`, `"GND"`). Use with `componentRef`.     |
+| labelType     | string         | No       | `label` (default), `global_label`, or `hierarchical_label`             |
+| orientation   | number         | No       | Rotation angle: 0, 90, 180, 270 (default: 0)                           |
+
+\* Either `position` **or** (`componentRef` + `pinNumber`) is required.
+
+**Response fields:**
+
+| Field           | Description                                                  |
+| --------------- | ------------------------------------------------------------ |
+| success         | `true` / `false`                                             |
+| actual_position | `[x, y]` coordinates where the label was actually placed     |
+| snapped_to_pin  | `{component, pin}` — present only when pin-snapping was used |
+| message         | Human-readable status                                        |
 
 ### connect_to_net
 
-Connect a component pin to a named net.
+Connect a component pin to a named net by adding a wire stub from the pin endpoint and placing a net label at the stub's far end. The exact pin coordinates are resolved internally via `PinLocator`.
 
 | Parameter     | Type   | Required | Description                        |
 | ------------- | ------ | -------- | ---------------------------------- |
@@ -137,7 +156,17 @@ Connect a component pin to a named net.
 | pinName       | string | Yes      | Pin name/number to connect         |
 | netName       | string | Yes      | Name of the net to connect to      |
 
-**Usage Notes:** Creates a wire stub from the pin and places a net label at the stub endpoint. The stub direction follows the pin's outward angle. Default stub length is 2.54mm (0.1 inch, standard grid spacing).
+**Response fields:**
+
+| Field          | Description                                |
+| -------------- | ------------------------------------------ |
+| success        | `true` / `false`                           |
+| pin_location   | `[x, y]` exact pin endpoint used           |
+| label_location | `[x, y]` where the net label was placed    |
+| wire_stub      | `[[x1,y1],[x2,y2]]` the wire segment added |
+| message        | Human-readable status                      |
+
+**Usage Notes:** Creates a wire stub from the pin and places a net label at the stub endpoint. The stub direction follows the pin's outward angle. Default stub length is 2.54 mm (0.1 inch, standard grid spacing). Check `pin_location` in the response to confirm the correct pin was found; no separate verification call is needed.
 
 ### connect_passthrough
 
@@ -155,7 +184,7 @@ Connects all pins of a source connector (e.g. J1) to matching pins of a target c
 
 ### get_schematic_pin_locations
 
-Returns the exact x/y coordinates of every pin on a schematic component. Use this before add_schematic_net_label to place labels correctly on pin endpoints.
+Returns the exact x/y coordinates of every pin on a schematic component. Useful for inspection or when building custom placement logic. When the goal is to connect a pin to a net, prefer `add_schematic_net_label` with `componentRef`+`pinNumber` (which calls this internally) or `connect_to_net` — both snap to the exact pin endpoint automatically.
 
 | Parameter     | Type   | Required | Description                                      |
 | ------------- | ------ | -------- | ------------------------------------------------ |
