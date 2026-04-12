@@ -1524,6 +1524,35 @@ SCHEMATIC_TOOLS = [
         },
     },
     {
+        "name": "get_net_at_point",
+        "title": "Get Net At Point",
+        "description": (
+            "Returns the net name at a given (x, y) coordinate in a schematic, "
+            "or null if no net label or wire endpoint is present at that position. "
+            "Checks net label positions first, then wire endpoints. "
+            "Useful for quickly identifying what net occupies a specific coordinate "
+            "without traversing the full wire graph."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the schematic file (.kicad_sch)",
+                },
+                "x": {
+                    "type": "number",
+                    "description": "X coordinate in mm",
+                },
+                "y": {
+                    "type": "number",
+                    "description": "Y coordinate in mm",
+                },
+            },
+            "required": ["schematicPath", "x", "y"],
+        },
+    },
+    {
         "name": "get_pin_net",
         "title": "Get Pin Net",
         "description": (

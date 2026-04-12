@@ -1426,6 +1426,46 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
   );
 
   server.tool(
+    "get_net_at_point",
+    "Returns the net name at a given (x, y) coordinate in a schematic, or null if no net label " +
+      "or wire endpoint is present at that position. Faster than get_pin_net when you only need " +
+      "the net name at a known coordinate and don't need pin traversal.",
+    {
+      schematicPath: z.string().describe("Path to the schematic file (.kicad_sch)"),
+      x: z.number().describe("X coordinate in mm"),
+      y: z.number().describe("Y coordinate in mm"),
+    },
+    async (args: { schematicPath: string; x: number; y: number }) => {
+      const result = await callKicadScript("get_net_at_point", args);
+      if (result.success) {
+        const netName = result.net_name ?? null;
+        const source = result.source ?? null;
+        const pos = result.position;
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Net at (${pos?.x ?? args.x}, ${pos?.y ?? args.y}): ` +
+                (netName !== null ? netName : "(none)") +
+                (source ? ` [source: ${source}]` : ""),
+            },
+          ],
+        };
+      } else {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Failed to get net at point: ${result.message || "Unknown error"}`,
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  server.tool(
     "get_pin_net",
     "Returns the net name and all connected pins for a component pin (reference + pin number) " +
       "or a schematic coordinate (x, y in mm). Use this instead of list_schematic_nets + " +

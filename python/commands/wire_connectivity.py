@@ -331,3 +331,53 @@ def get_pin_net(schematic: Any, schematic_path: str, x_mm: float, y_mm: float) -
         pins = _find_pins_on_net(net_points, schematic_path, schematic)
 
     return {"net": net, "pins": pins, "wires": wires_out, "query_point": {"x": x_mm, "y": y_mm}}
+
+
+def get_net_at_point(
+    schematic: Any, schematic_path: str, x_mm: float, y_mm: float
+) -> Dict[str, Any]:
+    """Return the net name at the given coordinate, or null if none found.
+
+    Checks net label positions first (exact IU match within tolerance), then
+    wire endpoints. Returns a dict with keys:
+      - "net_name": str or None
+      - "position": {"x": float, "y": float}
+      - "source": "net_label" | "wire_endpoint" | None
+    """
+    query_iu = _to_iu(x_mm, y_mm)
+    position = {"x": x_mm, "y": y_mm}
+
+    # Build label map from schematic
+    point_to_label, _ = _parse_virtual_connections(schematic, schematic_path)
+
+    # Check if query point is exactly on a net label / power symbol position
+    label_name = point_to_label.get(query_iu)
+    if label_name is not None:
+        return {"net_name": label_name, "position": position, "source": "net_label"}
+
+    # Check if query point is on a wire endpoint
+    all_wires = _parse_wires(schematic) if hasattr(schematic, "wire") else []
+    if all_wires:
+        _, iu_to_wires = _build_adjacency(all_wires)
+        if query_iu in iu_to_wires:
+            # Found a wire endpoint — trace the net to get the name
+            adjacency, _ = _build_adjacency(all_wires)
+            visited, net_points = _find_connected_wires(
+                x_mm,
+                y_mm,
+                all_wires,
+                iu_to_wires,
+                adjacency,
+                point_to_label=point_to_label,
+                label_to_points=None,
+            )
+            if visited is not None:
+                net: Optional[str] = None
+                if net_points:
+                    for pt in net_points:
+                        net = point_to_label.get(pt)
+                        if net is not None:
+                            break
+                return {"net_name": net, "position": position, "source": "wire_endpoint"}
+
+    return {"net_name": None, "position": position, "source": None}

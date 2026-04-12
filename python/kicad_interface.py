@@ -382,6 +382,7 @@ class KiCADInterface:
             "get_schematic_pin_locations": self._handle_get_schematic_pin_locations,
             "get_net_connections": self._handle_get_net_connections,
             "get_wire_connections": self._handle_get_wire_connections,
+            "get_net_at_point": self._handle_get_net_at_point,
             "get_pin_net": self._handle_get_pin_net,
             "run_erc": self._handle_run_erc,
             "generate_netlist": self._handle_generate_netlist,
@@ -2499,6 +2500,40 @@ class KiCADInterface:
 
         except Exception as e:
             logger.error(f"Error getting wire connections: {str(e)}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_get_net_at_point(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the net name at a given (x, y) coordinate, or null if none found."""
+        logger.info("Getting net at point")
+        try:
+            from commands.wire_connectivity import get_net_at_point
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "Missing required parameter: schematicPath"}
+
+            x = params.get("x")
+            y = params.get("y")
+            if x is None or y is None:
+                return {"success": False, "message": "Missing required parameters: x and y"}
+
+            try:
+                x, y = float(x), float(y)
+            except (TypeError, ValueError):
+                return {"success": False, "message": "Parameters x and y must be numeric"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            result = get_net_at_point(schematic, schematic_path, x, y)
+            return {"success": True, **result}
+
+        except Exception as e:
+            logger.error(f"Error getting net at point: {str(e)}")
             import traceback
 
             logger.error(traceback.format_exc())
