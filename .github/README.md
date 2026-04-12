@@ -74,6 +74,21 @@ npm run build
 > All code has been reviewed, tested, and integrated by the maintainers.  
 > AI tools were used to accelerate development — creative decisions, architecture, and responsibility remain entirely with the authors.
 
+### Disclaimer
+
+> **No Warranty — Use at Your Own Risk**
+>
+> This project is provided without any warranty, express or implied. The authors and contributors accept no liability for damages of any kind arising from the use or inability to use this software, including but not limited to:
+>
+> - Errors in generated schematics, PCB layouts, or manufacturing files
+> - Damage to hardware, components, or devices caused by incorrect designs
+> - Financial losses due to manufacturing errors or incorrect orders
+> - Data loss or corruption of KiCAD project files
+>
+> AI-generated design suggestions do not replace qualified engineering review. Safety-critical applications (medical, aerospace, automotive, etc.) require mandatory independent expert verification.
+>
+> This project is licensed under the MIT License — which likewise excludes all liability.
+
 ---
 
 ## Deutsch
@@ -134,6 +149,21 @@ npm run build
 > Sämtlicher Code wurde von den Maintainern geprüft, getestet und integriert.  
 > KI-Werkzeuge dienten der Entwicklungsbeschleunigung — kreative Entscheidungen, Architektur und Verantwortung liegen ausschließlich bei den Autoren.
 
+### Haftungsausschluss
+
+> **Keine Haftung — Nutzung auf eigene Verantwortung**
+>
+> Dieses Projekt wird ohne jegliche Gewährleistung bereitgestellt — weder ausdrücklich noch stillschweigend. Die Autoren und Mitwirkenden übernehmen keinerlei Haftung für Schäden jeder Art, die durch die Nutzung oder Nichtnutzung dieser Software entstehen, einschließlich aber nicht beschränkt auf:
+>
+> - Fehler in erzeugten Schaltplänen, PCB-Layouts oder Fertigungsdateien
+> - Schäden an Hardware, Bauteilen oder Geräten durch fehlerhafte Designs
+> - Finanzielle Verluste durch Fehlproduktionen oder Fehlerbestellungen
+> - Datenverlust oder Beschädigung von KiCAD-Projektdateien
+>
+> KI-generierte Design-Vorschläge ersetzen keine qualifizierte ingenieurtechnische Prüfung. Sicherheitskritische Anwendungen (Medizintechnik, Luftfahrt, Automotive o.ä.) erfordern zwingend eine unabhängige Fachprüfung.
+>
+> Dieses Projekt steht unter der MIT-Lizenz — die Lizenz schließt ebenfalls jede Haftung aus.
+
 ---
 
 ## 中文
@@ -193,3 +223,18 @@ npm run build
 > 本项目在 AI 辅助编码工具（GitHub Copilot、Claude）的支持下开发完成。  
 > 所有代码均经过维护者的审查、测试和集成。  
 > AI 工具用于加速开发 — 创意决策、架构设计和责任归属完全由作者承担。
+
+### 免责声明
+
+> **不提供任何保证 — 使用风险自负**
+>
+> 本项目按现状提供，不附带任何明示或暗示的保证。作者和贡献者对因使用或无法使用本软件而造成的任何类型的损害不承担任何责任，包括但不限于：
+>
+> - 生成的原理图、PCB 布局或生产文件中的错误
+> - 因设计错误导致的硬件、元件或设备损坏
+> - 因生产错误或错误订单造成的经济损失
+> - KiCAD 项目文件的数据丢失或损坏
+>
+> AI 生成的设计建议不能替代专业工程师审查。安全关键型应用（医疗、航空航天、汽车等）必须进行独立的专业验证。
+>
+> 本项目采用 MIT 许可证 — 该许可证同样排除一切责任。
