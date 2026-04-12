@@ -18,11 +18,11 @@
 
 ## English
 
-**KiCAD MCP Server** is a Model Context Protocol server that lets AI assistants like Claude control KiCAD for schematic and PCB design workflows — using natural language.
+**KiCAD MCP Server** is a Model Context Protocol (MCP) server that enables AI assistants like Claude to interact with KiCAD for PCB design automation. Built on the MCP 2025-06-18 specification, this server provides comprehensive tool schemas and real-time project state access for intelligent PCB design workflows.
 
 ### Design PCBs with natural language
 
-Describe what you want to build — and let AI handle the EDA work. Place components, create custom symbols and footprints, route connections, run checks, and export production files, all by talking to your AI assistant. No fighting menus, no looking up obscure settings.
+Describe what you want to build — and let AI handle the EDA work. Place components, create custom symbols and footprints, route connections, run checks, and export production files, all by talking to your AI assistant.
 
 ### What it can do today
 
@@ -77,11 +77,11 @@ npm run build
 
 ## Deutsch
 
-**KiCAD MCP Server** ist ein Model Context Protocol Server, der KI-Assistenten wie Claude ermöglicht, KiCAD für Schaltplan- und PCB-Workflows per natürlicher Sprache zu steuern.
+**KiCAD MCP Server** ist ein Model Context Protocol (MCP) Server, der KI-Assistenten wie Claude ermöglicht, mit KiCAD für die PCB-Design-Automatisierung zu interagieren. Aufgebaut auf der MCP-Spezifikation 2025-06-18, bietet dieser Server umfassende Tool-Schemas und Echtzeit-Projektzugriff für intelligente PCB-Design-Workflows.
 
 ### PCBs mit natürlicher Sprache designen
 
-Beschreibe was du bauen möchtest — und lass die KI die EDA-Arbeit übernehmen. Bauteile platzieren, eigene Symbole und Footprints erstellen, Verbindungen routen, Prüfungen ausführen und Fertigungsdateien exportieren — alles im Gespräch mit deinem KI-Assistenten. Kein Menü-Kampf, kein Nachschlagen obskurer Einstellungen.
+Beschreibe was du bauen möchtest — und lass die KI die EDA-Arbeit übernehmen. Bauteile platzieren, eigene Symbole und Footprints erstellen, Verbindungen routen, Prüfungen ausführen und Fertigungsdateien exportieren — alles im Gespräch mit deinem KI-Assistenten.
 
 ### Was es heute kann
 
