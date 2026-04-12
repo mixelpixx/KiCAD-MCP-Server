@@ -268,7 +268,7 @@ Checks net label / power symbol positions first (exact IU match), then wire endp
 | position | `{"x": float, "y": float}` — echoes the query coordinates               |
 | source   | `"net_label"` \| `"wire_endpoint"` \| `null` — how the net was resolved |
 
-## Schematic Creation and Export (5 tools)
+## Schematic Creation and Export (6 tools)
 
 ### create_schematic
 
@@ -312,13 +312,27 @@ Return a rasterized image of the schematic (PNG by default, or SVG). Uses kicad-
 
 ### generate_netlist
 
-Generate a netlist from the schematic.
+Return a structured JSON netlist from the schematic for programmatic use. Uses `kicad-cli` internally — the schematic file must be saved to disk first.
 
-| Parameter     | Type   | Required | Description                |
-| ------------- | ------ | -------- | -------------------------- |
-| schematicPath | string | Yes      | Path to the schematic file |
+| Parameter     | Type   | Required | Description                                    |
+| ------------- | ------ | -------- | ---------------------------------------------- |
+| schematicPath | string | Yes      | Absolute path to the .kicad_sch schematic file |
 
-**Usage Notes:** Returns a complete netlist with component information (reference, value, footprint) and net connections (net name with all connected component/pin pairs).
+**Returns:** `{ components: [{reference, value, footprint}], nets: [{name, connections: [{component, pin}]}] }`
+
+**Usage Notes:** Use this when you need net membership data in the conversation (e.g., to verify connectivity). For writing a netlist to a file or exporting SPICE/Cadstar/OrcadPCB2 format, use `export_netlist` instead.
+
+### export_netlist
+
+Export a netlist to a file in a standard EDA format using `kicad-cli`. Supports SPICE (for simulation), KiCad XML (for archiving/import), Cadstar, and OrcadPCB2.
+
+| Parameter     | Type   | Required | Description                                                  |
+| ------------- | ------ | -------- | ------------------------------------------------------------ |
+| schematicPath | string | Yes      | Absolute path to the .kicad_sch schematic file               |
+| outputPath    | string | Yes      | Absolute path for the output file (e.g. `/tmp/design.spice`) |
+| format        | enum   | No       | `KiCad` (default), `Spice`, `Cadstar`, `OrcadPCB2`           |
+
+**Usage Notes:** The schematic file must be saved before calling this tool. Use `Spice` format to produce a SPICE netlist for simulation or diff against a reference. The output file is created or overwritten at `outputPath`.
 
 ## Validation and Synchronization (6 tools)
 
