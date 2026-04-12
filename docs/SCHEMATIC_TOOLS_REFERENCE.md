@@ -211,7 +211,7 @@ Remove a net label from the schematic.
 | netName       | string | Yes      | Name of the net label to remove                                                  |
 | position      | object | No       | Position to disambiguate if multiple labels with same name (x and y coordinates) |
 
-## Net Analysis (4 tools)
+## Net Analysis (5 tools)
 
 ### get_net_connections
 
@@ -247,6 +247,26 @@ List all net labels, global labels, and power flags in the schematic.
 | Parameter     | Type   | Required | Description                 |
 | ------------- | ------ | -------- | --------------------------- |
 | schematicPath | string | Yes      | Path to the .kicad_sch file |
+
+### get_net_at_point
+
+Return the net name at a given (x, y) coordinate, or `null` if no net label or wire endpoint is present there.
+
+Checks net label / power symbol positions first (exact IU match), then wire endpoints. Faster than `get_wire_connections` when you only need the net name and not full pin traversal.
+
+| Parameter     | Type   | Required | Description                           |
+| ------------- | ------ | -------- | ------------------------------------- |
+| schematicPath | string | Yes      | Path to the .kicad_sch schematic file |
+| x             | number | Yes      | X coordinate in mm                    |
+| y             | number | Yes      | Y coordinate in mm                    |
+
+**Response fields:**
+
+| Field    | Description                                                             |
+| -------- | ----------------------------------------------------------------------- |
+| net_name | Net label string, or `null` if no net found at this point               |
+| position | `{"x": float, "y": float}` — echoes the query coordinates               |
+| source   | `"net_label"` \| `"wire_endpoint"` \| `null` — how the net was resolved |
 
 ## Schematic Creation and Export (5 tools)
 
@@ -300,7 +320,52 @@ Generate a netlist from the schematic.
 
 **Usage Notes:** Returns a complete netlist with component information (reference, value, footprint) and net connections (net name with all connected component/pin pairs).
 
-## Validation and Synchronization (3 tools)
+## Validation and Synchronization (6 tools)
+
+### list_floating_labels
+
+Return all net labels that are not connected to any component pin.
+
+A label is "floating" when no component pin's coordinate falls on the wire-network reachable from the label's anchor position. Floating labels indicate misplaced or off-grid labels that will cause ERC errors. Does not require the KiCAD UI to be running.
+
+| Parameter     | Type   | Required | Description                           |
+| ------------- | ------ | -------- | ------------------------------------- |
+| schematicPath | string | Yes      | Path to the .kicad_sch schematic file |
+
+**Response fields:** list of `{"name": str, "x": float, "y": float, "type": "label" | "global_label"}`.
+
+### find_orphaned_wires
+
+Find wire segments with at least one dangling endpoint — not connected to a component pin, net label, or another wire. Orphaned wires cause ERC "wire end unconnected" errors. Does not require the KiCAD UI to be running.
+
+| Parameter     | Type   | Required | Description                           |
+| ------------- | ------ | -------- | ------------------------------------- |
+| schematicPath | string | Yes      | Path to the .kicad_sch schematic file |
+
+**Response fields:**
+
+| Field          | Description                                                                  |
+| -------------- | ---------------------------------------------------------------------------- |
+| orphaned_wires | List of `{"start": {x,y}, "end": {x,y}, "dangling_ends": [{x,y}, ...]}` (mm) |
+| count          | Total number of orphaned wire segments                                       |
+
+### snap_to_grid
+
+Snap schematic element coordinates to the nearest grid point. KiCAD uses exact integer matching (10 000 IU/mm) internally, so even a sub-pixel offset makes wires appear connected visually while failing ERC. Run this before `run_erc` to eliminate that class of error. Modifies the `.kicad_sch` file in place. Does not require the KiCAD UI to be running.
+
+| Parameter     | Type            | Required | Description                                                                                                                                                                                                          |
+| ------------- | --------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| schematicPath | string          | Yes      | Path to the .kicad_sch schematic file                                                                                                                                                                                |
+| gridSize      | number          | No       | Grid spacing in mm (default: 2.54 — standard KiCAD schematic grid; use 1.27 for high-density)                                                                                                                        |
+| elements      | array\<string\> | No       | Types to snap: `"wires"`, `"junctions"`, `"labels"`, `"components"`. Default: `["wires", "junctions", "labels"]`. `"components"` is opt-in — moving a component without re-routing its wires creates new mismatches. |
+
+**Response fields:**
+
+| Field           | Description                                               |
+| --------------- | --------------------------------------------------------- |
+| snapped         | Number of elements that had at least one coordinate moved |
+| already_on_grid | Number of elements already on the grid                    |
+| grid_size       | Grid spacing used (mm)                                    |
 
 ### run_erc
 
