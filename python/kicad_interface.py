@@ -382,6 +382,7 @@ class KiCADInterface:
             "get_schematic_pin_locations": self._handle_get_schematic_pin_locations,
             "get_net_connections": self._handle_get_net_connections,
             "get_wire_connections": self._handle_get_wire_connections,
+            "get_pin_net": self._handle_get_pin_net,
             "run_erc": self._handle_run_erc,
             "generate_netlist": self._handle_generate_netlist,
             "sync_schematic_to_board": self._handle_sync_schematic_to_board,
@@ -2498,6 +2499,70 @@ class KiCADInterface:
 
         except Exception as e:
             logger.error(f"Error getting wire connections: {str(e)}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_get_pin_net(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Find net name and all connected pins for a reference+pin or coordinate query"""
+        logger.info("Getting pin net")
+        try:
+            from pathlib import Path
+
+            from commands.pin_locator import PinLocator
+            from commands.wire_connectivity import get_pin_net
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "Missing required parameter: schematicPath"}
+
+            reference = params.get("reference")
+            pin = params.get("pin")
+            x = params.get("x")
+            y = params.get("y")
+
+            has_ref_pin = reference is not None and pin is not None
+            has_coords = x is not None and y is not None
+
+            if not has_ref_pin and not has_coords:
+                return {
+                    "success": False,
+                    "message": "Must supply either {reference, pin} or {x, y}",
+                }
+
+            if has_ref_pin:
+                location = PinLocator().get_pin_location(Path(schematic_path), reference, str(pin))
+                if location is None:
+                    return {
+                        "success": False,
+                        "message": f"Pin {pin} not found on {reference}",
+                    }
+                x, y = location[0], location[1]
+            else:
+                try:
+                    x, y = float(x), float(y)
+                except (TypeError, ValueError):
+                    return {"success": False, "message": "Parameters x and y must be numeric"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            if not hasattr(schematic, "wire"):
+                return {"success": False, "message": "Schematic has no wires"}
+
+            result = get_pin_net(schematic, schematic_path, x, y)
+            if result is None:
+                return {
+                    "success": False,
+                    "message": f"No wire found at ({x},{y}) — pin may not be connected",
+                }
+
+            return {"success": True, **result}
+
+        except Exception as e:
+            logger.error(f"Error getting pin net: {str(e)}")
             import traceback
 
             logger.error(traceback.format_exc())

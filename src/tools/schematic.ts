@@ -1424,4 +1424,61 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       };
     },
   );
+
+  server.tool(
+    "get_pin_net",
+    "Returns the net name and all connected pins for a component pin (reference + pin number) " +
+      "or a schematic coordinate (x, y in mm). Use this instead of list_schematic_nets + " +
+      "get_wire_connections when you want to answer 'what net is pin 3 of U1 on?'. " +
+      "Returns net=null for unnamed (unlabelled) nets.",
+    {
+      schematicPath: z.string().describe("Path to the schematic file"),
+      reference: z
+        .string()
+        .optional()
+        .describe("Component reference (e.g. U1, R1). Pair with pin."),
+      pin: z
+        .string()
+        .optional()
+        .describe("Pin number or name (e.g. '3', 'SDA'). Pair with reference."),
+      x: z.number().optional().describe("X coordinate of a wire endpoint in mm. Pair with y."),
+      y: z.number().optional().describe("Y coordinate of a wire endpoint in mm. Pair with x."),
+    },
+    async (args: {
+      schematicPath: string;
+      reference?: string;
+      pin?: string;
+      x?: number;
+      y?: number;
+    }) => {
+      const result = await callKicadScript("get_pin_net", args);
+      if (result.success) {
+        const netLabel = result.net ?? "(unnamed)";
+        const pinList = (result.pins ?? [])
+          .map((p: any) => `  - ${p.component}/${p.pin}`)
+          .join("\n");
+        const qp = result.query_point;
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Net: ${netLabel}\n` +
+                `Query point: (${qp?.x ?? args.x}, ${qp?.y ?? args.y})\n` +
+                `Connected pins:\n${pinList || "  (none found)"}`,
+            },
+          ],
+        };
+      } else {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Failed to get pin net: ${result.message || "Unknown error"}`,
+            },
+          ],
+        };
+      }
+    },
+  );
 }

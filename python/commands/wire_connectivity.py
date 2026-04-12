@@ -273,3 +273,61 @@ def get_wire_connections(
 
     pins = _find_pins_on_net(net_points, schematic_path, schematic)
     return {"pins": pins, "wires": wires_out}
+
+
+def get_pin_net(schematic: Any, schematic_path: str, x_mm: float, y_mm: float) -> Optional[Dict]:
+    """Return the net name and all connected pins for the wire network at (x_mm, y_mm).
+
+    Returns dict with keys:
+      - "net": str or None (net label/power name, None if unnamed)
+      - "pins": list of {"component": str, "pin": str}
+      - "wires": list of {"start": {"x", "y"}, "end": {"x", "y"}} in mm
+      - "query_point": {"x": float, "y": float}
+    Or None if no wire endpoint found at the query point.
+    """
+    all_wires = _parse_wires(schematic)
+    if not all_wires:
+        return {"net": None, "pins": [], "wires": [], "query_point": {"x": x_mm, "y": y_mm}}
+
+    adjacency, iu_to_wires = _build_adjacency(all_wires)
+    point_to_label, label_to_points = _parse_virtual_connections(schematic, schematic_path)
+
+    visited, net_points = _find_connected_wires(
+        x_mm,
+        y_mm,
+        all_wires,
+        iu_to_wires,
+        adjacency,
+        point_to_label=point_to_label,
+        label_to_points=label_to_points,
+    )
+    if visited is None:
+        return None
+
+    # Resolve net name: first label anchor that falls on this net's IU points
+    net: Optional[str] = None
+    for pt in net_points:
+        label = point_to_label.get(pt)
+        if label is not None:
+            net = label
+            break
+
+    wires_out = [
+        {
+            "start": {
+                "x": all_wires[i][0][0] / _IU_PER_MM,
+                "y": all_wires[i][0][1] / _IU_PER_MM,
+            },
+            "end": {
+                "x": all_wires[i][-1][0] / _IU_PER_MM,
+                "y": all_wires[i][-1][1] / _IU_PER_MM,
+            },
+        }
+        for i in visited
+    ]
+
+    pins: List[Dict] = []
+    if hasattr(schematic, "symbol"):
+        pins = _find_pins_on_net(net_points, schematic_path, schematic)
+
+    return {"net": net, "pins": pins, "wires": wires_out, "query_point": {"x": x_mm, "y": y_mm}}

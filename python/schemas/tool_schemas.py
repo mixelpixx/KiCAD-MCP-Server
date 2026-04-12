@@ -1524,6 +1524,44 @@ SCHEMATIC_TOOLS = [
         },
     },
     {
+        "name": "get_pin_net",
+        "title": "Get Pin Net",
+        "description": (
+            "Returns the net name and all connected component pins for a query. "
+            "Accepts either a component reference + pin number (e.g. reference='U1', pin='3') "
+            "or a schematic coordinate (x, y in mm). "
+            "If a net label or power symbol is reachable from the query point, its name is "
+            "returned as 'net'; otherwise 'net' is null (unnamed net). "
+            "The 'pins' list contains every component pin on that same net."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the schematic file (.kicad_sch)",
+                },
+                "reference": {
+                    "type": "string",
+                    "description": "Component reference (e.g. U1, R1). Pair with pin.",
+                },
+                "pin": {
+                    "type": "string",
+                    "description": "Pin number or name (e.g. '3', 'SDA'). Pair with reference.",
+                },
+                "x": {
+                    "type": "number",
+                    "description": "X coordinate of a wire endpoint in mm. Pair with y.",
+                },
+                "y": {
+                    "type": "number",
+                    "description": "Y coordinate of a wire endpoint in mm. Pair with x.",
+                },
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
         "name": "get_schematic_pin_locations",
         "title": "Get Schematic Pin Locations",
         "description": "Returns the exact absolute coordinates of all pins on a schematic component. Use this BEFORE placing net labels with add_schematic_net_label to get the correct x/y position for each pin endpoint.",
