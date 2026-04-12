@@ -384,6 +384,7 @@ class KiCADInterface:
             "get_wire_connections": self._handle_get_wire_connections,
             "get_net_at_point": self._handle_get_net_at_point,
             "run_erc": self._handle_run_erc,
+            "export_netlist": self._handle_export_netlist,
             "generate_netlist": self._handle_generate_netlist,
             "sync_schematic_to_board": self._handle_sync_schematic_to_board,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
@@ -2717,23 +2718,190 @@ class KiCADInterface:
             logger.error(f"Error running ERC: {str(e)}")
             return {"success": False, "message": str(e)}
 
-    def _handle_generate_netlist(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate netlist from schematic"""
-        logger.info("Generating netlist from schematic")
+    # ------------------------------------------------------------------
+    # kicad-cli helper shared by netlist handlers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _find_kicad_cli_static() -> Optional[str]:
+        """Return path to kicad-cli executable, or None."""
+        import platform
+        import shutil
+
+        cli = shutil.which("kicad-cli")
+        if cli:
+            return cli
+
+        system = platform.system()
+        if system == "Windows":
+            candidates = [
+                r"C:\Program Files\KiCad\9.0\bin\kicad-cli.exe",
+                r"C:\Program Files\KiCad\8.0\bin\kicad-cli.exe",
+                r"C:\Program Files (x86)\KiCad\9.0\bin\kicad-cli.exe",
+                r"C:\Program Files (x86)\KiCad\8.0\bin\kicad-cli.exe",
+            ]
+        elif system == "Darwin":
+            candidates = [
+                "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
+                "/usr/local/bin/kicad-cli",
+            ]
+        else:
+            candidates = [
+                "/usr/bin/kicad-cli",
+                "/usr/local/bin/kicad-cli",
+            ]
+        for path in candidates:
+            if os.path.exists(path):
+                return path
+        return None
+
+    # ------------------------------------------------------------------
+
+    def _handle_export_netlist(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export netlist to a file using kicad-cli."""
+        import subprocess
+
+        logger.info("Exporting netlist via kicad-cli")
         try:
             schematic_path = params.get("schematicPath")
+            output_path = params.get("outputPath")
+            fmt = params.get("format", "KiCad")
 
             if not schematic_path:
-                return {"success": False, "message": "Schematic path is required"}
+                return {"success": False, "message": "schematicPath is required"}
+            if not output_path:
+                return {"success": False, "message": "outputPath is required"}
+            if not os.path.exists(schematic_path):
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            netlist = ConnectionManager.generate_netlist(schematic, schematic_path=schematic_path)
-            return {"success": True, "netlist": netlist}
+            fmt_map = {
+                "KiCad": "kicadxml",
+                "Spice": "spice",
+                "Cadstar": "cadstar",
+                "OrcadPCB2": "orcadpcb2",
+            }
+            cli_format = fmt_map.get(fmt, "kicadxml")
+
+            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+
+            cmd = [
+                kicad_cli,
+                "sch",
+                "export",
+                "netlist",
+                "--format",
+                cli_format,
+                "--output",
+                output_path,
+                schematic_path,
+            ]
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+            if result.returncode == 0:
+                return {"success": True, "outputPath": output_path, "format": fmt}
+            else:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): {result.stderr.strip()}",
+                }
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 60 seconds"}
         except Exception as e:
-            logger.error(f"Error generating netlist: {str(e)}")
+            logger.error(f"Error exporting netlist: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_generate_netlist(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate netlist from schematic and return structured JSON.
+
+        Uses kicad-cli to export KiCad XML netlist to a temp file, then
+        parses it into {components, nets} structure expected by the TS handler.
+        """
+        import subprocess
+        import tempfile
+        import xml.etree.ElementTree as ET
+
+        logger.info("Generating netlist from schematic via kicad-cli")
+        try:
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "Schematic path is required"}
+            if not os.path.exists(schematic_path):
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tmp:
+                tmp_path = tmp.name
+
+            try:
+                cmd = [
+                    kicad_cli,
+                    "sch",
+                    "export",
+                    "netlist",
+                    "--format",
+                    "kicadxml",
+                    "--output",
+                    tmp_path,
+                    schematic_path,
+                ]
+                logger.info(f"Running: {' '.join(cmd)}")
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+                if result.returncode != 0:
+                    return {
+                        "success": False,
+                        "message": f"kicad-cli failed (exit {result.returncode}): {result.stderr.strip()}",
+                    }
+
+                tree = ET.parse(tmp_path)
+                root = tree.getroot()
+
+                components = []
+                for comp in root.findall("./components/comp"):
+                    ref = comp.get("ref", "")
+                    value = comp.findtext("value", "")
+                    footprint = comp.findtext("footprint", "")
+                    components.append({"reference": ref, "value": value, "footprint": footprint})
+
+                nets = []
+                for net in root.findall("./nets/net"):
+                    net_name = net.get("name", "")
+                    connections = []
+                    for node in net.findall("node"):
+                        connections.append(
+                            {
+                                "component": node.get("ref", ""),
+                                "pin": node.get("pin", ""),
+                            }
+                        )
+                    nets.append({"name": net_name, "connections": connections})
+
+                logger.info(f"Generated netlist: {len(components)} components, {len(nets)} nets")
+                return {"success": True, "netlist": {"components": components, "nets": nets}}
+
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 60 seconds"}
+        except Exception as e:
+            logger.error(f"Error generating netlist: {e}")
             return {"success": False, "message": str(e)}
 
     def _handle_sync_schematic_to_board(self, params: Dict[str, Any]) -> Dict[str, Any]:

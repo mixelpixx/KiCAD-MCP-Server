@@ -1654,24 +1654,20 @@ SCHEMATIC_TOOLS = [
     },
     {
         "name": "generate_netlist",
-        "title": "Generate Netlist",
-        "description": "Generates a netlist from the schematic showing all components and their net connections.",
+        "title": "Generate Netlist (JSON)",
+        "description": (
+            "Returns a structured JSON netlist from the schematic: component list "
+            "(reference, value, footprint) and net list (net name + all connected "
+            "component/pin pairs). Uses kicad-cli internally — requires a saved "
+            ".kicad_sch file. For writing to a file or exporting SPICE/Cadstar/OrcadPCB2 "
+            "format, use export_netlist instead."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "schematicPath": {
                     "type": "string",
-                    "description": "Path to schematic file",
-                },
-                "outputPath": {
-                    "type": "string",
-                    "description": "Optional path to save netlist file",
-                },
-                "format": {
-                    "type": "string",
-                    "enum": ["kicad", "json", "spice"],
-                    "description": "Netlist output format",
-                    "default": "json",
+                    "description": "Absolute path to the .kicad_sch schematic file",
                 },
             },
             "required": ["schematicPath"],

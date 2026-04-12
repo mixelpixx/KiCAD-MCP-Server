@@ -1152,9 +1152,9 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
   // Generate netlist
   server.tool(
     "generate_netlist",
-    "Generate a netlist from the schematic",
+    "Return a structured JSON netlist from the schematic — component list (reference, value, footprint) and net list (net name with all connected component/pin pairs). Use this to inspect or verify connectivity within the conversation. Does not write any file. To export a netlist file in Spice, KiCad XML, Cadstar, or OrcadPCB2 format, use export_netlist instead.",
     {
-      schematicPath: z.string().describe("Path to the schematic file"),
+      schematicPath: z.string().describe("Absolute path to the .kicad_sch schematic file"),
     },
     async (args: { schematicPath: string }) => {
       const result = await callKicadScript("generate_netlist", args);
