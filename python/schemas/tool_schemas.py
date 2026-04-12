@@ -1399,7 +1399,15 @@ SCHEMATIC_TOOLS = [
     {
         "name": "add_schematic_net_label",
         "title": "Add Net Label",
-        "description": "Adds a net label at exact coordinates on a schematic wire or pin endpoint. WARNING: x/y must match an existing wire endpoint or pin endpoint exactly — placing the label even 0.01mm away from a pin will result in an unconnected pin ERC error. To connect a component pin to a net by reference and pin number (recommended), use connect_to_net instead.",
+        "description": (
+            "Add a net label to a schematic. "
+            "PREFERRED: supply componentRef + pinNumber to snap the label to the exact pin endpoint — "
+            "this guarantees an electrical connection. "
+            "Alternatively supply position [x, y], but the coordinates must match the pin endpoint exactly "
+            "(even a 0.01 mm offset breaks the connection). "
+            "The response includes actual_position (coordinates actually used) and snapped_to_pin "
+            "(present when a pin reference was resolved)."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1411,21 +1419,45 @@ SCHEMATIC_TOOLS = [
                     "type": "string",
                     "description": "Name of the net (e.g., VCC, GND, SDA)",
                 },
-                "x": {"type": "number", "description": "X coordinate on schematic"},
-                "y": {"type": "number", "description": "Y coordinate on schematic"},
-                "rotation": {
+                "position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "description": "Position [x, y] for the label. Required when componentRef/pinNumber are not given.",
+                },
+                "componentRef": {
+                    "type": "string",
+                    "description": "Component reference to snap label to (e.g. U1, R1). Use with pinNumber.",
+                },
+                "pinNumber": {
+                    "type": "string",
+                    "description": "Pin number or name on componentRef (e.g. '1', 'GND'). Use with componentRef.",
+                },
+                "labelType": {
+                    "type": "string",
+                    "enum": ["label", "global_label", "hierarchical_label"],
+                    "description": "Label type (default: label)",
+                    "default": "label",
+                },
+                "orientation": {
                     "type": "number",
                     "description": "Rotation angle in degrees (0, 90, 180, 270)",
                     "default": 0,
                 },
             },
-            "required": ["schematicPath", "netName", "x", "y"],
+            "required": ["schematicPath", "netName"],
         },
     },
     {
         "name": "connect_to_net",
         "title": "Connect Pin to Net",
-        "description": "Intelligently connects a component pin to a named net, automatically routing wires as needed.",
+        "description": (
+            "Connect a component pin to a named net by adding a wire stub and net label at the exact "
+            "pin endpoint. The response includes pin_location (exact pin coords), label_location "
+            "(where the label was placed), and wire_stub (the wire segment added) so you can confirm "
+            "the placement without a separate verification call."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1433,11 +1465,11 @@ SCHEMATIC_TOOLS = [
                     "type": "string",
                     "description": "Path to schematic file",
                 },
-                "reference": {
+                "componentRef": {
                     "type": "string",
                     "description": "Component reference designator (e.g., R1, U3)",
                 },
-                "pinNumber": {
+                "pinName": {
                     "type": "string",
                     "description": "Pin number or name on the component",
                 },
@@ -1446,7 +1478,7 @@ SCHEMATIC_TOOLS = [
                     "description": "Name of the net to connect to",
                 },
             },
-            "required": ["schematicPath", "reference", "pinNumber", "netName"],
+            "required": ["schematicPath", "componentRef", "pinName", "netName"],
         },
     },
     {

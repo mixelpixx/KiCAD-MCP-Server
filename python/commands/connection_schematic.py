@@ -59,9 +59,9 @@ class ConnectionManager:
     @staticmethod
     def connect_to_net(
         schematic_path: Path, component_ref: str, pin_name: str, net_name: str
-    ) -> bool:
+    ) -> Dict[str, Any]:
         """
-        Connect a component pin to a named net using a wire stub and label
+        Connect a component pin to a named net using a wire stub and label.
 
         Args:
             schematic_path: Path to .kicad_sch file
@@ -70,27 +70,32 @@ class ConnectionManager:
             net_name: Name of the net to connect to (e.g., "VCC", "GND", "SIGNAL_1")
 
         Returns:
-            True if successful, False otherwise
+            Dict with keys:
+              success        – bool
+              pin_location   – [x, y] exact pin endpoint used (present on success)
+              label_location – [x, y] where the net label was placed (present on success)
+              wire_stub      – [[x1,y1],[x2,y2]] the wire segment added (present on success)
+              message        – human-readable status
         """
         try:
             if not WIRE_MANAGER_AVAILABLE:
                 logger.error("WireManager/PinLocator not available")
-                return False
+                return {"success": False, "message": "WireManager/PinLocator not available"}
 
             locator = ConnectionManager.get_pin_locator()
             if not locator:
                 logger.error("Pin locator unavailable")
-                return False
+                return {"success": False, "message": "Pin locator unavailable"}
 
             # Get pin location using PinLocator
             pin_loc = locator.get_pin_location(schematic_path, component_ref, pin_name)
             if not pin_loc:
-                logger.error(f"Could not locate pin {component_ref}/{pin_name}")
-                return False
+                msg = f"Could not locate pin {component_ref}/{pin_name}"
+                logger.error(msg)
+                return {"success": False, "message": msg}
 
             # Add a small wire stub from the pin (2.54mm = 0.1 inch, standard grid spacing)
             # Stub direction follows the pin's outward angle from the PinLocator
-            pin_angle_deg = getattr(locator, "_last_pin_angle", 0)
             try:
                 pin_angle_deg = locator.get_pin_angle(schematic_path, component_ref, pin_name) or 0
             except Exception:
@@ -106,26 +111,34 @@ class ConnectionManager:
             # Create wire stub using WireManager
             wire_success = WireManager.add_wire(schematic_path, pin_loc, stub_end)
             if not wire_success:
-                logger.error(f"Failed to create wire stub for net connection")
-                return False
+                msg = "Failed to create wire stub for net connection"
+                logger.error(msg)
+                return {"success": False, "message": msg}
 
             # Add label at the end of the stub using WireManager
             label_success = WireManager.add_label(
                 schematic_path, net_name, stub_end, label_type="label"
             )
             if not label_success:
-                logger.error(f"Failed to add net label '{net_name}'")
-                return False
+                msg = f"Failed to add net label '{net_name}'"
+                logger.error(msg)
+                return {"success": False, "message": msg}
 
             logger.info(f"Connected {component_ref}/{pin_name} to net '{net_name}'")
-            return True
+            return {
+                "success": True,
+                "message": f"Connected {component_ref}/{pin_name} to net '{net_name}'",
+                "pin_location": pin_loc,
+                "label_location": stub_end,
+                "wire_stub": [pin_loc, stub_end],
+            }
 
         except Exception as e:
             logger.error(f"Error connecting to net: {e}")
             import traceback
 
             logger.error(traceback.format_exc())
-            return False
+            return {"success": False, "message": str(e)}
 
     @staticmethod
     def connect_passthrough(
@@ -177,18 +190,18 @@ class ConnectionManager:
                     else f"{net_prefix}_{pin_num}"
                 )
 
-                ok_src = ConnectionManager.connect_to_net(
+                res_src = ConnectionManager.connect_to_net(
                     schematic_path, source_ref, pin_num, net_name
                 )
-                if not ok_src:
+                if not res_src.get("success"):
                     failed.append(f"{source_ref}/{pin_num}")
                     continue
 
                 if pin_num in tgt_pins:
-                    ok_tgt = ConnectionManager.connect_to_net(
+                    res_tgt = ConnectionManager.connect_to_net(
                         schematic_path, target_ref, pin_num, net_name
                     )
-                    if not ok_tgt:
+                    if not res_tgt.get("success"):
                         failed.append(f"{target_ref}/{pin_num}")
                         continue
                 else:

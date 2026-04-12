@@ -1514,9 +1514,16 @@ class KiCADInterface:
             return {"success": False, "message": str(e)}
 
     def _handle_add_schematic_net_label(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Add a net label to schematic using WireManager"""
+        """Add a net label to schematic using WireManager.
+
+        When componentRef and pinNumber are supplied the label is placed at the
+        exact pin endpoint retrieved via PinLocator, ignoring the provided
+        position.  The response includes the actual coordinates used and
+        whether the label landed on a pin endpoint.
+        """
         logger.info("Adding net label to schematic")
         try:
+            import traceback
             from pathlib import Path
 
             from commands.wire_manager import WireManager
@@ -1524,13 +1531,48 @@ class KiCADInterface:
             schematic_path = params.get("schematicPath")
             net_name = params.get("netName")
             position = params.get("position")
-            label_type = params.get(
-                "labelType", "label"
-            )  # 'label', 'global_label', 'hierarchical_label'
-            orientation = params.get("orientation", 0)  # 0, 90, 180, 270
+            label_type = params.get("labelType", "label")
+            orientation = params.get("orientation", 0)
+            component_ref = params.get("componentRef")
+            pin_number = params.get("pinNumber")
 
-            if not all([schematic_path, net_name, position]):
-                return {"success": False, "message": "Missing required parameters"}
+            if not all([schematic_path, net_name]):
+                return {
+                    "success": False,
+                    "message": "Missing required parameters: schematicPath, netName",
+                }
+
+            snapped_to_pin: Optional[Dict[str, Any]] = None
+
+            if component_ref and pin_number:
+                # Snap position to exact pin endpoint using PinLocator
+                from commands.pin_locator import PinLocator
+
+                locator = PinLocator()
+                pin_loc = locator.get_pin_location(
+                    Path(schematic_path), component_ref, str(pin_number)
+                )
+                if pin_loc is None:
+                    return {
+                        "success": False,
+                        "message": (
+                            f"Could not locate pin {pin_number} on {component_ref}. "
+                            "Check the reference and pin number."
+                        ),
+                    }
+                position = pin_loc
+                snapped_to_pin = {"component": component_ref, "pin": str(pin_number)}
+                logger.info(
+                    f"Snapped label '{net_name}' to pin {component_ref}/{pin_number} at {position}"
+                )
+            elif position is None:
+                return {
+                    "success": False,
+                    "message": (
+                        "Missing position. Either provide position [x, y] or "
+                        "componentRef + pinNumber to snap to a pin endpoint."
+                    ),
+                }
 
             # Use WireManager for S-expression manipulation
             success = WireManager.add_label(
@@ -1541,13 +1583,22 @@ class KiCADInterface:
                 orientation=orientation,
             )
 
-            if success:
-                return {
-                    "success": True,
-                    "message": f"Added net label '{net_name}' at {position}",
-                }
-            else:
+            if not success:
                 return {"success": False, "message": "Failed to add net label"}
+
+            response: Dict[str, Any] = {
+                "success": True,
+                "message": f"Added net label '{net_name}' at {position}",
+                "actual_position": position,
+            }
+            if snapped_to_pin:
+                response["snapped_to_pin"] = snapped_to_pin
+                response["message"] = (
+                    f"Added net label '{net_name}' at exact pin endpoint "
+                    f"{component_ref}/{pin_number} ({position[0]}, {position[1]})"
+                )
+            return response
+
         except Exception as e:
             logger.error(f"Error adding net label: {str(e)}")
             import traceback
@@ -1574,17 +1625,10 @@ class KiCADInterface:
                 return {"success": False, "message": "Missing required parameters"}
 
             # Use ConnectionManager with new WireManager integration
-            success = ConnectionManager.connect_to_net(
+            result = ConnectionManager.connect_to_net(
                 Path(schematic_path), component_ref, pin_name, net_name
             )
-
-            if success:
-                return {
-                    "success": True,
-                    "message": f"Connected {component_ref}/{pin_name} to net '{net_name}'",
-                }
-            else:
-                return {"success": False, "message": "Failed to connect to net"}
+            return result
         except Exception as e:
             logger.error(f"Error connecting to net: {str(e)}")
             import traceback

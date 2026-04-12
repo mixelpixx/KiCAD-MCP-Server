@@ -325,20 +325,55 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
   // Add net label
   server.tool(
     "add_schematic_net_label",
-    "Add a net label to the schematic",
+    "Add a net label to the schematic. " +
+      "PREFERRED: supply componentRef + pinNumber to snap the label to the exact pin endpoint — " +
+      "this guarantees an electrical connection. " +
+      "Alternatively supply position [x, y], but the coordinates must match the pin endpoint exactly " +
+      "(even a 0.01 mm offset breaks the connection). " +
+      "The response includes actual_position (coordinates actually used) and snapped_to_pin " +
+      "(present when a pin reference was resolved).",
     {
       schematicPath: z.string().describe("Path to the schematic file"),
       netName: z.string().describe("Name of the net (e.g., VCC, GND, SIGNAL_1)"),
-      position: z.array(z.number()).length(2).describe("Position [x, y] for the label"),
+      position: z
+        .array(z.number())
+        .length(2)
+        .optional()
+        .describe(
+          "Position [x, y] for the label. Required when componentRef/pinNumber are not given.",
+        ),
+      componentRef: z
+        .string()
+        .optional()
+        .describe("Component reference to snap label to (e.g. U1, R1). Use with pinNumber."),
+      pinNumber: z
+        .union([z.string(), z.number()])
+        .optional()
+        .describe(
+          "Pin number or name on componentRef to snap label to (e.g. '1', 'GND'). Use with componentRef.",
+        ),
+      labelType: z
+        .enum(["label", "global_label", "hierarchical_label"])
+        .optional()
+        .describe("Label type (default: label)"),
+      orientation: z.number().optional().describe("Rotation angle 0/90/180/270 (default: 0)"),
     },
-    async (args: { schematicPath: string; netName: string; position: number[] }) => {
+    async (args: {
+      schematicPath: string;
+      netName: string;
+      position?: number[];
+      componentRef?: string;
+      pinNumber?: string | number;
+      labelType?: string;
+      orientation?: number;
+    }) => {
       const result = await callKicadScript("add_schematic_net_label", args);
       if (result.success) {
         return {
           content: [
             {
               type: "text",
-              text: `Successfully added net label '${args.netName}' at position [${args.position}]`,
+              text: JSON.stringify(result, null, 2),
             },
           ],
         };
@@ -358,7 +393,9 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
   // Connect pin to net
   server.tool(
     "connect_to_net",
-    "Connect a component pin to a named net",
+    "Connect a component pin to a named net by adding a wire stub and net label at the exact pin endpoint. " +
+      "The response includes pin_location (exact pin coords), label_location (where the label was placed), " +
+      "and wire_stub (the wire segment added) so you can confirm the placement.",
     {
       schematicPath: z.string().describe("Path to the schematic file"),
       componentRef: z.string().describe("Component reference (e.g., U1, R1)"),
@@ -377,7 +414,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           content: [
             {
               type: "text",
-              text: `Successfully connected ${args.componentRef}/${args.pinName} to net '${args.netName}'`,
+              text: JSON.stringify(result, null, 2),
             },
           ],
         };
