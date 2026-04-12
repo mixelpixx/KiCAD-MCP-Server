@@ -1814,6 +1814,52 @@ SCHEMATIC_TOOLS = [
             "required": ["schematicPath"],
         },
     },
+    {
+        "name": "snap_to_grid",
+        "title": "Snap Schematic Elements to Grid",
+        "description": (
+            "Snap schematic element coordinates to the nearest grid point. "
+            "KiCAD eeschema uses exact integer matching (10 000 IU/mm) for connectivity, "
+            "so even a sub-pixel coordinate offset will make wires appear connected visually "
+            "but fail ERC checks. Running this tool before ERC eliminates that class of error. "
+            "Modifies the .kicad_sch file in place. "
+            "Does not require the KiCAD UI to be running."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                },
+                "gridSize": {
+                    "type": "number",
+                    "description": (
+                        "Grid spacing in mm. "
+                        "Standard KiCAD schematic grid is 2.54 mm (0.1 inch). "
+                        "Use 1.27 mm for high-density layouts. "
+                        "Defaults to 2.54."
+                    ),
+                    "default": 2.54,
+                },
+                "elements": {
+                    "type": "array",
+                    "description": (
+                        "Element types to snap. "
+                        'Valid values: "wires", "junctions", "labels", "components". '
+                        'Defaults to ["wires", "junctions", "labels"] when omitted. '
+                        '"components" is opt-in because moving a component without re-routing '
+                        "its wires will create new mismatches."
+                    ),
+                    "items": {
+                        "type": "string",
+                        "enum": ["wires", "junctions", "labels", "components"],
+                    },
+                },
+            },
+            "required": ["schematicPath"],
+        },
+    },
 ]
 
 # =============================================================================

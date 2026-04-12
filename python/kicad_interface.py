@@ -404,6 +404,7 @@ class KiCADInterface:
             "get_elements_in_region": self._handle_get_elements_in_region,
             "find_wires_crossing_symbols": self._handle_find_wires_crossing_symbols,
             "find_orphaned_wires": self._handle_find_orphaned_wires,
+            "snap_to_grid": self._handle_snap_to_grid,
             "import_svg_logo": self._handle_import_svg_logo,
             # UI/Process management commands
             "check_kicad_ui": self._handle_check_kicad_ui,
@@ -2957,6 +2958,38 @@ class KiCADInterface:
             }
         except Exception as e:
             logger.error(f"Error finding orphaned wires: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_snap_to_grid(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Snap schematic element coordinates to the nearest grid point"""
+        logger.info("Snapping schematic elements to grid")
+        try:
+            from pathlib import Path
+
+            from commands.schematic_snap import snap_to_grid
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            grid_size = float(params.get("gridSize", 2.54))
+            elements = params.get("elements")  # None → defaults inside snap_to_grid
+
+            result = snap_to_grid(Path(schematic_path), grid_size=grid_size, elements=elements)
+            total = result["snapped"] + result["already_on_grid"]
+            return {
+                "success": True,
+                **result,
+                "message": (
+                    f"Snapped {result['snapped']} element(s) to {grid_size} mm grid "
+                    f"({result['already_on_grid']} of {total} were already on grid)"
+                ),
+            }
+        except Exception as e:
+            logger.error(f"Error snapping to grid: {e}")
             import traceback
 
             logger.error(traceback.format_exc())

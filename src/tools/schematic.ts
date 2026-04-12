@@ -1392,4 +1392,36 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       };
     },
   );
+
+  // Snap schematic elements to grid
+  server.tool(
+    "snap_to_grid",
+    "Snap schematic element coordinates to the nearest grid point. " +
+      "KiCAD uses exact integer matching for connectivity, so off-grid coordinates cause wires " +
+      "that look connected to fail ERC checks. " +
+      "Modifies the .kicad_sch file in place. Does not require the KiCAD UI to be running.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+      gridSize: z
+        .number()
+        .optional()
+        .describe("Grid spacing in mm (default: 2.54 — standard KiCAD schematic grid)"),
+      elements: z
+        .array(z.enum(["wires", "junctions", "labels", "components"]))
+        .optional()
+        .describe(
+          'Element types to snap (default: ["wires", "junctions", "labels"]). ' +
+            '"components" is opt-in — moving a component without re-routing wires creates new mismatches.',
+        ),
+    },
+    async (args: { schematicPath: string; gridSize?: number; elements?: string[] }) => {
+      const result = await callKicadScript("snap_to_grid", args);
+      if (result.success) {
+        return { content: [{ type: "text", text: result.message }] };
+      }
+      return {
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
+      };
+    },
+  );
 }
