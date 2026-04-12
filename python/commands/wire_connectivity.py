@@ -220,7 +220,7 @@ def _find_pins_on_net(
 def get_wire_connections(
     schematic: Any, schematic_path: str, x_mm: float, y_mm: float
 ) -> Optional[Dict]:
-    """Find all component pins reachable from a point via connected wires, net labels, and power symbols.
+    """Find the net name and all component pins reachable from a point via connected wires.
 
     The query point (x_mm, y_mm) must be exactly on a wire endpoint or junction (exact IU match).
     Interior (mid-segment) points are not matched —
@@ -230,66 +230,19 @@ def get_wire_connections(
     treated as connected even when they are not geometrically adjacent.
 
     Returns dict with keys:
-      - "pins": list of {"component": str, "pin": str}
-      - "wires": list of {"start": {"x", "y"}, "end": {"x", "y"}} in mm
-    Or None if no wire endpoint found within tolerance of the query point.
-    """
-    all_wires = _parse_wires(schematic)
-    if not all_wires:
-        return {"pins": [], "wires": []}
-
-    adjacency, iu_to_wires = _build_adjacency(all_wires)
-
-    point_to_label, label_to_points = _parse_virtual_connections(schematic, schematic_path)
-
-    visited, net_points = _find_connected_wires(
-        x_mm,
-        y_mm,
-        all_wires,
-        iu_to_wires,
-        adjacency,
-        point_to_label=point_to_label,
-        label_to_points=label_to_points,
-    )
-    if visited is None:
-        return None
-
-    wires_out = [
-        {
-            "start": {
-                "x": all_wires[i][0][0] / _IU_PER_MM,
-                "y": all_wires[i][0][1] / _IU_PER_MM,
-            },
-            "end": {
-                "x": all_wires[i][-1][0] / _IU_PER_MM,
-                "y": all_wires[i][-1][1] / _IU_PER_MM,
-            },
-        }
-        for i in visited
-    ]
-
-    if not hasattr(schematic, "symbol"):
-        return {"pins": [], "wires": wires_out}
-
-    pins = _find_pins_on_net(net_points, schematic_path, schematic)
-    return {"pins": pins, "wires": wires_out}
-
-
-def get_pin_net(schematic: Any, schematic_path: str, x_mm: float, y_mm: float) -> Optional[Dict]:
-    """Return the net name and all connected pins for the wire network at (x_mm, y_mm).
-
-    Returns dict with keys:
       - "net": str or None (net label/power name, None if unnamed)
       - "pins": list of {"component": str, "pin": str}
       - "wires": list of {"start": {"x", "y"}, "end": {"x", "y"}} in mm
       - "query_point": {"x": float, "y": float}
-    Or None if no wire endpoint found at the query point.
+    Or None if no wire endpoint found within tolerance of the query point.
     """
     all_wires = _parse_wires(schematic)
+    query_point = {"x": x_mm, "y": y_mm}
     if not all_wires:
-        return {"net": None, "pins": [], "wires": [], "query_point": {"x": x_mm, "y": y_mm}}
+        return {"net": None, "pins": [], "wires": [], "query_point": query_point}
 
     adjacency, iu_to_wires = _build_adjacency(all_wires)
+
     point_to_label, label_to_points = _parse_virtual_connections(schematic, schematic_path)
 
     visited, net_points = _find_connected_wires(
@@ -326,11 +279,11 @@ def get_pin_net(schematic: Any, schematic_path: str, x_mm: float, y_mm: float) -
         for i in visited
     ]
 
-    pins: List[Dict] = []
-    if hasattr(schematic, "symbol"):
-        pins = _find_pins_on_net(net_points, schematic_path, schematic)
+    if not hasattr(schematic, "symbol"):
+        return {"net": net, "pins": [], "wires": wires_out, "query_point": query_point}
 
-    return {"net": net, "pins": pins, "wires": wires_out, "query_point": {"x": x_mm, "y": y_mm}}
+    pins = _find_pins_on_net(net_points, schematic_path, schematic)
+    return {"net": net, "pins": pins, "wires": wires_out, "query_point": query_point}
 
 
 def count_pins_on_net(

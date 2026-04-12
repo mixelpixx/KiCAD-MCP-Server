@@ -469,24 +469,50 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
   // Get wire connections
   server.tool(
     "get_wire_connections",
-    "Find all component pins reachable from a schematic point via connected wires, net labels, and power symbols. The query point must be at a wire endpoint or junction — midpoints of wire segments are not matched. Use get_schematic_pin_locations or list_schematic_wires to obtain exact endpoint coordinates first.",
+    "Returns the net name and all wires and component pins connected at a given point. " +
+      "Accepts either a component reference + pin number (e.g. reference='U1', pin='3') " +
+      "or a schematic coordinate (x, y in mm). " +
+      "Returns net=null for unnamed (unlabelled) nets. " +
+      "The query point must be at a wire endpoint or junction — midpoints are not matched. " +
+      "Use get_schematic_pin_locations or list_schematic_wires to obtain exact endpoint coordinates.",
     {
       schematicPath: z.string().describe("Path to the schematic file"),
-      x: z.number().describe("X coordinate of a wire endpoint or junction"),
-      y: z.number().describe("Y coordinate of a wire endpoint or junction"),
+      reference: z
+        .string()
+        .optional()
+        .describe("Component reference (e.g. U1, R1). Pair with pin."),
+      pin: z
+        .string()
+        .optional()
+        .describe("Pin number or name (e.g. '3', 'SDA'). Pair with reference."),
+      x: z.number().optional().describe("X coordinate of a wire endpoint in mm. Pair with y."),
+      y: z.number().optional().describe("Y coordinate of a wire endpoint in mm. Pair with x."),
     },
-    async (args: { schematicPath: string; x: number; y: number }) => {
+    async (args: {
+      schematicPath: string;
+      reference?: string;
+      pin?: string;
+      x?: number;
+      y?: number;
+    }) => {
       const result = await callKicadScript("get_wire_connections", args);
-      if (result.success && result.pins) {
-        const pinList = result.pins.map((p: any) => `  - ${p.component}/${p.pin}`).join("\n");
+      if (result.success) {
+        const netLabel = result.net ?? "(unnamed)";
+        const pinList = (result.pins ?? [])
+          .map((p: any) => `  - ${p.component}/${p.pin}`)
+          .join("\n");
         const wireList = (result.wires ?? [])
           .map((w: any) => `  - (${w.start.x},${w.start.y}) → (${w.end.x},${w.end.y})`)
           .join("\n");
+        const qp = result.query_point;
         return {
           content: [
             {
               type: "text",
-              text: `Pins connected at (${args.x},${args.y}):\n${pinList || "  (none found)"}\n\nWire segments:\n${wireList || "  (none)"}`,
+              text:
+                `Net: ${netLabel}\n` +
+                `Query point: (${qp?.x ?? args.x}, ${qp?.y ?? args.y})\n` +
+                `Connected pins:\n${pinList || "  (none found)"}\n\nWire segments:\n${wireList || "  (none)"}`,
             },
           ],
         };
@@ -1492,63 +1518,6 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
             {
               type: "text",
               text: `Failed to get net at point: ${result.message || "Unknown error"}`,
-            },
-          ],
-        };
-      }
-    },
-  );
-
-  server.tool(
-    "get_pin_net",
-    "Returns the net name and all connected pins for a component pin (reference + pin number) " +
-      "or a schematic coordinate (x, y in mm). Use this instead of list_schematic_nets + " +
-      "get_wire_connections when you want to answer 'what net is pin 3 of U1 on?'. " +
-      "Returns net=null for unnamed (unlabelled) nets.",
-    {
-      schematicPath: z.string().describe("Path to the schematic file"),
-      reference: z
-        .string()
-        .optional()
-        .describe("Component reference (e.g. U1, R1). Pair with pin."),
-      pin: z
-        .string()
-        .optional()
-        .describe("Pin number or name (e.g. '3', 'SDA'). Pair with reference."),
-      x: z.number().optional().describe("X coordinate of a wire endpoint in mm. Pair with y."),
-      y: z.number().optional().describe("Y coordinate of a wire endpoint in mm. Pair with x."),
-    },
-    async (args: {
-      schematicPath: string;
-      reference?: string;
-      pin?: string;
-      x?: number;
-      y?: number;
-    }) => {
-      const result = await callKicadScript("get_pin_net", args);
-      if (result.success) {
-        const netLabel = result.net ?? "(unnamed)";
-        const pinList = (result.pins ?? [])
-          .map((p: any) => `  - ${p.component}/${p.pin}`)
-          .join("\n");
-        const qp = result.query_point;
-        return {
-          content: [
-            {
-              type: "text",
-              text:
-                `Net: ${netLabel}\n` +
-                `Query point: (${qp?.x ?? args.x}, ${qp?.y ?? args.y})\n` +
-                `Connected pins:\n${pinList || "  (none found)"}`,
-            },
-          ],
-        };
-      } else {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Failed to get pin net: ${result.message || "Unknown error"}`,
             },
           ],
         };

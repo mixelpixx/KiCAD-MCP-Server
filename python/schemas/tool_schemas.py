@@ -1503,24 +1503,41 @@ SCHEMATIC_TOOLS = [
     {
         "name": "get_wire_connections",
         "title": "Get Wire Connections",
-        "description": "Returns all wires and component pins connected to the wire at a given point, by flood-filling through touching wires.",
+        "description": (
+            "Returns the net name and all wires and component pins connected at a given point. "
+            "Accepts either a component reference + pin number (e.g. reference='U1', pin='3') "
+            "or a schematic coordinate (x, y in mm). "
+            "The response includes: 'net' (label name or null for unnamed nets), "
+            "'pins' (all component pins on the net), 'wires' (all wire segments on the net), "
+            "and 'query_point' (the resolved coordinate used). "
+            "The query point must be at a wire endpoint or junction — wire midpoints are not matched. "
+            "Use get_schematic_pin_locations or list_schematic_wires to obtain exact endpoint coordinates."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "schematicPath": {
                     "type": "string",
-                    "description": "Path to schematic file",
+                    "description": "Path to the schematic file (.kicad_sch)",
+                },
+                "reference": {
+                    "type": "string",
+                    "description": "Component reference (e.g. U1, R1). Pair with pin.",
+                },
+                "pin": {
+                    "type": "string",
+                    "description": "Pin number or name (e.g. '3', 'SDA'). Pair with reference.",
                 },
                 "x": {
                     "type": "number",
-                    "description": "X coordinate of the point on the wire",
+                    "description": "X coordinate of a wire endpoint in mm. Pair with y.",
                 },
                 "y": {
                     "type": "number",
-                    "description": "Y coordinate of the point on the wire",
+                    "description": "Y coordinate of a wire endpoint in mm. Pair with x.",
                 },
             },
-            "required": ["schematicPath", "x", "y"],
+            "required": ["schematicPath"],
         },
     },
     {
@@ -1550,44 +1567,6 @@ SCHEMATIC_TOOLS = [
                 },
             },
             "required": ["schematicPath", "x", "y"],
-        },
-    },
-    {
-        "name": "get_pin_net",
-        "title": "Get Pin Net",
-        "description": (
-            "Returns the net name and all connected component pins for a query. "
-            "Accepts either a component reference + pin number (e.g. reference='U1', pin='3') "
-            "or a schematic coordinate (x, y in mm). "
-            "If a net label or power symbol is reachable from the query point, its name is "
-            "returned as 'net'; otherwise 'net' is null (unnamed net). "
-            "The 'pins' list contains every component pin on that same net."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "schematicPath": {
-                    "type": "string",
-                    "description": "Path to the schematic file (.kicad_sch)",
-                },
-                "reference": {
-                    "type": "string",
-                    "description": "Component reference (e.g. U1, R1). Pair with pin.",
-                },
-                "pin": {
-                    "type": "string",
-                    "description": "Pin number or name (e.g. '3', 'SDA'). Pair with reference.",
-                },
-                "x": {
-                    "type": "number",
-                    "description": "X coordinate of a wire endpoint in mm. Pair with y.",
-                },
-                "y": {
-                    "type": "number",
-                    "description": "Y coordinate of a wire endpoint in mm. Pair with x.",
-                },
-            },
-            "required": ["schematicPath"],
         },
     },
     {
