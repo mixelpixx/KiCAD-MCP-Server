@@ -1399,7 +1399,15 @@ SCHEMATIC_TOOLS = [
     {
         "name": "add_schematic_net_label",
         "title": "Add Net Label",
-        "description": "Adds a net label at exact coordinates on a schematic wire or pin endpoint. WARNING: x/y must match an existing wire endpoint or pin endpoint exactly — placing the label even 0.01mm away from a pin will result in an unconnected pin ERC error. To connect a component pin to a net by reference and pin number (recommended), use connect_to_net instead.",
+        "description": (
+            "Add a net label to a schematic. "
+            "PREFERRED: supply componentRef + pinNumber to snap the label to the exact pin endpoint — "
+            "this guarantees an electrical connection. "
+            "Alternatively supply position [x, y], but the coordinates must match the pin endpoint exactly "
+            "(even a 0.01 mm offset breaks the connection). "
+            "The response includes actual_position (coordinates actually used) and snapped_to_pin "
+            "(present when a pin reference was resolved)."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1411,21 +1419,45 @@ SCHEMATIC_TOOLS = [
                     "type": "string",
                     "description": "Name of the net (e.g., VCC, GND, SDA)",
                 },
-                "x": {"type": "number", "description": "X coordinate on schematic"},
-                "y": {"type": "number", "description": "Y coordinate on schematic"},
-                "rotation": {
+                "position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "description": "Position [x, y] for the label. Required when componentRef/pinNumber are not given.",
+                },
+                "componentRef": {
+                    "type": "string",
+                    "description": "Component reference to snap label to (e.g. U1, R1). Use with pinNumber.",
+                },
+                "pinNumber": {
+                    "type": "string",
+                    "description": "Pin number or name on componentRef (e.g. '1', 'GND'). Use with componentRef.",
+                },
+                "labelType": {
+                    "type": "string",
+                    "enum": ["label", "global_label", "hierarchical_label"],
+                    "description": "Label type (default: label)",
+                    "default": "label",
+                },
+                "orientation": {
                     "type": "number",
                     "description": "Rotation angle in degrees (0, 90, 180, 270)",
                     "default": 0,
                 },
             },
-            "required": ["schematicPath", "netName", "x", "y"],
+            "required": ["schematicPath", "netName"],
         },
     },
     {
         "name": "connect_to_net",
         "title": "Connect Pin to Net",
-        "description": "Intelligently connects a component pin to a named net, automatically routing wires as needed.",
+        "description": (
+            "Connect a component pin to a named net by adding a wire stub and net label at the exact "
+            "pin endpoint. The response includes pin_location (exact pin coords), label_location "
+            "(where the label was placed), and wire_stub (the wire segment added) so you can confirm "
+            "the placement without a separate verification call."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1433,11 +1465,11 @@ SCHEMATIC_TOOLS = [
                     "type": "string",
                     "description": "Path to schematic file",
                 },
-                "reference": {
+                "componentRef": {
                     "type": "string",
                     "description": "Component reference designator (e.g., R1, U3)",
                 },
-                "pinNumber": {
+                "pinName": {
                     "type": "string",
                     "description": "Pin number or name on the component",
                 },
@@ -1446,7 +1478,7 @@ SCHEMATIC_TOOLS = [
                     "description": "Name of the net to connect to",
                 },
             },
-            "required": ["schematicPath", "reference", "pinNumber", "netName"],
+            "required": ["schematicPath", "componentRef", "pinName", "netName"],
         },
     },
     {
@@ -1471,21 +1503,67 @@ SCHEMATIC_TOOLS = [
     {
         "name": "get_wire_connections",
         "title": "Get Wire Connections",
-        "description": "Returns all wires and component pins connected to the wire at a given point, by flood-filling through touching wires.",
+        "description": (
+            "Returns the net name and all wires and component pins connected at a given point. "
+            "Accepts either a component reference + pin number (e.g. reference='U1', pin='3') "
+            "or a schematic coordinate (x, y in mm). "
+            "The response includes: 'net' (label name or null for unnamed nets), "
+            "'pins' (all component pins on the net), 'wires' (all wire segments on the net), "
+            "and 'query_point' (the resolved coordinate used). "
+            "The query point must be at a wire endpoint or junction — wire midpoints are not matched. "
+            "Use get_schematic_pin_locations or list_schematic_wires to obtain exact endpoint coordinates."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "schematicPath": {
                     "type": "string",
-                    "description": "Path to schematic file",
+                    "description": "Path to the schematic file (.kicad_sch)",
+                },
+                "reference": {
+                    "type": "string",
+                    "description": "Component reference (e.g. U1, R1). Pair with pin.",
+                },
+                "pin": {
+                    "type": "string",
+                    "description": "Pin number or name (e.g. '3', 'SDA'). Pair with reference.",
                 },
                 "x": {
                     "type": "number",
-                    "description": "X coordinate of the point on the wire",
+                    "description": "X coordinate of a wire endpoint in mm. Pair with y.",
                 },
                 "y": {
                     "type": "number",
-                    "description": "Y coordinate of the point on the wire",
+                    "description": "Y coordinate of a wire endpoint in mm. Pair with x.",
+                },
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
+        "name": "get_net_at_point",
+        "title": "Get Net At Point",
+        "description": (
+            "Returns the net name at a given (x, y) coordinate in a schematic, "
+            "or null if no net label or wire endpoint is present at that position. "
+            "Checks net label positions first, then wire endpoints. "
+            "Useful for quickly identifying what net occupies a specific coordinate "
+            "without traversing the full wire graph."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the schematic file (.kicad_sch)",
+                },
+                "x": {
+                    "type": "number",
+                    "description": "X coordinate in mm",
+                },
+                "y": {
+                    "type": "number",
+                    "description": "Y coordinate in mm",
                 },
             },
             "required": ["schematicPath", "x", "y"],
@@ -1758,6 +1836,93 @@ SCHEMATIC_TOOLS = [
                     "type": "string",
                     "description": "Path to the .kicad_sch schematic file",
                 }
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
+        "name": "find_orphaned_wires",
+        "title": "Find Orphaned Wires",
+        "description": (
+            "Find wire segments with at least one dangling endpoint — an endpoint not connected "
+            "to a component pin, net label, or another wire. "
+            "Orphaned wires cause ERC 'wire end unconnected' errors and indicate routing mistakes. "
+            "Does not require the KiCad UI to be running."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                }
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
+        "name": "list_floating_labels",
+        "title": "List Floating Net Labels",
+        "description": (
+            "Returns all net labels in the schematic that are not connected to any component pin. "
+            "A label is 'floating' when no component pin's coordinate falls on the wire-network "
+            "reachable from the label's anchor position. "
+            "Floating labels indicate misplaced or off-grid labels that will cause ERC errors. "
+            "Does not require the KiCad UI to be running."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                }
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
+        "name": "snap_to_grid",
+        "title": "Snap Schematic Elements to Grid",
+        "description": (
+            "Snap schematic element coordinates to the nearest grid point. "
+            "KiCAD eeschema uses exact integer matching (10 000 IU/mm) for connectivity, "
+            "so even a sub-pixel coordinate offset will make wires appear connected visually "
+            "but fail ERC checks. Running this tool before ERC eliminates that class of error. "
+            "Modifies the .kicad_sch file in place. "
+            "Does not require the KiCAD UI to be running."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                },
+                "gridSize": {
+                    "type": "number",
+                    "description": (
+                        "Grid spacing in mm (default: 1.27 — standard KiCAD schematic grid). "
+                        "Do NOT use 2.54: half of all valid KiCAD pin positions are at odd "
+                        "multiples of 1.27 mm and would be displaced 1.27 mm, breaking "
+                        "connectivity."
+                    ),
+                    "default": 1.27,
+                },
+                "elements": {
+                    "type": "array",
+                    "description": (
+                        "Element types to snap. "
+                        'Valid values: "wires", "junctions", "labels", "components". '
+                        'Defaults to ["wires", "junctions", "labels"] when omitted. '
+                        '"components" is opt-in because moving a component without re-routing '
+                        "its wires will create new mismatches."
+                    ),
+                    "items": {
+                        "type": "string",
+                        "enum": ["wires", "junctions", "labels", "components"],
+                    },
+                },
             },
             "required": ["schematicPath"],
         },

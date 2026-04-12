@@ -7,6 +7,8 @@ Covers:
   - Parameter validation in the handler (TestHandlerParamValidation)
   - Core logic: _to_iu, _parse_wires, _build_adjacency, _find_connected_wires,
     get_wire_connections (TestCoreLogic)
+  - New net/query_point fields and reference+pin input mode (TestGetWireConnectionsNewFields,
+    TestGetWireConnectionsHandlerRefPinMode)
 """
 
 import sys
@@ -77,8 +79,23 @@ class TestSchema:
         schema = TOOL_SCHEMAS["get_wire_connections"]
         required = schema["inputSchema"]["required"]
         assert "schematicPath" in required
-        assert "x" in required
-        assert "y" in required
+        # x, y and reference, pin are all optional (dual-mode input)
+        assert "x" not in required
+        assert "y" not in required
+
+    def test_schema_optional_fields(self) -> None:
+        from schemas.tool_schemas import TOOL_SCHEMAS
+
+        props = TOOL_SCHEMAS["get_wire_connections"]["inputSchema"]["properties"]
+        assert "reference" in props
+        assert "pin" in props
+        assert "x" in props
+        assert "y" in props
+
+    def test_get_pin_net_not_registered(self) -> None:
+        from schemas.tool_schemas import TOOL_SCHEMAS
+
+        assert "get_pin_net" not in TOOL_SCHEMAS
 
     def test_schema_has_title_and_description(self) -> None:
         from schemas.tool_schemas import TOOL_SCHEMAS
@@ -145,14 +162,24 @@ class TestHandlerParamValidation:
         assert result["success"] is False
         assert "schematicPath" in result["message"] or "Missing" in result["message"]
 
-    def test_missing_x(self) -> None:
+    def test_missing_both_modes(self) -> None:
         handler = self._make_handler()
-        result = handler({"schematicPath": "/tmp/test.kicad_sch", "y": 2.0})
+        result = handler({"schematicPath": "/tmp/test.kicad_sch"})
+        assert result["success"] is False
+        assert (
+            "reference" in result["message"]
+            or "x" in result["message"]
+            or "supply" in result["message"].lower()
+        )
+
+    def test_partial_reference_without_pin(self) -> None:
+        handler = self._make_handler()
+        result = handler({"schematicPath": "/tmp/test.kicad_sch", "reference": "U1"})
         assert result["success"] is False
 
-    def test_missing_y(self) -> None:
+    def test_partial_pin_without_reference(self) -> None:
         handler = self._make_handler()
-        result = handler({"schematicPath": "/tmp/test.kicad_sch", "x": 1.0})
+        result = handler({"schematicPath": "/tmp/test.kicad_sch", "pin": "3"})
         assert result["success"] is False
 
     def test_non_numeric_x(self) -> None:
@@ -304,7 +331,11 @@ class TestCoreLogic:
         sch = MagicMock()
         sch.wire = []
         result = get_wire_connections(sch, "/fake/path.kicad_sch", 0.0, 0.0)
-        assert result == {"pins": [], "wires": []}
+        assert result is not None
+        assert result["pins"] == []
+        assert result["wires"] == []
+        assert result["net"] is None
+        assert result["query_point"] == {"x": 0.0, "y": 0.0}
 
     def test_get_wire_connections_no_wire_at_point_returns_none(self) -> None:
         sch = _make_schematic(_make_wire(0.0, 0.0, 1.0, 0.0))
@@ -313,7 +344,6 @@ class TestCoreLogic:
 
     def test_get_wire_connections_returns_wire_data(self) -> None:
         sch = _make_schematic(_make_wire(0.0, 0.0, 1.0, 0.0))
-        # Prevent _find_pins_on_net from iterating symbols
         result = get_wire_connections(sch, "/fake/path.kicad_sch", 0.0, 0.0)
         assert result is not None
         assert result["pins"] == []
@@ -321,6 +351,8 @@ class TestCoreLogic:
         wire = result["wires"][0]
         assert wire["start"] == {"x": 0.0, "y": 0.0}
         assert wire["end"] == {"x": 1.0, "y": 0.0}
+        assert "net" in result
+        assert "query_point" in result
 
     def test_get_wire_connections_chain_returns_all_wires(self) -> None:
         sch = _make_schematic(
@@ -330,3 +362,122 @@ class TestCoreLogic:
         result = get_wire_connections(sch, "/fake/path.kicad_sch", 0.0, 0.0)
         assert result is not None
         assert len(result["wires"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# TestGetWireConnectionsNewFields
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetWireConnectionsNewFields:
+    """Verify net and query_point are present in all return paths."""
+
+    def test_net_field_present_when_no_wires(self) -> None:
+        sch = MagicMock()
+        sch.wire = []
+        result = get_wire_connections(sch, "/fake/path.kicad_sch", 1.0, 2.0)
+        assert result is not None
+        assert "net" in result
+        assert result["net"] is None
+
+    def test_query_point_echoed_when_no_wires(self) -> None:
+        sch = MagicMock()
+        sch.wire = []
+        result = get_wire_connections(sch, "/fake/path.kicad_sch", 3.5, 7.25)
+        assert result is not None
+        assert result["query_point"] == {"x": 3.5, "y": 7.25}
+
+    def test_net_is_none_for_unnamed_net(self) -> None:
+        # Wire with no labels → net should be None
+        sch = _make_schematic(_make_wire(0.0, 0.0, 1.0, 0.0))
+        result = get_wire_connections(sch, "/fake/path.kicad_sch", 0.0, 0.0)
+        assert result is not None
+        assert result["net"] is None
+
+    def test_query_point_echoed_with_wire(self) -> None:
+        sch = _make_schematic(_make_wire(0.0, 0.0, 1.0, 0.0))
+        result = get_wire_connections(sch, "/fake/path.kicad_sch", 0.0, 0.0)
+        assert result is not None
+        assert result["query_point"] == {"x": 0.0, "y": 0.0}
+
+    def test_net_none_returned_when_no_wire_at_point(self) -> None:
+        sch = _make_schematic(_make_wire(0.0, 0.0, 1.0, 0.0))
+        result = get_wire_connections(sch, "/fake/path.kicad_sch", 5.0, 0.0)
+        assert result is None  # no match at midpoint
+
+
+# ---------------------------------------------------------------------------
+# TestGetWireConnectionsHandlerRefPinMode
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetWireConnectionsHandlerRefPinMode:
+    """Handler correctly resolves reference+pin to coordinates via PinLocator."""
+
+    def _make_handler(self) -> Any:
+        with patch("kicad_interface.USE_IPC_BACKEND", False):
+            from kicad_interface import KiCADInterface
+
+            iface = KiCADInterface.__new__(KiCADInterface)
+        return iface._handle_get_wire_connections
+
+    def test_ref_pin_resolves_to_coordinates(self) -> None:
+        handler = self._make_handler()
+        mock_result = {
+            "net": "VCC",
+            "pins": [],
+            "wires": [],
+            "query_point": {"x": 10.0, "y": 20.0},
+        }
+        with (
+            patch(
+                "commands.pin_locator.PinLocator.get_pin_location",
+                return_value=(10.0, 20.0),
+            ),
+            patch("commands.wire_connectivity.get_wire_connections", return_value=mock_result),
+            patch(
+                "kicad_interface.SchematicManager.load_schematic",
+                return_value=MagicMock(wire=[MagicMock()]),
+            ),
+        ):
+            result = handler(
+                {"schematicPath": "/fake/path.kicad_sch", "reference": "U1", "pin": "3"}
+            )
+        assert result["success"] is True
+
+    def test_ref_pin_not_found_returns_error(self) -> None:
+        handler = self._make_handler()
+        with patch(
+            "commands.pin_locator.PinLocator.get_pin_location",
+            return_value=None,
+        ):
+            result = handler(
+                {"schematicPath": "/fake/path.kicad_sch", "reference": "U1", "pin": "99"}
+            )
+        assert result["success"] is False
+        assert "99" in result["message"] or "U1" in result["message"]
+
+    def test_missing_both_modes_returns_error(self) -> None:
+        handler = self._make_handler()
+        result = handler({"schematicPath": "/fake/path.kicad_sch"})
+        assert result["success"] is False
+
+    def test_partial_reference_without_pin_returns_error(self) -> None:
+        handler = self._make_handler()
+        result = handler({"schematicPath": "/fake/path.kicad_sch", "reference": "U1"})
+        assert result["success"] is False
+
+    def test_partial_pin_without_reference_returns_error(self) -> None:
+        handler = self._make_handler()
+        result = handler({"schematicPath": "/fake/path.kicad_sch", "pin": "3"})
+        assert result["success"] is False
+
+    def test_get_pin_net_not_in_routes(self) -> None:
+        with patch("kicad_interface.USE_IPC_BACKEND", False):
+            from kicad_interface import KiCADInterface
+
+            iface = KiCADInterface.__new__(KiCADInterface)
+            KiCADInterface.__init__(iface)
+        assert "get_pin_net" not in iface.command_routes

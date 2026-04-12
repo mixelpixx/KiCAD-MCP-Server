@@ -7,12 +7,15 @@ and checking connectivity in KiCad schematic files.
 
 import logging
 import math
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import sexpdata
 from commands.pin_locator import PinLocator
+from commands.wire_connectivity import _parse_virtual_connections, _to_iu
 from sexpdata import Symbol
+from skip import Schematic
 
 logger = logging.getLogger("kicad_interface")
 
@@ -872,3 +875,102 @@ def find_wires_crossing_symbols(schematic_path: Path) -> List[Dict[str, Any]]:
             )
 
     return collisions
+
+
+def find_orphaned_wires(schematic_path: Path) -> Dict[str, Any]:
+    """
+    Find wire segments with at least one dangling endpoint.
+
+    A wire endpoint is dangling when the IU point at that endpoint satisfies
+    all three conditions simultaneously:
+      1. No other wire shares that IU endpoint (would imply a junction / T-join)
+      2. No component pin is at that IU point
+      3. No net label or power symbol pin is at that IU point
+
+    Uses exact KiCad IU matching (10 000 IU/mm) — same strategy as
+    wire_connectivity.py — to avoid floating-point tolerance issues.
+
+    Returns:
+        {
+            "orphaned_wires": [
+                {
+                    "start": {"x": float, "y": float},
+                    "end":   {"x": float, "y": float},
+                    "dangling_ends": [{"x": float, "y": float}, ...]
+                },
+                ...
+            ],
+            "count": int
+        }
+    """
+    sexp_data = _load_sexp(schematic_path)
+
+    # --- wire endpoints in mm and IU ---
+    wires_mm = _parse_wires(sexp_data)
+    wires_iu: List[Tuple[Tuple[int, int], Tuple[int, int]]] = [
+        (_to_iu(*w["start"]), _to_iu(*w["end"])) for w in wires_mm
+    ]
+
+    # Count how many wires touch each IU endpoint
+    iu_to_count: Dict[Tuple[int, int], int] = defaultdict(int)
+    for s_iu, e_iu in wires_iu:
+        iu_to_count[s_iu] += 1
+        iu_to_count[e_iu] += 1
+
+    # --- anchors: component pins ---
+    pin_iu: Set[Tuple[int, int]] = set()
+    try:
+        locator = PinLocator()
+        sch = Schematic(str(schematic_path))
+        for symbol in sch.symbol:
+            try:
+                if not hasattr(symbol, "property") or not hasattr(symbol.property, "Reference"):
+                    continue
+                ref = symbol.property.Reference.value
+                if ref.startswith("_TEMPLATE"):
+                    continue
+                all_pins = locator.get_all_symbol_pins(schematic_path, ref)
+                for coords in all_pins.values():
+                    pin_iu.add(_to_iu(float(coords[0]), float(coords[1])))
+            except Exception as e:
+                logger.warning(f"Error reading pins for symbol: {e}")
+    except Exception as e:
+        logger.warning(f"Could not load schematic via skip for pin extraction: {e}")
+        sch = None
+
+    # --- anchors: net labels and global_labels ---
+    labels = _parse_labels(sexp_data)
+    label_iu: Set[Tuple[int, int]] = {_to_iu(lbl["x"], lbl["y"]) for lbl in labels}
+
+    # --- anchors: power symbol pins (VCC, GND …) ---
+    power_iu: Set[Tuple[int, int]] = set()
+    if sch is not None:
+        try:
+            point_to_label, _ = _parse_virtual_connections(sch, schematic_path)
+            power_iu = set(point_to_label.keys())
+        except Exception as e:
+            logger.warning(f"Could not extract power symbol anchors: {e}")
+
+    anchored_iu = pin_iu | label_iu | power_iu
+
+    # --- classify each wire ---
+    orphaned: List[Dict[str, Any]] = []
+    for i, (s_iu, e_iu) in enumerate(wires_iu):
+        w = wires_mm[i]
+        dangling_ends: List[Dict[str, float]] = []
+        for pt_iu, pt_mm in [(s_iu, w["start"]), (e_iu, w["end"])]:
+            if iu_to_count[pt_iu] > 1:
+                continue  # shared with another wire → connected
+            if pt_iu in anchored_iu:
+                continue  # touches a pin or label → connected
+            dangling_ends.append({"x": pt_mm[0], "y": pt_mm[1]})
+        if dangling_ends:
+            orphaned.append(
+                {
+                    "start": {"x": w["start"][0], "y": w["start"][1]},
+                    "end": {"x": w["end"][0], "y": w["end"][1]},
+                    "dangling_ends": dangling_ends,
+                }
+            )
+
+    return {"orphaned_wires": orphaned, "count": len(orphaned)}
