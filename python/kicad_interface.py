@@ -403,6 +403,7 @@ class KiCADInterface:
             "find_overlapping_elements": self._handle_find_overlapping_elements,
             "get_elements_in_region": self._handle_get_elements_in_region,
             "find_wires_crossing_symbols": self._handle_find_wires_crossing_symbols,
+            "find_orphaned_wires": self._handle_find_orphaned_wires,
             "import_svg_logo": self._handle_import_svg_logo,
             # UI/Process management commands
             "check_kicad_ui": self._handle_check_kicad_ui,
@@ -2931,6 +2932,31 @@ class KiCADInterface:
             }
         except Exception as e:
             logger.error(f"Error checking wire collisions: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_find_orphaned_wires(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Find wire segments with at least one dangling (unconnected) endpoint"""
+        logger.info("Finding orphaned wires in schematic")
+        try:
+            from pathlib import Path
+
+            from commands.schematic_analysis import find_orphaned_wires
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            result = find_orphaned_wires(Path(schematic_path))
+            return {
+                "success": True,
+                **result,
+                "message": f"Found {result['count']} orphaned wire(s)",
+            }
+        except Exception as e:
+            logger.error(f"Error finding orphaned wires: {e}")
             import traceback
 
             logger.error(traceback.format_exc())

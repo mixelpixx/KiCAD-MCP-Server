@@ -1794,6 +1794,26 @@ SCHEMATIC_TOOLS = [
             "required": ["schematicPath"],
         },
     },
+    {
+        "name": "find_orphaned_wires",
+        "title": "Find Orphaned Wires",
+        "description": (
+            "Find wire segments with at least one dangling endpoint — an endpoint not connected "
+            "to a component pin, net label, or another wire. "
+            "Orphaned wires cause ERC 'wire end unconnected' errors and indicate routing mistakes. "
+            "Does not require the KiCad UI to be running."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                }
+            },
+            "required": ["schematicPath"],
+        },
+    },
 ]
 
 # =============================================================================

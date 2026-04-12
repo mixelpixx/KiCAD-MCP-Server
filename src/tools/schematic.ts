@@ -1360,4 +1360,36 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       };
     },
   );
+
+  // Find orphaned wires
+  server.tool(
+    "find_orphaned_wires",
+    "Find wire segments with at least one dangling endpoint — not connected to a component pin, " +
+      "net label, or another wire. Orphaned wires cause ERC 'wire end unconnected' errors. " +
+      "Does not require the KiCad UI to be running.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+    },
+    async (args: { schematicPath: string }) => {
+      const result = await callKicadScript("find_orphaned_wires", args);
+      if (result.success) {
+        const wires: any[] = result.orphaned_wires || [];
+        if (wires.length === 0) {
+          return { content: [{ type: "text", text: "No orphaned wires found." }] };
+        }
+        const lines: string[] = [`Found ${wires.length} orphaned wire(s):\n`];
+        wires.slice(0, 50).forEach((w: any) => {
+          const dangling = w.dangling_ends.map((e: any) => `(${e.x}, ${e.y})`).join(", ");
+          lines.push(
+            `  wire (${w.start.x}, ${w.start.y})→(${w.end.x}, ${w.end.y})  dangling end(s): ${dangling}`,
+          );
+        });
+        if (wires.length > 50) lines.push(`  ... and ${wires.length - 50} more`);
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      }
+      return {
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
+      };
+    },
+  );
 }
