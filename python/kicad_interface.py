@@ -1527,7 +1527,6 @@ class KiCADInterface:
         """
         logger.info("Adding net label to schematic")
         try:
-            import traceback
             from pathlib import Path
 
             from commands.wire_manager import WireManager

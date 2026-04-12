@@ -98,7 +98,10 @@ class ConnectionManager:
             # Stub direction follows the pin's outward angle from the PinLocator
             try:
                 pin_angle_deg = locator.get_pin_angle(schematic_path, component_ref, pin_name) or 0
-            except Exception:
+            except Exception as e:
+                logger.warning(
+                    f"Could not get pin angle for {component_ref}/{pin_name}, defaulting to 0: {e}"
+                )
                 pin_angle_deg = 0
             import math as _math
 

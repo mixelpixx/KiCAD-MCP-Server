@@ -414,10 +414,10 @@ def list_floating_labels(schematic: Any, schematic_path: str) -> List[Dict[str, 
             coords = label.at.value
             lx_mm = float(coords[0])
             ly_mm = float(coords[1])
-            lx_iu = _to_iu(lx_mm, ly_mm)
+            label_iu = _to_iu(lx_mm, ly_mm)
 
             # Check if the label anchor itself is a pin position
-            if lx_iu in pin_iu_set:
+            if label_iu in pin_iu_set:
                 continue
 
             # Trace the wire-network from this label and check for pins
@@ -470,10 +470,9 @@ def get_net_at_point(
     # Check if query point is on a wire endpoint
     all_wires = _parse_wires(schematic) if hasattr(schematic, "wire") else []
     if all_wires:
-        _, iu_to_wires = _build_adjacency(all_wires)
+        adjacency, iu_to_wires = _build_adjacency(all_wires)
         if query_iu in iu_to_wires:
             # Found a wire endpoint — trace the net to get the name
-            adjacency, _ = _build_adjacency(all_wires)
             visited, net_points = _find_connected_wires(
                 x_mm,
                 y_mm,
