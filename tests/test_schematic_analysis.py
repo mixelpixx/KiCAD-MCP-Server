@@ -17,7 +17,7 @@ import sexpdata
 from sexpdata import Symbol
 
 # Ensure the python/ package is importable
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
 
 from commands.schematic_analysis import (
     _aabb_overlap,
@@ -43,7 +43,7 @@ from commands.schematic_analysis import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "empty.kicad_sch"
+TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "python" / "templates" / "empty.kicad_sch"
 
 
 def _make_temp_schematic(extra_sexp: str = "") -> Path:

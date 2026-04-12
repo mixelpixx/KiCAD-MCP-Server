@@ -22,7 +22,7 @@ import sexpdata
 # Helpers
 # ---------------------------------------------------------------------------
 
-TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
+TEMPLATES_DIR = Path(__file__).parent.parent / "python" / "templates"
 EMPTY_SCH = TEMPLATES_DIR / "empty.kicad_sch"
 
 # Minimal schematic content used by integration tests

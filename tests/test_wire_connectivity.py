@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Ensure the python package root is importable
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 # ---------------------------------------------------------------------------
 # Module under test

@@ -18,7 +18,7 @@ import sexpdata
 from sexpdata import Symbol
 
 # Add python dir to path
-PYTHON_DIR = Path(__file__).parent.parent
+PYTHON_DIR = Path(__file__).parent.parent / "python"
 sys.path.insert(0, str(PYTHON_DIR))
 
 TEMPLATES_DIR = PYTHON_DIR / "templates"

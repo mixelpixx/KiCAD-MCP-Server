@@ -12,15 +12,14 @@ from typing import Any
 import pytest
 
 # Ensure python/ directory is on path so kicad_interface can be imported
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "python"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 
 # ---------------------------------------------------------------------------
 # Helpers shared across tests
 # ---------------------------------------------------------------------------
 
-TEMPLATE_SCH = Path(__file__).parent.parent / "templates" / "empty.kicad_sch"
+TEMPLATE_SCH = Path(__file__).parent.parent / "python" / "templates" / "empty.kicad_sch"
 
 # Minimal placed-symbol block we can embed into a schematic for testing
 PLACED_RESISTOR_BLOCK = """\

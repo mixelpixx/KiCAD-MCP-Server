@@ -17,11 +17,11 @@ import sexpdata
 from sexpdata import Symbol
 
 # Make python/ importable
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
 
 from commands.wire_dragger import EPS, WireDragger, _coords_match, _rotate
 
-TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "empty.kicad_sch"
+TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "python" / "templates" / "empty.kicad_sch"
 
 
 # ---------------------------------------------------------------------------
@@ -517,7 +517,7 @@ class TestMoveWithWirePreservation:
         sch = self._make_schematic()
         self._add_resistor(sch, "R1", 100, 100)
         # Call handler directly
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
         from kicad_interface import KiCADInterface
 
         iface = KiCADInterface()
@@ -541,7 +541,7 @@ class TestMoveWithWirePreservation:
         self._add_resistor(sch, "R1", 100, 100)
         self._add_wire(sch, 100, 103.81, 100, 120)  # wire from pin 1 upward
 
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
         from kicad_interface import KiCADInterface
 
         iface = KiCADInterface()
@@ -572,7 +572,7 @@ class TestMoveWithWirePreservation:
         self._add_resistor(sch, "R1", 100, 100)
         self._add_wire(sch, 50, 50, 60, 50)  # unrelated wire
 
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
         from kicad_interface import KiCADInterface
 
         iface = KiCADInterface()
@@ -596,7 +596,7 @@ class TestMoveWithWirePreservation:
         # Wire from pin 1 to pin 2 of same component (intra-component wire)
         self._add_wire(sch, 100, 103.81, 100, 96.19)
 
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
         from kicad_interface import KiCADInterface
 
         iface = KiCADInterface()
@@ -621,7 +621,7 @@ class TestMoveWithWirePreservation:
         self._add_resistor(sch, "R1", 100, 100)
         self._add_wire(sch, 100, 103.81, 100, 120)
 
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
         from kicad_interface import KiCADInterface
 
         iface = KiCADInterface()
@@ -648,7 +648,7 @@ class TestMoveWithWirePreservation:
 
     def test_missing_component_returns_error(self) -> None:
         sch = self._make_schematic()
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
         from kicad_interface import KiCADInterface
 
         iface = KiCADInterface()
@@ -907,7 +907,7 @@ class TestTouchingPinIntegration:
         self._add_resistor(sch, "R1", 100, 100)
         self._add_resistor(sch, "R2", 100, 92.38)
 
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
         from kicad_interface import KiCADInterface
 
         iface = KiCADInterface()
@@ -958,7 +958,7 @@ class TestTouchingPinIntegration:
         self._add_resistor(sch, "R1", 100, 100)
         self._add_resistor(sch, "R2", 150, 150)  # far away
 
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
         from kicad_interface import KiCADInterface
 
         iface = KiCADInterface()
@@ -995,7 +995,7 @@ class TestTouchingPinIntegration:
         idx = content.rfind(")")
         sch.write_text(content[:idx] + "\n" + wire_sexp + "\n)", encoding="utf-8")
 
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
         from kicad_interface import KiCADInterface
 
         iface = KiCADInterface()
