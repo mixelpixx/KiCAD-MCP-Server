@@ -20,11 +20,9 @@
 
 **KiCAD MCP Server** is a Model Context Protocol server that lets AI assistants like Claude control KiCAD for schematic and PCB design workflows — using natural language.
 
-### Target Users
+### Design PCBs with natural language
 
-- Occasional PCB designers who know electronics but struggle with KiCAD tooling
-- Makers and product builders who need custom symbols, footprints, or boards without spending hours in the GUI
-- Anyone who wants AI to handle the repetitive EDA work
+Describe what you want to build — and let AI handle the EDA work. Place components, create custom symbols and footprints, route connections, run checks, and export production files, all by talking to your AI assistant. No fighting menus, no looking up obscure settings.
 
 ### What it can do today
 
@@ -81,11 +79,9 @@ npm run build
 
 **KiCAD MCP Server** ist ein Model Context Protocol Server, der KI-Assistenten wie Claude ermöglicht, KiCAD für Schaltplan- und PCB-Workflows per natürlicher Sprache zu steuern.
 
-### Zielgruppe
+### PCBs mit natürlicher Sprache designen
 
-- Gelegenheits-Designer mit Elektronik-Kenntnissen, die mit KiCAD-Werkzeugen kämpfen
-- Maker und Produktentwickler, die eigene Symbole, Footprints oder Platinen brauchen — ohne stundenlange GUI-Arbeit
-- Alle, die repetitive EDA-Aufgaben an KI abgeben möchten
+Beschreibe was du bauen möchtest — und lass die KI die EDA-Arbeit übernehmen. Bauteile platzieren, eigene Symbole und Footprints erstellen, Verbindungen routen, Prüfungen ausführen und Fertigungsdateien exportieren — alles im Gespräch mit deinem KI-Assistenten. Kein Menü-Kampf, kein Nachschlagen obskurer Einstellungen.
 
 ### Was es heute kann
 
