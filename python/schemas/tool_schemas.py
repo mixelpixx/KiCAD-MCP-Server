@@ -1882,6 +1882,27 @@ SCHEMATIC_TOOLS = [
         },
     },
     {
+        "name": "list_floating_labels",
+        "title": "List Floating Net Labels",
+        "description": (
+            "Returns all net labels in the schematic that are not connected to any component pin. "
+            "A label is 'floating' when no component pin's coordinate falls on the wire-network "
+            "reachable from the label's anchor position. "
+            "Floating labels indicate misplaced or off-grid labels that will cause ERC errors. "
+            "Does not require the KiCad UI to be running."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                }
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
         "name": "snap_to_grid",
         "title": "Snap Schematic Elements to Grid",
         "description": (

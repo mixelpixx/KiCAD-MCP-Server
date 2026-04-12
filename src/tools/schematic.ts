@@ -660,7 +660,9 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         }
         const lines = nets.map((n: any) => {
           const conns = (n.connections || []).map((c: any) => `${c.component}/${c.pin}`).join(", ");
-          return `  ${n.name}: ${conns || "(no connections)"}`;
+          const pinCount =
+            n.connected_pin_count !== undefined ? ` [${n.connected_pin_count} pin(s)]` : "";
+          return `  ${n.name}${pinCount}: ${conns || "(no connections)"}`;
         });
         return {
           content: [
@@ -1353,6 +1355,38 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           );
         });
         if (collisions.length > 30) lines.push(`  ... and ${collisions.length - 30} more`);
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      }
+      return {
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
+      };
+    },
+  );
+
+  // List floating net labels
+  server.tool(
+    "list_floating_labels",
+    "Returns all net labels in the schematic that are not connected to any component pin. " +
+      "A label is 'floating' when no component pin falls on the wire-network reachable from the " +
+      "label's position. Floating labels indicate misplaced or off-grid labels that cause ERC errors. " +
+      "Does not require the KiCAD UI to be running.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+    },
+    async (args: { schematicPath: string }) => {
+      const result = await callKicadScript("list_floating_labels", args);
+      if (result.success) {
+        const labels: any[] = result.floating_labels || [];
+        if (labels.length === 0) {
+          return { content: [{ type: "text", text: "No floating labels found." }] };
+        }
+        const lines: string[] = [`Found ${labels.length} floating label(s):\n`];
+        labels.slice(0, 50).forEach((lbl: any) => {
+          lines.push(`  "${lbl.name}" (${lbl.type}) at (${lbl.x}, ${lbl.y})`);
+        });
+        if (labels.length > 50) {
+          lines.push(`  ... and ${labels.length - 50} more`);
+        }
         return { content: [{ type: "text", text: lines.join("\n") }] };
       }
       return {

@@ -406,6 +406,7 @@ class KiCADInterface:
             "get_elements_in_region": self._handle_get_elements_in_region,
             "find_wires_crossing_symbols": self._handle_find_wires_crossing_symbols,
             "find_orphaned_wires": self._handle_find_orphaned_wires,
+            "list_floating_labels": self._handle_list_floating_labels,
             "snap_to_grid": self._handle_snap_to_grid,
             "import_svg_logo": self._handle_import_svg_logo,
             # UI/Process management commands
@@ -1924,6 +1925,13 @@ class KiCADInterface:
         try:
             from pathlib import Path
 
+            from commands.wire_connectivity import (
+                _build_adjacency,
+                _parse_virtual_connections,
+                _parse_wires,
+                count_pins_on_net,
+            )
+
             schematic_path = params.get("schematicPath")
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
@@ -1943,15 +1951,34 @@ class KiCADInterface:
                     if hasattr(label, "value"):
                         net_names.add(label.value)
 
+            # Pre-build shared wire graph structures for efficiency
+            all_wires = _parse_wires(schematic)
+            if all_wires:
+                adjacency, iu_to_wires = _build_adjacency(all_wires)
+            else:
+                adjacency, iu_to_wires = [], {}
+            point_to_label, label_to_points = _parse_virtual_connections(schematic, schematic_path)
+
             nets = []
             for net_name in sorted(net_names):
                 connections = ConnectionManager.get_net_connections(
                     schematic, net_name, Path(schematic_path)
                 )
+                pin_count = count_pins_on_net(
+                    schematic,
+                    schematic_path,
+                    net_name,
+                    all_wires,
+                    iu_to_wires,
+                    adjacency,
+                    point_to_label,
+                    label_to_points,
+                )
                 nets.append(
                     {
                         "name": net_name,
                         "connections": connections,
+                        "connected_pin_count": pin_count,
                     }
                 )
 
@@ -3058,6 +3085,34 @@ class KiCADInterface:
             }
         except Exception as e:
             logger.error(f"Error finding orphaned wires: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_list_floating_labels(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List net labels that are not connected to any component pin"""
+        logger.info("Listing floating net labels in schematic")
+        try:
+            from commands.wire_connectivity import list_floating_labels
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            labels = list_floating_labels(schematic, schematic_path)
+            return {
+                "success": True,
+                "floating_labels": labels,
+                "count": len(labels),
+                "message": f"Found {len(labels)} floating label(s)",
+            }
+        except Exception as e:
+            logger.error(f"Error listing floating labels: {e}")
             import traceback
 
             logger.error(traceback.format_exc())

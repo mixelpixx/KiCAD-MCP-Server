@@ -333,6 +333,165 @@ def get_pin_net(schematic: Any, schematic_path: str, x_mm: float, y_mm: float) -
     return {"net": net, "pins": pins, "wires": wires_out, "query_point": {"x": x_mm, "y": y_mm}}
 
 
+def count_pins_on_net(
+    schematic: Any,
+    schematic_path: str,
+    net_name: str,
+    all_wires: List[List[Tuple[int, int]]],
+    iu_to_wires: Dict[Tuple[int, int], Set[int]],
+    adjacency: List[Set[int]],
+    point_to_label: Dict[Tuple[int, int], str],
+    label_to_points: Dict[str, List[Tuple[int, int]]],
+) -> int:
+    """Count the number of component pins connected to the named net.
+
+    A pin is counted if its IU coordinate falls on the wire-network reachable
+    from any label anchor for *net_name*, or directly on a label anchor of that
+    net (pin directly touching a label with no intervening wire).
+
+    Returns the count of distinct (component, pin_num) pairs on this net.
+    """
+    label_positions = label_to_points.get(net_name, [])
+    if not label_positions:
+        return 0
+
+    # Collect the union of all net-points across all label positions for this net
+    all_net_points: Set[Tuple[int, int]] = set()
+    for lx, ly in label_positions:
+        # Include the label anchor itself so pins directly at the label count
+        all_net_points.add((lx, ly))
+        # Trace from this label position into the wire graph
+        x_mm = lx / _IU_PER_MM
+        y_mm = ly / _IU_PER_MM
+        visited, net_points = _find_connected_wires(
+            x_mm,
+            y_mm,
+            all_wires,
+            iu_to_wires,
+            adjacency,
+            point_to_label=point_to_label,
+            label_to_points=label_to_points,
+        )
+        if net_points:
+            all_net_points |= net_points
+
+    if not hasattr(schematic, "symbol"):
+        return 0
+
+    locator = PinLocator()
+    seen: Set[Tuple[str, str]] = set()
+    ref = None
+    for symbol in schematic.symbol:
+        try:
+            if not hasattr(symbol, "property") or not hasattr(symbol.property, "Reference"):
+                continue
+            ref = symbol.property.Reference.value
+            if ref.startswith("_TEMPLATE"):
+                continue
+            all_pins = locator.get_all_symbol_pins(Path(schematic_path), ref)
+            if not all_pins:
+                continue
+            for pin_num, pin_data in all_pins.items():
+                pin_iu = _to_iu(float(pin_data[0]), float(pin_data[1]))
+                if pin_iu in all_net_points:
+                    key = (ref, pin_num)
+                    if key not in seen:
+                        seen.add(key)
+        except Exception as e:
+            logger.warning(
+                f"Error checking pins for {ref if ref is not None else '<unknown>'}: {e}"
+            )
+
+    return len(seen)
+
+
+def list_floating_labels(schematic: Any, schematic_path: str) -> List[Dict[str, Any]]:
+    """Return net labels that are not connected to any component pin.
+
+    A label is "floating" when no component pin's IU coordinate falls on the
+    wire-network reachable from the label's anchor position.  These labels are
+    likely placed off-grid or incorrectly positioned and will cause ERC errors.
+
+    Returns a list of dicts with keys:
+      - "name": str   — the net label text
+      - "x": float    — label X position in mm
+      - "y": float    — label Y position in mm
+      - "type": str   — "label" or "global_label"
+    """
+    all_wires = _parse_wires(schematic)
+    if all_wires:
+        adjacency, iu_to_wires = _build_adjacency(all_wires)
+    else:
+        adjacency = []
+        iu_to_wires = {}
+
+    point_to_label, label_to_points = _parse_virtual_connections(schematic, schematic_path)
+
+    # Build a set of all pin IU positions for fast lookup
+    pin_iu_set: Set[Tuple[int, int]] = set()
+    if hasattr(schematic, "symbol"):
+        locator = PinLocator()
+        for symbol in schematic.symbol:
+            try:
+                if not hasattr(symbol, "property") or not hasattr(symbol.property, "Reference"):
+                    continue
+                ref = symbol.property.Reference.value
+                if ref.startswith("_TEMPLATE"):
+                    continue
+                all_pins = locator.get_all_symbol_pins(Path(schematic_path), ref)
+                if not all_pins:
+                    continue
+                for pin_data in all_pins.values():
+                    pin_iu_set.add(_to_iu(float(pin_data[0]), float(pin_data[1])))
+            except Exception as e:
+                logger.warning(f"Error reading pins for floating-label check: {e}")
+
+    floating: List[Dict[str, Any]] = []
+
+    if not hasattr(schematic, "label"):
+        return floating
+
+    for label in schematic.label:
+        try:
+            if not hasattr(label, "value"):
+                continue
+            name = label.value
+            if not hasattr(label, "at") or not hasattr(label.at, "value"):
+                continue
+            coords = label.at.value
+            lx_mm = float(coords[0])
+            ly_mm = float(coords[1])
+            lx_iu = _to_iu(lx_mm, ly_mm)
+
+            # Check if the label anchor itself is a pin position
+            if lx_iu in pin_iu_set:
+                continue
+
+            # Trace the wire-network from this label and check for pins
+            if all_wires:
+                _, net_points = _find_connected_wires(
+                    lx_mm,
+                    ly_mm,
+                    all_wires,
+                    iu_to_wires,
+                    adjacency,
+                    point_to_label=point_to_label,
+                    label_to_points=label_to_points,
+                )
+            else:
+                net_points = None
+
+            if net_points is not None and net_points & pin_iu_set:
+                continue  # at least one pin on this net
+
+            floating.append({"name": name, "x": lx_mm, "y": ly_mm, "type": "label"})
+
+        except Exception as e:
+            logger.warning(f"Error checking label for floating status: {e}")
+
+    return floating
+
+
 def get_net_at_point(
     schematic: Any, schematic_path: str, x_mm: float, y_mm: float
 ) -> Dict[str, Any]:
