@@ -39,7 +39,7 @@ curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
 # Clone the repository
-git clone https://github.com/yourusername/kicad-mcp-server.git
+git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd kicad-mcp-server
 
 # Install Node.js dependencies
@@ -64,7 +64,7 @@ pytest
 # Install Node.js from https://nodejs.org/
 
 # Clone the repository
-git clone https://github.com/yourusername/kicad-mcp-server.git
+git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd kicad-mcp-server
 
 # Install Node.js dependencies
@@ -90,7 +90,7 @@ pytest
 brew install node
 
 # Clone the repository
-git clone https://github.com/yourusername/kicad-mcp-server.git
+git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd kicad-mcp-server
 
 # Install Node.js dependencies
