@@ -86,5 +86,8 @@ data/
 Thumbs.db
 Desktop.ini
 
+# Generated local config files (contain machine-specific paths)
+windows-mcp-config.json
+
 # Personal notes / local contributions (not for upstream)
 myContribution/
