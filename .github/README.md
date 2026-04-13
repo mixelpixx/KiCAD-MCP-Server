@@ -1,3 +1,5 @@
+<a name="top"></a>
+
 <div align="center">
 
 <img src="../resources/images/KiCAD-MCP-Server_only_css.svg" alt="KiCAD-MCP-Server Logo" height="240" />
@@ -69,9 +71,9 @@ npm run build
 
 ### AI Disclosure
 
-> **Developed with AI Assistance**  
-> This project was developed with the support of AI-assisted coding tools (GitHub Copilot, Claude).  
-> All code has been reviewed, tested, and integrated by the maintainers.  
+> **Developed with AI Assistance**
+> This project was developed with the support of AI-assisted coding tools (GitHub Copilot, Claude).
+> All code has been reviewed, tested, and integrated by the maintainers.
 > AI tools were used to accelerate development — creative decisions, architecture, and responsibility remain entirely with the authors.
 
 ### Disclaimer
@@ -88,6 +90,8 @@ npm run build
 > AI-generated design suggestions do not replace qualified engineering review. Safety-critical applications (medical, aerospace, automotive, etc.) require mandatory independent expert verification.
 >
 > This project is licensed under the MIT License — which likewise excludes all liability.
+
+<div align="right"><a href="#top"><img src="https://img.shields.io/badge/%E2%96%B4_top-grey?style=flat-square" alt="back to top"></a></div>
 
 ---
 
@@ -144,9 +148,9 @@ npm run build
 
 ### KI-Hinweis
 
-> **Entwickelt mit KI-Unterstützung**  
-> Dieses Projekt wurde unter Einsatz von KI-gestützten Entwicklungswerkzeugen (GitHub Copilot, Claude) erstellt.  
-> Sämtlicher Code wurde von den Maintainern geprüft, getestet und integriert.  
+> **Entwickelt mit KI-Unterstützung**
+> Dieses Projekt wurde unter Einsatz von KI-gestützten Entwicklungswerkzeugen (GitHub Copilot, Claude) erstellt.
+> Sämtlicher Code wurde von den Maintainern geprüft, getestet und integriert.
 > KI-Werkzeuge dienten der Entwicklungsbeschleunigung — kreative Entscheidungen, Architektur und Verantwortung liegen ausschließlich bei den Autoren.
 
 ### Haftungsausschluss
@@ -163,6 +167,8 @@ npm run build
 > KI-generierte Design-Vorschläge ersetzen keine qualifizierte ingenieurtechnische Prüfung. Sicherheitskritische Anwendungen (Medizintechnik, Luftfahrt, Automotive o.ä.) erfordern zwingend eine unabhängige Fachprüfung.
 >
 > Dieses Projekt steht unter der MIT-Lizenz — die Lizenz schließt ebenfalls jede Haftung aus.
+
+<div align="right"><a href="#top"><img src="https://img.shields.io/badge/%E2%96%B4_top-grey?style=flat-square" alt="back to top"></a></div>
 
 ---
 
@@ -219,9 +225,9 @@ npm run build
 
 ### AI 声明
 
-> **借助 AI 辅助开发**  
-> 本项目在 AI 辅助编码工具（GitHub Copilot、Claude）的支持下开发完成。  
-> 所有代码均经过维护者的审查、测试和集成。  
+> **借助 AI 辅助开发**
+> 本项目在 AI 辅助编码工具（GitHub Copilot、Claude）的支持下开发完成。
+> 所有代码均经过维护者的审查、测试和集成。
 > AI 工具用于加速开发 — 创意决策、架构设计和责任归属完全由作者承担。
 
 ### 免责声明
@@ -238,3 +244,5 @@ npm run build
 > AI 生成的设计建议不能替代专业工程师审查。安全关键型应用（医疗、航空航天、汽车等）必须进行独立的专业验证。
 >
 > 本项目采用 MIT 许可证 — 该许可证同样排除一切责任。
+
+<div align="right"><a href="#top"><img src="https://img.shields.io/badge/%E2%96%B4_top-grey?style=flat-square" alt="back to top"></a></div>
