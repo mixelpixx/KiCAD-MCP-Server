@@ -1,0 +1,39 @@
+name: CI (self-hosted Windows / KiCad 10)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  tests:
+    runs-on: [self-hosted, windows, kicad-10]
+    env:
+      KICAD_PYTHON_PATH: 'C:\\Program Files\\KiCad\\10.0\\bin\\python.exe'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set KiCad Python path
+        shell: powershell
+        run: |
+          echo "KICAD_PYTHON_PATH=${{ env.KICAD_PYTHON_PATH }}" >> $env:GITHUB_ENV
+
+      - name: Install project dependencies into KiCad Python
+        shell: powershell
+        run: |
+          "${{ env.KICAD_PYTHON_PATH }}" -m pip install --upgrade pip
+          "${{ env.KICAD_PYTHON_PATH }}" -m pip install -r requirements.txt
+
+      - name: Run pytest (KiCad Python)
+        shell: powershell
+        run: |
+          if (-not (Test-Path results)) { New-Item -ItemType Directory -Path results | Out-Null }
+          "${{ env.KICAD_PYTHON_PATH }}" -m pytest tests/ -q --junitxml=results/junit.xml --cov=python --cov-report=xml:results/coverage.xml
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: results
