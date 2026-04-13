@@ -13,7 +13,7 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from resources.resource_definitions import RESOURCE_DEFINITIONS, handle_resource_read
 
@@ -382,7 +382,9 @@ class KiCADInterface:
             "get_schematic_pin_locations": self._handle_get_schematic_pin_locations,
             "get_net_connections": self._handle_get_net_connections,
             "get_wire_connections": self._handle_get_wire_connections,
+            "get_net_at_point": self._handle_get_net_at_point,
             "run_erc": self._handle_run_erc,
+            "export_netlist": self._handle_export_netlist,
             "generate_netlist": self._handle_generate_netlist,
             "sync_schematic_to_board": self._handle_sync_schematic_to_board,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
@@ -403,6 +405,9 @@ class KiCADInterface:
             "find_overlapping_elements": self._handle_find_overlapping_elements,
             "get_elements_in_region": self._handle_get_elements_in_region,
             "find_wires_crossing_symbols": self._handle_find_wires_crossing_symbols,
+            "find_orphaned_wires": self._handle_find_orphaned_wires,
+            "list_floating_labels": self._handle_list_floating_labels,
+            "snap_to_grid": self._handle_snap_to_grid,
             "import_svg_logo": self._handle_import_svg_logo,
             # UI/Process management commands
             "check_kicad_ui": self._handle_check_kicad_ui,
@@ -1514,7 +1519,13 @@ class KiCADInterface:
             return {"success": False, "message": str(e)}
 
     def _handle_add_schematic_net_label(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Add a net label to schematic using WireManager"""
+        """Add a net label to schematic using WireManager.
+
+        When componentRef and pinNumber are supplied the label is placed at the
+        exact pin endpoint retrieved via PinLocator, ignoring the provided
+        position.  The response includes the actual coordinates used and
+        whether the label landed on a pin endpoint.
+        """
         logger.info("Adding net label to schematic")
         try:
             from pathlib import Path
@@ -1524,13 +1535,66 @@ class KiCADInterface:
             schematic_path = params.get("schematicPath")
             net_name = params.get("netName")
             position = params.get("position")
-            label_type = params.get(
-                "labelType", "label"
-            )  # 'label', 'global_label', 'hierarchical_label'
-            orientation = params.get("orientation", 0)  # 0, 90, 180, 270
+            label_type = params.get("labelType", "label")
+            orientation = params.get("orientation", 0)
+            component_ref = params.get("componentRef")
+            pin_number = params.get("pinNumber")
 
-            if not all([schematic_path, net_name, position]):
-                return {"success": False, "message": "Missing required parameters"}
+            if not all([schematic_path, net_name]):
+                return {
+                    "success": False,
+                    "message": "Missing required parameters: schematicPath, netName",
+                }
+
+            snapped_to_pin: Optional[Dict[str, Any]] = None
+
+            if component_ref and pin_number:
+                # Snap position to exact pin endpoint using PinLocator
+                from commands.pin_locator import PinLocator
+
+                locator = PinLocator()
+                pin_loc = locator.get_pin_location(
+                    Path(schematic_path), component_ref, str(pin_number)
+                )
+                if pin_loc is None:
+                    return {
+                        "success": False,
+                        "message": (
+                            f"Could not locate pin {pin_number} on {component_ref}. "
+                            "Check the reference and pin number."
+                        ),
+                    }
+                position = pin_loc
+                snapped_to_pin = {"component": component_ref, "pin": str(pin_number)}
+                logger.info(
+                    f"Snapped label '{net_name}' to pin {component_ref}/{pin_number} at {position}"
+                )
+            elif position is None:
+                return {
+                    "success": False,
+                    "message": (
+                        "Missing position. Either provide position [x, y] or "
+                        "componentRef + pinNumber to snap to a pin endpoint."
+                    ),
+                }
+
+            # Collect existing net names BEFORE adding the new label so we can
+            # detect case-mismatch collisions against pre-existing nets only.
+            existing_net_names: List[str] = []
+            try:
+                pre_schematic = SchematicManager.load_schematic(schematic_path)
+                if pre_schematic is not None:
+                    if hasattr(pre_schematic, "label"):
+                        for lbl in pre_schematic.label:
+                            if hasattr(lbl, "value"):
+                                existing_net_names.append(lbl.value)
+                    if hasattr(pre_schematic, "global_label"):
+                        for lbl in pre_schematic.global_label:
+                            if hasattr(lbl, "value"):
+                                existing_net_names.append(lbl.value)
+            except Exception:
+                # Non-fatal: if we can't read existing nets, skip the warning
+                existing_net_names = []
 
             # Use WireManager for S-expression manipulation
             success = WireManager.add_label(
@@ -1541,13 +1605,33 @@ class KiCADInterface:
                 orientation=orientation,
             )
 
-            if success:
-                return {
-                    "success": True,
-                    "message": f"Added net label '{net_name}' at {position}",
-                }
-            else:
+            if not success:
                 return {"success": False, "message": "Failed to add net label"}
+
+            # Compute case-mismatch warnings against pre-existing net names.
+            # A collision is: existing name != new name, but lowercases match.
+            new_name_lower = net_name.lower()
+            case_warnings: List[str] = [
+                f"Net '{existing}' already exists — label '{net_name}' may be a case mismatch."
+                for existing in existing_net_names
+                if existing.lower() == new_name_lower and existing != net_name
+            ]
+
+            response: Dict[str, Any] = {
+                "success": True,
+                "message": f"Added net label '{net_name}' at {position}",
+                "actual_position": position,
+            }
+            if snapped_to_pin:
+                response["snapped_to_pin"] = snapped_to_pin
+                response["message"] = (
+                    f"Added net label '{net_name}' at exact pin endpoint "
+                    f"{component_ref}/{pin_number} ({position[0]}, {position[1]})"
+                )
+            if case_warnings:
+                response["case_warnings"] = case_warnings
+            return response
+
         except Exception as e:
             logger.error(f"Error adding net label: {str(e)}")
             import traceback
@@ -1574,17 +1658,10 @@ class KiCADInterface:
                 return {"success": False, "message": "Missing required parameters"}
 
             # Use ConnectionManager with new WireManager integration
-            success = ConnectionManager.connect_to_net(
+            result = ConnectionManager.connect_to_net(
                 Path(schematic_path), component_ref, pin_name, net_name
             )
-
-            if success:
-                return {
-                    "success": True,
-                    "message": f"Connected {component_ref}/{pin_name} to net '{net_name}'",
-                }
-            else:
-                return {"success": False, "message": "Failed to connect to net"}
+            return result
         except Exception as e:
             logger.error(f"Error connecting to net: {str(e)}")
             import traceback
@@ -1876,6 +1953,13 @@ class KiCADInterface:
         try:
             from pathlib import Path
 
+            from commands.wire_connectivity import (
+                _build_adjacency,
+                _parse_virtual_connections,
+                _parse_wires,
+                count_pins_on_net,
+            )
+
             schematic_path = params.get("schematicPath")
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
@@ -1895,15 +1979,34 @@ class KiCADInterface:
                     if hasattr(label, "value"):
                         net_names.add(label.value)
 
+            # Pre-build shared wire graph structures for efficiency
+            all_wires = _parse_wires(schematic)
+            if all_wires:
+                adjacency, iu_to_wires = _build_adjacency(all_wires)
+            else:
+                adjacency, iu_to_wires = [], {}
+            point_to_label, label_to_points = _parse_virtual_connections(schematic, schematic_path)
+
             nets = []
             for net_name in sorted(net_names):
                 connections = ConnectionManager.get_net_connections(
                     schematic, net_name, Path(schematic_path)
                 )
+                pin_count = count_pins_on_net(
+                    schematic,
+                    schematic_path,
+                    net_name,
+                    all_wires,
+                    iu_to_wires,
+                    adjacency,
+                    point_to_label,
+                    label_to_points,
+                )
                 nets.append(
                     {
                         "name": net_name,
                         "connections": connections,
+                        "connected_pin_count": pin_count,
                     }
                 )
 
@@ -2411,28 +2514,56 @@ class KiCADInterface:
             return {"success": False, "message": str(e)}
 
     def _handle_get_wire_connections(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Find all component pins reachable from a point via connected wires"""
+        """Find net name and all component pins reachable from a point or component pin."""
         logger.info("Getting wire connections")
         try:
+            from pathlib import Path
+
+            from commands.pin_locator import PinLocator
             from commands.wire_connectivity import get_wire_connections
 
             schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "Missing required parameter: schematicPath"}
+
+            reference = params.get("reference")
+            pin = params.get("pin")
             x = params.get("x")
             y = params.get("y")
 
-            if not (schematic_path and x is not None and y is not None):
+            has_ref_pin = reference is not None and pin is not None
+            has_coords = x is not None and y is not None
+
+            if has_ref_pin and has_coords:
                 return {
                     "success": False,
-                    "message": "Missing required parameters: schematicPath, x, y",
+                    "message": "Supply either {reference, pin} or {x, y}, not both",
                 }
 
-            try:
-                x, y = float(x), float(y)
-            except (TypeError, ValueError):
+            if not has_ref_pin and not has_coords:
+                if reference is not None or pin is not None:
+                    return {
+                        "success": False,
+                        "message": "Both reference and pin are required together",
+                    }
                 return {
                     "success": False,
-                    "message": "Parameters x and y must be numeric",
+                    "message": "Must supply either {reference, pin} or {x, y}",
                 }
+
+            if has_ref_pin:
+                location = PinLocator().get_pin_location(Path(schematic_path), reference, str(pin))
+                if location is None:
+                    return {
+                        "success": False,
+                        "message": f"Pin {pin} not found on {reference}",
+                    }
+                x, y = location[0], location[1]
+            else:
+                try:
+                    x, y = float(x), float(y)
+                except (TypeError, ValueError):
+                    return {"success": False, "message": "Parameters x and y must be numeric"}
 
             schematic = SchematicManager.load_schematic(schematic_path)
             if not schematic:
@@ -2445,13 +2576,47 @@ class KiCADInterface:
             if result is None:
                 return {
                     "success": False,
-                    "message": f"No wire found at ({x},{y}) within tolerance",
+                    "message": f"No wire found at ({x},{y}) — point may not be connected",
                 }
 
             return {"success": True, **result}
 
         except Exception as e:
             logger.error(f"Error getting wire connections: {str(e)}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_get_net_at_point(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the net name at a given (x, y) coordinate, or null if none found."""
+        logger.info("Getting net at point")
+        try:
+            from commands.wire_connectivity import get_net_at_point
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "Missing required parameter: schematicPath"}
+
+            x = params.get("x")
+            y = params.get("y")
+            if x is None or y is None:
+                return {"success": False, "message": "Missing required parameters: x and y"}
+
+            try:
+                x, y = float(x), float(y)
+            except (TypeError, ValueError):
+                return {"success": False, "message": "Parameters x and y must be numeric"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            result = get_net_at_point(schematic, schematic_path, x, y)
+            return {"success": True, **result}
+
+        except Exception as e:
+            logger.error(f"Error getting net at point: {str(e)}")
             import traceback
 
             logger.error(traceback.format_exc())
@@ -2553,23 +2718,190 @@ class KiCADInterface:
             logger.error(f"Error running ERC: {str(e)}")
             return {"success": False, "message": str(e)}
 
-    def _handle_generate_netlist(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate netlist from schematic"""
-        logger.info("Generating netlist from schematic")
+    # ------------------------------------------------------------------
+    # kicad-cli helper shared by netlist handlers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _find_kicad_cli_static() -> Optional[str]:
+        """Return path to kicad-cli executable, or None."""
+        import platform
+        import shutil
+
+        cli = shutil.which("kicad-cli")
+        if cli:
+            return cli
+
+        system = platform.system()
+        if system == "Windows":
+            candidates = [
+                r"C:\Program Files\KiCad\9.0\bin\kicad-cli.exe",
+                r"C:\Program Files\KiCad\8.0\bin\kicad-cli.exe",
+                r"C:\Program Files (x86)\KiCad\9.0\bin\kicad-cli.exe",
+                r"C:\Program Files (x86)\KiCad\8.0\bin\kicad-cli.exe",
+            ]
+        elif system == "Darwin":
+            candidates = [
+                "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
+                "/usr/local/bin/kicad-cli",
+            ]
+        else:
+            candidates = [
+                "/usr/bin/kicad-cli",
+                "/usr/local/bin/kicad-cli",
+            ]
+        for path in candidates:
+            if os.path.exists(path):
+                return path
+        return None
+
+    # ------------------------------------------------------------------
+
+    def _handle_export_netlist(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export netlist to a file using kicad-cli."""
+        import subprocess
+
+        logger.info("Exporting netlist via kicad-cli")
         try:
             schematic_path = params.get("schematicPath")
+            output_path = params.get("outputPath")
+            fmt = params.get("format", "KiCad")
 
             if not schematic_path:
-                return {"success": False, "message": "Schematic path is required"}
+                return {"success": False, "message": "schematicPath is required"}
+            if not output_path:
+                return {"success": False, "message": "outputPath is required"}
+            if not os.path.exists(schematic_path):
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            netlist = ConnectionManager.generate_netlist(schematic, schematic_path=schematic_path)
-            return {"success": True, "netlist": netlist}
+            fmt_map = {
+                "KiCad": "kicadxml",
+                "Spice": "spice",
+                "Cadstar": "cadstar",
+                "OrcadPCB2": "orcadpcb2",
+            }
+            cli_format = fmt_map.get(fmt, "kicadxml")
+
+            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+
+            cmd = [
+                kicad_cli,
+                "sch",
+                "export",
+                "netlist",
+                "--format",
+                cli_format,
+                "--output",
+                output_path,
+                schematic_path,
+            ]
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+            if result.returncode == 0:
+                return {"success": True, "outputPath": output_path, "format": fmt}
+            else:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): {result.stderr.strip()}",
+                }
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 60 seconds"}
         except Exception as e:
-            logger.error(f"Error generating netlist: {str(e)}")
+            logger.error(f"Error exporting netlist: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_generate_netlist(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate netlist from schematic and return structured JSON.
+
+        Uses kicad-cli to export KiCad XML netlist to a temp file, then
+        parses it into {components, nets} structure expected by the TS handler.
+        """
+        import subprocess
+        import tempfile
+        import xml.etree.ElementTree as ET
+
+        logger.info("Generating netlist from schematic via kicad-cli")
+        try:
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "Schematic path is required"}
+            if not os.path.exists(schematic_path):
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tmp:
+                tmp_path = tmp.name
+
+            try:
+                cmd = [
+                    kicad_cli,
+                    "sch",
+                    "export",
+                    "netlist",
+                    "--format",
+                    "kicadxml",
+                    "--output",
+                    tmp_path,
+                    schematic_path,
+                ]
+                logger.info(f"Running: {' '.join(cmd)}")
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+                if result.returncode != 0:
+                    return {
+                        "success": False,
+                        "message": f"kicad-cli failed (exit {result.returncode}): {result.stderr.strip()}",
+                    }
+
+                tree = ET.parse(tmp_path)
+                root = tree.getroot()
+
+                components = []
+                for comp in root.findall("./components/comp"):
+                    ref = comp.get("ref", "")
+                    value = comp.findtext("value", "")
+                    footprint = comp.findtext("footprint", "")
+                    components.append({"reference": ref, "value": value, "footprint": footprint})
+
+                nets = []
+                for net in root.findall("./nets/net"):
+                    net_name = net.get("name", "")
+                    connections = []
+                    for node in net.findall("node"):
+                        connections.append(
+                            {
+                                "component": node.get("ref", ""),
+                                "pin": node.get("pin", ""),
+                            }
+                        )
+                    nets.append({"name": net_name, "connections": connections})
+
+                logger.info(f"Generated netlist: {len(components)} components, {len(nets)} nets")
+                return {"success": True, "netlist": {"components": components, "nets": nets}}
+
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 60 seconds"}
+        except Exception as e:
+            logger.error(f"Error generating netlist: {e}")
             return {"success": False, "message": str(e)}
 
     def _handle_sync_schematic_to_board(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -2887,6 +3219,91 @@ class KiCADInterface:
             }
         except Exception as e:
             logger.error(f"Error checking wire collisions: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_find_orphaned_wires(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Find wire segments with at least one dangling (unconnected) endpoint"""
+        logger.info("Finding orphaned wires in schematic")
+        try:
+            from pathlib import Path
+
+            from commands.schematic_analysis import find_orphaned_wires
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            result = find_orphaned_wires(Path(schematic_path))
+            return {
+                "success": True,
+                **result,
+                "message": f"Found {result['count']} orphaned wire(s)",
+            }
+        except Exception as e:
+            logger.error(f"Error finding orphaned wires: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_list_floating_labels(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List net labels that are not connected to any component pin"""
+        logger.info("Listing floating net labels in schematic")
+        try:
+            from commands.wire_connectivity import list_floating_labels
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            schematic = SchematicManager.load_schematic(schematic_path)
+            if not schematic:
+                return {"success": False, "message": "Failed to load schematic"}
+
+            labels = list_floating_labels(schematic, schematic_path)
+            return {
+                "success": True,
+                "floating_labels": labels,
+                "count": len(labels),
+                "message": f"Found {len(labels)} floating label(s)",
+            }
+        except Exception as e:
+            logger.error(f"Error listing floating labels: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_snap_to_grid(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Snap schematic element coordinates to the nearest grid point"""
+        logger.info("Snapping schematic elements to grid")
+        try:
+            from pathlib import Path
+
+            from commands.schematic_snap import snap_to_grid
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            grid_size = float(params.get("gridSize", 1.27))
+            elements = params.get("elements")  # None → defaults inside snap_to_grid
+
+            result = snap_to_grid(Path(schematic_path), grid_size=grid_size, elements=elements)
+            total = result["snapped"] + result["already_on_grid"]
+            return {
+                "success": True,
+                **result,
+                "message": (
+                    f"Snapped {result['snapped']} element(s) to {grid_size} mm grid "
+                    f"({result['already_on_grid']} of {total} were already on grid)"
+                ),
+            }
+        except Exception as e:
+            logger.error(f"Error snapping to grid: {e}")
             import traceback
 
             logger.error(traceback.format_exc())

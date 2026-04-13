@@ -34,6 +34,7 @@ from commands.schematic_analysis import (
     _point_in_rect,
     _transform_local_point,
     compute_symbol_bbox,
+    find_orphaned_wires,
     find_overlapping_elements,
     find_wires_crossing_symbols,
     get_elements_in_region,
@@ -946,3 +947,133 @@ class TestIntegrationGraphicsBbox:
         assert max(xs) == pytest.approx(1.27)
         assert min(ys) == pytest.approx(-1.27)
         assert max(ys) == pytest.approx(1.27)
+
+
+# ---------------------------------------------------------------------------
+# TestFindOrphanedWires
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestFindOrphanedWires:
+    """Integration tests for find_orphaned_wires."""
+
+    def test_empty_schematic_no_orphans(self) -> None:
+        """A schematic with no wires has no orphans."""
+        tmp = _make_temp_schematic()
+        result = find_orphaned_wires(tmp)
+        assert result["count"] == 0
+        assert result["orphaned_wires"] == []
+
+    def test_isolated_wire_is_orphaned(self) -> None:
+        """A single wire floating in empty space has both endpoints dangling."""
+        extra = """
+        (wire (pts (xy 10 20) (xy 30 20))
+            (stroke (width 0) (type default))
+            (uuid "w-isolated"))
+        """
+        tmp = _make_temp_schematic(extra)
+        result = find_orphaned_wires(tmp)
+        assert result["count"] == 1
+        w = result["orphaned_wires"][0]
+        assert len(w["dangling_ends"]) == 2
+
+    def test_wire_between_two_labels_not_orphaned(self) -> None:
+        """A wire whose endpoints both land on net labels is fully connected."""
+        extra = """
+        (label "VCC" (at 10 20 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl1"))
+        (label "GND" (at 30 20 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl2"))
+        (wire (pts (xy 10 20) (xy 30 20))
+            (stroke (width 0) (type default))
+            (uuid "w-label-to-label"))
+        """
+        tmp = _make_temp_schematic(extra)
+        result = find_orphaned_wires(tmp)
+        assert result["count"] == 0
+
+    def test_wire_with_one_dangling_end(self) -> None:
+        """A wire from a label to empty space has exactly one dangling end."""
+        extra = """
+        (label "SIG" (at 10 20 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl-sig"))
+        (wire (pts (xy 10 20) (xy 40 20))
+            (stroke (width 0) (type default))
+            (uuid "w-stub"))
+        """
+        tmp = _make_temp_schematic(extra)
+        result = find_orphaned_wires(tmp)
+        assert result["count"] == 1
+        w = result["orphaned_wires"][0]
+        assert len(w["dangling_ends"]) == 1
+        # The dangling end is the far end at x=40, not the label end at x=10
+        assert w["dangling_ends"][0]["x"] == pytest.approx(40.0)
+
+    def test_connected_wires_not_orphaned(self) -> None:
+        """Two wires sharing an endpoint are connected — neither is orphaned
+        provided the remaining ends are also anchored."""
+        # Wire A: (10,20)→(20,20), Wire B: (20,20)→(30,20)
+        # Both share endpoint at (20,20). Anchor the outer ends with labels.
+        extra = """
+        (label "A" (at 10 20 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl-a"))
+        (label "B" (at 30 20 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl-b"))
+        (wire (pts (xy 10 20) (xy 20 20))
+            (stroke (width 0) (type default))
+            (uuid "w1"))
+        (wire (pts (xy 20 20) (xy 30 20))
+            (stroke (width 0) (type default))
+            (uuid "w2"))
+        """
+        tmp = _make_temp_schematic(extra)
+        result = find_orphaned_wires(tmp)
+        assert result["count"] == 0
+
+    def test_t_junction_shared_endpoint_not_dangling(self) -> None:
+        """Three wires meeting at a single point — the shared vertex is connected
+        to multiple wires and must not be reported as dangling."""
+        # Three wires all touching (50, 50). Outer ends get labels.
+        extra = """
+        (label "L1" (at 30 50 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl-t1"))
+        (label "L2" (at 70 50 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl-t2"))
+        (label "L3" (at 50 30 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl-t3"))
+        (wire (pts (xy 30 50) (xy 50 50))
+            (stroke (width 0) (type default))
+            (uuid "wt1"))
+        (wire (pts (xy 50 50) (xy 70 50))
+            (stroke (width 0) (type default))
+            (uuid "wt2"))
+        (wire (pts (xy 50 50) (xy 50 30))
+            (stroke (width 0) (type default))
+            (uuid "wt3"))
+        """
+        tmp = _make_temp_schematic(extra)
+        result = find_orphaned_wires(tmp)
+        assert result["count"] == 0
+
+    def test_multiple_isolated_wires_all_reported(self) -> None:
+        """Two separate isolated wires are both reported."""
+        extra = """
+        (wire (pts (xy 10 10) (xy 20 10))
+            (stroke (width 0) (type default))
+            (uuid "wi1"))
+        (wire (pts (xy 50 50) (xy 60 50))
+            (stroke (width 0) (type default))
+            (uuid "wi2"))
+        """
+        tmp = _make_temp_schematic(extra)
+        result = find_orphaned_wires(tmp)
+        assert result["count"] == 2

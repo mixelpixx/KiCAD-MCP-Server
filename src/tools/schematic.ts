@@ -325,20 +325,55 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
   // Add net label
   server.tool(
     "add_schematic_net_label",
-    "Add a net label to the schematic",
+    "Add a net label to the schematic. " +
+      "PREFERRED: supply componentRef + pinNumber to snap the label to the exact pin endpoint — " +
+      "this guarantees an electrical connection. " +
+      "Alternatively supply position [x, y], but the coordinates must match the pin endpoint exactly " +
+      "(even a 0.01 mm offset breaks the connection). " +
+      "The response includes actual_position (coordinates actually used) and snapped_to_pin " +
+      "(present when a pin reference was resolved).",
     {
       schematicPath: z.string().describe("Path to the schematic file"),
       netName: z.string().describe("Name of the net (e.g., VCC, GND, SIGNAL_1)"),
-      position: z.array(z.number()).length(2).describe("Position [x, y] for the label"),
+      position: z
+        .array(z.number())
+        .length(2)
+        .optional()
+        .describe(
+          "Position [x, y] for the label. Required when componentRef/pinNumber are not given.",
+        ),
+      componentRef: z
+        .string()
+        .optional()
+        .describe("Component reference to snap label to (e.g. U1, R1). Use with pinNumber."),
+      pinNumber: z
+        .union([z.string(), z.number()])
+        .optional()
+        .describe(
+          "Pin number or name on componentRef to snap label to (e.g. '1', 'GND'). Use with componentRef.",
+        ),
+      labelType: z
+        .enum(["label", "global_label", "hierarchical_label"])
+        .optional()
+        .describe("Label type (default: label)"),
+      orientation: z.number().optional().describe("Rotation angle 0/90/180/270 (default: 0)"),
     },
-    async (args: { schematicPath: string; netName: string; position: number[] }) => {
+    async (args: {
+      schematicPath: string;
+      netName: string;
+      position?: number[];
+      componentRef?: string;
+      pinNumber?: string | number;
+      labelType?: string;
+      orientation?: number;
+    }) => {
       const result = await callKicadScript("add_schematic_net_label", args);
       if (result.success) {
         return {
           content: [
             {
               type: "text",
-              text: `Successfully added net label '${args.netName}' at position [${args.position}]`,
+              text: JSON.stringify(result, null, 2),
             },
           ],
         };
@@ -358,7 +393,9 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
   // Connect pin to net
   server.tool(
     "connect_to_net",
-    "Connect a component pin to a named net",
+    "Connect a component pin to a named net by adding a wire stub and net label at the exact pin endpoint. " +
+      "The response includes pin_location (exact pin coords), label_location (where the label was placed), " +
+      "and wire_stub (the wire segment added) so you can confirm the placement.",
     {
       schematicPath: z.string().describe("Path to the schematic file"),
       componentRef: z.string().describe("Component reference (e.g., U1, R1)"),
@@ -377,7 +414,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           content: [
             {
               type: "text",
-              text: `Successfully connected ${args.componentRef}/${args.pinName} to net '${args.netName}'`,
+              text: JSON.stringify(result, null, 2),
             },
           ],
         };
@@ -432,24 +469,50 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
   // Get wire connections
   server.tool(
     "get_wire_connections",
-    "Find all component pins reachable from a schematic point via connected wires, net labels, and power symbols. The query point must be at a wire endpoint or junction — midpoints of wire segments are not matched. Use get_schematic_pin_locations or list_schematic_wires to obtain exact endpoint coordinates first.",
+    "Returns the net name and all wires and component pins connected at a given point. " +
+      "Accepts either a component reference + pin number (e.g. reference='U1', pin='3') " +
+      "or a schematic coordinate (x, y in mm). " +
+      "Returns net=null for unnamed (unlabelled) nets. " +
+      "The query point must be at a wire endpoint or junction — midpoints are not matched. " +
+      "Use get_schematic_pin_locations or list_schematic_wires to obtain exact endpoint coordinates.",
     {
       schematicPath: z.string().describe("Path to the schematic file"),
-      x: z.number().describe("X coordinate of a wire endpoint or junction"),
-      y: z.number().describe("Y coordinate of a wire endpoint or junction"),
+      reference: z
+        .string()
+        .optional()
+        .describe("Component reference (e.g. U1, R1). Pair with pin."),
+      pin: z
+        .string()
+        .optional()
+        .describe("Pin number or name (e.g. '3', 'SDA'). Pair with reference."),
+      x: z.number().optional().describe("X coordinate of a wire endpoint in mm. Pair with y."),
+      y: z.number().optional().describe("Y coordinate of a wire endpoint in mm. Pair with x."),
     },
-    async (args: { schematicPath: string; x: number; y: number }) => {
+    async (args: {
+      schematicPath: string;
+      reference?: string;
+      pin?: string;
+      x?: number;
+      y?: number;
+    }) => {
       const result = await callKicadScript("get_wire_connections", args);
-      if (result.success && result.pins) {
-        const pinList = result.pins.map((p: any) => `  - ${p.component}/${p.pin}`).join("\n");
+      if (result.success) {
+        const netLabel = result.net ?? "(unnamed)";
+        const pinList = (result.pins ?? [])
+          .map((p: any) => `  - ${p.component}/${p.pin}`)
+          .join("\n");
         const wireList = (result.wires ?? [])
           .map((w: any) => `  - (${w.start.x},${w.start.y}) → (${w.end.x},${w.end.y})`)
           .join("\n");
+        const qp = result.query_point;
         return {
           content: [
             {
               type: "text",
-              text: `Pins connected at (${args.x},${args.y}):\n${pinList || "  (none found)"}\n\nWire segments:\n${wireList || "  (none)"}`,
+              text:
+                `Net: ${netLabel}\n` +
+                `Query point: (${qp?.x ?? args.x}, ${qp?.y ?? args.y})\n` +
+                `Connected pins:\n${pinList || "  (none found)"}\n\nWire segments:\n${wireList || "  (none)"}`,
             },
           ],
         };
@@ -623,7 +686,9 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         }
         const lines = nets.map((n: any) => {
           const conns = (n.connections || []).map((c: any) => `${c.component}/${c.pin}`).join(", ");
-          return `  ${n.name}: ${conns || "(no connections)"}`;
+          const pinCount =
+            n.connected_pin_count !== undefined ? ` [${n.connected_pin_count} pin(s)]` : "";
+          return `  ${n.name}${pinCount}: ${conns || "(no connections)"}`;
         });
         return {
           content: [
@@ -1087,9 +1152,9 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
   // Generate netlist
   server.tool(
     "generate_netlist",
-    "Generate a netlist from the schematic",
+    "Return a structured JSON netlist from the schematic — component list (reference, value, footprint) and net list (net name with all connected component/pin pairs). Use this to inspect or verify connectivity within the conversation. Does not write any file. To export a netlist file in Spice, KiCad XML, Cadstar, or OrcadPCB2 format, use export_netlist instead.",
     {
-      schematicPath: z.string().describe("Path to the schematic file"),
+      schematicPath: z.string().describe("Absolute path to the .kicad_sch schematic file"),
     },
     async (args: { schematicPath: string }) => {
       const result = await callKicadScript("generate_netlist", args);
@@ -1321,6 +1386,142 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       return {
         content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
       };
+    },
+  );
+
+  // List floating net labels
+  server.tool(
+    "list_floating_labels",
+    "Returns all net labels in the schematic that are not connected to any component pin. " +
+      "A label is 'floating' when no component pin falls on the wire-network reachable from the " +
+      "label's position. Floating labels indicate misplaced or off-grid labels that cause ERC errors. " +
+      "Does not require the KiCAD UI to be running.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+    },
+    async (args: { schematicPath: string }) => {
+      const result = await callKicadScript("list_floating_labels", args);
+      if (result.success) {
+        const labels: any[] = result.floating_labels || [];
+        if (labels.length === 0) {
+          return { content: [{ type: "text", text: "No floating labels found." }] };
+        }
+        const lines: string[] = [`Found ${labels.length} floating label(s):\n`];
+        labels.slice(0, 50).forEach((lbl: any) => {
+          lines.push(`  "${lbl.name}" (${lbl.type}) at (${lbl.x}, ${lbl.y})`);
+        });
+        if (labels.length > 50) {
+          lines.push(`  ... and ${labels.length - 50} more`);
+        }
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      }
+      return {
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
+      };
+    },
+  );
+
+  // Find orphaned wires
+  server.tool(
+    "find_orphaned_wires",
+    "Find wire segments with at least one dangling endpoint — not connected to a component pin, " +
+      "net label, or another wire. Orphaned wires cause ERC 'wire end unconnected' errors. " +
+      "Does not require the KiCad UI to be running.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+    },
+    async (args: { schematicPath: string }) => {
+      const result = await callKicadScript("find_orphaned_wires", args);
+      if (result.success) {
+        const wires: any[] = result.orphaned_wires || [];
+        if (wires.length === 0) {
+          return { content: [{ type: "text", text: "No orphaned wires found." }] };
+        }
+        const lines: string[] = [`Found ${wires.length} orphaned wire(s):\n`];
+        wires.slice(0, 50).forEach((w: any) => {
+          const dangling = w.dangling_ends.map((e: any) => `(${e.x}, ${e.y})`).join(", ");
+          lines.push(
+            `  wire (${w.start.x}, ${w.start.y})→(${w.end.x}, ${w.end.y})  dangling end(s): ${dangling}`,
+          );
+        });
+        if (wires.length > 50) lines.push(`  ... and ${wires.length - 50} more`);
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      }
+      return {
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
+      };
+    },
+  );
+
+  // Snap schematic elements to grid
+  server.tool(
+    "snap_to_grid",
+    "Snap schematic element coordinates to the nearest grid point. " +
+      "KiCAD uses exact integer matching for connectivity, so off-grid coordinates cause wires " +
+      "that look connected to fail ERC checks. " +
+      "Modifies the .kicad_sch file in place. Does not require the KiCAD UI to be running.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+      gridSize: z
+        .number()
+        .optional()
+        .describe("Grid spacing in mm (default: 2.54 — standard KiCAD schematic grid)"),
+      elements: z
+        .array(z.enum(["wires", "junctions", "labels", "components"]))
+        .optional()
+        .describe(
+          'Element types to snap (default: ["wires", "junctions", "labels"]). ' +
+            '"components" is opt-in — moving a component without re-routing wires creates new mismatches.',
+        ),
+    },
+    async (args: { schematicPath: string; gridSize?: number; elements?: string[] }) => {
+      const result = await callKicadScript("snap_to_grid", args);
+      if (result.success) {
+        return { content: [{ type: "text", text: result.message }] };
+      }
+      return {
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
+      };
+    },
+  );
+
+  server.tool(
+    "get_net_at_point",
+    "Returns the net name at a given (x, y) coordinate in a schematic, or null if no net label " +
+      "or wire endpoint is present at that position. Faster than get_pin_net when you only need " +
+      "the net name at a known coordinate and don't need pin traversal.",
+    {
+      schematicPath: z.string().describe("Path to the schematic file (.kicad_sch)"),
+      x: z.number().describe("X coordinate in mm"),
+      y: z.number().describe("Y coordinate in mm"),
+    },
+    async (args: { schematicPath: string; x: number; y: number }) => {
+      const result = await callKicadScript("get_net_at_point", args);
+      if (result.success) {
+        const netName = result.net_name ?? null;
+        const source = result.source ?? null;
+        const pos = result.position;
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Net at (${pos?.x ?? args.x}, ${pos?.y ?? args.y}): ` +
+                (netName !== null ? netName : "(none)") +
+                (source ? ` [source: ${source}]` : ""),
+            },
+          ],
+        };
+      } else {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Failed to get net at point: ${result.message || "Unknown error"}`,
+            },
+          ],
+        };
+      }
     },
   );
 }

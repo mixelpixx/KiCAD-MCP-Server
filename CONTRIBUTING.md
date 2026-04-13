@@ -107,6 +107,25 @@ npm test
 pytest
 ```
 
+### Pre-commit Hooks
+
+This project uses [pre-commit](https://pre-commit.com/) to run linters and formatters automatically before each commit. Pre-commit hooks prevent noisy formatting diffs caused by different IDE configurations across contributors, catch common mistakes and type errors before they reach code review, and ensure every commit in the repository meets the same quality baseline — so reviewers can focus on logic and design rather than style issues.
+
+**All contributors must install pre-commit hooks after cloning the repo:**
+
+```bash
+# Install pre-commit (if not already installed)
+pip install pre-commit
+
+# Install the git hooks
+pre-commit install
+
+# (Optional) Run against all files to verify setup
+pre-commit run --all-files
+```
+
+> **Important:** Do not use `git commit --no-verify` to bypass pre-commit hooks. The hooks enforce code quality checks (Black, isort, Prettier, flake8, mypy, ESLint) that must pass before code is merged. If a hook fails, fix the underlying issue rather than skipping the check.
+
 ---
 
 ## Project Structure

@@ -120,15 +120,34 @@ Connect two component pins with a wire. Use this for individual connections betw
 
 Add a net label to the schematic.
 
-| Parameter     | Type   | Required | Description                                |
-| ------------- | ------ | -------- | ------------------------------------------ |
-| schematicPath | string | Yes      | Path to the schematic file                 |
-| netName       | string | Yes      | Name of the net (e.g., VCC, GND, SIGNAL_1) |
-| position      | array  | Yes      | Position [x, y] for the label              |
+**Preferred usage — snap to pin:** supply `componentRef` + `pinNumber` and the label is placed at the exact pin endpoint resolved by `PinLocator`. This guarantees an electrical connection. A 0.01 mm offset is enough to break the connection in KiCad, so this mode eliminates all guesswork.
+
+**Alternative — explicit position:** supply `position [x, y]`. The coordinates must match a pin or wire endpoint exactly; use `get_schematic_pin_locations` first to obtain them.
+
+| Parameter     | Type           | Required | Description                                                            |
+| ------------- | -------------- | -------- | ---------------------------------------------------------------------- |
+| schematicPath | string         | Yes      | Path to the schematic file                                             |
+| netName       | string         | Yes      | Name of the net (e.g., VCC, GND, SIGNAL_1)                             |
+| position      | array [x, y]   | No\*     | Explicit position. Required when `componentRef`/`pinNumber` not given. |
+| componentRef  | string         | No\*     | Component reference to snap to (e.g. U1). Use with `pinNumber`.        |
+| pinNumber     | string\|number | No\*     | Pin number or name (e.g. `"1"`, `"GND"`). Use with `componentRef`.     |
+| labelType     | string         | No       | `label` (default), `global_label`, or `hierarchical_label`             |
+| orientation   | number         | No       | Rotation angle: 0, 90, 180, 270 (default: 0)                           |
+
+\* Either `position` **or** (`componentRef` + `pinNumber`) is required.
+
+**Response fields:**
+
+| Field           | Description                                                  |
+| --------------- | ------------------------------------------------------------ |
+| success         | `true` / `false`                                             |
+| actual_position | `[x, y]` coordinates where the label was actually placed     |
+| snapped_to_pin  | `{component, pin}` — present only when pin-snapping was used |
+| message         | Human-readable status                                        |
 
 ### connect_to_net
 
-Connect a component pin to a named net.
+Connect a component pin to a named net by adding a wire stub from the pin endpoint and placing a net label at the stub's far end. The exact pin coordinates are resolved internally via `PinLocator`.
 
 | Parameter     | Type   | Required | Description                        |
 | ------------- | ------ | -------- | ---------------------------------- |
@@ -137,7 +156,17 @@ Connect a component pin to a named net.
 | pinName       | string | Yes      | Pin name/number to connect         |
 | netName       | string | Yes      | Name of the net to connect to      |
 
-**Usage Notes:** Creates a wire stub from the pin and places a net label at the stub endpoint. The stub direction follows the pin's outward angle. Default stub length is 2.54mm (0.1 inch, standard grid spacing).
+**Response fields:**
+
+| Field          | Description                                |
+| -------------- | ------------------------------------------ |
+| success        | `true` / `false`                           |
+| pin_location   | `[x, y]` exact pin endpoint used           |
+| label_location | `[x, y]` where the net label was placed    |
+| wire_stub      | `[[x1,y1],[x2,y2]]` the wire segment added |
+| message        | Human-readable status                      |
+
+**Usage Notes:** Creates a wire stub from the pin and places a net label at the stub endpoint. The stub direction follows the pin's outward angle. Default stub length is 2.54 mm (0.1 inch, standard grid spacing). Check `pin_location` in the response to confirm the correct pin was found; no separate verification call is needed.
 
 ### connect_passthrough
 
@@ -155,7 +184,7 @@ Connects all pins of a source connector (e.g. J1) to matching pins of a target c
 
 ### get_schematic_pin_locations
 
-Returns the exact x/y coordinates of every pin on a schematic component. Use this before add_schematic_net_label to place labels correctly on pin endpoints.
+Returns the exact x/y coordinates of every pin on a schematic component. Useful for inspection or when building custom placement logic. When the goal is to connect a pin to a net, prefer `add_schematic_net_label` with `componentRef`+`pinNumber` (which calls this internally) or `connect_to_net` — both snap to the exact pin endpoint automatically.
 
 | Parameter     | Type   | Required | Description                                      |
 | ------------- | ------ | -------- | ------------------------------------------------ |
@@ -182,7 +211,7 @@ Remove a net label from the schematic.
 | netName       | string | Yes      | Name of the net label to remove                                                  |
 | position      | object | No       | Position to disambiguate if multiple labels with same name (x and y coordinates) |
 
-## Net Analysis (4 tools)
+## Net Analysis (5 tools)
 
 ### get_net_connections
 
@@ -219,7 +248,27 @@ List all net labels, global labels, and power flags in the schematic.
 | ------------- | ------ | -------- | --------------------------- |
 | schematicPath | string | Yes      | Path to the .kicad_sch file |
 
-## Schematic Creation and Export (5 tools)
+### get_net_at_point
+
+Return the net name at a given (x, y) coordinate, or `null` if no net label or wire endpoint is present there.
+
+Checks net label / power symbol positions first (exact IU match), then wire endpoints. Faster than `get_wire_connections` when you only need the net name and not full pin traversal.
+
+| Parameter     | Type   | Required | Description                           |
+| ------------- | ------ | -------- | ------------------------------------- |
+| schematicPath | string | Yes      | Path to the .kicad_sch schematic file |
+| x             | number | Yes      | X coordinate in mm                    |
+| y             | number | Yes      | Y coordinate in mm                    |
+
+**Response fields:**
+
+| Field    | Description                                                             |
+| -------- | ----------------------------------------------------------------------- |
+| net_name | Net label string, or `null` if no net found at this point               |
+| position | `{"x": float, "y": float}` — echoes the query coordinates               |
+| source   | `"net_label"` \| `"wire_endpoint"` \| `null` — how the net was resolved |
+
+## Schematic Creation and Export (6 tools)
 
 ### create_schematic
 
@@ -263,15 +312,74 @@ Return a rasterized image of the schematic (PNG by default, or SVG). Uses kicad-
 
 ### generate_netlist
 
-Generate a netlist from the schematic.
+Return a structured JSON netlist from the schematic for programmatic use. Uses `kicad-cli` internally — the schematic file must be saved to disk first.
 
-| Parameter     | Type   | Required | Description                |
-| ------------- | ------ | -------- | -------------------------- |
-| schematicPath | string | Yes      | Path to the schematic file |
+| Parameter     | Type   | Required | Description                                    |
+| ------------- | ------ | -------- | ---------------------------------------------- |
+| schematicPath | string | Yes      | Absolute path to the .kicad_sch schematic file |
 
-**Usage Notes:** Returns a complete netlist with component information (reference, value, footprint) and net connections (net name with all connected component/pin pairs).
+**Returns:** `{ components: [{reference, value, footprint}], nets: [{name, connections: [{component, pin}]}] }`
 
-## Validation and Synchronization (3 tools)
+**Usage Notes:** Use this when you need net membership data in the conversation (e.g., to verify connectivity). For writing a netlist to a file or exporting SPICE/Cadstar/OrcadPCB2 format, use `export_netlist` instead.
+
+### export_netlist
+
+Export a netlist to a file in a standard EDA format using `kicad-cli`. Supports SPICE (for simulation), KiCad XML (for archiving/import), Cadstar, and OrcadPCB2.
+
+| Parameter     | Type   | Required | Description                                                  |
+| ------------- | ------ | -------- | ------------------------------------------------------------ |
+| schematicPath | string | Yes      | Absolute path to the .kicad_sch schematic file               |
+| outputPath    | string | Yes      | Absolute path for the output file (e.g. `/tmp/design.spice`) |
+| format        | enum   | No       | `KiCad` (default), `Spice`, `Cadstar`, `OrcadPCB2`           |
+
+**Usage Notes:** The schematic file must be saved before calling this tool. Use `Spice` format to produce a SPICE netlist for simulation or diff against a reference. The output file is created or overwritten at `outputPath`.
+
+## Validation and Synchronization (6 tools)
+
+### list_floating_labels
+
+Return all net labels that are not connected to any component pin.
+
+A label is "floating" when no component pin's coordinate falls on the wire-network reachable from the label's anchor position. Floating labels indicate misplaced or off-grid labels that will cause ERC errors. Does not require the KiCAD UI to be running.
+
+| Parameter     | Type   | Required | Description                           |
+| ------------- | ------ | -------- | ------------------------------------- |
+| schematicPath | string | Yes      | Path to the .kicad_sch schematic file |
+
+**Response fields:** list of `{"name": str, "x": float, "y": float, "type": "label" | "global_label"}`.
+
+### find_orphaned_wires
+
+Find wire segments with at least one dangling endpoint — not connected to a component pin, net label, or another wire. Orphaned wires cause ERC "wire end unconnected" errors. Does not require the KiCAD UI to be running.
+
+| Parameter     | Type   | Required | Description                           |
+| ------------- | ------ | -------- | ------------------------------------- |
+| schematicPath | string | Yes      | Path to the .kicad_sch schematic file |
+
+**Response fields:**
+
+| Field          | Description                                                                  |
+| -------------- | ---------------------------------------------------------------------------- |
+| orphaned_wires | List of `{"start": {x,y}, "end": {x,y}, "dangling_ends": [{x,y}, ...]}` (mm) |
+| count          | Total number of orphaned wire segments                                       |
+
+### snap_to_grid
+
+Snap schematic element coordinates to the nearest grid point. KiCAD uses exact integer matching (10 000 IU/mm) internally, so even a sub-pixel offset makes wires appear connected visually while failing ERC. Run this before `run_erc` to eliminate that class of error. Modifies the `.kicad_sch` file in place. Does not require the KiCAD UI to be running.
+
+| Parameter     | Type            | Required | Description                                                                                                                                                                                                          |
+| ------------- | --------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| schematicPath | string          | Yes      | Path to the .kicad_sch schematic file                                                                                                                                                                                |
+| gridSize      | number          | No       | Grid spacing in mm (default: 2.54 — standard KiCAD schematic grid; use 1.27 for high-density)                                                                                                                        |
+| elements      | array\<string\> | No       | Types to snap: `"wires"`, `"junctions"`, `"labels"`, `"components"`. Default: `["wires", "junctions", "labels"]`. `"components"` is opt-in — moving a component without re-routing its wires creates new mismatches. |
+
+**Response fields:**
+
+| Field           | Description                                               |
+| --------------- | --------------------------------------------------------- |
+| snapped         | Number of elements that had at least one coordinate moved |
+| already_on_grid | Number of elements already on the grid                    |
+| grid_size       | Grid spacing used (mm)                                    |
 
 ### run_erc
 
