@@ -2664,11 +2664,14 @@ class KiCADInterface:
 
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
-                if result.returncode != 0:
-                    logger.error(f"ERC command failed: {result.stderr}")
+                # kicad-cli returns non-zero when ERC violations are found —
+                # this is normal, not an error.  Only fail when no JSON was
+                # produced (genuine CLI failure).
+                if not os.path.exists(json_output) or os.path.getsize(json_output) == 0:
+                    logger.error(f"ERC command produced no output: {result.stderr}")
                     return {
                         "success": False,
-                        "message": "ERC command failed",
+                        "message": "ERC command failed - no output produced",
                         "errorDetails": result.stderr,
                     }
 
@@ -2678,7 +2681,14 @@ class KiCADInterface:
                 violations = []
                 severity_counts = {"error": 0, "warning": 0, "info": 0}
 
-                for v in erc_data.get("violations", []):
+                # KiCad 9 nests violations under sheets[].violations
+                # instead of (or in addition to) the top-level violations
+                # array used by KiCad 8.
+                all_violations = erc_data.get("violations", [])
+                for sheet in erc_data.get("sheets", []):
+                    all_violations.extend(sheet.get("violations", []))
+
+                for v in all_violations:
                     vseverity = v.get("severity", "error")
                     items = v.get("items", [])
                     loc = {}
