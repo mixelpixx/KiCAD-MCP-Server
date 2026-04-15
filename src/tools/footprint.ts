@@ -62,10 +62,7 @@ const RectSchema = z.object({
 
 // ---- tool registration --------------------------------------------------- //
 
-export function registerFootprintTools(
-  server: McpServer,
-  callKicadScript: Function,
-) {
+export function registerFootprintTools(server: McpServer, callKicadScript: Function) {
   // ── create_footprint ──────────────────────────────────────────────────── //
   server.tool(
     "create_footprint",
@@ -80,10 +77,7 @@ export function registerFootprintTools(
         ),
       name: z.string().describe("Footprint name, e.g. 'R_0603_Custom'"),
       description: z.string().optional().describe("Human-readable description"),
-      tags: z
-        .string()
-        .optional()
-        .describe("Space-separated tag string, e.g. 'resistor SMD 0603'"),
+      tags: z.string().optional().describe("Space-separated tag string, e.g. 'resistor SMD 0603'"),
       pads: z
         .array(PadSchema)
         .optional()
@@ -91,9 +85,7 @@ export function registerFootprintTools(
       courtyard: RectSchema.optional().describe(
         "Courtyard rectangle on F.CrtYd (recommended: 0.25 mm clearance around pads)",
       ),
-      silkscreen: RectSchema.optional().describe(
-        "Silkscreen rectangle on F.SilkS",
-      ),
+      silkscreen: RectSchema.optional().describe("Silkscreen rectangle on F.SilkS"),
       fabLayer: RectSchema.optional().describe(
         "Fab-layer rectangle on F.Fab (shows component body)",
       ),
@@ -139,9 +131,7 @@ export function registerFootprintTools(
       footprintPath: z
         .string()
         .describe("Full path to the .kicad_mod file, e.g. C:/MyLib.pretty/R_Custom.kicad_mod"),
-      padNumber: z
-        .union([z.string(), z.number()])
-        .describe("Pad number to edit, e.g. '1' or 2"),
+      padNumber: z.union([z.string(), z.number()]).describe("Pad number to edit, e.g. '1' or 2"),
       size: PadSize.optional().describe("New pad size in mm"),
       at: PadPosition.optional().describe("New pad position in mm"),
       drill: z
@@ -151,10 +141,7 @@ export function registerFootprintTools(
         ])
         .optional()
         .describe("New drill size (for THT pads)"),
-      shape: z
-        .enum(["rect", "circle", "oval", "roundrect"])
-        .optional()
-        .describe("New pad shape"),
+      shape: z.enum(["rect", "circle", "oval", "roundrect"]).optional().describe("New pad shape"),
     },
     async (args: {
       footprintPath: string;
@@ -177,9 +164,7 @@ export function registerFootprintTools(
     "Register a .pretty footprint library in KiCAD's fp-lib-table so KiCAD can find the footprints. " +
       "Run this after create_footprint when KiCAD shows 'library not found in footprint library table'.",
     {
-      libraryPath: z
-        .string()
-        .describe("Full path to the .pretty directory to register"),
+      libraryPath: z.string().describe("Full path to the .pretty directory to register"),
       libraryName: z
         .string()
         .optional()

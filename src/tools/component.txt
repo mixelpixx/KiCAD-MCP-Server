@@ -11,13 +11,13 @@ type CommandFunction = (command: string, params: any) => Promise<any>;
 
 /**
  * Register component management tools with the MCP server
- * 
+ *
  * @param server MCP server instance
  * @param callKicadScript Function to call KiCAD script commands
  */
 export function registerComponentTools(server: McpServer, callKicadScript: CommandFunction): void {
   logger.info('Registering component management tools');
-  
+
   // ------------------------------------------------------
   // Place Component Tool
   // ------------------------------------------------------

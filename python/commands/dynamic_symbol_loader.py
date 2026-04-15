@@ -7,10 +7,10 @@ on-the-fly using TEXT MANIPULATION (not sexpdata) to preserve file formatting.
 This enables access to all ~10,000+ KiCad symbols dynamically.
 """
 
+import logging
 import os
 import re
 import uuid
-import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -41,10 +41,17 @@ class DynamicSymbolLoader:
             Path("C:/Program Files/KiCad/9.0/share/kicad/symbols"),
             Path("C:/Program Files/KiCad/8.0/share/kicad/symbols"),
             Path("/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols"),
+            Path.home() / ".local" / "share" / "kicad" / "10.0" / "symbols",
             Path.home() / ".local" / "share" / "kicad" / "9.0" / "symbols",
+            Path.home() / "Documents" / "KiCad" / "10.0" / "3rdparty" / "symbols",
             Path.home() / "Documents" / "KiCad" / "9.0" / "3rdparty" / "symbols",
         ]
-        for env_var in ["KICAD9_SYMBOL_DIR", "KICAD8_SYMBOL_DIR", "KICAD_SYMBOL_DIR"]:
+        for env_var in [
+            "KICAD10_SYMBOL_DIR",
+            "KICAD9_SYMBOL_DIR",
+            "KICAD8_SYMBOL_DIR",
+            "KICAD_SYMBOL_DIR",
+        ]:
             if env_var in os.environ:
                 possible_paths.insert(0, Path(os.environ[env_var]))
 
@@ -81,7 +88,9 @@ class DynamicSymbolLoader:
             with open(table_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            lib_pattern = r'\(lib\s+\(name\s+"?([^"\)\s]+)"?\)\s*\(type\s+[^)]+\)\s*\(uri\s+"?([^"\)\s]+)"?'
+            lib_pattern = (
+                r'\(lib\s+\(name\s+"?([^"\)\s]+)"?\)\s*\(type\s+[^)]+\)\s*\(uri\s+"?([^"\)\s]+)"?'
+            )
             for match in re.finditer(lib_pattern, content, re.IGNORECASE):
                 nickname = match.group(1)
                 if nickname != library_name:
@@ -97,6 +106,11 @@ class DynamicSymbolLoader:
     def _resolve_sym_uri(self, uri: str) -> Optional[str]:
         """Resolve environment variables in a sym-lib-table URI."""
         env_map = {
+            "KICAD10_SYMBOL_DIR": [
+                "/usr/share/kicad/symbols",
+                "C:/Program Files/KiCad/10.0/share/kicad/symbols",
+                "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols",
+            ],
             "KICAD9_SYMBOL_DIR": [
                 "C:/Program Files/KiCad/9.0/share/kicad/symbols",
                 "/usr/share/kicad/symbols",
@@ -201,9 +215,7 @@ class DynamicSymbolLoader:
 
         return items
 
-    def _inline_extends_symbol(
-        self, lib_content: str, symbol_name: str, child_block: str
-    ) -> str:
+    def _inline_extends_symbol(self, lib_content: str, symbol_name: str, child_block: str) -> str:
         """
         Fully inline a child symbol that uses (extends "ParentName") by merging
         the parent's pins / graphics into the child definition.
@@ -248,22 +260,16 @@ class DynamicSymbolLoader:
 
         for item in self._iter_top_level_items(parent_block):
             prop_match = re.match(r'[\s\t]*\(property "([^"]+)"', item)
-            sub_match = re.search(
-                r'\(symbol "' + re.escape(parent_name) + r'_\d+_\d+"', item
-            )
+            sub_match = re.search(r'\(symbol "' + re.escape(parent_name) + r'_\d+_\d+"', item)
 
             if prop_match:
                 pname = prop_match.group(1)
                 parent_prop_names.add(pname)
-                body_lines.append(
-                    child_props[pname] if pname in child_props else item
-                )
+                body_lines.append(child_props[pname] if pname in child_props else item)
             elif sub_match:
                 # Rename ParentName_0_1 → ChildName_0_1
-                body_lines.append(
-                    item.replace(f'"{parent_name}_', f'"{symbol_name}_')
-                )
-            elif re.match(r'[\s\t]*\(extends ', item):
+                body_lines.append(item.replace(f'"{parent_name}_', f'"{symbol_name}_'))
+            elif re.match(r"[\s\t]*\(extends ", item):
                 pass  # drop extends clause
             else:
                 body_lines.append(item)  # pin_names, in_bom, on_board …
@@ -273,16 +279,12 @@ class DynamicSymbolLoader:
             if pname not in parent_prop_names:
                 body_lines.append(pblock)
 
-        first_line = parent_block.split("\n")[0].replace(
-            f'"{parent_name}"', f'"{symbol_name}"'
-        )
+        first_line = parent_block.split("\n")[0].replace(f'"{parent_name}"', f'"{symbol_name}"')
         last_line = parent_block.split("\n")[-1]
 
         return first_line + "\n" + "\n".join(body_lines) + "\n" + last_line
 
-    def extract_symbol_from_library(
-        self, library_name: str, symbol_name: str
-    ) -> Optional[str]:
+    def extract_symbol_from_library(self, library_name: str, symbol_name: str) -> Optional[str]:
         """
         Extract a symbol definition from a KiCad .kicad_sym library file.
         Returns the raw text block, ready to be injected into a schematic.
@@ -304,9 +306,7 @@ class DynamicSymbolLoader:
 
         block = self._extract_symbol_block(lib_content, symbol_name)
         if block is None:
-            logger.warning(
-                f"Symbol '{symbol_name}' not found in {library_name}.kicad_sym"
-            )
+            logger.warning(f"Symbol '{symbol_name}' not found in {library_name}.kicad_sym")
             return None
 
         # If the symbol uses (extends "ParentName"), inline the parent content
@@ -315,9 +315,7 @@ class DynamicSymbolLoader:
         # load a schematic whose lib_symbols section contains it.
         if re.search(r'\(extends "([^"]+)"\)', block):
             parent_name = re.search(r'\(extends "([^"]+)"\)', block).group(1)
-            logger.info(
-                f"Symbol {symbol_name} extends {parent_name}, inlining parent content"
-            )
+            logger.info(f"Symbol {symbol_name} extends {parent_name}, inlining parent content")
             block = self._inline_extends_symbol(lib_content, symbol_name, block)
 
         # Prefix top-level symbol name with library
@@ -355,9 +353,7 @@ class DynamicSymbolLoader:
         # Extract symbol from library
         symbol_block = self.extract_symbol_from_library(library_name, symbol_name)
         if not symbol_block:
-            raise ValueError(
-                f"Symbol '{symbol_name}' not found in library '{library_name}'"
-            )
+            raise ValueError(f"Symbol '{symbol_name}' not found in library '{library_name}'")
 
         # Indent the block to match lib_symbols indentation (4 spaces for top-level)
         indented_lines = []
@@ -392,11 +388,7 @@ class DynamicSymbolLoader:
             f.write(content)
 
         # Handle both Path objects and strings
-        sch_name = (
-            schematic_path.name
-            if hasattr(schematic_path, "name")
-            else str(schematic_path)
-        )
+        sch_name = schematic_path.name if hasattr(schematic_path, "name") else str(schematic_path)
         logger.info(f"Injected symbol {full_name} into {sch_name}")
         return True
 
@@ -433,6 +425,14 @@ class DynamicSymbolLoader:
     (property "Datasheet" "~" (at {x} {y} 0)
       (effects (font (size 1.27 1.27)) (hide yes))
     )
+    (instances
+      (project "project"
+        (path "/"
+          (reference "{reference}")
+          (unit 1)
+        )
+      )
+    )
   )"""
 
         with open(schematic_path, "r", encoding="utf-8") as f:
@@ -450,9 +450,7 @@ class DynamicSymbolLoader:
         with open(schematic_path, "w", encoding="utf-8") as f:
             f.write(content)
 
-        logger.info(
-            f"Added component instance {reference} ({full_lib_id}) at ({x}, {y})"
-        )
+        logger.info(f"Added component instance {reference} ({full_lib_id}) at ({x}, {y})")
         return True
 
     def load_symbol_dynamically(

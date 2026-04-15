@@ -1,21 +1,21 @@
 /**
  * Component prompts for KiCAD MCP server
- * 
+ *
  * These prompts guide the LLM in providing assistance with component-related tasks
  * in KiCAD PCB design.
  */
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import { logger } from '../logger.js';
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { logger } from "../logger.js";
 
 /**
  * Register component prompts with the MCP server
- * 
+ *
  * @param server MCP server instance
  */
 export function registerComponentPrompts(server: McpServer): void {
-  logger.info('Registering component prompts');
+  logger.info("Registering component prompts");
 
   // ------------------------------------------------------
   // Component Selection Prompt
@@ -23,7 +23,7 @@ export function registerComponentPrompts(server: McpServer): void {
   server.prompt(
     "component_selection",
     {
-      requirements: z.string().describe("Description of the circuit requirements and constraints")
+      requirements: z.string().describe("Description of the circuit requirements and constraints"),
     },
     () => ({
       messages: [
@@ -44,11 +44,11 @@ Suggest appropriate components with their values, ratings, and footprints. Consi
 - Thermal characteristics
 - Performance specifications
 
-For each component type, recommend specific values and provide a brief explanation of your recommendation. If appropriate, suggest alternatives with different trade-offs.`
-          }
-        }
-      ]
-    })
+For each component type, recommend specific values and provide a brief explanation of your recommendation. If appropriate, suggest alternatives with different trade-offs.`,
+          },
+        },
+      ],
+    }),
   );
 
   // ------------------------------------------------------
@@ -57,7 +57,7 @@ For each component type, recommend specific values and provide a brief explanati
   server.prompt(
     "component_placement_strategy",
     {
-      components: z.string().describe("List of components to be placed on the PCB")
+      components: z.string().describe("List of components to be placed on the PCB"),
     },
     () => ({
       messages: [
@@ -91,11 +91,11 @@ Provide a strategy for optimal placement considering:
    - Adequate spacing for rework
    - Consider component height distribution
 
-Group components functionally and suggest a logical arrangement. If possible, provide a rough sketch or description of component zones.`
-          }
-        }
-      ]
-    })
+Group components functionally and suggest a logical arrangement. If possible, provide a rough sketch or description of component zones.`,
+          },
+        },
+      ],
+    }),
   );
 
   // ------------------------------------------------------
@@ -104,7 +104,9 @@ Group components functionally and suggest a logical arrangement. If possible, pr
   server.prompt(
     "component_replacement_analysis",
     {
-      component_info: z.string().describe("Information about the component that needs to be replaced")
+      component_info: z
+        .string()
+        .describe("Information about the component that needs to be replaced"),
     },
     () => ({
       messages: [
@@ -137,11 +139,11 @@ Consider these factors when suggesting replacements:
    - Cost comparison with original part
    - Lead time considerations
 
-Suggest suitable replacement options and explain the advantages and disadvantages of each. Include any circuit modifications that might be necessary.`
-          }
-        }
-      ]
-    })
+Suggest suitable replacement options and explain the advantages and disadvantages of each. Include any circuit modifications that might be necessary.`,
+          },
+        },
+      ],
+    }),
   );
 
   // ------------------------------------------------------
@@ -150,7 +152,9 @@ Suggest suitable replacement options and explain the advantages and disadvantage
   server.prompt(
     "component_troubleshooting",
     {
-      issue_description: z.string().describe("Description of the component or circuit issue being troubleshooted")
+      issue_description: z
+        .string()
+        .describe("Description of the component or circuit issue being troubleshooted"),
     },
     () => ({
       messages: [
@@ -184,11 +188,11 @@ Use the following systematic approach to diagnose the problem:
    - Check for potential EMI/RFI issues
    - Review mechanical stress or vibration effects
 
-Based on the available information, suggest likely causes of the issue and recommend specific steps to diagnose and resolve the problem.`
-          }
-        }
-      ]
-    })
+Based on the available information, suggest likely causes of the issue and recommend specific steps to diagnose and resolve the problem.`,
+          },
+        },
+      ],
+    }),
   );
 
   // ------------------------------------------------------
@@ -197,7 +201,9 @@ Based on the available information, suggest likely causes of the issue and recom
   server.prompt(
     "component_value_calculation",
     {
-      circuit_requirements: z.string().describe("Description of the circuit function and performance requirements")
+      circuit_requirements: z
+        .string()
+        .describe("Description of the circuit function and performance requirements"),
     },
     () => ({
       messages: [
@@ -220,12 +226,12 @@ Follow these steps to determine the optimal component values:
    - Parasitic effects
    - Available standard values
 
-Present your calculations step-by-step, showing your work and explaining your reasoning. Recommend specific component values, explaining why they're appropriate for this application. If there are multiple valid approaches, discuss the trade-offs between them.`
-          }
-        }
-      ]
-    })
+Present your calculations step-by-step, showing your work and explaining your reasoning. Recommend specific component values, explaining why they're appropriate for this application. If there are multiple valid approaches, discuss the trade-offs between them.`,
+          },
+        },
+      ],
+    }),
   );
 
-  logger.info('Component prompts registered');
+  logger.info("Component prompts registered");
 }

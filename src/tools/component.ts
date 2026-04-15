@@ -7,10 +7,7 @@ import { z } from "zod";
 import { logger } from "../logger.js";
 
 // Command function type for KiCAD script calls
-type CommandFunction = (
-  command: string,
-  params: Record<string, unknown>,
-) => Promise<any>;
+type CommandFunction = (command: string, params: Record<string, unknown>) => Promise<any>;
 
 /**
  * Register component management tools with the MCP server
@@ -18,10 +15,7 @@ type CommandFunction = (
  * @param server MCP server instance
  * @param callKicadScript Function to call KiCAD script commands
  */
-export function registerComponentTools(
-  server: McpServer,
-  callKicadScript: CommandFunction,
-): void {
+export function registerComponentTools(server: McpServer, callKicadScript: CommandFunction): void {
   logger.info("Registering component management tools");
 
   // ------------------------------------------------------
@@ -40,38 +34,19 @@ export function registerComponentTools(
           unit: z.enum(["mm", "inch"]).describe("Unit of measurement"),
         })
         .describe("Position coordinates and unit"),
-      reference: z
-        .string()
-        .optional()
-        .describe("Optional desired reference (e.g., 'R5')"),
-      value: z
-        .string()
-        .optional()
-        .describe("Optional component value (e.g., '10k')"),
-      footprint: z
-        .string()
-        .optional()
-        .describe("Optional specific footprint name"),
+      reference: z.string().optional().describe("Optional desired reference (e.g., 'R5')"),
+      value: z.string().optional().describe("Optional component value (e.g., '10k')"),
+      footprint: z.string().optional().describe("Optional specific footprint name"),
       rotation: z.number().optional().describe("Optional rotation in degrees"),
-      layer: z
-        .string()
-        .optional()
-        .describe("Optional layer (e.g., 'F.Cu', 'B.SilkS')"),
+      layer: z.string().optional().describe("Optional layer (e.g., 'F.Cu', 'B.SilkS')"),
       boardPath: z
         .string()
         .optional()
-        .describe("Path to the .kicad_pcb file – required when using project-local footprint libraries"),
+        .describe(
+          "Path to the .kicad_pcb file – required when using project-local footprint libraries",
+        ),
     },
-    async ({
-      componentId,
-      position,
-      reference,
-      value,
-      footprint,
-      rotation,
-      layer,
-      boardPath,
-    }) => {
+    async ({ componentId, position, reference, value, footprint, rotation, layer, boardPath }) => {
       logger.debug(
         `Placing component: ${componentId} at ${position.x},${position.y} ${position.unit}`,
       );
@@ -103,9 +78,7 @@ export function registerComponentTools(
   server.tool(
     "move_component",
     {
-      reference: z
-        .string()
-        .describe("Reference designator of the component (e.g., 'R5')"),
+      reference: z.string().describe("Reference designator of the component (e.g., 'R5')"),
       position: z
         .object({
           x: z.number().describe("X coordinate"),
@@ -113,12 +86,13 @@ export function registerComponentTools(
           unit: z.enum(["mm", "inch"]).describe("Unit of measurement"),
         })
         .describe("New position coordinates and unit"),
-      rotation: z
-        .number()
+      rotation: z.number().optional().describe("Optional new rotation in degrees"),
+      layer: z
+        .string()
         .optional()
-        .describe("Optional new rotation in degrees"),
+        .describe("Optional target layer (e.g., 'F.Cu', 'B.Cu') - flips component if needed"),
     },
-    async ({ reference, position, rotation }) => {
+    async ({ reference, position, rotation, layer }) => {
       logger.debug(
         `Moving component: ${reference} to ${position.x},${position.y} ${position.unit}`,
       );
@@ -126,6 +100,7 @@ export function registerComponentTools(
         reference,
         position,
         rotation,
+        layer,
       });
 
       return {
@@ -145,12 +120,8 @@ export function registerComponentTools(
   server.tool(
     "rotate_component",
     {
-      reference: z
-        .string()
-        .describe("Reference designator of the component (e.g., 'R5')"),
-      angle: z
-        .number()
-        .describe("Rotation angle in degrees (absolute, not relative)"),
+      reference: z.string().describe("Reference designator of the component (e.g., 'R5')"),
+      angle: z.number().describe("Rotation angle in degrees (absolute, not relative)"),
     },
     async ({ reference, angle }) => {
       logger.debug(`Rotating component: ${reference} to ${angle} degrees`);
@@ -178,9 +149,7 @@ export function registerComponentTools(
     {
       reference: z
         .string()
-        .describe(
-          "Reference designator of the component to delete (e.g., 'R5')",
-        ),
+        .describe("Reference designator of the component to delete (e.g., 'R5')"),
     },
     async ({ reference }) => {
       logger.debug(`Deleting component: ${reference}`);
@@ -203,13 +172,8 @@ export function registerComponentTools(
   server.tool(
     "edit_component",
     {
-      reference: z
-        .string()
-        .describe("Reference designator of the component (e.g., 'R5')"),
-      newReference: z
-        .string()
-        .optional()
-        .describe("Optional new reference designator"),
+      reference: z.string().describe("Reference designator of the component (e.g., 'R5')"),
+      newReference: z.string().optional().describe("Optional new reference designator"),
       value: z.string().optional().describe("Optional new component value"),
       footprint: z.string().optional().describe("Optional new footprint"),
     },
@@ -239,10 +203,7 @@ export function registerComponentTools(
   server.tool(
     "find_component",
     {
-      reference: z
-        .string()
-        .optional()
-        .describe("Reference designator to search for"),
+      reference: z.string().optional().describe("Reference designator to search for"),
       value: z.string().optional().describe("Component value to search for"),
     },
     async ({ reference, value }) => {
@@ -271,9 +232,7 @@ export function registerComponentTools(
   server.tool(
     "get_component_properties",
     {
-      reference: z
-        .string()
-        .describe("Reference designator of the component (e.g., 'R5')"),
+      reference: z.string().describe("Reference designator of the component (e.g., 'R5')"),
     },
     async ({ reference }) => {
       logger.debug(`Getting properties for component: ${reference}`);
@@ -298,9 +257,7 @@ export function registerComponentTools(
   server.tool(
     "add_component_annotation",
     {
-      reference: z
-        .string()
-        .describe("Reference designator of the component (e.g., 'R5')"),
+      reference: z.string().describe("Reference designator of the component (e.g., 'R5')"),
       annotation: z.string().describe("Annotation or comment text to add"),
       visible: z
         .boolean()
@@ -332,15 +289,11 @@ export function registerComponentTools(
   server.tool(
     "group_components",
     {
-      references: z
-        .array(z.string())
-        .describe("Reference designators of components to group"),
+      references: z.array(z.string()).describe("Reference designators of components to group"),
       groupName: z.string().describe("Name for the component group"),
     },
     async ({ references, groupName }) => {
-      logger.debug(
-        `Grouping components: ${references.join(", ")} as ${groupName}`,
-      );
+      logger.debug(`Grouping components: ${references.join(", ")} as ${groupName}`);
       const result = await callKicadScript("group_components", {
         references,
         groupName,
@@ -363,9 +316,7 @@ export function registerComponentTools(
   server.tool(
     "replace_component",
     {
-      reference: z
-        .string()
-        .describe("Reference designator of the component to replace"),
+      reference: z.string().describe("Reference designator of the component to replace"),
       newComponentId: z.string().describe("ID of the new component to use"),
       newFootprint: z.string().optional().describe("Optional new footprint"),
       newValue: z.string().optional().describe("Optional new component value"),
@@ -396,13 +347,8 @@ export function registerComponentTools(
   server.tool(
     "get_component_pads",
     {
-      reference: z
-        .string()
-        .describe("Reference designator of the component (e.g., 'U1')"),
-      unit: z
-        .enum(["mm", "inch"])
-        .optional()
-        .describe("Unit for coordinates (default: mm)"),
+      reference: z.string().describe("Reference designator of the component (e.g., 'U1')"),
+      unit: z.enum(["mm", "inch"]).optional().describe("Unit for coordinates (default: mm)"),
     },
     async ({ reference, unit }) => {
       logger.debug(`Getting pads for component: ${reference}`);
@@ -428,10 +374,7 @@ export function registerComponentTools(
   server.tool(
     "get_component_list",
     {
-      layer: z
-        .string()
-        .optional()
-        .describe("Filter by layer (e.g., 'F.Cu', 'B.Cu')"),
+      layer: z.string().optional().describe("Filter by layer (e.g., 'F.Cu', 'B.Cu')"),
       boundingBox: z
         .object({
           x1: z.number(),
@@ -442,10 +385,7 @@ export function registerComponentTools(
         })
         .optional()
         .describe("Filter by bounding box region"),
-      unit: z
-        .enum(["mm", "inch"])
-        .optional()
-        .describe("Unit for coordinates (default: mm)"),
+      unit: z.enum(["mm", "inch"]).optional().describe("Unit for coordinates (default: mm)"),
     },
     async ({ layer, boundingBox, unit }) => {
       logger.debug("Getting component list");
@@ -472,14 +412,9 @@ export function registerComponentTools(
   server.tool(
     "get_pad_position",
     {
-      reference: z
-        .string()
-        .describe("Component reference designator (e.g., 'U1')"),
+      reference: z.string().describe("Component reference designator (e.g., 'U1')"),
       pad: z.string().describe("Pad number or name (e.g., '1', 'A1')"),
-      unit: z
-        .enum(["mm", "inch"])
-        .optional()
-        .describe("Unit for coordinates (default: mm)"),
+      unit: z.enum(["mm", "inch"]).optional().describe("Unit for coordinates (default: mm)"),
     },
     async ({ reference, pad, unit }) => {
       logger.debug(`Getting pad position for ${reference} pad ${pad}`);
@@ -518,10 +453,7 @@ export function registerComponentTools(
       columns: z.number().describe("Number of columns"),
       rowSpacing: z.number().describe("Spacing between rows"),
       columnSpacing: z.number().describe("Spacing between columns"),
-      startReference: z
-        .string()
-        .optional()
-        .describe("Starting reference (e.g., 'R1')"),
+      startReference: z.string().optional().describe("Starting reference (e.g., 'R1')"),
       footprint: z.string().optional().describe("Footprint name"),
       value: z.string().optional().describe("Component value"),
       rotation: z.number().optional().describe("Rotation in degrees"),
@@ -538,9 +470,7 @@ export function registerComponentTools(
       value,
       rotation,
     }) => {
-      logger.debug(
-        `Placing component array: ${rows}x${columns} of ${componentId}`,
-      );
+      logger.debug(`Placing component array: ${rows}x${columns} of ${componentId}`);
       const result = await callKicadScript("place_component_array", {
         componentId,
         startPosition,
@@ -571,20 +501,10 @@ export function registerComponentTools(
   server.tool(
     "align_components",
     {
-      references: z
-        .array(z.string())
-        .describe("Array of component references to align"),
-      alignmentType: z
-        .enum(["horizontal", "vertical", "grid"])
-        .describe("Type of alignment"),
-      spacing: z
-        .number()
-        .optional()
-        .describe("Spacing between components in mm"),
-      referenceComponent: z
-        .string()
-        .optional()
-        .describe("Reference component for alignment"),
+      references: z.array(z.string()).describe("Array of component references to align"),
+      alignmentType: z.enum(["horizontal", "vertical", "grid"]).describe("Type of alignment"),
+      spacing: z.number().optional().describe("Spacing between components in mm"),
+      referenceComponent: z.string().optional().describe("Reference component for alignment"),
     },
     async ({ references, alignmentType, spacing, referenceComponent }) => {
       logger.debug(`Aligning components: ${references.join(", ")}`);
@@ -621,10 +541,7 @@ export function registerComponentTools(
         })
         .describe("Offset from original position"),
       newReference: z.string().optional().describe("New reference designator"),
-      count: z
-        .number()
-        .optional()
-        .describe("Number of duplicates (default: 1)"),
+      count: z.number().optional().describe("Number of duplicates (default: 1)"),
     },
     async ({ reference, offset, newReference, count }) => {
       logger.debug(`Duplicating component: ${reference}`);

@@ -7,6 +7,7 @@ Automatically detect and launch KiCAD UI when needed, providing seamless visual 
 ## 🎯 Overview
 
 The KiCAD MCP server can now:
+
 - ✅ Detect if KiCAD UI is running
 - ✅ Launch KiCAD automatically when needed
 - ✅ Open projects directly in the UI
@@ -49,6 +50,7 @@ Check if KiCAD is currently running.
 **Parameters:** None
 
 **Example:**
+
 ```typescript
 {
   "command": "check_kicad_ui",
@@ -57,6 +59,7 @@ Check if KiCAD is currently running.
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -77,10 +80,12 @@ Check if KiCAD is currently running.
 Launch KiCAD UI, optionally with a project file.
 
 **Parameters:**
+
 - `projectPath` (optional): Path to `.kicad_pcb` file to open
 - `autoLaunch` (optional): Whether to launch if not running (default: true)
 
 **Example:**
+
 ```typescript
 {
   "command": "launch_kicad_ui",
@@ -91,6 +96,7 @@ Launch KiCAD UI, optionally with a project file.
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -157,10 +163,10 @@ Claude:
 
 ### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KICAD_AUTO_LAUNCH` | `false` | Auto-launch KiCAD when needed |
-| `KICAD_EXECUTABLE` | auto-detect | Override KiCAD executable path |
+| Variable            | Default     | Description                    |
+| ------------------- | ----------- | ------------------------------ |
+| `KICAD_AUTO_LAUNCH` | `false`     | Auto-launch KiCAD when needed  |
+| `KICAD_EXECUTABLE`  | auto-detect | Override KiCAD executable path |
 
 ### Custom Executable Path
 
@@ -182,16 +188,19 @@ If KiCAD is installed in a non-standard location:
 ### Process Detection
 
 **Linux:**
+
 ```bash
 pgrep -f "pcbnew|kicad"
 ```
 
 **macOS:**
+
 ```bash
 pgrep -f "KiCad|pcbnew"
 ```
 
 **Windows:**
+
 ```powershell
 tasklist /FI "IMAGENAME eq pcbnew.exe"
 ```
@@ -201,15 +210,18 @@ tasklist /FI "IMAGENAME eq pcbnew.exe"
 The system searches for KiCAD in:
 
 **Linux:**
+
 - `/usr/bin/pcbnew`
 - `/usr/local/bin/pcbnew`
 - `/usr/bin/kicad`
 
 **macOS:**
+
 - `/Applications/KiCad/KiCad.app/Contents/MacOS/kicad`
 - `/Applications/KiCad/pcbnew.app/Contents/MacOS/pcbnew`
 
 **Windows:**
+
 - `C:/Program Files/KiCad/9.0/bin/pcbnew.exe`
 - `C:/Program Files/KiCad/8.0/bin/pcbnew.exe`
 
@@ -229,6 +241,7 @@ The system searches for KiCAD in:
 ### 1. Beginner-Friendly Workflow
 
 User doesn't need to know how to launch KiCAD manually:
+
 ```
 User: "Help me design a simple LED board"
 Claude: [Auto-launches KiCAD, creates project, designs board]
@@ -237,6 +250,7 @@ Claude: [Auto-launches KiCAD, creates project, designs board]
 ### 2. Streamlined Iteration
 
 For rapid prototyping with visual feedback:
+
 ```
 1. Claude creates board → KiCAD opens
 2. User sees board, requests changes
@@ -247,6 +261,7 @@ For rapid prototyping with visual feedback:
 ### 3. Batch Processing
 
 Process multiple designs without manual intervention:
+
 ```python
 for design in designs:
     create_project(design)
@@ -263,6 +278,7 @@ for design in designs:
 ### KiCAD Doesn't Launch
 
 **Check executable path:**
+
 ```bash
 # Linux/macOS
 which pcbnew
@@ -272,6 +288,7 @@ where pcbnew.exe
 ```
 
 **Override if needed:**
+
 ```json
 {
   "env": {
@@ -283,6 +300,7 @@ where pcbnew.exe
 ### Process Detection Fails
 
 **Manual check:**
+
 ```bash
 # Linux/macOS
 ps aux | grep kicad
@@ -292,6 +310,7 @@ tasklist | findstr kicad
 ```
 
 **Verify permissions:**
+
 - Ensure user can execute `pgrep` (Linux/macOS)
 - Ensure user can execute `tasklist` (Windows)
 
@@ -309,17 +328,20 @@ tasklist | findstr kicad
 ### Files Modified/Created
 
 **New Files:**
+
 - `python/utils/kicad_process.py` - Process management utilities
 - `src/tools/ui.ts` - MCP tool definitions
 - `docs/UI_AUTO_LAUNCH.md` - This documentation
 
 **Modified Files:**
+
 - `python/kicad_interface.py` - Added UI command handlers
 - `src/server.ts` - Registered UI tools
 
 ### API Reference
 
 **Python:**
+
 ```python
 from utils.kicad_process import KiCADProcessManager, check_and_launch_kicad
 
@@ -341,6 +363,7 @@ result = check_and_launch_kicad(
 ```
 
 **MCP Tools:**
+
 ```typescript
 // Check status
 await callKicadScript("check_kicad_ui", {});
@@ -348,7 +371,7 @@ await callKicadScript("check_kicad_ui", {});
 // Launch
 await callKicadScript("launch_kicad_ui", {
   projectPath: "/path/to/project.kicad_pcb",
-  autoLaunch: true
+  autoLaunch: true,
 });
 ```
 
@@ -367,6 +390,7 @@ await callKicadScript("launch_kicad_ui", {
 ### IPC Mode (Coming Weeks 2-3)
 
 When IPC backend is fully implemented:
+
 ```
 KiCAD runs in background → MCP connects via IPC → Real-time updates
 No file reloading needed! Changes appear instantly.
@@ -377,6 +401,7 @@ No file reloading needed! Changes appear instantly.
 ## 📝 Summary
 
 **Before this feature:**
+
 ```
 User manually launches KiCAD
 User manually opens project
@@ -385,6 +410,7 @@ User manually reloads
 ```
 
 **After this feature:**
+
 ```
 User: "Design a board"
 → KiCAD auto-launches with project

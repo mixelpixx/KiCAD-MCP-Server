@@ -10,7 +10,7 @@ Each tool includes:
 - outputSchema: Optional JSON Schema for return values (structured content)
 """
 
-from typing import Dict, Any
+from typing import Any, Dict
 
 # =============================================================================
 # PROJECT TOOLS
@@ -27,19 +27,19 @@ PROJECT_TOOLS = [
                 "projectName": {
                     "type": "string",
                     "description": "Name of the project (used for file naming)",
-                    "minLength": 1
+                    "minLength": 1,
                 },
                 "path": {
                     "type": "string",
-                    "description": "Directory path where project will be created (defaults to current working directory)"
+                    "description": "Directory path where project will be created (defaults to current working directory)",
                 },
                 "template": {
                     "type": "string",
-                    "description": "Optional path to template board file to copy settings from"
-                }
+                    "description": "Optional path to template board file to copy settings from",
+                },
             },
-            "required": ["projectName"]
-        }
+            "required": ["projectName"],
+        },
     },
     {
         "name": "open_project",
@@ -50,11 +50,11 @@ PROJECT_TOOLS = [
             "properties": {
                 "filename": {
                     "type": "string",
-                    "description": "Path to .kicad_pro or .kicad_pcb file"
+                    "description": "Path to .kicad_pro or .kicad_pcb file",
                 }
             },
-            "required": ["filename"]
-        }
+            "required": ["filename"],
+        },
     },
     {
         "name": "save_project",
@@ -65,10 +65,10 @@ PROJECT_TOOLS = [
             "properties": {
                 "filename": {
                     "type": "string",
-                    "description": "Optional new path to save the board (if not provided, saves to current location)"
+                    "description": "Optional new path to save the board (if not provided, saves to current location)",
                 }
-            }
-        }
+            },
+        },
     },
     {
         "name": "snapshot_project",
@@ -79,28 +79,25 @@ PROJECT_TOOLS = [
             "properties": {
                 "step": {
                     "type": "string",
-                    "description": "Step number or name to include in snapshot folder name, e.g. '1' or '2'"
+                    "description": "Step number or name to include in snapshot folder name, e.g. '1' or '2'",
                 },
                 "label": {
                     "type": "string",
-                    "description": "Optional short label, e.g. 'schematic_ok' or 'layout_ok'"
+                    "description": "Optional short label, e.g. 'schematic_ok' or 'layout_ok'",
                 },
                 "projectPath": {
                     "type": "string",
-                    "description": "Project directory path. Auto-detected from loaded board if omitted."
-                }
-            }
-        }
+                    "description": "Project directory path. Auto-detected from loaded board if omitted.",
+                },
+            },
+        },
     },
     {
         "name": "get_project_info",
         "title": "Get Project Information",
         "description": "Retrieves metadata and properties of the currently open project including name, paths, and board status.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {}
-        }
-    }
+        "inputSchema": {"type": "object", "properties": {}},
+    },
 ]
 
 # =============================================================================
@@ -118,16 +115,16 @@ BOARD_TOOLS = [
                 "width": {
                     "type": "number",
                     "description": "Board width in millimeters",
-                    "minimum": 1
+                    "minimum": 1,
                 },
                 "height": {
                     "type": "number",
                     "description": "Board height in millimeters",
-                    "minimum": 1
-                }
+                    "minimum": 1,
+                },
             },
-            "required": ["width", "height"]
-        }
+            "required": ["width", "height"],
+        },
     },
     {
         "name": "add_board_outline",
@@ -139,44 +136,47 @@ BOARD_TOOLS = [
                 "shape": {
                     "type": "string",
                     "enum": ["rectangle", "rounded_rectangle", "circle", "polygon"],
-                    "description": "Shape type for the board outline"
+                    "description": "Shape type for the board outline",
                 },
                 "width": {
                     "type": "number",
                     "description": "Width in mm (for rectangle/rounded_rectangle)",
-                    "minimum": 1
+                    "minimum": 1,
                 },
                 "height": {
                     "type": "number",
                     "description": "Height in mm (for rectangle/rounded_rectangle)",
-                    "minimum": 1
+                    "minimum": 1,
                 },
                 "x": {
                     "type": "number",
-                    "description": "X coordinate of the top-left corner in mm (default: 0). Board extends from x to x+width."
+                    "description": "X coordinate of the top-left corner in mm (default: 0). Board extends from x to x+width.",
                 },
                 "y": {
                     "type": "number",
-                    "description": "Y coordinate of the top-left corner in mm (default: 0). Board extends from y to y+height."
+                    "description": "Y coordinate of the top-left corner in mm (default: 0). Board extends from y to y+height.",
                 },
                 "radius": {
                     "type": "number",
                     "description": "Corner radius in mm for rounded_rectangle, or radius for circle",
-                    "minimum": 0
+                    "minimum": 0,
                 },
                 "points": {
                     "type": "array",
                     "description": "Array of {x, y} point objects in mm (for polygon shape only)",
                     "items": {
                         "type": "object",
-                        "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
-                        "required": ["x", "y"]
+                        "properties": {
+                            "x": {"type": "number"},
+                            "y": {"type": "number"},
+                        },
+                        "required": ["x", "y"],
                     },
-                    "minItems": 3
-                }
+                    "minItems": 3,
+                },
             },
-            "required": ["shape"]
-        }
+            "required": ["shape"],
+        },
     },
     {
         "name": "add_layer",
@@ -187,16 +187,16 @@ BOARD_TOOLS = [
             "properties": {
                 "layerName": {
                     "type": "string",
-                    "description": "Name of the layer to add"
+                    "description": "Name of the layer to add",
                 },
                 "layerType": {
                     "type": "string",
                     "enum": ["signal", "power", "mixed", "jumper"],
-                    "description": "Type of layer (for copper layers)"
-                }
+                    "description": "Type of layer (for copper layers)",
+                },
             },
-            "required": ["layerName"]
-        }
+            "required": ["layerName"],
+        },
     },
     {
         "name": "set_active_layer",
@@ -207,29 +207,23 @@ BOARD_TOOLS = [
             "properties": {
                 "layerName": {
                     "type": "string",
-                    "description": "Name of the layer to make active (e.g., F.Cu, B.Cu, Edge.Cuts)"
+                    "description": "Name of the layer to make active (e.g., F.Cu, B.Cu, Edge.Cuts)",
                 }
             },
-            "required": ["layerName"]
-        }
+            "required": ["layerName"],
+        },
     },
     {
         "name": "get_layer_list",
         "title": "List Board Layers",
         "description": "Returns a list of all layers in the board with their properties.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {}
-        }
+        "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "get_board_info",
         "title": "Get Board Information",
         "description": "Retrieves comprehensive board information including dimensions, layer count, component count, and design rules.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {}
-        }
+        "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "get_board_2d_view",
@@ -242,16 +236,16 @@ BOARD_TOOLS = [
                     "type": "number",
                     "description": "Image width in pixels (default: 800)",
                     "minimum": 100,
-                    "default": 800
+                    "default": 800,
                 },
                 "height": {
                     "type": "number",
                     "description": "Image height in pixels (default: 600)",
                     "minimum": 100,
-                    "default": 600
-                }
-            }
-        }
+                    "default": 600,
+                },
+            },
+        },
     },
     {
         "name": "get_board_extents",
@@ -264,10 +258,10 @@ BOARD_TOOLS = [
                     "type": "string",
                     "enum": ["mm", "inch"],
                     "description": "Unit for returned coordinates (default: mm)",
-                    "default": "mm"
+                    "default": "mm",
                 }
-            }
-        }
+            },
+        },
     },
     {
         "name": "add_mounting_hole",
@@ -276,22 +270,16 @@ BOARD_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "x": {
-                    "type": "number",
-                    "description": "X coordinate in millimeters"
-                },
-                "y": {
-                    "type": "number",
-                    "description": "Y coordinate in millimeters"
-                },
+                "x": {"type": "number", "description": "X coordinate in millimeters"},
+                "y": {"type": "number", "description": "Y coordinate in millimeters"},
                 "diameter": {
                     "type": "number",
                     "description": "Hole diameter in millimeters",
-                    "minimum": 0.1
-                }
+                    "minimum": 0.1,
+                },
             },
-            "required": ["x", "y", "diameter"]
-        }
+            "required": ["x", "y", "diameter"],
+        },
     },
     {
         "name": "import_svg_logo",
@@ -302,43 +290,43 @@ BOARD_TOOLS = [
             "properties": {
                 "pcbPath": {
                     "type": "string",
-                    "description": "Path to the .kicad_pcb file"
+                    "description": "Path to the .kicad_pcb file",
                 },
                 "svgPath": {
                     "type": "string",
-                    "description": "Path to the SVG logo file"
+                    "description": "Path to the SVG logo file",
                 },
                 "x": {
                     "type": "number",
-                    "description": "X position of the logo top-left corner in mm"
+                    "description": "X position of the logo top-left corner in mm",
                 },
                 "y": {
                     "type": "number",
-                    "description": "Y position of the logo top-left corner in mm"
+                    "description": "Y position of the logo top-left corner in mm",
                 },
                 "width": {
                     "type": "number",
                     "description": "Target width of the logo in mm (height scaled to preserve aspect ratio)",
-                    "minimum": 0.1
+                    "minimum": 0.1,
                 },
                 "layer": {
                     "type": "string",
                     "description": "PCB layer name, e.g. F.SilkS or B.SilkS (default: F.SilkS)",
-                    "default": "F.SilkS"
+                    "default": "F.SilkS",
                 },
                 "strokeWidth": {
                     "type": "number",
                     "description": "Outline stroke width in mm (0 = no outline, default 0)",
-                    "default": 0
+                    "default": 0,
                 },
                 "filled": {
                     "type": "boolean",
                     "description": "Fill polygons with solid layer colour (default true)",
-                    "default": True
-                }
+                    "default": True,
+                },
             },
-            "required": ["pcbPath", "svgPath", "x", "y", "width"]
-        }
+            "required": ["pcbPath", "svgPath", "x", "y", "width"],
+        },
     },
     {
         "name": "add_board_text",
@@ -350,37 +338,31 @@ BOARD_TOOLS = [
                 "text": {
                     "type": "string",
                     "description": "Text content to add",
-                    "minLength": 1
+                    "minLength": 1,
                 },
-                "x": {
-                    "type": "number",
-                    "description": "X coordinate in millimeters"
-                },
-                "y": {
-                    "type": "number",
-                    "description": "Y coordinate in millimeters"
-                },
+                "x": {"type": "number", "description": "X coordinate in millimeters"},
+                "y": {"type": "number", "description": "Y coordinate in millimeters"},
                 "layer": {
                     "type": "string",
                     "description": "Layer name (e.g., F.SilkS, B.SilkS, F.Cu)",
-                    "default": "F.SilkS"
+                    "default": "F.SilkS",
                 },
                 "size": {
                     "type": "number",
                     "description": "Text size in millimeters",
                     "minimum": 0.1,
-                    "default": 1.0
+                    "default": 1.0,
                 },
                 "thickness": {
                     "type": "number",
                     "description": "Text thickness in millimeters",
                     "minimum": 0.01,
-                    "default": 0.15
-                }
+                    "default": 0.15,
+                },
             },
-            "required": ["text", "x", "y"]
-        }
-    }
+            "required": ["text", "x", "y"],
+        },
+    },
 ]
 
 # =============================================================================
@@ -397,36 +379,30 @@ COMPONENT_TOOLS = [
             "properties": {
                 "reference": {
                     "type": "string",
-                    "description": "Component reference designator (e.g., R1, C2, U3)"
+                    "description": "Component reference designator (e.g., R1, C2, U3)",
                 },
                 "footprint": {
                     "type": "string",
-                    "description": "Footprint library:name (e.g., Resistor_SMD:R_0805_2012Metric)"
+                    "description": "Footprint library:name (e.g., Resistor_SMD:R_0805_2012Metric)",
                 },
-                "x": {
-                    "type": "number",
-                    "description": "X coordinate in millimeters"
-                },
-                "y": {
-                    "type": "number",
-                    "description": "Y coordinate in millimeters"
-                },
+                "x": {"type": "number", "description": "X coordinate in millimeters"},
+                "y": {"type": "number", "description": "Y coordinate in millimeters"},
                 "rotation": {
                     "type": "number",
                     "description": "Rotation angle in degrees (0-360)",
                     "minimum": 0,
                     "maximum": 360,
-                    "default": 0
+                    "default": 0,
                 },
                 "layer": {
                     "type": "string",
                     "enum": ["F.Cu", "B.Cu"],
                     "description": "Board layer (top or bottom)",
-                    "default": "F.Cu"
-                }
+                    "default": "F.Cu",
+                },
             },
-            "required": ["reference", "footprint", "x", "y"]
-        }
+            "required": ["reference", "footprint", "x", "y"],
+        },
     },
     {
         "name": "move_component",
@@ -437,19 +413,19 @@ COMPONENT_TOOLS = [
             "properties": {
                 "reference": {
                     "type": "string",
-                    "description": "Component reference designator"
+                    "description": "Component reference designator",
                 },
                 "x": {
                     "type": "number",
-                    "description": "New X coordinate in millimeters"
+                    "description": "New X coordinate in millimeters",
                 },
                 "y": {
                     "type": "number",
-                    "description": "New Y coordinate in millimeters"
-                }
+                    "description": "New Y coordinate in millimeters",
+                },
             },
-            "required": ["reference", "x", "y"]
-        }
+            "required": ["reference", "x", "y"],
+        },
     },
     {
         "name": "rotate_component",
@@ -460,15 +436,15 @@ COMPONENT_TOOLS = [
             "properties": {
                 "reference": {
                     "type": "string",
-                    "description": "Component reference designator"
+                    "description": "Component reference designator",
                 },
                 "angle": {
                     "type": "number",
-                    "description": "Rotation angle in degrees (positive = counterclockwise)"
-                }
+                    "description": "Rotation angle in degrees (positive = counterclockwise)",
+                },
             },
-            "required": ["reference", "angle"]
-        }
+            "required": ["reference", "angle"],
+        },
     },
     {
         "name": "delete_component",
@@ -479,11 +455,11 @@ COMPONENT_TOOLS = [
             "properties": {
                 "reference": {
                     "type": "string",
-                    "description": "Component reference designator"
+                    "description": "Component reference designator",
                 }
             },
-            "required": ["reference"]
-        }
+            "required": ["reference"],
+        },
     },
     {
         "name": "edit_component",
@@ -494,19 +470,16 @@ COMPONENT_TOOLS = [
             "properties": {
                 "reference": {
                     "type": "string",
-                    "description": "Component reference designator"
+                    "description": "Component reference designator",
                 },
-                "value": {
-                    "type": "string",
-                    "description": "New component value"
-                },
+                "value": {"type": "string", "description": "New component value"},
                 "footprint": {
                     "type": "string",
-                    "description": "New footprint library:name"
-                }
+                    "description": "New footprint library:name",
+                },
             },
-            "required": ["reference"]
-        }
+            "required": ["reference"],
+        },
     },
     {
         "name": "get_component_properties",
@@ -517,20 +490,17 @@ COMPONENT_TOOLS = [
             "properties": {
                 "reference": {
                     "type": "string",
-                    "description": "Component reference designator"
+                    "description": "Component reference designator",
                 }
             },
-            "required": ["reference"]
-        }
+            "required": ["reference"],
+        },
     },
     {
         "name": "get_component_list",
         "title": "List All Components",
         "description": "Returns a list of all components on the board with their properties.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {}
-        }
+        "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "find_component",
@@ -541,18 +511,18 @@ COMPONENT_TOOLS = [
             "properties": {
                 "reference": {
                     "type": "string",
-                    "description": "Reference designator pattern to match (e.g., 'R1', 'U', 'C2')"
+                    "description": "Reference designator pattern to match (e.g., 'R1', 'U', 'C2')",
                 },
                 "value": {
                     "type": "string",
-                    "description": "Value pattern to match (e.g., '10k', '100nF')"
+                    "description": "Value pattern to match (e.g., '10k', '100nF')",
                 },
                 "footprint": {
                     "type": "string",
-                    "description": "Footprint pattern to match (e.g., '0805', 'SOIC')"
-                }
-            }
-        }
+                    "description": "Footprint pattern to match (e.g., '0805', 'SOIC')",
+                },
+            },
+        },
     },
     {
         "name": "get_component_pads",
@@ -563,11 +533,11 @@ COMPONENT_TOOLS = [
             "properties": {
                 "reference": {
                     "type": "string",
-                    "description": "Component reference designator (e.g., U1, R5)"
+                    "description": "Component reference designator (e.g., U1, R5)",
                 }
             },
-            "required": ["reference"]
-        }
+            "required": ["reference"],
+        },
     },
     {
         "name": "get_pad_position",
@@ -578,19 +548,19 @@ COMPONENT_TOOLS = [
             "properties": {
                 "reference": {
                     "type": "string",
-                    "description": "Component reference designator"
+                    "description": "Component reference designator",
                 },
                 "padName": {
                     "type": "string",
-                    "description": "Pad name or number (e.g., '1', '2', 'A1')"
+                    "description": "Pad name or number (e.g., '1', '2', 'A1')",
                 },
                 "padNumber": {
                     "type": "string",
-                    "description": "Alternative to padName - pad number"
-                }
+                    "description": "Alternative to padName - pad number",
+                },
             },
-            "required": ["reference"]
-        }
+            "required": ["reference"],
+        },
     },
     {
         "name": "place_component_array",
@@ -601,61 +571,68 @@ COMPONENT_TOOLS = [
             "properties": {
                 "referencePrefix": {
                     "type": "string",
-                    "description": "Reference prefix (e.g., 'R' for R1, R2, R3...)"
+                    "description": "Reference prefix (e.g., 'R' for R1, R2, R3...)",
                 },
                 "startNumber": {
                     "type": "integer",
                     "description": "Starting number for references",
                     "minimum": 1,
-                    "default": 1
+                    "default": 1,
                 },
                 "footprint": {
                     "type": "string",
-                    "description": "Footprint library:name"
+                    "description": "Footprint library:name",
                 },
                 "pattern": {
                     "type": "string",
                     "enum": ["grid", "circular"],
-                    "description": "Array pattern type"
+                    "description": "Array pattern type",
                 },
                 "count": {
                     "type": "integer",
                     "description": "Total number of components to place",
-                    "minimum": 1
+                    "minimum": 1,
                 },
                 "startX": {
                     "type": "number",
-                    "description": "Starting X coordinate in millimeters"
+                    "description": "Starting X coordinate in millimeters",
                 },
                 "startY": {
                     "type": "number",
-                    "description": "Starting Y coordinate in millimeters"
+                    "description": "Starting Y coordinate in millimeters",
                 },
                 "spacingX": {
                     "type": "number",
-                    "description": "Horizontal spacing in mm (for grid pattern)"
+                    "description": "Horizontal spacing in mm (for grid pattern)",
                 },
                 "spacingY": {
                     "type": "number",
-                    "description": "Vertical spacing in mm (for grid pattern)"
+                    "description": "Vertical spacing in mm (for grid pattern)",
                 },
                 "radius": {
                     "type": "number",
-                    "description": "Circle radius in mm (for circular pattern)"
+                    "description": "Circle radius in mm (for circular pattern)",
                 },
                 "rows": {
                     "type": "integer",
                     "description": "Number of rows (for grid pattern)",
-                    "minimum": 1
+                    "minimum": 1,
                 },
                 "columns": {
                     "type": "integer",
                     "description": "Number of columns (for grid pattern)",
-                    "minimum": 1
-                }
+                    "minimum": 1,
+                },
             },
-            "required": ["referencePrefix", "footprint", "pattern", "count", "startX", "startY"]
-        }
+            "required": [
+                "referencePrefix",
+                "footprint",
+                "pattern",
+                "count",
+                "startX",
+                "startY",
+            ],
+        },
     },
     {
         "name": "align_components",
@@ -668,20 +645,20 @@ COMPONENT_TOOLS = [
                     "type": "array",
                     "description": "Array of component reference designators to align",
                     "items": {"type": "string"},
-                    "minItems": 2
+                    "minItems": 2,
                 },
                 "direction": {
                     "type": "string",
                     "enum": ["horizontal", "vertical"],
-                    "description": "Alignment direction"
+                    "description": "Alignment direction",
                 },
                 "spacing": {
                     "type": "number",
-                    "description": "Spacing between components in mm (optional, for even distribution)"
-                }
+                    "description": "Spacing between components in mm (optional, for even distribution)",
+                },
             },
-            "required": ["references", "direction"]
-        }
+            "required": ["references", "direction"],
+        },
     },
     {
         "name": "duplicate_component",
@@ -692,26 +669,26 @@ COMPONENT_TOOLS = [
             "properties": {
                 "sourceReference": {
                     "type": "string",
-                    "description": "Reference of component to duplicate"
+                    "description": "Reference of component to duplicate",
                 },
                 "newReference": {
                     "type": "string",
-                    "description": "Reference designator for the new component"
+                    "description": "Reference designator for the new component",
                 },
                 "offsetX": {
                     "type": "number",
                     "description": "X offset from original position in mm",
-                    "default": 0
+                    "default": 0,
                 },
                 "offsetY": {
                     "type": "number",
                     "description": "Y offset from original position in mm",
-                    "default": 0
-                }
+                    "default": 0,
+                },
             },
-            "required": ["sourceReference", "newReference"]
-        }
-    }
+            "required": ["sourceReference", "newReference"],
+        },
+    },
 ]
 
 # =============================================================================
@@ -729,15 +706,15 @@ ROUTING_TOOLS = [
                 "netName": {
                     "type": "string",
                     "description": "Name of the net (e.g., VCC, GND, SDA)",
-                    "minLength": 1
+                    "minLength": 1,
                 },
                 "netClass": {
                     "type": "string",
-                    "description": "Optional net class to assign (must exist first)"
-                }
+                    "description": "Optional net class to assign (must exist first)",
+                },
             },
-            "required": ["netName"]
-        }
+            "required": ["netName"],
+        },
     },
     {
         "name": "route_trace",
@@ -746,19 +723,16 @@ ROUTING_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "netName": {
-                    "type": "string",
-                    "description": "Net name for this trace"
-                },
+                "netName": {"type": "string", "description": "Net name for this trace"},
                 "layer": {
                     "type": "string",
                     "description": "Layer to route on (e.g., F.Cu, B.Cu)",
-                    "default": "F.Cu"
+                    "default": "F.Cu",
                 },
                 "width": {
                     "type": "number",
                     "description": "Trace width in millimeters",
-                    "minimum": 0.1
+                    "minimum": 0.1,
                 },
                 "points": {
                     "type": "array",
@@ -767,13 +741,13 @@ ROUTING_TOOLS = [
                         "type": "array",
                         "items": {"type": "number"},
                         "minItems": 2,
-                        "maxItems": 2
+                        "maxItems": 2,
                     },
-                    "minItems": 2
-                }
+                    "minItems": 2,
+                },
             },
-            "required": ["points", "width"]
-        }
+            "required": ["points", "width"],
+        },
     },
     {
         "name": "add_via",
@@ -782,31 +756,25 @@ ROUTING_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "x": {
-                    "type": "number",
-                    "description": "X coordinate in millimeters"
-                },
-                "y": {
-                    "type": "number",
-                    "description": "Y coordinate in millimeters"
-                },
+                "x": {"type": "number", "description": "X coordinate in millimeters"},
+                "y": {"type": "number", "description": "Y coordinate in millimeters"},
                 "diameter": {
                     "type": "number",
                     "description": "Via diameter in millimeters",
-                    "minimum": 0.1
+                    "minimum": 0.1,
                 },
                 "drill": {
                     "type": "number",
                     "description": "Drill diameter in millimeters",
-                    "minimum": 0.1
+                    "minimum": 0.1,
                 },
                 "netName": {
                     "type": "string",
-                    "description": "Net name to assign to this via"
-                }
+                    "description": "Net name to assign to this via",
+                },
             },
-            "required": ["x", "y", "diameter", "drill"]
-        }
+            "required": ["x", "y", "diameter", "drill"],
+        },
     },
     {
         "name": "delete_trace",
@@ -817,7 +785,7 @@ ROUTING_TOOLS = [
             "properties": {
                 "uuid": {
                     "type": "string",
-                    "description": "UUID of a specific trace to delete"
+                    "description": "UUID of a specific trace to delete",
                 },
                 "position": {
                     "type": "object",
@@ -825,25 +793,29 @@ ROUTING_TOOLS = [
                     "properties": {
                         "x": {"type": "number", "description": "X coordinate"},
                         "y": {"type": "number", "description": "Y coordinate"},
-                        "unit": {"type": "string", "enum": ["mm", "inch"], "default": "mm"}
+                        "unit": {
+                            "type": "string",
+                            "enum": ["mm", "inch"],
+                            "default": "mm",
+                        },
                     },
-                    "required": ["x", "y"]
+                    "required": ["x", "y"],
                 },
                 "net": {
                     "type": "string",
-                    "description": "Delete all traces on this net (bulk delete)"
+                    "description": "Delete all traces on this net (bulk delete)",
                 },
                 "layer": {
                     "type": "string",
-                    "description": "Filter by layer when using net-based deletion"
+                    "description": "Filter by layer when using net-based deletion",
                 },
                 "includeVias": {
                     "type": "boolean",
                     "description": "Include vias in net-based deletion",
-                    "default": False
-                }
-            }
-        }
+                    "default": False,
+                },
+            },
+        },
     },
     {
         "name": "query_traces",
@@ -854,11 +826,11 @@ ROUTING_TOOLS = [
             "properties": {
                 "net": {
                     "type": "string",
-                    "description": "Filter by net name (e.g., 'GND', 'VCC')"
+                    "description": "Filter by net name (e.g., 'GND', 'VCC')",
                 },
                 "layer": {
                     "type": "string",
-                    "description": "Filter by layer name (e.g., 'F.Cu', 'B.Cu')"
+                    "description": "Filter by layer name (e.g., 'F.Cu', 'B.Cu')",
                 },
                 "boundingBox": {
                     "type": "object",
@@ -868,16 +840,20 @@ ROUTING_TOOLS = [
                         "y1": {"type": "number", "description": "Top Y coordinate"},
                         "x2": {"type": "number", "description": "Right X coordinate"},
                         "y2": {"type": "number", "description": "Bottom Y coordinate"},
-                        "unit": {"type": "string", "enum": ["mm", "inch"], "default": "mm"}
-                    }
+                        "unit": {
+                            "type": "string",
+                            "enum": ["mm", "inch"],
+                            "default": "mm",
+                        },
+                    },
                 },
                 "includeVias": {
                     "type": "boolean",
                     "description": "Include vias in the result",
-                    "default": False
-                }
-            }
-        }
+                    "default": False,
+                },
+            },
+        },
     },
     {
         "name": "modify_trace",
@@ -888,7 +864,7 @@ ROUTING_TOOLS = [
             "properties": {
                 "uuid": {
                     "type": "string",
-                    "description": "UUID of the trace to modify"
+                    "description": "UUID of the trace to modify",
                 },
                 "position": {
                     "type": "object",
@@ -896,24 +872,22 @@ ROUTING_TOOLS = [
                     "properties": {
                         "x": {"type": "number", "description": "X coordinate"},
                         "y": {"type": "number", "description": "Y coordinate"},
-                        "unit": {"type": "string", "enum": ["mm", "inch"], "default": "mm"}
+                        "unit": {
+                            "type": "string",
+                            "enum": ["mm", "inch"],
+                            "default": "mm",
+                        },
                     },
-                    "required": ["x", "y"]
+                    "required": ["x", "y"],
                 },
-                "width": {
-                    "type": "number",
-                    "description": "New trace width in mm"
-                },
+                "width": {"type": "number", "description": "New trace width in mm"},
                 "layer": {
                     "type": "string",
-                    "description": "New layer name (e.g., 'F.Cu', 'B.Cu')"
+                    "description": "New layer name (e.g., 'F.Cu', 'B.Cu')",
                 },
-                "net": {
-                    "type": "string",
-                    "description": "New net name to assign"
-                }
-            }
-        }
+                "net": {"type": "string", "description": "New net name to assign"},
+            },
+        },
     },
     {
         "name": "copy_routing_pattern",
@@ -925,34 +899,31 @@ ROUTING_TOOLS = [
                 "sourceRefs": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Source component references (e.g., ['U1', 'U2', 'U3'])"
+                    "description": "Source component references (e.g., ['U1', 'U2', 'U3'])",
                 },
                 "targetRefs": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Target component references (e.g., ['U4', 'U5', 'U6'])"
+                    "description": "Target component references (e.g., ['U4', 'U5', 'U6'])",
                 },
                 "includeVias": {
                     "type": "boolean",
                     "description": "Include vias in the pattern copy",
-                    "default": True
+                    "default": True,
                 },
                 "traceWidth": {
                     "type": "number",
-                    "description": "Override trace width in mm (uses original if not specified)"
-                }
+                    "description": "Override trace width in mm (uses original if not specified)",
+                },
             },
-            "required": ["sourceRefs", "targetRefs"]
-        }
+            "required": ["sourceRefs", "targetRefs"],
+        },
     },
     {
         "name": "get_nets_list",
         "title": "List All Nets",
         "description": "Returns a list of all electrical nets defined on the board.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {}
-        }
+        "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "create_netclass",
@@ -964,29 +935,29 @@ ROUTING_TOOLS = [
                 "name": {
                     "type": "string",
                     "description": "Net class name",
-                    "minLength": 1
+                    "minLength": 1,
                 },
                 "traceWidth": {
                     "type": "number",
                     "description": "Default trace width in millimeters",
-                    "minimum": 0.1
+                    "minimum": 0.1,
                 },
                 "clearance": {
                     "type": "number",
                     "description": "Clearance in millimeters",
-                    "minimum": 0.1
+                    "minimum": 0.1,
                 },
                 "viaDiameter": {
                     "type": "number",
-                    "description": "Via diameter in millimeters"
+                    "description": "Via diameter in millimeters",
                 },
                 "viaDrill": {
                     "type": "number",
-                    "description": "Via drill diameter in millimeters"
-                }
+                    "description": "Via drill diameter in millimeters",
+                },
             },
-            "required": ["name", "traceWidth", "clearance"]
-        }
+            "required": ["name", "traceWidth", "clearance"],
+        },
     },
     {
         "name": "add_copper_pour",
@@ -997,22 +968,22 @@ ROUTING_TOOLS = [
             "properties": {
                 "netName": {
                     "type": "string",
-                    "description": "Net to connect this copper pour to (e.g., GND, VCC)"
+                    "description": "Net to connect this copper pour to (e.g., GND, VCC)",
                 },
                 "layer": {
                     "type": "string",
-                    "description": "Layer for the copper pour (e.g., F.Cu, B.Cu)"
+                    "description": "Layer for the copper pour (e.g., F.Cu, B.Cu)",
                 },
                 "priority": {
                     "type": "integer",
                     "description": "Pour priority (higher priorities fill first)",
                     "minimum": 0,
-                    "default": 0
+                    "default": 0,
                 },
                 "clearance": {
                     "type": "number",
                     "description": "Clearance from other objects in millimeters",
-                    "minimum": 0.1
+                    "minimum": 0.1,
                 },
                 "outline": {
                     "type": "array",
@@ -1021,13 +992,13 @@ ROUTING_TOOLS = [
                         "type": "array",
                         "items": {"type": "number"},
                         "minItems": 2,
-                        "maxItems": 2
+                        "maxItems": 2,
                     },
-                    "minItems": 3
-                }
+                    "minItems": 3,
+                },
             },
-            "required": ["netName", "layer", "outline"]
-        }
+            "required": ["netName", "layer", "outline"],
+        },
     },
     {
         "name": "route_differential_pair",
@@ -1038,23 +1009,20 @@ ROUTING_TOOLS = [
             "properties": {
                 "positiveName": {
                     "type": "string",
-                    "description": "Positive signal net name"
+                    "description": "Positive signal net name",
                 },
                 "negativeName": {
                     "type": "string",
-                    "description": "Negative signal net name"
+                    "description": "Negative signal net name",
                 },
-                "layer": {
-                    "type": "string",
-                    "description": "Layer to route on"
-                },
+                "layer": {"type": "string", "description": "Layer to route on"},
                 "width": {
                     "type": "number",
-                    "description": "Trace width in millimeters"
+                    "description": "Trace width in millimeters",
                 },
                 "gap": {
                     "type": "number",
-                    "description": "Gap between traces in millimeters"
+                    "description": "Gap between traces in millimeters",
                 },
                 "points": {
                     "type": "array",
@@ -1063,14 +1031,14 @@ ROUTING_TOOLS = [
                         "type": "array",
                         "items": {"type": "number"},
                         "minItems": 2,
-                        "maxItems": 2
+                        "maxItems": 2,
                     },
-                    "minItems": 2
-                }
+                    "minItems": 2,
+                },
             },
-            "required": ["positiveName", "negativeName", "width", "gap", "points"]
-        }
-    }
+            "required": ["positiveName", "negativeName", "width", "gap", "points"],
+        },
+    },
 ]
 
 # =============================================================================
@@ -1082,10 +1050,7 @@ LIBRARY_TOOLS = [
         "name": "list_libraries",
         "title": "List Footprint Libraries",
         "description": "Lists all available footprint libraries accessible to KiCAD.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {}
-        }
+        "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "search_footprints",
@@ -1097,15 +1062,15 @@ LIBRARY_TOOLS = [
                 "query": {
                     "type": "string",
                     "description": "Search query (e.g., '0805', 'SOIC', 'QFP')",
-                    "minLength": 1
+                    "minLength": 1,
                 },
                 "library": {
                     "type": "string",
-                    "description": "Optional library to restrict search to"
-                }
+                    "description": "Optional library to restrict search to",
+                },
             },
-            "required": ["query"]
-        }
+            "required": ["query"],
+        },
     },
     {
         "name": "list_library_footprints",
@@ -1117,11 +1082,11 @@ LIBRARY_TOOLS = [
                 "library": {
                     "type": "string",
                     "description": "Library name (e.g., Resistor_SMD, Connector_PinHeader)",
-                    "minLength": 1
+                    "minLength": 1,
                 }
             },
-            "required": ["library"]
-        }
+            "required": ["library"],
+        },
     },
     {
         "name": "get_footprint_info",
@@ -1130,18 +1095,12 @@ LIBRARY_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "library": {
-                    "type": "string",
-                    "description": "Library name"
-                },
-                "footprint": {
-                    "type": "string",
-                    "description": "Footprint name"
-                }
+                "library": {"type": "string", "description": "Library name"},
+                "footprint": {"type": "string", "description": "Footprint name"},
             },
-            "required": ["library", "footprint"]
-        }
-    }
+            "required": ["library", "footprint"],
+        },
+    },
 ]
 
 # =============================================================================
@@ -1159,36 +1118,33 @@ DESIGN_RULE_TOOLS = [
                 "clearance": {
                     "type": "number",
                     "description": "Minimum clearance between copper in millimeters",
-                    "minimum": 0.1
+                    "minimum": 0.1,
                 },
                 "trackWidth": {
                     "type": "number",
                     "description": "Minimum track width in millimeters",
-                    "minimum": 0.1
+                    "minimum": 0.1,
                 },
                 "viaDiameter": {
                     "type": "number",
-                    "description": "Minimum via diameter in millimeters"
+                    "description": "Minimum via diameter in millimeters",
                 },
                 "viaDrill": {
                     "type": "number",
-                    "description": "Minimum via drill diameter in millimeters"
+                    "description": "Minimum via drill diameter in millimeters",
                 },
                 "microViaD iameter": {
                     "type": "number",
-                    "description": "Minimum micro-via diameter in millimeters"
-                }
-            }
-        }
+                    "description": "Minimum micro-via diameter in millimeters",
+                },
+            },
+        },
     },
     {
         "name": "get_design_rules",
         "title": "Get Current Design Rules",
         "description": "Retrieves the currently configured design rules from the board.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {}
-        }
+        "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "run_drc",
@@ -1200,20 +1156,17 @@ DESIGN_RULE_TOOLS = [
                 "includeWarnings": {
                     "type": "boolean",
                     "description": "Include warnings in addition to errors",
-                    "default": True
+                    "default": True,
                 }
-            }
-        }
+            },
+        },
     },
     {
         "name": "get_drc_violations",
         "title": "Get DRC Violations",
         "description": "Returns a list of design rule violations from the most recent DRC run.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {}
-        }
-    }
+        "inputSchema": {"type": "object", "properties": {}},
+    },
 ]
 
 # =============================================================================
@@ -1230,21 +1183,21 @@ EXPORT_TOOLS = [
             "properties": {
                 "outputPath": {
                     "type": "string",
-                    "description": "Directory path for output files"
+                    "description": "Directory path for output files",
                 },
                 "layers": {
                     "type": "array",
                     "description": "List of layers to export (if not provided, exports all copper and mask layers)",
-                    "items": {"type": "string"}
+                    "items": {"type": "string"},
                 },
                 "includeDrillFiles": {
                     "type": "boolean",
                     "description": "Include drill files (Excellon format)",
-                    "default": True
-                }
+                    "default": True,
+                },
             },
-            "required": ["outputPath"]
-        }
+            "required": ["outputPath"],
+        },
     },
     {
         "name": "export_pdf",
@@ -1255,22 +1208,22 @@ EXPORT_TOOLS = [
             "properties": {
                 "outputPath": {
                     "type": "string",
-                    "description": "Path for output PDF file"
+                    "description": "Path for output PDF file",
                 },
                 "layers": {
                     "type": "array",
                     "description": "Layers to include in PDF",
-                    "items": {"type": "string"}
+                    "items": {"type": "string"},
                 },
                 "colorMode": {
                     "type": "string",
                     "enum": ["color", "black_white"],
                     "description": "Color mode for output",
-                    "default": "color"
-                }
+                    "default": "color",
+                },
             },
-            "required": ["outputPath"]
-        }
+            "required": ["outputPath"],
+        },
     },
     {
         "name": "export_svg",
@@ -1281,16 +1234,16 @@ EXPORT_TOOLS = [
             "properties": {
                 "outputPath": {
                     "type": "string",
-                    "description": "Path for output SVG file"
+                    "description": "Path for output SVG file",
                 },
                 "layers": {
                     "type": "array",
                     "description": "Layers to include in SVG",
-                    "items": {"type": "string"}
-                }
+                    "items": {"type": "string"},
+                },
             },
-            "required": ["outputPath"]
-        }
+            "required": ["outputPath"],
+        },
     },
     {
         "name": "export_3d",
@@ -1301,22 +1254,22 @@ EXPORT_TOOLS = [
             "properties": {
                 "outputPath": {
                     "type": "string",
-                    "description": "Path for output 3D file"
+                    "description": "Path for output 3D file",
                 },
                 "format": {
                     "type": "string",
                     "enum": ["step", "vrml"],
                     "description": "3D model format",
-                    "default": "step"
+                    "default": "step",
                 },
                 "includeComponents": {
                     "type": "boolean",
                     "description": "Include 3D component models",
-                    "default": True
-                }
+                    "default": True,
+                },
             },
-            "required": ["outputPath"]
-        }
+            "required": ["outputPath"],
+        },
     },
     {
         "name": "export_bom",
@@ -1327,23 +1280,23 @@ EXPORT_TOOLS = [
             "properties": {
                 "outputPath": {
                     "type": "string",
-                    "description": "Path for output BOM file"
+                    "description": "Path for output BOM file",
                 },
                 "format": {
                     "type": "string",
                     "enum": ["csv", "xml", "html"],
                     "description": "BOM output format",
-                    "default": "csv"
+                    "default": "csv",
                 },
                 "groupByValue": {
                     "type": "boolean",
                     "description": "Group components with same value together",
-                    "default": True
-                }
+                    "default": True,
+                },
             },
-            "required": ["outputPath"]
-        }
-    }
+            "required": ["outputPath"],
+        },
+    },
 ]
 
 # =============================================================================
@@ -1360,15 +1313,12 @@ SCHEMATIC_TOOLS = [
             "properties": {
                 "filename": {
                     "type": "string",
-                    "description": "Path for the new schematic file (.kicad_sch)"
+                    "description": "Path for the new schematic file (.kicad_sch)",
                 },
-                "title": {
-                    "type": "string",
-                    "description": "Schematic title"
-                }
+                "title": {"type": "string", "description": "Schematic title"},
             },
-            "required": ["filename"]
-        }
+            "required": ["filename"],
+        },
     },
     {
         "name": "load_schematic",
@@ -1379,11 +1329,11 @@ SCHEMATIC_TOOLS = [
             "properties": {
                 "filename": {
                     "type": "string",
-                    "description": "Path to schematic file (.kicad_sch)"
+                    "description": "Path to schematic file (.kicad_sch)",
                 }
             },
-            "required": ["filename"]
-        }
+            "required": ["filename"],
+        },
     },
     {
         "name": "add_schematic_component",
@@ -1394,131 +1344,142 @@ SCHEMATIC_TOOLS = [
             "properties": {
                 "reference": {
                     "type": "string",
-                    "description": "Reference designator (e.g., R1, C2, U3)"
+                    "description": "Reference designator (e.g., R1, C2, U3)",
                 },
                 "symbol": {
                     "type": "string",
-                    "description": "Symbol library:name (e.g., Device:R, Device:C)"
+                    "description": "Symbol library:name (e.g., Device:R, Device:C)",
                 },
                 "value": {
                     "type": "string",
-                    "description": "Component value (e.g., 10k, 0.1uF)"
+                    "description": "Component value (e.g., 10k, 0.1uF)",
                 },
-                "x": {
-                    "type": "number",
-                    "description": "X coordinate on schematic"
-                },
-                "y": {
-                    "type": "number",
-                    "description": "Y coordinate on schematic"
-                }
+                "x": {"type": "number", "description": "X coordinate on schematic"},
+                "y": {"type": "number", "description": "Y coordinate on schematic"},
             },
-            "required": ["reference", "symbol", "x", "y"]
-        }
+            "required": ["reference", "symbol", "x", "y"],
+        },
     },
     {
         "name": "add_schematic_wire",
-        "title": "Connect Components",
-        "description": "Draws a wire connection between component pins on the schematic.",
+        "title": "Draw Wire Between Pins",
+        "description": "Draws a wire on the schematic between two or more coordinate points. Always call get_schematic_pin_locations first to get the approximate pin coordinates, then pass them as the first and last waypoints. snapToPins (on by default) will correct any float imprecision by snapping endpoints to the exact nearest pin coordinate. To route around components, add intermediate waypoints between the start and end: e.g. [[x1,y1], [xMid,y1], [xMid,y2], [x2,y2]] routes horizontally then vertically. Intermediate waypoints are never snapped.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "points": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to schematic file",
+                },
+                "waypoints": {
                     "type": "array",
-                    "description": "Array of [x, y] waypoints for the wire",
+                    "description": "Array of [x, y] coordinates defining the wire path. First and last points are the pin locations (from get_schematic_pin_locations). Add intermediate points to route around obstacles.",
                     "items": {
                         "type": "array",
                         "items": {"type": "number"},
                         "minItems": 2,
-                        "maxItems": 2
+                        "maxItems": 2,
                     },
-                    "minItems": 2
-                }
-            },
-            "required": ["points"]
-        }
-    },
-    {
-        "name": "add_schematic_connection",
-        "title": "Add Junction/Connection Point",
-        "description": "Adds a junction (connection point) at the specified location on the schematic where wires cross and should connect.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "schematicPath": {
-                    "type": "string",
-                    "description": "Path to schematic file"
+                    "minItems": 2,
                 },
-                "x": {
-                    "type": "number",
-                    "description": "X coordinate on schematic"
+                "snapToPins": {
+                    "type": "boolean",
+                    "description": "When true, the first and last waypoints are snapped to the nearest schematic pin within snapTolerance mm. Intermediate waypoints are left unchanged. Enabled by default to correct float coordinate imprecision.",
+                    "default": True,
                 },
-                "y": {
+                "snapTolerance": {
                     "type": "number",
-                    "description": "Y coordinate on schematic"
-                }
+                    "description": "Maximum distance in mm to search for a nearby pin when snapToPins is enabled.",
+                    "default": 1.0,
+                },
             },
-            "required": ["schematicPath", "x", "y"]
-        }
+            "required": ["schematicPath", "waypoints"],
+        },
     },
     {
         "name": "add_schematic_net_label",
         "title": "Add Net Label",
-        "description": "Adds a net label at exact coordinates on a schematic wire or pin endpoint. WARNING: x/y must match an existing wire endpoint or pin endpoint exactly — placing the label even 0.01mm away from a pin will result in an unconnected pin ERC error. To connect a component pin to a net by reference and pin number (recommended), use connect_to_net instead.",
+        "description": (
+            "Add a net label to a schematic. "
+            "PREFERRED: supply componentRef + pinNumber to snap the label to the exact pin endpoint — "
+            "this guarantees an electrical connection. "
+            "Alternatively supply position [x, y], but the coordinates must match the pin endpoint exactly "
+            "(even a 0.01 mm offset breaks the connection). "
+            "The response includes actual_position (coordinates actually used) and snapped_to_pin "
+            "(present when a pin reference was resolved)."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "schematicPath": {
                     "type": "string",
-                    "description": "Path to schematic file"
+                    "description": "Path to schematic file",
                 },
                 "netName": {
                     "type": "string",
-                    "description": "Name of the net (e.g., VCC, GND, SDA)"
+                    "description": "Name of the net (e.g., VCC, GND, SDA)",
                 },
-                "x": {
-                    "type": "number",
-                    "description": "X coordinate on schematic"
+                "position": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "description": "Position [x, y] for the label. Required when componentRef/pinNumber are not given.",
                 },
-                "y": {
-                    "type": "number",
-                    "description": "Y coordinate on schematic"
+                "componentRef": {
+                    "type": "string",
+                    "description": "Component reference to snap label to (e.g. U1, R1). Use with pinNumber.",
                 },
-                "rotation": {
+                "pinNumber": {
+                    "type": "string",
+                    "description": "Pin number or name on componentRef (e.g. '1', 'GND'). Use with componentRef.",
+                },
+                "labelType": {
+                    "type": "string",
+                    "enum": ["label", "global_label", "hierarchical_label"],
+                    "description": "Label type (default: label)",
+                    "default": "label",
+                },
+                "orientation": {
                     "type": "number",
                     "description": "Rotation angle in degrees (0, 90, 180, 270)",
-                    "default": 0
-                }
+                    "default": 0,
+                },
             },
-            "required": ["schematicPath", "netName", "x", "y"]
-        }
+            "required": ["schematicPath", "netName"],
+        },
     },
     {
         "name": "connect_to_net",
         "title": "Connect Pin to Net",
-        "description": "Intelligently connects a component pin to a named net, automatically routing wires as needed.",
+        "description": (
+            "Connect a component pin to a named net by adding a wire stub and net label at the exact "
+            "pin endpoint. The response includes pin_location (exact pin coords), label_location "
+            "(where the label was placed), and wire_stub (the wire segment added) so you can confirm "
+            "the placement without a separate verification call."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "schematicPath": {
                     "type": "string",
-                    "description": "Path to schematic file"
+                    "description": "Path to schematic file",
                 },
-                "reference": {
+                "componentRef": {
                     "type": "string",
-                    "description": "Component reference designator (e.g., R1, U3)"
+                    "description": "Component reference designator (e.g., R1, U3)",
                 },
-                "pinNumber": {
+                "pinName": {
                     "type": "string",
-                    "description": "Pin number or name on the component"
+                    "description": "Pin number or name on the component",
                 },
                 "netName": {
                     "type": "string",
-                    "description": "Name of the net to connect to"
-                }
+                    "description": "Name of the net to connect to",
+                },
             },
-            "required": ["schematicPath", "reference", "pinNumber", "netName"]
-        }
+            "required": ["schematicPath", "componentRef", "pinName", "netName"],
+        },
     },
     {
         "name": "get_net_connections",
@@ -1529,15 +1490,84 @@ SCHEMATIC_TOOLS = [
             "properties": {
                 "schematicPath": {
                     "type": "string",
-                    "description": "Path to schematic file"
+                    "description": "Path to schematic file",
                 },
                 "netName": {
                     "type": "string",
-                    "description": "Name of the net to query"
-                }
+                    "description": "Name of the net to query",
+                },
             },
-            "required": ["schematicPath", "netName"]
-        }
+            "required": ["schematicPath", "netName"],
+        },
+    },
+    {
+        "name": "get_wire_connections",
+        "title": "Get Wire Connections",
+        "description": (
+            "Returns the net name and all wires and component pins connected at a given point. "
+            "Accepts either a component reference + pin number (e.g. reference='U1', pin='3') "
+            "or a schematic coordinate (x, y in mm). "
+            "The response includes: 'net' (label name or null for unnamed nets), "
+            "'pins' (all component pins on the net), 'wires' (all wire segments on the net), "
+            "and 'query_point' (the resolved coordinate used). "
+            "The query point must be at a wire endpoint or junction — wire midpoints are not matched. "
+            "Use get_schematic_pin_locations or list_schematic_wires to obtain exact endpoint coordinates."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the schematic file (.kicad_sch)",
+                },
+                "reference": {
+                    "type": "string",
+                    "description": "Component reference (e.g. U1, R1). Pair with pin.",
+                },
+                "pin": {
+                    "type": "string",
+                    "description": "Pin number or name (e.g. '3', 'SDA'). Pair with reference.",
+                },
+                "x": {
+                    "type": "number",
+                    "description": "X coordinate of a wire endpoint in mm. Pair with y.",
+                },
+                "y": {
+                    "type": "number",
+                    "description": "Y coordinate of a wire endpoint in mm. Pair with x.",
+                },
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
+        "name": "get_net_at_point",
+        "title": "Get Net At Point",
+        "description": (
+            "Returns the net name at a given (x, y) coordinate in a schematic, "
+            "or null if no net label or wire endpoint is present at that position. "
+            "Checks net label positions first, then wire endpoints. "
+            "Useful for quickly identifying what net occupies a specific coordinate "
+            "without traversing the full wire graph."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the schematic file (.kicad_sch)",
+                },
+                "x": {
+                    "type": "number",
+                    "description": "X coordinate in mm",
+                },
+                "y": {
+                    "type": "number",
+                    "description": "Y coordinate in mm",
+                },
+            },
+            "required": ["schematicPath", "x", "y"],
+        },
     },
     {
         "name": "get_schematic_pin_locations",
@@ -1548,15 +1578,15 @@ SCHEMATIC_TOOLS = [
             "properties": {
                 "schematicPath": {
                     "type": "string",
-                    "description": "Path to the schematic file"
+                    "description": "Path to the schematic file",
                 },
                 "reference": {
                     "type": "string",
-                    "description": "Component reference designator (e.g., U1, R1, J2)"
-                }
+                    "description": "Component reference designator (e.g., U1, R1, J2)",
+                },
             },
-            "required": ["schematicPath", "reference"]
-        }
+            "required": ["schematicPath", "reference"],
+        },
     },
     {
         "name": "connect_passthrough",
@@ -1567,27 +1597,27 @@ SCHEMATIC_TOOLS = [
             "properties": {
                 "schematicPath": {
                     "type": "string",
-                    "description": "Path to the schematic file"
+                    "description": "Path to the schematic file",
                 },
                 "sourceRef": {
                     "type": "string",
-                    "description": "Reference of the source connector (e.g., J1)"
+                    "description": "Reference of the source connector (e.g., J1)",
                 },
                 "targetRef": {
                     "type": "string",
-                    "description": "Reference of the target connector (e.g., J2)"
+                    "description": "Reference of the target connector (e.g., J2)",
                 },
                 "netPrefix": {
                     "type": "string",
-                    "description": "Prefix for generated net names, e.g. 'CSI' produces CSI_1, CSI_2, ... (default: PIN)"
+                    "description": "Prefix for generated net names, e.g. 'CSI' produces CSI_1, CSI_2, ... (default: PIN)",
                 },
                 "pinOffset": {
                     "type": "integer",
-                    "description": "Add this value to the pin number when building net names (default: 0)"
-                }
+                    "description": "Add this value to the pin number when building net names (default: 0)",
+                },
             },
-            "required": ["schematicPath", "sourceRef", "targetRef"]
-        }
+            "required": ["schematicPath", "sourceRef", "targetRef"],
+        },
     },
     {
         "name": "run_erc",
@@ -1598,11 +1628,11 @@ SCHEMATIC_TOOLS = [
             "properties": {
                 "schematicPath": {
                     "type": "string",
-                    "description": "Path to the .kicad_sch schematic file"
+                    "description": "Path to the .kicad_sch schematic file",
                 }
             },
-            "required": ["schematicPath"]
-        }
+            "required": ["schematicPath"],
+        },
     },
     {
         "name": "sync_schematic_to_board",
@@ -1613,39 +1643,35 @@ SCHEMATIC_TOOLS = [
             "properties": {
                 "schematicPath": {
                     "type": "string",
-                    "description": "Path to .kicad_sch file. If omitted, auto-detected from current board path."
+                    "description": "Path to .kicad_sch file. If omitted, auto-detected from current board path.",
                 },
                 "boardPath": {
                     "type": "string",
-                    "description": "Path to .kicad_pcb file. If omitted, uses currently loaded board."
-                }
-            }
-        }
+                    "description": "Path to .kicad_pcb file. If omitted, uses currently loaded board.",
+                },
+            },
+        },
     },
     {
         "name": "generate_netlist",
-        "title": "Generate Netlist",
-        "description": "Generates a netlist from the schematic showing all components and their net connections.",
+        "title": "Generate Netlist (JSON)",
+        "description": (
+            "Returns a structured JSON netlist from the schematic: component list "
+            "(reference, value, footprint) and net list (net name + all connected "
+            "component/pin pairs). Uses kicad-cli internally — requires a saved "
+            ".kicad_sch file. For writing to a file or exporting SPICE/Cadstar/OrcadPCB2 "
+            "format, use export_netlist instead."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "schematicPath": {
                     "type": "string",
-                    "description": "Path to schematic file"
+                    "description": "Absolute path to the .kicad_sch schematic file",
                 },
-                "outputPath": {
-                    "type": "string",
-                    "description": "Optional path to save netlist file"
-                },
-                "format": {
-                    "type": "string",
-                    "enum": ["kicad", "json", "spice"],
-                    "description": "Netlist output format",
-                    "default": "json"
-                }
             },
-            "required": ["schematicPath"]
-        }
+            "required": ["schematicPath"],
+        },
     },
     {
         "name": "list_schematic_libraries",
@@ -1657,10 +1683,10 @@ SCHEMATIC_TOOLS = [
                 "searchPaths": {
                     "type": "array",
                     "description": "Optional additional paths to search for libraries",
-                    "items": {"type": "string"}
+                    "items": {"type": "string"},
                 }
-            }
-        }
+            },
+        },
     },
     {
         "name": "export_schematic_pdf",
@@ -1671,16 +1697,232 @@ SCHEMATIC_TOOLS = [
             "properties": {
                 "schematicPath": {
                     "type": "string",
-                    "description": "Path to schematic file"
+                    "description": "Path to schematic file",
                 },
-                "outputPath": {
+                "outputPath": {"type": "string", "description": "Path for output PDF"},
+            },
+            "required": ["schematicPath", "outputPath"],
+        },
+    },
+    {
+        "name": "add_schematic_junction",
+        "title": "Add Junction to Schematic",
+        "description": "Adds a junction (connection dot) at the specified coordinates on the schematic. Junctions are required in KiCAD to mark intentional connections where wires cross or where a wire branches off another wire. Without a junction, crossing wires are not electrically connected.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
                     "type": "string",
-                    "description": "Path for output PDF"
+                    "description": "Path to schematic file",
+                },
+                "position": {
+                    "type": "array",
+                    "description": "The [x, y] coordinates where the junction should be placed. Must be on an existing wire intersection or branch point.",
+                    "items": {"type": "number"},
+                    "minItems": 2,
+                    "maxItems": 2,
+                },
+            },
+            "required": ["schematicPath", "position"],
+        },
+    },
+    # --- Schematic Analysis Tools (read-only) ---
+    {
+        "name": "get_schematic_view_region",
+        "title": "Get Schematic View Region",
+        "description": "Exports a cropped region of the schematic as an image (PNG or SVG). Specify a bounding box in schematic mm coordinates to zoom into a specific area.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                },
+                "x1": {
+                    "type": "number",
+                    "description": "Left X coordinate of the region in mm",
+                },
+                "y1": {
+                    "type": "number",
+                    "description": "Top Y coordinate of the region in mm",
+                },
+                "x2": {
+                    "type": "number",
+                    "description": "Right X coordinate of the region in mm",
+                },
+                "y2": {
+                    "type": "number",
+                    "description": "Bottom Y coordinate of the region in mm",
+                },
+                "format": {
+                    "type": "string",
+                    "enum": ["png", "svg"],
+                    "description": "Output image format (default: png)",
+                },
+                "width": {
+                    "type": "integer",
+                    "description": "Output image width in pixels (default: 800)",
+                },
+                "height": {
+                    "type": "integer",
+                    "description": "Output image height in pixels (default: 600)",
+                },
+            },
+            "required": ["schematicPath", "x1", "y1", "x2", "y2"],
+        },
+    },
+    {
+        "name": "find_overlapping_elements",
+        "title": "Find Overlapping Elements",
+        "description": "Detects spatially overlapping symbols, wires, and labels in the schematic. Finds: duplicate power symbols at the same position, collinear overlapping wire segments, and labels stacked on top of each other.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                },
+                "tolerance": {
+                    "type": "number",
+                    "description": "Distance threshold in mm for label proximity and wire collinearity checks. Symbol overlap uses bounding-box intersection. (default: 0.5)",
+                },
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
+        "name": "get_elements_in_region",
+        "title": "Get Elements in Region",
+        "description": "Lists all symbols, wires, and labels within a rectangular region of the schematic. Useful for understanding what is in a specific area before modifying it.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                },
+                "x1": {
+                    "type": "number",
+                    "description": "Left X coordinate of the region in mm",
+                },
+                "y1": {
+                    "type": "number",
+                    "description": "Top Y coordinate of the region in mm",
+                },
+                "x2": {
+                    "type": "number",
+                    "description": "Right X coordinate of the region in mm",
+                },
+                "y2": {
+                    "type": "number",
+                    "description": "Bottom Y coordinate of the region in mm",
+                },
+            },
+            "required": ["schematicPath", "x1", "y1", "x2", "y2"],
+        },
+    },
+    {
+        "name": "find_wires_crossing_symbols",
+        "title": "Find Wires Crossing Symbols",
+        "description": "Find all wires that cross over component symbol bodies. Wires passing over symbols are unacceptable in schematics — they indicate routing mistakes where a wire was drawn across a component instead of around it.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
                 }
             },
-            "required": ["schematicPath", "outputPath"]
-        }
-    }
+            "required": ["schematicPath"],
+        },
+    },
+    {
+        "name": "find_orphaned_wires",
+        "title": "Find Orphaned Wires",
+        "description": (
+            "Find wire segments with at least one dangling endpoint — an endpoint not connected "
+            "to a component pin, net label, or another wire. "
+            "Orphaned wires cause ERC 'wire end unconnected' errors and indicate routing mistakes. "
+            "Does not require the KiCad UI to be running."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                }
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
+        "name": "list_floating_labels",
+        "title": "List Floating Net Labels",
+        "description": (
+            "Returns all net labels in the schematic that are not connected to any component pin. "
+            "A label is 'floating' when no component pin's coordinate falls on the wire-network "
+            "reachable from the label's anchor position. "
+            "Floating labels indicate misplaced or off-grid labels that will cause ERC errors. "
+            "Does not require the KiCad UI to be running."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                }
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
+        "name": "snap_to_grid",
+        "title": "Snap Schematic Elements to Grid",
+        "description": (
+            "Snap schematic element coordinates to the nearest grid point. "
+            "KiCAD eeschema uses exact integer matching (10 000 IU/mm) for connectivity, "
+            "so even a sub-pixel coordinate offset will make wires appear connected visually "
+            "but fail ERC checks. Running this tool before ERC eliminates that class of error. "
+            "Modifies the .kicad_sch file in place. "
+            "Does not require the KiCAD UI to be running."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                },
+                "gridSize": {
+                    "type": "number",
+                    "description": (
+                        "Grid spacing in mm (default: 1.27 — standard KiCAD schematic grid). "
+                        "Do NOT use 2.54: half of all valid KiCAD pin positions are at odd "
+                        "multiples of 1.27 mm and would be displaced 1.27 mm, breaking "
+                        "connectivity."
+                    ),
+                    "default": 1.27,
+                },
+                "elements": {
+                    "type": "array",
+                    "description": (
+                        "Element types to snap. "
+                        'Valid values: "wires", "junctions", "labels", "components". '
+                        'Defaults to ["wires", "junctions", "labels"] when omitted. '
+                        '"components" is opt-in because moving a component without re-routing '
+                        "its wires will create new mismatches."
+                    ),
+                    "items": {
+                        "type": "string",
+                        "enum": ["wires", "junctions", "labels", "components"],
+                    },
+                },
+            },
+            "required": ["schematicPath"],
+        },
+    },
 ]
 
 # =============================================================================
@@ -1692,10 +1934,7 @@ UI_TOOLS = [
         "name": "check_kicad_ui",
         "title": "Check KiCAD UI Status",
         "description": "Checks if KiCAD user interface is currently running and returns process information.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {}
-        }
+        "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "launch_kicad_ui",
@@ -1706,16 +1945,16 @@ UI_TOOLS = [
             "properties": {
                 "projectPath": {
                     "type": "string",
-                    "description": "Optional path to project file to open in UI"
+                    "description": "Optional path to project file to open in UI",
                 },
                 "autoLaunch": {
                     "type": "boolean",
                     "description": "Whether to automatically launch if not running",
-                    "default": True
-                }
-            }
-        }
-    }
+                    "default": True,
+                },
+            },
+        },
+    },
 ]
 
 # =============================================================================
@@ -1725,9 +1964,17 @@ UI_TOOLS = [
 TOOL_SCHEMAS: Dict[str, Any] = {}
 
 # Combine all tool categories
-for tool in (PROJECT_TOOLS + BOARD_TOOLS + COMPONENT_TOOLS + ROUTING_TOOLS +
-             LIBRARY_TOOLS + DESIGN_RULE_TOOLS + EXPORT_TOOLS +
-             SCHEMATIC_TOOLS + UI_TOOLS):
+for tool in (
+    PROJECT_TOOLS
+    + BOARD_TOOLS
+    + COMPONENT_TOOLS
+    + ROUTING_TOOLS
+    + LIBRARY_TOOLS
+    + DESIGN_RULE_TOOLS
+    + EXPORT_TOOLS
+    + SCHEMATIC_TOOLS
+    + UI_TOOLS
+):
     TOOL_SCHEMAS[tool["name"]] = tool
 
 # Total: 46 tools with comprehensive schemas

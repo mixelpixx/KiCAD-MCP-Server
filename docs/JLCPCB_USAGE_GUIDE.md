@@ -1,5 +1,7 @@
 # JLCPCB Integration Guide
 
+> **Note:** This document provides usage examples and workflow guidance. For complete API reference and setup instructions, see [JLCPCB_INTEGRATION.md](JLCPCB_INTEGRATION.md).
+
 The KiCAD MCP Server provides **three complementary approaches** for working with JLCPCB parts:
 
 1. **JLCSearch Public API** - No authentication required, 2.5M+ parts with pricing (Recommended)
@@ -18,6 +20,7 @@ All approaches can be used together to give you maximum flexibility.
 ## Approach 1: JLCSearch Public API (Recommended)
 
 ### What It Does
+
 - Access to 2.5M+ JLCPCB parts with pricing and stock data
 - **No authentication required** - works immediately
 - **No JLCPCB account needed**
@@ -37,6 +40,7 @@ download_jlcpcb_database({ force: false })
 This downloads ~2.5M parts from JLCSearch API and creates a local SQLite database (`data/jlcpcb_parts.db`).
 
 **Expected Output:**
+
 ```
 Downloading JLCPCB parts database...
 Downloaded 100 parts...
@@ -57,6 +61,7 @@ See "Approach 2" usage examples below - the API is the same.
 ## Approach 2: Local Symbol Libraries (Good for Offline Use)
 
 ### What It Does
+
 - Searches symbol libraries you've installed via KiCad's Plugin and Content Manager (PCM)
 - Works with community JLCPCB libraries like `JLCPCB-KiCad-Library`
 - No API credentials needed
@@ -79,6 +84,7 @@ See "Approach 2" usage examples below - the API is the same.
 ### Usage Examples
 
 #### Search for Components
+
 ```
 search_symbols({
   query: "ESP32",
@@ -87,6 +93,7 @@ search_symbols({
 ```
 
 Returns:
+
 ```
 Found 12 symbols matching "ESP32":
 
@@ -96,6 +103,7 @@ PCM_JLCPCB-MCUs:ESP32-S2 | LCSC: C701342 | ESP32-S2 WiFi SoC
 ```
 
 #### Search by LCSC ID
+
 ```
 search_symbols({
   query: "C2934196"  // Direct LCSC ID search
@@ -103,6 +111,7 @@ search_symbols({
 ```
 
 #### Get Symbol Details
+
 ```
 get_symbol_info({
   symbol: "PCM_JLCPCB-MCUs:ESP32-C3"
@@ -110,6 +119,7 @@ get_symbol_info({
 ```
 
 Returns:
+
 ```
 Symbol: PCM_JLCPCB-MCUs:ESP32-C3
 Description: ESP32-C3 RISC-V WiFi/BLE SoC
@@ -121,6 +131,7 @@ Class: Extended
 ```
 
 ### Advantages
+
 - ✅ No API credentials required
 - ✅ Works offline after library installation
 - ✅ Symbols pre-configured with correct footprints
@@ -128,6 +139,7 @@ Class: Extended
 - ✅ Instant availability
 
 ### Limitations
+
 - ❌ Only parts in installed libraries (typically 1k-10k parts)
 - ❌ No real-time pricing or stock information
 - ❌ Requires manual library updates via PCM
@@ -137,6 +149,7 @@ Class: Extended
 ## Approach 3: Official JLCPCB API (Advanced - Enterprise Accounts Only)
 
 ### What It Does
+
 - Downloads from the **official JLCPCB API** (requires enterprise account)
 - Provides **real-time pricing and stock information**
 - Automatic **Basic vs Extended** library type identification (Basic = free assembly)
@@ -148,6 +161,7 @@ Class: Extended
 #### 1. Get JLCPCB API Credentials
 
 Visit [JLCPCB](https://jlcpcb.com/) and get your API credentials:
+
 1. Log in to your JLCPCB account
 2. Go to: **Account → API Management**
 3. Click "Create API Key"
@@ -180,6 +194,7 @@ download_jlcpcb_database({ force: false })
 This downloads ~100k parts from JLCPCB and creates a local SQLite database (`data/jlcpcb_parts.db`).
 
 **Output:**
+
 ```
 ✓ Successfully downloaded JLCPCB parts database
 
@@ -203,6 +218,7 @@ search_jlcpcb_parts({
 ```
 
 **Returns:**
+
 ```
 Found 15 JLCPCB parts:
 
@@ -223,6 +239,7 @@ get_jlcpcb_part({
 ```
 
 **Returns:**
+
 ```
 LCSC: C58972
 MFR Part: 0603WAF1002T5E
@@ -255,6 +272,7 @@ suggest_jlcpcb_alternatives({
 ```
 
 **Returns:**
+
 ```
 Alternative parts for C25804:
 
@@ -287,6 +305,7 @@ get_jlcpcb_database_stats({})
 ```
 
 **Returns:**
+
 ```
 JLCPCB Database Statistics:
 
@@ -298,6 +317,7 @@ Database path: /home/user/KiCAD-MCP-Server/data/jlcpcb_parts.db
 ```
 
 ### Advantages
+
 - ✅ Complete JLCPCB catalog (100k+ parts)
 - ✅ Real-time pricing and stock data
 - ✅ Automatic Basic/Extended identification
@@ -306,6 +326,7 @@ Database path: /home/user/KiCAD-MCP-Server/data/jlcpcb_parts.db
 - ✅ Fast parametric search
 
 ### Limitations
+
 - ❌ Requires API credentials
 - ❌ Initial download takes 5-10 minutes
 - ❌ Database needs periodic updates for latest parts
@@ -318,6 +339,7 @@ Database path: /home/user/KiCAD-MCP-Server/data/jlcpcb_parts.db
 ### Workflow 1: Design with Known Components
 
 **Use Local Libraries:**
+
 ```
 1. search_symbols({ query: "STM32F103", library: "JLCPCB" })
 2. Select component from installed library
@@ -329,6 +351,7 @@ Database path: /home/user/KiCAD-MCP-Server/data/jlcpcb_parts.db
 ### Workflow 2: Find Optimal Part for Cost
 
 **Use JLCPCB API:**
+
 ```
 1. search_jlcpcb_parts({
      query: "10k resistor",
@@ -344,6 +367,7 @@ Database path: /home/user/KiCAD-MCP-Server/data/jlcpcb_parts.db
 ### Workflow 3: Explore Unknown Parts
 
 **Start with API, verify with Libraries:**
+
 ```
 1. search_jlcpcb_parts({ query: "ESP32", limit: 20 })
 2. Find interesting part (e.g., C2934196)
@@ -391,6 +415,7 @@ search_jlcpcb_parts({
 ### 4. Calculate BOM Cost
 
 For each part in your design:
+
 1. Use `get_jlcpcb_part()` to get price breaks
 2. Sum up total cost based on order quantity
 3. Check library_type count (each unique Extended part = $3 fee)
@@ -420,6 +445,7 @@ Future versions will support incremental updates that only fetch new/changed par
 ### "JLCPCB API credentials not configured"
 
 **Solution:** Set environment variables:
+
 ```bash
 export JLCPCB_API_KEY="your_key"
 export JLCPCB_API_SECRET="your_secret"
@@ -428,6 +454,7 @@ export JLCPCB_API_SECRET="your_secret"
 ### "Database not found or empty"
 
 **Solution:** Run:
+
 ```
 download_jlcpcb_database({ force: false })
 ```
@@ -435,6 +462,7 @@ download_jlcpcb_database({ force: false })
 ### "No symbols found" (Local Libraries)
 
 **Solution:**
+
 1. Install JLCPCB libraries via KiCad PCM
 2. Verify library is enabled in KiCad symbol library table
 3. Restart KiCad MCP server
@@ -442,6 +470,7 @@ download_jlcpcb_database({ force: false })
 ### "Authentication failed"
 
 **Solution:**
+
 1. Verify your API credentials are correct
 2. Check JLCPCB account has API access enabled
 3. Try regenerating API key/secret in JLCPCB dashboard
@@ -450,17 +479,17 @@ download_jlcpcb_database({ force: false })
 
 ## API vs Libraries: Quick Reference
 
-| Feature | Local Libraries | JLCPCB API |
-|---------|----------------|------------|
-| **Parts Count** | 1k-10k (installed) | 100k+ (complete catalog) |
-| **Setup** | Install via PCM | API credentials + download |
-| **Offline Use** | ✅ Yes | ✅ Yes (after download) |
-| **Pricing** | ❌ No | ✅ Real-time |
-| **Stock Info** | ❌ No | ✅ Real-time |
-| **Footprints** | ✅ Pre-configured | ⚠️ Auto-suggested |
-| **Updates** | Manual via PCM | Re-download database |
-| **Speed** | ⚡ Instant | ⚡ Fast (local DB) |
-| **Cost Optimization** | ❌ Manual | ✅ Automatic |
+| Feature               | Local Libraries    | JLCPCB API                 |
+| --------------------- | ------------------ | -------------------------- |
+| **Parts Count**       | 1k-10k (installed) | 100k+ (complete catalog)   |
+| **Setup**             | Install via PCM    | API credentials + download |
+| **Offline Use**       | ✅ Yes             | ✅ Yes (after download)    |
+| **Pricing**           | ❌ No              | ✅ Real-time               |
+| **Stock Info**        | ❌ No              | ✅ Real-time               |
+| **Footprints**        | ✅ Pre-configured  | ⚠️ Auto-suggested          |
+| **Updates**           | Manual via PCM     | Re-download database       |
+| **Speed**             | ⚡ Instant         | ⚡ Fast (local DB)         |
+| **Cost Optimization** | ❌ Manual          | ✅ Automatic               |
 
 ---
 
@@ -503,12 +532,14 @@ search_symbols({ query: "USB-C" })
 ## Summary
 
 **Use Local Libraries when:**
+
 - Starting a new design with common components
 - You want pre-configured, tested symbols
 - Working offline
 - Components are in installed libraries
 
 **Use JLCPCB API when:**
+
 - Optimizing cost (find cheapest Basic parts)
 - Checking real-time stock availability
 - Exploring parts outside installed libraries

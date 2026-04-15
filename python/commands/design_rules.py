@@ -2,10 +2,11 @@
 Design rules command implementations for KiCAD interface
 """
 
-import os
-import pcbnew
 import logging
-from typing import Dict, Any, Optional, List, Tuple
+import os
+from typing import Any, Dict, List, Optional, Tuple
+
+import pcbnew
 
 logger = logging.getLogger("kicad_interface")
 
@@ -58,13 +59,9 @@ class DesignRuleCommands:
 
             # Set micro via settings (use properties - methods removed in KiCAD 9.0)
             if "microViaDiameter" in params:
-                design_settings.m_MicroViasMinSize = int(
-                    params["microViaDiameter"] * scale
-                )
+                design_settings.m_MicroViasMinSize = int(params["microViaDiameter"] * scale)
             if "microViaDrill" in params:
-                design_settings.m_MicroViasMinDrill = int(
-                    params["microViaDrill"] * scale
-                )
+                design_settings.m_MicroViasMinDrill = int(params["microViaDrill"] * scale)
 
             # Set minimum values
             if "minTrackWidth" in params:
@@ -77,19 +74,13 @@ class DesignRuleCommands:
                 design_settings.m_MinThroughDrill = int(params["minViaDrill"] * scale)
 
             if "minMicroViaDiameter" in params:
-                design_settings.m_MicroViasMinSize = int(
-                    params["minMicroViaDiameter"] * scale
-                )
+                design_settings.m_MicroViasMinSize = int(params["minMicroViaDiameter"] * scale)
             if "minMicroViaDrill" in params:
-                design_settings.m_MicroViasMinDrill = int(
-                    params["minMicroViaDrill"] * scale
-                )
+                design_settings.m_MicroViasMinDrill = int(params["minMicroViaDrill"] * scale)
 
             # KiCAD 9.0: m_MinHoleDiameter removed - use m_MinThroughDrill
             if "minHoleDiameter" in params:
-                design_settings.m_MinThroughDrill = int(
-                    params["minHoleDiameter"] * scale
-                )
+                design_settings.m_MinThroughDrill = int(params["minHoleDiameter"] * scale)
 
             # KiCAD 9.0: Added hole clearance settings
             if "holeClearance" in params:
@@ -181,11 +172,11 @@ class DesignRuleCommands:
 
     def run_drc(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Run Design Rule Check using kicad-cli"""
-        import subprocess
         import json
-        import tempfile
         import platform
         import shutil
+        import subprocess
+        import tempfile
 
         try:
             if not self.board:
@@ -216,9 +207,7 @@ class DesignRuleCommands:
                 }
 
             # Create temporary JSON output file
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".json", delete=False
-            ) as tmp:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
                 json_output = tmp.name
 
             try:
@@ -297,9 +286,7 @@ class DesignRuleCommands:
                 # Determine where to save the violations file
                 board_dir = os.path.dirname(board_file)
                 board_name = os.path.splitext(os.path.basename(board_file))[0]
-                violations_file = os.path.join(
-                    board_dir, f"{board_name}_drc_violations.json"
-                )
+                violations_file = os.path.join(board_dir, f"{board_name}_drc_violations.json")
 
                 # Always save violations to JSON file (for large result sets)
                 with open(violations_file, "w", encoding="utf-8") as f:
@@ -453,9 +440,7 @@ class DesignRuleCommands:
 
             # Filter by severity if specified
             if severity != "all":
-                filtered_violations = [
-                    v for v in all_violations if v.get("severity") == severity
-                ]
+                filtered_violations = [v for v in all_violations if v.get("severity") == severity]
             else:
                 filtered_violations = all_violations
 

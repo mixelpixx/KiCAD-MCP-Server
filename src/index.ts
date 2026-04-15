@@ -3,11 +3,11 @@
  * Main entry point
  */
 
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { KiCADMcpServer } from './server.js';
-import { loadConfig } from './config.js';
-import { logger } from './logger.js';
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+import { KiCADMcpServer } from "./server.js";
+import { loadConfig } from "./config.js";
+import { logger } from "./logger.js";
 
 // Get the current directory
 const __filename = fileURLToPath(import.meta.url);
@@ -21,27 +21,23 @@ async function main() {
     // Parse command line arguments
     const args = process.argv.slice(2);
     const options = parseCommandLineArgs(args);
-    
+
     // Load configuration
     const config = await loadConfig(options.configPath);
-    
+
     // Path to the Python script that interfaces with KiCAD
-    const kicadScriptPath = join(dirname(__dirname), 'python', 'kicad_interface.py');
-    
+    const kicadScriptPath = join(dirname(__dirname), "python", "kicad_interface.py");
+
     // Create the server
-    const server = new KiCADMcpServer(
-      kicadScriptPath,
-      config.logLevel
-    );
-    
+    const server = new KiCADMcpServer(kicadScriptPath, config.logLevel);
+
     // Start the server
     await server.start();
-    
+
     // Setup graceful shutdown
     setupGracefulShutdown(server);
-    
-    logger.info('KiCAD MCP server started with STDIO transport');
-    
+
+    logger.info("KiCAD MCP server started with STDIO transport");
   } catch (error) {
     logger.error(`Failed to start KiCAD MCP server: ${error}`);
     process.exit(1);
@@ -53,14 +49,14 @@ async function main() {
  */
 function parseCommandLineArgs(args: string[]) {
   let configPath = undefined;
-  
+
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--config' && i + 1 < args.length) {
+    if (args[i] === "--config" && i + 1 < args.length) {
       configPath = args[i + 1];
       i++;
     }
   }
-  
+
   return { configPath };
 }
 
@@ -69,24 +65,24 @@ function parseCommandLineArgs(args: string[]) {
  */
 function setupGracefulShutdown(server: KiCADMcpServer) {
   // Handle termination signals
-  process.on('SIGINT', async () => {
-    logger.info('Received SIGINT signal. Shutting down...');
+  process.on("SIGINT", async () => {
+    logger.info("Received SIGINT signal. Shutting down...");
     await shutdownServer(server);
   });
-  
-  process.on('SIGTERM', async () => {
-    logger.info('Received SIGTERM signal. Shutting down...');
+
+  process.on("SIGTERM", async () => {
+    logger.info("Received SIGTERM signal. Shutting down...");
     await shutdownServer(server);
   });
-  
+
   // Handle uncaught exceptions
-  process.on('uncaughtException', async (error) => {
+  process.on("uncaughtException", async (error) => {
     logger.error(`Uncaught exception: ${error}`);
     await shutdownServer(server);
   });
-  
+
   // Handle unhandled promise rejections
-  process.on('unhandledRejection', async (reason) => {
+  process.on("unhandledRejection", async (reason) => {
     logger.error(`Unhandled promise rejection: ${reason}`);
     await shutdownServer(server);
   });
@@ -97,9 +93,9 @@ function setupGracefulShutdown(server: KiCADMcpServer) {
  */
 async function shutdownServer(server: KiCADMcpServer) {
   try {
-    logger.info('Shutting down KiCAD MCP server...');
+    logger.info("Shutting down KiCAD MCP server...");
     await server.stop();
-    logger.info('Server shutdown complete. Exiting...');
+    logger.info("Server shutdown complete. Exiting...");
     process.exit(0);
   } catch (error) {
     logger.error(`Error during shutdown: ${error}`);

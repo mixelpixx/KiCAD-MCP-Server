@@ -6,10 +6,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-export function registerLibraryTools(
-  server: McpServer,
-  callKicadScript: Function,
-) {
+export function registerLibraryTools(server: McpServer, callKicadScript: Function) {
   // List available footprint libraries
   server.tool(
     "list_libraries",
@@ -48,18 +45,9 @@ export function registerLibraryTools(
     "search_footprints",
     "Search for footprints matching a pattern across all libraries",
     {
-      search_term: z
-        .string()
-        .describe("Search term or pattern to match footprint names"),
-      library: z
-        .string()
-        .optional()
-        .describe("Optional specific library to search in"),
-      limit: z
-        .number()
-        .optional()
-        .default(50)
-        .describe("Maximum number of results to return"),
+      search_term: z.string().describe("Search term or pattern to match footprint names"),
+      library: z.string().optional().describe("Optional specific library to search in"),
+      limit: z.number().optional().default(50).describe("Maximum number of results to return"),
     },
     async (args: { search_term: string; library?: string; limit?: number }) => {
       const result = await callKicadScript("search_footprints", {
@@ -99,25 +87,14 @@ export function registerLibraryTools(
     "list_library_footprints",
     "List all footprints in a specific KiCAD library",
     {
-      library_name: z
-        .string()
-        .describe("Name of the library to list footprints from"),
-      filter: z
-        .string()
-        .optional()
-        .describe("Optional filter pattern for footprint names"),
-      limit: z
-        .number()
-        .optional()
-        .default(100)
-        .describe("Maximum number of footprints to list"),
+      library_name: z.string().describe("Name of the library to list footprints from"),
+      filter: z.string().optional().describe("Optional filter pattern for footprint names"),
+      limit: z.number().optional().default(100).describe("Maximum number of footprints to list"),
     },
     async (args: { library_name: string; filter?: string; limit?: number }) => {
       const result = await callKicadScript("list_library_footprints", args);
       if (result.success && result.footprints) {
-        const footprintList = result.footprints
-          .map((fp: string) => `  - ${fp}`)
-          .join("\n");
+        const footprintList = result.footprints.map((fp: string) => `  - ${fp}`).join("\n");
         return {
           content: [
             {
@@ -143,30 +120,39 @@ export function registerLibraryTools(
     "get_footprint_info",
     "Get detailed information about a specific footprint",
     {
-      library_name: z
-        .string()
-        .describe("Name of the library containing the footprint"),
-      footprint_name: z
-        .string()
-        .describe("Name of the footprint to get information about"),
+      library_name: z.string().describe("Name of the library containing the footprint"),
+      footprint_name: z.string().describe("Name of the footprint to get information about"),
     },
     async (args: { library_name: string; footprint_name: string }) => {
       const result = await callKicadScript("get_footprint_info", args);
       if (result.success && result.info) {
         const info = result.info;
+
+        // pads is a list of {number, type, shape} objects
+        const padsArray: Array<{ number: string; type: string; shape: string }> = Array.isArray(
+          info.pads,
+        )
+          ? info.pads
+          : [];
+        const padsSummary = padsArray.length
+          ? `${padsArray.length} pads: ${padsArray.map((p) => p.number).join(", ")}`
+          : "";
+        const padsDetail = padsArray.length
+          ? padsArray.map((p) => `  pad ${p.number}: ${p.type} ${p.shape}`).join("\n")
+          : "";
+
         const details = [
           `Footprint: ${info.name}`,
           `Library: ${info.library}`,
           info.description ? `Description: ${info.description}` : "",
           info.keywords ? `Keywords: ${info.keywords}` : "",
-          info.pads ? `Number of pads: ${info.pads}` : "",
+          padsSummary,
+          padsDetail,
           info.layers ? `Layers used: ${info.layers.join(", ")}` : "",
           info.courtyard
             ? `Courtyard size: ${info.courtyard.width}mm x ${info.courtyard.height}mm`
             : "",
-          info.attributes
-            ? `Attributes: ${JSON.stringify(info.attributes)}`
-            : "",
+          info.attributes ? `Attributes: ${JSON.stringify(info.attributes)}` : "",
         ]
           .filter((line) => line)
           .join("\n");

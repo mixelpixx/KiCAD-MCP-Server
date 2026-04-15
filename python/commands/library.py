@@ -5,12 +5,12 @@ Handles parsing fp-lib-table files, discovering footprints,
 and providing search functionality for component placement.
 """
 
+import glob
+import logging
 import os
 import re
-import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-import glob
 
 logger = logging.getLogger("kicad_interface")
 
@@ -35,7 +35,7 @@ class LibraryManager:
         self.footprint_cache: Dict[str, List[str]] = {}  # library -> [footprint names]
         self._load_libraries()
 
-    def _load_libraries(self):
+    def _load_libraries(self) -> None:
         """Load libraries from fp-lib-table files"""
         # Load global libraries
         global_table = self._get_global_fp_lib_table()
@@ -58,13 +58,16 @@ class LibraryManager:
         """Get path to global fp-lib-table file"""
         # Try different possible locations
         kicad_config_paths = [
+            Path.home() / ".config" / "kicad" / "10.0" / "fp-lib-table",
             Path.home() / ".config" / "kicad" / "9.0" / "fp-lib-table",
             Path.home() / ".config" / "kicad" / "8.0" / "fp-lib-table",
             Path.home() / ".config" / "kicad" / "fp-lib-table",
             # Windows paths
+            Path.home() / "AppData" / "Roaming" / "kicad" / "10.0" / "fp-lib-table",
             Path.home() / "AppData" / "Roaming" / "kicad" / "9.0" / "fp-lib-table",
             Path.home() / "AppData" / "Roaming" / "kicad" / "8.0" / "fp-lib-table",
             # macOS paths
+            Path.home() / "Library" / "Preferences" / "kicad" / "10.0" / "fp-lib-table",
             Path.home() / "Library" / "Preferences" / "kicad" / "9.0" / "fp-lib-table",
             Path.home() / "Library" / "Preferences" / "kicad" / "8.0" / "fp-lib-table",
         ]
@@ -75,7 +78,7 @@ class LibraryManager:
 
         return None
 
-    def _parse_fp_lib_table(self, table_path: Path):
+    def _parse_fp_lib_table(self, table_path: Path) -> None:
         """
         Parse fp-lib-table file
 
@@ -90,11 +93,21 @@ class LibraryManager:
 
             # Simple regex-based parser for lib entries
             # Pattern: (lib (name "NAME")(type TYPE)(uri "URI")...)
-            lib_pattern = r'\(lib\s+\(name\s+"?([^")\s]+)"?\)\s*\(type\s+[^)]+\)\s*\(uri\s+"?([^")\s]+)"?'
+            lib_pattern = r'\(lib\s+\(name\s+"?([^")\s]+)"?\)\s*\(type\s+"?([^")\s]+)"?\)\s*\(uri\s+"?([^")\s]+)"?'
 
             for match in re.finditer(lib_pattern, content, re.IGNORECASE):
                 nickname = match.group(1)
-                uri = match.group(2)
+                lib_type = match.group(2)
+                uri = match.group(3)
+
+                if lib_type.lower() == "table":
+                    table_uri = uri
+                    if os.path.isabs(table_uri) and os.path.isfile(table_uri):
+                        logger.info(f"  Following Table reference: {nickname} -> {table_uri}")
+                        self._parse_fp_lib_table(Path(table_uri))
+                    else:
+                        logger.warning(f"  Could not resolve Table URI: {table_uri}")
+                    continue
 
                 # Resolve environment variables in URI
                 resolved_uri = self._resolve_uri(uri)
@@ -103,9 +116,7 @@ class LibraryManager:
                     self.libraries[nickname] = resolved_uri
                     logger.debug(f"  Found library: {nickname} -> {resolved_uri}")
                 else:
-                    logger.warning(
-                        f"  Could not resolve URI for library {nickname}: {uri}"
-                    )
+                    logger.warning(f"  Could not resolve URI for library {nickname}: {uri}")
 
         except Exception as e:
             logger.error(f"Error parsing fp-lib-table at {table_path}: {e}")
@@ -126,10 +137,12 @@ class LibraryManager:
 
         # Common KiCAD environment variables
         env_vars = {
+            "KICAD10_FOOTPRINT_DIR": self._find_kicad_footprint_dir(),
             "KICAD9_FOOTPRINT_DIR": self._find_kicad_footprint_dir(),
             "KICAD8_FOOTPRINT_DIR": self._find_kicad_footprint_dir(),
             "KICAD_FOOTPRINT_DIR": self._find_kicad_footprint_dir(),
             "KISYSMOD": self._find_kicad_footprint_dir(),
+            "KICAD10_3RD_PARTY": self._find_kicad_3rdparty_dir(),
             "KICAD9_3RD_PARTY": self._find_kicad_3rdparty_dir(),
             "KICAD8_3RD_PARTY": self._find_kicad_3rdparty_dir(),
         }
@@ -206,12 +219,7 @@ class LibraryManager:
             / "9.0"
             / "kicad_common.json",  # macOS
             Path.home() / ".config" / "kicad" / "9.0" / "kicad_common.json",  # Linux
-            Path.home()
-            / "AppData"
-            / "Roaming"
-            / "kicad"
-            / "9.0"
-            / "kicad_common.json",  # Windows
+            Path.home() / "AppData" / "Roaming" / "kicad" / "9.0" / "kicad_common.json",  # Windows
         ]
 
         for config_path in kicad_common_paths:
@@ -337,9 +345,7 @@ class LibraryManager:
             for library_nickname, library_path in self.libraries.items():
                 fp_file = Path(library_path) / f"{footprint_name}.kicad_mod"
                 if fp_file.exists():
-                    logger.info(
-                        f"Found footprint {footprint_name} in library {library_nickname}"
-                    )
+                    logger.info(f"Found footprint {footprint_name} in library {library_nickname}")
                     return (library_path, footprint_name)
 
             logger.warning(f"Footprint not found in any library: {footprint_name}")
@@ -446,9 +452,7 @@ class LibraryCommands:
             # Filter by library if specified
             if library_filter:
                 results = [
-                    r
-                    for r in results
-                    if r.get("library", "").lower() == library_filter.lower()
+                    r for r in results if r.get("library", "").lower() == library_filter.lower()
                 ]
                 results = results[:limit]
 
@@ -492,7 +496,7 @@ class LibraryCommands:
     def get_footprint_info(self, params: Dict) -> Dict:
         """Get information about a specific footprint"""
         try:
-            footprint_spec = params.get("footprint")
+            footprint_spec = params.get("footprint_name")
             if not footprint_spec:
                 return {"success": False, "message": "Missing footprint parameter"}
 
@@ -508,19 +512,39 @@ class LibraryCommands:
                         library_nickname = nick
                         break
 
-                info = {
-                    "library": library_nickname,
-                    "footprint": footprint_name,
-                    "full_name": f"{library_nickname}:{footprint_name}",
-                    "library_path": library_path,
-                }
+            # Minimal info — always returned even if the parser fails
+            info: Dict = {
+                "library": library_nickname,
+                "name": footprint_name,
+                "full_name": f"{library_nickname}:{footprint_name}",
+                "library_path": library_path,
+            }
 
-                return {"success": True, "footprint_info": info}
-            else:
-                return {
-                    "success": False,
-                    "message": f"Footprint not found: {footprint_spec}",
-                }
+            # Attempt to enrich with parsed .kicad_mod data
+            try:
+                from pathlib import Path as _Path
+
+                from parsers.kicad_mod_parser import parse_kicad_mod
+
+                mod_file = str(_Path(library_path) / f"{footprint_name}.kicad_mod")
+                parsed = parse_kicad_mod(mod_file)
+                if parsed:
+                    # Merge parser output into info; keep our resolved library context
+                    info.update(parsed)
+                    info["name"] = footprint_name  # entry name wins over in-file name
+                    info["library"] = library_nickname
+                    info["full_name"] = f"{library_nickname}:{footprint_name}"
+                    info["library_path"] = library_path
+                else:
+                    logger.warning(
+                        f"get_footprint_info: parser returned nothing for {mod_file}, using minimal info"
+                    )
+            except Exception as parse_err:
+                logger.warning(
+                    f"get_footprint_info: parser error ({parse_err}), using minimal info"
+                )
+
+            return {"success": True, "info": info}
 
         except Exception as e:
             logger.error(f"Error getting footprint info: {e}")

@@ -6,6 +6,7 @@ Thank you for your interest in contributing to the KiCAD MCP Server! This guide 
 
 - [Development Environment Setup](#development-environment-setup)
 - [Project Structure](#project-structure)
+- [Architecture Overview](#architecture-overview)
 - [Development Workflow](#development-workflow)
 - [Testing](#testing)
 - [Code Style](#code-style)
@@ -38,7 +39,7 @@ curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
 # Clone the repository
-git clone https://github.com/yourusername/kicad-mcp-server.git
+git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd kicad-mcp-server
 
 # Install Node.js dependencies
@@ -63,7 +64,7 @@ pytest
 # Install Node.js from https://nodejs.org/
 
 # Clone the repository
-git clone https://github.com/yourusername/kicad-mcp-server.git
+git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd kicad-mcp-server
 
 # Install Node.js dependencies
@@ -89,7 +90,7 @@ pytest
 brew install node
 
 # Clone the repository
-git clone https://github.com/yourusername/kicad-mcp-server.git
+git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd kicad-mcp-server
 
 # Install Node.js dependencies
@@ -105,6 +106,25 @@ npm run build
 npm test
 pytest
 ```
+
+### Pre-commit Hooks
+
+This project uses [pre-commit](https://pre-commit.com/) to run linters and formatters automatically before each commit. Pre-commit hooks prevent noisy formatting diffs caused by different IDE configurations across contributors, catch common mistakes and type errors before they reach code review, and ensure every commit in the repository meets the same quality baseline — so reviewers can focus on logic and design rather than style issues.
+
+**All contributors must install pre-commit hooks after cloning the repo:**
+
+```bash
+# Install pre-commit (if not already installed)
+pip install pre-commit
+
+# Install the git hooks
+pre-commit install
+
+# (Optional) Run against all files to verify setup
+pre-commit run --all-files
+```
+
+> **Important:** Do not use `git commit --no-verify` to bypass pre-commit hooks. The hooks enforce code quality checks (Black, isort, Prettier, flake8, mypy, ESLint) that must pass before code is merged. If a hook fails, fix the underlying issue rather than skipping the check.
 
 ---
 
@@ -141,6 +161,22 @@ kicad-mcp-server/
 ├── requirements.txt      # Python production dependencies
 └── requirements-dev.txt  # Python dev dependencies
 ```
+
+---
+
+## Architecture Overview
+
+The KiCAD MCP Server is organized into several key components:
+
+- **TypeScript MCP Server** (`src/`) - Handles MCP protocol communication and tool routing
+- **Python KiCAD Interface** (`python/`) - Interfaces with KiCAD's Python API (pcbnew)
+- **Tool Router** - Organizes 122+ tools into 8 discoverable categories
+- **Resource System** - Provides dynamic project/board state information
+- **Prompt System** - Offers context-aware design prompts
+
+**Current Tool Count:** 122+ tools across 8 categories (direct + routed)
+
+For detailed architecture information, see `docs/ROUTER_ARCHITECTURE.md`.
 
 ---
 
@@ -192,6 +228,7 @@ git commit -m "feat: Add your feature description"
 ```
 
 **Commit Message Convention:**
+
 - `feat:` - New feature
 - `fix:` - Bug fix
 - `docs:` - Documentation changes
@@ -285,6 +322,7 @@ pylint python/
 ```
 
 **Python Style Guidelines:**
+
 - Use type hints for all function signatures
 - Use pathlib.Path for file paths (not os.path)
 - Use descriptive variable names
@@ -292,6 +330,7 @@ pylint python/
 - Follow PEP 8
 
 **Example:**
+
 ```python
 from pathlib import Path
 from typing import List, Optional
@@ -328,6 +367,7 @@ npx eslint src/
 ```
 
 **TypeScript Style Guidelines:**
+
 - Use interfaces for data structures
 - Use async/await for asynchronous code
 - Use descriptive variable names

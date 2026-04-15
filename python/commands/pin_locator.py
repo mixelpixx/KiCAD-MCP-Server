@@ -9,7 +9,8 @@ import logging
 import math
 import tempfile
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict
+from typing import Any, Dict, List, Optional, Tuple
+
 import sexpdata
 from sexpdata import Symbol
 from skip import Schematic
@@ -20,7 +21,7 @@ logger = logging.getLogger("kicad_interface")
 class PinLocator:
     """Locate pins on symbol instances in KiCad schematics"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize pin locator with empty cache"""
         self.pin_definition_cache = {}  # Cache: "lib_id:symbol_name" -> pin_data
         self._schematic_cache: Dict[str, object] = {}  # Cache: path -> loaded Schematic
@@ -40,9 +41,9 @@ class PinLocator:
                 "2": {"x": 0, "y": -3.81, "angle": 90, "length": 1.27, "name": "~", "type": "passive"}
             }
         """
-        pins = {}
+        pins: Dict[str, Dict[str, Any]] = {}
 
-        def extract_pins_recursive(sexp):
+        def extract_pins_recursive(sexp: Any) -> None:
             """Recursively search for pin definitions"""
             if not isinstance(sexp, list):
                 return
@@ -117,11 +118,7 @@ class PinLocator:
             # Find lib_symbols section
             lib_symbols = None
             for item in sch_data:
-                if (
-                    isinstance(item, list)
-                    and len(item) > 0
-                    and item[0] == Symbol("lib_symbols")
-                ):
+                if isinstance(item, list) and len(item) > 0 and item[0] == Symbol("lib_symbols"):
                     lib_symbols = item
                     break
 
@@ -131,11 +128,7 @@ class PinLocator:
 
             # Find the specific symbol definition
             for item in lib_symbols[1:]:  # Skip 'lib_symbols' itself
-                if (
-                    isinstance(item, list)
-                    and len(item) > 1
-                    and item[0] == Symbol("symbol")
-                ):
+                if isinstance(item, list) and len(item) > 1 and item[0] == Symbol("symbol"):
                     symbol_name = str(item[1]).strip('"')
                     if symbol_name == lib_id:
                         # Found the symbol, parse pins
@@ -284,9 +277,7 @@ class PinLocator:
             symbol_rotation = float(symbol_at[2]) if len(symbol_at) > 2 else 0.0
 
             # Get symbol lib_id
-            lib_id = (
-                target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
-            )
+            lib_id = target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
             if not lib_id:
                 logger.error(f"Symbol {symbol_reference} has no lib_id")
                 return None
@@ -309,7 +300,9 @@ class PinLocator:
                     None,
                 )
                 if matched_num:
-                    logger.debug(f"Resolved pin name '{pin_number}' to pin number '{matched_num}' on {symbol_reference}")
+                    logger.debug(
+                        f"Resolved pin name '{pin_number}' to pin number '{matched_num}' on {symbol_reference}"
+                    )
                     pin_number = matched_num
                 else:
                     logger.error(
@@ -324,26 +317,18 @@ class PinLocator:
             pin_rel_x = pin_data["x"]
             pin_rel_y = pin_data["y"]
 
-            logger.debug(
-                f"Pin {pin_number} relative position: ({pin_rel_x}, {pin_rel_y})"
-            )
+            logger.debug(f"Pin {pin_number} relative position: ({pin_rel_x}, {pin_rel_y})")
 
             # Apply symbol rotation to pin position
             if symbol_rotation != 0:
-                pin_rel_x, pin_rel_y = self.rotate_point(
-                    pin_rel_x, pin_rel_y, symbol_rotation
-                )
-                logger.debug(
-                    f"After rotation {symbol_rotation}°: ({pin_rel_x}, {pin_rel_y})"
-                )
+                pin_rel_x, pin_rel_y = self.rotate_point(pin_rel_x, pin_rel_y, symbol_rotation)
+                logger.debug(f"After rotation {symbol_rotation}°: ({pin_rel_x}, {pin_rel_y})")
 
             # Calculate absolute position
             abs_x = symbol_x + pin_rel_x
             abs_y = symbol_y + pin_rel_y
 
-            logger.info(
-                f"Pin {symbol_reference}/{pin_number} located at ({abs_x}, {abs_y})"
-            )
+            logger.info(f"Pin {symbol_reference}/{pin_number} located at ({abs_x}, {abs_y})")
             return [abs_x, abs_y]
 
         except Exception as e:
@@ -385,9 +370,7 @@ class PinLocator:
                 return {}
 
             # Get lib_id
-            lib_id = (
-                target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
-            )
+            lib_id = target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
             if not lib_id:
                 logger.error(f"Symbol {symbol_reference} has no lib_id")
                 return {}
@@ -400,9 +383,7 @@ class PinLocator:
             # Calculate location for each pin
             result = {}
             for pin_num in pins.keys():
-                location = self.get_pin_location(
-                    schematic_path, symbol_reference, pin_num
-                )
+                location = self.get_pin_location(schematic_path, symbol_reference, pin_num)
                 if location:
                     result[pin_num] = location
 
@@ -416,14 +397,14 @@ class PinLocator:
 
 if __name__ == "__main__":
     # Test pin location discovery
+    import shutil
     import sys
-
-    sys.path.insert(0, "/home/chris/MCP/KiCAD-MCP-Server/python")
-
     from pathlib import Path
+
     from commands.component_schematic import ComponentManager
     from commands.schematic import SchematicManager
-    import shutil
+
+    sys.path.insert(0, str(Path(__file__).parent.parent))
 
     print("=" * 80)
     print("PIN LOCATOR TEST")
@@ -431,8 +412,8 @@ if __name__ == "__main__":
 
     # Create test schematic with components (cross-platform temp directory)
     test_path = Path(tempfile.gettempdir()) / "test_pin_locator.kicad_sch"
-    template_path = Path(
-        "/home/chris/MCP/KiCAD-MCP-Server/python/templates/template_with_symbols_expanded.kicad_sch"
+    template_path = (
+        Path(__file__).parent.parent / "templates" / "template_with_symbols_expanded.kicad_sch"
     )
 
     shutil.copy(template_path, test_path)

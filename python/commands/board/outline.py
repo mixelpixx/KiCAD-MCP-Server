@@ -2,10 +2,11 @@
 Board outline command implementations for KiCAD interface
 """
 
-import pcbnew
 import logging
 import math
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
+import pcbnew
 
 logger = logging.getLogger("kicad_interface")
 
@@ -224,9 +225,7 @@ class BoardOutlineCommands:
                 }
 
             # Convert to internal units (nanometers)
-            scale = (
-                1000000 if position.get("unit", "mm") == "mm" else 25400000
-            )  # mm or inch to nm
+            scale = 1000000 if position.get("unit", "mm") == "mm" else 25400000  # mm or inch to nm
             x_nm = int(position["x"] * scale)
             y_nm = int(position["y"] * scale)
             diameter_nm = int(diameter * scale)
@@ -252,9 +251,7 @@ class BoardOutlineCommands:
             pad = pcbnew.PAD(module)
             pad.SetNumber(1)
             pad.SetShape(pcbnew.PAD_SHAPE_CIRCLE)
-            pad.SetAttribute(
-                pcbnew.PAD_ATTRIB_PTH if plated else pcbnew.PAD_ATTRIB_NPTH
-            )
+            pad.SetAttribute(pcbnew.PAD_ATTRIB_PTH if plated else pcbnew.PAD_ATTRIB_NPTH)
             pad.SetSize(pcbnew.VECTOR2I(pad_diameter_nm, pad_diameter_nm))
             pad.SetDrillSize(pcbnew.VECTOR2I(diameter_nm, diameter_nm))
             pad.SetPosition(pcbnew.VECTOR2I(0, 0))  # Position relative to module
@@ -311,9 +308,7 @@ class BoardOutlineCommands:
                 }
 
             # Convert to internal units (nanometers)
-            scale = (
-                1000000 if position.get("unit", "mm") == "mm" else 25400000
-            )  # mm or inch to nm
+            scale = 1000000 if position.get("unit", "mm") == "mm" else 25400000  # mm or inch to nm
             x_nm = int(position["x"] * scale)
             y_nm = int(position["y"] * scale)
             size_nm = int(size * scale)
@@ -372,9 +367,7 @@ class BoardOutlineCommands:
                 "errorDetails": str(e),
             }
 
-    def _add_edge_line(
-        self, start: pcbnew.VECTOR2I, end: pcbnew.VECTOR2I, layer: int
-    ) -> None:
+    def _add_edge_line(self, start: pcbnew.VECTOR2I, end: pcbnew.VECTOR2I, layer: int) -> None:
         """Add a line to the edge cuts layer"""
         line = pcbnew.PCB_SHAPE(self.board)
         line.SetShape(pcbnew.SHAPE_T_SEGMENT)
@@ -396,18 +389,12 @@ class BoardOutlineCommands:
         """Add a rounded rectangle to the edge cuts layer"""
         if radius_nm <= 0:
             # If no radius, create regular rectangle
-            top_left = pcbnew.VECTOR2I(
-                center_x_nm - width_nm // 2, center_y_nm - height_nm // 2
-            )
-            top_right = pcbnew.VECTOR2I(
-                center_x_nm + width_nm // 2, center_y_nm - height_nm // 2
-            )
+            top_left = pcbnew.VECTOR2I(center_x_nm - width_nm // 2, center_y_nm - height_nm // 2)
+            top_right = pcbnew.VECTOR2I(center_x_nm + width_nm // 2, center_y_nm - height_nm // 2)
             bottom_right = pcbnew.VECTOR2I(
                 center_x_nm + width_nm // 2, center_y_nm + height_nm // 2
             )
-            bottom_left = pcbnew.VECTOR2I(
-                center_x_nm - width_nm // 2, center_y_nm + height_nm // 2
-            )
+            bottom_left = pcbnew.VECTOR2I(center_x_nm - width_nm // 2, center_y_nm + height_nm // 2)
 
             self._add_edge_line(top_left, top_right, layer)
             self._add_edge_line(top_right, bottom_right, layer)

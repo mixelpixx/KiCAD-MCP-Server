@@ -2,15 +2,17 @@
 Board view command implementations for KiCAD interface
 """
 
-import os
-import pcbnew
-import logging
-from typing import Dict, Any, Optional, List, Tuple
-from PIL import Image
-import io
 import base64
+import io
+import logging
+import os
+from typing import Any, Dict, List, Optional, Tuple
 
-logger = logging.getLogger('kicad_interface')
+import pcbnew
+from PIL import Image
+
+logger = logging.getLogger("kicad_interface")
+
 
 class BoardViewCommands:
     """Handles board viewing operations"""
@@ -26,7 +28,7 @@ class BoardViewCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             # Get board dimensions
@@ -42,26 +44,24 @@ class BoardViewCommands:
             layers = []
             for layer_id in range(pcbnew.PCB_LAYER_ID_COUNT):
                 if self.board.IsLayerEnabled(layer_id):
-                    layers.append({
-                        "name": self.board.GetLayerName(layer_id),
-                        "type": self._get_layer_type_name(self.board.GetLayerType(layer_id)),
-                        "id": layer_id
-                    })
+                    layers.append(
+                        {
+                            "name": self.board.GetLayerName(layer_id),
+                            "type": self._get_layer_type_name(self.board.GetLayerType(layer_id)),
+                            "id": layer_id,
+                        }
+                    )
 
             return {
                 "success": True,
                 "board": {
                     "filename": self.board.GetFileName(),
-                    "size": {
-                        "width": width_mm,
-                        "height": height_mm,
-                        "unit": "mm"
-                    },
+                    "size": {"width": width_mm, "height": height_mm, "unit": "mm"},
                     "layers": layers,
-                    "title": self.board.GetTitleBlock().GetTitle()
+                    "title": self.board.GetTitleBlock().GetTitle(),
                     # Note: activeLayer removed - GetActiveLayer() doesn't exist in KiCAD 9.0
                     # Active layer is a UI concept not applicable to headless scripting
-                }
+                },
             }
 
         except Exception as e:
@@ -69,7 +69,7 @@ class BoardViewCommands:
             return {
                 "success": False,
                 "message": "Failed to get board information",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
 
     def get_board_2d_view(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -79,7 +79,7 @@ class BoardViewCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             # Get parameters
@@ -90,7 +90,7 @@ class BoardViewCommands:
 
             # Create plot controller
             plotter = pcbnew.PLOT_CONTROLLER(self.board)
-            
+
             # Set up plot options
             plot_opts = plotter.GetPlotOptions()
             plot_opts.SetOutputDirectory(os.path.dirname(self.board.GetFileName()))
@@ -100,7 +100,7 @@ class BoardViewCommands:
             plot_opts.SetPlotFrameRef(False)
             plot_opts.SetPlotValue(True)
             plot_opts.SetPlotReference(True)
-            
+
             # Plot to SVG first (for vector output)
             # Note: KiCAD 9.0 prepends the project name to the filename, so we use GetPlotFileName() to get the actual path
             plotter.OpenPlotfile("temp_view", pcbnew.PLOT_FORMAT_SVG, "Temporary View")
@@ -126,36 +126,33 @@ class BoardViewCommands:
 
             # Convert SVG to requested format
             if format == "svg":
-                with open(temp_svg, 'r') as f:
+                with open(temp_svg, "r") as f:
                     svg_data = f.read()
                 os.remove(temp_svg)
-                return {
-                    "success": True,
-                    "imageData": svg_data,
-                    "format": "svg"
-                }
+                return {"success": True, "imageData": svg_data, "format": "svg"}
             else:
                 # Use PIL to convert SVG to PNG/JPG
                 from cairosvg import svg2png
+
                 png_data = svg2png(url=temp_svg, output_width=width, output_height=height)
                 os.remove(temp_svg)
-                
+
                 if format == "jpg":
                     # Convert PNG to JPG
                     img = Image.open(io.BytesIO(png_data))
                     jpg_buffer = io.BytesIO()
-                    img.convert('RGB').save(jpg_buffer, format='JPEG')
+                    img.convert("RGB").save(jpg_buffer, format="JPEG")
                     jpg_data = jpg_buffer.getvalue()
                     return {
                         "success": True,
-                        "imageData": base64.b64encode(jpg_data).decode('utf-8'),
-                        "format": "jpg"
+                        "imageData": base64.b64encode(jpg_data).decode("utf-8"),
+                        "format": "jpg",
                     }
                 else:
                     return {
                         "success": True,
-                        "imageData": base64.b64encode(png_data).decode('utf-8'),
-                        "format": "png"
+                        "imageData": base64.b64encode(png_data).decode("utf-8"),
+                        "format": "png",
                     }
 
         except Exception as e:
@@ -163,16 +160,16 @@ class BoardViewCommands:
             return {
                 "success": False,
                 "message": "Failed to get board 2D view",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }
-    
+
     def _get_layer_type_name(self, type_id: int) -> str:
         """Convert KiCAD layer type constant to name"""
         type_map = {
             pcbnew.LT_SIGNAL: "signal",
             pcbnew.LT_POWER: "power",
             pcbnew.LT_MIXED: "mixed",
-            pcbnew.LT_JUMPER: "jumper"
+            pcbnew.LT_JUMPER: "jumper",
         }
         # Note: LT_USER was removed in KiCAD 9.0
         return type_map.get(type_id, "unknown")
@@ -184,7 +181,7 @@ class BoardViewCommands:
                 return {
                     "success": False,
                     "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first"
+                    "errorDetails": "Load or create a board first",
                 }
 
             # Get unit preference (default to mm)
@@ -215,12 +212,9 @@ class BoardViewCommands:
                     "bottom": bottom,
                     "width": width,
                     "height": height,
-                    "center": {
-                        "x": center_x,
-                        "y": center_y
-                    },
-                    "unit": unit
-                }
+                    "center": {"x": center_x, "y": center_y},
+                    "unit": unit,
+                },
             }
 
         except Exception as e:
@@ -228,5 +222,5 @@ class BoardViewCommands:
             return {
                 "success": False,
                 "message": "Failed to get board extents",
-                "errorDetails": str(e)
+                "errorDetails": str(e),
             }

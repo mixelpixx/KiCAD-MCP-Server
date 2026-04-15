@@ -5,10 +5,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-export function registerSchematicTools(
-  server: McpServer,
-  callKicadScript: Function,
-) {
+export function registerSchematicTools(server: McpServer, callKicadScript: Function) {
   // Create schematic tool
   server.tool(
     "create_schematic",
@@ -38,12 +35,13 @@ export function registerSchematicTools(
       schematicPath: z.string().describe("Path to the schematic file"),
       symbol: z
         .string()
-        .describe(
-          "Symbol library:name reference (e.g., Device:R, EDA-MCP:ESP32-C3)",
-        ),
+        .describe("Symbol library:name reference (e.g., Device:R, EDA-MCP:ESP32-C3)"),
       reference: z.string().describe("Component reference (e.g., R1, U1)"),
       value: z.string().optional().describe("Component value"),
-      footprint: z.string().optional().describe("KiCAD footprint (e.g. Resistor_SMD:R_0603_1608Metric)"),
+      footprint: z
+        .string()
+        .optional()
+        .describe("KiCAD footprint (e.g. Resistor_SMD:R_0603_1608Metric)"),
       position: z
         .object({
           x: z.number(),
@@ -79,10 +77,7 @@ export function registerSchematicTools(
         },
       };
 
-      const result = await callKicadScript(
-        "add_schematic_component",
-        transformed,
-      );
+      const result = await callKicadScript("add_schematic_component", transformed);
       if (result.success) {
         return {
           content: [
@@ -157,14 +152,27 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       reference: z.string().describe("Current reference designator of the component (e.g. R1, U3)"),
-      footprint: z.string().optional().describe("New KiCAD footprint string (e.g. Resistor_SMD:R_0603_1608Metric)"),
+      footprint: z
+        .string()
+        .optional()
+        .describe("New KiCAD footprint string (e.g. Resistor_SMD:R_0603_1608Metric)"),
       value: z.string().optional().describe("New value string (e.g. 10k, 100nF)"),
-      newReference: z.string().optional().describe("Rename the reference designator (e.g. R1 → R10)"),
-      fieldPositions: z.record(z.object({
-        x: z.number(),
-        y: z.number(),
-        angle: z.number().optional().default(0),
-      })).optional().describe("Reposition field labels: map of field name to {x, y, angle} (e.g. {\"Reference\": {\"x\": 12.5, \"y\": 17.0}})"),
+      newReference: z
+        .string()
+        .optional()
+        .describe("Rename the reference designator (e.g. R1 → R10)"),
+      fieldPositions: z
+        .record(
+          z.object({
+            x: z.number(),
+            y: z.number(),
+            angle: z.number().optional().default(0),
+          }),
+        )
+        .optional()
+        .describe(
+          'Reposition field labels: map of field name to {x, y, angle} (e.g. {"Reference": {"x": 12.5, "y": 17.0}})',
+        ),
     },
     async (args: {
       schematicPath: string;
@@ -215,84 +223,57 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           : "unknown";
         const fieldLines = Object.entries(result.fields ?? {}).map(
           ([name, f]: [string, any]) =>
-            `  ${name}: "${f.value}" @ (${f.x}, ${f.y}, angle=${f.angle}°)`
+            `  ${name}: "${f.value}" @ (${f.x}, ${f.y}, angle=${f.angle}°)`,
         );
         return {
-          content: [{
-            type: "text",
-            text: `Component ${result.reference} at ${pos}\nFields:\n${fieldLines.join("\n")}`,
-          }],
+          content: [
+            {
+              type: "text",
+              text: `Component ${result.reference} at ${pos}\nFields:\n${fieldLines.join("\n")}`,
+            },
+          ],
         };
       }
-      return {
-        content: [{
-          type: "text",
-          text: `Failed to get component: ${result.message || "Unknown error"}`,
-        }],
-      };
-    },
-  );
-
-  // Connect components with wire
-  server.tool(
-    "add_wire",
-    "Add a wire connection in the schematic",
-    {
-      start: z
-        .object({
-          x: z.number(),
-          y: z.number(),
-        })
-        .describe("Start position"),
-      end: z
-        .object({
-          x: z.number(),
-          y: z.number(),
-        })
-        .describe("End position"),
-    },
-    async (args: any) => {
-      const result = await callKicadScript("add_wire", args);
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(result, null, 2),
+            text: `Failed to get component: ${result.message || "Unknown error"}`,
           },
         ],
       };
     },
   );
 
-  // Add pin-to-pin connection
+  // Draw wire between coordinate waypoints with optional pin snapping
   server.tool(
-    "add_schematic_connection",
-    "Connect two component pins with a wire. Use this for individual connections between components with different pin roles (e.g. U1.SDA → J3.2). WARNING: Do NOT use this in a loop to wire N passthrough pins — use connect_passthrough instead (single call, cleaner layout, far fewer tokens).",
+    "add_schematic_wire",
+    "Draws a wire on the schematic between two or more coordinate points. Always call get_schematic_pin_locations first to get the approximate pin coordinates, then pass them as the first and last waypoints. snapToPins (on by default) will correct any float imprecision by snapping endpoints to the exact nearest pin coordinate. To route around components, add intermediate waypoints between the start and end: e.g. [[x1,y1], [xMid,y1], [xMid,y2], [x2,y2]] routes horizontally then vertically. Intermediate waypoints are never snapped.",
     {
-      schematicPath: z.string().describe("Path to the schematic file"),
-      sourceRef: z.string().describe("Source component reference (e.g., R1)"),
-      sourcePin: z
-        .string()
-        .describe("Source pin name/number (e.g., 1, 2, GND)"),
-      targetRef: z.string().describe("Target component reference (e.g., C1)"),
-      targetPin: z
-        .string()
-        .describe("Target pin name/number (e.g., 1, 2, VCC)"),
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      waypoints: z
+        .array(z.array(z.number()).length(2))
+        .min(2)
+        .describe("Ordered list of [x, y] coordinates. Minimum 2 points."),
+      snapToPins: z
+        .boolean()
+        .optional()
+        .describe("Snap the first and last waypoints to the nearest pin (default: true)"),
+      snapTolerance: z.number().optional().describe("Maximum snap distance in mm (default: 1.0)"),
     },
     async (args: {
       schematicPath: string;
-      sourceRef: string;
-      sourcePin: string;
-      targetRef: string;
-      targetPin: string;
+      waypoints: number[][];
+      snapToPins?: boolean;
+      snapTolerance?: number;
     }) => {
-      const result = await callKicadScript("add_schematic_connection", args);
+      const result = await callKicadScript("add_schematic_wire", args);
       if (result.success) {
         return {
           content: [
             {
-              type: "text",
-              text: `Successfully connected ${args.sourceRef}/${args.sourcePin} to ${args.targetRef}/${args.targetPin}`,
+              type: "text" as const,
+              text: result.message || "Wire added successfully",
             },
           ],
         };
@@ -300,8 +281,40 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         return {
           content: [
             {
-              type: "text",
-              text: `Failed to add connection: ${result.message || "Unknown error"}`,
+              type: "text" as const,
+              text: `Failed to add wire: ${result.message || "Unknown error"}`,
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  // Add junction dot at a T/X intersection
+  server.tool(
+    "add_schematic_junction",
+    "Place a junction dot at a wire intersection in the schematic. Required at T-branch and X-cross points so KiCAD recognises the electrical connection.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      position: z.array(z.number()).length(2).describe("Junction position [x, y] in mm"),
+    },
+    async (args: { schematicPath: string; position: number[] }) => {
+      const result = await callKicadScript("add_schematic_junction", args);
+      if (result.success) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: result.message || "Junction added successfully",
+            },
+          ],
+        };
+      } else {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to add junction: ${result.message || "Unknown error"}`,
             },
           ],
         };
@@ -312,21 +325,47 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
   // Add net label
   server.tool(
     "add_schematic_net_label",
-    "Add a net label to the schematic",
+    "Add a net label to the schematic. " +
+      "PREFERRED: supply componentRef + pinNumber to snap the label to the exact pin endpoint — " +
+      "this guarantees an electrical connection. " +
+      "Alternatively supply position [x, y], but the coordinates must match the pin endpoint exactly " +
+      "(even a 0.01 mm offset breaks the connection). " +
+      "The response includes actual_position (coordinates actually used) and snapped_to_pin " +
+      "(present when a pin reference was resolved).",
     {
       schematicPath: z.string().describe("Path to the schematic file"),
-      netName: z
-        .string()
-        .describe("Name of the net (e.g., VCC, GND, SIGNAL_1)"),
+      netName: z.string().describe("Name of the net (e.g., VCC, GND, SIGNAL_1)"),
       position: z
         .array(z.number())
         .length(2)
-        .describe("Position [x, y] for the label"),
+        .optional()
+        .describe(
+          "Position [x, y] for the label. Required when componentRef/pinNumber are not given.",
+        ),
+      componentRef: z
+        .string()
+        .optional()
+        .describe("Component reference to snap label to (e.g. U1, R1). Use with pinNumber."),
+      pinNumber: z
+        .union([z.string(), z.number()])
+        .optional()
+        .describe(
+          "Pin number or name on componentRef to snap label to (e.g. '1', 'GND'). Use with componentRef.",
+        ),
+      labelType: z
+        .enum(["label", "global_label", "hierarchical_label"])
+        .optional()
+        .describe("Label type (default: label)"),
+      orientation: z.number().optional().describe("Rotation angle 0/90/180/270 (default: 0)"),
     },
     async (args: {
       schematicPath: string;
       netName: string;
-      position: number[];
+      position?: number[];
+      componentRef?: string;
+      pinNumber?: string | number;
+      labelType?: string;
+      orientation?: number;
     }) => {
       const result = await callKicadScript("add_schematic_net_label", args);
       if (result.success) {
@@ -334,7 +373,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           content: [
             {
               type: "text",
-              text: `Successfully added net label '${args.netName}' at position [${args.position}]`,
+              text: JSON.stringify(result, null, 2),
             },
           ],
         };
@@ -354,7 +393,9 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
   // Connect pin to net
   server.tool(
     "connect_to_net",
-    "Connect a component pin to a named net",
+    "Connect a component pin to a named net by adding a wire stub and net label at the exact pin endpoint. " +
+      "The response includes pin_location (exact pin coords), label_location (where the label was placed), " +
+      "and wire_stub (the wire segment added) so you can confirm the placement.",
     {
       schematicPath: z.string().describe("Path to the schematic file"),
       componentRef: z.string().describe("Component reference (e.g., U1, R1)"),
@@ -373,7 +414,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           content: [
             {
               type: "text",
-              text: `Successfully connected ${args.componentRef}/${args.pinName} to net '${args.netName}'`,
+              text: JSON.stringify(result, null, 2),
             },
           ],
         };
@@ -425,6 +466,69 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
+  // Get wire connections
+  server.tool(
+    "get_wire_connections",
+    "Returns the net name and all wires and component pins connected at a given point. " +
+      "Accepts either a component reference + pin number (e.g. reference='U1', pin='3') " +
+      "or a schematic coordinate (x, y in mm). " +
+      "Returns net=null for unnamed (unlabelled) nets. " +
+      "The query point must be at a wire endpoint or junction — midpoints are not matched. " +
+      "Use get_schematic_pin_locations or list_schematic_wires to obtain exact endpoint coordinates.",
+    {
+      schematicPath: z.string().describe("Path to the schematic file"),
+      reference: z
+        .string()
+        .optional()
+        .describe("Component reference (e.g. U1, R1). Pair with pin."),
+      pin: z
+        .string()
+        .optional()
+        .describe("Pin number or name (e.g. '3', 'SDA'). Pair with reference."),
+      x: z.number().optional().describe("X coordinate of a wire endpoint in mm. Pair with y."),
+      y: z.number().optional().describe("Y coordinate of a wire endpoint in mm. Pair with x."),
+    },
+    async (args: {
+      schematicPath: string;
+      reference?: string;
+      pin?: string;
+      x?: number;
+      y?: number;
+    }) => {
+      const result = await callKicadScript("get_wire_connections", args);
+      if (result.success) {
+        const netLabel = result.net ?? "(unnamed)";
+        const pinList = (result.pins ?? [])
+          .map((p: any) => `  - ${p.component}/${p.pin}`)
+          .join("\n");
+        const wireList = (result.wires ?? [])
+          .map((w: any) => `  - (${w.start.x},${w.start.y}) → (${w.end.x},${w.end.y})`)
+          .join("\n");
+        const qp = result.query_point;
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Net: ${netLabel}\n` +
+                `Query point: (${qp?.x ?? args.x}, ${qp?.y ?? args.y})\n` +
+                `Connected pins:\n${pinList || "  (none found)"}\n\nWire segments:\n${wireList || "  (none)"}`,
+            },
+          ],
+        };
+      } else {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Failed to get wire connections: ${result.message || "Unknown error"}`,
+            },
+          ],
+        };
+      }
+    },
+  );
+
   // Get pin locations for a schematic component
   server.tool(
     "get_schematic_pin_locations",
@@ -438,20 +542,24 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       if (result.success && result.pins) {
         const lines = Object.entries(result.pins as Record<string, any>).map(
           ([pinNum, data]: [string, any]) =>
-            `  Pin ${pinNum} (${data.name || pinNum}): x=${data.x}, y=${data.y}, angle=${data.angle ?? 0}°`
+            `  Pin ${pinNum} (${data.name || pinNum}): x=${data.x}, y=${data.y}, angle=${data.angle ?? 0}°`,
         );
         return {
-          content: [{
-            type: "text",
-            text: `Pin locations for ${args.reference}:\n${lines.join("\n")}`,
-          }],
+          content: [
+            {
+              type: "text",
+              text: `Pin locations for ${args.reference}:\n${lines.join("\n")}`,
+            },
+          ],
         };
       } else {
         return {
-          content: [{
-            type: "text",
-            text: `Failed to get pin locations: ${result.message || "Unknown error"}`,
-          }],
+          content: [
+            {
+              type: "text",
+              text: `Failed to get pin locations: ${result.message || "Unknown error"}`,
+            },
+          ],
         };
       }
     },
@@ -465,21 +573,42 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       schematicPath: z.string().describe("Path to the schematic file"),
       sourceRef: z.string().describe("Source connector reference (e.g. J1)"),
       targetRef: z.string().describe("Target connector reference (e.g. J2)"),
-      netPrefix: z.string().optional().describe("Net name prefix, e.g. 'CSI' → CSI_1, CSI_2 (default: PIN)"),
-      pinOffset: z.number().optional().describe("Add to pin number when building net name (default: 0)"),
+      netPrefix: z
+        .string()
+        .optional()
+        .describe("Net name prefix, e.g. 'CSI' → CSI_1, CSI_2 (default: PIN)"),
+      pinOffset: z
+        .number()
+        .optional()
+        .describe("Add to pin number when building net name (default: 0)"),
     },
-    async (args: { schematicPath: string; sourceRef: string; targetRef: string; netPrefix?: string; pinOffset?: number }) => {
+    async (args: {
+      schematicPath: string;
+      sourceRef: string;
+      targetRef: string;
+      netPrefix?: string;
+      pinOffset?: number;
+    }) => {
       const result = await callKicadScript("connect_passthrough", args);
       if (result.success !== false || (result.connected && result.connected.length > 0)) {
         const lines: string[] = [];
-        if (result.connected?.length) lines.push(`Connected (${result.connected.length}): ${result.connected.slice(0, 5).join(", ")}${result.connected.length > 5 ? " ..." : ""}`);
-        if (result.failed?.length) lines.push(`Failed (${result.failed.length}): ${result.failed.join(", ")}`);
+        if (result.connected?.length)
+          lines.push(
+            `Connected (${result.connected.length}): ${result.connected.slice(0, 5).join(", ")}${result.connected.length > 5 ? " ..." : ""}`,
+          );
+        if (result.failed?.length)
+          lines.push(`Failed (${result.failed.length}): ${result.failed.join(", ")}`);
         return {
           content: [{ type: "text", text: result.message + "\n" + lines.join("\n") }],
         };
       } else {
         return {
-          content: [{ type: "text", text: `Passthrough failed: ${result.message || "Unknown error"}` }],
+          content: [
+            {
+              type: "text",
+              text: `Passthrough failed: ${result.message || "Unknown error"}`,
+            },
+          ],
         };
       }
     },
@@ -494,7 +623,10 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       filter: z
         .object({
           libId: z.string().optional().describe("Filter by library ID (e.g., 'Device:R')"),
-          referencePrefix: z.string().optional().describe("Filter by reference prefix (e.g., 'R', 'C', 'U')"),
+          referencePrefix: z
+            .string()
+            .optional()
+            .describe("Filter by reference prefix (e.g., 'R', 'C', 'U')"),
         })
         .optional()
         .describe("Optional filters"),
@@ -553,10 +685,10 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           };
         }
         const lines = nets.map((n: any) => {
-          const conns = (n.connections || [])
-            .map((c: any) => `${c.component}/${c.pin}`)
-            .join(", ");
-          return `  ${n.name}: ${conns || "(no connections)"}`;
+          const conns = (n.connections || []).map((c: any) => `${c.component}/${c.pin}`).join(", ");
+          const pinCount =
+            n.connected_pin_count !== undefined ? ` [${n.connected_pin_count} pin(s)]` : "";
+          return `  ${n.name}${pinCount}: ${conns || "(no connections)"}`;
         });
         return {
           content: [
@@ -593,8 +725,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           };
         }
         const lines = wires.map(
-          (w: any) =>
-            `  (${w.start.x}, ${w.start.y}) → (${w.end.x}, ${w.end.y})`,
+          (w: any) => `  (${w.start.x}, ${w.start.y}) → (${w.end.x}, ${w.end.y})`,
         );
         return {
           content: [
@@ -631,8 +762,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
           };
         }
         const lines = labels.map(
-          (l: any) =>
-            `  [${l.type}] ${l.name} at (${l.position.x}, ${l.position.y})`,
+          (l: any) => `  [${l.type}] ${l.name} at (${l.position.x}, ${l.position.y})`,
         );
         return {
           content: [
@@ -652,32 +782,40 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
-  // Move schematic component
+  // Move a placed symbol, dragging connected wires
   server.tool(
     "move_schematic_component",
-    "Move a placed symbol to a new position in the schematic.",
+    "Move a placed symbol to a new position in the schematic. By default (preserveWires=true) wire endpoints touching the component's pins are stretched to follow the new position.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       reference: z.string().describe("Reference designator (e.g., R1, U1)"),
       position: z
-        .object({
-          x: z.number(),
-          y: z.number(),
-        })
-        .describe("New position"),
+        .object({ x: z.number(), y: z.number() })
+        .describe("New position in schematic mm coordinates"),
+      preserveWires: z
+        .boolean()
+        .optional()
+        .describe("Stretch connected wire endpoints to follow the move (default true)"),
     },
     async (args: {
       schematicPath: string;
       reference: string;
       position: { x: number; y: number };
+      preserveWires?: boolean;
     }) => {
       const result = await callKicadScript("move_schematic_component", args);
       if (result.success) {
+        const moved = result.wiresMoved ?? 0;
+        const removed = result.wiresRemoved ?? 0;
         return {
           content: [
             {
               type: "text",
-              text: `Moved ${args.reference} from (${result.oldPosition.x}, ${result.oldPosition.y}) to (${result.newPosition.x}, ${result.newPosition.y})`,
+              text:
+                `Moved ${args.reference} from (${result.oldPosition.x}, ${result.oldPosition.y}) ` +
+                `to (${result.newPosition.x}, ${result.newPosition.y})` +
+                (moved > 0 ? `, ${moved} wire endpoint(s) updated` : "") +
+                (removed > 0 ? `, ${removed} zero-length wire(s) removed` : ""),
             },
           ],
         };
@@ -702,10 +840,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       reference: z.string().describe("Reference designator (e.g., R1, U1)"),
       angle: z.number().describe("Rotation angle in degrees (0, 90, 180, 270)"),
-      mirror: z
-        .enum(["x", "y"])
-        .optional()
-        .describe("Optional mirror axis"),
+      mirror: z.enum(["x", "y"]).optional().describe("Optional mirror axis"),
     },
     async (args: {
       schematicPath: string;
@@ -749,14 +884,10 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         const annotated = result.annotated || [];
         if (annotated.length === 0) {
           return {
-            content: [
-              { type: "text", text: "All components are already annotated." },
-            ],
+            content: [{ type: "text", text: "All components are already annotated." }],
           };
         }
-        const lines = annotated.map(
-          (a: any) => `  ${a.oldReference} → ${a.newReference}`,
-        );
+        const lines = annotated.map((a: any) => `  ${a.oldReference} → ${a.newReference}`);
         return {
           content: [
             {
@@ -784,12 +915,8 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     "Remove a wire from the schematic by start and end coordinates.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      start: z
-        .object({ x: z.number(), y: z.number() })
-        .describe("Wire start position"),
-      end: z
-        .object({ x: z.number(), y: z.number() })
-        .describe("Wire end position"),
+      start: z.object({ x: z.number(), y: z.number() }).describe("Wire start position"),
+      end: z.object({ x: z.number(), y: z.number() }).describe("Wire end position"),
     },
     async (args: {
       schematicPath: string;
@@ -866,16 +993,9 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       outputPath: z.string().describe("Output SVG file path"),
-      blackAndWhite: z
-        .boolean()
-        .optional()
-        .describe("Export in black and white"),
+      blackAndWhite: z.boolean().optional().describe("Export in black and white"),
     },
-    async (args: {
-      schematicPath: string;
-      outputPath: string;
-      blackAndWhite?: boolean;
-    }) => {
+    async (args: { schematicPath: string; outputPath: string; blackAndWhite?: boolean }) => {
       const result = await callKicadScript("export_schematic_svg", args);
       if (result.success) {
         return {
@@ -906,16 +1026,9 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       outputPath: z.string().describe("Output PDF file path"),
-      blackAndWhite: z
-        .boolean()
-        .optional()
-        .describe("Export in black and white"),
+      blackAndWhite: z.boolean().optional().describe("Export in black and white"),
     },
-    async (args: {
-      schematicPath: string;
-      outputPath: string;
-      blackAndWhite?: boolean;
-    }) => {
+    async (args: { schematicPath: string; outputPath: string; blackAndWhite?: boolean }) => {
       const result = await callKicadScript("export_schematic_pdf", args);
       if (result.success) {
         return {
@@ -945,10 +1058,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     "Return a rasterized image of the schematic (PNG by default, or SVG). Uses kicad-cli to export SVG, then converts to PNG via cairosvg. Use this for visual feedback after placing or wiring components.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      format: z
-        .enum(["png", "svg"])
-        .optional()
-        .describe("Output format (default: png)"),
+      format: z.enum(["png", "svg"]).optional().describe("Output format (default: png)"),
       width: z.number().optional().describe("Image width in pixels (default: 1200)"),
       height: z.number().optional().describe("Image height in pixels (default: 900)"),
     },
@@ -1008,12 +1118,17 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         const lines: string[] = [`ERC result: ${violations.length} violation(s)`];
         if (result.summary?.by_severity) {
           const s = result.summary.by_severity;
-          lines.push(`  Errors: ${s.error ?? 0}  Warnings: ${s.warning ?? 0}  Info: ${s.info ?? 0}`);
+          lines.push(
+            `  Errors: ${s.error ?? 0}  Warnings: ${s.warning ?? 0}  Info: ${s.info ?? 0}`,
+          );
         }
         if (violations.length > 0) {
           lines.push("");
           violations.slice(0, 30).forEach((v: any, i: number) => {
-            const loc = v.location && (v.location.x !== undefined) ? ` @ (${v.location.x}, ${v.location.y})` : "";
+            const loc =
+              v.location && v.location.x !== undefined
+                ? ` @ (${v.location.x}, ${v.location.y})`
+                : "";
             lines.push(`${i + 1}. [${v.severity}] ${v.message}${loc}`);
           });
           if (violations.length > 30) {
@@ -1023,7 +1138,12 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         return { content: [{ type: "text", text: lines.join("\n") }] };
       } else {
         return {
-          content: [{ type: "text", text: `ERC failed: ${result.message || "Unknown error"}${result.errorDetails ? "\n" + result.errorDetails : ""}` }],
+          content: [
+            {
+              type: "text",
+              text: `ERC failed: ${result.message || "Unknown error"}${result.errorDetails ? "\n" + result.errorDetails : ""}`,
+            },
+          ],
         };
       }
     },
@@ -1032,9 +1152,9 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
   // Generate netlist
   server.tool(
     "generate_netlist",
-    "Generate a netlist from the schematic",
+    "Return a structured JSON netlist from the schematic — component list (reference, value, footprint) and net list (net name with all connected component/pin pairs). Use this to inspect or verify connectivity within the conversation. Does not write any file. To export a netlist file in Spice, KiCad XML, Cadstar, or OrcadPCB2 format, use export_netlist instead.",
     {
-      schematicPath: z.string().describe("Path to the schematic file"),
+      schematicPath: z.string().describe("Absolute path to the .kicad_sch schematic file"),
     },
     async (args: { schematicPath: string }) => {
       const result = await callKicadScript("generate_netlist", args);
@@ -1090,6 +1210,318 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
       };
+    },
+  );
+
+  // ============================================================
+  // Schematic Analysis Tools (read-only)
+  // ============================================================
+
+  // Get a zoomed view of a schematic region
+  server.tool(
+    "get_schematic_view_region",
+    "Export a cropped region of the schematic as an image (PNG or SVG). Specify bounding box coordinates in schematic mm. Useful for zooming into a specific area to inspect wiring or layout.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+      x1: z.number().describe("Left X coordinate of the region in mm"),
+      y1: z.number().describe("Top Y coordinate of the region in mm"),
+      x2: z.number().describe("Right X coordinate of the region in mm"),
+      y2: z.number().describe("Bottom Y coordinate of the region in mm"),
+      format: z.enum(["png", "svg"]).optional().describe("Output image format (default: png)"),
+      width: z.number().optional().describe("Output image width in pixels (default: 800)"),
+      height: z.number().optional().describe("Output image height in pixels (default: 600)"),
+    },
+    async (args: {
+      schematicPath: string;
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+      format?: string;
+      width?: number;
+      height?: number;
+    }) => {
+      const result = await callKicadScript("get_schematic_view_region", args);
+      if (result.success && result.imageData) {
+        if (result.format === "svg") {
+          return { content: [{ type: "text", text: result.imageData }] };
+        }
+        return {
+          content: [
+            {
+              type: "image",
+              data: result.imageData,
+              mimeType: "image/png",
+            },
+          ],
+        };
+      }
+      return {
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
+      };
+    },
+  );
+
+  // Find overlapping elements
+  server.tool(
+    "find_overlapping_elements",
+    "Detect spatially overlapping symbols, wires, and labels in the schematic. Finds duplicate power symbols at the same position, collinear overlapping wires, and labels stacked on top of each other.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+      tolerance: z
+        .number()
+        .optional()
+        .describe(
+          "Distance threshold in mm for label proximity and wire collinearity checks. Symbol overlap uses bounding-box intersection. (default: 0.5)",
+        ),
+    },
+    async (args: { schematicPath: string; tolerance?: number }) => {
+      const result = await callKicadScript("find_overlapping_elements", args);
+      if (result.success) {
+        const lines = [`Found ${result.totalOverlaps} overlap(s):`];
+        const syms: any[] = result.overlappingSymbols || [];
+        const lbls: any[] = result.overlappingLabels || [];
+        const wires: any[] = result.overlappingWires || [];
+        if (syms.length) {
+          lines.push(`\nOverlapping symbols (${syms.length}):`);
+          syms.slice(0, 20).forEach((o: any) => {
+            lines.push(
+              `  ${o.element1.reference} ↔ ${o.element2.reference} (${o.distance}mm) [${o.type}]`,
+            );
+          });
+        }
+        if (lbls.length) {
+          lines.push(`\nOverlapping labels (${lbls.length}):`);
+          lbls.slice(0, 20).forEach((o: any) => {
+            lines.push(`  "${o.element1.name}" ↔ "${o.element2.name}" (${o.distance}mm)`);
+          });
+        }
+        if (wires.length) {
+          lines.push(`\nOverlapping wires (${wires.length}):`);
+          wires.slice(0, 20).forEach((o: any) => {
+            lines.push(
+              `  wire @ (${o.wire1.start.x},${o.wire1.start.y})→(${o.wire1.end.x},${o.wire1.end.y}) overlaps with another`,
+            );
+          });
+        }
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      }
+      return {
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
+      };
+    },
+  );
+
+  // Get elements in a region
+  server.tool(
+    "get_elements_in_region",
+    "List all symbols, wires, and labels within a rectangular region of the schematic. Useful for understanding what is in a specific area before modifying it.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+      x1: z.number().describe("Left X coordinate of the region in mm"),
+      y1: z.number().describe("Top Y coordinate of the region in mm"),
+      x2: z.number().describe("Right X coordinate of the region in mm"),
+      y2: z.number().describe("Bottom Y coordinate of the region in mm"),
+    },
+    async (args: { schematicPath: string; x1: number; y1: number; x2: number; y2: number }) => {
+      const result = await callKicadScript("get_elements_in_region", args);
+      if (result.success) {
+        const c = result.counts;
+        const lines = [
+          `Region (${args.x1},${args.y1})→(${args.x2},${args.y2}): ${c.symbols} symbols, ${c.wires} wires, ${c.labels} labels`,
+        ];
+        const syms: any[] = result.symbols || [];
+        if (syms.length) {
+          lines.push("\nSymbols:");
+          syms.forEach((s: any) => {
+            const pinCount = s.pins ? Object.keys(s.pins).length : 0;
+            lines.push(
+              `  ${s.reference} (${s.libId}) @ (${s.position.x}, ${s.position.y}) [${pinCount} pins]`,
+            );
+          });
+        }
+        const wires: any[] = result.wires || [];
+        if (wires.length) {
+          lines.push(`\nWires (${wires.length}):`);
+          wires.slice(0, 30).forEach((w: any) => {
+            lines.push(`  (${w.start.x},${w.start.y}) → (${w.end.x},${w.end.y})`);
+          });
+          if (wires.length > 30) lines.push(`  ... and ${wires.length - 30} more`);
+        }
+        const labels: any[] = result.labels || [];
+        if (labels.length) {
+          lines.push(`\nLabels (${labels.length}):`);
+          labels.forEach((l: any) => {
+            lines.push(`  "${l.name}" [${l.type}] @ (${l.position.x}, ${l.position.y})`);
+          });
+        }
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      }
+      return {
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
+      };
+    },
+  );
+
+  // Find wires crossing symbols
+  server.tool(
+    "find_wires_crossing_symbols",
+    "Find all wires that cross over component symbol bodies. Wires passing over symbols are unacceptable in schematics — they indicate routing mistakes where a wire was drawn across a component instead of around it.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+    },
+    async (args: { schematicPath: string }) => {
+      const result = await callKicadScript("find_wires_crossing_symbols", args);
+      if (result.success) {
+        const collisions: any[] = result.collisions || [];
+        const lines = [`Found ${collisions.length} wire(s) crossing symbols:`];
+        collisions.slice(0, 30).forEach((c: any, i: number) => {
+          lines.push(
+            `  ${i + 1}. Wire (${c.wire.start.x},${c.wire.start.y})→(${c.wire.end.x},${c.wire.end.y}) crosses ${c.component.reference} (${c.component.libId})`,
+          );
+        });
+        if (collisions.length > 30) lines.push(`  ... and ${collisions.length - 30} more`);
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      }
+      return {
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
+      };
+    },
+  );
+
+  // List floating net labels
+  server.tool(
+    "list_floating_labels",
+    "Returns all net labels in the schematic that are not connected to any component pin. " +
+      "A label is 'floating' when no component pin falls on the wire-network reachable from the " +
+      "label's position. Floating labels indicate misplaced or off-grid labels that cause ERC errors. " +
+      "Does not require the KiCAD UI to be running.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+    },
+    async (args: { schematicPath: string }) => {
+      const result = await callKicadScript("list_floating_labels", args);
+      if (result.success) {
+        const labels: any[] = result.floating_labels || [];
+        if (labels.length === 0) {
+          return { content: [{ type: "text", text: "No floating labels found." }] };
+        }
+        const lines: string[] = [`Found ${labels.length} floating label(s):\n`];
+        labels.slice(0, 50).forEach((lbl: any) => {
+          lines.push(`  "${lbl.name}" (${lbl.type}) at (${lbl.x}, ${lbl.y})`);
+        });
+        if (labels.length > 50) {
+          lines.push(`  ... and ${labels.length - 50} more`);
+        }
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      }
+      return {
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
+      };
+    },
+  );
+
+  // Find orphaned wires
+  server.tool(
+    "find_orphaned_wires",
+    "Find wire segments with at least one dangling endpoint — not connected to a component pin, " +
+      "net label, or another wire. Orphaned wires cause ERC 'wire end unconnected' errors. " +
+      "Does not require the KiCad UI to be running.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+    },
+    async (args: { schematicPath: string }) => {
+      const result = await callKicadScript("find_orphaned_wires", args);
+      if (result.success) {
+        const wires: any[] = result.orphaned_wires || [];
+        if (wires.length === 0) {
+          return { content: [{ type: "text", text: "No orphaned wires found." }] };
+        }
+        const lines: string[] = [`Found ${wires.length} orphaned wire(s):\n`];
+        wires.slice(0, 50).forEach((w: any) => {
+          const dangling = w.dangling_ends.map((e: any) => `(${e.x}, ${e.y})`).join(", ");
+          lines.push(
+            `  wire (${w.start.x}, ${w.start.y})→(${w.end.x}, ${w.end.y})  dangling end(s): ${dangling}`,
+          );
+        });
+        if (wires.length > 50) lines.push(`  ... and ${wires.length - 50} more`);
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      }
+      return {
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
+      };
+    },
+  );
+
+  // Snap schematic elements to grid
+  server.tool(
+    "snap_to_grid",
+    "Snap schematic element coordinates to the nearest grid point. " +
+      "KiCAD uses exact integer matching for connectivity, so off-grid coordinates cause wires " +
+      "that look connected to fail ERC checks. " +
+      "Modifies the .kicad_sch file in place. Does not require the KiCAD UI to be running.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+      gridSize: z
+        .number()
+        .optional()
+        .describe("Grid spacing in mm (default: 2.54 — standard KiCAD schematic grid)"),
+      elements: z
+        .array(z.enum(["wires", "junctions", "labels", "components"]))
+        .optional()
+        .describe(
+          'Element types to snap (default: ["wires", "junctions", "labels"]). ' +
+            '"components" is opt-in — moving a component without re-routing wires creates new mismatches.',
+        ),
+    },
+    async (args: { schematicPath: string; gridSize?: number; elements?: string[] }) => {
+      const result = await callKicadScript("snap_to_grid", args);
+      if (result.success) {
+        return { content: [{ type: "text", text: result.message }] };
+      }
+      return {
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
+      };
+    },
+  );
+
+  server.tool(
+    "get_net_at_point",
+    "Returns the net name at a given (x, y) coordinate in a schematic, or null if no net label " +
+      "or wire endpoint is present at that position. Faster than get_pin_net when you only need " +
+      "the net name at a known coordinate and don't need pin traversal.",
+    {
+      schematicPath: z.string().describe("Path to the schematic file (.kicad_sch)"),
+      x: z.number().describe("X coordinate in mm"),
+      y: z.number().describe("Y coordinate in mm"),
+    },
+    async (args: { schematicPath: string; x: number; y: number }) => {
+      const result = await callKicadScript("get_net_at_point", args);
+      if (result.success) {
+        const netName = result.net_name ?? null;
+        const source = result.source ?? null;
+        const pos = result.position;
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Net at (${pos?.x ?? args.x}, ${pos?.y ?? args.y}): ` +
+                (netName !== null ? netName : "(none)") +
+                (source ? ` [source: ${source}]` : ""),
+            },
+          ],
+        };
+      } else {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Failed to get net at point: ${result.message || "Unknown error"}`,
+            },
+          ],
+        };
+      }
     },
   );
 }
