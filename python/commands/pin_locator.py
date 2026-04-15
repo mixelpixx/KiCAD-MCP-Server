@@ -167,6 +167,10 @@ class PinLocator:
         cos_a = math.cos(angle_rad)
         sin_a = math.sin(angle_rad)
 
+        # Standard counter-clockwise rotation (math convention, Y-up).
+        # Callers are responsible for any y-axis negation required to convert
+        # library coordinates (y-up) to schematic coordinates (y-down) before
+        # passing values here — see get_pin_location and _transform_local_point.
         rotated_x = x * cos_a - y * sin_a
         rotated_y = x * sin_a + y * cos_a
 
