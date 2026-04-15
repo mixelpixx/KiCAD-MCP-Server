@@ -21,7 +21,7 @@ Thank you for your interest in contributing to the KiCAD MCP Server! This guide 
 
 - **KiCAD 9.0 or higher** - [Download here](https://www.kicad.org/download/)
 - **Node.js v18+** - [Download here](https://nodejs.org/)
-- **Python 3.10+** - Should come with KiCAD, or install separately
+- **Python 3.9+** - Comes bundled with KiCAD (macOS builds ship Python 3.9; Linux/Windows builds ship Python 3.11)
 - **Git** - For version control
 
 ### Platform-Specific Setup

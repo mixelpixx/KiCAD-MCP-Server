@@ -39,6 +39,7 @@ dmypy.json
 
 # Virtual Environments
 venv/
+.venv/
 env/
 ENV/
 

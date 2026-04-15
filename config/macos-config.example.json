@@ -5,7 +5,7 @@
       "args": ["/Users/YOUR_USERNAME/MCP/KiCAD-MCP-Server/dist/index.js"],
       "env": {
         "NODE_ENV": "production",
-        "PYTHONPATH": "/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/lib/python3.11/site-packages",
+        "PYTHONPATH": "/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/lib/python3.9/site-packages",
         "LOG_LEVEL": "info",
         "KICAD_AUTO_LAUNCH": "false"
       },

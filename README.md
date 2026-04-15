@@ -430,9 +430,9 @@ See [Freerouting Guide](docs/FREEROUTING_GUIDE.md) for setup and usage.
 - Download from [nodejs.org](https://nodejs.org/)
 - Verify: `node --version` and `npm --version`
 
-**Python 3.10 or Higher**
+**Python 3.9 or Higher**
 
-- Usually included with KiCAD
+- Comes bundled with KiCAD (macOS builds ship Python 3.9; Linux/Windows builds ship Python 3.11)
 - Required packages (auto-installed):
   - kicad-python (kipy) >= 0.5.0 (IPC API support, optional but recommended)
   - kicad-skip >= 0.1.0 (schematic support)
@@ -692,7 +692,7 @@ Edit configuration file:
 
 - **Linux:** `/usr/lib/kicad/lib/python3/dist-packages`
 - **Windows:** `C:\Program Files\KiCad\9.0\lib\python3\dist-packages`
-- **macOS:** `/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.11/lib/python3.11/site-packages`
+- **macOS:** `/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.9/lib/python3.9/site-packages`
 
 #### Linux Python Detection
 
