@@ -265,13 +265,14 @@ class ConnectionManager:
 
             logger.debug(f"Found {len(net_label_positions)} labels for net '{net_name}'")
 
-            # 2. Find all wires connected to these label positions
+            # 2. Find all wires connected to these label positions.
+            # A missing wire attribute is fine — all_match_points will still
+            # include label positions, so label-at-pin connections are detected.
+            connected_wire_points: set[tuple[float, float]] = set()
             if not hasattr(schematic, "wire"):
-                logger.warning("Schematic has no wires")
-                return connections
+                logger.debug("Schematic has no wires — will match labels to pins directly")
 
-            connected_wire_points = set()
-            for wire in schematic.wire:
+            for wire in (schematic.wire if hasattr(schematic, "wire") else []):
                 if hasattr(wire, "pts") and hasattr(wire.pts, "xy"):
                     # Get all points in this wire (polyline)
                     wire_points = []
@@ -297,9 +298,7 @@ class ConnectionManager:
             # Build match points: union of wire endpoints AND label positions.
             # This handles the valid KiCad style where a net label is placed
             # directly at a pin endpoint with no wire segment in between.
-            all_match_points = connected_wire_points | {
-                (p[0], p[1]) for p in net_label_positions
-            }
+            all_match_points = connected_wire_points | {(p[0], p[1]) for p in net_label_positions}
 
             if not all_match_points:
                 logger.debug(f"No connection points found for net '{net_name}'")
