@@ -241,7 +241,7 @@ PYTHONPATH=python python3 -c "from utils.platform_helper import PlatformHelper; 
 
 ```bash
 # Typical location
-/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/lib/python3.11/site-packages
+/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/lib/python3.9/site-packages
 
 # Find dynamically
 find /Applications/KiCad -name "pcbnew.py" -type f
