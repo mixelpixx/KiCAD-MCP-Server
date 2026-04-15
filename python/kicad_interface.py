@@ -408,6 +408,8 @@ class KiCADInterface:
             "find_orphaned_wires": self._handle_find_orphaned_wires,
             "list_floating_labels": self._handle_list_floating_labels,
             "snap_to_grid": self._handle_snap_to_grid,
+            "add_schematic_hierarchical_label": self._handle_add_schematic_hierarchical_label,
+            "add_sheet_pin": self._handle_add_sheet_pin,
             "import_svg_logo": self._handle_import_svg_logo,
             # UI/Process management commands
             "check_kicad_ui": self._handle_check_kicad_ui,
@@ -2617,6 +2619,126 @@ class KiCADInterface:
 
         except Exception as e:
             logger.error(f"Error getting net at point: {str(e)}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_add_schematic_hierarchical_label(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a hierarchical label to a sub-sheet schematic."""
+        logger.info("Adding hierarchical label to schematic")
+        try:
+            from commands.wire_manager import WireManager
+
+            schematic_path = params.get("schematicPath")
+            text = params.get("text")
+            position = params.get("position")
+            shape = params.get("shape", "bidirectional")
+            orientation = params.get("orientation", 0)
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not text:
+                return {"success": False, "message": "text is required"}
+            if not position or len(position) != 2:
+                return {"success": False, "message": "position [x, y] is required"}
+            if shape not in ("input", "output", "bidirectional"):
+                return {
+                    "success": False,
+                    "message": "shape must be input, output, or bidirectional",
+                }
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {
+                    "success": False,
+                    "message": f"Schematic not found: {schematic_path}",
+                }
+
+            success = WireManager.add_hierarchical_label(
+                sch_file, text, position, shape=shape, orientation=orientation
+            )
+
+            if success:
+                return {
+                    "success": True,
+                    "message": (
+                        f"Added hierarchical_label '{text}' " f"at {position} shape={shape}"
+                    ),
+                }
+            return {"success": False, "message": "Failed to add hierarchical label"}
+
+        except Exception as e:
+            logger.error(f"Error adding hierarchical label: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_add_sheet_pin(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a sheet pin to a sheet block on the parent schematic."""
+        logger.info("Adding sheet pin to schematic")
+        try:
+            from commands.wire_manager import WireManager
+
+            schematic_path = params.get("schematicPath")
+            sheet_name = params.get("sheetName")
+            pin_name = params.get("pinName")
+            pin_type = params.get("pinType", "bidirectional")
+            position = params.get("position")
+            orientation = params.get("orientation", 0)
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not sheet_name:
+                return {"success": False, "message": "sheetName is required"}
+            if not pin_name:
+                return {"success": False, "message": "pinName is required"}
+            if not position or len(position) != 2:
+                return {"success": False, "message": "position [x, y] is required"}
+            if pin_type not in ("input", "output", "bidirectional"):
+                return {
+                    "success": False,
+                    "message": "pinType must be input, output, or bidirectional",
+                }
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {
+                    "success": False,
+                    "message": f"Schematic not found: {schematic_path}",
+                }
+
+            with open(sch_file, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            modified, success = WireManager.add_sheet_pin(
+                content,
+                sheet_name,
+                pin_name,
+                pin_type,
+                position,
+                orientation=orientation,
+            )
+
+            if not success:
+                return {
+                    "success": False,
+                    "message": f"Sheet '{sheet_name}' not found in {schematic_path}",
+                }
+
+            with open(sch_file, "w", encoding="utf-8") as f:
+                f.write(modified)
+
+            return {
+                "success": True,
+                "message": (
+                    f"Added sheet pin '{pin_name}' ({pin_type}) " f"to sheet '{sheet_name}'"
+                ),
+            }
+
+        except Exception as e:
+            logger.error(f"Error adding sheet pin: {e}")
             import traceback
 
             logger.error(traceback.format_exc())
