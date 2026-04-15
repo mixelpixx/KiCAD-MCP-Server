@@ -412,45 +412,47 @@ class ConnectionManager:
             )
 
             # 2. Find all wires connected to these label positions
-            if not hasattr(schematic, "wire"):
-                logger.warning("Schematic has no wires")
-                return connections
-
             connected_wire_points = set()
-            for wire in schematic.wire:
-                if hasattr(wire, "pts") and hasattr(wire.pts, "xy"):
-                    # Get all points in this wire (polyline)
-                    wire_points = []
-                    for point in wire.pts.xy:
-                        if hasattr(point, "value"):
-                            wire_points.append(
-                                [float(point.value[0]), float(point.value[1])]
-                            )
+            if hasattr(schematic, "wire"):
+                for wire in schematic.wire:
+                    if hasattr(wire, "pts") and hasattr(wire.pts, "xy"):
+                        # Get all points in this wire (polyline)
+                        wire_points = []
+                        for point in wire.pts.xy:
+                            if hasattr(point, "value"):
+                                wire_points.append(
+                                    [float(point.value[0]), float(point.value[1])]
+                                )
 
-                    # Check if any wire point touches a label
-                    wire_connected = False
-                    for wire_pt in wire_points:
-                        for label_pt in net_label_positions:
-                            if points_coincide(wire_pt, label_pt):
-                                wire_connected = True
+                        # Check if any wire point touches a label
+                        wire_connected = False
+                        for wire_pt in wire_points:
+                            for label_pt in net_label_positions:
+                                if points_coincide(wire_pt, label_pt):
+                                    wire_connected = True
+                                    break
+                            if wire_connected:
                                 break
+
+                        # If this wire is connected to the net, add all its points
                         if wire_connected:
-                            break
+                            for pt in wire_points:
+                                connected_wire_points.add((pt[0], pt[1]))
 
-                    # If this wire is connected to the net, add all its points
-                    if wire_connected:
-                        for pt in wire_points:
-                            connected_wire_points.add((pt[0], pt[1]))
-
-            if not connected_wire_points:
-                logger.debug(f"No wires connected to net '{net_name}' labels")
-                return connections
+            # Build the full set of candidate match points:
+            # wire endpoints that touch this net PLUS label positions themselves.
+            # This handles labels placed directly at pin endpoints (no wire needed).
+            all_match_points = connected_wire_points | {
+                (p[0], p[1]) for p in net_label_positions
+            }
 
             logger.debug(
-                f"Found {len(connected_wire_points)} wire connection points for net '{net_name}'"
+                f"Net '{net_name}': {len(connected_wire_points)} wire points, "
+                f"{len(net_label_positions)} direct label positions, "
+                f"{len(all_match_points)} total match points"
             )
 
-            # 3. Find component pins at wire endpoints
+            # 3. Find component pins at wire endpoints or direct label positions
             if not hasattr(schematic, "symbol"):
                 logger.warning("Schematic has no symbols")
                 return connections
@@ -491,13 +493,13 @@ class ConnectionManager:
                             if not pin_loc:
                                 continue
 
-                            # Check if pin coincides with any wire point
-                            for wire_pt in connected_wire_points:
-                                if points_coincide(pin_loc, list(wire_pt)):
+                            # Check if pin coincides with any wire point or label position
+                            for match_pt in all_match_points:
+                                if points_coincide(pin_loc, list(match_pt)):
                                     connections.append(
                                         {"component": ref, "pin": pin_num}
                                     )
-                                    break  # Pin found, no need to check more wire points
+                                    break  # Pin found, no need to check more points
 
                     except Exception as e:
                         logger.warning(f"Error matching pins for {ref}: {e}")
@@ -513,8 +515,8 @@ class ConnectionManager:
                     symbol_x = float(symbol_pos[0])
                     symbol_y = float(symbol_pos[1])
 
-                    # Check if symbol is near any wire point (within 10mm)
-                    for wire_pt in connected_wire_points:
+                    # Check if symbol is near any wire point or label position (within 10mm)
+                    for wire_pt in all_match_points:
                         dist = (
                             (symbol_x - wire_pt[0]) ** 2 + (symbol_y - wire_pt[1]) ** 2
                         ) ** 0.5
