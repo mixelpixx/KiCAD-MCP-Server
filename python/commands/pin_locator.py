@@ -180,7 +180,7 @@ class PinLocator:
                 self._schematic_cache[sch_key] = Schematic(sch_key)
             sch = self._schematic_cache[sch_key]
             for symbol in sch.symbol:
-                if symbol.property.Reference.value == symbol_reference:
+                if symbol.property.Reference.value.rstrip("_") == symbol_reference:
                     return symbol.lib_id.value if hasattr(symbol, "lib_id") else None
         except Exception:
             pass
@@ -203,7 +203,7 @@ class PinLocator:
 
             target_symbol = None
             for symbol in sch.symbol:
-                if symbol.property.Reference.value == symbol_reference:
+                if symbol.property.Reference.value.rstrip("_") == symbol_reference:
                     target_symbol = symbol
                     break
 
@@ -258,10 +258,11 @@ class PinLocator:
                 self._schematic_cache[sch_key] = Schematic(sch_key)
             sch = self._schematic_cache[sch_key]
 
-            # Find the symbol instance
+            # Find the symbol instance.
+            # skip may write references with a trailing "_" (e.g. "R1_") — strip it when comparing.
             target_symbol = None
             for symbol in sch.symbol:
-                ref = symbol.property.Reference.value
+                ref = symbol.property.Reference.value.rstrip("_")
                 if ref == symbol_reference:
                     target_symbol = symbol
                     break
@@ -313,9 +314,11 @@ class PinLocator:
 
             pin_data = pins[pin_number]
 
-            # Get pin position relative to symbol origin
+            # Get pin position relative to symbol origin.
+            # lib_symbols uses library y-up convention; schematic uses y-down.
+            # Negate y here before rotation, matching KiCad's transform order.
             pin_rel_x = pin_data["x"]
-            pin_rel_y = pin_data["y"]
+            pin_rel_y = -pin_data["y"]
 
             logger.debug(f"Pin {pin_number} relative position: ({pin_rel_x}, {pin_rel_y})")
 
@@ -361,7 +364,7 @@ class PinLocator:
             # Find symbol
             target_symbol = None
             for symbol in sch.symbol:
-                if symbol.property.Reference.value == symbol_reference:
+                if symbol.property.Reference.value.rstrip("_") == symbol_reference:
                     target_symbol = symbol
                     break
 
@@ -412,9 +415,7 @@ if __name__ == "__main__":
 
     # Create test schematic with components (cross-platform temp directory)
     test_path = Path(tempfile.gettempdir()) / "test_pin_locator.kicad_sch"
-    template_path = (
-        Path(__file__).parent.parent / "templates" / "template_with_symbols_expanded.kicad_sch"
-    )
+    template_path = Path(__file__).parent.parent / "templates" / "template_with_symbols.kicad_sch"
 
     shutil.copy(template_path, test_path)
     print(f"\n✓ Created test schematic: {test_path}")
