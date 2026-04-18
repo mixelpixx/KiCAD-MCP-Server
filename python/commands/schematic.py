@@ -13,7 +13,7 @@ class SchematicManager:
     """Core schematic operations using kicad-skip"""
 
     @staticmethod
-    def create_schematic(name: str, path: Optional[str] = None, metadata: Optional[Any] = None) -> Any:
+    def create_schematic(name: str, metadata: Optional[Any] = None, *, path: Optional[str] = None) -> Any:
         """Create a new empty schematic from template"""
         try:
             # Determine template path (use template_with_symbols for component cloning support)
