@@ -748,11 +748,24 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
   // List all labels in schematic
   server.tool(
     "list_schematic_labels",
-    "List all net labels, global labels, and power flags in the schematic.",
+    "List all net labels, global labels, and power flags in the schematic. " +
+      "Optionally filter by label name (netName) and/or label type (labelType).",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      netName: z
+        .string()
+        .optional()
+        .describe(
+          "Filter to labels whose name exactly matches this string (case-sensitive). Omit to return all labels.",
+        ),
+      labelType: z
+        .enum(["net", "global", "power"])
+        .optional()
+        .describe(
+          "Filter by label type. 'net' = local label, 'global' = global label, 'power' = power symbol. Omit to return all types.",
+        ),
     },
-    async (args: { schematicPath: string }) => {
+    async (args: { schematicPath: string; netName?: string; labelType?: string }) => {
       const result = await callKicadScript("list_schematic_labels", args);
       if (result.success) {
         const labels = result.labels || [];
@@ -1534,22 +1547,15 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       "sheet pin name.",
     {
       schematicPath: z.string().describe("Path to the sub-sheet .kicad_sch file"),
-      text: z
-        .string()
-        .describe("Label text (e.g. 'SD_CLK') — must match the sheet pin name"),
-      position: z
-        .array(z.number())
-        .length(2)
-        .describe("Position [x, y] in mm"),
+      text: z.string().describe("Label text (e.g. 'SD_CLK') — must match the sheet pin name"),
+      position: z.array(z.number()).length(2).describe("Position [x, y] in mm"),
       shape: z
         .enum(["input", "output", "bidirectional"])
         .describe("Signal direction from the sub-sheet's perspective"),
       orientation: z
         .number()
         .optional()
-        .describe(
-          "Rotation in degrees: 0=label points right, 180=label points left (default: 0)",
-        ),
+        .describe("Rotation in degrees: 0=label points right, 180=label points left (default: 0)"),
     },
     async (args: {
       schematicPath: string;
@@ -1590,29 +1596,19 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       schematicPath: z.string().describe("Path to the PARENT .kicad_sch file"),
       sheetName: z
         .string()
-        .describe(
-          "Sheet name as it appears in the Sheetname property (e.g. 'Storage')",
-        ),
-      pinName: z
-        .string()
-        .describe("Pin name — must match a hierarchical_label in the sub-sheet"),
+        .describe("Sheet name as it appears in the Sheetname property (e.g. 'Storage')"),
+      pinName: z.string().describe("Pin name — must match a hierarchical_label in the sub-sheet"),
       pinType: z
         .enum(["input", "output", "bidirectional"])
-        .describe(
-          "Signal direction (should match the sub-sheet hierarchical label shape)",
-        ),
+        .describe("Signal direction (should match the sub-sheet hierarchical label shape)"),
       position: z
         .array(z.number())
         .length(2)
-        .describe(
-          "Pin position [x, y] in mm — must be on the sheet block boundary",
-        ),
+        .describe("Pin position [x, y] in mm — must be on the sheet block boundary"),
       orientation: z
         .number()
         .optional()
-        .describe(
-          "Pin orientation: 0=right edge of sheet box, 180=left edge (default: 0)",
-        ),
+        .describe("Pin orientation: 0=right edge of sheet box, 180=left edge (default: 0)"),
     },
     async (args: {
       schematicPath: string;
@@ -1629,8 +1625,7 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
             {
               type: "text" as const,
               text:
-                result.message ||
-                `Added sheet pin '${args.pinName}' to sheet '${args.sheetName}'`,
+                result.message || `Added sheet pin '${args.pinName}' to sheet '${args.sheetName}'`,
             },
           ],
         };

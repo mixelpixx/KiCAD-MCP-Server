@@ -623,8 +623,12 @@ class KiCADInterface:
                 }
 
             sch_path = path if path and path != "." else None
-            schematic = SchematicManager.create_schematic(project_name, path=sch_path, metadata=metadata)
-            base_name = project_name if project_name.endswith(".kicad_sch") else f"{project_name}.kicad_sch"
+            schematic = SchematicManager.create_schematic(
+                project_name, path=sch_path, metadata=metadata
+            )
+            base_name = (
+                project_name if project_name.endswith(".kicad_sch") else f"{project_name}.kicad_sch"
+            )
             normalized_path = path or "."
             file_path = os.path.join(normalized_path, base_name)
             success = SchematicManager.save_schematic(schematic, file_path)
@@ -2075,6 +2079,13 @@ class KiCADInterface:
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
 
+            net_name = params.get("netName")
+            label_type = params.get("labelType")
+
+            _valid_label_types = {"net", "global", "power"}
+            if label_type is not None and label_type not in _valid_label_types:
+                return {"success": False, "message": "labelType must be one of: net, global, power"}
+
             schematic = SchematicManager.load_schematic(schematic_path)
             if not schematic:
                 return {"success": False, "message": "Failed to load schematic"}
@@ -2136,6 +2147,12 @@ class KiCADInterface:
                             "position": {"x": float(pos[0]), "y": float(pos[1])},
                         }
                     )
+
+            # Apply filters
+            if net_name is not None:
+                labels = [lbl for lbl in labels if lbl["name"] == net_name]
+            if label_type is not None:
+                labels = [lbl for lbl in labels if lbl["type"] == label_type]
 
             return {"success": True, "labels": labels, "count": len(labels)}
 
