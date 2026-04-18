@@ -986,6 +986,51 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
+  // Batch delete net labels from schematic
+  server.tool(
+    "delete_schematic_net_labels",
+    "Remove multiple net labels from the schematic in a single file round-trip.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      labels: z
+        .array(
+          z.object({
+            netName: z.string().describe("Name of the net label to remove"),
+            position: z
+              .object({ x: z.number(), y: z.number() })
+              .optional()
+              .describe("Position to disambiguate if multiple labels share the same name"),
+          }),
+        )
+        .describe("List of labels to delete"),
+    },
+    async (args: {
+      schematicPath: string;
+      labels: Array<{ netName: string; position?: { x: number; y: number } }>;
+    }) => {
+      const result = await callKicadScript("delete_schematic_net_labels", args);
+      if (result.success) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: result.message ?? `Deleted ${result.deleted} of ${args.labels.length} labels`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Failed to delete labels: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
   // Export schematic to SVG
   server.tool(
     "export_schematic_svg",

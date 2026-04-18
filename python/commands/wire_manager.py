@@ -11,7 +11,7 @@ import math
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import sexpdata
 from sexpdata import Symbol
@@ -572,6 +572,33 @@ class WireManager:
             return False
 
     @staticmethod
+    def _match_label(
+        item: Any,
+        net_name: str,
+        position: Optional[Dict[str, float]],
+        tolerance: float,
+    ) -> bool:
+        """
+        Return True if *item* is a (label ...) s-expression matching *net_name*
+        and, when *position* is given, located within *tolerance* mm of that point.
+        """
+        if not (isinstance(item, list) and len(item) > 0 and item[0] == _SYM_LABEL):
+            return False
+        if len(item) < 2 or item[1] != net_name:
+            return False
+        if position is not None:
+            at_entry = next(
+                (p for p in item[1:] if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_AT),
+                None,
+            )
+            if at_entry is None:
+                return False
+            lx, ly = float(at_entry[1]), float(at_entry[2])
+            if not (abs(lx - position["x"]) < tolerance and abs(ly - position["y"]) < tolerance):
+                return False
+        return True
+
+    @staticmethod
     def delete_label(
         schematic_path: Path,
         net_name: str,
@@ -596,37 +623,17 @@ class WireManager:
 
             sch_data = sexpdata.loads(sch_content)
 
+            pos_dict: Optional[Dict[str, float]] = (
+                {"x": float(position[0]), "y": float(position[1])} if position is not None else None
+            )
+
             for i, item in enumerate(sch_data):
-                if not (isinstance(item, list) and len(item) > 0 and item[0] == _SYM_LABEL):
-                    continue
-
-                # Second element is the label text
-                if len(item) < 2 or item[1] != net_name:
-                    continue
-
-                if position is not None:
-                    # Find (at x y ...) sub-expression and check coordinates
-                    at_entry = next(
-                        (
-                            p
-                            for p in item[1:]
-                            if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_AT
-                        ),
-                        None,
-                    )
-                    if at_entry is None:
-                        continue
-                    lx, ly = float(at_entry[1]), float(at_entry[2])
-                    if not (
-                        abs(lx - position[0]) < tolerance and abs(ly - position[1]) < tolerance
-                    ):
-                        continue
-
-                del sch_data[i]
-                with open(schematic_path, "w", encoding="utf-8") as f:
-                    f.write(sexpdata.dumps(sch_data))
-                logger.info(f"Deleted label '{net_name}'")
-                return True
+                if WireManager._match_label(item, net_name, pos_dict, tolerance):
+                    del sch_data[i]
+                    with open(schematic_path, "w", encoding="utf-8") as f:
+                        f.write(sexpdata.dumps(sch_data))
+                    logger.info(f"Deleted label '{net_name}'")
+                    return True
 
             logger.warning(f"No matching label found for '{net_name}'")
             return False
@@ -637,6 +644,60 @@ class WireManager:
 
             logger.error(traceback.format_exc())
             return False
+
+    @staticmethod
+    def delete_labels_batch(
+        schematic_path: Path,
+        label_specs: List[Dict[str, Any]],
+        tolerance: float = 0.5,
+    ) -> List[Dict[str, Any]]:
+        """
+        Delete multiple net labels in a single load/save round-trip.
+
+        Each spec in *label_specs* must have a ``netName`` key and may have an
+        optional ``position`` dict with ``x`` and ``y`` keys.  For each spec the
+        current (post-previous-deletion) schematic state is scanned forward and
+        the first match is removed.
+
+        Args:
+            schematic_path: Path to .kicad_sch file
+            label_specs: List of deletion specs (netName + optional position)
+            tolerance: Position match tolerance in mm
+
+        Returns:
+            Per-spec result dicts; propagates exceptions to the caller.
+        """
+        with open(schematic_path, "r", encoding="utf-8") as f:
+            sch_data = sexpdata.loads(f.read())
+
+        results: List[Dict[str, Any]] = []
+        deleted_count = 0
+
+        for spec in label_specs:
+            net_name: str = spec["netName"]
+            position: Optional[Dict[str, float]] = spec.get("position")
+
+            matched = False
+            for i, item in enumerate(sch_data):
+                if WireManager._match_label(item, net_name, position, tolerance):
+                    del sch_data[i]
+                    deleted_count += 1
+                    matched = True
+                    record: Dict[str, Any] = {"netName": net_name, "deleted": True}
+                    if position is not None:
+                        record["position"] = position
+                    results.append(record)
+                    break
+
+            if not matched:
+                results.append({"netName": net_name, "deleted": False, "reason": "not found"})
+
+        if deleted_count > 0:
+            with open(schematic_path, "w", encoding="utf-8") as f:
+                f.write(sexpdata.dumps(sch_data))
+            logger.info(f"Batch deleted {deleted_count} label(s) from {schematic_path.name}")
+
+        return results
 
     @staticmethod
     def create_orthogonal_path(

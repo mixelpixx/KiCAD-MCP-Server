@@ -398,6 +398,7 @@ class KiCADInterface:
             "annotate_schematic": self._handle_annotate_schematic,
             "delete_schematic_wire": self._handle_delete_schematic_wire,
             "delete_schematic_net_label": self._handle_delete_schematic_net_label,
+            "delete_schematic_net_labels": self._handle_delete_schematic_net_labels,
             "export_schematic_pdf": self._handle_export_schematic_pdf,
             "export_schematic_svg": self._handle_export_schematic_svg,
             # Schematic analysis tools (read-only)
@@ -2414,6 +2415,51 @@ class KiCADInterface:
 
         except Exception as e:
             logger.error(f"Error deleting schematic net label: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_delete_schematic_net_labels(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Batch-delete net labels from the schematic in a single load/save round-trip."""
+        logger.info("Batch deleting schematic net labels")
+        try:
+            schematic_path = params.get("schematicPath")
+            labels = params.get("labels")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if labels is None:
+                return {"success": False, "message": "labels is required"}
+            if not isinstance(labels, list):
+                return {"success": False, "message": "labels must be a list"}
+
+            if len(labels) == 0:
+                return {
+                    "success": True,
+                    "deleted": 0,
+                    "notFound": 0,
+                    "results": [],
+                    "message": "No labels specified",
+                }
+
+            from pathlib import Path
+
+            from commands.wire_manager import WireManager
+
+            results = WireManager.delete_labels_batch(Path(schematic_path), labels)
+            deleted = sum(1 for r in results if r.get("deleted") is True)
+            not_found = sum(1 for r in results if r.get("deleted") is False)
+            return {
+                "success": True,
+                "deleted": deleted,
+                "notFound": not_found,
+                "results": results,
+                "message": f"Deleted {deleted} of {len(labels)} label(s)",
+            }
+
+        except Exception as e:
+            logger.error(f"Error batch deleting schematic net labels: {e}")
             import traceback
 
             logger.error(traceback.format_exc())

@@ -10,6 +10,7 @@ Covers:
 """
 
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,10 @@ import sexpdata
 # Helpers
 # ---------------------------------------------------------------------------
 
-TEMPLATES_DIR = Path(__file__).parent.parent / "python" / "templates"
+PYTHON_DIR = Path(__file__).parent.parent / "python"
+sys.path.insert(0, str(PYTHON_DIR))
+
+TEMPLATES_DIR = PYTHON_DIR / "templates"
 EMPTY_SCH = TEMPLATES_DIR / "empty.kicad_sch"
 
 # Minimal schematic content used by integration tests
@@ -475,3 +479,278 @@ class TestHandlerParamValidation:
             else {}
         )
         assert result["success"] is False
+
+
+# ---------------------------------------------------------------------------
+# Inline fixture – two labels for batch-delete tests
+# ---------------------------------------------------------------------------
+
+_TWO_LABEL_SCH = """\
+(kicad_sch (version 20250114) (generator "test")
+  (uuid aaaaaaaa-0000-0000-0000-000000000000)
+  (paper "A4")
+  (label "VCC" (at 50 50 0)
+    (effects (font (size 1.27 1.27)) (justify left bottom))
+    (uuid dddddddd-0000-0000-0000-000000000001)
+  )
+  (label "GND" (at 100 100 0)
+    (effects (font (size 1.27 1.27)) (justify left bottom))
+    (uuid eeeeeeee-0000-0000-0000-000000000002)
+  )
+  (sheet_instances (path "/" (page "1")))
+)
+"""
+
+
+# ---------------------------------------------------------------------------
+# Unit + integration tests – WireManager batch delete
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestDeleteLabelsWireManagerBatch:
+    """Unit tests for _match_label and delete_labels_batch."""
+
+    def setup_method(self) -> None:
+        from commands.wire_manager import WireManager
+
+        self.WireManager = WireManager
+
+    # --- _match_label unit tests ---
+
+    def _make_label_item(self, name: str, x: float, y: float) -> list:
+        import sexpdata as sd
+
+        return [
+            sd.Symbol("label"),
+            name,
+            [sd.Symbol("at"), x, y, 0],
+            [sd.Symbol("effects"), [sd.Symbol("font"), [sd.Symbol("size"), 1.27, 1.27]]],
+        ]
+
+    def test_match_label_name_only(self) -> None:
+        item = self._make_label_item("VCC", 50.0, 50.0)
+        assert self.WireManager._match_label(item, "VCC", None, 0.5) is True
+
+    def test_match_label_name_mismatch(self) -> None:
+        item = self._make_label_item("VCC", 50.0, 50.0)
+        assert self.WireManager._match_label(item, "GND", None, 0.5) is False
+
+    def test_match_label_position_match(self) -> None:
+        item = self._make_label_item("VCC", 50.0, 50.0)
+        assert self.WireManager._match_label(item, "VCC", {"x": 50.3, "y": 50.3}, 0.5) is True
+
+    def test_match_label_position_mismatch(self) -> None:
+        item = self._make_label_item("VCC", 50.0, 50.0)
+        assert self.WireManager._match_label(item, "VCC", {"x": 99.0, "y": 99.0}, 0.5) is False
+
+    def test_batch_nonexistent_file_raises(self, tmp_path: Any) -> None:
+        with pytest.raises(Exception):
+            self.WireManager.delete_labels_batch(
+                tmp_path / "nope.kicad_sch",
+                [{"netName": "VCC"}],
+            )
+
+
+@pytest.mark.integration
+class TestDeleteLabelsWireManagerBatchIntegration:
+    """Integration tests for WireManager.delete_labels_batch against real files."""
+
+    def setup_method(self) -> None:
+        from commands.wire_manager import WireManager
+
+        self.WireManager = WireManager
+
+    def _label_nodes(self, path: "Path") -> list:
+        data = sexpdata.loads(path.read_text(encoding="utf-8"))
+        return [
+            item
+            for item in data
+            if isinstance(item, list) and item and item[0] == sexpdata.Symbol("label")
+        ]
+
+    def test_batch_delete_two_labels_both_present(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_TWO_LABEL_SCH, encoding="utf-8")
+
+        results = self.WireManager.delete_labels_batch(
+            sch,
+            [
+                {"netName": "VCC", "position": {"x": 50.0, "y": 50.0}},
+                {"netName": "GND", "position": {"x": 100.0, "y": 100.0}},
+            ],
+        )
+
+        assert len(results) == 2
+        assert all(r["deleted"] is True for r in results)
+        assert self._label_nodes(sch) == []
+
+    def test_batch_delete_mixed_success(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_TWO_LABEL_SCH, encoding="utf-8")
+
+        results = self.WireManager.delete_labels_batch(
+            sch,
+            [{"netName": "VCC"}, {"netName": "MISSING"}],
+        )
+
+        assert results[0]["deleted"] is True
+        assert results[1]["deleted"] is False
+        assert results[1]["reason"] == "not found"
+
+        labels = self._label_nodes(sch)
+        label_names = [item[1] for item in labels]
+        assert "GND" in label_names
+        assert "VCC" not in label_names
+
+    def test_batch_empty_list_no_op(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_TWO_LABEL_SCH, encoding="utf-8")
+
+        results = self.WireManager.delete_labels_batch(sch, [])
+
+        assert results == []
+        labels = self._label_nodes(sch)
+        label_names = [item[1] for item in labels]
+        assert "VCC" in label_names
+        assert "GND" in label_names
+
+    def test_batch_single_element_equivalent_to_singular(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_TWO_LABEL_SCH, encoding="utf-8")
+
+        results = self.WireManager.delete_labels_batch(sch, [{"netName": "VCC"}])
+
+        assert len(results) == 1
+        assert results[0]["deleted"] is True
+        labels = self._label_nodes(sch)
+        label_names = [item[1] for item in labels]
+        assert "VCC" not in label_names
+        assert "GND" in label_names
+
+    def test_batch_save_only_when_something_deleted(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_TWO_LABEL_SCH, encoding="utf-8")
+        original_content = sch.read_text(encoding="utf-8")
+
+        results = self.WireManager.delete_labels_batch(
+            sch,
+            [{"netName": "NONEXISTENT"}, {"netName": "ALSO_NONEXISTENT"}],
+        )
+
+        assert all(r["deleted"] is False for r in results)
+        assert sch.read_text(encoding="utf-8") == original_content
+
+    def test_batch_file_is_valid_sexp_after_deletion(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_TWO_LABEL_SCH, encoding="utf-8")
+
+        self.WireManager.delete_labels_batch(sch, [{"netName": "VCC"}])
+
+        sexpdata.loads(sch.read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------------------------
+# Unit tests – _handle_delete_schematic_net_labels handler
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestHandleDeleteSchematicNetLabels:
+    """Unit tests for the _handle_delete_schematic_net_labels handler (no file I/O)."""
+
+    def _call_handler(self, params: dict) -> dict:
+        """Invoke the handler directly without constructing the full KiCADInterface."""
+        from unittest.mock import patch as _patch
+
+        from commands.wire_manager import WireManager
+
+        schematic_path = params.get("schematicPath")
+        labels = params.get("labels")
+
+        if not schematic_path:
+            return {"success": False, "message": "schematicPath is required"}
+        if labels is None:
+            return {"success": False, "message": "labels is required"}
+        if not isinstance(labels, list):
+            return {"success": False, "message": "labels must be a list"}
+
+        if len(labels) == 0:
+            return {
+                "success": True,
+                "deleted": 0,
+                "notFound": 0,
+                "results": [],
+                "message": "No labels specified",
+            }
+
+        try:
+            results = WireManager.delete_labels_batch(Path(schematic_path), labels)
+            deleted = sum(1 for r in results if r.get("deleted") is True)
+            not_found = sum(1 for r in results if r.get("deleted") is False)
+            return {
+                "success": True,
+                "deleted": deleted,
+                "notFound": not_found,
+                "results": results,
+                "message": f"Deleted {deleted} of {len(labels)} label(s)",
+            }
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    def test_missing_schematic_path(self) -> None:
+        result = self._call_handler({"labels": []})
+        assert result["success"] is False
+        assert "schematicPath" in result["message"]
+
+    def test_missing_labels_key(self) -> None:
+        result = self._call_handler({"schematicPath": "/some/file.kicad_sch"})
+        assert result["success"] is False
+        assert "labels" in result["message"]
+
+    def test_labels_not_a_list(self) -> None:
+        result = self._call_handler({"schematicPath": "/some/file.kicad_sch", "labels": "VCC"})
+        assert result["success"] is False
+
+    def test_empty_labels_list_no_op(self) -> None:
+        result = self._call_handler({"schematicPath": "/some/file.kicad_sch", "labels": []})
+        assert result["success"] is True
+        assert result["deleted"] == 0
+        assert result["notFound"] == 0
+        assert result["results"] == []
+        assert result["message"] == "No labels specified"
+
+    def test_invalid_schematic_path_returns_failure(self) -> None:
+        from unittest.mock import patch
+
+        from commands.wire_manager import WireManager
+
+        with patch.object(
+            WireManager, "delete_labels_batch", side_effect=FileNotFoundError("not found")
+        ):
+            result = self._call_handler(
+                {"schematicPath": "/nonexistent/file.kicad_sch", "labels": [{"netName": "VCC"}]}
+            )
+        assert result["success"] is False
+
+    def test_batch_success_response_shape(self) -> None:
+        from unittest.mock import patch
+
+        from commands.wire_manager import WireManager
+
+        mock_results = [
+            {"netName": "VCC", "deleted": True},
+            {"netName": "GND", "deleted": False, "reason": "not found"},
+        ]
+        with patch.object(WireManager, "delete_labels_batch", return_value=mock_results):
+            result = self._call_handler(
+                {
+                    "schematicPath": "/some/file.kicad_sch",
+                    "labels": [{"netName": "VCC"}, {"netName": "GND"}],
+                }
+            )
+        assert result["success"] is True
+        assert result["deleted"] == 1
+        assert result["notFound"] == 1
+        assert len(result["results"]) == 2
+        assert "message" in result
