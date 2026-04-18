@@ -306,14 +306,13 @@ class KiCADServer {
 
       // Start the Python process for KiCAD scripting
       console.error(`Starting Python process with script: ${this.kicadScriptPath}`);
-      const pythonExe = "C:\\Program Files\\KiCad\\9.0\\bin\\python.exe";
+      const pythonExe = process.env.KICAD_PYTHON || "python3";
 
       console.error(`Using Python executable: ${pythonExe}`);
       this.pythonProcess = spawn(pythonExe, [this.kicadScriptPath], {
         stdio: ["pipe", "pipe", "pipe"],
         env: {
           ...process.env,
-          PYTHONPATH: "C:/Program Files/KiCad/9.0/lib/python3/dist-packages",
         },
       });
 
