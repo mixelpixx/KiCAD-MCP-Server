@@ -158,6 +158,7 @@ Returns symbol references that can be used directly in schematics.`,
           info.category ? `Category: ${info.category}` : "",
           info.lib_class ? `Class: ${info.lib_class}` : "",
           info.datasheet ? `Datasheet: ${info.datasheet}` : "",
+          info.sim_pins ? `Sim.Pins: ${info.sim_pins}` : "",
         ]
           .filter((line) => line)
           .join("\n");

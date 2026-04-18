@@ -33,6 +33,7 @@ class SymbolInfo:
     stock: str = ""  # Stock (from JLCPCB libs)
     price: str = ""  # Price (from JLCPCB libs)
     lib_class: str = ""  # Basic/Preferred/Extended
+    sim_pins: str = ""  # Sim.Pins pin mapping (e.g. "1=in+ 2=in- 3=vcc 4=vee 5=out")
 
 
 class SymbolLibraryManager:
@@ -268,11 +269,28 @@ class SymbolLibraryManager:
                 # Find the start position of this symbol
                 start_pos = match.start()
 
-                # Extract properties from this symbol block
-                # We need to find the matching closing paren - use a simple heuristic
-                # Look for the next 2000 characters for properties
-                block_end = min(start_pos + 5000, len(content))
-                symbol_block = content[start_pos:block_end]
+                # Walk forward tracking parenthesis depth to find the true end of the block
+                depth = 0
+                i = start_pos
+                end_pos = start_pos
+                while i < len(content):
+                    ch = content[i]
+                    if ch == "(":
+                        depth += 1
+                    elif ch == ")":
+                        depth -= 1
+                        if depth == 0:
+                            end_pos = i + 1
+                            break
+                    i += 1
+
+                if end_pos == start_pos:
+                    logger.warning(
+                        f"Malformed symbol block for '{symbol_name}' in {library_path}; skipping"
+                    )
+                    continue
+
+                symbol_block = content[start_pos:end_pos]
 
                 # Extract properties
                 properties = self._extract_properties(symbol_block)
@@ -292,6 +310,7 @@ class SymbolLibraryManager:
                     stock=properties.get("Stock", ""),
                     price=properties.get("Price", ""),
                     lib_class=properties.get("Class", ""),
+                    sim_pins=properties.get("Sim.Pins", ""),
                 )
 
                 symbols.append(symbol_info)
