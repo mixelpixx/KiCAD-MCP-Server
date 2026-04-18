@@ -174,3 +174,172 @@ class TestListSchematicLabelsFilters:
         assert result["success"] is True
         assert "labels" in result
         assert "count" in result
+
+
+# ===========================================================================
+# TestMoveSchematicNetLabelSchema (unit)
+# ===========================================================================
+
+
+@pytest.mark.unit
+class TestMoveSchematicNetLabelSchema:
+    """Validate parameter acceptance and rejection for move_schematic_net_label."""
+
+    def _ki(self):
+        from kicad_interface import KiCADInterface
+
+        return KiCADInterface()
+
+    def test_missing_schematic_path_rejected(self) -> None:
+        result = self._ki()._handle_move_schematic_net_label(
+            {"netName": "VCC", "newPosition": {"x": 10, "y": 10}}
+        )
+        assert result["success"] is False
+        assert "schematicPath" in result["message"]
+
+    def test_missing_net_name_rejected(self) -> None:
+        result = self._ki()._handle_move_schematic_net_label(
+            {"schematicPath": "/tmp/fake.kicad_sch", "newPosition": {"x": 10, "y": 10}}
+        )
+        assert result["success"] is False
+        assert "netName" in result["message"]
+
+    def test_missing_new_position_rejected(self) -> None:
+        tmp = _make_temp_schematic()
+        result = self._ki()._handle_move_schematic_net_label(
+            {"schematicPath": str(tmp), "netName": "VCC", "newPosition": {}}
+        )
+        assert result["success"] is False
+        assert "newPosition" in result["message"]
+
+    def test_invalid_label_type_rejected(self) -> None:
+        tmp = _make_temp_schematic()
+        result = self._ki()._handle_move_schematic_net_label(
+            {
+                "schematicPath": str(tmp),
+                "netName": "VCC",
+                "newPosition": {"x": 10, "y": 10},
+                "labelType": "net",
+            }
+        )
+        assert result["success"] is False
+        assert "labelType" in result["message"]
+
+
+# ===========================================================================
+# TestMoveSchematicNetLabel (integration)
+# ===========================================================================
+
+
+@pytest.mark.integration
+class TestMoveSchematicNetLabel:
+    """Integration tests for _handle_move_schematic_net_label."""
+
+    def _ki(self):
+        from kicad_interface import KiCADInterface
+
+        return KiCADInterface()
+
+    def _read_label_positions(self, path: Path, name: str) -> list:
+        """Return list of (x, y) tuples for all labels matching name."""
+        import sexpdata
+        from sexpdata import Symbol
+
+        _SYM_AT = Symbol("at")
+        _LABEL_SYMS = {Symbol("label"), Symbol("global_label"), Symbol("hierarchical_label")}
+        sch_data = sexpdata.loads(path.read_text(encoding="utf-8"))
+        positions = []
+        for item in sch_data:
+            if not (isinstance(item, list) and len(item) >= 2 and item[0] in _LABEL_SYMS):
+                continue
+            if item[1] != name:
+                continue
+            at_entry = next(
+                (p for p in item if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_AT),
+                None,
+            )
+            if at_entry is not None:
+                positions.append((float(at_entry[1]), float(at_entry[2])))
+        return positions
+
+    def test_move_net_label_updates_position(self) -> None:
+        tmp = _make_temp_schematic(_label_sexp("VCC", 10.0, 20.0))
+        result = self._ki()._handle_move_schematic_net_label(
+            {
+                "schematicPath": str(tmp),
+                "netName": "VCC",
+                "newPosition": {"x": 30.0, "y": 40.0},
+            }
+        )
+        assert result["success"] is True
+        assert result["oldPosition"] == {"x": 10.0, "y": 20.0}
+        assert result["newPosition"] == {"x": 30.0, "y": 40.0}
+        positions = self._read_label_positions(tmp, "VCC")
+        assert len(positions) == 1
+        assert positions[0] == (30.0, 40.0)
+
+    def test_move_global_label(self) -> None:
+        tmp = _make_temp_schematic(_global_label_sexp("GND", 5.0, 5.0))
+        result = self._ki()._handle_move_schematic_net_label(
+            {
+                "schematicPath": str(tmp),
+                "netName": "GND",
+                "newPosition": {"x": 15.0, "y": 25.0},
+            }
+        )
+        assert result["success"] is True
+        positions = self._read_label_positions(tmp, "GND")
+        assert positions[0] == (15.0, 25.0)
+
+    def test_disambiguate_by_current_position(self) -> None:
+        extra = _label_sexp("SIG", 10.0, 10.0) + "\n" + _label_sexp("SIG", 20.0, 20.0)
+        tmp = _make_temp_schematic(extra)
+        result = self._ki()._handle_move_schematic_net_label(
+            {
+                "schematicPath": str(tmp),
+                "netName": "SIG",
+                "newPosition": {"x": 50.0, "y": 50.0},
+                "currentPosition": {"x": 10.0, "y": 10.0},
+            }
+        )
+        assert result["success"] is True
+        positions = sorted(self._read_label_positions(tmp, "SIG"))
+        assert (20.0, 20.0) in positions
+        assert (50.0, 50.0) in positions
+
+    def test_label_not_found_returns_failure(self) -> None:
+        tmp = _make_temp_schematic()
+        result = self._ki()._handle_move_schematic_net_label(
+            {
+                "schematicPath": str(tmp),
+                "netName": "NONEXISTENT",
+                "newPosition": {"x": 10.0, "y": 10.0},
+            }
+        )
+        assert result["success"] is False
+        assert "NONEXISTENT" in result["message"]
+
+    def test_label_type_filter_skips_wrong_type(self) -> None:
+        # Only a global_label exists; requesting labelType="label" should not find it
+        tmp = _make_temp_schematic(_global_label_sexp("PWR", 10.0, 10.0))
+        result = self._ki()._handle_move_schematic_net_label(
+            {
+                "schematicPath": str(tmp),
+                "netName": "PWR",
+                "newPosition": {"x": 30.0, "y": 30.0},
+                "labelType": "label",
+            }
+        )
+        assert result["success"] is False
+
+    def test_current_position_no_match_returns_failure(self) -> None:
+        tmp = _make_temp_schematic(_label_sexp("NET", 10.0, 10.0))
+        result = self._ki()._handle_move_schematic_net_label(
+            {
+                "schematicPath": str(tmp),
+                "netName": "NET",
+                "newPosition": {"x": 30.0, "y": 30.0},
+                "currentPosition": {"x": 99.0, "y": 99.0},
+            }
+        )
+        assert result["success"] is False

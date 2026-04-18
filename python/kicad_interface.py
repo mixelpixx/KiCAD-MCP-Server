@@ -398,6 +398,7 @@ class KiCADInterface:
             "annotate_schematic": self._handle_annotate_schematic,
             "delete_schematic_wire": self._handle_delete_schematic_wire,
             "delete_schematic_net_label": self._handle_delete_schematic_net_label,
+            "move_schematic_net_label": self._handle_move_schematic_net_label,
             "export_schematic_pdf": self._handle_export_schematic_pdf,
             "export_schematic_svg": self._handle_export_schematic_svg,
             # Schematic analysis tools (read-only)
@@ -2436,6 +2437,92 @@ class KiCADInterface:
 
         except Exception as e:
             logger.error(f"Error deleting schematic net label: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_move_schematic_net_label(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Move a net label to a new position in the schematic."""
+        logger.info("Moving schematic net label")
+        try:
+            import sexpdata as _sexpdata
+            from sexpdata import Symbol
+
+            schematic_path = params.get("schematicPath")
+            net_name = params.get("netName")
+            new_position = params.get("newPosition", {})
+            new_x = new_position.get("x")
+            new_y = new_position.get("y")
+            current_position = params.get("currentPosition")
+            label_type = params.get("labelType")
+
+            if not schematic_path or not net_name:
+                return {"success": False, "message": "schematicPath and netName are required"}
+            if new_x is None or new_y is None:
+                return {"success": False, "message": "newPosition with x and y is required"}
+
+            _valid_types = {"label", "global_label", "hierarchical_label"}
+            if label_type is not None and label_type not in _valid_types:
+                return {
+                    "success": False,
+                    "message": f"labelType must be one of: {', '.join(sorted(_valid_types))}",
+                }
+
+            _SYM_AT = Symbol("at")
+            target_syms = (
+                {Symbol(label_type)}
+                if label_type is not None
+                else {Symbol(t) for t in _valid_types}
+            )
+
+            TOLERANCE = 0.5
+
+            with open(schematic_path, "r", encoding="utf-8") as f:
+                sch_data = _sexpdata.loads(f.read())
+
+            for item in sch_data:
+                if not (isinstance(item, list) and len(item) >= 2 and item[0] in target_syms):
+                    continue
+                if item[1] != net_name:
+                    continue
+
+                at_idx = next(
+                    (
+                        j
+                        for j, p in enumerate(item)
+                        if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_AT
+                    ),
+                    None,
+                )
+                if at_idx is None:
+                    continue
+
+                at_entry = item[at_idx]
+                old_x, old_y = float(at_entry[1]), float(at_entry[2])
+
+                if current_position is not None:
+                    cx = current_position.get("x", 0)
+                    cy = current_position.get("y", 0)
+                    if not (abs(old_x - cx) < TOLERANCE and abs(old_y - cy) < TOLERANCE):
+                        continue
+
+                rotation = at_entry[3] if len(at_entry) > 3 else 0
+                item[at_idx] = [_SYM_AT, float(new_x), float(new_y), rotation]
+
+                with open(schematic_path, "w", encoding="utf-8") as f:
+                    f.write(_sexpdata.dumps(sch_data))
+
+                return {
+                    "success": True,
+                    "oldPosition": {"x": old_x, "y": old_y},
+                    "newPosition": {"x": float(new_x), "y": float(new_y)},
+                }
+
+            return {"success": False, "message": f"Label '{net_name}' not found"}
+
+        except Exception as e:
+            logger.error(f"Error moving schematic net label: {e}")
             import traceback
 
             logger.error(traceback.format_exc())

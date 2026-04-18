@@ -999,6 +999,53 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
+  // Move net label to a new position in the schematic
+  server.tool(
+    "move_schematic_net_label",
+    "Move a net label (local, global, or hierarchical) to a new position in the schematic. Use currentPosition to disambiguate when multiple labels share the same name.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      netName: z.string().describe("Name of the net label to move"),
+      newPosition: z.object({ x: z.number(), y: z.number() }).describe("Target position in mm"),
+      currentPosition: z
+        .object({ x: z.number(), y: z.number() })
+        .optional()
+        .describe("Current position to disambiguate when multiple labels share the same name"),
+      labelType: z
+        .enum(["label", "global_label", "hierarchical_label"])
+        .optional()
+        .describe("Restrict search to a specific label type"),
+    },
+    async (args: {
+      schematicPath: string;
+      netName: string;
+      newPosition: { x: number; y: number };
+      currentPosition?: { x: number; y: number };
+      labelType?: "label" | "global_label" | "hierarchical_label";
+    }) => {
+      const result = await callKicadScript("move_schematic_net_label", args);
+      if (result.success) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Moved net label '${args.netName}' from (${result.oldPosition?.x}, ${result.oldPosition?.y}) to (${result.newPosition?.x}, ${result.newPosition?.y})`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Failed to move label: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
   // Export schematic to SVG
   server.tool(
     "export_schematic_svg",
