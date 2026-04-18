@@ -8,6 +8,7 @@ manipulate the .kicad_sch file directly.
 
 import logging
 import math
+import re
 import tempfile
 import uuid
 from pathlib import Path
@@ -29,6 +30,90 @@ _SYM_WIDTH = Symbol("width")
 _SYM_TYPE = Symbol("type")
 _SYM_UUID = Symbol("uuid")
 _SYM_SHEET_INSTANCES = Symbol("sheet_instances")
+
+
+def _find_insertion_point(content: str) -> int:
+    """Find the right place to insert new elements in a .kicad_sch file.
+
+    Looks for (sheet_instances (KiCad 8) first, falls back to inserting
+    before the final closing paren (KiCad 9+).
+    """
+    marker = "(sheet_instances"
+    pos = content.rfind(marker)
+    if pos != -1:
+        return pos
+    pos = content.rfind(")")
+    if pos == -1:
+        raise ValueError("Could not find insertion point in schematic")
+    return pos
+
+
+def _text_insert(file_path: Path, sexp_text: str) -> bool:
+    """Insert S-expression text into a .kicad_sch file preserving formatting."""
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    insert_at = _find_insertion_point(content)
+    content = content[:insert_at] + sexp_text + content[insert_at:]
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    return True
+
+
+def _make_hierarchical_label_text(
+    text: str,
+    position: List[float],
+    shape: str = "bidirectional",
+    orientation: int = 0,
+) -> str:
+    """Generate a hierarchical_label S-expression as formatted text.
+
+    orientation: 0=right (label points right, justify left),
+                 180=left (label points left, justify right),
+                 90/270=vertical.
+    """
+    uid = str(uuid.uuid4())
+    justify = "right" if orientation == 180 else "left"
+    return (
+        f'\t(hierarchical_label "{text}"\n'
+        f"\t\t(shape {shape})\n"
+        f"\t\t(at {position[0]} {position[1]} {orientation})\n"
+        f"\t\t(effects\n"
+        f"\t\t\t(font\n"
+        f"\t\t\t\t(size 1.27 1.27)\n"
+        f"\t\t\t)\n"
+        f"\t\t\t(justify {justify})\n"
+        f"\t\t)\n"
+        f'\t\t(uuid "{uid}")\n'
+        f"\t)\n"
+    )
+
+
+def _make_sheet_pin_text(
+    pin_name: str,
+    pin_type: str,
+    position: List[float],
+    orientation: int = 0,
+) -> str:
+    """Generate a sheet pin S-expression as formatted text (indented for inside sheet block).
+
+    orientation: 0=right side of sheet box, 180=left side.
+    """
+    uid = str(uuid.uuid4())
+    justify = "left" if orientation == 0 else "right"
+    return (
+        f'\t\t(pin "{pin_name}" {pin_type}\n'
+        f"\t\t\t(at {position[0]} {position[1]} {orientation})\n"
+        f'\t\t\t(uuid "{uid}")\n'
+        f"\t\t\t(effects\n"
+        f"\t\t\t\t(font\n"
+        f"\t\t\t\t\t(size 1.27 1.27)\n"
+        f"\t\t\t\t)\n"
+        f"\t\t\t\t(justify {justify})\n"
+        f"\t\t\t)\n"
+        f"\t\t)\n"
+    )
 
 
 class WireManager:
@@ -668,6 +753,78 @@ class WireManager:
             return [start, end]
 
         return [start, corner, end]
+
+    @staticmethod
+    def add_hierarchical_label(
+        schematic_path: Path,
+        text: str,
+        position: List[float],
+        shape: str = "bidirectional",
+        orientation: int = 0,
+    ) -> bool:
+        """Add a hierarchical label to a sub-sheet schematic."""
+        try:
+            label_text = _make_hierarchical_label_text(text, position, shape, orientation)
+            _text_insert(schematic_path, label_text)
+            logger.info(f"Added hierarchical_label '{text}' at {position} shape={shape}")
+            return True
+        except Exception as e:
+            logger.error(f"Error adding hierarchical label: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return False
+
+    @staticmethod
+    def add_sheet_pin(
+        content: str,
+        sheet_name: str,
+        pin_name: str,
+        pin_type: str,
+        position: List[float],
+        orientation: int = 0,
+    ) -> Tuple[str, bool]:
+        """Insert a sheet pin into the named sheet block in the parent schematic.
+
+        Returns (modified_content, success).
+        """
+        lines = content.split("\n")
+        sheetname_pattern = re.compile(
+            r'\(property\s+"Sheetname"\s+"' + re.escape(sheet_name) + r'"'
+        )
+        sheet_block_pattern = re.compile(r"^\t\(sheet\b")
+
+        # Find the sheet block that contains the target Sheetname property
+        i = 0
+        while i < len(lines):
+            if sheet_block_pattern.match(lines[i]):
+                # Walk forward to find closing paren of this block
+                depth = sum(1 for c in lines[i] if c == "(") - sum(1 for c in lines[i] if c == ")")
+                j = i + 1
+                found_name = False
+                while j < len(lines) and depth > 0:
+                    if sheetname_pattern.search(lines[j]):
+                        found_name = True
+                    depth += sum(1 for c in lines[j] if c == "(") - sum(
+                        1 for c in lines[j] if c == ")"
+                    )
+                    j += 1
+                b_end = j - 1  # index of closing ")" line of the sheet block
+
+                if found_name:
+                    # Insert pin text before the closing paren of the sheet block
+                    pin_text = _make_sheet_pin_text(pin_name, pin_type, position, orientation)
+                    pin_lines = pin_text.rstrip("\n").split("\n")
+                    for offset, line in enumerate(pin_lines):
+                        lines.insert(b_end + offset, line)
+                    logger.info(f"Added sheet pin '{pin_name}' to sheet '{sheet_name}'")
+                    return "\n".join(lines), True
+
+                i = b_end + 1
+                continue
+            i += 1
+
+        return content, False
 
 
 if __name__ == "__main__":

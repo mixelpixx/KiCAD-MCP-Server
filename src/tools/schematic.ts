@@ -1524,4 +1524,125 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       }
     },
   );
+
+  // Add hierarchical label to a sub-sheet
+  server.tool(
+    "add_schematic_hierarchical_label",
+    "Add a hierarchical label (sheet interface port) to a sub-sheet schematic. " +
+      "Hierarchical labels are the connection points that link a sub-sheet to its " +
+      "parent via sheet pins. The label text must exactly match the corresponding " +
+      "sheet pin name.",
+    {
+      schematicPath: z.string().describe("Path to the sub-sheet .kicad_sch file"),
+      text: z
+        .string()
+        .describe("Label text (e.g. 'SD_CLK') — must match the sheet pin name"),
+      position: z
+        .array(z.number())
+        .length(2)
+        .describe("Position [x, y] in mm"),
+      shape: z
+        .enum(["input", "output", "bidirectional"])
+        .describe("Signal direction from the sub-sheet's perspective"),
+      orientation: z
+        .number()
+        .optional()
+        .describe(
+          "Rotation in degrees: 0=label points right, 180=label points left (default: 0)",
+        ),
+    },
+    async (args: {
+      schematicPath: string;
+      text: string;
+      position: number[];
+      shape: "input" | "output" | "bidirectional";
+      orientation?: number;
+    }) => {
+      const result = await callKicadScript("add_schematic_hierarchical_label", args);
+      if (result.success) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: result.message || `Added hierarchical label '${args.text}'`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Failed to add hierarchical label: ${result.message || "Unknown error"}`,
+          },
+        ],
+      };
+    },
+  );
+
+  // Add sheet pin to a sheet block on the parent schematic
+  server.tool(
+    "add_sheet_pin",
+    "Add a pin to a sheet symbol block on the parent schematic. Sheet pins are the " +
+      "parent-side connection points that correspond to hierarchical labels in the " +
+      "sub-sheet. The pinName must exactly match a hierarchical_label in the sub-sheet.",
+    {
+      schematicPath: z.string().describe("Path to the PARENT .kicad_sch file"),
+      sheetName: z
+        .string()
+        .describe(
+          "Sheet name as it appears in the Sheetname property (e.g. 'Storage')",
+        ),
+      pinName: z
+        .string()
+        .describe("Pin name — must match a hierarchical_label in the sub-sheet"),
+      pinType: z
+        .enum(["input", "output", "bidirectional"])
+        .describe(
+          "Signal direction (should match the sub-sheet hierarchical label shape)",
+        ),
+      position: z
+        .array(z.number())
+        .length(2)
+        .describe(
+          "Pin position [x, y] in mm — must be on the sheet block boundary",
+        ),
+      orientation: z
+        .number()
+        .optional()
+        .describe(
+          "Pin orientation: 0=right edge of sheet box, 180=left edge (default: 0)",
+        ),
+    },
+    async (args: {
+      schematicPath: string;
+      sheetName: string;
+      pinName: string;
+      pinType: "input" | "output" | "bidirectional";
+      position: number[];
+      orientation?: number;
+    }) => {
+      const result = await callKicadScript("add_sheet_pin", args);
+      if (result.success) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                result.message ||
+                `Added sheet pin '${args.pinName}' to sheet '${args.sheetName}'`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Failed to add sheet pin: ${result.message || "Unknown error"}`,
+          },
+        ],
+      };
+    },
+  );
 }
