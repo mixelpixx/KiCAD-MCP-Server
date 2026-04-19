@@ -440,14 +440,18 @@ class DynamicSymbolLoader:
         with open(schematic_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # Insert before (sheet_instances using direct string search.
-        # This works for both pretty-printed and sexpdata-compacted single-line files.
+        # Insert before (sheet_instances when present (top-level schematic).
+        # Sub-sheets don't have this block, so fall back to inserting before the
+        # final closing paren of the (kicad_sch ...) expression.
         insert_marker = "(sheet_instances"
         insert_at = content.rfind(insert_marker)
-        if insert_at == -1:
-            raise ValueError("Could not find insertion point in schematic")
-
-        content = content[:insert_at] + instance_block + "\n  " + content[insert_at:]
+        if insert_at != -1:
+            content = content[:insert_at] + instance_block + "\n  " + content[insert_at:]
+        else:
+            insert_at = content.rfind(")")
+            if insert_at == -1:
+                raise ValueError("Could not find insertion point in schematic")
+            content = content[:insert_at] + "\n" + instance_block + "\n" + content[insert_at:]
 
         with open(schematic_path, "w", encoding="utf-8") as f:
             f.write(content)
