@@ -316,8 +316,9 @@ class WireManager:
                     break
 
             if sheet_instances_index is None:
-                logger.error("No sheet_instances section found in schematic")
-                return False
+                # Sub-sheets in hierarchical designs don't have (sheet_instances).
+                # Fall back to appending before the final closing paren of (kicad_sch ...).
+                sheet_instances_index = len(sch_data)
 
             # Insert label
             sch_data.insert(sheet_instances_index, label_sexp)
