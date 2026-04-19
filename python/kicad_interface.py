@@ -718,9 +718,17 @@ class KiCADInterface:
             x = component.get("x", 0)
             y = component.get("y", 0)
 
-            # Derive project path from schematic path for project-local library resolution
+            # Derive project path from schematic path for project-local library resolution.
+            # Walk up from the schematic file to find the directory that owns the project
+            # (contains sym-lib-table or a .kicad_pro file).  Schematics stored in a
+            # sub-folder (e.g. sheets/) would otherwise resolve to the wrong directory and
+            # miss any project-local sym-lib-table entries.
             schematic_file = Path(schematic_path)
             derived_project_path = schematic_file.parent
+            for ancestor in schematic_file.parents:
+                if (ancestor / "sym-lib-table").exists() or list(ancestor.glob("*.kicad_pro")):
+                    derived_project_path = ancestor
+                    break
 
             loader = DynamicSymbolLoader(project_path=derived_project_path)
             loader.add_component(
