@@ -17,8 +17,11 @@ from typing import Any, Dict, List, Optional
 
 from resources.resource_definitions import RESOURCE_DEFINITIONS, handle_resource_read
 
-# Import tool schemas and resource definitions
+# Import tool schemas, resource definitions, and IPC API annotations
 from schemas.tool_schemas import TOOL_SCHEMAS
+from annotations import AnnotationLoader
+
+_annotation_loader = AnnotationLoader()
 
 # Configure logging
 log_dir = os.path.join(os.path.expanduser("~"), ".kicad-mcp", "logs")
@@ -4666,22 +4669,32 @@ def main() -> None:
                         # Return list of available tools with proper schemas
                         tools = []
                         for cmd_name in interface.command_routes.keys():
-                            # Get schema from TOOL_SCHEMAS if available
                             if cmd_name in TOOL_SCHEMAS:
-                                tool_def = TOOL_SCHEMAS[cmd_name].copy()
+                                # Enrich the existing schema with IPC annotation data
+                                # (adds description/blocking hints where the schema lacks them)
+                                tool_def = _annotation_loader.enrich_schema(
+                                    cmd_name, TOOL_SCHEMAS[cmd_name]
+                                )
                                 tools.append(tool_def)
                             else:
-                                # Fallback for tools without schemas
-                                logger.warning(f"No schema defined for tool: {cmd_name}")
+                                # Build a best-effort schema from IPC annotations
+                                ann_desc = _annotation_loader.description(cmd_name)
+                                if ann_desc:
+                                    logger.debug(f"Using IPC annotation for tool: {cmd_name}")
+                                else:
+                                    logger.warning(f"No schema or annotation for tool: {cmd_name}")
                                 tools.append(
-                                    {
-                                        "name": cmd_name,
-                                        "description": f"KiCAD command: {cmd_name}",
-                                        "inputSchema": {
-                                            "type": "object",
-                                            "properties": {},
+                                    _annotation_loader.enrich_schema(
+                                        cmd_name,
+                                        {
+                                            "name": cmd_name,
+                                            "description": ann_desc or f"KiCAD command: {cmd_name}",
+                                            "inputSchema": {
+                                                "type": "object",
+                                                "properties": {},
+                                            },
                                         },
-                                    }
+                                    )
                                 )
 
                         logger.info(f"Returning {len(tools)} tools")
