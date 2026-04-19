@@ -25,6 +25,8 @@ _SYM_PTS = Symbol("pts")
 _SYM_XY = Symbol("xy")
 _SYM_AT = Symbol("at")
 _SYM_LABEL = Symbol("label")
+_SYM_GLOBAL_LABEL = Symbol("global_label")
+_SYM_HIERARCHICAL_LABEL = Symbol("hierarchical_label")
 _SYM_STROKE = Symbol("stroke")
 _SYM_WIDTH = Symbol("width")
 _SYM_TYPE = Symbol("type")
@@ -681,8 +683,9 @@ class WireManager:
 
             sch_data = sexpdata.loads(sch_content)
 
+            _LABEL_TYPES = {_SYM_LABEL, _SYM_GLOBAL_LABEL, _SYM_HIERARCHICAL_LABEL}
             for i, item in enumerate(sch_data):
-                if not (isinstance(item, list) and len(item) > 0 and item[0] == _SYM_LABEL):
+                if not (isinstance(item, list) and len(item) > 0 and item[0] in _LABEL_TYPES):
                     continue
 
                 # Second element is the label text
