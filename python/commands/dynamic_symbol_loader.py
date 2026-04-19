@@ -402,15 +402,17 @@ class DynamicSymbolLoader:
         footprint: str = "",
         x: float = 0,
         y: float = 0,
+        unit: int = 1,
     ) -> bool:
         """
         Add a component instance to the schematic.
         This creates the (symbol ...) block with lib_id reference.
+        For multi-unit symbols, set unit to 1–N to place a specific unit.
         """
         full_lib_id = f"{library_name}:{symbol_name}"
         new_uuid = str(uuid.uuid4())
 
-        instance_block = f"""  (symbol (lib_id "{full_lib_id}") (at {x} {y} 0) (unit 1)
+        instance_block = f"""  (symbol (lib_id "{full_lib_id}") (at {x} {y} 0) (unit {unit})
     (in_bom yes) (on_board yes) (dnp no)
     (uuid "{new_uuid}")
     (property "Reference" "{reference}" (at {x} {y - 2.54} 0)
@@ -429,7 +431,7 @@ class DynamicSymbolLoader:
       (project "project"
         (path "/"
           (reference "{reference}")
-          (unit 1)
+          (unit {unit})
         )
       )
     )
@@ -493,6 +495,7 @@ class DynamicSymbolLoader:
         footprint: str = "",
         x: float = 0,
         y: float = 0,
+        unit: int = 1,
         project_path: Optional[Path] = None,
     ) -> bool:
         """
@@ -500,6 +503,7 @@ class DynamicSymbolLoader:
         This is the main entry point for adding components.
 
         Args:
+            unit: For multi-unit symbols, which unit to place (1=A, 2=B, …). Default 1.
             project_path: Optional project directory. When set, project-specific
                           sym-lib-table is also searched for the library file.
         """
@@ -518,6 +522,7 @@ class DynamicSymbolLoader:
             footprint=footprint,
             x=x,
             y=y,
+            unit=unit,
         )
 
 

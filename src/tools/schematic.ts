@@ -49,6 +49,12 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
         })
         .optional()
         .describe("Position on schematic"),
+      unit: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe("Unit number for multi-unit symbols (1=A, 2=B, 3=C, …). Defaults to 1."),
     },
     async (args: {
       schematicPath: string;
@@ -57,6 +63,7 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
       value?: string;
       footprint?: string;
       position?: { x: number; y: number };
+      unit?: number;
     }) => {
       // Transform to what Python backend expects
       const [library, symbolName] = args.symbol.includes(":")
@@ -74,6 +81,7 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
           // Python expects flat x, y not nested position
           x: args.position?.x ?? 0,
           y: args.position?.y ?? 0,
+          unit: args.unit ?? 1,
         },
       };
 
