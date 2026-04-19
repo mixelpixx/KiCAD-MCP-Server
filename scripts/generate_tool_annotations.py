@@ -412,16 +412,61 @@ def _build_proto_context(messages: dict[str, ProtoMessage]) -> str:
     return "\n".join(sections)
 
 
-def call_claude(
+def _filter_command_messages(
+    messages: dict[str, ProtoMessage], existing: dict, resume: bool
+) -> tuple[dict[str, ProtoMessage], dict[str, ProtoMessage]]:
+    """Return (all_messages_for_context, todo_commands) after applying --resume filter."""
+    command_messages = {
+        name: msg
+        for name, msg in messages.items()
+        if "_commands" in msg.source_file and not msg.is_response
+    }
+    if resume:
+        already_done = set(existing.get("annotations", {}).keys())
+        todo = {n: m for n, m in command_messages.items() if n not in already_done}
+        print(f"  Resuming: {len(already_done)} already annotated, {len(todo)} remaining")
+    else:
+        todo = command_messages
+    return command_messages, todo
+
+
+def _build_full_prompt(proto_context: str, target_names: list[str]) -> str:
+    """Build the complete prompt text used by both the SDK and CLI backends."""
+    return (
+        _SYSTEM_PROMPT
+        + "\n\n## KiCad IPC API — proto definitions\n\n"
+        + proto_context
+        + "\n\n## Annotation request\n\n"
+        "Generate MCP annotations for the following request messages:\n"
+        + "\n".join(f"- {n}" for n in target_names)
+        + "\n\nReturn only the JSON object described in your instructions."
+    )
+
+
+def _parse_response(raw: str) -> dict:
+    """Parse a Claude text response to a JSON dict, stripping markdown fences."""
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-z]*\n?", "", raw).rstrip("`").strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        print(f"ERROR: Claude returned invalid JSON: {exc}", file=sys.stderr)
+        print("--- raw response (first 2000 chars) ---", file=sys.stderr)
+        print(raw[:2000], file=sys.stderr)
+        sys.exit(1)
+
+
+def call_claude_sdk(
     messages: dict[str, ProtoMessage],
     model: str,
     existing: dict,
     resume: bool,
 ) -> dict:
     """
-    Call the Claude API to generate annotations for all request messages.
+    Annotate messages via the Anthropic Python SDK (requires ANTHROPIC_API_KEY).
 
-    Uses prompt caching on the proto context block so repeated runs against
+    Uses prompt caching on the static proto context block so repeated runs against
     the same proto definitions only bill the small annotation-request portion.
     """
     try:
@@ -431,33 +476,18 @@ def call_claude(
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        sys.exit("ANTHROPIC_API_KEY environment variable is not set")
+        sys.exit("ANTHROPIC_API_KEY is not set. Use --use-cli to call Claude Code instead.")
 
     client = anthropic.Anthropic(api_key=api_key)
 
-    # Decide which messages need annotation
-    # Command messages live in *_commands.proto files; type/settings messages in *_types.proto
-    # and base_types.proto are data structures, not callable commands.
-    request_messages = {
-        name: msg
-        for name, msg in messages.items()
-        if "_commands" in msg.source_file and not msg.is_response
-    }
-    if resume:
-        already_done = set(existing.get("annotations", {}).keys())
-        todo = {n: m for n, m in request_messages.items() if n not in already_done}
-        print(f"  Resuming: {len(already_done)} already annotated, {len(todo)} remaining")
-    else:
-        todo = request_messages
-
+    _, todo = _filter_command_messages(messages, existing, resume)
     if not todo:
         print("  Nothing to annotate.")
         return existing
 
     proto_context = _build_proto_context(messages)
     target_names = sorted(todo.keys())
-
-    print(f"  Sending {len(target_names)} messages to {model} for annotation ...")
+    print(f"  Sending {len(target_names)} messages to {model} via SDK ...")
 
     response = client.messages.create(
         model=model,
@@ -467,16 +497,12 @@ def call_claude(
             {
                 "role": "user",
                 "content": [
-                    # Cache the large, static proto context
+                    # Cache the large, static proto context block
                     {
                         "type": "text",
-                        "text": (
-                            "## KiCad IPC API — proto definitions\n\n"
-                            + proto_context
-                        ),
+                        "text": "## KiCad IPC API — proto definitions\n\n" + proto_context,
                         "cache_control": {"type": "ephemeral"},
                     },
-                    # Small, non-cached request specifying what to annotate
                     {
                         "type": "text",
                         "text": (
@@ -491,7 +517,6 @@ def call_claude(
         ],
     )
 
-    # Report cache stats when available
     usage = response.usage
     if hasattr(usage, "cache_creation_input_tokens"):
         print(
@@ -501,24 +526,87 @@ def call_claude(
             f"output: {usage.output_tokens}"
         )
 
-    raw = response.content[0].text.strip()
-
-    # Strip markdown fences if the model wrapped the output anyway
-    if raw.startswith("```"):
-        raw = re.sub(r"^```[a-z]*\n?", "", raw).rstrip("`").strip()
-
-    try:
-        new_annotations: dict = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        print(f"ERROR: Claude returned invalid JSON: {exc}", file=sys.stderr)
-        print("--- raw response ---", file=sys.stderr)
-        print(raw[:2000], file=sys.stderr)
-        sys.exit(1)
-
-    # Merge into existing output
+    new_annotations = _parse_response(response.content[0].text)
     result = dict(existing)
     result.setdefault("annotations", {}).update(new_annotations)
     return result
+
+
+def call_claude_cli(
+    messages: dict[str, ProtoMessage],
+    model: str,
+    existing: dict,
+    resume: bool,
+) -> dict:
+    """
+    Annotate messages by shelling out to the ``claude`` CLI (Claude Code).
+
+    Works with a Claude.ai monthly subscription — no API key required.
+    The ``claude`` binary must be on PATH (install Claude Code from claude.ai/code).
+
+    Note: prompt caching is not available via the CLI; the full context is sent
+    each time. Use --resume between interrupted runs to avoid redundant work.
+    """
+    import shutil
+    import subprocess
+
+    claude_bin = shutil.which("claude")
+    if not claude_bin:
+        sys.exit(
+            "claude CLI not found on PATH.\n"
+            "Install Claude Code from https://claude.ai/code, then re-run."
+        )
+
+    _, todo = _filter_command_messages(messages, existing, resume)
+    if not todo:
+        print("  Nothing to annotate.")
+        return existing
+
+    proto_context = _build_proto_context(messages)
+    target_names = sorted(todo.keys())
+    print(f"  Sending {len(target_names)} messages to claude CLI ...")
+
+    prompt = _build_full_prompt(proto_context, target_names)
+
+    cmd = [claude_bin, "--output-format", "text", "-p", prompt]
+    if model:
+        cmd += ["--model", model]
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired:
+        sys.exit("ERROR: claude CLI timed out after 5 minutes.")
+    except FileNotFoundError:
+        sys.exit(f"ERROR: could not execute {claude_bin}")
+
+    if proc.returncode != 0:
+        print(f"ERROR: claude CLI exited {proc.returncode}", file=sys.stderr)
+        if proc.stderr:
+            print(proc.stderr[:1000], file=sys.stderr)
+        sys.exit(1)
+
+    new_annotations = _parse_response(proc.stdout)
+    result = dict(existing)
+    result.setdefault("annotations", {}).update(new_annotations)
+    return result
+
+
+def call_claude(
+    messages: dict[str, ProtoMessage],
+    model: str,
+    existing: dict,
+    resume: bool,
+    use_cli: bool,
+) -> dict:
+    """Dispatch to the appropriate Claude backend."""
+    if use_cli:
+        return call_claude_cli(messages, model, existing, resume)
+    return call_claude_sdk(messages, model, existing, resume)
 
 
 # ---------------------------------------------------------------------------
@@ -617,6 +705,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Parse proto files and list what would be annotated; do not call the API.",
     )
 
+    backend = p.add_mutually_exclusive_group()
+    backend.add_argument(
+        "--use-cli",
+        action="store_true",
+        help=(
+            "Use the 'claude' CLI (Claude Code) instead of the SDK. "
+            "Works with a Claude.ai monthly plan — no API key needed. "
+            "Requires the 'claude' binary on PATH."
+        ),
+    )
+    backend.add_argument(
+        "--use-sdk",
+        action="store_true",
+        default=True,
+        help="Use the Anthropic Python SDK (requires ANTHROPIC_API_KEY). This is the default.",
+    )
+
     return p
 
 
@@ -655,7 +760,13 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # ── annotate ─────────────────────────────────────────────────────────────
     existing = load_existing(args.output) if args.resume else {"annotations": {}}
-    result = call_claude(messages, args.model, existing, resume=args.resume)
+    result = call_claude(
+        messages,
+        args.model,
+        existing,
+        resume=args.resume,
+        use_cli=args.use_cli,
+    )
 
     # ── write ────────────────────────────────────────────────────────────────
     write_output(result, args.output, kicad_ref)
