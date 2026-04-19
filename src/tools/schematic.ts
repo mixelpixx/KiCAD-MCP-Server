@@ -1633,6 +1633,114 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
+  // List free-form text annotations in schematic
+  server.tool(
+    "list_schematic_texts",
+    "List all free-form text annotations (notes, headings, documentation strings) in the schematic. " +
+      "Returns position, angle, font size, bold/italic flags, and justification for each text element. " +
+      "Optionally filter by a substring match on the text content.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      text: z
+        .string()
+        .optional()
+        .describe("Case-insensitive substring filter — only return texts containing this string"),
+    },
+    async (args: { schematicPath: string; text?: string }) => {
+      const result = await callKicadScript("list_schematic_texts", args);
+      if (result.success) {
+        const texts = result.texts || [];
+        if (texts.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: "No text annotations found in schematic." }],
+          };
+        }
+        const lines = texts.map(
+          (t: any) =>
+            `  "${t.text}" at (${t.position.x}, ${t.position.y})` +
+            (t.angle ? ` angle=${t.angle}` : "") +
+            ` size=${t.font_size}` +
+            (t.bold ? " bold" : "") +
+            (t.italic ? " italic" : "") +
+            ` justify=${t.justify}`,
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Text annotations (${texts.length}):\n${lines.join("\n")}`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Failed to list text annotations: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
+  // Add free-form text annotation to schematic
+  server.tool(
+    "add_schematic_text",
+    "Add a free-form text annotation to the schematic. " +
+      "Use this to add notes, labels, section headings, or documentation strings " +
+      "directly on the schematic canvas. Unlike net labels, text annotations have " +
+      "no electrical significance.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      text: z.string().describe("Text content to display"),
+      position: z
+        .array(z.number())
+        .length(2)
+        .describe("Position [x, y] in schematic mm coordinates"),
+      angle: z.number().optional().describe("Rotation angle in degrees (default: 0)"),
+      fontSize: z.number().optional().describe("Font size in mm (default: 1.27)"),
+      bold: z.boolean().optional().describe("Bold text (default: false)"),
+      italic: z.boolean().optional().describe("Italic text (default: false)"),
+      justify: z
+        .enum(["left", "center", "right"])
+        .optional()
+        .describe("Horizontal text justification (default: left)"),
+    },
+    async (args: {
+      schematicPath: string;
+      text: string;
+      position: number[];
+      angle?: number;
+      fontSize?: number;
+      bold?: boolean;
+      italic?: boolean;
+      justify?: "left" | "center" | "right";
+    }) => {
+      const result = await callKicadScript("add_schematic_text", args);
+      if (result.success) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: result.message || "Text annotation added successfully",
+            },
+          ],
+        };
+      } else {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to add text annotation: ${result.message || "Unknown error"}`,
+            },
+          ],
+        };
+      }
+    },
+  );
+
   // Add sheet pin to a sheet block on the parent schematic
   server.tool(
     "add_sheet_pin",

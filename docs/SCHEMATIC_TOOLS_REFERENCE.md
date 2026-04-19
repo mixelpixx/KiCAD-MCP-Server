@@ -268,6 +268,45 @@ Checks net label / power symbol positions first (exact IU match), then wire endp
 | position | `{"x": float, "y": float}` — echoes the query coordinates               |
 | source   | `"net_label"` \| `"wire_endpoint"` \| `null` — how the net was resolved |
 
+## Text Annotations (2 tools)
+
+### add_schematic_text
+
+Add a free-form text annotation (note, heading, documentation string) directly on the schematic canvas. Text annotations have no electrical significance — they are purely visual. For electrically meaningful labels, use `add_schematic_net_label` instead.
+
+| Parameter     | Type         | Required | Description                                      |
+| ------------- | ------------ | -------- | ------------------------------------------------ |
+| schematicPath | string       | Yes      | Path to the .kicad_sch file                      |
+| text          | string       | Yes      | Text content to display                          |
+| position      | array [x, y] | Yes      | Position in schematic mm coordinates             |
+| angle         | number       | No       | Rotation angle in degrees (default: 0)           |
+| fontSize      | number       | No       | Font size in mm (default: 1.27 — KiCad standard) |
+| bold          | boolean      | No       | Bold text (default: false)                       |
+| italic        | boolean      | No       | Italic text (default: false)                     |
+| justify       | string       | No       | `left` \| `center` \| `right` (default: `left`)  |
+
+### list_schematic_texts
+
+List all free-form text annotations in the schematic. Optionally filter by a substring of the text content.
+
+| Parameter     | Type   | Required | Description                                                    |
+| ------------- | ------ | -------- | -------------------------------------------------------------- |
+| schematicPath | string | Yes      | Path to the .kicad_sch file                                    |
+| text          | string | No       | Case-insensitive substring filter — only return matching texts |
+
+**Response fields (per text entry):**
+
+| Field     | Description                         |
+| --------- | ----------------------------------- |
+| text      | Text string content                 |
+| position  | `{"x": float, "y": float}` in mm    |
+| angle     | Rotation angle in degrees           |
+| font_size | Font size in mm                     |
+| bold      | `true` / `false`                    |
+| italic    | `true` / `false`                    |
+| justify   | `"left"` \| `"center"` \| `"right"` |
+| uuid      | KiCad UUID of the element           |
+
 ## Schematic Creation and Export (6 tools)
 
 ### create_schematic

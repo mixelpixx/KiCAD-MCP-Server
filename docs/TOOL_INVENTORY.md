@@ -169,6 +169,13 @@ _Source: `src/tools/schematic.ts`_
 | `list_schematic_wires`  | List all wires in schematic   | Routed (schematic) |
 | `list_schematic_labels` | List all net labels           | Routed (schematic) |
 
+### Text Annotations
+
+| Tool                   | Description                                      | Access             |
+| ---------------------- | ------------------------------------------------ | ------------------ |
+| `add_schematic_text`   | Add free-form text annotation to schematic       | Routed (schematic) |
+| `list_schematic_texts` | List all text annotations (with optional filter) | Routed (schematic) |
+
 ### Schematic Creation and Export
 
 | Tool                   | Description                      | Access             |
