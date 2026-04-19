@@ -755,6 +755,128 @@ class WireManager:
         return [start, corner, end]
 
     @staticmethod
+    def list_texts(schematic_path: Path) -> Optional[List[Any]]:
+        """Return all free-form text annotations (SCH_TEXT) in a schematic.
+
+        Each entry is a dict with keys: text, position (x/y), angle,
+        font_size, bold, italic, justify, uuid.
+        Returns None on parse error.
+        """
+        try:
+            with open(schematic_path, "r", encoding="utf-8") as f:
+                sch_data = sexpdata.loads(f.read())
+
+            _SYM_TEXT = Symbol("text")
+            _SYM_EFFECTS = Symbol("effects")
+            _SYM_FONT = Symbol("font")
+            _SYM_SIZE = Symbol("size")
+            _SYM_JUSTIFY = Symbol("justify")
+            _SYM_BOLD = Symbol("bold")
+            _SYM_ITALIC = Symbol("italic")
+
+            results = []
+            for item in sch_data:
+                if not (isinstance(item, list) and len(item) >= 2 and item[0] == _SYM_TEXT):
+                    continue
+                # item[1] is the text string
+                text_val = item[1] if len(item) > 1 else ""
+
+                pos_x = pos_y = angle = 0.0
+                font_size = 1.27
+                bold = italic = False
+                justify = "left"
+                uid = ""
+
+                for part in item[2:]:
+                    if not isinstance(part, list) or not part:
+                        continue
+                    tag = part[0]
+                    if tag == _SYM_AT and len(part) >= 3:
+                        pos_x = float(part[1])
+                        pos_y = float(part[2])
+                        angle = float(part[3]) if len(part) >= 4 else 0.0
+                    elif tag == _SYM_UUID and len(part) >= 2:
+                        uid = str(part[1])
+                    elif tag == _SYM_EFFECTS:
+                        for eff in part[1:]:
+                            if not isinstance(eff, list) or not eff:
+                                continue
+                            if eff[0] == _SYM_FONT:
+                                for fp in eff[1:]:
+                                    if not isinstance(fp, list) or not fp:
+                                        continue
+                                    if fp[0] == _SYM_SIZE and len(fp) >= 2:
+                                        font_size = float(fp[1])
+                                    elif fp[0] == _SYM_BOLD and len(fp) >= 2:
+                                        bold = str(fp[1]).lower() == "yes"
+                                    elif fp[0] == _SYM_ITALIC and len(fp) >= 2:
+                                        italic = str(fp[1]).lower() == "yes"
+                            elif eff[0] == _SYM_JUSTIFY and len(eff) >= 2:
+                                justify = str(eff[1])
+
+                results.append(
+                    {
+                        "text": text_val,
+                        "position": {"x": pos_x, "y": pos_y},
+                        "angle": angle,
+                        "font_size": font_size,
+                        "bold": bold,
+                        "italic": italic,
+                        "justify": justify,
+                        "uuid": uid,
+                    }
+                )
+            return results
+        except Exception as e:
+            logger.error(f"Error listing texts: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return None
+
+    @staticmethod
+    def add_text(
+        schematic_path: Path,
+        text: str,
+        position: List[float],
+        angle: float = 0,
+        font_size: float = 1.27,
+        bold: bool = False,
+        italic: bool = False,
+        justify: str = "left",
+    ) -> bool:
+        """Add a free-form text annotation (SCH_TEXT) to a KiCad schematic."""
+        try:
+            text_escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+            uid = str(uuid.uuid4())
+            font_attrs = f"\n\t\t\t\t(size {font_size} {font_size})"
+            if bold:
+                font_attrs += "\n\t\t\t\t(bold yes)"
+            if italic:
+                font_attrs += "\n\t\t\t\t(italic yes)"
+            text_sexp = (
+                f'\t(text "{text_escaped}"\n'
+                f"\t\t(exclude_from_sim no)\n"
+                f"\t\t(at {position[0]} {position[1]} {angle})\n"
+                f"\t\t(effects\n"
+                f"\t\t\t(font{font_attrs}\n"
+                f"\t\t\t)\n"
+                f"\t\t\t(justify {justify} bottom)\n"
+                f"\t\t)\n"
+                f'\t\t(uuid "{uid}")\n'
+                f"\t)\n"
+            )
+            _text_insert(schematic_path, text_sexp)
+            logger.info(f"Added text '{text}' at {position}")
+            return True
+        except Exception as e:
+            logger.error(f"Error adding text: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return False
+
+    @staticmethod
     def add_hierarchical_label(
         schematic_path: Path,
         text: str,

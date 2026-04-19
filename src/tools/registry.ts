@@ -109,6 +109,8 @@ export const toolCategories: ToolCategory[] = [
       "get_schematic_view",
       "export_schematic_svg",
       "export_schematic_pdf",
+      "add_schematic_text",
+      "list_schematic_texts",
     ],
   },
   {

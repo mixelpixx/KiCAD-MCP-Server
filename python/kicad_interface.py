@@ -410,6 +410,8 @@ class KiCADInterface:
             "list_floating_labels": self._handle_list_floating_labels,
             "snap_to_grid": self._handle_snap_to_grid,
             "add_schematic_hierarchical_label": self._handle_add_schematic_hierarchical_label,
+            "add_schematic_text": self._handle_add_schematic_text,
+            "list_schematic_texts": self._handle_list_schematic_texts,
             "add_sheet_pin": self._handle_add_sheet_pin,
             "import_svg_logo": self._handle_import_svg_logo,
             # UI/Process management commands
@@ -2726,6 +2728,98 @@ class KiCADInterface:
 
         except Exception as e:
             logger.error(f"Error getting net at point: {str(e)}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_list_schematic_texts(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List all free-form text annotations (SCH_TEXT) in a schematic."""
+        logger.info("Listing schematic text annotations")
+        try:
+            from commands.wire_manager import WireManager
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            texts = WireManager.list_texts(sch_file)
+            if texts is None:
+                return {"success": False, "message": "Failed to parse schematic"}
+
+            # Optional text filter
+            filter_text = params.get("text")
+            if filter_text is not None:
+                texts = [t for t in texts if filter_text.lower() in t["text"].lower()]
+
+            return {"success": True, "texts": texts, "count": len(texts)}
+
+        except Exception as e:
+            logger.error(f"Error listing schematic texts: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_add_schematic_text(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a free-form text annotation (SCH_TEXT) to a schematic."""
+        logger.info("Adding text annotation to schematic")
+        try:
+            from commands.wire_manager import WireManager
+
+            schematic_path = params.get("schematicPath")
+            text = params.get("text")
+            position = params.get("position")
+            angle = params.get("angle", 0)
+            font_size = params.get("fontSize", 1.27)
+            bold = params.get("bold", False)
+            italic = params.get("italic", False)
+            justify = params.get("justify", "left")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not text:
+                return {"success": False, "message": "text is required"}
+            if not position or len(position) != 2:
+                return {"success": False, "message": "position [x, y] is required"}
+            if justify not in ("left", "center", "right"):
+                return {"success": False, "message": "justify must be left, center, or right"}
+            if font_size <= 0:
+                return {"success": False, "message": "fontSize must be positive"}
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {
+                    "success": False,
+                    "message": f"Schematic not found: {schematic_path}",
+                }
+
+            success = WireManager.add_text(
+                sch_file,
+                text,
+                position,
+                angle=angle,
+                font_size=font_size,
+                bold=bold,
+                italic=italic,
+                justify=justify,
+            )
+
+            if success:
+                return {
+                    "success": True,
+                    "message": f"Added text '{text}' at ({position[0]}, {position[1]})",
+                    "position": {"x": position[0], "y": position[1]},
+                    "angle": angle,
+                }
+            return {"success": False, "message": "Failed to add text annotation"}
+
+        except Exception as e:
+            logger.error(f"Error adding schematic text: {e}")
             import traceback
 
             logger.error(traceback.format_exc())
