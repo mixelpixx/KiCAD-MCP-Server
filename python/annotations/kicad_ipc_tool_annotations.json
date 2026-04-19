@@ -1,0 +1,565 @@
+{
+  "annotations": {
+    "AddToSelection": {
+      "description": "Adds the given items to the current selection in the editor.",
+      "parameters": {
+        "header": "ItemHeader specifying the target document.",
+        "items": "List of KIIDs of items to add to the selection."
+      },
+      "returns": "SelectionResponse containing the updated set of selected items."
+    },
+    "BeginCommit": {
+      "description": "Begins a staged set of changes. Modifications made after this call are held in a pending commit until EndCommit.",
+      "parameters": {
+        "header": "ItemHeader specifying which document to associate the commit with."
+      },
+      "returns": "BeginCommitResponse with an opaque KIID tracking the commit."
+    },
+    "BoardEditorAppearanceSettings": {
+      "description": "Message describing the appearance settings of the PCB editor (inactive layers, net colors, flip, ratsnest).",
+      "parameters": {
+        "inactive_layer_display": "How inactive layers are displayed (dimmed, hidden, normal).",
+        "net_color_display": "How net colors are applied in the editor.",
+        "board_flip": "Whether the board view is flipped.",
+        "ratsnest_display": "How the ratsnest is shown."
+      }
+    },
+    "BoardLayers": {
+      "description": "A simple wrapper containing a list of BoardLayer enum values.",
+      "parameters": {
+        "layers": "List of BoardLayer enum values."
+      }
+    },
+    "CheckPadstackPresenceOnLayers": {
+      "description": "Tests whether the given pads/vias have copper presence on the given set of board layers.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board.",
+        "items": "List of pad/via KIIDs to test.",
+        "layers": "List of BoardLayer values to test against."
+      },
+      "returns": "PadstackPresenceResponse with an entry per (item, layer) pair."
+    },
+    "ClearSelection": {
+      "description": "Removes all items from the current selection.",
+      "parameters": {
+        "header": "ItemHeader specifying the target document."
+      }
+    },
+    "CloseDocument": {
+      "description": "Closes the given open document in KiCad.",
+      "parameters": {
+        "document": "DocumentSpecifier identifying the document to close."
+      }
+    },
+    "CreateItems": {
+      "description": "Creates new items on a given document, optionally inside a container (symbol or footprint).",
+      "parameters": {
+        "header": "ItemHeader specifying the target document and field mask.",
+        "items": "List of items to create (Any-wrapped typed messages).",
+        "container": "Optional KIID of a container (symbol/footprint) the items should be added to. Omit for top-level insertion."
+      },
+      "returns": "CreateItemsResponse with per-item status and the created items (with assigned KIIDs)."
+    },
+    "DeleteItems": {
+      "description": "Deletes items from a given document by KIID.",
+      "parameters": {
+        "header": "ItemHeader specifying the target document.",
+        "item_ids": "List of KIIDs of items to delete."
+      },
+      "returns": "DeleteItemsResponse with a per-item deletion status.",
+      "warnings": [
+        "Deletion is destructive; use BeginCommit/EndCommit to make it undoable."
+      ]
+    },
+    "EndCommit": {
+      "description": "Finalizes or discards a pending commit that was started with BeginCommit.",
+      "parameters": {
+        "id": "Opaque KIID of the commit, as returned by BeginCommit.",
+        "action": "CommitAction indicating whether to commit or roll back the staged changes.",
+        "message": "Optional human-readable changeset message.",
+        "header": "ItemHeader specifying which document the commit is associated with."
+      }
+    },
+    "ExpandTextVariables": {
+      "description": "Expands KiCad text variables (like ${VAR}) in the supplied strings using the given document's variable table.",
+      "parameters": {
+        "document": "DocumentSpecifier identifying the document whose variable table to use.",
+        "text": "List of input strings potentially containing text variable references."
+      },
+      "returns": "ExpandTextVariablesResponse with one expanded string per input, in order."
+    },
+    "GetActiveLayer": {
+      "description": "Returns the currently active (drawing) layer of the PCB editor for the given board.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board."
+      },
+      "returns": "BoardLayerResponse containing the active BoardLayer."
+    },
+    "GetBoardDesignRules": {
+      "description": "Retrieves the design rules (constraints, predefined sizes, mask/paste, teardrops, severities, exclusions) for a board.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board."
+      },
+      "returns": "BoardDesignRulesResponse with the rules and custom rules status."
+    },
+    "GetBoardEditorAppearanceSettings": {
+      "description": "Returns the current appearance settings of the PCB editor.",
+      "parameters": {},
+      "returns": "BoardEditorAppearanceSettings with the current editor appearance state."
+    },
+    "GetBoardEnabledLayers": {
+      "description": "Returns the set of layers currently enabled in the given board's stackup.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board."
+      },
+      "returns": "BoardEnabledLayersResponse with copper_layer_count and the full list of enabled layers."
+    },
+    "GetBoardLayerName": {
+      "description": "Returns the user-facing display name of a single board layer (may be default or user-customized).",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board.",
+        "layer": "The BoardLayer whose display name should be returned."
+      },
+      "returns": "BoardLayerNameResponse containing the layer's GUI name."
+    },
+    "GetBoardOrigin": {
+      "description": "Retrieves a specific origin point (drill/place, grid, etc.) for the given board.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board.",
+        "type": "BoardOriginType selecting which origin to retrieve."
+      },
+      "returns": "Vector2 with the origin's x and y coordinates in nanometers."
+    },
+    "GetBoardStackup": {
+      "description": "Retrieves the full board stackup (finish, impedance, edge settings, and layer list) for the given board.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board."
+      },
+      "returns": "BoardStackupResponse with the board's BoardStackup."
+    },
+    "GetBoundingBox": {
+      "description": "Returns the bounding boxes of the given items in the target document.",
+      "parameters": {
+        "header": "ItemHeader specifying the target document.",
+        "items": "List of KIIDs to measure.",
+        "mode": "BoundingBoxMode controlling whether movable child text (e.g. footprint fields) is included."
+      },
+      "returns": "GetBoundingBoxResponse with a Box2 (in nanometers) for each item."
+    },
+    "GetConnectedItems": {
+      "description": "Retrieves all copper-connected items reachable from one or more source items.",
+      "parameters": {
+        "header": "ItemHeader specifying the target document and field mask.",
+        "items": "One or more source item KIIDs used as the connectivity roots.",
+        "types": "Optional KiCadObjectType filter. If empty, all connected item types are returned."
+      },
+      "returns": "GetItemsResponse with the list of connected items."
+    },
+    "GetCustomDesignRules": {
+      "description": "Retrieves the custom (user-defined) DRC rules associated with the given board.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board."
+      },
+      "returns": "CustomRulesResponse with the parse status and the list of custom rules."
+    },
+    "GetGraphicsDefaults": {
+      "description": "Retrieves the per-layer-class graphics defaults (text attributes and line thickness) for the given board.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board."
+      },
+      "returns": "GraphicsDefaultsResponse with the board's GraphicsDefaults."
+    },
+    "GetItems": {
+      "description": "Retrieves items of the given KiCad object types from the target document.",
+      "parameters": {
+        "header": "ItemHeader specifying the target document and field mask.",
+        "types": "List of KiCadObjectType values identifying which item types to retrieve."
+      },
+      "returns": "GetItemsResponse with the matching items wrapped in Any."
+    },
+    "GetItemsById": {
+      "description": "Retrieves specific items from the target document by their KIIDs.",
+      "parameters": {
+        "header": "ItemHeader specifying the target document and field mask.",
+        "items": "List of KIIDs to look up."
+      },
+      "returns": "GetItemsResponse with the requested items (Any-wrapped)."
+    },
+    "GetItemsByNet": {
+      "description": "Retrieves copper items (pads, vias, tracks, zones by default) that belong to the given nets.",
+      "parameters": {
+        "header": "ItemHeader specifying the target document and field mask.",
+        "types": "Optional list of item types to filter by. Defaults to pads, vias, tracks, and zones.",
+        "nets": "List of Nets used as filters; items belonging to any of them are returned."
+      },
+      "returns": "GetItemsResponse with the matching copper items."
+    },
+    "GetItemsByNetClass": {
+      "description": "Retrieves copper items that belong to any of the given net classes.",
+      "parameters": {
+        "header": "ItemHeader specifying the target document and field mask.",
+        "types": "Optional list of KiCadObjectType filters. Defaults to pads, vias, tracks, and zones.",
+        "net_classes": "List of net class names used as filters."
+      },
+      "returns": "GetItemsResponse with the matching copper items."
+    },
+    "GetKiCadBinaryPath": {
+      "description": "Returns the full path to a KiCad binary (e.g. kicad-cli) on the current system.",
+      "parameters": {
+        "binary_name": "Short name of the binary, e.g. 'kicad-cli'. On Windows, a '.exe' extension is assumed if missing."
+      },
+      "returns": "PathResponse with the absolute path to the binary."
+    },
+    "GetNetClassForNets": {
+      "description": "Computes the effective (merged) netclass for each provided net, combining all classes a net belongs to by priority.",
+      "parameters": {
+        "net": "List of Nets to resolve effective netclasses for."
+      },
+      "returns": "NetClassForNetsResponse mapping each net to its effective netclass."
+    },
+    "GetNetClasses": {
+      "description": "Returns all netclasses defined in the current project.",
+      "parameters": {},
+      "returns": "NetClassesResponse with the list of NetClass definitions."
+    },
+    "GetNets": {
+      "description": "Retrieves the nets defined on a board, optionally filtered by one or more netclass names.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board.",
+        "netclass_filter": "Optional list of netclass names. If provided, only nets in any of these classes are returned."
+      },
+      "returns": "NetsResponse with the matching nets."
+    },
+    "GetOpenDocuments": {
+      "description": "Retrieves a list of currently open documents of the requested type (board, schematic, etc.).",
+      "parameters": {
+        "type": "DocumentType specifying which kind of document to query."
+      },
+      "returns": "GetOpenDocumentsResponse with DocumentSpecifiers for each open document of that type."
+    },
+    "GetPadShapeAsPolygon": {
+      "description": "Computes the polygon outline of one or more pads on a given layer, merging custom shapes and approximating curves as segments.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board.",
+        "pads": "List of pad KIIDs to process.",
+        "layer": "BoardLayer on which to evaluate the pad shape."
+      },
+      "returns": "PadShapeAsPolygonResponse containing parallel lists of pad KIIDs and their PolygonWithHoles outlines."
+    },
+    "GetPluginSettingsPath": {
+      "description": "Returns a writeable directory path a plugin can use for persistent configuration/data. The directory may not yet exist.",
+      "parameters": {
+        "identifier": "The plugin's identifier (used to namespace the settings directory)."
+      },
+      "returns": "StringResponse with the plugin's settings directory path."
+    },
+    "GetSchematicHierarchy": {
+      "description": "Retrieves the hierarchical sheet structure of a schematic project.",
+      "parameters": {
+        "document": "DocumentSpecifier with type DT_SCHEMATIC; only the project field is used."
+      },
+      "returns": "SchematicHierarchyResponse with the top-level SheetInstances and their children."
+    },
+    "GetSelection": {
+      "description": "Retrieves the currently selected items in the editor, optionally filtered by type.",
+      "parameters": {
+        "header": "ItemHeader specifying the target document.",
+        "types": "Optional KiCadObjectType filter. If empty, all selected items are returned."
+      },
+      "returns": "SelectionResponse with the selected items."
+    },
+    "GetTextAsShapes": {
+      "description": "Renders the given text or textbox objects as shapes (polygons or stroke segments, depending on font).",
+      "parameters": {
+        "text": "List of TextOrTextBox objects to render."
+      },
+      "returns": "GetTextAsShapesResponse pairing each input with its CompoundShape representation."
+    },
+    "GetTextExtents": {
+      "description": "Calculates the bounding box of a temporary text item as it would be rendered.",
+      "parameters": {
+        "text": "A temporary Text item whose extents should be measured."
+      },
+      "returns": "Box2 (in nanometers) giving the text's bounding box."
+    },
+    "GetTextVariables": {
+      "description": "Retrieves the text variable table defined for the given document.",
+      "parameters": {
+        "document": "DocumentSpecifier identifying the target document."
+      },
+      "returns": "TextVariables with the name/value map of text variables."
+    },
+    "GetTitleBlockInfo": {
+      "description": "Retrieves the drawing-sheet title block fields (title, date, revision, company, comments) for the given document.",
+      "parameters": {
+        "document": "DocumentSpecifier identifying the target document."
+      },
+      "returns": "TitleBlockInfo with the title block's field values."
+    },
+    "GetVersion": {
+      "description": "Retrieves the version of the running KiCad instance.",
+      "parameters": {},
+      "returns": "GetVersionResponse containing a KiCadVersion (major/minor/patch and full version string)."
+    },
+    "GetVisibleLayers": {
+      "description": "Returns the list of layers currently set visible in the PCB editor for the given board.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board."
+      },
+      "returns": "BoardLayers with the visible BoardLayer list."
+    },
+    "HitTest": {
+      "description": "Tests whether a point lies within a given tolerance of an item's geometry.",
+      "parameters": {
+        "header": "ItemHeader specifying the target document.",
+        "id": "KIID of the item to test against.",
+        "position": "Point to test, in nanometer coordinates.",
+        "tolerance": "Tolerance distance in nanometers."
+      },
+      "returns": "HitTestResponse with a HitTestResult indicating hit or miss."
+    },
+    "InjectDrcError": {
+      "description": "Injects a synthetic DRC marker onto the board at a given location, referencing specific items. Useful for plugins emitting custom rule violations.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board.",
+        "severity": "DrcSeverity level of the injected marker.",
+        "message": "Human-readable message describing the violation.",
+        "position": "Location of the marker in nanometer coordinates.",
+        "items": "List of KIIDs of items associated with this DRC error."
+      },
+      "returns": "InjectDrcErrorResponse with the KIID of the newly created marker."
+    },
+    "InteractiveMoveItems": {
+      "description": "Selects the given items and starts an interactive move in the PCB editor; KiCad becomes unresponsive to API calls until the user confirms or cancels.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board.",
+        "items": "List of KIIDs of items to move."
+      },
+      "warnings": [
+        "Takes ownership of the active commit if one exists: the move tool pushes it on confirm or rolls it back on cancel. Account for this when combining with explicit commits."
+      ],
+      "interactive": true
+    },
+    "ItemStatus": {
+      "description": "Per-item status returned alongside creation and update results.",
+      "parameters": {
+        "code": "ItemStatusCode indicating success or a specific failure reason.",
+        "error_message": "Human-readable error message when the code indicates failure."
+      }
+    },
+    "OpenDocument": {
+      "description": "Opens a document of a given type from a file path in KiCad.",
+      "parameters": {
+        "type": "DocumentType of the document to open (board, schematic, etc.).",
+        "path": "Filesystem path to the document to open."
+      },
+      "returns": "OpenDocumentResponse with a DocumentSpecifier for the opened document."
+    },
+    "PadstackPresenceEntry": {
+      "description": "One entry in a PadstackPresenceResponse, describing an (item, layer) pair's padstack presence.",
+      "parameters": {
+        "item": "KIID of the pad or via being reported on.",
+        "layer": "BoardLayer being reported on.",
+        "presence": "PadstackPresence value indicating whether the item has copper on this layer."
+      }
+    },
+    "ParseAndCreateItemsFromString": {
+      "description": "Parses an s-expression item container (like the Paste action in the editor) and creates the resulting items in the document.",
+      "parameters": {
+        "document": "DocumentSpecifier identifying the target document.",
+        "contents": "S-expression text describing items to create."
+      },
+      "returns": "CreateItemsResponse with per-item creation status."
+    },
+    "Ping": {
+      "description": "Pings KiCad to verify the API connection is alive.",
+      "parameters": {}
+    },
+    "RefillZones": {
+      "description": "Refills some or all copper zones on the given board. Blocking: returns Empty immediately and KiCad returns AS_BUSY to further API calls until the fill completes.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board.",
+        "zones": "List of zone KIIDs to refill. If empty, all zones on the board are refilled."
+      },
+      "blocking": true
+    },
+    "RefreshEditor": {
+      "description": "Requests that the given editor frame redraw itself, if open.",
+      "parameters": {
+        "frame": "FrameType identifying which editor frame to refresh."
+      }
+    },
+    "RemoveFromSelection": {
+      "description": "Removes the given items from the current selection.",
+      "parameters": {
+        "header": "ItemHeader specifying the target document.",
+        "items": "List of KIIDs of items to deselect."
+      },
+      "returns": "SelectionResponse with the updated selection."
+    },
+    "RevertDocument": {
+      "description": "Reverts the given document to its on-disk state, discarding unsaved changes.",
+      "parameters": {
+        "document": "DocumentSpecifier identifying the document to revert."
+      },
+      "warnings": [
+        "Discards all unsaved changes in the target document; this cannot be undone."
+      ]
+    },
+    "RunAction": {
+      "description": "Runs a TOOL_ACTION through the TOOL_MANAGER of a frame. Intended for low-level prototyping only.",
+      "parameters": {
+        "action": "Action name, e.g. 'eeschema.InteractiveSelection.ClearSelection'."
+      },
+      "returns": "RunActionResponse with a RunActionStatus.",
+      "warnings": [
+        "TOOL_ACTIONs are specifically NOT a stable API. Action names may change or be removed as code is refactored; use only for prototyping."
+      ]
+    },
+    "SaveCopyOfDocument": {
+      "description": "Saves a copy of the given document to a new path, without opening the copy.",
+      "parameters": {
+        "document": "DocumentSpecifier identifying the source document.",
+        "path": "Destination file path for the saved copy.",
+        "options": "SaveOptions controlling overwrite and whether to save a project alongside the file."
+      }
+    },
+    "SaveDocument": {
+      "description": "Saves the given open document to its current location on disk.",
+      "parameters": {
+        "document": "DocumentSpecifier identifying the document to save."
+      }
+    },
+    "SaveDocumentToString": {
+      "description": "Serializes the given document to a string (s-expression) without writing to disk.",
+      "parameters": {
+        "document": "DocumentSpecifier identifying the document to serialize."
+      },
+      "returns": "SavedDocumentResponse with the serialized contents."
+    },
+    "SaveOptions": {
+      "description": "Options controlling how SaveCopyOfDocument behaves.",
+      "parameters": {
+        "overwrite": "If true, destination file(s) may be overwritten if they already exist.",
+        "include_project": "If true, save a new project alongside the file when the file type normally requires one (board or schematic)."
+      }
+    },
+    "SaveSelectionToString": {
+      "description": "Serializes the current selection to a string (s-expression) suitable for later pasting.",
+      "parameters": {},
+      "returns": "SavedSelectionResponse with the selected items' KIIDs and serialized contents."
+    },
+    "SetActiveLayer": {
+      "description": "Sets the active (drawing) layer in the PCB editor for the given board.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board.",
+        "layer": "The BoardLayer to make active."
+      }
+    },
+    "SetBoardDesignRules": {
+      "description": "Replaces the board's design rules (constraints, predefined sizes, mask/paste, teardrops, severities, exclusions).",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board.",
+        "rules": "BoardDesignRules to install on the board."
+      },
+      "returns": "BoardDesignRulesResponse with the resulting rules and custom rules status."
+    },
+    "SetBoardEditorAppearanceSettings": {
+      "description": "Updates the PCB editor's appearance settings (inactive layer display, net colors, flip, ratsnest).",
+      "parameters": {
+        "settings": "BoardEditorAppearanceSettings to apply."
+      }
+    },
+    "SetBoardEnabledLayers": {
+      "description": "Changes which layers are enabled in the board stackup.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board.",
+        "copper_layer_count": "Number of copper layers to enable; must currently be an even number >= 2.",
+        "layers": "Non-copper layers to enable. Copper layers in this list are ignored (use copper_layer_count). F/B.Courtyard, Edge.Cuts, and Margin cannot be disabled and remain enabled regardless."
+      },
+      "returns": "BoardEnabledLayersResponse with the updated enabled layer set.",
+      "warnings": [
+        "Any existing content on layers removed by this call is deleted. This operation cannot be undone."
+      ]
+    },
+    "SetBoardOrigin": {
+      "description": "Sets a specific origin point (drill/place, grid, etc.) for the given board.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board.",
+        "type": "BoardOriginType selecting which origin to set.",
+        "origin": "New origin location in nanometer coordinates."
+      }
+    },
+    "SetCustomDesignRules": {
+      "description": "Replaces the custom (user-defined) DRC rules for the given board.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board.",
+        "rules": "List of CustomRule definitions to install."
+      },
+      "returns": "CustomRulesResponse with parse status, resulting rules, and any error text."
+    },
+    "SetNetClasses": {
+      "description": "Updates the project's netclass definitions, merging with or replacing the existing set based on merge_mode.",
+      "parameters": {
+        "net_classes": "List of NetClass definitions to apply.",
+        "merge_mode": "MapMergeMode controlling merge vs. replace semantics. With MMM_MERGE, existing classes not named here are kept; named classes are replaced. With MMM_REPLACE, unnamed classes are erased except 'Default', which always persists."
+      }
+    },
+    "SetTextVariables": {
+      "description": "Updates the text variable table for a document, merging with or replacing the existing variables.",
+      "parameters": {
+        "document": "DocumentSpecifier identifying the target document.",
+        "variables": "TextVariables map to apply.",
+        "merge_mode": "MapMergeMode controlling whether to merge with or replace the existing variables."
+      }
+    },
+    "SetTitleBlockInfo": {
+      "description": "Sets the drawing-sheet title block fields (title, date, revision, company, comments) for the given document.",
+      "parameters": {
+        "document": "DocumentSpecifier identifying the target document.",
+        "title_block": "TitleBlockInfo with the new field values."
+      }
+    },
+    "SetVisibleLayers": {
+      "description": "Sets which layers are visible in the PCB editor for the given board.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board.",
+        "layers": "List of BoardLayers to mark visible."
+      }
+    },
+    "TextOrTextBox": {
+      "description": "A union-style wrapper holding either a Text or TextBox object, used as input for text-related commands.",
+      "parameters": {}
+    },
+    "TextWithShapes": {
+      "description": "Pairs an input text/textbox with its rendered CompoundShape, as returned by GetTextAsShapes.",
+      "parameters": {
+        "text": "The original TextOrTextBox input.",
+        "shapes": "CompoundShape rendering (polygons or stroke segments) of the text."
+      }
+    },
+    "UpdateBoardStackup": {
+      "description": "Replaces the board stackup with the contents of this message. Not yet implemented.",
+      "parameters": {
+        "board": "DocumentSpecifier identifying the target board.",
+        "stackup": "The new BoardStackup to install."
+      },
+      "returns": "BoardStackupResponse with the updated stackup in normalized form.",
+      "warnings": [
+        "Any existing content on layers removed by this call is deleted. This operation cannot be undone."
+      ]
+    },
+    "UpdateItems": {
+      "description": "Modifies existing items in a document; fields updated are controlled by the ItemHeader field mask.",
+      "parameters": {
+        "header": "ItemHeader specifying the target document and field mask.",
+        "items": "List of items (Any-wrapped) with updated values. Each item's KIID must identify an existing item."
+      },
+      "returns": "UpdateItemsResponse with per-item update status."
+    }
+  },
+  "_meta": {
+    "kicad_ref": "master",
+    "generator": "generate_tool_annotations.py"
+  }
+}
