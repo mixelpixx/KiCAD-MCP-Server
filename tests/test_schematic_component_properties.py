@@ -39,6 +39,41 @@ PLACED_RESISTOR_BLOCK = """\
   )
 """
 
+# Multi-line placed-symbol block in the format KiCad emits for symbols whose
+# library entry has been rescued / customised — these carry an extra
+# (lib_name "...") child BEFORE (lib_id "..."). Reproduced from a real user
+# schematic that exposed a regex bug where (symbol (lib_id "...")) was the
+# only matched form and `(symbol (lib_name "...") (lib_id "..."))` placed
+# components were invisible to get/edit/delete.
+PLACED_RESISTOR_BLOCK_LIBNAME_FIRST = """\
+  (symbol
+    (lib_name "RESISTOR_0603_4")
+    (lib_id "MF_Passives:RESISTOR_0603")
+    (at 132.08 44.45 90)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "bbbbbbbb-cccc-dddd-eeee-ffffffffffff")
+    (property "Reference" "R7"
+      (at 132.08 40.894 90)
+      (effects (font (size 1.143 1.143)))
+    )
+    (property "Value" "499k"
+      (at 132.08 42.418 90)
+      (effects (font (size 1.143 1.143)))
+    )
+    (property "Footprint" "MF_Passives_R0603"
+      (at 134.366 38.1 0)
+      (effects (font (size 1.27 1.27)) (hide yes))
+    )
+    (property "Datasheet" "~"
+      (at 132.08 44.45 0)
+      (effects (font (size 1.27 1.27)) (hide yes))
+    )
+  )
+"""
+
 
 def _make_test_schematic(tmp_dir: Path, extra_block: str = "") -> Path:
     """Copy empty.kicad_sch into tmp_dir, optionally appending a placed symbol block."""
@@ -657,3 +692,174 @@ class TestRemoveSchematicComponentProperty:
         )
         assert result["success"] is True
         assert "propertiesRemoved" not in result["updated"]
+
+
+# ---------------------------------------------------------------------------
+# Regression: KiCad emits (symbol (lib_name "...") (lib_id "...") ...) for
+# rescued / customised symbols. The original lookup regex required (lib_id
+# IMMEDIATELY after (symbol — silently failing on these blocks. All three
+# affected handlers (get / edit / set / remove) must find them.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestLibNameBeforeLibIdOrdering:
+    """Reproduces the real-world failure where R1 in a 90k-line user
+    schematic was reported as 'not found' because the placed (symbol ...)
+    block carried a (lib_name "...") child before (lib_id "...")."""
+
+    @pytest.fixture
+    def sch_with_libname(self, tmp_path: Any) -> Any:
+        return _make_test_schematic(tmp_path, PLACED_RESISTOR_BLOCK_LIBNAME_FIRST)
+
+    def _iface(self) -> Any:
+        from kicad_interface import KiCADInterface
+
+        return KiCADInterface()
+
+    def test_get_finds_symbol_with_libname_before_libid(self, sch_with_libname: Any) -> None:
+        iface = self._iface()
+        result = iface.handle_command(
+            "get_schematic_component",
+            {"schematicPath": str(sch_with_libname), "reference": "R7"},
+        )
+        assert result["success"] is True, result.get("message")
+        assert result["fields"]["Value"]["value"] == "499k"
+        assert result["fields"]["Footprint"]["value"] == "MF_Passives_R0603"
+        # Symbol position must come from the symbol's own (at), not a property
+        assert result["position"]["x"] == pytest.approx(132.08)
+        assert result["position"]["y"] == pytest.approx(44.45)
+
+    def test_set_property_works_on_symbol_with_libname_before_libid(
+        self, sch_with_libname: Any
+    ) -> None:
+        iface = self._iface()
+        result = iface.handle_command(
+            "set_schematic_component_property",
+            {
+                "schematicPath": str(sch_with_libname),
+                "reference": "R7",
+                "name": "Mfr",
+                "value": "Yageo",
+            },
+        )
+        assert result["success"] is True, result.get("message")
+        assert result["updated"]["propertiesAdded"]["Mfr"] == "Yageo"
+
+        verify = iface.handle_command(
+            "get_schematic_component",
+            {"schematicPath": str(sch_with_libname), "reference": "R7"},
+        )
+        assert verify["fields"]["Mfr"]["value"] == "Yageo"
+
+    def test_edit_with_properties_dict_works_on_libname_first_form(
+        self, sch_with_libname: Any
+    ) -> None:
+        iface = self._iface()
+        result = iface.handle_command(
+            "edit_schematic_component",
+            {
+                "schematicPath": str(sch_with_libname),
+                "reference": "R7",
+                "properties": {
+                    "MPN": "RC0603FR-07499KL",
+                    "Manufacturer": "Yageo",
+                    "Tolerance": "1%",
+                },
+            },
+        )
+        assert result["success"] is True, result.get("message")
+        assert set(result["updated"]["propertiesAdded"].keys()) == {
+            "MPN",
+            "Manufacturer",
+            "Tolerance",
+        }
+
+    def test_remove_property_works_on_libname_first_form(self, sch_with_libname: Any) -> None:
+        iface = self._iface()
+        # First add a property so we have something to remove
+        iface.handle_command(
+            "set_schematic_component_property",
+            {
+                "schematicPath": str(sch_with_libname),
+                "reference": "R7",
+                "name": "MPN",
+                "value": "RC0603FR-07499KL",
+            },
+        )
+        result = iface.handle_command(
+            "remove_schematic_component_property",
+            {
+                "schematicPath": str(sch_with_libname),
+                "reference": "R7",
+                "name": "MPN",
+            },
+        )
+        assert result["success"] is True, result.get("message")
+        assert "MPN" in result["updated"]["propertiesRemoved"]
+
+    def test_default_property_position_matches_symbol_origin_on_libname_first_form(
+        self, sch_with_libname: Any
+    ) -> None:
+        """Newly-added properties default to the parent symbol's (at) position.
+        This used to silently fall back to (0,0) on (lib_name)-first symbols
+        because the position-extraction regex required (symbol (lib_id ...) (at ...)).
+        """
+        iface = self._iface()
+        iface.handle_command(
+            "set_schematic_component_property",
+            {
+                "schematicPath": str(sch_with_libname),
+                "reference": "R7",
+                "name": "Mfr",
+                "value": "Yageo",
+            },
+        )
+        verify = iface.handle_command(
+            "get_schematic_component",
+            {"schematicPath": str(sch_with_libname), "reference": "R7"},
+        )
+        mfr = verify["fields"]["Mfr"]
+        assert mfr["x"] == pytest.approx(132.08)
+        assert mfr["y"] == pytest.approx(44.45)
+
+    def test_edit_builtin_fields_works_on_libname_first_form(self, sch_with_libname: Any) -> None:
+        """The pre-existing edit path (footprint / value / reference rewriting,
+        unrelated to custom properties) also relied on the buggy symbol-lookup
+        regex. Verify it now works on (lib_name)-first symbols too."""
+        iface = self._iface()
+        result = iface.handle_command(
+            "edit_schematic_component",
+            {
+                "schematicPath": str(sch_with_libname),
+                "reference": "R7",
+                "value": "1k",
+                "footprint": "Resistor_SMD:R_0603_1608Metric",
+            },
+        )
+        assert result["success"] is True, result.get("message")
+
+        verify = iface.handle_command(
+            "get_schematic_component",
+            {"schematicPath": str(sch_with_libname), "reference": "R7"},
+        )
+        assert verify["fields"]["Value"]["value"] == "1k"
+        assert verify["fields"]["Footprint"]["value"] == "Resistor_SMD:R_0603_1608Metric"
+
+    def test_delete_works_on_libname_first_form(self, sch_with_libname: Any) -> None:
+        """The pre-existing delete path used the same buggy symbol-lookup
+        regex and would silently report 'not found' for (lib_name)-first
+        symbols. Verify it can now locate and remove them."""
+        iface = self._iface()
+        result = iface.handle_command(
+            "delete_schematic_component",
+            {"schematicPath": str(sch_with_libname), "reference": "R7"},
+        )
+        assert result["success"] is True, result.get("message")
+
+        verify = iface.handle_command(
+            "get_schematic_component",
+            {"schematicPath": str(sch_with_libname), "reference": "R7"},
+        )
+        assert verify["success"] is False
+        assert "not found" in verify.get("message", "").lower()

@@ -4,6 +4,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- **Schematic symbol lookup**: `get_schematic_component`,
+  `edit_schematic_component`, `set_schematic_component_property`,
+  `remove_schematic_component_property`, and `delete_schematic_component`
+  no longer fail with `Component '<ref>' not found in schematic` when the
+  placed symbol uses KiCad's rescued / locally-customised serialisation
+  form `(symbol (lib_name "...") (lib_id "...") ...)`. The block-matching
+  regex now accepts any opening paren after `(symbol`, and the
+  parent-position lookup uses the first `(at ...)` inside the symbol
+  block, so newly-added properties anchor to the symbol origin instead of
+  silently falling back to `(0, 0)`. Added 7 regression tests reproducing
+  the failure on a real-world user schematic.
+
 ### New MCP Tools
 
 - `set_schematic_component_property` — Add or update a single custom property
