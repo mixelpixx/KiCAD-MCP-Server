@@ -3585,6 +3585,148 @@ class KiCADInterface:
             logger.error(f"Error generating netlist: {e}")
             return {"success": False, "message": str(e)}
 
+    def _build_hierarchical_pad_net_map(self, project_sch_path: str):
+        """Walk all .kicad_sch files in the project and build a {(ref, pin_num): net_name} map.
+
+        Handles hierarchical schematics by scanning every sub-sheet file.  Net names
+        from global_label / hierarchical_label / local label / power symbols are all
+        collected.  Wire connectivity is traced via BFS so labels not placed directly
+        on a pin endpoint still reach through wire segments.
+
+        Returns: (pad_net_map, net_names_set)
+        """
+        from collections import defaultdict
+        from pathlib import Path
+
+        from commands.pin_locator import PinLocator
+        from skip import Schematic
+
+        TOLERANCE = 0.5  # mm; schematic grid is 1.27 mm so 0.5 is safe
+
+        def snap(x, y):
+            """Round to 2 dp to use exact dict lookup instead of O(n²) scan."""
+            return (round(float(x), 2), round(float(y), 2))
+
+        def nearby_net(pt, point_net, tol=TOLERANCE):
+            """Return net name for the nearest occupied grid point, or None."""
+            x, y = pt
+            # Try exact snap first (fast path)
+            key = snap(x, y)
+            if key in point_net:
+                return point_net[key]
+            # Slow fallback for off-grid placements
+            for (lx, ly), name in point_net.items():
+                if abs(x - lx) < tol and abs(y - ly) < tol:
+                    return name
+            return None
+
+        project_dir = Path(project_sch_path).parent
+        pad_net_map: dict = {}
+        all_net_names: set = set()
+        pin_locator = PinLocator()
+
+        sch_files = sorted(project_dir.rglob("*.kicad_sch"))
+        logger.info(f"_build_hierarchical_pad_net_map: scanning {len(sch_files)} schematic files")
+
+        for sch_path in sch_files:
+            try:
+                sch = Schematic(str(sch_path))
+            except Exception as e:
+                logger.warning(f"Could not load {sch_path}: {e}")
+                continue
+
+            # ── 1. Collect explicit label positions → net name ──────────────
+            point_net: dict = {}  # snap(x,y) -> net_name
+
+            for attr in ("label", "global_label", "hierarchical_label"):
+                for lbl in getattr(sch, attr, None) or []:
+                    try:
+                        pos = lbl.at.value
+                        name = lbl.value
+                        if name:
+                            k = snap(pos[0], pos[1])
+                            point_net[k] = name
+                            all_net_names.add(name)
+                    except Exception:
+                        pass
+
+            # Power symbols (#PWR / #FLG): value property IS the net name; use pin 1 pos
+            for sym in getattr(sch, "symbol", None) or []:
+                try:
+                    ref = sym.property.Reference.value
+                    if not (ref.startswith("#PWR") or ref.startswith("#FLG")):
+                        continue
+                    net_name = sym.property.Value.value
+                    if not net_name:
+                        continue
+                    all_pins = pin_locator.get_all_symbol_pins(sch_path, ref)
+                    for _pin_num, (px, py) in all_pins.items():
+                        k = snap(px, py)
+                        point_net[k] = net_name
+                        all_net_names.add(net_name)
+                except Exception:
+                    pass
+
+            # ── 2. Build wire adjacency and BFS-propagate net names ──────────
+            wire_segments = []
+            for wire in getattr(sch, "wire", None) or []:
+                try:
+                    pts = []
+                    for pt in wire.pts.xy:
+                        pts.append(snap(pt.value[0], pt.value[1]))
+                    if len(pts) >= 2:
+                        wire_segments.append(pts)
+                except Exception:
+                    pass
+
+            # Adjacency: connect endpoints of different segments that share a grid point
+            point_adj: dict = defaultdict(set)
+            for seg in wire_segments:
+                # Connect consecutive points within the segment
+                for i in range(len(seg) - 1):
+                    point_adj[seg[i]].add(seg[i + 1])
+                    point_adj[seg[i + 1]].add(seg[i])
+
+            # All unique wire points
+            all_wire_pts = set()
+            for seg in wire_segments:
+                all_wire_pts.update(seg)
+
+            # BFS: propagate known net names through wire connections
+            queue = [pt for pt in all_wire_pts if pt in point_net]
+            visited = set(queue)
+            while queue:
+                pt = queue.pop()
+                net = point_net[pt]
+                for neighbor in point_adj[pt]:
+                    if neighbor not in point_net:
+                        point_net[neighbor] = net
+                        all_net_names.add(net)
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        queue.append(neighbor)
+
+            # ── 3. Match component pin positions to net names ────────────────
+            for sym in getattr(sch, "symbol", None) or []:
+                try:
+                    ref = sym.property.Reference.value
+                    if ref.startswith("#"):
+                        continue
+                except Exception:
+                    continue
+
+                pin_positions = pin_locator.get_all_symbol_pins(sch_path, ref)
+                for pin_num, (px, py) in pin_positions.items():
+                    net = nearby_net((px, py), point_net)
+                    if net:
+                        pad_net_map[(ref, pin_num)] = net
+
+        logger.info(
+            f"_build_hierarchical_pad_net_map: {len(pad_net_map)} pin→net assignments, "
+            f"{len(all_net_names)} unique nets"
+        )
+        return pad_net_map, all_net_names
+
     def _handle_sync_schematic_to_board(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Sync schematic netlist to PCB board (equivalent to KiCAD F8 'Update PCB from Schematic').
         Reads net connections from the schematic and assigns them to the matching pads in the PCB.
@@ -3629,24 +3771,8 @@ class KiCADInterface:
                     "message": f"Schematic not found. Provide schematicPath. Tried: {schematic_path}",
                 }
 
-            # Generate netlist from schematic
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
-
-            netlist = ConnectionManager.generate_netlist(schematic, schematic_path=schematic_path)
-
-            # Build (reference, pad_number) -> net_name map
-            pad_net_map = {}  # {(ref, pin_str): net_name}
-            net_names = set()
-            for net_entry in netlist.get("nets", []):
-                net_name = net_entry["name"]
-                net_names.add(net_name)
-                for conn in net_entry.get("connections", []):
-                    ref = conn.get("component", "")
-                    pin = str(conn.get("pin", ""))
-                    if ref and pin and pin != "unknown":
-                        pad_net_map[(ref, pin)] = net_name
+            # Build hierarchical pad→net map (walks all sub-sheets)
+            pad_net_map, net_names = self._build_hierarchical_pad_net_map(schematic_path)
 
             # Add all nets to board
             netinfo = board.GetNetInfo()
