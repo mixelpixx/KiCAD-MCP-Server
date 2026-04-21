@@ -2,6 +2,63 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
+## [Unreleased]
+
+### New MCP Tools
+
+- `set_schematic_component_property` — Add or update a single custom property
+  (BOM / sourcing field) on a placed schematic symbol. Convenience wrapper
+  around `edit_schematic_component` for the common case of attaching one MPN /
+  Manufacturer / DigiKey_PN / LCSC / JLCPCB_PN / Voltage / Tolerance /
+  Dielectric value at a time. Newly created properties default to hidden so
+  they do not clutter the schematic canvas.
+
+- `remove_schematic_component_property` — Delete a custom property from a
+  placed schematic symbol. The four built-in fields (Reference, Value,
+  Footprint, Datasheet) are protected and cannot be removed; clear them by
+  setting their value to `""` via `edit_schematic_component` instead.
+
+### Tool Enhancements
+
+- `edit_schematic_component`: extended with two new optional parameters that
+  promote arbitrary custom properties to first-class citizens:
+  - **`properties`** — map of property name to either a string value or a full
+    spec object `{ value, x?, y?, angle?, hide?, fontSize? }`. Adds the
+    property if it does not yet exist on the symbol, otherwise updates the
+    existing value (and optionally its label position / visibility). Lets a
+    single tool call attach an entire BOM / sourcing payload to a component:
+    `properties: { MPN: "RC0603FR-0710KL", Manufacturer: "Yageo", Tolerance: "1%" }`.
+  - **`removeProperties`** — list of custom property names to delete in the
+    same call.
+  - String values written through any of the property paths are now properly
+    backslash-escaped so descriptions containing `"` or `\` no longer
+    corrupt the .kicad_sch file.
+
+- `get_schematic_component`: clarified description — it already returns every
+  field on the symbol (built-in + custom). The tool description now spells
+  this out explicitly so agents know they can use it to inspect MPN,
+  Manufacturer, Distributor PN and other BOM fields without a separate call.
+
+### New MCP Prompt
+
+- `component_sourcing_properties` — Guides the LLM through attaching BOM and
+  sourcing metadata (MPN, Manufacturer, distributor part numbers, parametric
+  fields like Voltage / Tolerance / Dielectric) to schematic components. Lists
+  the conventional property names recognised by downstream BOM tooling and the
+  recommended call sequence (`list_schematic_components` →
+  `get_schematic_component` → `set_schematic_component_property` /
+  `edit_schematic_component`).
+
+### Tests
+
+- `tests/test_schematic_component_properties.py`: 32 new tests covering custom
+  property add / update / remove (single + batched), full spec dicts, position
+  defaults, `(hide yes)` defaulting, protected built-in field rejection,
+  no-op removal, special-character escaping, UUID preservation, and the two
+  new convenience tools.
+
+---
+
 ## [2.2.3] - 2026-03-11
 
 ### Merged: PR #57 (Kletternaut/demo/rpiCSI-videotest → main)

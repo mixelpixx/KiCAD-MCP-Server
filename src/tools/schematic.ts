@@ -139,16 +139,29 @@ To remove a footprint from a PCB, use delete_component instead.`,
     },
   );
 
-  // Edit component properties in schematic (footprint, value, reference)
+  // Edit component properties in schematic (footprint, value, reference, custom fields)
   server.tool(
     "edit_schematic_component",
     `Update properties of a placed symbol in a KiCAD schematic (.kicad_sch) in-place.
 
-Use this tool to assign or update a footprint, change the value, or rename the reference
-of an already-placed component. This is more efficient than delete + re-add because it
-preserves the component's position and UUID.
+Use this tool to:
+  • assign or update the footprint, value, or reference designator,
+  • reposition field labels (Reference / Value text),
+  • add, update, or remove ARBITRARY CUSTOM PROPERTIES used by BOM and sourcing
+    workflows: MPN, Manufacturer, Manufacturer_PN, Distributor, DigiKey, DigiKey_PN,
+    Mouser_PN, LCSC, JLCPCB_PN, Voltage, Tolerance, Power, Dielectric, etc.
 
-Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_component.`,
+Custom properties are first-class — they survive ERC, are exported by export_bom,
+and are picked up by the JLCPCB / Digi-Key BOM tooling. Newly-added properties
+default to hidden so they do not clutter the schematic canvas.
+
+Multiple updates can be batched in a single call: pass any combination of
+\`footprint\`, \`value\`, \`newReference\`, \`fieldPositions\`, \`properties\`,
+and \`removeProperties\` together.
+
+This is more efficient than delete + re-add because it preserves the component's
+position and UUID. Operates on .kicad_sch files only — to modify a PCB footprint
+use edit_component instead.`,
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       reference: z.string().describe("Current reference designator of the component (e.g. R1, U3)"),
@@ -173,6 +186,45 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
         .describe(
           'Reposition field labels: map of field name to {x, y, angle} (e.g. {"Reference": {"x": 12.5, "y": 17.0}})',
         ),
+      properties: z
+        .record(
+          z.union([
+            z.string(),
+            z.object({
+              value: z.string().describe("Property value to write"),
+              x: z.number().optional().describe("Label X position in mm (default: component X)"),
+              y: z.number().optional().describe("Label Y position in mm (default: component Y)"),
+              angle: z.number().optional().describe("Label rotation in degrees (default: 0)"),
+              hide: z
+                .boolean()
+                .optional()
+                .describe(
+                  "Whether to hide the property text on the schematic. Defaults to true for newly-created custom properties (BOM/sourcing data is normally hidden).",
+                ),
+              fontSize: z
+                .number()
+                .optional()
+                .describe("Font size in mm for the label (default: 1.27)"),
+            }),
+          ]),
+        )
+        .optional()
+        .describe(
+          "Add or update component properties. Map of property name to either a string value (sensible defaults) " +
+            "or a full spec object {value, x?, y?, angle?, hide?, fontSize?}. Use this to attach BOM and sourcing " +
+            "metadata such as MPN, Manufacturer, Distributor, DigiKey, LCSC, JLCPCB_PN, Voltage, Tolerance, " +
+            "Dielectric, Power, etc. Built-in fields (Reference, Value, Footprint, Datasheet) can also be set " +
+            "this way but the dedicated parameters above are clearer. Example: " +
+            '{"MPN": "RC0603FR-0710KL", "Manufacturer": "Yageo", "Tolerance": "1%"}',
+        ),
+      removeProperties: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "List of custom property names to delete from this component. The built-in fields " +
+            "Reference, Value, Footprint, and Datasheet cannot be removed (clear them by setting " +
+            'value to "" instead). Example: ["OldMPN", "Distributor_PN"]',
+        ),
     },
     async (args: {
       schematicPath: string;
@@ -181,17 +233,41 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
       value?: string;
       newReference?: string;
       fieldPositions?: Record<string, { x: number; y: number; angle?: number }>;
+      properties?: Record<
+        string,
+        | string
+        | {
+            value: string;
+            x?: number;
+            y?: number;
+            angle?: number;
+            hide?: boolean;
+            fontSize?: number;
+          }
+      >;
+      removeProperties?: string[];
     }) => {
       const result = await callKicadScript("edit_schematic_component", args);
       if (result.success) {
-        const changes = Object.entries(result.updated ?? {})
-          .map(([k, v]) => `${k}=${v}`)
-          .join(", ");
+        const updated = result.updated ?? {};
+        const summaryParts: string[] = [];
+        const simpleKeys = ["footprint", "value", "reference"] as const;
+        for (const k of simpleKeys) {
+          if (updated[k] !== undefined) summaryParts.push(`${k}=${updated[k]}`);
+        }
+        if (updated.fieldPositions)
+          summaryParts.push(`fieldPositions=${Object.keys(updated.fieldPositions).join(",")}`);
+        if (updated.propertiesAdded)
+          summaryParts.push(`added=${Object.keys(updated.propertiesAdded).join(",")}`);
+        if (updated.propertiesUpdated)
+          summaryParts.push(`updated=${Object.keys(updated.propertiesUpdated).join(",")}`);
+        if (updated.propertiesRemoved)
+          summaryParts.push(`removed=${updated.propertiesRemoved.join(",")}`);
         return {
           content: [
             {
               type: "text" as const,
-              text: `Successfully updated ${args.reference}: ${changes}`,
+              text: `Successfully updated ${args.reference}: ${summaryParts.join("; ") || "(no-op)"}`,
             },
           ],
         };
@@ -207,10 +283,146 @@ Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_comp
     },
   );
 
+  // ------------------------------------------------------------------
+  // Single-property convenience tools (delegate to edit_schematic_component)
+  // ------------------------------------------------------------------
+
+  // Set a single custom property on a placed symbol
+  server.tool(
+    "set_schematic_component_property",
+    `Add or update a single custom property on a placed schematic symbol.
+
+This is a focused convenience wrapper around edit_schematic_component for the very
+common case of attaching one BOM / sourcing field at a time. The property is
+created if it does not already exist on the component.
+
+Typical custom properties:
+  • MPN, Manufacturer, Manufacturer_PN — manufacturer part number metadata
+  • DigiKey, DigiKey_PN, Mouser_PN, LCSC, JLCPCB_PN — distributor part numbers
+  • Voltage, Tolerance, Power, Dielectric, Temperature_Coefficient — passive parameters
+  • Description, Notes — free-form documentation
+  • Any custom field your BOM exporter expects.
+
+These properties are written into the .kicad_sch file as standard KiCad property
+records, are exported by export_bom, and are picked up by the JLCPCB and Digi-Key
+sourcing tools. Newly-created properties default to hidden — set hide=false to
+display the value on the schematic canvas.
+
+For batch updates of multiple properties at once, use edit_schematic_component
+with the \`properties\` parameter instead.`,
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      reference: z.string().describe("Reference designator of the component (e.g. R1, U3)"),
+      name: z
+        .string()
+        .describe(
+          "Property name (e.g. 'MPN', 'Manufacturer', 'DigiKey_PN', 'Voltage', 'Dielectric')",
+        ),
+      value: z.string().describe("Property value to write (use empty string to clear)"),
+      x: z.number().optional().describe("Label X position in mm (default: component X)"),
+      y: z.number().optional().describe("Label Y position in mm (default: component Y)"),
+      angle: z.number().optional().describe("Label rotation in degrees (default: 0)"),
+      hide: z
+        .boolean()
+        .optional()
+        .describe(
+          "Hide the property text on the schematic canvas. Defaults to true for newly-created custom properties.",
+        ),
+      fontSize: z.number().optional().describe("Font size in mm for the label (default: 1.27)"),
+    },
+    async (args: {
+      schematicPath: string;
+      reference: string;
+      name: string;
+      value: string;
+      x?: number;
+      y?: number;
+      angle?: number;
+      hide?: boolean;
+      fontSize?: number;
+    }) => {
+      const result = await callKicadScript("set_schematic_component_property", args);
+      if (result.success) {
+        const updated = result.updated ?? {};
+        const action = updated.propertiesAdded?.[args.name] !== undefined ? "added" : "updated";
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Successfully ${action} property ${args.name}="${args.value}" on ${args.reference}`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Failed to set property '${args.name}' on ${args.reference}: ${result.message || "Unknown error"}`,
+          },
+        ],
+      };
+    },
+  );
+
+  // Remove a single custom property from a placed symbol
+  server.tool(
+    "remove_schematic_component_property",
+    `Remove a single custom property from a placed schematic symbol.
+
+Built-in fields (Reference, Value, Footprint, Datasheet) cannot be removed —
+KiCad requires them on every symbol. To clear a built-in field, use
+edit_schematic_component and set its value to an empty string.`,
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      reference: z.string().describe("Reference designator of the component (e.g. R1, U3)"),
+      name: z
+        .string()
+        .describe("Custom property name to remove (e.g. 'MPN', 'Distributor_PN', 'OldField')"),
+    },
+    async (args: { schematicPath: string; reference: string; name: string }) => {
+      const result = await callKicadScript("remove_schematic_component_property", args);
+      if (result.success) {
+        const removed = result.updated?.propertiesRemoved ?? [];
+        if (removed.includes(args.name)) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Successfully removed property '${args.name}' from ${args.reference}`,
+              },
+            ],
+          };
+        }
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Property '${args.name}' was not present on ${args.reference} (no change made)`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Failed to remove property '${args.name}' from ${args.reference}: ${result.message || "Unknown error"}`,
+          },
+        ],
+      };
+    },
+  );
+
   // Get component properties and field positions from schematic
   server.tool(
     "get_schematic_component",
-    "Get full component info from a schematic: position, field values, and each field's label position (at x/y/angle). Use this to inspect or prepare repositioning of Reference/Value labels.",
+    "Get full component info from a schematic: position, every field's value, and each field's " +
+      "label position (at x/y/angle). Returns ALL properties — both built-in fields " +
+      "(Reference, Value, Footprint, Datasheet) and any custom BOM/sourcing properties present " +
+      "on the symbol (MPN, Manufacturer, DigiKey_PN, LCSC, Voltage, Tolerance, Dielectric, etc.). " +
+      "Use this before edit_schematic_component / set_schematic_component_property to inspect " +
+      "what is currently set, or to plan a label repositioning.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       reference: z.string().describe("Component reference designator (e.g. R1, U1)"),

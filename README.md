@@ -318,8 +318,10 @@ Complete schematic workflow with dynamic symbol loading (~10,000 symbols) and in
 
 - `add_schematic_component` - Place symbols from any KiCad library
 - `delete_schematic_component` - Remove component
-- `edit_schematic_component` - Edit properties and fields
-- `get_schematic_component` - Get component info with field positions
+- `edit_schematic_component` - Edit footprint, value, reference, label positions, and **arbitrary custom properties** (MPN, Manufacturer, DigiKey_PN, LCSC, Voltage, Tolerance, Dielectric, …) in one batched call
+- `set_schematic_component_property` - Add or update a single custom property (BOM/sourcing field) on a component
+- `remove_schematic_component_property` - Delete a single custom property from a component
+- `get_schematic_component` - Inspect every field on a component (built-in + custom) including label positions
 - `list_schematic_components` - List all components
 - `move_schematic_component` - Reposition component
 - `rotate_schematic_component` - Rotate component
