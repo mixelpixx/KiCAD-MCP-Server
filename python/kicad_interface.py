@@ -2286,13 +2286,15 @@ class KiCADInterface:
         """List all nets in a schematic with their connections"""
         logger.info("Listing schematic nets")
         try:
-            from pathlib import Path
-
             from commands.wire_connectivity import (
                 _build_adjacency,
+                _discover_sub_sheets,
+                _load_sexp,
+                _parse_labels_sexp,
                 _parse_virtual_connections,
                 _parse_wires,
                 count_pins_on_net,
+                get_connections_for_net,
             )
 
             schematic_path = params.get("schematicPath")
@@ -2303,16 +2305,39 @@ class KiCADInterface:
             if not schematic:
                 return {"success": False, "message": "Failed to load schematic"}
 
-            # Get all net names from labels and global labels
-            net_names = set()
-            if hasattr(schematic, "label"):
-                for label in schematic.label:
-                    if hasattr(label, "value"):
-                        net_names.add(label.value)
-            if hasattr(schematic, "global_label"):
-                for label in schematic.global_label:
-                    if hasattr(label, "value"):
-                        net_names.add(label.value)
+            # Collect net names from the top-level sheet using sexpdata.
+            # Falls back to kicad-skip's label collections when the file
+            # cannot be read (e.g. mocked schematics in unit tests).
+            net_names: set = set()
+            sexp_loaded = False
+            try:
+                sexp = _load_sexp(schematic_path)
+                sexp_loaded = True
+                _, label_to_points = _parse_labels_sexp(sexp)
+                net_names.update(label_to_points.keys())
+            except Exception as e:
+                logger.debug(
+                    f"Could not parse labels from {schematic_path} via sexp ({e}); "
+                    "falling back to kicad-skip label collections"
+                )
+                for attr in ("label", "global_label"):
+                    if not hasattr(schematic, attr):
+                        continue
+                    for label in getattr(schematic, attr):
+                        if hasattr(label, "value"):
+                            net_names.add(label.value)
+
+            # Collect net names from all sub-sheets (only when the parent
+            # sheet was readable; fake/mock paths skip recursion entirely).
+            if sexp_loaded:
+                sub_sheets = _discover_sub_sheets(schematic_path)
+                for sub_path in sub_sheets:
+                    try:
+                        sub_sexp = _load_sexp(sub_path)
+                        _, sub_label_to_points = _parse_labels_sexp(sub_sexp)
+                        net_names.update(sub_label_to_points.keys())
+                    except Exception as e:
+                        logger.warning(f"Error reading sub-sheet {sub_path}: {e}")
 
             # Pre-build shared wire graph structures for efficiency
             all_wires = _parse_wires(schematic)
@@ -2324,9 +2349,7 @@ class KiCADInterface:
 
             nets = []
             for net_name in sorted(net_names):
-                connections = ConnectionManager.get_net_connections(
-                    schematic, net_name, Path(schematic_path)
-                )
+                connections = get_connections_for_net(schematic, schematic_path, net_name)
                 pin_count = count_pins_on_net(
                     schematic,
                     schematic_path,
@@ -2931,6 +2954,8 @@ class KiCADInterface:
         """Get all connections for a named net"""
         logger.info("Getting net connections")
         try:
+            from commands.wire_connectivity import get_connections_for_net
+
             schematic_path = params.get("schematicPath")
             net_name = params.get("netName")
 
@@ -2941,7 +2966,7 @@ class KiCADInterface:
             if not schematic:
                 return {"success": False, "message": "Failed to load schematic"}
 
-            connections = ConnectionManager.get_net_connections(schematic, net_name)
+            connections = get_connections_for_net(schematic, schematic_path, net_name)
             return {"success": True, "connections": connections}
         except Exception as e:
             logger.error(f"Error getting net connections: {str(e)}")

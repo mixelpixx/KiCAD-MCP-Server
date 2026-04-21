@@ -420,7 +420,9 @@ class ConnectionManager:
             }
         """
         try:
-            netlist = {"nets": [], "components": []}
+            from commands.wire_connectivity import get_connections_for_net
+
+            netlist: Dict[str, Any] = {"nets": [], "components": []}
 
             # Gather all components
             if hasattr(schematic, "symbol"):
@@ -438,20 +440,19 @@ class ConnectionManager:
                     }
                     netlist["components"].append(component_info)
 
-            # Gather all nets from labels
-            if hasattr(schematic, "label"):
-                net_names = set()
-                for label in schematic.label:
-                    if hasattr(label, "value"):
-                        net_names.add(label.value)
+            # Gather all nets from labels and global labels
+            net_names: set = set()
+            for attr_name in ("label", "global_label"):
+                if hasattr(schematic, attr_name):
+                    for label in getattr(schematic, attr_name):
+                        if hasattr(label, "value"):
+                            net_names.add(label.value)
 
-                # For each net, get connections
-                for net_name in net_names:
-                    connections = ConnectionManager.get_net_connections(
-                        schematic, net_name, schematic_path
-                    )
-                    if connections:
-                        netlist["nets"].append({"name": net_name, "connections": connections})
+            sch_path_str = str(schematic_path) if schematic_path else ""
+            for net_name in net_names:
+                connections = get_connections_for_net(schematic, sch_path_str, net_name)
+                if connections:
+                    netlist["nets"].append({"name": net_name, "connections": connections})
 
             logger.info(
                 f"Generated netlist with {len(netlist['nets'])} nets and {len(netlist['components'])} components"

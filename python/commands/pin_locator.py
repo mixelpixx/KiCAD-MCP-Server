@@ -126,16 +126,42 @@ class PinLocator:
                 logger.error("No lib_symbols section found in schematic")
                 return {}
 
-            # Find the specific symbol definition
-            for item in lib_symbols[1:]:  # Skip 'lib_symbols' itself
-                if isinstance(item, list) and len(item) > 1 and item[0] == Symbol("symbol"):
-                    symbol_name = str(item[1]).strip('"')
-                    if symbol_name == lib_id:
-                        # Found the symbol, parse pins
-                        pins = self.parse_symbol_definition(item)
-                        self.pin_definition_cache[cache_key] = pins
-                        logger.info(f"Extracted {len(pins)} pins from {lib_id}")
-                        return pins
+            # Find the specific symbol definition.
+            # KiCad lib_symbols may use a different name than the instance lib_id:
+            #   instance lib_id:  "stat-tis-custom:BAT_18650"
+            #   lib_symbols name: "BAT_18650_3"  (prefix stripped, unit suffix added)
+            # Strategy: exact match first, then bare-name prefix match.
+            bare_name = lib_id.split(":")[-1] if ":" in lib_id else lib_id
+
+            best_match = None
+            for item in lib_symbols[1:]:
+                if not (isinstance(item, list) and len(item) > 1 and item[0] == Symbol("symbol")):
+                    continue
+                symbol_name = str(item[1]).strip('"')
+                if symbol_name == lib_id:
+                    best_match = item
+                    break
+                if best_match is None:
+                    sn_bare = symbol_name.split(":")[-1] if ":" in symbol_name else symbol_name
+                    if sn_bare == bare_name or (
+                        sn_bare.startswith(bare_name)
+                        and len(sn_bare) > len(bare_name)
+                        and sn_bare[len(bare_name)] == "_"
+                        and sn_bare[len(bare_name) + 1 :].isdigit()
+                    ):
+                        best_match = item
+
+            if best_match is not None:
+                matched_name = str(best_match[1]).strip('"')
+                pins = self.parse_symbol_definition(best_match)
+                self.pin_definition_cache[cache_key] = pins
+                if matched_name != lib_id:
+                    logger.info(
+                        f"Matched {lib_id} → lib_symbols '{matched_name}' ({len(pins)} pins)"
+                    )
+                else:
+                    logger.info(f"Extracted {len(pins)} pins from {lib_id}")
+                return pins
 
             logger.warning(f"Symbol {lib_id} not found in lib_symbols")
             return {}
@@ -228,8 +254,26 @@ class PinLocator:
                 else:
                     return None
 
-            # Pin definition angle + symbol rotation = absolute outward direction
+            mirror_x = False
+            mirror_y = False
+            if hasattr(target_symbol, "mirror"):
+                mirror_val = (
+                    str(target_symbol.mirror.value)
+                    if hasattr(target_symbol.mirror, "value")
+                    else ""
+                )
+                if mirror_val == "x":
+                    mirror_x = True
+                elif mirror_val == "y":
+                    mirror_y = True
+
             pin_def_angle = pins[pin_number].get("angle", 0)
+            # Y-negate flips the angle across the x-axis
+            pin_def_angle = (360 - pin_def_angle) % 360
+            if mirror_x:
+                pin_def_angle = (360 - pin_def_angle) % 360
+            if mirror_y:
+                pin_def_angle = (180 - pin_def_angle) % 360
             absolute_angle = (pin_def_angle + symbol_rotation) % 360
             return absolute_angle
 
@@ -270,11 +314,24 @@ class PinLocator:
                 logger.error(f"Symbol {symbol_reference} not found in schematic")
                 return None
 
-            # Get symbol position and rotation
+            # Get symbol position, rotation, and mirror state
             symbol_at = target_symbol.at.value
             symbol_x = float(symbol_at[0])
             symbol_y = float(symbol_at[1])
             symbol_rotation = float(symbol_at[2]) if len(symbol_at) > 2 else 0.0
+
+            mirror_x = False
+            mirror_y = False
+            if hasattr(target_symbol, "mirror"):
+                mirror_val = (
+                    str(target_symbol.mirror.value)
+                    if hasattr(target_symbol.mirror, "value")
+                    else ""
+                )
+                if mirror_val == "x":
+                    mirror_x = True
+                elif mirror_val == "y":
+                    mirror_y = True
 
             # Get symbol lib_id
             lib_id = target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
@@ -283,7 +340,8 @@ class PinLocator:
                 return None
 
             logger.debug(
-                f"Symbol {symbol_reference}: pos=({symbol_x}, {symbol_y}), rot={symbol_rotation}, lib_id={lib_id}"
+                f"Symbol {symbol_reference}: pos=({symbol_x}, {symbol_y}), rot={symbol_rotation}, "
+                f"mirror_x={mirror_x}, mirror_y={mirror_y}, lib_id={lib_id}"
             )
 
             # Get pin definitions for this symbol
@@ -319,10 +377,21 @@ class PinLocator:
 
             logger.debug(f"Pin {pin_number} relative position: ({pin_rel_x}, {pin_rel_y})")
 
+            # lib_symbols uses y-up; schematic uses y-down
+            pin_rel_y = -pin_rel_y
+
+            # Mirror in local coords after y-negate (KiCad transform order)
+            # mirror_x = flip across X axis → negate y
+            # mirror_y = flip across Y axis → negate x
+            if mirror_x:
+                pin_rel_y = -pin_rel_y
+            if mirror_y:
+                pin_rel_x = -pin_rel_x
+
             # Apply symbol rotation to pin position
             if symbol_rotation != 0:
                 pin_rel_x, pin_rel_y = self.rotate_point(pin_rel_x, pin_rel_y, symbol_rotation)
-                logger.debug(f"After rotation {symbol_rotation}°: ({pin_rel_x}, {pin_rel_y})")
+                logger.debug(f"After transform (y-neg/mirror/rot): ({pin_rel_x}, {pin_rel_y})")
 
             # Calculate absolute position
             abs_x = symbol_x + pin_rel_x
