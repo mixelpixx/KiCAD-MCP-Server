@@ -196,6 +196,78 @@ Based on the available information, suggest likely causes of the issue and recom
   );
 
   // ------------------------------------------------------
+  // Component Sourcing / BOM Properties Prompt
+  // ------------------------------------------------------
+  server.prompt(
+    "component_sourcing_properties",
+    {
+      component_info: z
+        .string()
+        .describe(
+          "Description of the component(s) being sourced and which BOM fields need to be attached " +
+            "(MPN, distributor part numbers, manufacturer, etc.).",
+        ),
+    },
+    () => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `You are attaching sourcing and BOM metadata to schematic components. Here is the situation:
+
+{{component_info}}
+
+KiCad symbols carry arbitrary key/value properties on top of the four built-in fields
+(Reference, Value, Footprint, Datasheet). These custom properties are written into
+the .kicad_sch file, are exported by export_bom, and are picked up by JLCPCB / Digi-Key
+sourcing tooling.
+
+Conventional property names (use these so downstream BOM tools recognise them):
+
+  • MPN                — Manufacturer Part Number (canonical)
+  • Manufacturer       — Manufacturer name (e.g. "Yageo", "Murata")
+  • Manufacturer_PN    — Alias some BOM templates expect; mirror MPN if unsure
+  • DigiKey, DigiKey_PN — Digi-Key catalogue number
+  • Mouser_PN          — Mouser catalogue number
+  • LCSC, JLCPCB_PN    — JLCPCB / LCSC part number (used by JLCPCB assembly)
+  • Distributor, Distributor_PN — Generic fallback fields
+  • Voltage            — Working voltage rating (e.g. "50V")
+  • Tolerance          — Tolerance (e.g. "1%", "±5%")
+  • Power              — Power rating (e.g. "0.1W", "1/4W")
+  • Dielectric         — Capacitor dielectric (e.g. "X7R", "C0G", "Y5V")
+  • Temperature_Coefficient — Resistor TC (e.g. "100ppm/°C")
+  • Description        — Free-form human-readable description
+
+Tools to use, in this order:
+
+  1. \`list_schematic_components\` — confirm which components need updating.
+  2. \`get_schematic_component\` — inspect what properties are already present
+     (returns ALL property fields, including custom ones).
+  3. \`set_schematic_component_property\` — attach or update one property at a time
+     when working on a single component.
+  4. \`edit_schematic_component\` with the \`properties\` parameter — batch-update
+     many properties on the same component in a single call:
+       properties: { MPN: "RC0603FR-0710KL", Manufacturer: "Yageo", Tolerance: "1%" }
+  5. \`remove_schematic_component_property\` — delete an obsolete custom field.
+
+Hidden vs visible:
+  • Newly-created custom properties default to hidden — they appear in BOM exports
+    but do NOT clutter the schematic canvas. This is the normal convention for
+    sourcing metadata.
+  • If a value should be displayed (e.g. you want the MPN visible next to the
+    symbol), pass \`hide: false\` and a sensible \`x\`/\`y\` position.
+
+Recommend the right set of properties for the components in the brief, generate
+the actual tool calls (with concrete values), and explain any sourcing trade-offs
+or substitutions you propose.`,
+          },
+        },
+      ],
+    }),
+  );
+
+  // ------------------------------------------------------
   // Component Value Calculation Prompt
   // ------------------------------------------------------
   server.prompt(
