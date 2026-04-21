@@ -725,6 +725,7 @@ class KiCADInterface:
             footprint = component.get("footprint", "")
             x = component.get("x", 0)
             y = component.get("y", 0)
+            unit = component.get("unit", 1)
 
             # Derive project path from schematic path for project-local library resolution
             schematic_file = Path(schematic_path)
@@ -740,6 +741,7 @@ class KiCADInterface:
                 footprint=footprint,
                 x=x,
                 y=y,
+                unit=unit,
                 project_path=derived_project_path,
             )
 
