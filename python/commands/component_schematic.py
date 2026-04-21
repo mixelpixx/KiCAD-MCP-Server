@@ -255,8 +255,9 @@ class ComponentManager:
             # Generate new UUID
             new_symbol.uuid.value = str(uuid.uuid4())
 
-            # Append to schematic
-            schematic.symbol.append(new_symbol)
+            # NOTE: clone() already inserts the raw element into the schematic tree.
+            # Calling schematic.symbol.append() again causes NamedCollection to detect
+            # the reference as "taken" and rename it to "R1_" (trailing underscore).
             logger.info(f"Successfully added component {reference} to schematic")
 
             return new_symbol
