@@ -69,7 +69,7 @@ npm run build
 - [Changelog](../CHANGELOG.md)
 
 ### Community
-
+- [Forum](https://forum.orchis.ai) — Official Forum for discussions, help, and troubleshooting
 - [Discussions](https://github.com/mixelpixx/KiCAD-MCP-Server/discussions) — questions, ideas, showcase
 - [Issues](https://github.com/mixelpixx/KiCAD-MCP-Server/issues) — bugs and feature requests
 - [Contributing](../CONTRIBUTING.md)
