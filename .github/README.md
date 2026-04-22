@@ -16,9 +16,11 @@
 
 </div>
 
+<div align="center">
 ---
 ## Our new forum is up: https://forum.orchis.ai/
 ---
+</div>
 
 ## English
 
