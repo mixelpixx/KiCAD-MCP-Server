@@ -17,6 +17,8 @@
 </div>
 
 ---
+## Our new forum is up: https://forum.orchis.ai/
+---
 
 ## English
 
