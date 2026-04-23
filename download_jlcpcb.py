@@ -39,7 +39,7 @@ def curl_download(url: str, dest: Path) -> bool:
     return result.returncode == 0
 
 
-def download_files():
+def download_files() -> bool:
     """Download split archive volumes (z01..zNN) then cache.zip, stopping volumes at 404 or MAX_PARTS."""
     print("Downloading jlcparts database (~421MB)...")
 
@@ -69,7 +69,7 @@ def download_files():
     return True
 
 
-def extract_database():
+def extract_database() -> bool:
     """Extract the split 7z archive to get cache.sqlite3."""
     cache_sqlite = CACHE_DIR / "cache.sqlite3"
     if cache_sqlite.exists() and cache_sqlite.stat().st_size > 100_000_000:
@@ -97,7 +97,7 @@ def extract_database():
     return False
 
 
-def convert_to_mcp_format():
+def convert_to_mcp_format() -> bool:
     """Convert jlcparts cache.sqlite3 to the MCP server's expected format."""
     source = CACHE_DIR / "cache.sqlite3"
     if not source.exists():
@@ -289,7 +289,7 @@ def convert_to_mcp_format():
     return True
 
 
-def main():
+def main() -> None:
     print("=" * 60)
     print("JLCPCB Parts Database Downloader (jlcparts method)")
     print("=" * 60)
