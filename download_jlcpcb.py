@@ -25,7 +25,7 @@ CACHE_DIR = DATA_DIR / "jlcparts_cache"
 CACHE_DIR.mkdir(exist_ok=True)
 
 BASE_URL = "https://yaqwsx.github.io/jlcparts/data"
-PARTS = [f"cache.z{i:02d}" for i in range(1, 20)] + ["cache.zip"]
+PARTS = [f"cache.z{i:02d}" for i in range(1, 21)] + ["cache.zip"]
 
 TARGET_DB = DATA_DIR / "jlcpcb_parts.db"
 
