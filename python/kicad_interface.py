@@ -574,6 +574,7 @@ class KiCADInterface:
         "import_svg_logo",
         "sync_schematic_to_board",
         "connect_passthrough",
+        "connect_to_net",
     }
 
     def _auto_save_board(self) -> None:
@@ -1984,7 +1985,11 @@ class KiCADInterface:
             }
 
     def _handle_connect_to_net(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Connect a component pin to a named net using wire stub and label"""
+        """Connect a component pin to a named net using wire stub and label,
+        and also assign the net to the corresponding pad on the PCB board so
+        that save_project persists the net (pcbnew.SaveBoard only writes nets
+        that are referenced by at least one board element).
+        """
         logger.info("Connecting component pin to net")
         try:
             from pathlib import Path
@@ -2001,6 +2006,16 @@ class KiCADInterface:
             result = ConnectionManager.connect_to_net(
                 Path(schematic_path), component_ref, pin_name, net_name
             )
+
+            # Also assign the net to the pad on the PCB board
+            if self.board and isinstance(result, dict) and result.get("success"):
+                try:
+                    if self._assign_net_to_pad(component_ref, pin_name, net_name):
+                        msg = result.get("message", "")
+                        result["message"] = (msg + " (PCB pad also updated)").strip()
+                except Exception as pcb_err:
+                    logger.warning(f"Could not assign net to PCB pad: {pcb_err}")
+
             return result
         except Exception as e:
             logger.error(f"Error connecting to net: {str(e)}")
@@ -2035,11 +2050,48 @@ class KiCADInterface:
                 Path(schematic_path), source_ref, target_ref, net_prefix, pin_offset
             )
 
+            # Also assign nets to PCB pads for each successfully connected pin
+            pcb_assigned = 0
+            if self.board:
+                import re as _re
+
+                for conn_info in result.get("connected", []):
+                    # Expected format: "{src_ref}/{pin} <-> {tgt_ref}/{pin} [{net}]"
+                    try:
+                        parts = conn_info.split(" <-> ")
+                        if len(parts) != 2:
+                            continue
+                        src_part = parts[0]
+                        rest = parts[1]
+                        bracket_match = _re.search(r"\[(.+)\]", rest)
+                        tgt_part = rest.split(" [")[0] if " [" in rest else rest
+                        net_name = bracket_match.group(1) if bracket_match else None
+                        if not net_name:
+                            continue
+
+                        src_ref_pin = src_part.split("/")
+                        tgt_ref_pin = tgt_part.split("/")
+                        if len(src_ref_pin) == 2 and self._assign_net_to_pad(
+                            src_ref_pin[0], src_ref_pin[1], net_name
+                        ):
+                            pcb_assigned += 1
+                        if len(tgt_ref_pin) == 2 and self._assign_net_to_pad(
+                            tgt_ref_pin[0], tgt_ref_pin[1], net_name
+                        ):
+                            pcb_assigned += 1
+                    except Exception as parse_err:
+                        logger.debug(
+                            f"Could not parse passthrough result for PCB assignment: {parse_err}"
+                        )
+
             n_ok = len(result["connected"])
             n_fail = len(result["failed"])
+            msg = f"Passthrough complete: {n_ok} connected, {n_fail} failed"
+            if pcb_assigned:
+                msg += f" ({pcb_assigned} PCB pads updated)"
             return {
                 "success": n_fail == 0,
-                "message": f"Passthrough complete: {n_ok} connected, {n_fail} failed",
+                "message": msg,
                 "connected": result["connected"],
                 "failed": result["failed"],
             }
@@ -2049,6 +2101,49 @@ class KiCADInterface:
 
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
+
+    def _assign_net_to_pad(self, component_ref: str, pin_name: str, net_name: str) -> bool:
+        """Assign a net to a specific pad on the PCB board.
+
+        Ensures the net exists on the board and sets it on the matching pad.
+        Needed because pcbnew.SaveBoard() drops nets that are not referenced
+        by any board element (pad/track/via/zone).
+        Returns True if the pad was found and updated.
+        """
+        board = self.board
+        if not board:
+            return False
+
+        netinfo = board.GetNetInfo()
+        nets_map = netinfo.NetsByName()
+        if not nets_map.has_key(net_name):
+            net_item = pcbnew.NETINFO_ITEM(board, net_name)
+            board.Add(net_item)
+            netinfo = board.GetNetInfo()
+            nets_map = netinfo.NetsByName()
+
+        if not nets_map.has_key(net_name):
+            logger.warning(f"Net '{net_name}' could not be created on board")
+            return False
+
+        net_obj = nets_map[net_name]
+
+        for fp in board.GetFootprints():
+            if fp.GetReference() == component_ref:
+                for pad in fp.Pads():
+                    if str(pad.GetNumber()) == str(pin_name):
+                        pad.SetNet(net_obj)
+                        logger.info(
+                            f"Assigned net '{net_name}' to pad {component_ref}/{pin_name} on PCB"
+                        )
+                        return True
+                logger.warning(
+                    f"Pad '{pin_name}' not found on footprint '{component_ref}'"
+                )
+                return False
+
+        logger.warning(f"Footprint '{component_ref}' not found on board")
+        return False
 
     def _handle_get_schematic_pin_locations(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return exact pin endpoint coordinates for a schematic component"""
