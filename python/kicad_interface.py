@@ -15,11 +15,11 @@ import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from annotations import AnnotationLoader
 from resources.resource_definitions import RESOURCE_DEFINITIONS, handle_resource_read
 
 # Import tool schemas, resource definitions, and IPC API annotations
 from schemas.tool_schemas import TOOL_SCHEMAS
-from annotations import AnnotationLoader
 
 _annotation_loader = AnnotationLoader()
 
@@ -814,7 +814,15 @@ class KiCADInterface:
             # line-by-line regex would never match.
             blocks_to_delete = []  # list of (char_start, char_end) into content
             search_start = 0
-            pattern = re.compile(r'\(symbol\s+\(lib_id\s+"')
+            # Match the opening of any placed-symbol block. KiCAD may emit the
+            # children of (symbol ...) in any order — most commonly
+            # `(symbol (lib_id "..."))`, but symbols whose library entry has been
+            # rescued / customised carry an additional `(lib_name "...")` first:
+            # `(symbol (lib_name "...") (lib_id "...") ...)`. Matching just
+            # `(symbol\s+(` covers both, and the lib_symbols range check below
+            # still excludes library-definition symbols (which use the
+            # `(symbol "name" ...)` form with a quoted string, not a paren).
+            pattern = re.compile(r"\(symbol\s+\(")
             while True:
                 m = pattern.search(content, search_start)
                 if not m:
@@ -1148,11 +1156,17 @@ class KiCADInterface:
                 self._find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
             )
 
-            # Find placed symbol blocks that match the reference
-            # Search for (symbol (lib_id "...") ... (property "Reference" "<ref>" ...) ...)
+            # Find placed symbol blocks that match the reference. KiCAD may
+            # serialise the children of (symbol ...) in different orders —
+            # `(symbol (lib_id "..."))` is the common case but rescued or
+            # locally-customised symbols carry an extra `(lib_name "...")`
+            # before the lib_id: `(symbol (lib_name "...") (lib_id "..."))`.
+            # Match any opening paren after `(symbol`; the lib_symbols range
+            # check below excludes library-definition symbols, which use the
+            # `(symbol "name" ...)` form (quoted string, not paren).
             block_start = block_end = None
             search_start = 0
-            pattern = re.compile(r'\(symbol\s+\(lib_id\s+"')
+            pattern = re.compile(r"\(symbol\s+\(")
             while True:
                 m = pattern.search(content, search_start)
                 if not m:
@@ -1186,8 +1200,12 @@ class KiCADInterface:
 
             # Determine the parent symbol position so that newly-added properties
             # default to a sensible location (anchored near the component).
+            # KiCAD always emits the symbol's own (at x y angle) before any
+            # (property ...) child blocks, so the FIRST (at ...) inside the
+            # symbol block is the symbol origin regardless of whether
+            # (lib_name ...) precedes (lib_id ...).
             comp_at = re.search(
-                r'\(symbol\s+\(lib_id\s+"[^"]*"\s*\)\s+\(at\s+([\d\.\-]+)\s+([\d\.\-]+)',
+                r"\(at\s+([\d\.\-]+)\s+([\d\.\-]+)",
                 block_text,
             )
             comp_origin: Tuple[float, float] = (
@@ -1387,10 +1405,17 @@ class KiCADInterface:
             lib_sym_pos = content.find("(lib_symbols")
             lib_sym_end = find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
 
-            # Find the placed symbol block for this reference
+            # Find the placed symbol block for this reference. KiCAD may emit
+            # the children of (symbol ...) in different orders — most commonly
+            # `(symbol (lib_id "..."))`, but symbols whose library entry has
+            # been rescued / customised carry an extra `(lib_name "...")` first
+            # (`(symbol (lib_name "...") (lib_id "..."))`). Match `(symbol\s+(`
+            # — any opening paren — to handle both. The lib_symbols range check
+            # below excludes library-definition symbols, which use the
+            # `(symbol "name" ...)` form (quoted string, not paren).
             block_start = block_end = None
             search_start = 0
-            pattern = re.compile(r'\(symbol\s+\(lib_id\s+"')
+            pattern = re.compile(r"\(symbol\s+\(")
             while True:
                 m = pattern.search(content, search_start)
                 if not m:
@@ -1420,9 +1445,12 @@ class KiCADInterface:
 
             block_text = content[block_start : block_end + 1]
 
-            # Extract component position: first (at x y angle) in the symbol header line
+            # Extract component position: the first (at x y angle) inside the
+            # symbol block. KiCAD always writes the symbol's own (at) before
+            # any (property ...) child blocks, so the first match is the
+            # symbol origin regardless of the (lib_name)/(lib_id) ordering.
             comp_at = re.search(
-                r'\(symbol\s+\(lib_id\s+"[^"]*"\s*\)\s+\(at\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s*\)',
+                r"\(at\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s*\)",
                 block_text,
             )
             if comp_at:
