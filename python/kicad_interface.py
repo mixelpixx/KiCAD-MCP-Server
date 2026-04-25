@@ -24,15 +24,23 @@ from schemas.tool_schemas import TOOL_SCHEMAS
 _annotation_loader = AnnotationLoader()
 
 # Configure logging
-log_dir = os.path.join(os.path.expanduser("~"), ".kicad-mcp", "logs")
-os.makedirs(log_dir, exist_ok=True)
-log_file = os.path.join(log_dir, "kicad_interface.log")
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.FileHandler(log_file)],
-)
+# Try to set up a file handler in ~/.kicad-mcp/logs. If that directory isn't
+# writable (e.g. sandboxed test environments, restricted CI runners), fall
+# back to console-only logging so importing this module never crashes.
+try:
+    log_dir = os.path.join(os.path.expanduser("~"), ".kicad-mcp", "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "kicad_interface.log")
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[logging.FileHandler(log_file)],
+    )
+except (OSError, PermissionError):
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
 logger = logging.getLogger("kicad_interface")
 
 # Log Python environment details
