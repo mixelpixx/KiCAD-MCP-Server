@@ -12,6 +12,7 @@ KiCad MCP server's JLCPCBPartsManager.
 
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -25,31 +26,50 @@ CACHE_DIR = DATA_DIR / "jlcparts_cache"
 CACHE_DIR.mkdir(exist_ok=True)
 
 BASE_URL = "https://yaqwsx.github.io/jlcparts/data"
-PARTS = [f"cache.z{i:02d}" for i in range(1, 20)] + ["cache.zip"]
+MAX_PARTS = 30  # probe up to this many split volumes
 
 TARGET_DB = DATA_DIR / "jlcpcb_parts.db"
 
 
-def download_files():
-    """Download all split archive parts."""
+def curl_download(url: str, dest: Path) -> bool:
+    """Download url to dest with curl. Returns False on 4xx/5xx or network error."""
+    result = subprocess.run(
+        ["curl", "-L", "-f", "-o", str(dest), "--progress-bar", url], capture_output=False
+    )
+    return result.returncode == 0
+
+
+def download_files() -> bool:
+    """Download split archive volumes (z01..zNN) then cache.zip, stopping volumes at 404 or MAX_PARTS."""
     print("Downloading jlcparts database (~421MB)...")
-    for part in PARTS:
+
+    for i in range(1, MAX_PARTS + 1):
+        part = f"cache.z{i:02d}"
         dest = CACHE_DIR / part
         if dest.exists() and dest.stat().st_size > 1000:
             print(f"  {part} already exists, skipping")
             continue
-        url = f"{BASE_URL}/{part}"
         print(f"  Downloading {part}...")
-        result = subprocess.run(
-            ["curl", "-L", "-o", str(dest), "--progress-bar", url], capture_output=False
-        )
-        if result.returncode != 0:
-            print(f"  ERROR downloading {part}")
+        if not curl_download(f"{BASE_URL}/{part}", dest):
+            # -f causes non-zero exit on 4xx/5xx; treat as end of volumes
+            if dest.exists():
+                dest.unlink()
+            print(f"  {part} not found — {i - 1} volumes total")
+            break
+
+    dest = CACHE_DIR / "cache.zip"
+    if dest.exists() and dest.stat().st_size > 1000:
+        print("  cache.zip already exists, skipping")
+    else:
+        print("  Downloading cache.zip...")
+        if not curl_download(f"{BASE_URL}/cache.zip", dest):
+            print("  ERROR downloading cache.zip")
             return False
+
     return True
 
 
-def extract_database():
+def extract_database() -> bool:
     """Extract the split 7z archive to get cache.sqlite3."""
     cache_sqlite = CACHE_DIR / "cache.sqlite3"
     if cache_sqlite.exists() and cache_sqlite.stat().st_size > 100_000_000:
@@ -77,7 +97,7 @@ def extract_database():
     return False
 
 
-def convert_to_mcp_format():
+def convert_to_mcp_format() -> bool:
     """Convert jlcparts cache.sqlite3 to the MCP server's expected format."""
     source = CACHE_DIR / "cache.sqlite3"
     if not source.exists():
@@ -116,7 +136,8 @@ def convert_to_mcp_format():
 
     # Create target DB in MCP format
     dst = sqlite3.connect(str(TARGET_DB))
-    dst.execute("""
+    dst.execute(
+        """
         CREATE TABLE components (
             lcsc TEXT PRIMARY KEY,
             category TEXT,
@@ -132,7 +153,8 @@ def convert_to_mcp_format():
             price_json TEXT,
             last_updated INTEGER
         )
-    """)
+    """
+    )
     dst.execute("CREATE INDEX idx_category ON components(category, subcategory)")
     dst.execute("CREATE INDEX idx_package ON components(package)")
     dst.execute("CREATE INDEX idx_manufacturer ON components(manufacturer)")
@@ -233,12 +255,14 @@ def convert_to_mcp_format():
 
     # Build FTS index
     print(f"  Building full-text search index...")
-    dst.execute("""
+    dst.execute(
+        """
         CREATE VIRTUAL TABLE IF NOT EXISTS components_fts USING fts5(
             lcsc, description, mfr_part, manufacturer,
             content=components
         )
-    """)
+    """
+    )
     dst.execute("INSERT INTO components_fts(components_fts) VALUES('rebuild')")
     dst.commit()
 
@@ -252,6 +276,10 @@ def convert_to_mcp_format():
     dst.close()
     src.close()
 
+    print("Cleaning up source database...")
+    shutil.rmtree(CACHE_DIR)
+    print(f"  Removed {CACHE_DIR}")
+
     db_size = TARGET_DB.stat().st_size / (1024 * 1024)
     print(f"\nDatabase ready: {TARGET_DB}")
     print(f"  Total parts:    {total:,}")
@@ -261,7 +289,7 @@ def convert_to_mcp_format():
     return True
 
 
-def main():
+def main() -> None:
     print("=" * 60)
     print("JLCPCB Parts Database Downloader (jlcparts method)")
     print("=" * 60)
