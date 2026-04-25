@@ -59,7 +59,12 @@ class PlatformHelper:
             ]
             for pf in program_files:
                 # Check multiple KiCAD versions
-                for version in ["9.0", "9.1", "10.0", "8.0"]:
+                for version in ["10.0", "9.0", "9.1", "8.0"]:
+                    # KiCad 10.0+ Windows: bin/Lib/site-packages
+                    path = pf / version / "bin" / "Lib" / "site-packages"
+                    if path.exists():
+                        paths.append(path)
+                    # KiCad 9.x Windows: lib/python3/dist-packages
                     path = pf / version / "lib" / "python3" / "dist-packages"
                     if path.exists():
                         paths.append(path)
