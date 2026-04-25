@@ -384,9 +384,6 @@ class PinLocator:
 
             logger.debug(f"Pin {pin_number} relative position: ({pin_rel_x}, {pin_rel_y})")
 
-            # lib_symbols uses y-up; schematic uses y-down
-            pin_rel_y = -pin_rel_y
-
             # Mirror in local coords after y-negate (KiCad transform order)
             # mirror_x = flip across X axis → negate y
             # mirror_y = flip across Y axis → negate x
