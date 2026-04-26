@@ -236,7 +236,7 @@ def _parse_virtual_connections(
                 if not hasattr(symbol, "property") or not hasattr(symbol.property, "Reference"):
                     continue
                 ref = symbol.property.Reference.value
-                if not ref.startswith("#PWR"):
+                if not (ref.startswith("#PWR") or ref.startswith("#FLG")):
                     continue
                 if ref.startswith("_TEMPLATE"):
                     continue

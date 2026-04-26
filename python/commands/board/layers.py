@@ -64,7 +64,7 @@ class BoardLayerCommands:
             # Enable inner copper layers by increasing copper layer count (KiCAD 9.0 API)
             if position == "inner":
                 current_count = self.board.GetCopperLayerCount()
-                needed_count = 2 + number  # F.Cu + B.Cu + inner layers
+                needed_count = 2 + (number or 0)  # F.Cu + B.Cu + inner layers
                 if needed_count > current_count:
                     self.board.SetCopperLayerCount(needed_count)
 
