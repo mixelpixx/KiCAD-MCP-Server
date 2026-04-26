@@ -89,6 +89,7 @@ Desktop.ini
 
 # Generated local config files (contain machine-specific paths)
 windows-mcp-config.json
+.mcp.json
 
 # Personal notes / local contributions (not for upstream)
 myContribution/

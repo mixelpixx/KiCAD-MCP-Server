@@ -71,6 +71,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
   no-op removal, special-character escaping, UUID preservation, and the two
   new convenience tools.
 
+### Removed
+
+- `add_schematic_junction` MCP tool has been removed. Junctions are now
+  inserted and removed automatically via `WireManager.sync_junctions` whenever
+  wires are added, deleted, or moved.
+- Junction placement is pin-aware: `sync_junctions` consults component pin
+  positions so that T-junctions at component pins are correctly recognised.
+
 ---
 
 ## [2.2.3] - 2026-03-11

@@ -510,38 +510,6 @@ edit_schematic_component and set its value to an empty string.`,
     },
   );
 
-  // Add junction dot at a T/X intersection
-  server.tool(
-    "add_schematic_junction",
-    "Place a junction dot at a wire intersection in the schematic. Required at T-branch and X-cross points so KiCAD recognises the electrical connection.",
-    {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      position: z.array(z.number()).length(2).describe("Junction position [x, y] in mm"),
-    },
-    async (args: { schematicPath: string; position: number[] }) => {
-      const result = await callKicadScript("add_schematic_junction", args);
-      if (result.success) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: result.message || "Junction added successfully",
-            },
-          ],
-        };
-      } else {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Failed to add junction: ${result.message || "Unknown error"}`,
-            },
-          ],
-        };
-      }
-    },
-  );
-
   // Add net label
   server.tool(
     "add_schematic_net_label",

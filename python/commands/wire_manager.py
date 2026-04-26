@@ -32,6 +32,14 @@ _SYM_WIDTH = Symbol("width")
 _SYM_TYPE = Symbol("type")
 _SYM_UUID = Symbol("uuid")
 _SYM_SHEET_INSTANCES = Symbol("sheet_instances")
+_SYM_JUNCTION = Symbol("junction")
+_SYM_LIB_SYMBOLS = Symbol("lib_symbols")
+_SYM_LIB_ID = Symbol("lib_id")
+_SYM_MIRROR = Symbol("mirror")
+_SYM_PIN = Symbol("pin")
+_SYM_SYMBOL = Symbol("symbol")
+_SYM_UNIT = Symbol("unit")
+_IU_PER_MM = 10000
 
 
 def _find_insertion_point(content: str) -> int:
@@ -121,6 +129,11 @@ def _make_sheet_pin_text(
 class WireManager:
     """Manage wires in KiCad schematics using S-expression manipulation"""
 
+    # Regex to parse sub-unit names like "LM324_2_1" → (base="LM324", unit=2, style=1)
+    # The sub-unit suffix is <base>_<unit>_<style> where unit and style are integers.
+    # Assumes KiCad's <base>_<unit>_<style> convention (rightmost two underscore-separated numeric groups are unit/style); unparseable names fall back to including all pins via the else branch in _parse_lib_pins.
+    _SUB_UNIT_RE = re.compile(r"^(.+)_(\d+)_(\d+)$")
+
     @staticmethod
     def add_wire(
         schematic_path: Path,
@@ -175,6 +188,8 @@ class WireManager:
             # Insert wire before sheet_instances
             sch_data.insert(sheet_instances_index, wire_sexp)
             logger.info(f"Injected wire from {start_point} to {end_point}")
+
+            WireManager.sync_junctions(sch_data)
 
             # Write back
             with open(schematic_path, "w", encoding="utf-8") as f:
@@ -251,6 +266,8 @@ class WireManager:
             logger.info(
                 f"Injected {len(wire_sexps)} wire segments for {len(points)}-point polyline"
             )
+
+            WireManager.sync_junctions(sch_data)
 
             # Write back
             with open(schematic_path, "w", encoding="utf-8") as f:
@@ -450,74 +467,257 @@ class WireManager:
         return splits
 
     @staticmethod
-    def add_junction(schematic_path: Path, position: List[float], diameter: float = 0) -> bool:
+    def _collect_wire_endpoints(sch_data: list) -> List[Tuple[float, float]]:
+        """Return all (x, y) endpoints for every wire in sch_data."""
+        endpoints: List[Tuple[float, float]] = []
+        for item in sch_data:
+            parsed = WireManager._parse_wire(item)
+            if parsed is not None:
+                (x1, y1), (x2, y2), _, _ = parsed
+                endpoints.append((x1, y1))
+                endpoints.append((x2, y2))
+        return endpoints
+
+    @staticmethod
+    def _get_existing_junctions(sch_data: list) -> dict:
+        """Return {(iu_x, iu_y): index_in_sch_data} for every junction element."""
+        result: dict = {}
+        for i, item in enumerate(sch_data):
+            if not (isinstance(item, list) and len(item) > 0 and item[0] == _SYM_JUNCTION):
+                continue
+            at_entry = next(
+                (p for p in item[1:] if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_AT),
+                None,
+            )
+            if at_entry is None:
+                continue
+            x, y = float(at_entry[1]), float(at_entry[2])
+            result[(round(x * _IU_PER_MM), round(y * _IU_PER_MM))] = i
+        return result
+
+    @staticmethod
+    def _make_junction_sexp(x: float, y: float, diameter: float = 0) -> list:
+        return [
+            _SYM_JUNCTION,
+            [_SYM_AT, x, y],
+            [Symbol("diameter"), diameter],
+            [Symbol("color"), 0, 0, 0, 0],
+            [_SYM_UUID, str(uuid.uuid4())],
+        ]
+
+    @staticmethod
+    def _parse_lib_pins(sym_def: list, unit: int = 1) -> List[Tuple[float, float]]:
+        """Extract pin local (x, y) positions for *unit* from a lib_symbols symbol definition.
+
+        Only collects pins from sub-unit symbols whose parsed unit number matches *unit*
+        OR is 0 (the "common" body drawn on every unit, e.g. power pins on an op-amp).
+        Sub-units whose unit index is neither *unit* nor 0 are skipped entirely.
+
+        If the lib_symbols entry has no nested (symbol ...) children at all (rare, simple
+        defs), falls back to collecting every (pin ...) directly from the top-level entry.
+
+        Uses a stack instead of recursion to handle nested sub-unit symbols.
         """
-        Add a junction (connection dot) to the schematic.
+        pins: List[Tuple[float, float]] = []
 
-        Mirrors KiCAD's AddJunction behaviour: any wire whose interior passes
-        through *position* is split into two segments at that point so that
-        the BFS-based get_wire_connections tool can traverse the T/X branch.
+        # Separate top-level direct children into sub-unit symbols vs other nodes.
+        sub_units: list = []
+        direct_pins: list = []
+        for child in sym_def[1:]:
+            if not isinstance(child, list) or not child:
+                continue
+            if child[0] == _SYM_SYMBOL:
+                sub_units.append(child)
+            elif child[0] == _SYM_PIN:
+                direct_pins.append(child)
 
-        Args:
-            schematic_path: Path to .kicad_sch file
-            position: [x, y] coordinates for junction
-            diameter: Junction diameter (0 for default)
+        if not sub_units:
+            # Fallback: simple definition with no nested sub-unit symbols — collect all pins.
+            nodes_to_search = direct_pins
+        else:
+            # Filter sub-units by parsed unit number.
+            nodes_to_search = []
+            for sub in sub_units:
+                sub_name = (
+                    sub[1]
+                    if len(sub) > 1 and isinstance(sub[1], str)
+                    else str(sub[1]) if len(sub) > 1 else ""
+                )
+                m = WireManager._SUB_UNIT_RE.match(sub_name)
+                if m:
+                    sub_unit_num = int(m.group(2))
+                    if sub_unit_num == unit or sub_unit_num == 0:
+                        nodes_to_search.extend(sub[1:])
+                else:
+                    # Name doesn't match the expected pattern — include it (fail-safe).
+                    logger.debug(
+                        "lib_symbols sub-unit name %r did not match <base>_<unit>_<style>; "
+                        "including all its pins as fallback",
+                        sub_name,
+                    )
+                    nodes_to_search.extend(sub[1:])
 
-        Returns:
-            True if successful, False otherwise
+        # Walk the selected nodes to collect (pin ...) entries via stack.
+        stack: list = list(nodes_to_search)
+        while stack:
+            node = stack.pop()
+            if not isinstance(node, list) or not node:
+                continue
+            if node[0] == _SYM_PIN:
+                at = next(
+                    (
+                        p
+                        for p in node[1:]
+                        if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_AT
+                    ),
+                    None,
+                )
+                if at:
+                    pins.append((float(at[1]), float(at[2])))
+                continue  # don't recurse into pin sub-expressions
+            stack.extend(node[1:])
+        return pins
+
+    @staticmethod
+    def _collect_pin_positions(sch_data: list) -> List[Tuple[float, float]]:
+        """Return world (x, y) positions for every placed component pin in sch_data.
+
+        Parses lib_symbols for pin local coordinates (unit-aware), then applies the KiCad
+        transform chain (y-negate → mirror → rotate → translate) to each pin.
         """
-        try:
-            # Read schematic
-            with open(schematic_path, "r", encoding="utf-8") as f:
-                sch_content = f.read()
+        # Build {lib_id: sym_def} from the embedded lib_symbols section.
+        # We defer pin extraction until we know which unit each placed instance uses.
+        lib_sym_defs: dict = {}
+        for item in sch_data:
+            if not (isinstance(item, list) and len(item) > 0 and item[0] == _SYM_LIB_SYMBOLS):
+                continue
+            for sym_def in item[1:]:
+                if not (
+                    isinstance(sym_def, list) and len(sym_def) > 1 and sym_def[0] == _SYM_SYMBOL
+                ):
+                    continue
+                lib_id = sym_def[1] if isinstance(sym_def[1], str) else str(sym_def[1])
+                lib_sym_defs[lib_id] = sym_def
+            break
 
-            sch_data = sexpdata.loads(sch_content)
+        # Transform each placed symbol's pins to world coordinates
+        world_positions: List[Tuple[float, float]] = []
+        for item in sch_data:
+            if not (isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SYMBOL):
+                continue
+            lib_id_part = next(
+                (
+                    p
+                    for p in item[1:]
+                    if isinstance(p, list) and len(p) >= 2 and p[0] == _SYM_LIB_ID
+                ),
+                None,
+            )
+            if lib_id_part is None:
+                continue  # not a placed instance (e.g. sub-unit inside lib_symbols)
+            lib_id = lib_id_part[1] if isinstance(lib_id_part[1], str) else str(lib_id_part[1])
 
-            # Split any wire that passes through the junction as a midpoint
-            # (mirrors KiCAD's AddJunction / BreakSegments behaviour)
-            splits = WireManager._break_wires_at_point(sch_data, position)
-            if splits:
-                logger.info(f"Broke {splits} wire(s) at junction position {position}")
+            # Read the placed unit number (default 1 for single-unit parts).
+            unit_part = next(
+                (p for p in item[1:] if isinstance(p, list) and len(p) >= 2 and p[0] == _SYM_UNIT),
+                None,
+            )
+            unit_num = int(unit_part[1]) if unit_part is not None else 1
 
-            # Create junction S-expression
-            # Format: (junction (at x y) (diameter 0) (color 0 0 0 0) (uuid ...))
-            junction_sexp = [
-                Symbol("junction"),
-                [Symbol("at"), position[0], position[1]],
-                [Symbol("diameter"), diameter],
-                [Symbol("color"), 0, 0, 0, 0],
-                [Symbol("uuid"), str(uuid.uuid4())],
-            ]
+            at_part = next(
+                (p for p in item[1:] if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_AT),
+                None,
+            )
+            if at_part is None:
+                continue
+            sym_x, sym_y = float(at_part[1]), float(at_part[2])
+            rotation = float(at_part[3]) if len(at_part) > 3 else 0.0
 
-            # Find insertion point
-            sheet_instances_index = None
-            for i, item in enumerate(sch_data):
-                if isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SHEET_INSTANCES:
-                    sheet_instances_index = i
-                    break
+            mirror_x = mirror_y = False
+            for part in item[1:]:
+                if isinstance(part, list) and len(part) >= 2 and part[0] == _SYM_MIRROR:
+                    if part[1] == Symbol("x"):
+                        mirror_x = True
+                    elif part[1] == Symbol("y"):
+                        mirror_y = True
 
+            sym_def = lib_sym_defs.get(lib_id)
+            if sym_def is None:
+                continue
+            local_pins = WireManager._parse_lib_pins(sym_def, unit=unit_num)
+
+            for lx, ly in local_pins:
+                # KiCad lib uses y-up; schematic uses y-down — negate before transform
+                ly = -ly
+                if mirror_x:
+                    ly = -ly
+                if mirror_y:
+                    lx = -lx
+                if rotation != 0.0:
+                    rad = math.radians(rotation)
+                    c, s = math.cos(rad), math.sin(rad)
+                    lx, ly = lx * c - ly * s, lx * s + ly * c
+                world_positions.append((sym_x + lx, sym_y + ly))
+
+        return world_positions
+
+    @staticmethod
+    def sync_junctions(sch_data: list) -> Tuple[int, int]:
+        """Add missing junctions and remove stale ones in sch_data in-place.
+
+        A junction is needed at any point where the total of wire endpoints plus
+        component pin positions is ≥ 3 and at least one wire endpoint is present.
+        This covers wire-only T/X junctions and wire-meets-pin-with-another-wire cases.
+
+        Returns (added_count, removed_count).
+        """
+        from collections import Counter
+
+        wire_endpoints = WireManager._collect_wire_endpoints(sch_data)
+        wire_iu: Counter = Counter(
+            (round(x * _IU_PER_MM), round(y * _IU_PER_MM)) for x, y in wire_endpoints
+        )
+
+        pin_positions = WireManager._collect_pin_positions(sch_data)
+        pin_iu: Counter = Counter(
+            (round(x * _IU_PER_MM), round(y * _IU_PER_MM)) for x, y in pin_positions
+        )
+
+        # wire_iu.items() guarantees wire_cnt >= 1, so no extra guard needed
+        needed_iu = {iu for iu, wire_cnt in wire_iu.items() if wire_cnt + pin_iu.get(iu, 0) >= 3}
+
+        existing = WireManager._get_existing_junctions(sch_data)
+        existing_iu = set(existing.keys())
+
+        # Remove stale junctions; work in reverse index order to avoid shifting
+        stale_indices = sorted([existing[iu] for iu in existing_iu - needed_iu], reverse=True)
+        for idx in stale_indices:
+            del sch_data[idx]
+        removed = len(stale_indices)
+
+        # Locate insertion point for new junctions
+        sheet_instances_index = None
+        for i, item in enumerate(sch_data):
+            if isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SHEET_INSTANCES:
+                sheet_instances_index = i
+                break
+
+        to_add = needed_iu - existing_iu
+        added = 0
+        if to_add:
             if sheet_instances_index is None:
-                logger.error("No sheet_instances section found in schematic")
-                return False
+                logger.warning("sync_junctions: no sheet_instances found, skipping junction insert")
+            else:
+                for iu_x, iu_y in to_add:
+                    x = iu_x / _IU_PER_MM
+                    y = iu_y / _IU_PER_MM
+                    sch_data.insert(sheet_instances_index, WireManager._make_junction_sexp(x, y))
+                    sheet_instances_index += 1
+                    added += 1
 
-            # Insert junction
-            sch_data.insert(sheet_instances_index, junction_sexp)
-            logger.info(f"Injected junction at {position}")
-
-            # Write back
-            with open(schematic_path, "w", encoding="utf-8") as f:
-                output = sexpdata.dumps(sch_data)
-                f.write(output)
-
-            logger.info(f"Successfully added junction to {schematic_path.name}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Error adding junction: {e}")
-            import traceback
-
-            logger.error(traceback.format_exc())
-            return False
+        if added or removed:
+            logger.info(f"sync_junctions: added {added}, removed {removed}")
+        return added, removed
 
     @staticmethod
     def add_no_connect(schematic_path: Path, position: List[float]) -> bool:
@@ -644,6 +844,7 @@ class WireManager:
 
                 if match_fwd or match_rev:
                     del sch_data[i]
+                    WireManager.sync_junctions(sch_data)
                     with open(schematic_path, "w", encoding="utf-8") as f:
                         f.write(sexpdata.dumps(sch_data))
                     logger.info(f"Deleted wire from {start_point} to {end_point}")
@@ -973,29 +1174,24 @@ if __name__ == "__main__":
     print(f"\n✓ Created test schematic: {test_path}")
 
     # Test 1: Add simple wire
-    print("\n[1/5] Testing simple wire creation...")
+    print("\n[1/4] Testing simple wire creation...")
     success = WireManager.add_wire(test_path, [50.8, 50.8], [101.6, 50.8])
     print(f"  {'✓' if success else '✗'} Simple wire: {success}")
 
     # Test 2: Add orthogonal wire
-    print("\n[2/5] Testing orthogonal wire...")
+    print("\n[2/4] Testing orthogonal wire...")
     path = WireManager.create_orthogonal_path([50.8, 60.96], [101.6, 88.9])
     print(f"  Orthogonal path: {path}")
     success = WireManager.add_polyline_wire(test_path, path)
     print(f"  {'✓' if success else '✗'} Polyline wire: {success}")
 
     # Test 3: Add label
-    print("\n[3/5] Testing label creation...")
+    print("\n[3/4] Testing label creation...")
     success = WireManager.add_label(test_path, "VCC", [76.2, 50.8])
     print(f"  {'✓' if success else '✗'} Label: {success}")
 
-    # Test 4: Add junction
-    print("\n[4/5] Testing junction creation...")
-    success = WireManager.add_junction(test_path, [76.2, 50.8])
-    print(f"  {'✓' if success else '✗'} Junction: {success}")
-
-    # Test 5: Add no-connect
-    print("\n[5/5] Testing no-connect creation...")
+    # Test 4: Add no-connect
+    print("\n[4/4] Testing no-connect creation...")
     success = WireManager.add_no_connect(test_path, [127, 50.8])
     print(f"  {'✓' if success else '✗'} No-connect: {success}")
 
