@@ -389,7 +389,6 @@ class KiCADInterface:
             "get_schematic_component": self._handle_get_schematic_component,
             "add_schematic_wire": self._handle_add_schematic_wire,
             "add_schematic_net_label": self._handle_add_schematic_net_label,
-            "add_schematic_junction": self._handle_add_schematic_junction,
             "connect_to_net": self._handle_connect_to_net,
             "connect_passthrough": self._handle_connect_passthrough,
             "get_schematic_pin_locations": self._handle_get_schematic_pin_locations,
@@ -1628,39 +1627,6 @@ class KiCADInterface:
                 "errorDetails": traceback.format_exc(),
             }
 
-    def _handle_add_schematic_junction(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Add a junction (connection dot) to a schematic using WireManager"""
-        logger.info("Adding junction to schematic")
-        try:
-            from pathlib import Path
-
-            from commands.wire_manager import WireManager
-
-            schematic_path = params.get("schematicPath")
-            position = params.get("position")
-
-            if not schematic_path:
-                return {"success": False, "message": "Schematic path is required"}
-            if not position:
-                return {"success": False, "message": "Position is required"}
-
-            success = WireManager.add_junction(Path(schematic_path), position)
-
-            if success:
-                return {"success": True, "message": "Junction added successfully"}
-            else:
-                return {"success": False, "message": "Failed to add junction"}
-        except Exception as e:
-            logger.error(f"Error adding junction to schematic: {str(e)}")
-            import traceback
-
-            logger.error(traceback.format_exc())
-            return {
-                "success": False,
-                "message": str(e),
-                "errorDetails": traceback.format_exc(),
-            }
-
     def _handle_list_schematic_libraries(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """List available symbol libraries"""
         logger.info("Listing schematic libraries")
@@ -2626,6 +2592,10 @@ class KiCADInterface:
             # Update symbol position
             WireDragger.update_symbol_position(sch_data, reference, float(new_x), float(new_y))
 
+            from commands.wire_manager import WireManager as _WireManager
+
+            _WireManager.sync_junctions(sch_data)
+
             with open(schematic_path, "w", encoding="utf-8") as f:
                 f.write(_sexpdata.dumps(sch_data))
 
@@ -2684,6 +2654,19 @@ class KiCADInterface:
                             )
 
                     SchematicManager.save_schematic(schematic, schematic_path)
+
+                    # Re-open with raw sexpdata so sync_junctions can operate on
+                    # the mutated file (mirrors the pattern used in move handler).
+                    import sexpdata as _sexpdata
+
+                    with open(schematic_path, "r", encoding="utf-8") as _f:
+                        sch_data = _sexpdata.load(_f)
+                    from commands.wire_manager import WireManager as _WireManager
+
+                    _WireManager.sync_junctions(sch_data)
+                    with open(schematic_path, "w", encoding="utf-8") as _f:
+                        _f.write(_sexpdata.dumps(sch_data))
+
                     return {"success": True, "reference": reference, "angle": angle}
 
             return {"success": False, "message": f"Component {reference} not found"}
