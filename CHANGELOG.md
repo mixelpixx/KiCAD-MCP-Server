@@ -1,10 +1,5 @@
 # Changelog
 
-> **⚠️ Research Project — No Stability Guarantees**
-> This is an unstable, experimental research project. APIs, tool names, parameters,
-> and file formats may change at any time without notice. Back-compatibility is
-> explicitly **not** preserved between versions.
-
 All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
