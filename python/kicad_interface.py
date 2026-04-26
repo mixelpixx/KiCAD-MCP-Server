@@ -15,7 +15,9 @@ import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import sexpdata
 from annotations import AnnotationLoader
+from commands.wire_manager import WireManager
 from resources.resource_definitions import RESOURCE_DEFINITIONS, handle_resource_read
 
 # Import tool schemas, resource definitions, and IPC API annotations
@@ -2531,7 +2533,6 @@ class KiCADInterface:
         """Move a schematic component to a new position, dragging connected wires."""
         logger.info("Moving schematic component")
         try:
-            import sexpdata as _sexpdata
             from commands.wire_dragger import WireDragger
 
             schematic_path = params.get("schematicPath")
@@ -2553,7 +2554,7 @@ class KiCADInterface:
                 }
 
             with open(schematic_path, "r", encoding="utf-8") as f:
-                sch_data = _sexpdata.loads(f.read())
+                sch_data = sexpdata.loads(f.read())
 
             # Find symbol and record old position
             found = WireDragger.find_symbol(sch_data, reference)
@@ -2592,12 +2593,10 @@ class KiCADInterface:
             # Update symbol position
             WireDragger.update_symbol_position(sch_data, reference, float(new_x), float(new_y))
 
-            from commands.wire_manager import WireManager as _WireManager
-
-            _WireManager.sync_junctions(sch_data)
+            WireManager.sync_junctions(sch_data)
 
             with open(schematic_path, "w", encoding="utf-8") as f:
-                f.write(_sexpdata.dumps(sch_data))
+                f.write(sexpdata.dumps(sch_data))
 
             return {
                 "success": True,
@@ -2630,46 +2629,77 @@ class KiCADInterface:
                     "message": "schematicPath and reference are required",
                 }
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            sym_k = sexpdata.Symbol("symbol")
+            prop_k = sexpdata.Symbol("property")
+            at_k = sexpdata.Symbol("at")
+            mirror_k = sexpdata.Symbol("mirror")
 
-            for symbol in schematic.symbol:
-                if not hasattr(symbol.property, "Reference"):
+            with open(schematic_path, "r", encoding="utf-8") as _f:
+                sch_data = sexpdata.load(_f)
+
+            target = None
+            for item in sch_data:
+                if not (isinstance(item, list) and item and item[0] == sym_k):
                     continue
-                if symbol.property.Reference.value == reference:
-                    pos = list(symbol.at.value)
-                    while len(pos) < 3:
-                        pos.append(0)
-                    pos[2] = angle
-                    symbol.at.value = pos
+                ref_val = None
+                for sub in item[1:]:
+                    if (
+                        isinstance(sub, list)
+                        and len(sub) >= 3
+                        and sub[0] == prop_k
+                        and str(sub[1]).strip('"') == "Reference"
+                    ):
+                        ref_val = str(sub[2]).strip('"')
+                        break
+                if ref_val == reference:
+                    target = item
+                    break
 
-                    if mirror:
-                        if hasattr(symbol, "mirror"):
-                            symbol.mirror.value = mirror
-                        else:
-                            logger.warning(
-                                f"Mirror '{mirror}' requested for {reference}, "
-                                f"but symbol has no mirror attribute; skipped"
-                            )
+            if target is None:
+                return {"success": False, "message": f"Component {reference} not found"}
 
-                    SchematicManager.save_schematic(schematic, schematic_path)
+            # Update (at x y rot)
+            at_node = None
+            mirror_idx = None
+            for idx, sub in enumerate(target[1:], start=1):
+                if not isinstance(sub, list) or not sub:
+                    continue
+                if sub[0] == at_k:
+                    at_node = sub
+                elif sub[0] == mirror_k:
+                    mirror_idx = idx
 
-                    # Re-open with raw sexpdata so sync_junctions can operate on
-                    # the mutated file (mirrors the pattern used in move handler).
-                    import sexpdata as _sexpdata
+            if at_node is None:
+                return {
+                    "success": False,
+                    "message": f"Component {reference} has no (at ...) node",
+                }
+            while len(at_node) < 3:
+                at_node.append(0)
+            if len(at_node) < 4:
+                at_node.append(angle)
+            else:
+                at_node[3] = angle
 
-                    with open(schematic_path, "r", encoding="utf-8") as _f:
-                        sch_data = _sexpdata.load(_f)
-                    from commands.wire_manager import WireManager as _WireManager
+            if mirror:
+                mirror_node = [mirror_k, sexpdata.Symbol(str(mirror))]
+                if mirror_idx is not None:
+                    target[mirror_idx] = mirror_node
+                else:
+                    # Insert after (at ...) for stability
+                    insert_at = len(target)
+                    for idx, sub in enumerate(target[1:], start=1):
+                        if isinstance(sub, list) and sub and sub[0] == at_k:
+                            insert_at = idx + 1
+                            break
+                    target.insert(insert_at, mirror_node)
 
-                    _WireManager.sync_junctions(sch_data)
-                    with open(schematic_path, "w", encoding="utf-8") as _f:
-                        _f.write(_sexpdata.dumps(sch_data))
+            WireManager.sync_junctions(sch_data)
 
-                    return {"success": True, "reference": reference, "angle": angle}
+            with open(schematic_path, "w", encoding="utf-8") as _f:
+                _f.write(sexpdata.dumps(sch_data))
 
-            return {"success": False, "message": f"Component {reference} not found"}
+            return {"success": True, "reference": reference, "angle": angle}
 
         except Exception as e:
             logger.error(f"Error rotating schematic component: {e}")

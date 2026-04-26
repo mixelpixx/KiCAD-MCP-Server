@@ -37,6 +37,8 @@ _SYM_LIB_SYMBOLS = Symbol("lib_symbols")
 _SYM_LIB_ID = Symbol("lib_id")
 _SYM_MIRROR = Symbol("mirror")
 _SYM_PIN = Symbol("pin")
+_SYM_SYMBOL = Symbol("symbol")
+_SYM_UNIT = Symbol("unit")
 _IU_PER_MM = 10000
 
 
@@ -126,6 +128,11 @@ def _make_sheet_pin_text(
 
 class WireManager:
     """Manage wires in KiCad schematics using S-expression manipulation"""
+
+    # Regex to parse sub-unit names like "LM324_2_1" → (base="LM324", unit=2, style=1)
+    # The sub-unit suffix is <base>_<unit>_<style> where unit and style are integers.
+    # Assumes KiCad's <base>_<unit>_<style> convention (rightmost two underscore-separated numeric groups are unit/style); unparseable names fall back to including all pins via the else branch in _parse_lib_pins.
+    _SUB_UNIT_RE = re.compile(r"^(.+)_(\d+)_(\d+)$")
 
     @staticmethod
     def add_wire(
@@ -498,10 +505,6 @@ class WireManager:
             [_SYM_UUID, str(uuid.uuid4())],
         ]
 
-    # Regex to parse sub-unit names like "LM324_2_1" → (base="LM324", unit=2, style=1)
-    # The sub-unit suffix is <base>_<unit>_<style> where unit and style are integers.
-    _SUB_UNIT_RE = re.compile(r"^(.+)_(\d+)_(\d+)$")
-
     @staticmethod
     def _parse_lib_pins(sym_def: list, unit: int = 1) -> List[Tuple[float, float]]:
         """Extract pin local (x, y) positions for *unit* from a lib_symbols symbol definition.
@@ -515,7 +518,6 @@ class WireManager:
 
         Uses a stack instead of recursion to handle nested sub-unit symbols.
         """
-        _SYM_SYMBOL = Symbol("symbol")
         pins: List[Tuple[float, float]] = []
 
         # Separate top-level direct children into sub-unit symbols vs other nodes.
@@ -583,8 +585,6 @@ class WireManager:
         Parses lib_symbols for pin local coordinates (unit-aware), then applies the KiCad
         transform chain (y-negate → mirror → rotate → translate) to each pin.
         """
-        _SYM_UNIT = Symbol("unit")
-
         # Build {lib_id: sym_def} from the embedded lib_symbols section.
         # We defer pin extraction until we know which unit each placed instance uses.
         lib_sym_defs: dict = {}
@@ -593,9 +593,7 @@ class WireManager:
                 continue
             for sym_def in item[1:]:
                 if not (
-                    isinstance(sym_def, list)
-                    and len(sym_def) > 1
-                    and sym_def[0] == Symbol("symbol")
+                    isinstance(sym_def, list) and len(sym_def) > 1 and sym_def[0] == _SYM_SYMBOL
                 ):
                     continue
                 lib_id = sym_def[1] if isinstance(sym_def[1], str) else str(sym_def[1])
@@ -605,7 +603,7 @@ class WireManager:
         # Transform each placed symbol's pins to world coordinates
         world_positions: List[Tuple[float, float]] = []
         for item in sch_data:
-            if not (isinstance(item, list) and len(item) > 0 and item[0] == Symbol("symbol")):
+            if not (isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SYMBOL):
                 continue
             lib_id_part = next(
                 (
