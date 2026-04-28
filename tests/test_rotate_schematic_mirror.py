@@ -181,9 +181,15 @@ def test_pin_positions_mirror_x_flips_x():
 
 def test_rotate_handler_no_crash(tmp_path):
     """_handle_rotate_schematic_component should succeed without kicad-skip."""
+    # Ensure python/ is on sys.path so commands.* imports resolve
+    _python_dir = os.path.join(os.path.dirname(__file__), "..", "python")
+    if _python_dir not in sys.path:
+        sys.path.insert(0, _python_dir)
+
     # Stub heavy imports before loading kicad_interface
     for modname in ("pcbnew", "skip", "resources", "schemas",
-                    "resources.resource_definitions", "schemas.tool_schemas"):
+                    "resources.resource_definitions", "schemas.tool_schemas",
+                    "annotations"):
         sys.modules.setdefault(modname, MagicMock())
     sys.modules["resources.resource_definitions"].RESOURCE_DEFINITIONS = {}
     sys.modules["resources.resource_definitions"].handle_resource_read = MagicMock()
