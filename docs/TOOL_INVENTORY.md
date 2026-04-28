@@ -1,8 +1,8 @@
 # KiCAD MCP Server - Complete Tool Inventory
 
 **Version:** 2.2.3
-**Total Tools:** 122 (18 direct + 65 routed + 4 router + 35 additional)
-**Last Updated:** 2026-03-21
+**Total Tools:** 124 (18 direct + 65 routed + 4 router + 37 additional)
+**Last Updated:** 2026-04-20
 
 ## How Tools Are Organized
 
@@ -130,22 +130,24 @@ _Source: `src/tools/export.ts`_
 
 ---
 
-## Schematic (27 tools)
+## Schematic (29 tools)
 
 _Source: `src/tools/schematic.ts`_
 
 ### Component Operations
 
-| Tool                         | Description                                             | Access             |
-| ---------------------------- | ------------------------------------------------------- | ------------------ |
-| `add_schematic_component`    | Add component to schematic (symbol from library)        | Direct             |
-| `delete_schematic_component` | Remove component from schematic                         | Additional         |
-| `edit_schematic_component`   | Edit component properties (footprint, value, reference) | Additional         |
-| `get_schematic_component`    | Get component info with field positions                 | Additional         |
-| `list_schematic_components`  | List all components in schematic                        | Direct             |
-| `move_schematic_component`   | Move component to new position                          | Routed (schematic) |
-| `rotate_schematic_component` | Rotate component                                        | Routed (schematic) |
-| `annotate_schematic`         | Auto-annotate reference designators                     | Direct             |
+| Tool                                  | Description                                                                                                            | Access             |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `add_schematic_component`             | Add component to schematic (symbol from library)                                                                       | Direct             |
+| `delete_schematic_component`          | Remove component from schematic                                                                                        | Additional         |
+| `edit_schematic_component`            | Edit footprint, value, reference, label positions, and **arbitrary custom properties** (MPN, Manufacturer, DigiKey, …) | Additional         |
+| `set_schematic_component_property`    | Add or update a single custom property (BOM/sourcing field) on a component                                             | Additional         |
+| `remove_schematic_component_property` | Delete a single custom property from a component                                                                       | Additional         |
+| `get_schematic_component`             | Get component info: built-in fields + all custom properties + label positions                                          | Additional         |
+| `list_schematic_components`           | List all components in schematic                                                                                       | Direct             |
+| `move_schematic_component`            | Move component to new position                                                                                         | Routed (schematic) |
+| `rotate_schematic_component`          | Rotate component                                                                                                       | Routed (schematic) |
+| `annotate_schematic`                  | Auto-annotate reference designators                                                                                    | Direct             |
 
 ### Wiring and Connections
 
@@ -168,6 +170,13 @@ _Source: `src/tools/schematic.ts`_
 | `list_schematic_nets`   | List all nets in schematic    | Routed (schematic) |
 | `list_schematic_wires`  | List all wires in schematic   | Routed (schematic) |
 | `list_schematic_labels` | List all net labels           | Routed (schematic) |
+
+### Text Annotations
+
+| Tool                   | Description                                      | Access             |
+| ---------------------- | ------------------------------------------------ | ------------------ |
+| `add_schematic_text`   | Add free-form text annotation to schematic       | Routed (schematic) |
+| `list_schematic_texts` | List all text annotations (with optional filter) | Routed (schematic) |
 
 ### Schematic Creation and Export
 

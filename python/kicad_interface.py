@@ -13,23 +13,36 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
+import sexpdata
+from annotations import AnnotationLoader
+from commands.wire_manager import WireManager
 from resources.resource_definitions import RESOURCE_DEFINITIONS, handle_resource_read
 
-# Import tool schemas and resource definitions
+# Import tool schemas, resource definitions, and IPC API annotations
 from schemas.tool_schemas import TOOL_SCHEMAS
 
-# Configure logging
-log_dir = os.path.join(os.path.expanduser("~"), ".kicad-mcp", "logs")
-os.makedirs(log_dir, exist_ok=True)
-log_file = os.path.join(log_dir, "kicad_interface.log")
+_annotation_loader = AnnotationLoader()
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.FileHandler(log_file)],
-)
+# Configure logging
+# Try to set up a file handler in ~/.kicad-mcp/logs. If that directory isn't
+# writable (e.g. sandboxed test environments, restricted CI runners), fall
+# back to console-only logging so importing this module never crashes.
+try:
+    log_dir = os.path.join(os.path.expanduser("~"), ".kicad-mcp", "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "kicad_interface.log")
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[logging.FileHandler(log_file)],
+    )
+except (OSError, PermissionError):
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
 logger = logging.getLogger("kicad_interface")
 
 # Log Python environment details
@@ -373,10 +386,11 @@ class KiCADInterface:
             "add_schematic_component": self._handle_add_schematic_component,
             "delete_schematic_component": self._handle_delete_schematic_component,
             "edit_schematic_component": self._handle_edit_schematic_component,
+            "set_schematic_component_property": self._handle_set_schematic_component_property,
+            "remove_schematic_component_property": self._handle_remove_schematic_component_property,
             "get_schematic_component": self._handle_get_schematic_component,
             "add_schematic_wire": self._handle_add_schematic_wire,
             "add_schematic_net_label": self._handle_add_schematic_net_label,
-            "add_schematic_junction": self._handle_add_schematic_junction,
             "connect_to_net": self._handle_connect_to_net,
             "connect_passthrough": self._handle_connect_passthrough,
             "get_schematic_pin_locations": self._handle_get_schematic_pin_locations,
@@ -398,6 +412,7 @@ class KiCADInterface:
             "annotate_schematic": self._handle_annotate_schematic,
             "delete_schematic_wire": self._handle_delete_schematic_wire,
             "delete_schematic_net_label": self._handle_delete_schematic_net_label,
+            "move_schematic_net_label": self._handle_move_schematic_net_label,
             "export_schematic_pdf": self._handle_export_schematic_pdf,
             "export_schematic_svg": self._handle_export_schematic_svg,
             # Schematic analysis tools (read-only)
@@ -408,6 +423,10 @@ class KiCADInterface:
             "find_orphaned_wires": self._handle_find_orphaned_wires,
             "list_floating_labels": self._handle_list_floating_labels,
             "snap_to_grid": self._handle_snap_to_grid,
+            "add_schematic_hierarchical_label": self._handle_add_schematic_hierarchical_label,
+            "add_schematic_text": self._handle_add_schematic_text,
+            "list_schematic_texts": self._handle_list_schematic_texts,
+            "add_sheet_pin": self._handle_add_sheet_pin,
             "import_svg_logo": self._handle_import_svg_logo,
             # UI/Process management commands
             "check_kicad_ui": self._handle_check_kicad_ui,
@@ -564,6 +583,7 @@ class KiCADInterface:
         "import_svg_logo",
         "sync_schematic_to_board",
         "connect_passthrough",
+        "connect_to_net",
     }
 
     def _auto_save_board(self) -> None:
@@ -620,8 +640,15 @@ class KiCADInterface:
                     "message": "Schematic name is required. Provide 'name', 'projectName', or 'filename' parameter.",
                 }
 
-            schematic = SchematicManager.create_schematic(project_name, metadata)
-            file_path = f"{path}/{project_name}.kicad_sch"
+            sch_path = path if path and path != "." else None
+            schematic = SchematicManager.create_schematic(
+                project_name, path=sch_path, metadata=metadata
+            )
+            base_name = (
+                project_name if project_name.endswith(".kicad_sch") else f"{project_name}.kicad_sch"
+            )
+            normalized_path = path or "."
+            file_path = os.path.join(normalized_path, base_name)
             success = SchematicManager.save_schematic(schematic, file_path)
 
             return {"success": success, "file_path": file_path}
@@ -708,10 +735,19 @@ class KiCADInterface:
             footprint = component.get("footprint", "")
             x = component.get("x", 0)
             y = component.get("y", 0)
+            unit = component.get("unit", 1)
 
-            # Derive project path from schematic path for project-local library resolution
+            # Derive project path from schematic path for project-local library resolution.
+            # Walk up from the schematic file to find the directory that owns the project
+            # (contains sym-lib-table or a .kicad_pro file).  Schematics stored in a
+            # sub-folder (e.g. sheets/) would otherwise resolve to the wrong directory and
+            # miss any project-local sym-lib-table entries.
             schematic_file = Path(schematic_path)
             derived_project_path = schematic_file.parent
+            for ancestor in schematic_file.parents:
+                if (ancestor / "sym-lib-table").exists() or list(ancestor.glob("*.kicad_pro")):
+                    derived_project_path = ancestor
+                    break
 
             loader = DynamicSymbolLoader(project_path=derived_project_path)
             loader.add_component(
@@ -723,6 +759,7 @@ class KiCADInterface:
                 footprint=footprint,
                 x=x,
                 y=y,
+                unit=unit,
                 project_path=derived_project_path,
             )
 
@@ -787,7 +824,15 @@ class KiCADInterface:
             # line-by-line regex would never match.
             blocks_to_delete = []  # list of (char_start, char_end) into content
             search_start = 0
-            pattern = re.compile(r'\(symbol\s+\(lib_id\s+"')
+            # Match the opening of any placed-symbol block. KiCAD may emit the
+            # children of (symbol ...) in any order — most commonly
+            # `(symbol (lib_id "..."))`, but symbols whose library entry has been
+            # rescued / customised carry an additional `(lib_name "...")` first:
+            # `(symbol (lib_name "...") (lib_id "...") ...)`. Matching just
+            # `(symbol\s+(` covers both, and the lib_symbols range check below
+            # still excludes library-definition symbols (which use the
+            # `(symbol "name" ...)` form with a quoted string, not a paren).
+            pattern = re.compile(r"\(symbol\s+\(")
             while True:
                 m = pattern.search(content, search_start)
                 if not m:
@@ -844,9 +889,215 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
+    # Built-in property names that have dedicated parameters and cannot be removed
+    # via the generic removeProperties path. They are also written by KiCad on every
+    # save, so deleting them produces an invalid schematic.
+    _PROTECTED_PROPERTY_FIELDS = frozenset({"Reference", "Value", "Footprint", "Datasheet"})
+
+    @staticmethod
+    def _escape_sexpr_string(value: str) -> str:
+        """Escape a string for safe insertion into an S-expression double-quoted token."""
+        return value.replace("\\", "\\\\").replace('"', '\\"')
+
+    @staticmethod
+    def _find_matching_paren(s: str, start: int) -> int:
+        """Return the index of the closing paren matching the opening paren at `start`.
+
+        Returns -1 if no match is found. Does not understand string literals — that's
+        fine for KiCAD .kicad_sch files because property values cannot contain a
+        bare `(` or `)` character (they would be backslash-escaped).
+        """
+        depth = 0
+        i = start
+        while i < len(s):
+            if s[i] == "(":
+                depth += 1
+            elif s[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    return i
+            i += 1
+        return -1
+
+    def _set_property_in_block(
+        self,
+        block: str,
+        name: str,
+        spec: Dict[str, Any],
+        default_position: Tuple[float, float],
+    ) -> Tuple[str, str]:
+        """Add or update a property within a placed-symbol block.
+
+        Args:
+            block: The full text of the (symbol ...) block.
+            name: Property name (e.g. "MPN", "Manufacturer").
+            spec: Dict that may contain keys: value, x, y, angle, hide, fontSize.
+            default_position: (x, y) of the parent symbol — used as the default
+                location for newly-created properties so the field is anchored
+                near the component, not at (0, 0).
+
+        Returns:
+            Tuple of (new_block_text, action_taken) where action is "added" or "updated".
+        """
+        import re
+
+        new_value = spec.get("value")
+        new_x = spec.get("x")
+        new_y = spec.get("y")
+        new_angle = spec.get("angle")
+        new_hide = spec.get("hide")
+        font_size = spec.get("fontSize", 1.27)
+
+        existing_match = re.search(
+            r'\(property\s+"' + re.escape(name) + r'"\s+"',
+            block,
+        )
+
+        if existing_match:
+            # Property exists — patch value / position / hide in place
+            if new_value is not None:
+                escaped = self._escape_sexpr_string(str(new_value))
+                block = re.sub(
+                    r'(\(property\s+"' + re.escape(name) + r'"\s+)"[^"]*"',
+                    rf'\1"{escaped}"',
+                    block,
+                    count=1,
+                )
+
+            if new_x is not None or new_y is not None or new_angle is not None:
+                pos_match = re.search(
+                    r'(\(property\s+"'
+                    + re.escape(name)
+                    + r'"\s+"[^"]*"\s+\(at\s+)([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)(\s*\))',
+                    block,
+                )
+                if pos_match:
+                    cx = new_x if new_x is not None else float(pos_match.group(2))
+                    cy = new_y if new_y is not None else float(pos_match.group(3))
+                    ca = new_angle if new_angle is not None else float(pos_match.group(4))
+                    block = (
+                        block[: pos_match.start()]
+                        + pos_match.group(1)
+                        + f"{cx} {cy} {ca}"
+                        + pos_match.group(5)
+                        + block[pos_match.end() :]
+                    )
+
+            if new_hide is not None:
+                block = self._set_hide_on_property(block, name, bool(new_hide))
+
+            return block, "updated"
+
+        # Property does not exist — append a new one after the last existing property
+        if new_value is None:
+            # Adding a brand-new property requires at least a value
+            raise ValueError(
+                f"Property '{name}' does not exist on this component yet — supply a value to create it"
+            )
+
+        cx = new_x if new_x is not None else default_position[0]
+        cy = new_y if new_y is not None else default_position[1]
+        ca = new_angle if new_angle is not None else 0
+        # New properties default to hidden (BOM/sourcing data normally has no
+        # visible footprint on the schematic canvas).
+        hide_str = "(hide yes)" if (new_hide is None or new_hide) else "(hide no)"
+        escaped = self._escape_sexpr_string(str(new_value))
+        escaped_name = self._escape_sexpr_string(str(name))
+
+        new_prop = (
+            f'    (property "{escaped_name}" "{escaped}" (at {cx} {cy} {ca})\n'
+            f"      (effects (font (size {font_size} {font_size})) {hide_str})\n"
+            f"    )"
+        )
+
+        # Find the last existing property block and insert immediately after it.
+        last_prop_end = -1
+        for m in re.finditer(r'\(property\s+"', block):
+            end = self._find_matching_paren(block, m.start())
+            if end > last_prop_end:
+                last_prop_end = end
+
+        if last_prop_end < 0:
+            # No properties at all — insert just before the closing paren of the symbol
+            block_close = block.rfind(")")
+            if block_close < 0:
+                raise ValueError("Malformed symbol block: no closing paren")
+            block = block[:block_close] + "\n" + new_prop + "\n  " + block[block_close:]
+        else:
+            block = block[: last_prop_end + 1] + "\n" + new_prop + block[last_prop_end + 1 :]
+
+        return block, "added"
+
+    def _set_hide_on_property(self, block: str, name: str, hide: bool) -> str:
+        """Set the (hide yes|no) flag on a named property's effects clause.
+
+        Handles three pre-existing forms:
+            (effects (font (size 1.27 1.27)))                   — no hide flag
+            (effects (font (size 1.27 1.27)) hide)              — legacy bare token
+            (effects (font (size 1.27 1.27)) (hide yes|no))     — KiCad 9 form
+        """
+        import re
+
+        prop_match = re.search(
+            r'\(property\s+"' + re.escape(name) + r'"',
+            block,
+        )
+        if not prop_match:
+            return block
+        prop_start = prop_match.start()
+        prop_end = self._find_matching_paren(block, prop_start)
+        if prop_end < 0:
+            return block
+
+        # Locate the (effects ...) clause inside the property
+        prop_segment = block[prop_start : prop_end + 1]
+        eff_match = re.search(r"\(effects\b", prop_segment)
+        if not eff_match:
+            return block
+        eff_start = prop_start + eff_match.start()
+        eff_end = self._find_matching_paren(block, eff_start)
+        if eff_end < 0:
+            return block
+
+        eff_inner = block[eff_start + 1 : eff_end]  # 'effects (font ...) ...'
+        eff_inner = re.sub(r"\s*\(hide\s+(yes|no)\)", "", eff_inner)
+        eff_inner = re.sub(r"\s+hide\b(?!\s+(yes|no))", "", eff_inner)
+        eff_inner = eff_inner.rstrip() + f' (hide {"yes" if hide else "no"})'
+
+        new_effects = "(" + eff_inner + ")"
+        return block[:eff_start] + new_effects + block[eff_end + 1 :]
+
+    def _remove_property_from_block(self, block: str, name: str) -> Tuple[str, bool]:
+        """Remove a property from the symbol block. Returns (new_block, removed_bool)."""
+        import re
+
+        m = re.search(r'\(property\s+"' + re.escape(name) + r'"\s+"', block)
+        if not m:
+            return block, False
+        start = m.start()
+        end = self._find_matching_paren(block, start)
+        if end < 0:
+            return block, False
+
+        # Trim surrounding whitespace (leading newline + indent) so the resulting
+        # file does not develop blank lines after every removal.
+        trim_start = start
+        while trim_start > 0 and block[trim_start - 1] in (" ", "\t"):
+            trim_start -= 1
+        if trim_start > 0 and block[trim_start - 1] == "\n":
+            trim_start -= 1
+        return block[:trim_start] + block[end + 1 :], True
+
     def _handle_edit_schematic_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Update properties of a placed symbol in a schematic (footprint, value, reference).
-        Uses text-based in-place editing – preserves position, UUID and all other fields.
+        """Update properties of a placed symbol in a schematic.
+
+        Supports updating the standard fields (footprint / value / reference rename),
+        repositioning field labels, and managing **arbitrary custom properties**
+        (MPN, Manufacturer, Distributor part numbers, Voltage, Dielectric, Tolerance,
+        LCSC, etc.) used by BOM/CPL exporters and JLCPCB / Digi-Key sourcing.
+
+        Uses text-based in-place editing — preserves position, UUID, and all
+        unrelated fields.
         """
         logger.info("Editing schematic component")
         try:
@@ -858,9 +1109,12 @@ class KiCADInterface:
             new_footprint = params.get("footprint")
             new_value = params.get("value")
             new_reference = params.get("newReference")
-            field_positions = params.get(
-                "fieldPositions"
-            )  # dict: {"Reference": {"x": 1, "y": 2, "angle": 0}}
+            # dict: {"Reference": {"x": 1, "y": 2, "angle": 0}}
+            field_positions = params.get("fieldPositions")
+            # dict: {"MPN": "RC0603FR-0710KL"}  OR  {"MPN": {"value": "...", "hide": true}}
+            properties = params.get("properties")
+            # list[str]: ["OldField"] — protected built-ins are rejected
+            remove_properties = params.get("removeProperties")
 
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
@@ -872,12 +1126,29 @@ class KiCADInterface:
                     new_value is not None,
                     new_reference is not None,
                     field_positions is not None,
+                    properties is not None,
+                    remove_properties is not None,
                 ]
             ):
                 return {
                     "success": False,
-                    "message": "At least one of footprint, value, newReference, or fieldPositions must be provided",
+                    "message": (
+                        "At least one of footprint, value, newReference, fieldPositions, "
+                        "properties, or removeProperties must be provided"
+                    ),
                 }
+
+            # Reject removal attempts targeting protected built-in fields up-front
+            if remove_properties:
+                blocked = [n for n in remove_properties if n in self._PROTECTED_PROPERTY_FIELDS]
+                if blocked:
+                    return {
+                        "success": False,
+                        "message": (
+                            f"Cannot remove built-in field(s) {blocked}: use the dedicated "
+                            "value/footprint/newReference parameters or set the value to ''"
+                        ),
+                    }
 
             sch_file = Path(schematic_path)
             if not sch_file.exists():
@@ -889,29 +1160,23 @@ class KiCADInterface:
             with open(sch_file, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            def find_matching_paren(s: str, start: int) -> int:
-                """Find the position of the closing paren matching the opening paren at start."""
-                depth = 0
-                i = start
-                while i < len(s):
-                    if s[i] == "(":
-                        depth += 1
-                    elif s[i] == ")":
-                        depth -= 1
-                        if depth == 0:
-                            return i
-                    i += 1
-                return -1
-
             # Skip lib_symbols section
             lib_sym_pos = content.find("(lib_symbols")
-            lib_sym_end = find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
+            lib_sym_end = (
+                self._find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
+            )
 
-            # Find placed symbol blocks that match the reference
-            # Search for (symbol (lib_id "...") ... (property "Reference" "<ref>" ...) ...)
+            # Find placed symbol blocks that match the reference. KiCAD may
+            # serialise the children of (symbol ...) in different orders —
+            # `(symbol (lib_id "..."))` is the common case but rescued or
+            # locally-customised symbols carry an extra `(lib_name "...")`
+            # before the lib_id: `(symbol (lib_name "...") (lib_id "..."))`.
+            # Match any opening paren after `(symbol`; the lib_symbols range
+            # check below excludes library-definition symbols, which use the
+            # `(symbol "name" ...)` form (quoted string, not paren).
             block_start = block_end = None
             search_start = 0
-            pattern = re.compile(r'\(symbol\s+\(lib_id\s+"')
+            pattern = re.compile(r"\(symbol\s+\(")
             while True:
                 m = pattern.search(content, search_start)
                 if not m:
@@ -921,7 +1186,7 @@ class KiCADInterface:
                 if lib_sym_pos >= 0 and lib_sym_pos <= pos <= lib_sym_end:
                     search_start = lib_sym_end + 1
                     continue
-                end = find_matching_paren(content, pos)
+                end = self._find_matching_paren(content, pos)
                 if end < 0:
                     search_start = pos + 1
                     continue
@@ -942,20 +1207,40 @@ class KiCADInterface:
 
             # Apply property replacements within the found block
             block_text = content[block_start : block_end + 1]
+
+            # Determine the parent symbol position so that newly-added properties
+            # default to a sensible location (anchored near the component).
+            # KiCAD always emits the symbol's own (at x y angle) before any
+            # (property ...) child blocks, so the FIRST (at ...) inside the
+            # symbol block is the symbol origin regardless of whether
+            # (lib_name ...) precedes (lib_id ...).
+            comp_at = re.search(
+                r"\(at\s+([\d\.\-]+)\s+([\d\.\-]+)",
+                block_text,
+            )
+            comp_origin: Tuple[float, float] = (
+                (float(comp_at.group(1)), float(comp_at.group(2))) if comp_at else (0.0, 0.0)
+            )
+
             if new_footprint is not None:
+                escaped_fp = self._escape_sexpr_string(str(new_footprint))
                 block_text = re.sub(
                     r'(\(property\s+"Footprint"\s+)"[^"]*"',
-                    rf'\1"{new_footprint}"',
+                    rf'\1"{escaped_fp}"',
                     block_text,
                 )
             if new_value is not None:
+                escaped_v = self._escape_sexpr_string(str(new_value))
                 block_text = re.sub(
-                    r'(\(property\s+"Value"\s+)"[^"]*"', rf'\1"{new_value}"', block_text
+                    r'(\(property\s+"Value"\s+)"[^"]*"',
+                    rf'\1"{escaped_v}"',
+                    block_text,
                 )
             if new_reference is not None:
+                escaped_r = self._escape_sexpr_string(str(new_reference))
                 block_text = re.sub(
                     r'(\(property\s+"Reference"\s+)"[^"]*"',
-                    rf'\1"{new_reference}"',
+                    rf'\1"{escaped_r}"',
                     block_text,
                 )
             if field_positions is not None:
@@ -971,12 +1256,50 @@ class KiCADInterface:
                         block_text,
                     )
 
+            properties_added: Dict[str, Any] = {}
+            properties_updated: Dict[str, Any] = {}
+            if properties:
+                if not isinstance(properties, dict):
+                    return {
+                        "success": False,
+                        "message": "properties must be a dict mapping property name -> value or spec",
+                    }
+                for name, spec in properties.items():
+                    if not isinstance(name, str) or not name:
+                        return {
+                            "success": False,
+                            "message": f"Invalid property name: {name!r}",
+                        }
+                    # Normalise scalar values to a spec dict with just {"value": ...}
+                    if not isinstance(spec, dict):
+                        spec = {"value": spec}
+                    try:
+                        block_text, action = self._set_property_in_block(
+                            block_text, name, spec, comp_origin
+                        )
+                    except ValueError as ve:
+                        return {"success": False, "message": str(ve)}
+                    target = properties_added if action == "added" else properties_updated
+                    target[name] = spec.get("value")
+
+            properties_removed: list = []
+            if remove_properties:
+                if not isinstance(remove_properties, list):
+                    return {
+                        "success": False,
+                        "message": "removeProperties must be a list of property names",
+                    }
+                for name in remove_properties:
+                    block_text, removed = self._remove_property_from_block(block_text, name)
+                    if removed:
+                        properties_removed.append(name)
+
             content = content[:block_start] + block_text + content[block_end + 1 :]
 
             with open(sch_file, "w", encoding="utf-8") as f:
                 f.write(content)
 
-            changes = {
+            changes: Dict[str, Any] = {
                 k: v
                 for k, v in {
                     "footprint": new_footprint,
@@ -987,6 +1310,13 @@ class KiCADInterface:
             }
             if field_positions is not None:
                 changes["fieldPositions"] = field_positions
+            if properties_added:
+                changes["propertiesAdded"] = properties_added
+            if properties_updated:
+                changes["propertiesUpdated"] = properties_updated
+            if properties_removed:
+                changes["propertiesRemoved"] = properties_removed
+
             logger.info(f"Edited schematic component {reference}: {changes}")
             return {"success": True, "reference": reference, "updated": changes}
 
@@ -996,6 +1326,52 @@ class KiCADInterface:
 
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
+
+    def _handle_set_schematic_component_property(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add or update a single property on a placed schematic symbol.
+
+        Convenience wrapper around `edit_schematic_component` for the very common
+        case of setting one BOM/sourcing field at a time. The property is created
+        if it does not already exist, otherwise its value (and optionally its
+        position / visibility) is updated in place.
+        """
+        logger.info("Setting schematic component property")
+        name = params.get("name")
+        if not isinstance(name, str) or not name:
+            return {"success": False, "message": "name is required"}
+        if "value" not in params:
+            return {"success": False, "message": "value is required"}
+
+        spec: Dict[str, Any] = {"value": params["value"]}
+        for key in ("x", "y", "angle", "hide", "fontSize"):
+            if params.get(key) is not None:
+                spec[key] = params[key]
+
+        return self._handle_edit_schematic_component(
+            {
+                "schematicPath": params.get("schematicPath"),
+                "reference": params.get("reference"),
+                "properties": {name: spec},
+            }
+        )
+
+    def _handle_remove_schematic_component_property(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove a single custom property from a placed schematic symbol.
+
+        Built-in fields (Reference, Value, Footprint, Datasheet) cannot be
+        removed — use `edit_schematic_component` to clear them instead.
+        """
+        logger.info("Removing schematic component property")
+        name = params.get("name")
+        if not isinstance(name, str) or not name:
+            return {"success": False, "message": "name is required"}
+        return self._handle_edit_schematic_component(
+            {
+                "schematicPath": params.get("schematicPath"),
+                "reference": params.get("reference"),
+                "removeProperties": [name],
+            }
+        )
 
     def _handle_get_schematic_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return full component info: position and all field values with their (at x y angle) positions."""
@@ -1039,10 +1415,17 @@ class KiCADInterface:
             lib_sym_pos = content.find("(lib_symbols")
             lib_sym_end = find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
 
-            # Find the placed symbol block for this reference
+            # Find the placed symbol block for this reference. KiCAD may emit
+            # the children of (symbol ...) in different orders — most commonly
+            # `(symbol (lib_id "..."))`, but symbols whose library entry has
+            # been rescued / customised carry an extra `(lib_name "...")` first
+            # (`(symbol (lib_name "...") (lib_id "..."))`). Match `(symbol\s+(`
+            # — any opening paren — to handle both. The lib_symbols range check
+            # below excludes library-definition symbols, which use the
+            # `(symbol "name" ...)` form (quoted string, not paren).
             block_start = block_end = None
             search_start = 0
-            pattern = re.compile(r'\(symbol\s+\(lib_id\s+"')
+            pattern = re.compile(r"\(symbol\s+\(")
             while True:
                 m = pattern.search(content, search_start)
                 if not m:
@@ -1072,9 +1455,12 @@ class KiCADInterface:
 
             block_text = content[block_start : block_end + 1]
 
-            # Extract component position: first (at x y angle) in the symbol header line
+            # Extract component position: the first (at x y angle) inside the
+            # symbol block. KiCAD always writes the symbol's own (at) before
+            # any (property ...) child blocks, so the first match is the
+            # symbol origin regardless of the (lib_name)/(lib_id) ordering.
             comp_at = re.search(
-                r'\(symbol\s+\(lib_id\s+"[^"]*"\s*\)\s+\(at\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s*\)',
+                r"\(at\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s*\)",
                 block_text,
             )
             if comp_at:
@@ -1235,39 +1621,6 @@ class KiCADInterface:
                 return {"success": False, "message": "Failed to add wire"}
         except Exception as e:
             logger.error(f"Error adding wire to schematic: {str(e)}")
-            import traceback
-
-            logger.error(traceback.format_exc())
-            return {
-                "success": False,
-                "message": str(e),
-                "errorDetails": traceback.format_exc(),
-            }
-
-    def _handle_add_schematic_junction(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Add a junction (connection dot) to a schematic using WireManager"""
-        logger.info("Adding junction to schematic")
-        try:
-            from pathlib import Path
-
-            from commands.wire_manager import WireManager
-
-            schematic_path = params.get("schematicPath")
-            position = params.get("position")
-
-            if not schematic_path:
-                return {"success": False, "message": "Schematic path is required"}
-            if not position:
-                return {"success": False, "message": "Position is required"}
-
-            success = WireManager.add_junction(Path(schematic_path), position)
-
-            if success:
-                return {"success": True, "message": "Junction added successfully"}
-            else:
-                return {"success": False, "message": "Failed to add junction"}
-        except Exception as e:
-            logger.error(f"Error adding junction to schematic: {str(e)}")
             import traceback
 
             logger.error(traceback.format_exc())
@@ -1644,7 +1997,11 @@ class KiCADInterface:
             }
 
     def _handle_connect_to_net(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Connect a component pin to a named net using wire stub and label"""
+        """Connect a component pin to a named net using wire stub and label,
+        and also assign the net to the corresponding pad on the PCB board so
+        that save_project persists the net (pcbnew.SaveBoard only writes nets
+        that are referenced by at least one board element).
+        """
         logger.info("Connecting component pin to net")
         try:
             from pathlib import Path
@@ -1661,6 +2018,16 @@ class KiCADInterface:
             result = ConnectionManager.connect_to_net(
                 Path(schematic_path), component_ref, pin_name, net_name
             )
+
+            # Also assign the net to the pad on the PCB board
+            if self.board and isinstance(result, dict) and result.get("success"):
+                try:
+                    if self._assign_net_to_pad(component_ref, pin_name, net_name):
+                        msg = result.get("message", "")
+                        result["message"] = (msg + " (PCB pad also updated)").strip()
+                except Exception as pcb_err:
+                    logger.warning(f"Could not assign net to PCB pad: {pcb_err}")
+
             return result
         except Exception as e:
             logger.error(f"Error connecting to net: {str(e)}")
@@ -1695,11 +2062,48 @@ class KiCADInterface:
                 Path(schematic_path), source_ref, target_ref, net_prefix, pin_offset
             )
 
+            # Also assign nets to PCB pads for each successfully connected pin
+            pcb_assigned = 0
+            if self.board:
+                import re as _re
+
+                for conn_info in result.get("connected", []):
+                    # Expected format: "{src_ref}/{pin} <-> {tgt_ref}/{pin} [{net}]"
+                    try:
+                        parts = conn_info.split(" <-> ")
+                        if len(parts) != 2:
+                            continue
+                        src_part = parts[0]
+                        rest = parts[1]
+                        bracket_match = _re.search(r"\[(.+)\]", rest)
+                        tgt_part = rest.split(" [")[0] if " [" in rest else rest
+                        net_name = bracket_match.group(1) if bracket_match else None
+                        if not net_name:
+                            continue
+
+                        src_ref_pin = src_part.split("/")
+                        tgt_ref_pin = tgt_part.split("/")
+                        if len(src_ref_pin) == 2 and self._assign_net_to_pad(
+                            src_ref_pin[0], src_ref_pin[1], net_name
+                        ):
+                            pcb_assigned += 1
+                        if len(tgt_ref_pin) == 2 and self._assign_net_to_pad(
+                            tgt_ref_pin[0], tgt_ref_pin[1], net_name
+                        ):
+                            pcb_assigned += 1
+                    except Exception as parse_err:
+                        logger.debug(
+                            f"Could not parse passthrough result for PCB assignment: {parse_err}"
+                        )
+
             n_ok = len(result["connected"])
             n_fail = len(result["failed"])
+            msg = f"Passthrough complete: {n_ok} connected, {n_fail} failed"
+            if pcb_assigned:
+                msg += f" ({pcb_assigned} PCB pads updated)"
             return {
                 "success": n_fail == 0,
-                "message": f"Passthrough complete: {n_ok} connected, {n_fail} failed",
+                "message": msg,
                 "connected": result["connected"],
                 "failed": result["failed"],
             }
@@ -1709,6 +2113,49 @@ class KiCADInterface:
 
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
+
+    def _assign_net_to_pad(self, component_ref: str, pin_name: str, net_name: str) -> bool:
+        """Assign a net to a specific pad on the PCB board.
+
+        Ensures the net exists on the board and sets it on the matching pad.
+        Needed because pcbnew.SaveBoard() drops nets that are not referenced
+        by any board element (pad/track/via/zone).
+        Returns True if the pad was found and updated.
+        """
+        board = self.board
+        if not board:
+            return False
+
+        netinfo = board.GetNetInfo()
+        nets_map = netinfo.NetsByName()
+        if not nets_map.has_key(net_name):
+            net_item = pcbnew.NETINFO_ITEM(board, net_name)
+            board.Add(net_item)
+            netinfo = board.GetNetInfo()
+            nets_map = netinfo.NetsByName()
+
+        if not nets_map.has_key(net_name):
+            logger.warning(f"Net '{net_name}' could not be created on board")
+            return False
+
+        net_obj = nets_map[net_name]
+
+        for fp in board.GetFootprints():
+            if fp.GetReference() == component_ref:
+                for pad in fp.Pads():
+                    if str(pad.GetNumber()) == str(pin_name):
+                        pad.SetNet(net_obj)
+                        logger.info(
+                            f"Assigned net '{net_name}' to pad {component_ref}/{pin_name} on PCB"
+                        )
+                        return True
+                logger.warning(
+                    f"Pad '{pin_name}' not found on footprint '{component_ref}'"
+                )
+                return False
+
+        logger.warning(f"Footprint '{component_ref}' not found on board")
+        return False
 
     def _handle_get_schematic_pin_locations(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return exact pin endpoint coordinates for a schematic component"""
@@ -1951,13 +2398,15 @@ class KiCADInterface:
         """List all nets in a schematic with their connections"""
         logger.info("Listing schematic nets")
         try:
-            from pathlib import Path
-
             from commands.wire_connectivity import (
                 _build_adjacency,
+                _discover_sub_sheets,
+                _load_sexp,
+                _parse_labels_sexp,
                 _parse_virtual_connections,
                 _parse_wires,
                 count_pins_on_net,
+                get_connections_for_net,
             )
 
             schematic_path = params.get("schematicPath")
@@ -1968,16 +2417,39 @@ class KiCADInterface:
             if not schematic:
                 return {"success": False, "message": "Failed to load schematic"}
 
-            # Get all net names from labels and global labels
-            net_names = set()
-            if hasattr(schematic, "label"):
-                for label in schematic.label:
-                    if hasattr(label, "value"):
-                        net_names.add(label.value)
-            if hasattr(schematic, "global_label"):
-                for label in schematic.global_label:
-                    if hasattr(label, "value"):
-                        net_names.add(label.value)
+            # Collect net names from the top-level sheet using sexpdata.
+            # Falls back to kicad-skip's label collections when the file
+            # cannot be read (e.g. mocked schematics in unit tests).
+            net_names: set = set()
+            sexp_loaded = False
+            try:
+                sexp = _load_sexp(schematic_path)
+                sexp_loaded = True
+                _, label_to_points = _parse_labels_sexp(sexp)
+                net_names.update(label_to_points.keys())
+            except Exception as e:
+                logger.debug(
+                    f"Could not parse labels from {schematic_path} via sexp ({e}); "
+                    "falling back to kicad-skip label collections"
+                )
+                for attr in ("label", "global_label"):
+                    if not hasattr(schematic, attr):
+                        continue
+                    for label in getattr(schematic, attr):
+                        if hasattr(label, "value"):
+                            net_names.add(label.value)
+
+            # Collect net names from all sub-sheets (only when the parent
+            # sheet was readable; fake/mock paths skip recursion entirely).
+            if sexp_loaded:
+                sub_sheets = _discover_sub_sheets(schematic_path)
+                for sub_path in sub_sheets:
+                    try:
+                        sub_sexp = _load_sexp(sub_path)
+                        _, sub_label_to_points = _parse_labels_sexp(sub_sexp)
+                        net_names.update(sub_label_to_points.keys())
+                    except Exception as e:
+                        logger.warning(f"Error reading sub-sheet {sub_path}: {e}")
 
             # Pre-build shared wire graph structures for efficiency
             all_wires = _parse_wires(schematic)
@@ -1989,9 +2461,7 @@ class KiCADInterface:
 
             nets = []
             for net_name in sorted(net_names):
-                connections = ConnectionManager.get_net_connections(
-                    schematic, net_name, Path(schematic_path)
-                )
+                connections = get_connections_for_net(schematic, schematic_path, net_name)
                 pin_count = count_pins_on_net(
                     schematic,
                     schematic_path,
@@ -2070,6 +2540,13 @@ class KiCADInterface:
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
 
+            net_name = params.get("netName")
+            label_type = params.get("labelType")
+
+            _valid_label_types = {"net", "global", "power"}
+            if label_type is not None and label_type not in _valid_label_types:
+                return {"success": False, "message": "labelType must be one of: net, global, power"}
+
             schematic = SchematicManager.load_schematic(schematic_path)
             if not schematic:
                 return {"success": False, "message": "Failed to load schematic"}
@@ -2132,6 +2609,12 @@ class KiCADInterface:
                         }
                     )
 
+            # Apply filters
+            if net_name is not None:
+                labels = [lbl for lbl in labels if lbl["name"] == net_name]
+            if label_type is not None:
+                labels = [lbl for lbl in labels if lbl["type"] == label_type]
+
             return {"success": True, "labels": labels, "count": len(labels)}
 
         except Exception as e:
@@ -2145,7 +2628,6 @@ class KiCADInterface:
         """Move a schematic component to a new position, dragging connected wires."""
         logger.info("Moving schematic component")
         try:
-            import sexpdata as _sexpdata
             from commands.wire_dragger import WireDragger
 
             schematic_path = params.get("schematicPath")
@@ -2167,7 +2649,7 @@ class KiCADInterface:
                 }
 
             with open(schematic_path, "r", encoding="utf-8") as f:
-                sch_data = _sexpdata.loads(f.read())
+                sch_data = sexpdata.loads(f.read())
 
             # Find symbol and record old position
             found = WireDragger.find_symbol(sch_data, reference)
@@ -2206,8 +2688,10 @@ class KiCADInterface:
             # Update symbol position
             WireDragger.update_symbol_position(sch_data, reference, float(new_x), float(new_y))
 
+            WireManager.sync_junctions(sch_data)
+
             with open(schematic_path, "w", encoding="utf-8") as f:
-                f.write(_sexpdata.dumps(sch_data))
+                f.write(sexpdata.dumps(sch_data))
 
             return {
                 "success": True,
@@ -2240,33 +2724,77 @@ class KiCADInterface:
                     "message": "schematicPath and reference are required",
                 }
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            sym_k = sexpdata.Symbol("symbol")
+            prop_k = sexpdata.Symbol("property")
+            at_k = sexpdata.Symbol("at")
+            mirror_k = sexpdata.Symbol("mirror")
 
-            for symbol in schematic.symbol:
-                if not hasattr(symbol.property, "Reference"):
+            with open(schematic_path, "r", encoding="utf-8") as _f:
+                sch_data = sexpdata.load(_f)
+
+            target = None
+            for item in sch_data:
+                if not (isinstance(item, list) and item and item[0] == sym_k):
                     continue
-                if symbol.property.Reference.value == reference:
-                    pos = list(symbol.at.value)
-                    while len(pos) < 3:
-                        pos.append(0)
-                    pos[2] = angle
-                    symbol.at.value = pos
+                ref_val = None
+                for sub in item[1:]:
+                    if (
+                        isinstance(sub, list)
+                        and len(sub) >= 3
+                        and sub[0] == prop_k
+                        and str(sub[1]).strip('"') == "Reference"
+                    ):
+                        ref_val = str(sub[2]).strip('"')
+                        break
+                if ref_val == reference:
+                    target = item
+                    break
 
-                    if mirror:
-                        if hasattr(symbol, "mirror"):
-                            symbol.mirror.value = mirror
-                        else:
-                            logger.warning(
-                                f"Mirror '{mirror}' requested for {reference}, "
-                                f"but symbol has no mirror attribute; skipped"
-                            )
+            if target is None:
+                return {"success": False, "message": f"Component {reference} not found"}
 
-                    SchematicManager.save_schematic(schematic, schematic_path)
-                    return {"success": True, "reference": reference, "angle": angle}
+            # Update (at x y rot)
+            at_node = None
+            mirror_idx = None
+            for idx, sub in enumerate(target[1:], start=1):
+                if not isinstance(sub, list) or not sub:
+                    continue
+                if sub[0] == at_k:
+                    at_node = sub
+                elif sub[0] == mirror_k:
+                    mirror_idx = idx
 
-            return {"success": False, "message": f"Component {reference} not found"}
+            if at_node is None:
+                return {
+                    "success": False,
+                    "message": f"Component {reference} has no (at ...) node",
+                }
+            while len(at_node) < 3:
+                at_node.append(0)
+            if len(at_node) < 4:
+                at_node.append(angle)
+            else:
+                at_node[3] = angle
+
+            if mirror:
+                mirror_node = [mirror_k, sexpdata.Symbol(str(mirror))]
+                if mirror_idx is not None:
+                    target[mirror_idx] = mirror_node
+                else:
+                    # Insert after (at ...) for stability
+                    insert_at = len(target)
+                    for idx, sub in enumerate(target[1:], start=1):
+                        if isinstance(sub, list) and sub and sub[0] == at_k:
+                            insert_at = idx + 1
+                            break
+                    target.insert(insert_at, mirror_node)
+
+            WireManager.sync_junctions(sch_data)
+
+            with open(schematic_path, "w", encoding="utf-8") as _f:
+                _f.write(sexpdata.dumps(sch_data))
+
+            return {"success": True, "reference": reference, "angle": angle}
 
         except Exception as e:
             logger.error(f"Error rotating schematic component: {e}")
@@ -2419,6 +2947,92 @@ class KiCADInterface:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
+    def _handle_move_schematic_net_label(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Move a net label to a new position in the schematic."""
+        logger.info("Moving schematic net label")
+        try:
+            import sexpdata as _sexpdata
+            from sexpdata import Symbol
+
+            schematic_path = params.get("schematicPath")
+            net_name = params.get("netName")
+            new_position = params.get("newPosition", {})
+            new_x = new_position.get("x")
+            new_y = new_position.get("y")
+            current_position = params.get("currentPosition")
+            label_type = params.get("labelType")
+
+            if not schematic_path or not net_name:
+                return {"success": False, "message": "schematicPath and netName are required"}
+            if new_x is None or new_y is None:
+                return {"success": False, "message": "newPosition with x and y is required"}
+
+            _valid_types = {"label", "global_label", "hierarchical_label"}
+            if label_type is not None and label_type not in _valid_types:
+                return {
+                    "success": False,
+                    "message": f"labelType must be one of: {', '.join(sorted(_valid_types))}",
+                }
+
+            _SYM_AT = Symbol("at")
+            target_syms = (
+                {Symbol(label_type)}
+                if label_type is not None
+                else {Symbol(t) for t in _valid_types}
+            )
+
+            TOLERANCE = 0.5
+
+            with open(schematic_path, "r", encoding="utf-8") as f:
+                sch_data = _sexpdata.loads(f.read())
+
+            for item in sch_data:
+                if not (isinstance(item, list) and len(item) >= 2 and item[0] in target_syms):
+                    continue
+                if item[1] != net_name:
+                    continue
+
+                at_idx = next(
+                    (
+                        j
+                        for j, p in enumerate(item)
+                        if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_AT
+                    ),
+                    None,
+                )
+                if at_idx is None:
+                    continue
+
+                at_entry = item[at_idx]
+                old_x, old_y = float(at_entry[1]), float(at_entry[2])
+
+                if current_position is not None:
+                    cx = current_position.get("x", 0)
+                    cy = current_position.get("y", 0)
+                    if not (abs(old_x - cx) < TOLERANCE and abs(old_y - cy) < TOLERANCE):
+                        continue
+
+                rotation = at_entry[3] if len(at_entry) > 3 else 0
+                item[at_idx] = [_SYM_AT, float(new_x), float(new_y), rotation]
+
+                with open(schematic_path, "w", encoding="utf-8") as f:
+                    f.write(_sexpdata.dumps(sch_data))
+
+                return {
+                    "success": True,
+                    "oldPosition": {"x": old_x, "y": old_y},
+                    "newPosition": {"x": float(new_x), "y": float(new_y)},
+                }
+
+            return {"success": False, "message": f"Label '{net_name}' not found"}
+
+        except Exception as e:
+            logger.error(f"Error moving schematic net label: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
     def _handle_export_schematic_svg(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Export schematic to SVG using kicad-cli"""
         logger.info("Exporting schematic SVG")
@@ -2497,6 +3111,8 @@ class KiCADInterface:
         """Get all connections for a named net"""
         logger.info("Getting net connections")
         try:
+            from commands.wire_connectivity import get_connections_for_net
+
             schematic_path = params.get("schematicPath")
             net_name = params.get("netName")
 
@@ -2507,7 +3123,7 @@ class KiCADInterface:
             if not schematic:
                 return {"success": False, "message": "Failed to load schematic"}
 
-            connections = ConnectionManager.get_net_connections(schematic, net_name)
+            connections = get_connections_for_net(schematic, schematic_path, net_name)
             return {"success": True, "connections": connections}
         except Exception as e:
             logger.error(f"Error getting net connections: {str(e)}")
@@ -2617,6 +3233,218 @@ class KiCADInterface:
 
         except Exception as e:
             logger.error(f"Error getting net at point: {str(e)}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_list_schematic_texts(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List all free-form text annotations (SCH_TEXT) in a schematic."""
+        logger.info("Listing schematic text annotations")
+        try:
+            from commands.wire_manager import WireManager
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+
+            texts = WireManager.list_texts(sch_file)
+            if texts is None:
+                return {"success": False, "message": "Failed to parse schematic"}
+
+            # Optional text filter
+            filter_text = params.get("text")
+            if filter_text is not None:
+                texts = [t for t in texts if filter_text.lower() in t["text"].lower()]
+
+            return {"success": True, "texts": texts, "count": len(texts)}
+
+        except Exception as e:
+            logger.error(f"Error listing schematic texts: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_add_schematic_text(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a free-form text annotation (SCH_TEXT) to a schematic."""
+        logger.info("Adding text annotation to schematic")
+        try:
+            from commands.wire_manager import WireManager
+
+            schematic_path = params.get("schematicPath")
+            text = params.get("text")
+            position = params.get("position")
+            angle = params.get("angle", 0)
+            font_size = params.get("fontSize", 1.27)
+            bold = params.get("bold", False)
+            italic = params.get("italic", False)
+            justify = params.get("justify", "left")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not text:
+                return {"success": False, "message": "text is required"}
+            if not position or len(position) != 2:
+                return {"success": False, "message": "position [x, y] is required"}
+            if justify not in ("left", "center", "right"):
+                return {"success": False, "message": "justify must be left, center, or right"}
+            if font_size <= 0:
+                return {"success": False, "message": "fontSize must be positive"}
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {
+                    "success": False,
+                    "message": f"Schematic not found: {schematic_path}",
+                }
+
+            success = WireManager.add_text(
+                sch_file,
+                text,
+                position,
+                angle=angle,
+                font_size=font_size,
+                bold=bold,
+                italic=italic,
+                justify=justify,
+            )
+
+            if success:
+                return {
+                    "success": True,
+                    "message": f"Added text '{text}' at ({position[0]}, {position[1]})",
+                    "position": {"x": position[0], "y": position[1]},
+                    "angle": angle,
+                }
+            return {"success": False, "message": "Failed to add text annotation"}
+
+        except Exception as e:
+            logger.error(f"Error adding schematic text: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_add_schematic_hierarchical_label(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a hierarchical label to a sub-sheet schematic."""
+        logger.info("Adding hierarchical label to schematic")
+        try:
+            from commands.wire_manager import WireManager
+
+            schematic_path = params.get("schematicPath")
+            text = params.get("text")
+            position = params.get("position")
+            shape = params.get("shape", "bidirectional")
+            orientation = params.get("orientation", 0)
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not text:
+                return {"success": False, "message": "text is required"}
+            if not position or len(position) != 2:
+                return {"success": False, "message": "position [x, y] is required"}
+            if shape not in ("input", "output", "bidirectional"):
+                return {
+                    "success": False,
+                    "message": "shape must be input, output, or bidirectional",
+                }
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {
+                    "success": False,
+                    "message": f"Schematic not found: {schematic_path}",
+                }
+
+            success = WireManager.add_hierarchical_label(
+                sch_file, text, position, shape=shape, orientation=orientation
+            )
+
+            if success:
+                return {
+                    "success": True,
+                    "message": (
+                        f"Added hierarchical_label '{text}' " f"at {position} shape={shape}"
+                    ),
+                }
+            return {"success": False, "message": "Failed to add hierarchical label"}
+
+        except Exception as e:
+            logger.error(f"Error adding hierarchical label: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_add_sheet_pin(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a sheet pin to a sheet block on the parent schematic."""
+        logger.info("Adding sheet pin to schematic")
+        try:
+            from commands.wire_manager import WireManager
+
+            schematic_path = params.get("schematicPath")
+            sheet_name = params.get("sheetName")
+            pin_name = params.get("pinName")
+            pin_type = params.get("pinType", "bidirectional")
+            position = params.get("position")
+            orientation = params.get("orientation", 0)
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not sheet_name:
+                return {"success": False, "message": "sheetName is required"}
+            if not pin_name:
+                return {"success": False, "message": "pinName is required"}
+            if not position or len(position) != 2:
+                return {"success": False, "message": "position [x, y] is required"}
+            if pin_type not in ("input", "output", "bidirectional"):
+                return {
+                    "success": False,
+                    "message": "pinType must be input, output, or bidirectional",
+                }
+
+            sch_file = Path(schematic_path)
+            if not sch_file.exists():
+                return {
+                    "success": False,
+                    "message": f"Schematic not found: {schematic_path}",
+                }
+
+            with open(sch_file, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            modified, success = WireManager.add_sheet_pin(
+                content,
+                sheet_name,
+                pin_name,
+                pin_type,
+                position,
+                orientation=orientation,
+            )
+
+            if not success:
+                return {
+                    "success": False,
+                    "message": f"Sheet '{sheet_name}' not found in {schematic_path}",
+                }
+
+            with open(sch_file, "w", encoding="utf-8") as f:
+                f.write(modified)
+
+            return {
+                "success": True,
+                "message": (
+                    f"Added sheet pin '{pin_name}' ({pin_type}) " f"to sheet '{sheet_name}'"
+                ),
+            }
+
+        except Exception as e:
+            logger.error(f"Error adding sheet pin: {e}")
             import traceback
 
             logger.error(traceback.format_exc())
@@ -2914,6 +3742,148 @@ class KiCADInterface:
             logger.error(f"Error generating netlist: {e}")
             return {"success": False, "message": str(e)}
 
+    def _build_hierarchical_pad_net_map(self, project_sch_path: str):
+        """Walk all .kicad_sch files in the project and build a {(ref, pin_num): net_name} map.
+
+        Handles hierarchical schematics by scanning every sub-sheet file.  Net names
+        from global_label / hierarchical_label / local label / power symbols are all
+        collected.  Wire connectivity is traced via BFS so labels not placed directly
+        on a pin endpoint still reach through wire segments.
+
+        Returns: (pad_net_map, net_names_set)
+        """
+        from collections import defaultdict
+        from pathlib import Path
+
+        from commands.pin_locator import PinLocator
+        from skip import Schematic
+
+        TOLERANCE = 0.5  # mm; schematic grid is 1.27 mm so 0.5 is safe
+
+        def snap(x, y):
+            """Round to 2 dp to use exact dict lookup instead of O(n²) scan."""
+            return (round(float(x), 2), round(float(y), 2))
+
+        def nearby_net(pt, point_net, tol=TOLERANCE):
+            """Return net name for the nearest occupied grid point, or None."""
+            x, y = pt
+            # Try exact snap first (fast path)
+            key = snap(x, y)
+            if key in point_net:
+                return point_net[key]
+            # Slow fallback for off-grid placements
+            for (lx, ly), name in point_net.items():
+                if abs(x - lx) < tol and abs(y - ly) < tol:
+                    return name
+            return None
+
+        project_dir = Path(project_sch_path).parent
+        pad_net_map: dict = {}
+        all_net_names: set = set()
+        pin_locator = PinLocator()
+
+        sch_files = sorted(project_dir.rglob("*.kicad_sch"))
+        logger.info(f"_build_hierarchical_pad_net_map: scanning {len(sch_files)} schematic files")
+
+        for sch_path in sch_files:
+            try:
+                sch = Schematic(str(sch_path))
+            except Exception as e:
+                logger.warning(f"Could not load {sch_path}: {e}")
+                continue
+
+            # ── 1. Collect explicit label positions → net name ──────────────
+            point_net: dict = {}  # snap(x,y) -> net_name
+
+            for attr in ("label", "global_label", "hierarchical_label"):
+                for lbl in getattr(sch, attr, None) or []:
+                    try:
+                        pos = lbl.at.value
+                        name = lbl.value
+                        if name:
+                            k = snap(pos[0], pos[1])
+                            point_net[k] = name
+                            all_net_names.add(name)
+                    except Exception:
+                        pass
+
+            # Power symbols (#PWR / #FLG): value property IS the net name; use pin 1 pos
+            for sym in getattr(sch, "symbol", None) or []:
+                try:
+                    ref = sym.property.Reference.value
+                    if not (ref.startswith("#PWR") or ref.startswith("#FLG")):
+                        continue
+                    net_name = sym.property.Value.value
+                    if not net_name:
+                        continue
+                    all_pins = pin_locator.get_all_symbol_pins(sch_path, ref)
+                    for _pin_num, (px, py) in all_pins.items():
+                        k = snap(px, py)
+                        point_net[k] = net_name
+                        all_net_names.add(net_name)
+                except Exception:
+                    pass
+
+            # ── 2. Build wire adjacency and BFS-propagate net names ──────────
+            wire_segments = []
+            for wire in getattr(sch, "wire", None) or []:
+                try:
+                    pts = []
+                    for pt in wire.pts.xy:
+                        pts.append(snap(pt.value[0], pt.value[1]))
+                    if len(pts) >= 2:
+                        wire_segments.append(pts)
+                except Exception:
+                    pass
+
+            # Adjacency: connect endpoints of different segments that share a grid point
+            point_adj: dict = defaultdict(set)
+            for seg in wire_segments:
+                # Connect consecutive points within the segment
+                for i in range(len(seg) - 1):
+                    point_adj[seg[i]].add(seg[i + 1])
+                    point_adj[seg[i + 1]].add(seg[i])
+
+            # All unique wire points
+            all_wire_pts = set()
+            for seg in wire_segments:
+                all_wire_pts.update(seg)
+
+            # BFS: propagate known net names through wire connections
+            queue = [pt for pt in all_wire_pts if pt in point_net]
+            visited = set(queue)
+            while queue:
+                pt = queue.pop()
+                net = point_net[pt]
+                for neighbor in point_adj[pt]:
+                    if neighbor not in point_net:
+                        point_net[neighbor] = net
+                        all_net_names.add(net)
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        queue.append(neighbor)
+
+            # ── 3. Match component pin positions to net names ────────────────
+            for sym in getattr(sch, "symbol", None) or []:
+                try:
+                    ref = sym.property.Reference.value
+                    if ref.startswith("#"):
+                        continue
+                except Exception:
+                    continue
+
+                pin_positions = pin_locator.get_all_symbol_pins(sch_path, ref)
+                for pin_num, (px, py) in pin_positions.items():
+                    net = nearby_net((px, py), point_net)
+                    if net:
+                        pad_net_map[(ref, pin_num)] = net
+
+        logger.info(
+            f"_build_hierarchical_pad_net_map: {len(pad_net_map)} pin→net assignments, "
+            f"{len(all_net_names)} unique nets"
+        )
+        return pad_net_map, all_net_names
+
     def _handle_sync_schematic_to_board(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Sync schematic netlist to PCB board (equivalent to KiCAD F8 'Update PCB from Schematic').
         Reads net connections from the schematic and assigns them to the matching pads in the PCB.
@@ -2958,24 +3928,8 @@ class KiCADInterface:
                     "message": f"Schematic not found. Provide schematicPath. Tried: {schematic_path}",
                 }
 
-            # Generate netlist from schematic
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
-
-            netlist = ConnectionManager.generate_netlist(schematic, schematic_path=schematic_path)
-
-            # Build (reference, pad_number) -> net_name map
-            pad_net_map = {}  # {(ref, pin_str): net_name}
-            net_names = set()
-            for net_entry in netlist.get("nets", []):
-                net_name = net_entry["name"]
-                net_names.add(net_name)
-                for conn in net_entry.get("connections", []):
-                    ref = conn.get("component", "")
-                    pin = str(conn.get("pin", ""))
-                    if ref and pin and pin != "unknown":
-                        pad_net_map[(ref, pin)] = net_name
+            # Build hierarchical pad→net map (walks all sub-sheets)
+            pad_net_map, net_names = self._build_hierarchical_pad_net_map(schematic_path)
 
             # Add all nets to board
             netinfo = board.GetNetInfo()
@@ -4522,22 +5476,32 @@ def main() -> None:
                         # Return list of available tools with proper schemas
                         tools = []
                         for cmd_name in interface.command_routes.keys():
-                            # Get schema from TOOL_SCHEMAS if available
                             if cmd_name in TOOL_SCHEMAS:
-                                tool_def = TOOL_SCHEMAS[cmd_name].copy()
+                                # Enrich the existing schema with IPC annotation data
+                                # (adds description/blocking hints where the schema lacks them)
+                                tool_def = _annotation_loader.enrich_schema(
+                                    cmd_name, TOOL_SCHEMAS[cmd_name]
+                                )
                                 tools.append(tool_def)
                             else:
-                                # Fallback for tools without schemas
-                                logger.warning(f"No schema defined for tool: {cmd_name}")
+                                # Build a best-effort schema from IPC annotations
+                                ann_desc = _annotation_loader.description(cmd_name)
+                                if ann_desc:
+                                    logger.debug(f"Using IPC annotation for tool: {cmd_name}")
+                                else:
+                                    logger.warning(f"No schema or annotation for tool: {cmd_name}")
                                 tools.append(
-                                    {
-                                        "name": cmd_name,
-                                        "description": f"KiCAD command: {cmd_name}",
-                                        "inputSchema": {
-                                            "type": "object",
-                                            "properties": {},
+                                    _annotation_loader.enrich_schema(
+                                        cmd_name,
+                                        {
+                                            "name": cmd_name,
+                                            "description": ann_desc or f"KiCAD command: {cmd_name}",
+                                            "inputSchema": {
+                                                "type": "object",
+                                                "properties": {},
+                                            },
                                         },
-                                    }
+                                    )
                                 )
 
                         logger.info(f"Returning {len(tools)} tools")

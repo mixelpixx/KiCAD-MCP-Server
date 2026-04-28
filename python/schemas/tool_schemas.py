@@ -1704,28 +1704,6 @@ SCHEMATIC_TOOLS = [
             "required": ["schematicPath", "outputPath"],
         },
     },
-    {
-        "name": "add_schematic_junction",
-        "title": "Add Junction to Schematic",
-        "description": "Adds a junction (connection dot) at the specified coordinates on the schematic. Junctions are required in KiCAD to mark intentional connections where wires cross or where a wire branches off another wire. Without a junction, crossing wires are not electrically connected.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "schematicPath": {
-                    "type": "string",
-                    "description": "Path to schematic file",
-                },
-                "position": {
-                    "type": "array",
-                    "description": "The [x, y] coordinates where the junction should be placed. Must be on an existing wire intersection or branch point.",
-                    "items": {"type": "number"},
-                    "minItems": 2,
-                    "maxItems": 2,
-                },
-            },
-            "required": ["schematicPath", "position"],
-        },
-    },
     # --- Schematic Analysis Tools (read-only) ---
     {
         "name": "get_schematic_view_region",

@@ -16,6 +16,14 @@
 
 </div>
 
+<div align="center">
+
+---
+
+## Our new forum is up: https://forum.orchis.ai — Need help? Have suggestions? Want to show off your work?
+
+</div>
+
 ---
 
 ## English

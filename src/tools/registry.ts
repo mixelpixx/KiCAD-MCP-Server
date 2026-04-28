@@ -94,7 +94,6 @@ export const toolCategories: ToolCategory[] = [
       "annotate_schematic",
       "add_schematic_wire",
       "delete_schematic_wire",
-      "add_schematic_junction",
       "add_schematic_net_label",
       "delete_schematic_net_label",
       "connect_to_net",
@@ -109,6 +108,8 @@ export const toolCategories: ToolCategory[] = [
       "get_schematic_view",
       "export_schematic_svg",
       "export_schematic_pdf",
+      "add_schematic_text",
+      "list_schematic_texts",
     ],
   },
   {

@@ -13,7 +13,9 @@ class SchematicManager:
     """Core schematic operations using kicad-skip"""
 
     @staticmethod
-    def create_schematic(name: str, metadata: Optional[Any] = None) -> Any:
+    def create_schematic(
+        name: str, metadata: Optional[Any] = None, *, path: Optional[str] = None
+    ) -> Any:
         """Create a new empty schematic from template"""
         try:
             # Determine template path (use template_with_symbols for component cloning support)
@@ -25,7 +27,8 @@ class SchematicManager:
             )
 
             # Determine output path
-            output_path = name if name.endswith(".kicad_sch") else f"{name}.kicad_sch"
+            base_name = name if name.endswith(".kicad_sch") else f"{name}.kicad_sch"
+            output_path = os.path.join(path, base_name) if path else base_name
 
             if os.path.exists(template_path):
                 # Copy template to target location

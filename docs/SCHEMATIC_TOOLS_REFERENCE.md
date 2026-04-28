@@ -3,9 +3,9 @@
 Added in: v2.1.0, expanded in v2.2.0-v2.2.3
 Contributors: @Mehanik (PRs #60, #66), @Kletternaut (PR #57)
 
-This document provides a complete reference for the 27 schematic tools in the KiCAD MCP Server. These tools enable a complete schematic design workflow, from creating projects and adding components to wiring, validation, and synchronization with PCB boards. The dynamic symbol loading feature provides access to approximately 10,000 standard KiCad symbols.
+This document provides a complete reference for the 29 schematic tools in the KiCAD MCP Server. These tools enable a complete schematic design workflow, from creating projects and adding components to wiring, validation, BOM/sourcing metadata, and synchronization with PCB boards. The dynamic symbol loading feature provides access to approximately 10,000 standard KiCad symbols.
 
-## Component Operations (8 tools)
+## Component Operations (10 tools)
 
 ### add_schematic_component
 
@@ -33,20 +33,100 @@ Remove a placed symbol from a KiCAD schematic (.kicad_sch). This removes the sym
 
 ### edit_schematic_component
 
-Update properties of a placed symbol in a KiCAD schematic (.kicad_sch) in-place. Use this tool to assign or update a footprint, change the value, or rename the reference of an already-placed component. This is more efficient than delete + re-add because it preserves the component's position and UUID. Note: operates on .kicad_sch files only. To modify a PCB footprint use edit_component.
+Update properties of a placed symbol in a KiCAD schematic (.kicad_sch) in-place.
 
-| Parameter      | Type   | Required | Description                                                                                              |
-| -------------- | ------ | -------- | -------------------------------------------------------------------------------------------------------- |
-| schematicPath  | string | Yes      | Path to the .kicad_sch file                                                                              |
-| reference      | string | Yes      | Current reference designator of the component (e.g. R1, U3)                                              |
-| footprint      | string | No       | New KiCAD footprint string (e.g. Resistor_SMD:R_0603_1608Metric)                                         |
-| value          | string | No       | New value string (e.g. 10k, 100nF)                                                                       |
-| newReference   | string | No       | Rename the reference designator (e.g. R1 → R10)                                                          |
-| fieldPositions | object | No       | Reposition field labels: map of field name to {x, y, angle} (e.g. {"Reference": {"x": 12.5, "y": 17.0}}) |
+Use this tool to:
+
+- assign or update the footprint, value, or reference designator,
+- reposition field labels (Reference / Value text),
+- add, update, or remove **arbitrary custom properties** used by BOM and sourcing
+  workflows (`MPN`, `Manufacturer`, `Manufacturer_PN`, `Distributor`, `DigiKey`,
+  `DigiKey_PN`, `Mouser_PN`, `LCSC`, `JLCPCB_PN`, `Voltage`, `Tolerance`, `Power`,
+  `Dielectric`, `Temperature_Coefficient`, …).
+
+Custom properties are first-class — they survive ERC, are exported by
+`export_bom`, and are picked up by the JLCPCB / Digi-Key sourcing tooling. Newly
+created properties default to hidden so they do not clutter the schematic canvas.
+
+Multiple updates can be batched in a single call: pass any combination of
+`footprint`, `value`, `newReference`, `fieldPositions`, `properties`, and
+`removeProperties` together. This is more efficient than delete + re-add because
+it preserves the component's position and UUID. Operates on .kicad_sch files
+only — to modify a PCB footprint use `edit_component` instead.
+
+| Parameter        | Type     | Required | Description                                                                                                                                                                                                                                                      |
+| ---------------- | -------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| schematicPath    | string   | Yes      | Path to the .kicad_sch file                                                                                                                                                                                                                                      |
+| reference        | string   | Yes      | Current reference designator of the component (e.g. R1, U3)                                                                                                                                                                                                      |
+| footprint        | string   | No       | New KiCAD footprint string (e.g. Resistor_SMD:R_0603_1608Metric)                                                                                                                                                                                                 |
+| value            | string   | No       | New value string (e.g. 10k, 100nF)                                                                                                                                                                                                                               |
+| newReference     | string   | No       | Rename the reference designator (e.g. R1 → R10)                                                                                                                                                                                                                  |
+| fieldPositions   | object   | No       | Reposition field labels: map of field name to {x, y, angle} (e.g. {"Reference": {"x": 12.5, "y": 17.0}})                                                                                                                                                         |
+| properties       | object   | No       | Add or update component properties. Map of property name to either a string value or `{value, x?, y?, angle?, hide?, fontSize?}`. Built-in fields (Reference/Value/Footprint/Datasheet) can also be set this way but the dedicated parameters above are clearer. |
+| removeProperties | string[] | No       | List of custom property names to delete. Built-in fields (Reference, Value, Footprint, Datasheet) cannot be removed (clear them by setting `value` to `""` instead).                                                                                             |
+
+**Example — attach BOM/sourcing data to a 0603 resistor:**
+
+```json
+{
+  "schematicPath": "/path/to/board.kicad_sch",
+  "reference": "R7",
+  "value": "10k",
+  "footprint": "Resistor_SMD:R_0603_1608Metric",
+  "properties": {
+    "MPN": "RC0603FR-0710KL",
+    "Manufacturer": "Yageo",
+    "DigiKey_PN": "311-10.0KHRCT-ND",
+    "LCSC": "C25804",
+    "Tolerance": "1%",
+    "Power": "0.1W"
+  }
+}
+```
+
+### set_schematic_component_property
+
+Add or update a **single** custom property on a placed schematic symbol. Convenience
+wrapper around `edit_schematic_component` for the common case of attaching one
+BOM / sourcing field at a time. Creates the property if it does not yet exist.
+
+Newly created properties default to hidden — set `hide: false` plus an explicit
+`x`/`y` to display the value on the schematic canvas.
+
+| Parameter     | Type    | Required | Description                                                                                          |
+| ------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| schematicPath | string  | Yes      | Path to the .kicad_sch file                                                                          |
+| reference     | string  | Yes      | Reference designator of the component (e.g. R1, U3)                                                  |
+| name          | string  | Yes      | Property name (e.g. 'MPN', 'Manufacturer', 'DigiKey_PN', 'Voltage', 'Dielectric')                    |
+| value         | string  | Yes      | Property value to write (use empty string to clear)                                                  |
+| x             | number  | No       | Label X position in mm (default: component X)                                                        |
+| y             | number  | No       | Label Y position in mm (default: component Y)                                                        |
+| angle         | number  | No       | Label rotation in degrees (default: 0)                                                               |
+| hide          | boolean | No       | Hide the property text on the schematic canvas. Defaults to true for newly created custom properties |
+| fontSize      | number  | No       | Font size in mm for the label (default: 1.27)                                                        |
+
+### remove_schematic_component_property
+
+Remove a single custom property from a placed schematic symbol. Built-in fields
+(Reference, Value, Footprint, Datasheet) cannot be removed — KiCad requires them
+on every symbol. To clear a built-in field, use `edit_schematic_component` and
+set its value to an empty string.
+
+| Parameter     | Type   | Required | Description                                                               |
+| ------------- | ------ | -------- | ------------------------------------------------------------------------- |
+| schematicPath | string | Yes      | Path to the .kicad_sch file                                               |
+| reference     | string | Yes      | Reference designator of the component (e.g. R1, U3)                       |
+| name          | string | Yes      | Custom property name to remove (e.g. 'MPN', 'Distributor_PN', 'OldField') |
 
 ### get_schematic_component
 
-Get full component info from a schematic: position, field values, and each field's label position (at x/y/angle). Use this to inspect or prepare repositioning of Reference/Value labels.
+Get full component info from a schematic: position, every field's value, and each
+field's label position (at x/y/angle). Returns **all** properties — both built-in
+fields (Reference, Value, Footprint, Datasheet) and any custom BOM/sourcing
+properties present on the symbol (MPN, Manufacturer, DigiKey_PN, LCSC, Voltage,
+Tolerance, Dielectric, etc.). Use this before `edit_schematic_component` /
+`set_schematic_component_property` to inspect what is currently set, or to plan
+a label repositioning.
 
 | Parameter     | Type   | Required | Description                                  |
 | ------------- | ------ | -------- | -------------------------------------------- |
@@ -267,6 +347,45 @@ Checks net label / power symbol positions first (exact IU match), then wire endp
 | net_name | Net label string, or `null` if no net found at this point               |
 | position | `{"x": float, "y": float}` — echoes the query coordinates               |
 | source   | `"net_label"` \| `"wire_endpoint"` \| `null` — how the net was resolved |
+
+## Text Annotations (2 tools)
+
+### add_schematic_text
+
+Add a free-form text annotation (note, heading, documentation string) directly on the schematic canvas. Text annotations have no electrical significance — they are purely visual. For electrically meaningful labels, use `add_schematic_net_label` instead.
+
+| Parameter     | Type         | Required | Description                                      |
+| ------------- | ------------ | -------- | ------------------------------------------------ |
+| schematicPath | string       | Yes      | Path to the .kicad_sch file                      |
+| text          | string       | Yes      | Text content to display                          |
+| position      | array [x, y] | Yes      | Position in schematic mm coordinates             |
+| angle         | number       | No       | Rotation angle in degrees (default: 0)           |
+| fontSize      | number       | No       | Font size in mm (default: 1.27 — KiCad standard) |
+| bold          | boolean      | No       | Bold text (default: false)                       |
+| italic        | boolean      | No       | Italic text (default: false)                     |
+| justify       | string       | No       | `left` \| `center` \| `right` (default: `left`)  |
+
+### list_schematic_texts
+
+List all free-form text annotations in the schematic. Optionally filter by a substring of the text content.
+
+| Parameter     | Type   | Required | Description                                                    |
+| ------------- | ------ | -------- | -------------------------------------------------------------- |
+| schematicPath | string | Yes      | Path to the .kicad_sch file                                    |
+| text          | string | No       | Case-insensitive substring filter — only return matching texts |
+
+**Response fields (per text entry):**
+
+| Field     | Description                         |
+| --------- | ----------------------------------- |
+| text      | Text string content                 |
+| position  | `{"x": float, "y": float}` in mm    |
+| angle     | Rotation angle in degrees           |
+| font_size | Font size in mm                     |
+| bold      | `true` / `false`                    |
+| italic    | `true` / `false`                    |
+| justify   | `"left"` \| `"center"` \| `"right"` |
+| uuid      | KiCad UUID of the element           |
 
 ## Schematic Creation and Export (6 tools)
 
