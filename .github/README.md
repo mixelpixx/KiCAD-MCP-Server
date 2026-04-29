@@ -100,6 +100,17 @@ npm run build
 
 ---
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=mixelpixx%2FKiCAD-MCP-Server&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=mixelpixx/KiCAD-MCP-Server&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=mixelpixx/KiCAD-MCP-Server&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=mixelpixx/KiCAD-MCP-Server&type=date&legend=top-left" />
+ </picture>
+</a>
+
+
 ## Deutsch
 
 **KiCAD MCP Server** ist ein Model Context Protocol (MCP) Server, der KI-Assistenten wie Claude ermöglicht, mit KiCAD für die PCB-Design-Automatisierung zu interagieren. Aufgebaut auf der MCP-Spezifikation 2025-06-18, bietet dieser Server umfassende Tool-Schemas und Echtzeit-Projektzugriff für intelligente PCB-Design-Workflows.
