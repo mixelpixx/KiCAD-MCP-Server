@@ -306,25 +306,41 @@ class WireManager:
             True if successful, False otherwise
         """
         try:
-            from skip import Schematic
-            from sexpdata import Symbol as SexpSymbol
+            with open(schematic_path, "r", encoding="utf-8") as f:
+                sch_content = f.read()
 
-            schematic = Schematic(str(schematic_path))
+            sch_data = sexpdata.loads(sch_content)
 
-            existing_labels = list(schematic.label)
-            if not existing_labels:
-                logger.warning("No existing labels to clone from; falling back to sexpdata")
-                raise RuntimeError("no existing labels")
+            # Orientation-aware justify: KiCAD flips horizontal alignment for 180°/270°
+            justify_h = Symbol("right") if orientation in (180, 270) else Symbol("left")
 
-            new_label = existing_labels[0].clone()
-            new_label.value = text
-            new_label.at.value = [position[0], position[1], orientation]
+            label_sexp = [
+                Symbol(label_type),
+                text,
+                [Symbol("at"), position[0], position[1], orientation],
+                [
+                    Symbol("effects"),
+                    [Symbol("font"), [Symbol("size"), 1.27, 1.27]],
+                    [Symbol("justify"), justify_h, Symbol("bottom")],
+                ],
+                [Symbol("uuid"), str(uuid.uuid4())],
+            ]
 
-            # justify: left for 0°/90°, right for 180°/270° (matches KiCAD convention)
-            justify_val = "right" if orientation in (180, 270) else "left"
-            new_label.effects.justify._tree[1] = SexpSymbol(justify_val)
+            sheet_instances_index = None
+            for i, item in enumerate(sch_data):
+                if isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SHEET_INSTANCES:
+                    sheet_instances_index = i
+                    break
 
-            schematic.write(str(schematic_path))
+            if sheet_instances_index is None:
+                # Sub-sheets in hierarchical designs don't have (sheet_instances).
+                sheet_instances_index = len(sch_data)
+
+            sch_data.insert(sheet_instances_index, label_sexp)
+
+            with open(schematic_path, "w", encoding="utf-8") as f:
+                f.write(sexpdata.dumps(sch_data))
+
             logger.info(f"Successfully added label '{text}' to {schematic_path.name}")
             return True
 
