@@ -280,12 +280,12 @@ class PinLocator:
             pin_def_angle = pins[pin_number].get("angle", 0)
 
             # Mirror flips the angle before applying symbol rotation.
-            # mirror_x negates the Y component → reflects angle across X axis → negate angle.
-            # mirror_y negates the X component → reflects angle across Y axis → 180 - angle.
+            # mirror_x flips the X component of local vectors → reflects across Y axis → 180 - angle.
+            # mirror_y flips the Y component of local vectors → reflects across X axis → negate angle.
             if mirror_x:
-                pin_def_angle = (-pin_def_angle) % 360
-            if mirror_y:
                 pin_def_angle = (180 - pin_def_angle) % 360
+            if mirror_y:
+                pin_def_angle = (-pin_def_angle) % 360
 
             absolute_angle = (pin_def_angle + symbol_rotation) % 360
             return absolute_angle
@@ -374,9 +374,13 @@ class PinLocator:
             from commands.wire_dragger import WireDragger
 
             abs_x, abs_y = WireDragger.pin_world_xy(
-                pin_data["x"], pin_data["y"],
-                symbol_x, symbol_y,
-                symbol_rotation, mirror_x, mirror_y,
+                pin_data["x"],
+                pin_data["y"],
+                symbol_x,
+                symbol_y,
+                symbol_rotation,
+                mirror_x,
+                mirror_y,
             )
 
             logger.info(f"Pin {symbol_reference}/{pin_number} located at ({abs_x}, {abs_y})")
