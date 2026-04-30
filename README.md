@@ -169,6 +169,9 @@ We are currently implementing and testing the KiCAD 9.0 IPC API for real-time UI
 - Changes made via MCP tools appear immediately in the KiCAD UI
 - No manual reload required when IPC is active
 - Hybrid backend: uses IPC when available, falls back to SWIG API
+- IPC runtime reconnect: if MCP has fallen back to SWIG, IPC-capable board
+  tools retry IPC after KiCAD launches instead of staying on SWIG for the entire
+  session
 - 20+ commands now support IPC including routing, component placement, and zone operations
 
 Note: IPC features are under active development and testing. Enable IPC in KiCAD via Preferences > Plugins > Enable IPC API Server.
@@ -418,7 +421,7 @@ See [Freerouting Guide](docs/FREEROUTING_GUIDE.md) for setup and usage.
 
 ### Required Software
 
-**KiCAD 9.0 or Higher**
+**KiCAD 9.0 or higher**
 
 - Download from [kicad.org/download](https://www.kicad.org/download/)
 - Must include Python module (pcbnew)
@@ -463,7 +466,7 @@ Choose one:
 ### Linux (Ubuntu/Debian)
 
 ```bash
-# Install KiCAD 9.0
+# Install KiCAD 9.0 or higher
 sudo add-apt-repository --yes ppa:kicad/kicad-9.0-releases
 sudo apt-get update
 sudo apt-get install -y kicad kicad-libraries
@@ -495,7 +498,9 @@ cd KiCAD-MCP-Server
 
 The script will:
 
-- Detect KiCAD installation
+- Detect KiCAD installations, including both machine-wide installs under
+  `C:\Program Files\KiCad` and per-user installs under
+  `%LOCALAPPDATA%\Programs\KiCad`
 - Verify prerequisites
 - Install dependencies
 - Build project
@@ -693,7 +698,8 @@ Edit configuration file:
 **Platform-specific PYTHONPATH:**
 
 - **Linux:** `/usr/lib/kicad/lib/python3/dist-packages`
-- **Windows:** `C:\Program Files\KiCad\9.0\lib\python3\dist-packages`
+- **Windows:** `C:\Program Files\KiCad\10.0\lib\python3\dist-packages` or
+  `%LOCALAPPDATA%\Programs\KiCad\10.0\lib\python3\dist-packages`
 - **macOS:** `/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.9/lib/python3.9/site-packages`
 
 #### Linux Python Detection
@@ -1064,7 +1070,7 @@ npm run format
 **Solutions:**
 
 1. Run automated diagnostics: `.\setup-windows.ps1`
-2. Verify Python path uses double backslashes: `C:\\Program Files\\KiCad\\9.0`
+2. Verify Python path uses double backslashes: `C:\\Program Files\\KiCad\\10.0`
 3. Check Windows Event Viewer for Node.js errors
 4. See [Windows Troubleshooting Guide](docs/WINDOWS_TROUBLESHOOTING.md)
 
@@ -1106,7 +1112,7 @@ See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix a
 
 **IPC Backend (Experimental):**
 
-- Real-time UI synchronization via KiCAD 9.0 IPC API
+- Real-time UI synchronization via the KiCAD IPC API
 - 21 IPC-enabled commands with automatic SWIG fallback
 - Hybrid footprint loading (SWIG for library access, IPC for placement)
 

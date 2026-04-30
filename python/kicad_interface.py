@@ -466,6 +466,7 @@ class KiCADInterface:
         "add_via": "_ipc_add_via",
         "add_net": "_ipc_add_net",
         "delete_trace": "_ipc_delete_trace",
+        "query_traces": "_ipc_query_traces",
         "get_nets_list": "_ipc_get_nets_list",
         # Zone commands
         "add_copper_pour": "_ipc_add_copper_pour",
@@ -489,12 +490,99 @@ class KiCADInterface:
         "save_project": "_ipc_save_project",
     }
 
+    # Commands that are implemented by the explicit IPC command handlers in
+    # command_routes, rather than by the generic IPC_CAPABLE_COMMANDS fast path.
+    IPC_DIRECT_COMMANDS = {
+        "ipc_add_track",
+        "ipc_add_via",
+        "ipc_add_text",
+        "ipc_list_components",
+        "ipc_get_tracks",
+        "ipc_get_vias",
+        "ipc_save_board",
+    }
+
+    def _refresh_ipc_board_api(self) -> bool:
+        """Refresh the IPC board API after KiCAD or a board becomes available."""
+        ipc_backend = getattr(self, "ipc_backend", None)
+        if not ipc_backend or not ipc_backend.is_connected():
+            self.ipc_board_api = None
+            return False
+
+        try:
+            self.ipc_board_api = ipc_backend.get_board()
+            return True
+        except Exception as e:
+            logger.warning(f"Connected to KiCAD IPC, but no board API is available yet: {e}")
+            self.ipc_board_api = None
+            return False
+
+    def _try_enable_ipc_backend(self, force: bool = False) -> bool:
+        """Try to switch an already-running interface to IPC when KiCAD is available."""
+        if KICAD_BACKEND == "swig":
+            return False
+
+        ipc_backend = getattr(self, "ipc_backend", None)
+        if self.use_ipc and ipc_backend and ipc_backend.is_connected():
+            self._refresh_ipc_board_api()
+            return True
+
+        if not force and not KiCADProcessManager.is_running():
+            return False
+
+        try:
+            from kicad_api.ipc_backend import IPCBackend
+
+            backend = ipc_backend or IPCBackend()
+            if not backend.is_connected():
+                backend.connect()
+
+            self.ipc_backend = backend
+            self.use_ipc = True
+            self._refresh_ipc_board_api()
+            logger.info("Switched to IPC backend after KiCAD became available")
+            return True
+        except Exception as e:
+            logger.info(f"Runtime IPC connection not available: {e}")
+            return False
+
+    def _backend_status(self) -> Dict[str, Any]:
+        """Return backend status fields for command responses."""
+        ipc_backend = getattr(self, "ipc_backend", None)
+        ipc_connected = ipc_backend.is_connected() if ipc_backend else False
+        return {
+            "backend": "ipc" if self.use_ipc and ipc_connected else "swig",
+            "realtime_sync": self.use_ipc and ipc_connected,
+            "ipc_connected": ipc_connected,
+        }
+
+    @staticmethod
+    def _normalize_ipc_layer_name(layer: Any) -> str:
+        """Convert KiCad IPC layer enum strings to common layer names."""
+        layer_name = str(layer)
+        if layer_name.startswith("BL_"):
+            return layer_name[3:].replace("_", ".")
+        return layer_name
+
+    def _result_backend_for_command(self, command: str, result: Dict[str, Any]) -> str:
+        """Return the backend label for a command result."""
+        if command in {"get_backend_info", "check_kicad_ui", "launch_kicad_ui"}:
+            return result.get("backend", "ipc" if self.use_ipc else "swig")
+
+        if command in self.IPC_DIRECT_COMMANDS:
+            return "ipc" if self.use_ipc else "unavailable"
+
+        return "swig"
+
     def handle_command(self, command: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Route command to appropriate handler, preferring IPC when available"""
         logger.info(f"Handling command: {command}")
         logger.debug(f"Command parameters: {params}")
 
         try:
+            if command in self.IPC_CAPABLE_COMMANDS:
+                self._try_enable_ipc_backend()
+
             # Check if we can use IPC for this command (real-time UI sync)
             if self.use_ipc and self.ipc_board_api and command in self.IPC_CAPABLE_COMMANDS:
                 ipc_handler_name = self.IPC_CAPABLE_COMMANDS[command]
@@ -528,8 +616,11 @@ class KiCADInterface:
 
                 # Add backend indicator
                 if isinstance(result, dict):
-                    result["_backend"] = "swig"
-                    result["_realtime"] = False
+                    backend = self._result_backend_for_command(command, result)
+                    result["_backend"] = backend
+                    result["_realtime"] = bool(
+                        backend == "ipc" and result.get("realtime", self.use_ipc)
+                    )
 
                 # Update board reference if command was successful
                 if result.get("success", False):
@@ -2149,9 +2240,7 @@ class KiCADInterface:
                             f"Assigned net '{net_name}' to pad {component_ref}/{pin_name} on PCB"
                         )
                         return True
-                logger.warning(
-                    f"Pad '{pin_name}' not found on footprint '{component_ref}'"
-                )
+                logger.warning(f"Pad '{pin_name}' not found on footprint '{component_ref}'")
                 return False
 
         logger.warning(f"Footprint '{component_ref}' not found on board")
@@ -4411,12 +4500,15 @@ class KiCADInterface:
             manager = KiCADProcessManager()
             is_running = manager.is_running()
             processes = manager.get_process_info() if is_running else []
+            if is_running:
+                self._try_enable_ipc_backend()
 
             return {
                 "success": True,
                 "running": is_running,
                 "processes": processes,
                 "message": "KiCAD is running" if is_running else "KiCAD is not running",
+                **self._backend_status(),
             }
         except Exception as e:
             logger.error(f"Error checking KiCAD UI status: {str(e)}")
@@ -4435,8 +4527,10 @@ class KiCADInterface:
             path_obj = Path(project_path) if project_path else None
 
             result = check_and_launch_kicad(path_obj, auto_launch)
+            if result.get("running"):
+                self._try_enable_ipc_backend(force=True)
 
-            return {"success": True, **result}
+            return {"success": True, **result, **self._backend_status()}
         except Exception as e:
             logger.error(f"Error launching KiCAD UI: {str(e)}")
             return {"success": False, "message": str(e)}
@@ -4875,6 +4969,85 @@ print("ok")
         logger.info("delete_trace: Falling back to SWIG (IPC doesn't support trace deletion)")
         return self.routing_commands.delete_trace(params)
 
+    def _ipc_query_traces(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """IPC handler for query_traces - reads traces from the live KiCAD board."""
+        try:
+            net_name = params.get("net")
+            layer_filter = params.get("layer")
+            bbox = params.get("boundingBox")
+            include_vias = params.get("includeVias", False)
+
+            def point_in_bbox(point: Dict[str, Any]) -> bool:
+                if not bbox:
+                    return True
+                unit_scale = 25.4 if bbox.get("unit", "mm") == "inch" else 1.0
+                x1 = bbox.get("x1", 0) * unit_scale
+                y1 = bbox.get("y1", 0) * unit_scale
+                x2 = bbox.get("x2", 0) * unit_scale
+                y2 = bbox.get("y2", 0) * unit_scale
+                low_x, high_x = sorted((x1, x2))
+                low_y, high_y = sorted((y1, y2))
+                return low_x <= point.get("x", 0) <= high_x and low_y <= point.get("y", 0) <= high_y
+
+            traces = []
+            for track in self.ipc_board_api.get_tracks():
+                if net_name and track.get("net") != net_name:
+                    continue
+
+                layer = self._normalize_ipc_layer_name(track.get("layer", ""))
+                if layer_filter and layer != layer_filter:
+                    continue
+
+                start = track.get("start", {})
+                end = track.get("end", {})
+                if bbox and not (point_in_bbox(start) or point_in_bbox(end)):
+                    continue
+
+                start_with_unit = {**start, "unit": "mm"}
+                end_with_unit = {**end, "unit": "mm"}
+                dx = end.get("x", 0) - start.get("x", 0)
+                dy = end.get("y", 0) - start.get("y", 0)
+                traces.append(
+                    {
+                        "uuid": track.get("id", ""),
+                        "net": track.get("net", ""),
+                        "netCode": track.get("netCode", 0),
+                        "layer": layer,
+                        "width": track.get("width", 0),
+                        "start": start_with_unit,
+                        "end": end_with_unit,
+                        "length": (dx**2 + dy**2) ** 0.5,
+                    }
+                )
+
+            result = {"success": True, "traceCount": len(traces), "traces": traces}
+
+            if include_vias:
+                vias = []
+                for via in self.ipc_board_api.get_vias():
+                    if net_name and via.get("net") != net_name:
+                        continue
+                    position = via.get("position", {})
+                    if bbox and not point_in_bbox(position):
+                        continue
+                    vias.append(
+                        {
+                            "uuid": via.get("id", ""),
+                            "position": {**position, "unit": "mm"},
+                            "net": via.get("net", ""),
+                            "netCode": via.get("netCode", 0),
+                            "diameter": via.get("diameter", 0),
+                            "drill": via.get("drill", 0),
+                        }
+                    )
+                result["viaCount"] = len(vias)
+                result["vias"] = vias
+
+            return result
+        except Exception as e:
+            logger.error(f"IPC query_traces error: {e}")
+            return {"success": False, "message": str(e)}
+
     def _ipc_get_nets_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for get_nets_list - gets nets with real-time data"""
         try:
@@ -5061,15 +5234,17 @@ print("ok")
 
     def _handle_get_backend_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get information about the current backend"""
+        if KiCADProcessManager.is_running():
+            self._try_enable_ipc_backend()
+        status = self._backend_status()
+        ipc_backend = getattr(self, "ipc_backend", None)
         return {
             "success": True,
-            "backend": "ipc" if self.use_ipc else "swig",
-            "realtime_sync": self.use_ipc,
-            "ipc_connected": (self.ipc_backend.is_connected() if self.ipc_backend else False),
-            "version": self.ipc_backend.get_version() if self.ipc_backend else "N/A",
+            **status,
+            "version": ipc_backend.get_version() if ipc_backend else "N/A",
             "message": (
                 "Using IPC backend with real-time UI sync"
-                if self.use_ipc
+                if status["backend"] == "ipc"
                 else "Using SWIG backend (requires manual reload)"
             ),
         }

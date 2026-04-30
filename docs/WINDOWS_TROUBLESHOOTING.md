@@ -45,10 +45,12 @@ If the automated setup fails, continue with the manual troubleshooting below.
 2. **Test pcbnew import manually:**
 
    ```powershell
-   & "C:\Program Files\KiCad\9.0\bin\python.exe" -c "import pcbnew; print(pcbnew.GetBuildVersion())"
+   & "C:\Program Files\KiCad\10.0\bin\python.exe" -c "import pcbnew; print(pcbnew.GetBuildVersion())"
    ```
 
-   **Expected:** Prints KiCAD version like `9.0.0`
+   Replace `10.0` with your installed KiCAD version if needed.
+
+   **Expected:** Prints KiCAD version like `10.0.0`
 
    **If it fails:**
    - KiCAD's Python module isn't installed
@@ -61,7 +63,7 @@ If the automated setup fails, continue with the manual troubleshooting below.
      "mcpServers": {
        "kicad": {
          "env": {
-           "PYTHONPATH": "C:\\Program Files\\KiCad\\9.0\\lib\\python3\\dist-packages"
+           "PYTHONPATH": "C:\\Program Files\\KiCad\\10.0\\lib\\python3\\dist-packages"
          }
        }
      }
@@ -74,25 +76,37 @@ If the automated setup fails, continue with the manual troubleshooting below.
 
 **Symptom:** Log shows "No KiCAD installations found"
 
+The server checks common Windows install locations, including both machine-wide
+and per-user KiCAD installs:
+
+- `%LOCALAPPDATA%\Programs\KiCad`
+- `C:\Program Files\KiCad`
+- `C:\Program Files (x86)\KiCad`
+
 **Solution:**
 
 1. **Check if KiCAD is installed:**
 
    ```powershell
-   Test-Path "C:\Program Files\KiCad\9.0"
+   Test-Path "C:\Program Files\KiCad\10.0"
+   Test-Path "$env:LOCALAPPDATA\Programs\KiCad\10.0"
    ```
+
+   Replace `10.0` with your installed KiCAD version if needed.
 
 2. **If KiCAD is installed elsewhere:**
    - Find your KiCAD installation directory
-   - Update PYTHONPATH in config to match your installation
-   - Example for version 8.0:
+   - Set `KICAD_PYTHON` to the bundled `python.exe`
+   - Update `PYTHONPATH` in config to match your installation if needed
+   - Example for a per-user 10.0 install:
      ```
-     "PYTHONPATH": "C:\\Program Files\\KiCad\\8.0\\lib\\python3\\dist-packages"
+     "KICAD_PYTHON": "C:\\Users\\YourName\\AppData\\Local\\Programs\\KiCad\\10.0\\bin\\python.exe",
+     "PYTHONPATH": "C:\\Users\\YourName\\AppData\\Local\\Programs\\KiCad\\10.0\\lib\\python3\\dist-packages"
      ```
 
 3. **If KiCAD is not installed:**
    - Download from https://www.kicad.org/download/windows/
-   - Install version 9.0 or higher
+   - Install KiCAD 9.0 or higher
    - Use default installation path
 
 ---
@@ -162,7 +176,7 @@ If the automated setup fails, continue with the manual troubleshooting below.
 1. **Install with KiCAD's Python:**
 
    ```powershell
-   & "C:\Program Files\KiCad\9.0\bin\python.exe" -m pip install -r requirements.txt
+   & "C:\Program Files\KiCad\10.0\bin\python.exe" -m pip install -r requirements.txt
    ```
 
 2. **If pip is not available:**
@@ -172,10 +186,10 @@ If the automated setup fails, continue with the manual troubleshooting below.
    Invoke-WebRequest -Uri https://bootstrap.pypa.io/get-pip.py -OutFile get-pip.py
 
    # Install pip
-   & "C:\Program Files\KiCad\9.0\bin\python.exe" get-pip.py
+   & "C:\Program Files\KiCad\10.0\bin\python.exe" get-pip.py
 
    # Then install requirements
-   & "C:\Program Files\KiCad\9.0\bin\python.exe" -m pip install -r requirements.txt
+   & "C:\Program Files\KiCad\10.0\bin\python.exe" -m pip install -r requirements.txt
    ```
 
 ---
@@ -232,7 +246,8 @@ If the automated setup fails, continue with the manual troubleshooting below.
 
 **Solution:**
 
-KiCAD MCP requires Python 3.10+. KiCAD 9.0 includes Python 3.11, which is perfect.
+KiCAD MCP requires Python 3.10+. KiCAD 10.0 includes a compatible bundled Python,
+and KiCAD 9.0+ is supported.
 
 **Always use KiCAD's bundled Python:**
 
@@ -240,7 +255,7 @@ KiCAD MCP requires Python 3.10+. KiCAD 9.0 includes Python 3.11, which is perfec
 {
   "mcpServers": {
     "kicad": {
-      "command": "C:\\Program Files\\KiCad\\9.0\\bin\\python.exe",
+      "command": "C:\\Program Files\\KiCad\\10.0\\bin\\python.exe",
       "args": ["C:\\Users\\YourName\\KiCAD-MCP-Server\\python\\kicad_interface.py"]
     }
   }
@@ -264,7 +279,7 @@ Config location: `%APPDATA%\Claude\claude_desktop_config.json`
       "command": "node",
       "args": ["C:\\Users\\YourName\\KiCAD-MCP-Server\\dist\\index.js"],
       "env": {
-        "PYTHONPATH": "C:\\Program Files\\KiCad\\9.0\\lib\\python3\\dist-packages",
+        "PYTHONPATH": "C:\\Program Files\\KiCad\\10.0\\lib\\python3\\dist-packages",
         "NODE_ENV": "production",
         "LOG_LEVEL": "info"
       }
@@ -284,7 +299,7 @@ Config location: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\setti
       "command": "node",
       "args": ["C:\\Users\\YourName\\KiCAD-MCP-Server\\dist\\index.js"],
       "env": {
-        "PYTHONPATH": "C:\\Program Files\\KiCad\\9.0\\lib\\python3\\dist-packages"
+        "PYTHONPATH": "C:\\Program Files\\KiCad\\10.0\\lib\\python3\\dist-packages"
       },
       "description": "KiCAD PCB Design Assistant"
     }
@@ -300,10 +315,10 @@ If Node.js issues persist, run Python directly:
 {
   "mcpServers": {
     "kicad": {
-      "command": "C:\\Program Files\\KiCad\\9.0\\bin\\python.exe",
+      "command": "C:\\Program Files\\KiCad\\10.0\\bin\\python.exe",
       "args": ["C:\\Users\\YourName\\KiCAD-MCP-Server\\python\\kicad_interface.py"],
       "env": {
-        "PYTHONPATH": "C:\\Program Files\\KiCad\\9.0\\lib\\python3\\dist-packages"
+        "PYTHONPATH": "C:\\Program Files\\KiCad\\10.0\\lib\\python3\\dist-packages"
       }
     }
   }
@@ -317,7 +332,7 @@ If Node.js issues persist, run Python directly:
 ### Test 1: Verify KiCAD Python
 
 ```powershell
-& "C:\Program Files\KiCad\9.0\bin\python.exe" -c @"
+& "C:\Program Files\KiCad\10.0\bin\python.exe" -c @"
 import sys
 print(f'Python version: {sys.version}')
 import pcbnew
@@ -330,7 +345,7 @@ Expected output:
 
 ```
 Python version: 3.11.x ...
-pcbnew version: 9.0.0
+pcbnew version: 10.0.0
 SUCCESS!
 ```
 
@@ -353,7 +368,7 @@ Test-Path .\dist\index.js  # Should output: True
 ### Test 4: Run Server Manually
 
 ```powershell
-$env:PYTHONPATH = "C:\Program Files\KiCad\9.0\lib\python3\dist-packages"
+$env:PYTHONPATH = "C:\Program Files\KiCad\10.0\lib\python3\dist-packages"
 node .\dist\index.js
 ```
 
@@ -390,20 +405,20 @@ Add to your MCP config:
 ### Check Python sys.path
 
 ```powershell
-& "C:\Program Files\KiCad\9.0\bin\python.exe" -c @"
+& "C:\Program Files\KiCad\10.0\bin\python.exe" -c @"
 import sys
 for path in sys.path:
     print(path)
 "@
 ```
 
-Should include: `C:\Program Files\KiCad\9.0\lib\python3\dist-packages`
+Should include: `C:\Program Files\KiCad\10.0\lib\python3\dist-packages`
 
 ### Test MCP Communication
 
 ```powershell
 # Start server
-$env:PYTHONPATH = "C:\Program Files\KiCad\9.0\lib\python3\dist-packages"
+$env:PYTHONPATH = "C:\Program Files\KiCad\10.0\lib\python3\dist-packages"
 $process = Start-Process -FilePath "node" -ArgumentList ".\dist\index.js" -NoNewWindow -PassThru
 
 # Wait 3 seconds
@@ -474,7 +489,8 @@ If none of the above solutions work:
 
 When everything works, you should have:
 
-- [ ] KiCAD 9.0+ installed at `C:\Program Files\KiCad\9.0`
+- [ ] KiCAD 9.0 or higher installed under a versioned KiCAD directory such as
+      `C:\Program Files\KiCad\10.0` or `%LOCALAPPDATA%\Programs\KiCad\10.0`
 - [ ] Node.js 18+ installed and in PATH
 - [ ] Python can import pcbnew successfully
 - [ ] `npm run build` completes without errors
