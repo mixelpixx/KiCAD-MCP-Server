@@ -71,7 +71,10 @@ Check if KiCAD is currently running.
       "command": "/usr/bin/pcbnew /tmp/project.kicad_pcb"
     }
   ],
-  "message": "KiCAD is running"
+  "message": "KiCAD is running",
+  "backend": "ipc",
+  "realtime_sync": true,
+  "ipc_connected": true
 }
 ```
 
@@ -104,9 +107,25 @@ Launch KiCAD UI, optionally with a project file.
   "launched": true,
   "message": "KiCAD launched successfully",
   "project": "/tmp/mcp_demo/New_Project.kicad_pcb",
-  "processes": [...]
+  "processes": [...],
+  "backend": "ipc",
+  "realtime_sync": true,
+  "ipc_connected": true
 }
 ```
+
+If IPC is not enabled, no board is open, or the IPC connection is otherwise not
+available yet, these status fields report `backend: "swig"`,
+`realtime_sync: false`, and `ipc_connected: false`.
+
+### IPC Reconnect After Launch
+
+When the MCP server starts before KiCAD, it may initially fall back to the SWIG
+backend. `launch_kicad_ui` and `check_kicad_ui` now refresh the live backend
+status after KiCAD is running, and normal IPC-capable board tools retry IPC on
+their next call. Agents do not need to switch to special `ipc_*` tools; they can
+retry standard tools such as `get_board_info`, `get_layer_list`,
+`get_component_list`, `get_nets_list`, or `query_traces`.
 
 ---
 
@@ -383,16 +402,15 @@ await callKicadScript("launch_kicad_ui", {
 
 - **Window Management:** Bring KiCAD to front, minimize/maximize
 - **Multi-Instance:** Handle multiple KiCAD instances
-- **IPC Integration:** Seamless integration with IPC backend
 - **Status Notifications:** Push notifications when KiCAD state changes
 - **Auto-Close:** Option to close KiCAD after operations complete
 
-### IPC Mode (Coming Weeks 2-3)
+### IPC Mode
 
-When IPC backend is fully implemented:
+When KiCAD is running with IPC enabled:
 
 ```
-KiCAD runs in background → MCP connects via IPC → Real-time updates
+KiCAD runs in background → MCP connects or reconnects via IPC → Real-time updates
 No file reloading needed! Changes appear instantly.
 ```
 
