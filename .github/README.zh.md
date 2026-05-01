@@ -16,11 +16,9 @@
 
 </div>
 
-## <div align="center">
-
-我们的新论坛已上线：https://forum.orchis.ai — 有问题？有建议？想展示你的作品？
-
-</div>
+<hr>
+<div align="center">我们的新论坛已上线：https://forum.orchis.ai — 有问题？有建议？想展示你的作品？</div>
+<hr>
 
 **KiCAD MCP Server** 是一个模型上下文协议（MCP）服务器，使 Claude 等 AI 助手能够与 KiCAD 交互，实现 PCB 设计自动化。本服务器基于 MCP 2025-06-18 规范构建，为智能 PCB 设计工作流提供全面的工具模式和实时项目状态访问。
 
