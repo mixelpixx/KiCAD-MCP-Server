@@ -28,11 +28,11 @@
 
 **KiCAD MCP Server** is a Model Context Protocol (MCP) server that enables AI assistants like Claude to interact with KiCAD for PCB design automation. Built on the MCP 2025-06-18 specification, this server provides comprehensive tool schemas and real-time project state access for intelligent PCB design workflows.
 
-## Design PCBs with natural language
+### Design PCBs with natural language
 
 Describe what you want to build — and let AI handle the EDA work. Place components, create custom symbols and footprints, route connections, run checks, and export production files, all by talking to your AI assistant.
 
-## What it can do today
+### What it can do today
 
 - Project setup, schematic editing, component placement, routing, DRC/ERC, export
 - **Custom symbol and footprint generation** — for modules not in the standard KiCAD library
@@ -42,7 +42,7 @@ Describe what you want to build — and let AI handle the EDA work. Place compon
 - **Visual feedback** — snapshots and session logs for traceability
 - **Cross-platform** — Windows, Linux, macOS
 
-## Quick Start
+### Quick Start
 
 1. Install [KiCAD 9.0+](https://www.kicad.org/download/)
 2. Install [Node.js 18+](https://nodejs.org/) and [Python 3.11+](https://www.python.org/)
@@ -78,7 +78,7 @@ Edit your config file:
 
 Example configs: `config/windows-config.example.json` or `config/macos-config.example.json`
 
-## Documentation
+### Documentation
 
 - [**Full README**](../README.md) — complete documentation
 - [Quick Start (Router Tools)](../docs/ROUTER_QUICK_START.md) — first steps
@@ -90,7 +90,7 @@ Example configs: `config/windows-config.example.json` or `config/macos-config.ex
 - [Platform Guide](../docs/PLATFORM_GUIDE.md)
 - [Changelog](../CHANGELOG.md)
 
-## Community
+### Community
 
 - [Discussions](https://github.com/mixelpixx/KiCAD-MCP-Server/discussions) — questions, ideas, showcase
 - [Issues](https://github.com/mixelpixx/KiCAD-MCP-Server/issues) — bugs and feature requests
@@ -106,14 +106,14 @@ Example configs: `config/windows-config.example.json` or `config/macos-config.ex
  </picture>
 </a>
 
-## AI Disclosure
+### AI Disclosure
 
 > **Developed with AI Assistance**
 > This project was developed with the support of AI-assisted coding tools (GitHub Copilot, Claude).
 > All code has been reviewed, tested, and integrated by the maintainers.
 > AI tools were used to accelerate development — creative decisions, architecture, and responsibility remain entirely with the authors.
 
-## Disclaimer
+### Disclaimer
 
 > **No Warranty — Use at Your Own Risk**
 >

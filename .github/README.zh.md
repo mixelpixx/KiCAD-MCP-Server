@@ -20,11 +20,11 @@
 
 **KiCAD MCP Server** 是一个模型上下文协议（MCP）服务器，使 Claude 等 AI 助手能够与 KiCAD 交互，实现 PCB 设计自动化。本服务器基于 MCP 2025-06-18 规范构建，为智能 PCB 设计工作流提供全面的工具模式和实时项目状态访问。
 
-## 用自然语言设计 PCB
+### 用自然语言设计 PCB
 
 描述你想构建的内容 — 让 AI 处理 EDA 工作。放置元件、创建自定义符号和封装、布线、运行检查并导出生产文件 — 全程通过与 AI 助手对话完成。
 
-## 当前功能
+### 当前功能
 
 - 项目创建、原理图编辑、元件放置、布线、DRC/ERC、导出
 - **自定义符号和封装生成** — 适用于标准 KiCAD 库中未收录的模块
@@ -34,7 +34,7 @@
 - **可视化反馈** — 快照和会话日志，便于追溯
 - **跨平台** — Windows、Linux、macOS
 
-## 快速开始
+### 快速开始
 
 1. 安装 [KiCAD 9.0+](https://www.kicad.org/download/)
 2. 安装 [Node.js 18+](https://nodejs.org/) 和 [Python 3.11+](https://www.python.org/)
@@ -68,7 +68,7 @@ VS Code 会自动检测 `.vscode/mcp.json` 并注册服务器。模板使用 `${
 
 示例配置：`config/windows-config.example.json` 或 `config/macos-config.example.json`
 
-## 文档
+### 文档
 
 - [**完整 README**](../README.md) — 完整文档
 - [快速开始（路由工具）](../docs/ROUTER_QUICK_START.md) — 入门指引
@@ -80,20 +80,20 @@ VS Code 会自动检测 `.vscode/mcp.json` 并注册服务器。模板使用 `${
 - [平台指南](../docs/PLATFORM_GUIDE.md)
 - [更新日志](../CHANGELOG.md)
 
-## 社区
+### 社区
 
 - [讨论区](https://github.com/mixelpixx/KiCAD-MCP-Server/discussions) — 问题、想法、展示项目
 - [问题反馈](https://github.com/mixelpixx/KiCAD-MCP-Server/issues) — 错误报告和功能请求
 - [贡献指南](../CONTRIBUTING.md)
 
-## AI 声明
+### AI 声明
 
 > **借助 AI 辅助开发**
 > 本项目在 AI 辅助编码工具（GitHub Copilot、Claude）的支持下开发完成。
 > 所有代码均经过维护者的审查、测试和集成。
 > AI 工具用于加速开发 — 创意决策、架构设计和责任归属完全由作者承担。
 
-## 免责声明
+### 免责声明
 
 > **不提供任何保证 — 使用风险自负**
 >

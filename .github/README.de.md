@@ -20,11 +20,11 @@
 
 **KiCAD MCP Server** ist ein Model Context Protocol (MCP) Server, der KI-Assistenten wie Claude ermöglicht, mit KiCAD für die PCB-Design-Automatisierung zu interagieren. Aufgebaut auf der MCP-Spezifikation 2025-06-18, bietet dieser Server umfassende Tool-Schemas und Echtzeit-Projektzugriff für intelligente PCB-Design-Workflows.
 
-## PCBs mit natürlicher Sprache designen
+### PCBs mit natürlicher Sprache designen
 
 Beschreibe was du bauen möchtest — und lass die KI die EDA-Arbeit übernehmen. Bauteile platzieren, eigene Symbole und Footprints erstellen, Verbindungen routen, Prüfungen ausführen und Fertigungsdateien exportieren — alles im Gespräch mit deinem KI-Assistenten.
 
-## Was es heute kann
+### Was es heute kann
 
 - Projektanlage, Schaltplan-Bearbeitung, Bauteil-Platzierung, Routing, DRC/ERC, Export
 - **Eigene Symbole und Footprints generieren** — auch für Module die in KiCAD-Standardbibliotheken fehlen
@@ -34,7 +34,7 @@ Beschreibe was du bauen möchtest — und lass die KI die EDA-Arbeit übernehmen
 - **Visuelles Feedback** — Snapshots und Session-Logs für Nachvollziehbarkeit
 - **Plattformübergreifend** — Windows, Linux, macOS
 
-## Schnellstart
+### Schnellstart
 
 1. [KiCAD 9.0+](https://www.kicad.org/download/) installieren
 2. [Node.js 18+](https://nodejs.org/) und [Python 3.11+](https://www.python.org/) installieren
@@ -68,7 +68,7 @@ Konfigurationsdatei bearbeiten:
 
 Beispielkonfiguration: `config/windows-config.example.json` oder `config/macos-config.example.json`
 
-## Dokumentation
+### Dokumentation
 
 - [**Vollständige README**](../README.md) — komplette Dokumentation
 - [Schnellstart (Router Tools)](../docs/ROUTER_QUICK_START.md) — erste Schritte
@@ -80,20 +80,20 @@ Beispielkonfiguration: `config/windows-config.example.json` oder `config/macos-c
 - [Plattform-Anleitung](../docs/PLATFORM_GUIDE.md)
 - [Changelog](../CHANGELOG.md)
 
-## Community
+### Community
 
 - [Diskussionen](https://github.com/mixelpixx/KiCAD-MCP-Server/discussions) — Fragen, Ideen, Projekte zeigen
 - [Issues](https://github.com/mixelpixx/KiCAD-MCP-Server/issues) — Fehler und Feature-Wünsche
 - [Mitwirken](../CONTRIBUTING.md)
 
-## KI-Hinweis
+### KI-Hinweis
 
 > **Entwickelt mit KI-Unterstützung**
 > Dieses Projekt wurde unter Einsatz von KI-gestützten Entwicklungswerkzeugen (GitHub Copilot, Claude) erstellt.
 > Sämtlicher Code wurde von den Maintainern geprüft, getestet und integriert.
 > KI-Werkzeuge dienten der Entwicklungsbeschleunigung — kreative Entscheidungen, Architektur und Verantwortung liegen ausschließlich bei den Autoren.
 
-## Haftungsausschluss
+### Haftungsausschluss
 
 > **Keine Haftung — Nutzung auf eigene Verantwortung**
 >
