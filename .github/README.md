@@ -55,15 +55,7 @@ npm run build
 
 ### GitHub Copilot (VS Code)
 
-Copy the template to your workspace:
-
-```bash
-cp config/vscode-mcp.example.json .vscode/mcp.json
-```
-
-VS Code auto-detects `.vscode/mcp.json` and registers the server. The template uses `${workspaceFolder}` — no path editing needed.
-
-> **Note:** `.vscode/mcp.json` is in `.gitignore` — your local config won't be committed.
+Copy `config/vscode-mcp.example.json` to `.vscode/mcp.json` — VS Code auto-detects it. → [Full setup guide](../README.md#github-copilot-vs-code)
 
 ### Claude Desktop
 
