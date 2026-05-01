@@ -306,28 +306,26 @@ class WireManager:
             True if successful, False otherwise
         """
         try:
-            # Read schematic
             with open(schematic_path, "r", encoding="utf-8") as f:
                 sch_content = f.read()
 
             sch_data = sexpdata.loads(sch_content)
 
-            # Create label S-expression
-            # Format: (label "TEXT" (at x y angle) (effects (font (size 1.27 1.27))))
+            # Orientation-aware justify: KiCAD flips horizontal alignment for 180°/270°
+            justify_h = Symbol("right") if orientation in (180, 270) else Symbol("left")
+
             label_sexp = [
                 Symbol(label_type),
                 text,
                 [Symbol("at"), position[0], position[1], orientation],
-                [Symbol("fields_autoplaced"), Symbol("yes")],
                 [
                     Symbol("effects"),
                     [Symbol("font"), [Symbol("size"), 1.27, 1.27]],
-                    [Symbol("justify"), Symbol("left"), Symbol("bottom")],
+                    [Symbol("justify"), justify_h, Symbol("bottom")],
                 ],
                 [Symbol("uuid"), str(uuid.uuid4())],
             ]
 
-            # Find insertion point
             sheet_instances_index = None
             for i, item in enumerate(sch_data):
                 if isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SHEET_INSTANCES:
@@ -336,19 +334,14 @@ class WireManager:
 
             if sheet_instances_index is None:
                 # Sub-sheets in hierarchical designs don't have (sheet_instances).
-                # Fall back to appending before the final closing paren of (kicad_sch ...).
                 sheet_instances_index = len(sch_data)
 
-            # Insert label
             sch_data.insert(sheet_instances_index, label_sexp)
-            logger.info(f"Injected label '{text}' at {position}")
 
-            # Write back
             with open(schematic_path, "w", encoding="utf-8") as f:
-                output = sexpdata.dumps(sch_data)
-                f.write(output)
+                f.write(sexpdata.dumps(sch_data))
 
-            logger.info(f"Successfully added label to {schematic_path.name}")
+            logger.info(f"Successfully added label '{text}' to {schematic_path.name}")
             return True
 
         except Exception as e:

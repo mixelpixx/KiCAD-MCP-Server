@@ -25,6 +25,7 @@ class PinLocator:
         """Initialize pin locator with empty cache"""
         self.pin_definition_cache = {}  # Cache: "lib_id:symbol_name" -> pin_data
         self._schematic_cache: Dict[str, object] = {}  # Cache: path -> loaded Schematic
+        self._sexp_cache: Dict[str, Any] = {}  # Cache: path -> parsed sexpdata (mirror-aware)
 
     @staticmethod
     def parse_symbol_definition(symbol_def: list) -> Dict[str, Dict]:
@@ -216,6 +217,35 @@ class PinLocator:
             pass
         return None
 
+    def _get_symbol_transform(
+        self, schematic_path: Path, symbol_reference: str
+    ) -> Optional[Tuple[float, float, float, bool, bool, str]]:
+        """
+        Read symbol position, rotation, mirror flags, and lib_id directly from the
+        .kicad_sch file via sexpdata (authoritative — not kicad-skip cache, which
+        does not reflect mirror/rotation changes made by rotate_schematic_component).
+
+        Returns (x, y, rotation, mirror_x, mirror_y, lib_id) or None.
+        """
+        import sexpdata as _sexpdata
+        from commands.wire_dragger import WireDragger
+
+        sch_key = str(schematic_path)
+        try:
+            if sch_key not in self._sexp_cache:
+                with open(schematic_path, "r", encoding="utf-8") as f:
+                    self._sexp_cache[sch_key] = _sexpdata.loads(f.read())
+        except Exception as e:
+            logger.error(f"_get_symbol_transform: failed to parse {schematic_path}: {e}")
+            return None
+
+        found = WireDragger.find_symbol(self._sexp_cache[sch_key], symbol_reference)
+        if found is None:
+            return None
+
+        _, sym_x, sym_y, rotation, lib_id, mirror_x, mirror_y = found
+        return sym_x, sym_y, rotation, mirror_x, mirror_y, lib_id
+
     def get_pin_angle(
         self, schematic_path: Path, symbol_reference: str, pin_number: str
     ) -> Optional[float]:
@@ -223,27 +253,16 @@ class PinLocator:
         Get the outward angle of a pin endpoint in degrees (0=right, 90=up, 180=left, 270=down).
         This is the direction a wire stub must extend to stay connected to the pin.
 
+        Accounts for mirror flags read directly from the .kicad_sch file.
+
         Returns angle in degrees, or None if pin not found.
         """
         try:
-            sch_key = str(schematic_path)
-            if sch_key not in self._schematic_cache:
-                self._schematic_cache[sch_key] = Schematic(sch_key)
-            sch = self._schematic_cache[sch_key]
-
-            target_symbol = None
-            for symbol in sch.symbol:
-                if symbol.property.Reference.value.rstrip("_") == symbol_reference:
-                    target_symbol = symbol
-                    break
-
-            if not target_symbol:
+            transform = self._get_symbol_transform(schematic_path, symbol_reference)
+            if transform is None:
                 return None
 
-            symbol_at = target_symbol.at.value
-            symbol_rotation = float(symbol_at[2]) if len(symbol_at) > 2 else 0.0
-
-            lib_id = target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
+            _, _, symbol_rotation, mirror_x, mirror_y, lib_id = transform
             if not lib_id:
                 return None
 
@@ -258,26 +277,16 @@ class PinLocator:
                 else:
                     return None
 
-            mirror_x = False
-            mirror_y = False
-            if hasattr(target_symbol, "mirror"):
-                mirror_val = (
-                    str(target_symbol.mirror.value)
-                    if hasattr(target_symbol.mirror, "value")
-                    else ""
-                )
-                if mirror_val == "x":
-                    mirror_x = True
-                elif mirror_val == "y":
-                    mirror_y = True
-
             pin_def_angle = pins[pin_number].get("angle", 0)
-            # Y-negate flips the angle across the x-axis
-            pin_def_angle = (360 - pin_def_angle) % 360
+
+            # Mirror flips the angle before applying symbol rotation.
+            # mirror_x flips the X component of local vectors → reflects across Y axis → 180 - angle.
+            # mirror_y flips the Y component of local vectors → reflects across X axis → negate angle.
             if mirror_x:
-                pin_def_angle = (360 - pin_def_angle) % 360
-            if mirror_y:
                 pin_def_angle = (180 - pin_def_angle) % 360
+            if mirror_y:
+                pin_def_angle = (-pin_def_angle) % 360
+
             absolute_angle = (pin_def_angle + symbol_rotation) % 360
             return absolute_angle
 
@@ -319,27 +328,14 @@ class PinLocator:
                 logger.error(f"Symbol {symbol_reference} not found in schematic")
                 return None
 
-            # Get symbol position, rotation, and mirror state
-            symbol_at = target_symbol.at.value
-            symbol_x = float(symbol_at[0])
-            symbol_y = float(symbol_at[1])
-            symbol_rotation = float(symbol_at[2]) if len(symbol_at) > 2 else 0.0
+            # Get symbol transform from sexpdata (authoritative: reflects mirror state
+            # after rotate_schematic_component, which kicad-skip cache does not).
+            transform = self._get_symbol_transform(schematic_path, symbol_reference)
+            if transform is None:
+                logger.error(f"Could not read transform for {symbol_reference}")
+                return None
+            symbol_x, symbol_y, symbol_rotation, mirror_x, mirror_y, lib_id = transform
 
-            mirror_x = False
-            mirror_y = False
-            if hasattr(target_symbol, "mirror"):
-                mirror_val = (
-                    str(target_symbol.mirror.value)
-                    if hasattr(target_symbol.mirror, "value")
-                    else ""
-                )
-                if mirror_val == "x":
-                    mirror_x = True
-                elif mirror_val == "y":
-                    mirror_y = True
-
-            # Get symbol lib_id
-            lib_id = target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
             if not lib_id:
                 logger.error(f"Symbol {symbol_reference} has no lib_id")
                 return None
@@ -375,31 +371,17 @@ class PinLocator:
                     return None
 
             pin_data = pins[pin_number]
+            from commands.wire_dragger import WireDragger
 
-            # Get pin position relative to symbol origin.
-            # lib_symbols uses library y-up convention; schematic uses y-down.
-            # Negate y here before rotation, matching KiCad's transform order.
-            pin_rel_x = pin_data["x"]
-            pin_rel_y = -pin_data["y"]
-
-            logger.debug(f"Pin {pin_number} relative position: ({pin_rel_x}, {pin_rel_y})")
-
-            # Mirror in local coords after y-negate (KiCad transform order)
-            # mirror_x = flip across X axis → negate y
-            # mirror_y = flip across Y axis → negate x
-            if mirror_x:
-                pin_rel_y = -pin_rel_y
-            if mirror_y:
-                pin_rel_x = -pin_rel_x
-
-            # Apply symbol rotation to pin position
-            if symbol_rotation != 0:
-                pin_rel_x, pin_rel_y = self.rotate_point(pin_rel_x, pin_rel_y, symbol_rotation)
-                logger.debug(f"After transform (y-neg/mirror/rot): ({pin_rel_x}, {pin_rel_y})")
-
-            # Calculate absolute position
-            abs_x = symbol_x + pin_rel_x
-            abs_y = symbol_y + pin_rel_y
+            abs_x, abs_y = WireDragger.pin_world_xy(
+                pin_data["x"],
+                pin_data["y"],
+                symbol_x,
+                symbol_y,
+                symbol_rotation,
+                mirror_x,
+                mirror_y,
+            )
 
             logger.info(f"Pin {symbol_reference}/{pin_number} located at ({abs_x}, {abs_y})")
             return [abs_x, abs_y]

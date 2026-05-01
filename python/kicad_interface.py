@@ -2710,13 +2710,16 @@ class KiCADInterface:
             return {"success": False, "message": str(e)}
 
     def _handle_rotate_schematic_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Rotate a schematic component"""
+        """Rotate and/or mirror a schematic component, dragging connected wires."""
         logger.info("Rotating schematic component")
         try:
+            import sexpdata as _sexpdata
+            from commands.wire_dragger import WireDragger
+
             schematic_path = params.get("schematicPath")
             reference = params.get("reference")
             angle = params.get("angle", 0)
-            mirror = params.get("mirror")
+            mirror = params.get("mirror")  # "x", "y", or None
 
             if not schematic_path or not reference:
                 return {
@@ -2724,77 +2727,61 @@ class KiCADInterface:
                     "message": "schematicPath and reference are required",
                 }
 
-            sym_k = sexpdata.Symbol("symbol")
-            prop_k = sexpdata.Symbol("property")
-            at_k = sexpdata.Symbol("at")
-            mirror_k = sexpdata.Symbol("mirror")
+            with open(schematic_path, "r", encoding="utf-8") as f:
+                sch_data = _sexpdata.loads(f.read())
 
-            with open(schematic_path, "r", encoding="utf-8") as _f:
-                sch_data = sexpdata.load(_f)
-
-            target = None
-            for item in sch_data:
-                if not (isinstance(item, list) and item and item[0] == sym_k):
-                    continue
-                ref_val = None
-                for sub in item[1:]:
-                    if (
-                        isinstance(sub, list)
-                        and len(sub) >= 3
-                        and sub[0] == prop_k
-                        and str(sub[1]).strip('"') == "Reference"
-                    ):
-                        ref_val = str(sub[2]).strip('"')
-                        break
-                if ref_val == reference:
-                    target = item
-                    break
-
-            if target is None:
+            found = WireDragger.find_symbol(sch_data, reference)
+            if found is None:
                 return {"success": False, "message": f"Component {reference} not found"}
 
-            # Update (at x y rot)
-            at_node = None
-            mirror_idx = None
-            for idx, sub in enumerate(target[1:], start=1):
-                if not isinstance(sub, list) or not sub:
-                    continue
-                if sub[0] == at_k:
-                    at_node = sub
-                elif sub[0] == mirror_k:
-                    mirror_idx = idx
-
-            if at_node is None:
-                return {
-                    "success": False,
-                    "message": f"Component {reference} has no (at ...) node",
-                }
-            while len(at_node) < 3:
-                at_node.append(0)
-            if len(at_node) < 4:
-                at_node.append(angle)
+            # Determine new mirror state: explicit param overrides; None preserves existing
+            _, _, _, _, _, old_mirror_x, old_mirror_y = found
+            if mirror is None:
+                new_mirror_x = old_mirror_x
+                new_mirror_y = old_mirror_y
+                effective_mirror = "x" if old_mirror_x else ("y" if old_mirror_y else None)
             else:
-                at_node[3] = angle
+                new_mirror_x = (mirror == "x")
+                new_mirror_y = (mirror == "y")
+                effective_mirror = mirror
 
-            if mirror:
-                mirror_node = [mirror_k, sexpdata.Symbol(str(mirror))]
-                if mirror_idx is not None:
-                    target[mirror_idx] = mirror_node
-                else:
-                    # Insert after (at ...) for stability
-                    insert_at = len(target)
-                    for idx, sub in enumerate(target[1:], start=1):
-                        if isinstance(sub, list) and sub and sub[0] == at_k:
-                            insert_at = idx + 1
-                            break
-                    target.insert(insert_at, mirror_node)
+            # Compute pin world positions before and after the transform
+            pin_positions = WireDragger.compute_pin_positions_for_rotation(
+                sch_data, reference, float(angle), new_mirror_x, new_mirror_y
+            )
+
+            # Build old→new map (skip pins that don't move)
+            old_to_new = {}
+            for _pin, (old_xy, new_xy) in pin_positions.items():
+                if old_xy == new_xy:
+                    continue
+                if old_xy in old_to_new:
+                    logger.warning(
+                        f"rotate: pin {_pin!r} of {reference!r} shares old position "
+                        f"{old_xy} with another pin; skipping duplicate"
+                    )
+                    continue
+                old_to_new[old_xy] = new_xy
+
+            # Drag connected wires to follow pins
+            drag_summary = WireDragger.drag_wires(sch_data, old_to_new)
+
+            # Update the symbol's rotation and mirror token in sexpdata
+            WireDragger.update_symbol_rotation_mirror(sch_data, reference, float(angle), effective_mirror)
 
             WireManager.sync_junctions(sch_data)
 
-            with open(schematic_path, "w", encoding="utf-8") as _f:
-                _f.write(sexpdata.dumps(sch_data))
+            with open(schematic_path, "w", encoding="utf-8") as f:
+                f.write(_sexpdata.dumps(sch_data))
 
-            return {"success": True, "reference": reference, "angle": angle}
+            return {
+                "success": True,
+                "reference": reference,
+                "angle": angle,
+                "mirror": effective_mirror,
+                "wiresMoved": drag_summary.get("endpoints_moved", 0),
+                "wiresRemoved": drag_summary.get("wires_removed", 0),
+            }
 
         except Exception as e:
             logger.error(f"Error rotating schematic component: {e}")
