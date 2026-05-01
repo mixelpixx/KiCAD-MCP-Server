@@ -6,7 +6,7 @@
 
 # KiCAD MCP Server
 
-[🇺🇸 English](README.md) &nbsp;•&nbsp; [🇩🇪 **Deutsch**](#) &nbsp;•&nbsp; [🇨🇳 中文](README.zh.md)
+[🇺🇸 **English** (EN)](.github/README.md) &nbsp;•&nbsp; [🇩🇪 **Deutsch** (DE)](#) &nbsp;•&nbsp; [🇨🇳 **中文** (ZH)](.github/README.zh.md)
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](../docs/PLATFORM_GUIDE.md)
@@ -16,7 +16,11 @@
 
 </div>
 
----
+## <div align="center">
+
+Unser neues Forum ist online: https://forum.orchis.ai — Fragen? Ideen? Projekte zeigen?
+
+</div>
 
 **KiCAD MCP Server** ist ein Model Context Protocol (MCP) Server, der KI-Assistenten wie Claude ermöglicht, mit KiCAD für die PCB-Design-Automatisierung zu interagieren. Aufgebaut auf der MCP-Spezifikation 2025-06-18, bietet dieser Server umfassende Tool-Schemas und Echtzeit-Projektzugriff für intelligente PCB-Design-Workflows.
 
