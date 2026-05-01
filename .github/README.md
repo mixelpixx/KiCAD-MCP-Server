@@ -20,11 +20,11 @@
 
 ---
 
-## Our new forum is up: https://forum.orchis.ai — Need help? Have suggestions? Want to show off your work?
-
-</div>
+Our new forum is up: https://forum.orchis.ai — Need help? Have suggestions? Want to show off your work?
 
 ---
+
+</div>
 
 **KiCAD MCP Server** is a Model Context Protocol (MCP) server that enables AI assistants like Claude to interact with KiCAD for PCB design automation. Built on the MCP 2025-06-18 specification, this server provides comprehensive tool schemas and real-time project state access for intelligent PCB design workflows.
 
