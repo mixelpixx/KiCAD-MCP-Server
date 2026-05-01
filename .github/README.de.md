@@ -6,7 +6,7 @@
 
 # KiCAD MCP Server
 
-[🇺🇸 **English** (EN)](.github/README.md) &nbsp;•&nbsp; [🇩🇪 **Deutsch** (DE)](#) &nbsp;•&nbsp; [🇨🇳 **中文** (ZH)](.github/README.zh.md)
+[🇺🇸 **English** (EN)](README.md) &nbsp;•&nbsp; [🇩🇪 **Deutsch** (DE)](#) &nbsp;•&nbsp; [🇨🇳 **中文** (ZH)](README.zh.md)
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](../docs/PLATFORM_GUIDE.md)
