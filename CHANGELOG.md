@@ -6,6 +6,24 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **KiCad 10 standard symbol libraries are now discoverable**: `search_symbols`,
+  `list_symbol_libraries`, and `add_schematic_component` previously returned no
+  results for stdlib symbols (`Device:R`, `RF_Module:ESP32-WROOM-DA`,
+  `Connector_Generic:*`, etc.) on KiCad 10 installations. Two underlying
+  causes:
+  1. `_find_kicad_symbol_dir` (in `library_symbol.py` and
+     `dynamic_symbol_loader.py`) hard-coded only KiCad 8.0 / 9.0 install
+     paths, so `${KICAD10_SYMBOL_DIR}` and the matching `KICAD10_SYMBOL_DIR`
+     env var never resolved. Added `C:/Program Files/KiCad/10.0/share/kicad/symbols`
+     and `KICAD10_SYMBOL_DIR` env-var support.
+  2. The `sym-lib-table` regex used `[^")\s]+` for the URI capture, which
+     rejects any URI containing a space. KiCad's default global table on
+     Windows references the stdlib via
+     `(lib (name "KiCad") (type "Table") (uri "C:/Program Files/KiCad/10.0/share/kicad/template/sym-lib-table"))`
+     — the space in `Program Files` caused the Table reference to be
+     skipped silently, hiding the entire stdlib. Regex now matches either
+     a quoted value (allowing spaces) or a bare token.
+
 - **Schematic symbol lookup**: `get_schematic_component`,
   `edit_schematic_component`, `set_schematic_component_property`,
   `remove_schematic_component_property`, and `delete_schematic_component`
