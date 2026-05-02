@@ -515,9 +515,57 @@ class SymbolLibraryCommands:
         """Initialize with optional library manager"""
         self.library_manager = library_manager or SymbolLibraryManager()
 
+    @staticmethod
+    def _derive_project_path(params: Dict) -> Optional[Path]:
+        """Derive a project directory from caller-supplied params.
+
+        Accepts an explicit project directory or .kicad_pro file via projectPath,
+        or any related file path (schematicPath/boardPath) — in which case the
+        nearest ancestor containing sym-lib-table or a .kicad_pro is used.
+        """
+        for key in ("projectPath", "project_path"):
+            value = params.get(key)
+            if value:
+                p = Path(value).expanduser()
+                if p.suffix == ".kicad_pro" or p.is_file():
+                    p = p.parent
+                return p
+
+        for key in ("schematicPath", "boardPath"):
+            value = params.get(key)
+            if value:
+                start = Path(value).expanduser().parent
+                for ancestor in [start, *start.parents]:
+                    if (ancestor / "sym-lib-table").exists() or list(
+                        ancestor.glob("*.kicad_pro")
+                    ):
+                        return ancestor
+                return start
+
+        return None
+
+    def use_project(self, project_path: Optional[Path]) -> None:
+        """Switch the underlying manager to load project-scope libraries.
+
+        Callers (e.g. open_project / create_project) use this to make
+        `<project>/sym-lib-table` visible to subsequent search/list/info calls
+        without requiring every caller to pass projectPath.
+        """
+        if project_path is None:
+            return
+        if self.library_manager.project_path == project_path:
+            return
+        logger.info(f"Rebuilding SymbolLibraryManager for project: {project_path}")
+        self.library_manager = SymbolLibraryManager(project_path=project_path)
+
+    def _ensure_manager_for(self, params: Dict) -> None:
+        """Rebuild the library manager if the caller's project differs."""
+        self.use_project(self._derive_project_path(params))
+
     def list_symbol_libraries(self, params: Dict) -> Dict:
         """List all available symbol libraries"""
         try:
+            self._ensure_manager_for(params)
             libraries = self.library_manager.list_libraries()
             return {"success": True, "libraries": libraries, "count": len(libraries)}
         except Exception as e:
@@ -534,6 +582,8 @@ class SymbolLibraryCommands:
             query = params.get("query", "")
             if not query:
                 return {"success": False, "message": "Missing query parameter"}
+
+            self._ensure_manager_for(params)
 
             limit = params.get("limit", 20)
             library_filter = params.get("library")
@@ -556,6 +606,8 @@ class SymbolLibraryCommands:
             library = params.get("library")
             if not library:
                 return {"success": False, "message": "Missing library parameter"}
+
+            self._ensure_manager_for(params)
 
             # Check if library exists in sym-lib-table
             if library not in self.library_manager.libraries:
@@ -592,6 +644,8 @@ class SymbolLibraryCommands:
             symbol_spec = params.get("symbol")
             if not symbol_spec:
                 return {"success": False, "message": "Missing symbol parameter"}
+
+            self._ensure_manager_for(params)
 
             result = self.library_manager.find_symbol(symbol_spec)
 

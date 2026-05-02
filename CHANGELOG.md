@@ -6,6 +6,21 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Project-scope `sym-lib-table` is now visible to symbol-discovery tools**:
+  `search_symbols`, `list_symbol_libraries`, `list_library_symbols`, and
+  `get_symbol_info` previously only consulted the global `sym-lib-table`. A
+  library registered with project scope (i.e. an entry in
+  `<project>/sym-lib-table`) was therefore invisible — even right after
+  `open_project` succeeded — making `add_schematic_component` the only tool
+  that could see it. Two changes:
+  1. `open_project` and `create_project` now rebuild the
+     `SymbolLibraryManager` against the project directory so subsequent
+     search/list/info calls see project-scope libraries automatically.
+  2. The four discovery tools also accept an optional `projectPath`
+     parameter (a project directory, `.kicad_pro`, `.kicad_pcb`, or
+     `.kicad_sch` path) for stateless callers, so project libraries can be
+     resolved without first calling `open_project`.
+
 - **Schematic symbol lookup**: `get_schematic_component`,
   `edit_schematic_component`, `set_schematic_component_property`,
   `remove_schematic_component_property`, and `delete_schematic_component`
