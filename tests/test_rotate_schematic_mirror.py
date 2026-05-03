@@ -163,19 +163,21 @@ def test_pin_positions_unchanged_at_same_transform():
         assert old_xy == new_xy
 
 
-def test_pin_positions_mirror_x_flips_x():
-    """mirror_x should negate the local X coordinate before rotation."""
+def test_pin_positions_mirror_x_flips_y():
+    """mirror_x = SYM_MIRROR_X = TRANSFORM(1,0,0,-1) negates the screen-Y
+    coordinate (eeschema symbol.h:43-44), not X. With the lib→screen Y-flip
+    applied first, this means the pin's screen Y is reflected back to lib Y."""
     sch = _make_sch()  # at (75, 105, 0), no mirror
 
-    fake_pins = {"1": {"x": 2.0, "y": 0.0}}
+    fake_pins = {"1": {"x": 0.0, "y": 2.0}}
     with patch.object(WireDragger, "get_pin_defs", return_value=fake_pins):
         pos = WireDragger.compute_pin_positions_for_rotation(sch, "Q1", 0.0, True, False)
 
     _, (old_xy, new_xy) = next(iter(pos.items()))
-    # old: pin at local (2, 0), world = (75+2, 105) = (77, 105)
-    assert abs(old_xy[0] - 77.0) < 1e-4
-    # new: mirror_x → local (-2, 0), world = (75-2, 105) = (73, 105)
-    assert abs(new_xy[0] - 73.0) < 1e-4
+    # old: pin at lib (0, 2). Y-flip → (0, -2). No mirror. World = (75, 105-2) = (75, 103).
+    assert abs(old_xy[1] - 103.0) < 1e-4
+    # new: mirror_x → negate screen-Y → (0, 2). World = (75, 105+2) = (75, 107).
+    assert abs(new_xy[1] - 107.0) < 1e-4
 
 
 # ---------------------------------------------------------------------------

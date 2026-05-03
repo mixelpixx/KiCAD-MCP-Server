@@ -279,24 +279,26 @@ class PinLocator:
 
             pin_def_angle = pins[pin_number].get("angle", 0)
 
-            # Mirror flips the angle before applying symbol rotation.
-            # mirror_x flips the X component of local vectors → reflects across Y axis → 180 - angle.
-            # mirror_y flips the Y component of local vectors → reflects across X axis → negate angle.
-            if mirror_x:
-                pin_def_angle = (180 - pin_def_angle) % 360
-            if mirror_y:
-                pin_def_angle = (-pin_def_angle) % 360
-
-            # Library symbols are Y-up; the schematic is Y-down. Match the
-            # lib→screen Y-flip applied by WireDragger.pin_world_xy (mirror in
-            # lib space → Y-flip → rotate → translate). For an angle this
-            # negates the Y component, i.e. negates the angle. Without this
-            # step pin angles are 180° off along the Y axis; before PR #145
-            # this was masked because pin_world_xy was missing the same flip,
-            # so the two were "wrong in the same direction" and consistent.
+            # Mirror this exactly the way WireDragger.pin_world_xy does, in the
+            # same order: Y-flip (lib Y-up → screen Y-down) → mirror → rotate.
+            #
+            # Y-flip on an angle: negate it (reflects across X axis).
             pin_def_angle = (-pin_def_angle) % 360
 
-            absolute_angle = (pin_def_angle + symbol_rotation) % 360
+            # eeschema (symbol.h:43-44):
+            #   (mirror x) = SYM_MIRROR_X = TRANSFORM(1,0,0,-1) → negates Y →
+            #     reflect angle across X axis → -angle.
+            #   (mirror y) = SYM_MIRROR_Y = TRANSFORM(-1,0,0,1) → negates X →
+            #     reflect angle across Y axis → 180 - angle.
+            if mirror_x:
+                pin_def_angle = (-pin_def_angle) % 360
+            if mirror_y:
+                pin_def_angle = (180 - pin_def_angle) % 360
+
+            # eeschema's rotation TRANSFORM is screen-CCW in Y-down, which is
+            # math-CW in standard atan2 convention — so subtract the rotation
+            # to match `pin_world_xy`'s `_rotate(..., -rotation)` call.
+            absolute_angle = (pin_def_angle - symbol_rotation) % 360
             return absolute_angle
 
         except Exception:
