@@ -1044,17 +1044,12 @@ class RoutingCommands:
                     "errorDetails": "name parameter is required",
                 }
 
-            # Get net classes
-            net_classes = self.board.GetNetClasses()
+            # Use NET_SETTINGS API (KiCad 8+)
+            ds = self.board.GetDesignSettings()
+            ns = ds.m_NetSettings
 
-            # Create new net class if it doesn't exist
-            if not net_classes.Find(name):
-                netclass = pcbnew.NETCLASS(name)
-                net_classes.Add(netclass)
-            else:
-                netclass = net_classes.Find(name)
-
-            # Set properties
+            # Create netclass and set properties
+            netclass = pcbnew.NETCLASS(name)
             scale = 1000000  # mm to nm
             if clearance is not None:
                 netclass.SetClearance(int(clearance * scale))
@@ -1065,21 +1060,20 @@ class RoutingCommands:
             if via_drill is not None:
                 netclass.SetViaDrill(int(via_drill * scale))
             if uvia_diameter is not None:
-                netclass.SetMicroViaDiameter(int(uvia_diameter * scale))
+                netclass.SetuViaDiameter(int(uvia_diameter * scale))
             if uvia_drill is not None:
-                netclass.SetMicroViaDrill(int(uvia_drill * scale))
+                netclass.SetuViaDrill(int(uvia_drill * scale))
             if diff_pair_width is not None:
                 netclass.SetDiffPairWidth(int(diff_pair_width * scale))
             if diff_pair_gap is not None:
                 netclass.SetDiffPairGap(int(diff_pair_gap * scale))
 
-            # Add nets to net class
-            netinfo = self.board.GetNetInfo()
-            nets_map = netinfo.NetsByName()
+            # Register netclass via NET_SETTINGS
+            ns.SetNetclass(name, netclass)
+
+            # Assign nets via pattern matching (stored in .kicad_pro, not .kicad_pcb)
             for net_name in nets:
-                if nets_map.has_key(net_name):
-                    net = nets_map[net_name]
-                    net.SetClass(netclass)
+                ns.SetNetclassPatternAssignment(name, net_name)
 
             return {
                 "success": True,
@@ -1090,8 +1084,8 @@ class RoutingCommands:
                     "trackWidth": netclass.GetTrackWidth() / scale,
                     "viaDiameter": netclass.GetViaDiameter() / scale,
                     "viaDrill": netclass.GetViaDrill() / scale,
-                    "uviaDiameter": netclass.GetMicroViaDiameter() / scale,
-                    "uviaDrill": netclass.GetMicroViaDrill() / scale,
+                    "uviaDiameter": netclass.GetuViaDiameter() / scale,
+                    "uviaDrill": netclass.GetuViaDrill() / scale,
                     "diffPairWidth": netclass.GetDiffPairWidth() / scale,
                     "diffPairGap": netclass.GetDiffPairGap() / scale,
                     "nets": nets,
