@@ -106,6 +106,20 @@ def _build_diode_case(tmp: Path, rotation: int) -> tuple[Path, dict]:
     return sch_path, {("D1", "1"): "D1_K", ("D1", "2"): "D1_A"}
 
 
+def _apply_mirror_to_file(sch_path: Path, reference: str, axis: str) -> None:
+    """Apply (mirror x|y) to a placed symbol via direct sexpr mutation.
+
+    ComponentManager.add_component silently drops a 'mirror' kwarg, so this
+    fixture goes around it via the same low-level helper rotate_schematic_component
+    uses (WireDragger.update_symbol_rotation_mirror)."""
+    import sexpdata
+
+    sch_data = sexpdata.loads(sch_path.read_text())
+    if not WireDragger.update_symbol_rotation_mirror(sch_data, reference, 0, axis):
+        raise RuntimeError(f"Failed to apply mirror={axis} to {reference}")
+    sch_path.write_text(sexpdata.dumps(sch_data))
+
+
 def _build_mirror_case(tmp: Path, axis: str) -> tuple[Path, dict]:
     sch_path = tmp / f"resistor_mirror_{axis}.kicad_sch"
     template = PYTHON_DIR / "templates" / "template_with_symbols.kicad_sch"
@@ -114,23 +128,23 @@ def _build_mirror_case(tmp: Path, axis: str) -> tuple[Path, dict]:
     sch = SchematicManager.load_schematic(str(sch_path))
     ComponentManager.add_component(
         sch,
-        {
-            "type": "R",
-            "reference": "R1",
-            "value": "10k",
-            "x": 100.0,
-            "y": 100.0,
-            "rotation": 0,
-            "mirror": axis,
-        },
+        {"type": "R", "reference": "R1", "value": "10k", "x": 100.0, "y": 100.0, "rotation": 0},
         sch_path,
     )
     SchematicManager.save_schematic(sch, str(sch_path))
 
+    _apply_mirror_to_file(sch_path, "R1", axis)
+    if f"(mirror {axis})" not in sch_path.read_text():
+        raise RuntimeError(
+            f"Fixture failed to write (mirror {axis}) — the kicad-cli oracle would "
+            f"silently match our pin coords for an unmirrored symbol."
+        )
+
     locator = PinLocator()
     p1 = locator.get_pin_location(sch_path, "R1", "1")
     p2 = locator.get_pin_location(sch_path, "R1", "2")
-    assert p1 is not None and p2 is not None
+    if p1 is None or p2 is None:
+        raise RuntimeError(f"PinLocator returned None for R1 mirror={axis}")
 
     _add_labels_to_file(sch_path, [("R1_PIN1", p1[0], p1[1]), ("R1_PIN2", p2[0], p2[1])])
 
