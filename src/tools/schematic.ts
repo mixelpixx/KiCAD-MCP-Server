@@ -578,6 +578,53 @@ edit_schematic_component and set its value to an empty string.`,
     },
   );
 
+  // Add no-connect flag
+  server.tool(
+    "add_no_connect",
+    "Add a no-connect flag (X marker) to a pin that is intentionally left unconnected. " +
+      "This suppresses ERC 'Pin not connected' errors for unused pins. " +
+      "PREFERRED: supply componentRef + pinNumber to snap to the exact pin endpoint. " +
+      "Alternatively supply position [x, y] in mm matching the pin endpoint exactly.",
+    {
+      schematicPath: z.string().describe("Path to the schematic file"),
+      position: z
+        .array(z.number())
+        .length(2)
+        .optional()
+        .describe("Position [x, y] in mm. Required when componentRef/pinNumber are not given."),
+      componentRef: z
+        .string()
+        .optional()
+        .describe("Component reference to snap to (e.g. U1, R1). Use with pinNumber."),
+      pinNumber: z
+        .union([z.string(), z.number()])
+        .optional()
+        .describe("Pin number or name on componentRef (e.g. '1', 'GND'). Use with componentRef."),
+    },
+    async (args: {
+      schematicPath: string;
+      position?: number[];
+      componentRef?: string;
+      pinNumber?: string | number;
+    }) => {
+      const result = await callKicadScript("add_no_connect", args);
+      if (result.success) {
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+      } else {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Failed to add no-connect: ${result.message || "Unknown error"}`,
+            },
+          ],
+        };
+      }
+    },
+  );
+
   // Connect pin to net
   server.tool(
     "connect_to_net",

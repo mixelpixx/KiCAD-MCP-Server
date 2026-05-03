@@ -10,7 +10,6 @@ import { logger } from "../logger.js";
 import {
   getAllCategories,
   getCategory,
-  getToolCategory,
   searchTools as registrySearchTools,
   getRegistryStats,
 } from "./registry.js";
@@ -18,26 +17,10 @@ import {
 // Command function type for KiCAD script calls
 type CommandFunction = (command: string, params: Record<string, unknown>) => Promise<any>;
 
-// Map to store tool execution handlers
-// This will be populated by registerToolHandler()
-const toolHandlers = new Map<string, (params: any) => Promise<any>>();
-
-/**
- * Register a tool handler for execution via execute_tool
- * This should be called by each tool registration function
- */
-export function registerToolHandler(
-  toolName: string,
-  handler: (params: any) => Promise<any>,
-): void {
-  toolHandlers.set(toolName, handler);
-  logger.debug(`Registered handler for routed tool: ${toolName}`);
-}
-
 /**
  * Register all router tools with the MCP server
  */
-export function registerRouterTools(server: McpServer, callKicadScript: CommandFunction): void {
+export function registerRouterTools(server: McpServer, _callKicadScript: CommandFunction): void {
   logger.info("Registering router tools");
 
   // ============================================================================
@@ -45,6 +28,7 @@ export function registerRouterTools(server: McpServer, callKicadScript: CommandF
   // ============================================================================
   server.tool(
     "list_tool_categories",
+    "List all available KiCAD tool categories with their descriptions and tool counts. Use this to discover which tools are available via the router.",
     {
       // No parameters
     },
@@ -82,6 +66,7 @@ export function registerRouterTools(server: McpServer, callKicadScript: CommandF
   // ============================================================================
   server.tool(
     "get_category_tools",
+    "Return all tools available in a specific category. Use list_tool_categories first to find valid category names.",
     {
       category: z.string().describe("Category name from list_tool_categories"),
     },
@@ -134,135 +119,11 @@ export function registerRouterTools(server: McpServer, callKicadScript: CommandF
   );
 
   // ============================================================================
-  // execute_tool
-  // ============================================================================
-  server.tool(
-    "execute_tool",
-    {
-      tool_name: z.string().describe("Tool name from get_category_tools"),
-      params: z.record(z.unknown()).optional().describe("Tool parameters (optional)"),
-    },
-    async ({ tool_name, params }) => {
-      logger.info(`Executing routed tool: ${tool_name}`);
-
-      // Check if tool exists in registry
-      const category = getToolCategory(tool_name);
-
-      if (!category) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: `Unknown tool: ${tool_name}`,
-                  hint: "Use list_tool_categories and get_category_tools to find available tools",
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
-      }
-
-      // Get the handler
-      const handler = toolHandlers.get(tool_name);
-
-      if (!handler) {
-        // Tool is in registry but handler not registered yet
-        // This means the tool exists but hasn't been migrated to router pattern yet
-        // Fall back to calling KiCAD script directly
-        logger.warn(
-          `Tool ${tool_name} in registry but no handler registered, falling back to direct call`,
-        );
-
-        try {
-          const result = await callKicadScript(tool_name, params || {});
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify(
-                  {
-                    tool: tool_name,
-                    category: category,
-                    result: result,
-                  },
-                  null,
-                  2,
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify(
-                  {
-                    error: `Tool execution failed: ${(error as Error).message}`,
-                    tool: tool_name,
-                    category: category,
-                  },
-                  null,
-                  2,
-                ),
-              },
-            ],
-          };
-        }
-      }
-
-      // Execute the tool via its handler
-      try {
-        const result = await handler(params || {});
-
-        // The handler already returns MCP-formatted response
-        // Just add metadata
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  tool: tool_name,
-                  category: category,
-                  ...result,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  error: `Tool execution failed: ${(error as Error).message}`,
-                  tool: tool_name,
-                  category: category,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
-      }
-    },
-  );
-
-  // ============================================================================
   // search_tools
   // ============================================================================
   server.tool(
     "search_tools",
+    "Search all available KiCAD tools by keyword. Returns matching tool names and their categories.",
     {
       query: z.string().describe("Search term (e.g., 'gerber', 'zone', 'export', 'drc')"),
     },
