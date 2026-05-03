@@ -36,6 +36,7 @@ class DynamicSymbolLoader:
     def find_kicad_symbol_libraries(self) -> List[Path]:
         """Find all KiCad symbol library directories"""
         possible_paths = [
+            Path("C:/Program Files/KiCad/10.0/share/kicad/symbols"),
             Path("/usr/share/kicad/symbols"),
             Path("/usr/local/share/kicad/symbols"),
             Path("C:/Program Files/KiCad/9.0/share/kicad/symbols"),
@@ -88,14 +89,18 @@ class DynamicSymbolLoader:
             with open(table_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
+            # name and uri may be "quoted" (allowing spaces, e.g. Windows
+            # "C:/Program Files/...") or bare. Capture both forms.
             lib_pattern = (
-                r'\(lib\s+\(name\s+"?([^"\)\s]+)"?\)\s*\(type\s+[^)]+\)\s*\(uri\s+"?([^"\)\s]+)"?'
+                r'\(lib\s+\(name\s+(?:"([^"]+)"|([^"\)\s]+))\)\s*'
+                r'\(type\s+[^)]+\)\s*'
+                r'\(uri\s+(?:"([^"]+)"|([^"\)\s]+))'
             )
             for match in re.finditer(lib_pattern, content, re.IGNORECASE):
-                nickname = match.group(1)
+                nickname = match.group(1) or match.group(2)
                 if nickname != library_name:
                     continue
-                uri = match.group(2)
+                uri = match.group(3) or match.group(4)
                 resolved = self._resolve_sym_uri(uri)
                 if resolved and Path(resolved).exists():
                     return Path(resolved)

@@ -114,12 +114,18 @@ class SymbolLibraryManager:
 
             # Simple regex-based parser for lib entries
             # Pattern: (lib (name "NAME")(type TYPE)(uri "URI")...)
-            lib_pattern = r'\(lib\s+\(name\s+"?([^")\s]+)"?\)\s*\(type\s+"?([^")\s]+)"?\)\s*\(uri\s+"?([^")\s]+)"?'
+            # Each value can be either "quoted" (allowing spaces, e.g. "C:/Program Files/...")
+            # or bare (no whitespace). Capture both forms via alternation.
+            lib_pattern = (
+                r'\(lib\s+\(name\s+(?:"([^"]+)"|([^"\)\s]+))\)\s*'
+                r'\(type\s+(?:"([^"]+)"|([^"\)\s]+))\)\s*'
+                r'\(uri\s+(?:"([^"]+)"|([^"\)\s]+))'
+            )
 
             for match in re.finditer(lib_pattern, content, re.IGNORECASE):
-                nickname = match.group(1)
-                lib_type = match.group(2)
-                uri = match.group(3)
+                nickname = match.group(1) or match.group(2)
+                lib_type = match.group(3) or match.group(4)
+                uri = match.group(5) or match.group(6)
 
                 if lib_type.lower() == "table":
                     table_uri = uri
@@ -193,6 +199,7 @@ class SymbolLibraryManager:
     def _find_kicad_symbol_dir(self) -> Optional[str]:
         """Find KiCAD symbol directory"""
         possible_paths = [
+            "C:/Program Files/KiCad/10.0/share/kicad/symbols",
             "/usr/share/kicad/symbols",
             "/usr/local/share/kicad/symbols",
             "C:/Program Files/KiCad/9.0/share/kicad/symbols",
@@ -201,6 +208,8 @@ class SymbolLibraryManager:
         ]
 
         # Check environment variable
+        if "KICAD10_SYMBOL_DIR" in os.environ:
+            possible_paths.insert(0, os.environ["KICAD10_SYMBOL_DIR"])
         if "KICAD9_SYMBOL_DIR" in os.environ:
             possible_paths.insert(0, os.environ["KICAD9_SYMBOL_DIR"])
         if "KICAD8_SYMBOL_DIR" in os.environ:
