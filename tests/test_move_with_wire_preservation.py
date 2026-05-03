@@ -222,13 +222,14 @@ class TestComputePinPositions:
         assert abs(new2[1] - 23.81) < 1e-4
 
     def test_resistor_rotated_90(self) -> None:
-        """Device:R at (100, 100) rot=90. Pin 1 lib (0, +3.81) → y-flipped to
-        (0, -3.81) → rotated 90° → (3.81, 0) → world (103.81, 100)."""
+        """Device:R at (100, 100) rot=90. Pin 1 lib (0, +3.81), Y-flip → (0, -3.81),
+        eeschema rot=90 TRANSFORM(0,1,-1,0): (0*0+1*-3.81, -1*0+0*-3.81) = (-3.81, 0).
+        World (96.19, 100). Verified vs kicad-cli netlist."""
         sch = _make_sch_data([_make_symbol("R1", 100, 100, rotation=90)])
         positions = WireDragger.compute_pin_positions(sch, "R1", 100, 100)
         old1, _ = positions["1"]
         old2, _ = positions["2"]
-        assert abs(old1[0] - 103.81) < 1e-3
+        assert abs(old1[0] - 96.19) < 1e-3
         assert abs(old1[1] - 100) < 1e-3
 
     def test_returns_empty_for_missing_component(self) -> None:

@@ -105,8 +105,9 @@ def test_rotated_capacitor_pin_x_matches_render_convention():
         p1 = locator.get_pin_location(sch_path, "C1", "1")
         assert p1 is not None
 
-        # Device:C pin 1 is at symbol (0, +3.81). After y-negate → (0, -3.81).
-        # Rotated 90° CCW in screen coords: (0, -3.81) → (3.81, 0).
-        # Absolute: (150+3.81, 100+0) = (153.81, 100).
-        assert p1[0] == pytest.approx(153.81), f"rotated pin 1 X wrong: {p1[0]}"
+        # Device:C pin 1 lib (0, +3.81). parseXY(invertY=true) → internal (0, -3.81).
+        # Rotation 90 in eeschema is CCW in screen Y-down: TRANSFORM(0,1,-1,0).
+        # Apply: (0*0 + 1*(-3.81), -1*0 + 0*(-3.81)) = (-3.81, 0).
+        # World: (150-3.81, 100) = (146.19, 100). Verified vs kicad-cli netlist.
+        assert p1[0] == pytest.approx(146.19), f"rotated pin 1 X wrong: {p1[0]}"
         assert p1[1] == pytest.approx(100.0), f"rotated pin 1 Y wrong: {p1[1]}"

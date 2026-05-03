@@ -420,17 +420,19 @@ class TestMultipleSubsheets:
 @pytest.mark.unit
 class TestRotatedSymbol:
     def test_90_degree_rotation(self, iface, tmp_path):
-        """A 90° CCW rotation maps pin (-1.27, 0) → (0, -1.27) in local coords."""
+        """eeschema rot=90 is CCW in screen Y-down: TRANSFORM(0,1,-1,0).
+        Pin 1 lib (-1.27, 0) → internal (-1.27, 0) → (0,1,-1,0) applied = (0, 1.27)
+            → world (10.0, 11.27).
+        Pin 2 lib ( 1.27, 0) → internal ( 1.27, 0) → (0,1,-1,0) applied = (0, -1.27)
+            → world (10.0, 8.73).
+        Verified vs kicad-cli netlist on a Device:D rotated 90."""
         sch = tmp_path / "top.kicad_sch"
         sch.write_text(_build_sch_with_instances([("R1", "TestLib:R", 10.0, 10.0, 90)]))
-        # R1 at (10, 10), rotation=90°
-        # pin 1 (-1.27, 0) rotated 90° CCW → (0, -1.27) → abs (10.0, 8.73)
-        # pin 2 ( 1.27, 0) rotated 90° CCW → (0,  1.27) → abs (10.0, 11.27)
         mock_sch = _sch_mock(
             symbols=[_sym_mock("R1", "TestLib:R", 10.0, 10.0, rotation=90)],
             global_labels=[
-                _lbl_mock("UP_NET", 10.0, 8.73),
-                _lbl_mock("DN_NET", 10.0, 11.27),
+                _lbl_mock("UP_NET", 10.0, 11.27),
+                _lbl_mock("DN_NET", 10.0, 8.73),
             ],
         )
         pad_net_map, _ = _call(iface, sch, mock_sch)
