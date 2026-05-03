@@ -6,7 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import express from "express";
 import { spawn, exec, execSync, ChildProcess } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import { logger } from "./logger.js";
 
@@ -40,9 +40,41 @@ import { registerRoutingPrompts } from "./prompts/routing.js";
 import { registerDesignPrompts } from "./prompts/design.js";
 import { registerFootprintPrompts } from "./prompts/footprint.js";
 
+function getWindowsKiCadPythonCandidates(): string[] {
+  const roots = [
+    process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "Programs", "KiCad") : undefined,
+    "C:\\Program Files\\KiCad",
+    "C:\\Program Files (x86)\\KiCad",
+  ].filter((root): root is string => Boolean(root));
+
+  const candidates: string[] = [];
+
+  for (const root of roots) {
+    if (!existsSync(root)) {
+      continue;
+    }
+
+    try {
+      const versionDirs = readdirSync(root, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+
+      for (const versionDir of versionDirs) {
+        candidates.push(join(root, versionDir, "bin", "python.exe"));
+      }
+    } catch (error: any) {
+      logger.warn(`Failed to inspect KiCAD install directory ${root}: ${error.message}`);
+    }
+  }
+
+  return [...new Set(candidates)];
+}
+
 /**
- * Find the Python executable to use
- * Prioritizes virtual environment if available, falls back to system Python
+ * Find the Python executable to use.
+ * Prioritizes project venvs, then explicit overrides, then KiCAD-bundled Python
+ * before falling back to system Python.
  */
 function findPythonExecutable(scriptPath: string): string {
   const isWindows = process.platform === "win32";
@@ -73,11 +105,12 @@ function findPythonExecutable(scriptPath: string): string {
 
   // Platform-specific KiCAD bundled Python detection
   if (isWindows) {
-    // Windows: Always prefer KiCAD's bundled Python (pcbnew.pyd is compiled for it)
-    const kicadPython = "C:\\Program Files\\KiCad\\9.0\\bin\\python.exe";
-    if (existsSync(kicadPython)) {
-      logger.info(`Found KiCAD bundled Python at: ${kicadPython}`);
-      return kicadPython;
+    // Windows: Always prefer KiCAD's bundled Python (pcbnew.pyd is compiled for it).
+    for (const kicadPython of getWindowsKiCadPythonCandidates()) {
+      if (existsSync(kicadPython)) {
+        logger.info(`Found KiCAD bundled Python at: ${kicadPython}`);
+        return kicadPython;
+      }
     }
   } else if (isMac) {
     // macOS: Try KiCAD's bundled Python (check multiple versions and locations)
@@ -259,10 +292,12 @@ export class KiCADMcpServer {
     // Check if Python executable exists (for absolute paths) or is executable (for commands)
     const isAbsolutePath =
       pythonExe.startsWith("/") || pythonExe.startsWith("C:") || pythonExe.startsWith("\\");
+    let pythonExecutableAvailable = true;
 
     if (isAbsolutePath) {
       // Absolute path: use existsSync
       if (!existsSync(pythonExe)) {
+        pythonExecutableAvailable = false;
         errors.push(`Python executable not found: ${pythonExe}`);
 
         if (isWindows) {
@@ -299,6 +334,7 @@ export class KiCADMcpServer {
 
         logger.info(`Python version check passed: ${stdout.trim()}`);
       } catch (error: any) {
+        pythonExecutableAvailable = false;
         errors.push(`Python executable not found in PATH: ${pythonExe}`);
         errors.push(`Error: ${error.message}`);
         errors.push("Set KICAD_PYTHON environment variable to specify full path");
@@ -325,7 +361,7 @@ export class KiCADMcpServer {
     }
 
     // Try to test pcbnew import (quick validation)
-    if (existsSync(pythonExe) && existsSync(this.kicadScriptPath)) {
+    if (pythonExecutableAvailable && existsSync(this.kicadScriptPath)) {
       logger.info("Validating pcbnew module access...");
 
       const testCommand = `"${pythonExe}" -c "import pcbnew; print('OK')"`;

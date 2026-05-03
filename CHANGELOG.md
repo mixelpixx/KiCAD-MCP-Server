@@ -6,6 +6,22 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **IPC backend runtime reconnect**: MCP no longer stays on SWIG for the
+  entire process when it starts before KiCAD. IPC-capable board tools now retry
+  the IPC connection when KiCAD is running, refresh the live board API when a
+  board becomes available, and report `_backend: "ipc"` when they actually use
+  the IPC path. `check_kicad_ui`, `launch_kicad_ui`, and `get_backend_info`
+  now include live backend status instead of only reflecting startup state.
+
+- **Windows KiCAD Python discovery**: Windows startup now scans per-user KiCAD
+  installs under `%LOCALAPPDATA%\Programs\KiCad` in addition to machine-wide
+  installs under `C:\Program Files\KiCad` and `C:\Program Files (x86)\KiCad`,
+  so user-scope installs no longer require a manual `KICAD_PYTHON` override.
+
+- **IPC board size on KiCAD 10**: `get_board_info` now handles KiCAD 10 IPC
+  `Box2` objects that expose `pos` / `size` instead of `min` / `max`, avoiding
+  a zero-size board result with an attribute error.
+
 - **Schematic symbol lookup**: `get_schematic_component`,
   `edit_schematic_component`, `set_schematic_component_property`,
   `remove_schematic_component_property`, and `delete_schematic_component`
@@ -53,6 +69,9 @@ All notable changes to the KiCAD MCP Server project are documented here.
   this out explicitly so agents know they can use it to inspect MPN,
   Manufacturer, Distributor PN and other BOM fields without a separate call.
 
+- `query_traces`: added to the IPC-capable board command path so trace reads
+  can use live KiCAD board data when IPC is connected.
+
 ### New MCP Prompt
 
 - `component_sourcing_properties` — Guides the LLM through attaching BOM and
@@ -70,6 +89,10 @@ All notable changes to the KiCAD MCP Server project are documented here.
   defaults, `(hide yes)` defaulting, protected built-in field rejection,
   no-op removal, special-character escaping, UUID preservation, and the two
   new convenience tools.
+
+- `tests/test_backend_metadata.py`: regression coverage for backend metadata,
+  runtime IPC reconnect after KiCAD starts, IPC-backed `query_traces`, and
+  KiCAD 10 IPC `Box2` board-size compatibility.
 
 ### Removed
 

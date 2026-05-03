@@ -11,7 +11,13 @@
 
 The IPC backend provides real-time UI synchronization with KiCAD 9.0+ via the official IPC API. When KiCAD is running with IPC enabled, commands can update the KiCAD UI immediately without requiring manual reload.
 
-This feature is experimental and under active testing. The server uses a hybrid approach: IPC when available, automatic fallback to SWIG when IPC is not connected.
+This feature is experimental and under active testing. The server uses a hybrid
+approach: IPC when available, automatic fallback to SWIG when IPC is not
+connected, and runtime reconnect when KiCAD becomes available after the MCP
+server has already started. Tools with IPC implementations recheck IPC
+availability at runtime and reconnect if KiCAD is available, which prevents the
+MCP from staying in SWIG for the entire session after an initial failure to
+connect to IPC.
 
 ## Key Differences
 
@@ -33,6 +39,7 @@ The following MCP commands have IPC handlers:
 | `add_via`                  | `_ipc_add_via`                  | Implemented          |
 | `add_net`                  | `_ipc_add_net`                  | Implemented          |
 | `delete_trace`             | `_ipc_delete_trace`             | Falls back to SWIG   |
+| `query_traces`             | `_ipc_query_traces`             | Implemented          |
 | `get_nets_list`            | `_ipc_get_nets_list`            | Implemented          |
 | `add_copper_pour`          | `_ipc_add_copper_pour`          | Implemented          |
 | `refill_zones`             | `_ipc_refill_zones`             | Implemented          |
@@ -59,6 +66,7 @@ The following MCP commands have IPC handlers:
 - Auto-detect socket path (`/tmp/kicad/api.sock`)
 - Version checking and validation
 - Auto-fallback to SWIG when IPC unavailable
+- Runtime reconnect from SWIG to IPC when KiCAD starts after MCP
 - Change notification callbacks
 
 **Board Operations:**
@@ -86,6 +94,7 @@ The following MCP commands have IPC handlers:
 - Get all tracks
 - Get all vias
 - Get all nets
+- Query traces from the live board with net, layer, and bounding-box filters
 
 **Zone Operations:**
 
@@ -118,6 +127,30 @@ The following MCP commands have IPC handlers:
 ```bash
 pip install kicad-python
 ```
+
+### Runtime Backend Selection
+
+At startup, the server attempts IPC first when `KICAD_BACKEND` is `auto` or
+`ipc`. If KiCAD is not running yet, `auto` mode falls back to SWIG so file-based
+operations can still work.
+
+IPC-capable board tools now retry the IPC connection at runtime. This means the
+following workflow can switch from SWIG to IPC without restarting the MCP
+server:
+
+1. Start the MCP server before KiCAD is running.
+2. Launch KiCAD manually or with `launch_kicad_ui`.
+3. Open a board with IPC enabled in KiCAD.
+4. Call a normal IPC-capable board tool such as `get_board_info`,
+   `get_layer_list`, `get_component_list`, `get_nets_list`, or `query_traces`.
+
+When the reconnect succeeds, tool responses include `_backend: "ipc"` and
+`_realtime: true`. If IPC is still unavailable or no board API can be opened,
+the server continues to use SWIG and reports `_backend: "swig"` for the result.
+
+Use `check_kicad_ui`, `launch_kicad_ui`, or `get_backend_info` to inspect the
+current live backend status. These responses include `backend`,
+`realtime_sync`, and `ipc_connected`.
 
 ### Testing
 
@@ -164,7 +197,9 @@ Run the test script to verify IPC functionality:
 2. **Project creation**: Not supported via IPC, uses file system
 3. **Footprint library access**: Uses hybrid approach (SWIG loads from library, IPC places)
 4. **Delete trace**: Falls back to SWIG (IPC API doesn't support direct deletion)
-5. **Some operations may not work as expected**: This is experimental code
+5. **Reconnect still requires IPC prerequisites**: Runtime reconnect only
+   succeeds when KiCAD is running with IPC enabled and a board is available
+6. **Some operations may not work as expected**: This is experimental code
 
 ## Troubleshooting
 
@@ -173,6 +208,8 @@ Run the test script to verify IPC functionality:
 - Ensure KiCAD is running
 - Enable IPC API: `Preferences > Plugins > Enable IPC API Server`
 - Check if a board is open
+- If MCP started before KiCAD, call `check_kicad_ui` or retry an IPC-capable
+  board tool after KiCAD and the board are ready
 
 ### "kicad-python not found"
 

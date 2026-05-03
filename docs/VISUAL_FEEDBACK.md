@@ -2,15 +2,19 @@
 
 This document explains how to see changes made by the MCP server in the KiCAD UI in real-time or near-real-time.
 
-## Current Status (Week 1 - SWIG Backend)
+## Current Status
 
-**Active Backend:** SWIG (legacy pcbnew Python API)
-**Real-time Updates:** Not available yet
-**IPC Backend:** Skeleton implemented, operations coming in Weeks 2-3
+**Active Backend:** Hybrid SWIG/IPC
+
+**Real-time Updates:** Available for IPC-backed commands when KiCAD IPC is connected
+
+**SWIG Fallback:** File-based commands still require KiCAD to reload from disk
+
+**IPC Re-detect:** IPC-enabled tools detect at runtime if IPC is available again and switch from SWIG to IPC.
 
 ---
 
-## 🎯 Best Current Workflow (SWIG + Manual Reload)
+## 🎯 Best Current Workflow (Hybrid IPC + SWIG)
 
 ### Setup
 
@@ -24,10 +28,11 @@ This document explains how to see changes made by the MCP server in the KiCAD UI
    - Example: Add board outline, mounting holes, etc.
    - Each operation saves the file automatically
 
-3. **Reload in KiCAD UI**
-   - **Option A (Automatic):** KiCAD 8.0+ detects file changes and shows a reload prompt
-   - **Option B (Manual):** File → Revert to reload from disk
-   - **Keyboard shortcut:** None by default (but you can assign one)
+3. **Check whether reload is needed**
+   - If the MCP response reports `_backend: "ipc"` and `_realtime: true`, the change should appear in KiCAD immediately.
+   - If the MCP response reports `_backend: "swig"` or `_realtime: false`, reload the board from disk.
+   - **Option A (Automatic):** KiCAD 8.0+ detects file changes and shows a reload prompt.
+   - **Option B (Manual):** File → Revert to reload from disk.
 
 ### Workflow Example
 
@@ -57,34 +62,51 @@ This document explains how to see changes made by the MCP server in the KiCAD UI
 
 ---
 
-## 🔮 Future: IPC Backend (Weeks 2-3)
+## IPC Backend: Real-Time Updates (Experimental)
 
-When fully implemented, the IPC backend will provide **true real-time updates**:
+When KiCAD is running with the IPC API enabled, supported MCP board tools can
+use the IPC backend for **true real-time UI updates** instead of relying on
+file save/reload.
 
-### How It Will Work
+### How It Works
 
+```text
+Agent → MCP → IPC connection → Running KiCAD → Instant UI Update
 ```
-Claude MCP → IPC Socket → Running KiCAD → Instant UI Update
-```
 
-**No file reloading required** - changes appear as you make them!
+**No file reloading is required** for commands that successfully use IPC. Tool
+responses include `_backend: "ipc"` and `_realtime: true` when the IPC path was
+used. If IPC is unavailable, the server falls back to SWIG and the manual reload
+workflow still applies. If IPC becomes available during the session,
+IPC-capable tools can reconnect and use IPC without restarting the MCP server.
 
-### IPC Setup (When Available)
+### IPC Setup
 
-1. **Enable IPC in KiCAD**
-   - Preferences → Advanced Preferences
-   - Search for "IPC"
-   - Enable: "Enable IPC API Server"
-   - Restart KiCAD
+1. Enable IPC in KiCAD:
+   - Preferences → Plugins → Enable IPC API Server
+   - Restart KiCAD if required
 
-2. **Install kicad-python** (Already installed ✓)
+2. Install `kicad-python`:
 
    ```bash
    pip install kicad-python
    ```
 
 3. **Configure MCP Server**
-   Add to your MCP config:
+
+   The default `auto` backend mode is recommended when you want SWIG fallback
+   plus runtime reconnect. To make the setting explicit, add:
+
+   ```json
+   {
+     "env": {
+       "KICAD_BACKEND": "auto"
+     }
+   }
+   ```
+
+   Use strict `ipc` mode only when you want startup to fail if IPC is not
+   available:
 
    ```json
    {
@@ -94,20 +116,23 @@ Claude MCP → IPC Socket → Running KiCAD → Instant UI Update
    }
    ```
 
-4. **Start KiCAD first, then use MCP**
-   - Changes will appear in real-time
-   - No manual reloading needed
+4. Start KiCAD and open a board, or use `launch_kicad_ui`.
+
+The MCP server **can** start before KiCAD. In `auto` backend mode, IPC-capable
+board tools retry IPC at runtime after KiCAD is available, so agents can keep
+using standard tools such as `get_board_info`, `get_layer_list`,
+`get_component_list`, `get_nets_list`, and `query_traces`.
 
 ### Current IPC Status
 
-| Feature              | Status      |
-| -------------------- | ----------- |
-| Connection to KiCAD  | ✅ Working  |
-| Version checking     | ✅ Working  |
-| Project operations   | ⏳ Week 2-3 |
-| Board operations     | ⏳ Week 2-3 |
-| Component operations | ⏳ Week 2-3 |
-| Routing operations   | ⏳ Week 2-3 |
+| Feature                  | Status                                                        |
+| ------------------------ | ------------------------------------------------------------- |
+| Connection to KiCAD      | Working when KiCAD IPC is enabled                             |
+| Board operations         | Partially implemented via IPC                                 |
+| Component operations     | Partially implemented / hybrid                                |
+| Routing operations       | Partially implemented via IPC                                 |
+| SWIG fallback            | Used automatically in `auto` mode when IPC is unavailable     |
+| Runtime reconnect to IPC | Used automatically in `auto` mode for IPC-capable board tools |
 
 ---
 
@@ -153,7 +178,7 @@ The MCP server auto-saves after each operation, so changes are immediately avail
 For complex changes (multiple components, routing, etc.):
 
 1. Make the change
-2. Reload in KiCAD
+2. Confirm the change in KiCAD; reload only if the response used SWIG
 3. Verify it looks correct
 4. Proceed with next change
 
@@ -171,6 +196,15 @@ For complex changes (multiple components, routing, etc.):
 **Cause:** MCP operation may have failed
 **Solution:** Check the MCP response for success: true
 
+### Changes Still Require Reload
+
+**Cause:** The tool response reported `_backend: "swig"` or `_realtime: false`.
+SWIG-backed commands write files directly and still require KiCAD to reload the board from disk.
+
+**Solution:** Ensure KiCAD is running with IPC enabled and a board is open, then
+retry the IPC-capable board tool. If IPC reconnect succeeds, the response will
+report `_backend: "ipc"` and `_realtime: true`.
+
 ### File is Locked
 
 **Cause:** KiCAD has the file open exclusively
@@ -178,14 +212,6 @@ For complex changes (multiple components, routing, etc.):
 
 - KiCAD should allow external modifications
 - If not, close the file in KiCAD, let MCP make changes, then reopen
-
----
-
-## 📅 Roadmap
-
-**Current (Week 1):** SWIG backend with manual reload
-**Week 2-3:** IPC backend implementation
-**Week 4+:** Real-time collaboration features
 
 ---
 

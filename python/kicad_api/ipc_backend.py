@@ -371,10 +371,11 @@ class IPCBoardAPI(BoardAPI):
                 # Check if on Edge.Cuts layer
                 bbox = board.get_item_bounding_box(shape)
                 if bbox:
-                    min_x = min(min_x, bbox.min.x)
-                    min_y = min(min_y, bbox.min.y)
-                    max_x = max(max_x, bbox.max.x)
-                    max_y = max(max_y, bbox.max.y)
+                    left, top, right, bottom = self._get_box2_extents(bbox)
+                    min_x = min(min_x, left)
+                    min_y = min(min_y, top)
+                    max_x = max(max_x, right)
+                    max_y = max(max_y, bottom)
 
             if min_x == float("inf"):
                 return {"width": 0, "height": 0, "unit": "mm"}
@@ -384,6 +385,21 @@ class IPCBoardAPI(BoardAPI):
         except Exception as e:
             logger.error(f"Failed to get board size: {e}")
             return {"width": 0, "height": 0, "unit": "mm", "error": str(e)}
+
+    @staticmethod
+    def _get_box2_extents(bbox: Any) -> tuple[float, float, float, float]:
+        """Return left/top/right/bottom for kipy Box2 wrappers across versions."""
+        if hasattr(bbox, "min") and hasattr(bbox, "max"):
+            return bbox.min.x, bbox.min.y, bbox.max.x, bbox.max.y
+
+        if hasattr(bbox, "pos") and hasattr(bbox, "size"):
+            x1 = bbox.pos.x
+            y1 = bbox.pos.y
+            x2 = x1 + bbox.size.x
+            y2 = y1 + bbox.size.y
+            return min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)
+
+        raise AttributeError("Unsupported Box2 shape: expected min/max or pos/size")
 
     def add_layer(self, layer_name: str, layer_type: str) -> bool:
         """Add layer to the board (layers are typically predefined in KiCAD)."""
