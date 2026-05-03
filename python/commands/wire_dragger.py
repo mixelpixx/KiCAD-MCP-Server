@@ -75,14 +75,17 @@ class WireDragger:
             if not (isinstance(item, list) and item and item[0] == sym_k):
                 continue
 
-            # Check Reference property
+            # Check Reference property.
+            # kicad-skip may write a trailing "_" on references (e.g. "R1_") when
+            # cloning symbols; strip it so callers passing the canonical "R1"
+            # still find the symbol. Mirrors the rstrip in PinLocator.get_pin_location.
             ref_val = None
             for sub in item[1:]:
                 if isinstance(sub, list) and len(sub) >= 3 and sub[0] == prop_k:
                     if str(sub[1]).strip('"') == "Reference":
                         ref_val = str(sub[2]).strip('"')
                         break
-            if ref_val != reference:
+            if ref_val is None or ref_val.rstrip("_") != reference:
                 continue
 
             old_x = old_y = rotation = 0.0
@@ -153,15 +156,22 @@ class WireDragger:
         Compute the world coordinate of a pin given the symbol transform.
 
         Library pins are stored Y-up; the schematic is Y-down. Order matches
-        eeschema: mirror in lib space → Y-flip to screen → rotate → translate.
-        Without the Y-flip, polarized parts get pin 1/pin 2 silently swapped.
+        eeschema: Y-flip to screen → mirror → rotate (screen-CCW) → translate.
+
+        eeschema's TRANSFORM matrix for rotation 90 is (0, 1, -1, 0) —
+        i.e. screen-CCW in Y-down: (x, y) → (y, -x). Our `_rotate` helper is
+        standard math (Y-up CCW), so we negate the rotation angle to convert.
+
+        Mirror axis semantics match eeschema's symbol.h:
+          (mirror x) = SYM_MIRROR_X = TRANSFORM(1, 0, 0, -1) → negates Y.
+          (mirror y) = SYM_MIRROR_Y = TRANSFORM(-1, 0, 0, 1) → negates X.
         """
-        lx, ly = px, py
+        lx, ly = px, -py  # Y-flip: lib Y-up → screen Y-down
         if mirror_x:
-            lx = -lx
+            ly = -ly  # SYM_MIRROR_X negates screen-Y
         if mirror_y:
-            ly = -ly
-        rx, ry = _rotate(lx, -ly, rotation)
+            lx = -lx  # SYM_MIRROR_Y negates screen-X
+        rx, ry = _rotate(lx, ly, -rotation)  # negate angle: math-CCW → screen-CCW
         return sym_x + rx, sym_y + ry
 
     @staticmethod

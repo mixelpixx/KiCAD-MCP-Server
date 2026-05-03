@@ -19,9 +19,7 @@ EMPTY_SCH = TEMPLATES_DIR / "empty.kicad_sch"
 
 
 def _write_temp_sch(content: str) -> Path:
-    tmp = tempfile.NamedTemporaryFile(
-        suffix=".kicad_sch", delete=False, mode="w", encoding="utf-8"
-    )
+    tmp = tempfile.NamedTemporaryFile(suffix=".kicad_sch", delete=False, mode="w", encoding="utf-8")
     tmp.write(content)
     tmp.close()
     return Path(tmp.name)
@@ -36,7 +34,10 @@ def _unit_values_in_file(path: Path) -> list[int]:
     """Return all (unit N) values written for symbol instances in the schematic."""
     content = path.read_text()
     # Match top-level symbol instances: (symbol (lib_id ...) (at ...) (unit N) ...)
-    return [int(n) for n in re.findall(r"\(symbol \(lib_id [^)]+\) \(at [^)]+\) \(unit (\d+)\)", content)]
+    return [
+        int(n)
+        for n in re.findall(r"\(symbol \(lib_id [^)]+\) \(at [^)]+\) \(unit (\d+)\)", content)
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -155,18 +156,20 @@ class TestHandlerAddSchematicComponent:
     def test_unit_defaults_to_1_in_handler(self, tmp_path: Any) -> None:
         sch = tmp_path / "test.kicad_sch"
         shutil.copy(EMPTY_SCH, sch)
-        result = self._call_handler({
-            "schematicPath": str(sch),
-            "component": {
-                "library": "Device",
-                "type": "R",
-                "reference": "R99",
-                "value": "1k",
-                "x": 10,
-                "y": 10,
-                # no "unit" key — should default to 1
-            },
-        })
+        result = self._call_handler(
+            {
+                "schematicPath": str(sch),
+                "component": {
+                    "library": "Device",
+                    "type": "R",
+                    "reference": "R99",
+                    "value": "1k",
+                    "x": 10,
+                    "y": 10,
+                    # no "unit" key — should default to 1
+                },
+            }
+        )
         assert result["success"] is True
         units = _unit_values_in_file(sch)
         assert 1 in units
@@ -174,18 +177,82 @@ class TestHandlerAddSchematicComponent:
     def test_unit_2_passed_through_handler(self, tmp_path: Any) -> None:
         sch = tmp_path / "test.kicad_sch"
         shutil.copy(EMPTY_SCH, sch)
-        result = self._call_handler({
-            "schematicPath": str(sch),
-            "component": {
-                "library": "Device",
-                "type": "R",
-                "reference": "U10",
-                "value": "TLP291-4",
-                "x": 25,
-                "y": 35,
-                "unit": 2,
-            },
-        })
+        result = self._call_handler(
+            {
+                "schematicPath": str(sch),
+                "component": {
+                    "library": "Device",
+                    "type": "R",
+                    "reference": "U10",
+                    "value": "TLP291-4",
+                    "x": 25,
+                    "y": 35,
+                    "unit": 2,
+                },
+            }
+        )
         assert result["success"] is True
         units = _unit_values_in_file(sch)
         assert 2 in units
+
+
+# ---------------------------------------------------------------------------
+# Mirror parameter — known gap
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAddComponentMirrorParam:
+    """ComponentManager.add_component does NOT honor a 'mirror' kwarg today.
+
+    The MCP add_schematic_component tool schema also doesn't expose mirror.
+    A mirror is currently only applicable post-add via rotate_schematic_component.
+
+    These tests pin down the silent-drop behavior so a fixture that passes
+    'mirror': 'x' and then asserts something against the resulting schematic
+    cannot accidentally pass for the wrong reason (the symbol ends up
+    unmirrored). If/when add_component grows real mirror support, update both
+    tests together — the second test then becomes the positive assertion."""
+
+    def setup_method(self) -> None:
+        from commands.component_schematic import ComponentManager
+        from commands.schematic import SchematicManager
+
+        self.ComponentManager = ComponentManager
+        self.SchematicManager = SchematicManager
+
+    def _add(self, sch_path: Path, mirror_value: Any) -> None:
+        sch = self.SchematicManager.load_schematic(str(sch_path))
+        params = {
+            "type": "R",
+            "reference": "R1",
+            "value": "10k",
+            "x": 100.0,
+            "y": 100.0,
+            "rotation": 0,
+        }
+        if mirror_value is not None:
+            params["mirror"] = mirror_value
+        self.ComponentManager.add_component(sch, params, sch_path)
+        self.SchematicManager.save_schematic(sch, str(sch_path))
+
+    def test_mirror_x_arg_is_silently_dropped(self, tmp_path: Any) -> None:
+        sch = tmp_path / "mirror_x.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+        self._add(sch, "x")
+        text = sch.read_text()
+        assert "(mirror x)" not in text, (
+            "ComponentManager.add_component now appears to honor mirror='x'. "
+            "Update _build_mirror_case in test_pin_world_xy_eeschema_truth.py "
+            "to drop the post-add mirror application and remove this test."
+        )
+
+    def test_mirror_y_arg_is_silently_dropped(self, tmp_path: Any) -> None:
+        sch = tmp_path / "mirror_y.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+        self._add(sch, "y")
+        text = sch.read_text()
+        assert "(mirror y)" not in text, (
+            "ComponentManager.add_component now appears to honor mirror='y'. "
+            "See sibling test_mirror_x_arg_is_silently_dropped."
+        )

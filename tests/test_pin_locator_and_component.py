@@ -1,17 +1,21 @@
 """
-Regression tests for three bugs fixed in PR #103:
+Regression tests for bugs originally fixed in PR #103 and updated for PR #145.
 
   1. component_schematic.py: clone() + redundant append() causes trailing "_" on reference
-  2. pin_locator.py: pin_rel_y must be negated (lib y-up → schematic y-down)
-  3. pin_locator.py: reference comparison must tolerate trailing "_" from kicad-skip
+  2. pin_locator.py: reference comparison must tolerate trailing "_" from kicad-skip
+     (this also covers WireDragger.find_symbol, used by _get_symbol_transform)
+
+The pre-PR-145 y-axis-negation tests were removed: their assertions encoded the
+correct post-PR-145 convention, but their MagicMock setup bypassed
+_get_symbol_transform (which reads the .kicad_sch file directly via sexpdata).
+The y-flip behaviour is now covered end-to-end against eeschema in
+tests/test_pin_locator_y_flip.py — duplicating it with mocks added no value.
 """
 
 import shutil
 import sys
 import tempfile
-import types
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -24,15 +28,6 @@ sys.path.insert(0, str(PYTHON_DIR))
 # ---------------------------------------------------------------------------
 
 _TEMPLATE_SCH = TEMPLATES_DIR / "template_with_symbols.kicad_sch"
-
-
-def _stub_symbol(ref: str, at: list, lib_id: str = "Device:R") -> MagicMock:
-    """Build a minimal kicad-skip symbol stub."""
-    sym = MagicMock()
-    sym.property.Reference.value = ref
-    sym.at.value = at
-    sym.lib_id.value = lib_id
-    return sym
 
 
 # ===========================================================================
@@ -71,118 +66,78 @@ class TestAddComponentNoTrailingUnderscore:
 
 
 # ===========================================================================
-# 2. pin_locator — y-axis sign (lib y-up → schematic y-down)
+# 2. pin_locator — .rstrip("_") tolerance in reference lookup
 # ===========================================================================
 
 
-@pytest.mark.unit
-class TestPinLocatorYAxisNegation:
-    """
-    Device:R pin 1 is at library y=+3.81 (y-up).
-    For a symbol centred at (100, 100) with rotation=0, the schematic absolute y
-    must be 100 - 3.81 = 96.19, NOT 100 + 3.81 = 103.81.
-    """
-
-    @pytest.fixture(autouse=True)
-    def setup(self):
-        # Stub sexpdata and skip so the module can be imported without them installed
-        for mod_name in ("sexpdata", "skip"):
-            sys.modules.setdefault(mod_name, types.ModuleType(mod_name))
-        from commands.pin_locator import PinLocator
-
-        self.locator = PinLocator()
-
-    def test_pin1_y_above_center_for_rotation_0(self):
-        """Pin at lib y=+3.81 should appear *above* the symbol centre (lower y value)."""
-        sym = _stub_symbol("R1", at=[100.0, 100.0, 0.0])
-        self.locator._schematic_cache["test.kicad_sch"] = MagicMock(symbol=[sym])
-        # Patch get_symbol_pins to return a Device:R-like pin definition
-        with patch.object(
-            self.locator,
-            "get_symbol_pins",
-            return_value={"1": {"x": 0.0, "y": 3.81, "angle": 270, "name": "~"}},
-        ):
-            result = self.locator.get_pin_location(Path("test.kicad_sch"), "R1", "1")
-
-        assert result is not None
-        x, y = result
-        assert abs(x - 100.0) < 1e-6, f"x should be 100.0, got {x}"
-        assert abs(y - 96.19) < 1e-4, (
-            f"y should be ~96.19 (above centre), got {y}. "
-            "y was not negated — library y-up convention mismatch."
-        )
-
-    def test_pin2_y_below_center_for_rotation_0(self):
-        """Pin at lib y=-3.81 should appear *below* the symbol centre (higher y value)."""
-        sym = _stub_symbol("R1", at=[100.0, 100.0, 0.0])
-        self.locator._schematic_cache["test.kicad_sch"] = MagicMock(symbol=[sym])
-        with patch.object(
-            self.locator,
-            "get_symbol_pins",
-            return_value={"2": {"x": 0.0, "y": -3.81, "angle": 90, "name": "~"}},
-        ):
-            result = self.locator.get_pin_location(Path("test.kicad_sch"), "R1", "2")
-
-        assert result is not None
-        _, y = result
-        assert abs(y - 103.81) < 1e-4, f"y should be ~103.81 (below centre), got {y}."
-
-    def test_pin1_rotated_90(self):
-        """
-        Symbol rotated 90°. Pin at lib (x=0, y=+3.81).
-        After y-negation: (0, -3.81). After 90° CCW rotation: (x=3.81, y=0).
-        Absolute: (100+3.81, 100+0) = (103.81, 100).
-        """
-        sym = _stub_symbol("C1", at=[100.0, 100.0, 90.0])
-        self.locator._schematic_cache["test.kicad_sch"] = MagicMock(symbol=[sym])
-        with patch.object(
-            self.locator,
-            "get_symbol_pins",
-            return_value={"1": {"x": 0.0, "y": 3.81, "angle": 270, "name": "~"}},
-        ):
-            result = self.locator.get_pin_location(Path("test.kicad_sch"), "C1", "1")
-
-        assert result is not None
-        x, y = result
-        assert abs(x - 103.81) < 1e-4, f"x should be ~103.81, got {x}"
-        assert abs(y - 100.0) < 1e-4, f"y should be ~100.0, got {y}"
-
-
-# ===========================================================================
-# 3. pin_locator — .rstrip("_") tolerance in reference lookup
-# ===========================================================================
-
-
-@pytest.mark.unit
+@pytest.mark.integration
 class TestPinLocatorReferenceRstrip:
-    """kicad-skip may write 'R1_' — lookups must still find 'R1'."""
+    """
+    kicad-skip may write 'R1_' on disk after a clone; lookups for 'R1' must
+    still resolve. This must hold for *both* lookup paths inside
+    get_pin_location: the kicad-skip Schematic scan AND the sexpdata-based
+    _get_symbol_transform (via WireDragger.find_symbol).
+    """
 
-    @pytest.fixture(autouse=True)
-    def setup(self):
-        for mod_name in ("sexpdata", "skip"):
-            sys.modules.setdefault(mod_name, types.ModuleType(mod_name))
-        from commands.pin_locator import PinLocator
+    def _write_sch_with_underscored_ref(self, sch_path: Path) -> None:
+        """Add R1, then mangle the on-disk reference to 'R1_' to simulate the kicad-skip artifact."""
+        from commands.component_schematic import ComponentManager
+        from commands.schematic import SchematicManager
 
-        self.locator = PinLocator()
+        shutil.copy(_TEMPLATE_SCH, sch_path)
+        sch = SchematicManager.load_schematic(str(sch_path))
+        ComponentManager.add_component(
+            sch,
+            {"type": "R", "reference": "R1", "value": "10k", "x": 100.0, "y": 100.0, "rotation": 0},
+            sch_path,
+        )
+        SchematicManager.save_schematic(sch, str(sch_path))
+
+        # Rewrite the saved file, replacing the Reference "R1" with "R1_"
+        text = sch_path.read_text(encoding="utf-8")
+        text = text.replace('(property "Reference" "R1"', '(property "Reference" "R1_"', 1)
+        sch_path.write_text(text, encoding="utf-8")
 
     def test_get_pin_location_finds_symbol_with_trailing_underscore(self):
-        # Symbol stored in schematic with reference 'R1_' (kicad-skip artifact)
-        sym = _stub_symbol("R1_", at=[50.0, 50.0, 0.0])
-        self.locator._schematic_cache["sch.kicad_sch"] = MagicMock(symbol=[sym])
-        with patch.object(
-            self.locator,
-            "get_symbol_pins",
-            return_value={"1": {"x": 0.0, "y": 3.81, "angle": 270, "name": "~"}},
-        ):
-            # Caller uses clean reference 'R1'; should still resolve
-            result = self.locator.get_pin_location(Path("sch.kicad_sch"), "R1", "1")
+        from commands.pin_locator import PinLocator
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sch_path = Path(tmp) / "sch.kicad_sch"
+            self._write_sch_with_underscored_ref(sch_path)
+
+            locator = PinLocator()
+            # Caller uses clean reference 'R1'; should still resolve through both
+            # the kicad-skip path and the sexpdata _get_symbol_transform path.
+            result = locator.get_pin_location(sch_path, "R1", "1")
 
         assert (
             result is not None
         ), "get_pin_location returned None for reference 'R1' when schematic stores 'R1_'"
 
     def test_get_pin_location_returns_none_for_genuinely_missing_symbol(self):
-        sym = _stub_symbol("R2", at=[50.0, 50.0, 0.0])
-        self.locator._schematic_cache["sch.kicad_sch"] = MagicMock(symbol=[sym])
-        result = self.locator.get_pin_location(Path("sch.kicad_sch"), "R1", "1")
+        from commands.component_schematic import ComponentManager
+        from commands.pin_locator import PinLocator
+        from commands.schematic import SchematicManager
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sch_path = Path(tmp) / "sch.kicad_sch"
+            shutil.copy(_TEMPLATE_SCH, sch_path)
+            sch = SchematicManager.load_schematic(str(sch_path))
+            ComponentManager.add_component(
+                sch,
+                {
+                    "type": "R",
+                    "reference": "R2",
+                    "value": "1k",
+                    "x": 50.0,
+                    "y": 50.0,
+                    "rotation": 0,
+                },
+                sch_path,
+            )
+            SchematicManager.save_schematic(sch, str(sch_path))
+
+            locator = PinLocator()
+            result = locator.get_pin_location(sch_path, "R1", "1")
+
         assert result is None
