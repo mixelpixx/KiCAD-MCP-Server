@@ -287,6 +287,15 @@ class PinLocator:
             if mirror_y:
                 pin_def_angle = (-pin_def_angle) % 360
 
+            # Library symbols are Y-up; the schematic is Y-down. Match the
+            # lib→screen Y-flip applied by WireDragger.pin_world_xy (mirror in
+            # lib space → Y-flip → rotate → translate). For an angle this
+            # negates the Y component, i.e. negates the angle. Without this
+            # step pin angles are 180° off along the Y axis; before PR #145
+            # this was masked because pin_world_xy was missing the same flip,
+            # so the two were "wrong in the same direction" and consistent.
+            pin_def_angle = (-pin_def_angle) % 360
+
             absolute_angle = (pin_def_angle + symbol_rotation) % 360
             return absolute_angle
 
