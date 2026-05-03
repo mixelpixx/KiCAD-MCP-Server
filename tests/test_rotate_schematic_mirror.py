@@ -6,13 +6,13 @@ Tests are split into two layers:
  2. Handler integration smoke test — patches SchematicManager away.
 """
 
+import importlib.util
+import math
 import os
 import sys
-import math
-import textwrap
 import tempfile
-import importlib.util
-from unittest.mock import patch, MagicMock
+import textwrap
+from unittest.mock import MagicMock, patch
 
 import sexpdata
 from sexpdata import Symbol
@@ -39,6 +39,7 @@ WireDragger = _wd_mod.WireDragger
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _parse(text: str) -> list:
     return sexpdata.loads(text)
@@ -79,6 +80,7 @@ def _make_sch(sym_extra: str = "", wires: str = "") -> list:
 # ---------------------------------------------------------------------------
 # Tests: update_symbol_rotation_mirror
 # ---------------------------------------------------------------------------
+
 
 def test_update_rotation_sets_angle():
     sch = _make_sch()
@@ -130,6 +132,7 @@ def test_update_unknown_reference_returns_false():
 # Tests: compute_pin_positions_for_rotation
 # ---------------------------------------------------------------------------
 
+
 def test_pin_positions_change_on_rotation():
     """Pins at non-zero local offsets should move when the symbol rotates."""
     sch = _make_sch()
@@ -179,6 +182,7 @@ def test_pin_positions_mirror_x_flips_x():
 # Integration smoke test: handler uses sexpdata, not kicad-skip
 # ---------------------------------------------------------------------------
 
+
 def test_rotate_handler_no_crash(tmp_path):
     """_handle_rotate_schematic_component should succeed without kicad-skip."""
     # Ensure python/ is on sys.path so commands.* imports resolve
@@ -186,26 +190,44 @@ def test_rotate_handler_no_crash(tmp_path):
     if _python_dir not in sys.path:
         sys.path.insert(0, _python_dir)
 
-    # Stub heavy imports before loading kicad_interface
-    for modname in ("pcbnew", "skip", "resources", "schemas",
-                    "resources.resource_definitions", "schemas.tool_schemas",
-                    "annotations"):
-        sys.modules.setdefault(modname, MagicMock())
-    sys.modules["resources.resource_definitions"].RESOURCE_DEFINITIONS = {}
-    sys.modules["resources.resource_definitions"].handle_resource_read = MagicMock()
-    sys.modules["schemas.tool_schemas"].TOOL_SCHEMAS = []
-
-    _pcbnew = sys.modules["pcbnew"]
-    _pcbnew.__file__ = "/fake/pcbnew.so"
-    _pcbnew.GetBuildVersion.return_value = "9.0.0"
-
-    ki_spec = importlib.util.spec_from_file_location(
-        "kicad_interface_smoke",
-        os.path.join(os.path.dirname(__file__), "..", "python", "kicad_interface.py"),
+    # Stub heavy imports before loading kicad_interface. Save and restore
+    # sys.modules state so we don't pollute already-imported real modules
+    # (notably schemas.tool_schemas, whose TOOL_SCHEMAS dict is shared across
+    # the test session).
+    _stub_modnames = (
+        "pcbnew",
+        "skip",
+        "resources",
+        "schemas",
+        "resources.resource_definitions",
+        "schemas.tool_schemas",
+        "annotations",
     )
-    ki_mod = importlib.util.module_from_spec(ki_spec)
-    ki_spec.loader.exec_module(ki_mod)
-    KiCADInterface = ki_mod.KiCADInterface
+    _saved_modules = {n: sys.modules.get(n) for n in _stub_modnames}
+    try:
+        for modname in _stub_modnames:
+            sys.modules[modname] = MagicMock()
+        sys.modules["resources.resource_definitions"].RESOURCE_DEFINITIONS = {}
+        sys.modules["resources.resource_definitions"].handle_resource_read = MagicMock()
+        sys.modules["schemas.tool_schemas"].TOOL_SCHEMAS = []
+
+        _pcbnew = sys.modules["pcbnew"]
+        _pcbnew.__file__ = "/fake/pcbnew.so"
+        _pcbnew.GetBuildVersion.return_value = "9.0.0"
+
+        ki_spec = importlib.util.spec_from_file_location(
+            "kicad_interface_smoke",
+            os.path.join(os.path.dirname(__file__), "..", "python", "kicad_interface.py"),
+        )
+        ki_mod = importlib.util.module_from_spec(ki_spec)
+        ki_spec.loader.exec_module(ki_mod)
+        KiCADInterface = ki_mod.KiCADInterface
+    finally:
+        for modname, mod in _saved_modules.items():
+            if mod is None:
+                sys.modules.pop(modname, None)
+            else:
+                sys.modules[modname] = mod
 
     # Write a minimal schematic file
     sch_path = str(tmp_path / "test.kicad_sch")
@@ -233,11 +255,13 @@ def test_rotate_handler_no_crash(tmp_path):
         f.write(sch_content)
 
     iface = KiCADInterface.__new__(KiCADInterface)
-    result = iface._handle_rotate_schematic_component({
-        "schematicPath": sch_path,
-        "reference": "R1",
-        "angle": 90,
-    })
+    result = iface._handle_rotate_schematic_component(
+        {
+            "schematicPath": sch_path,
+            "reference": "R1",
+            "angle": 90,
+        }
+    )
 
     assert result["success"] is True
     assert result["angle"] == 90
