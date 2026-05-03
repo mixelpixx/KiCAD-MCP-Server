@@ -152,15 +152,16 @@ class WireDragger:
         """
         Compute the world coordinate of a pin given the symbol transform.
 
-        KiCAD applies mirror first (in local space), then rotation, then translation.
-        mirror_x negates the local X axis; mirror_y negates the local Y axis.
+        Library pins are stored Y-up; the schematic is Y-down. Order matches
+        eeschema: mirror in lib space → Y-flip to screen → rotate → translate.
+        Without the Y-flip, polarized parts get pin 1/pin 2 silently swapped.
         """
         lx, ly = px, py
         if mirror_x:
             lx = -lx
         if mirror_y:
             ly = -ly
-        rx, ry = _rotate(lx, ly, rotation)
+        rx, ry = _rotate(lx, -ly, rotation)
         return sym_x + rx, sym_y + ry
 
     @staticmethod
@@ -260,8 +261,7 @@ class WireDragger:
 
         # Remove existing (mirror ...) token(s)
         to_remove = [
-            i for i, sub in enumerate(item)
-            if isinstance(sub, list) and sub and sub[0] == mirror_k
+            i for i, sub in enumerate(item) if isinstance(sub, list) and sub and sub[0] == mirror_k
         ]
         for i in reversed(to_remove):
             del item[i]
