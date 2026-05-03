@@ -96,6 +96,7 @@ export const toolCategories: ToolCategory[] = [
       "delete_schematic_wire",
       "add_schematic_net_label",
       "delete_schematic_net_label",
+      "add_no_connect",
       "connect_to_net",
       "connect_passthrough",
       "get_net_connections",

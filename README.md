@@ -734,6 +734,18 @@ which python3  # Example output: /usr/bin/python3
 python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"  # Verify pcbnew access
 ```
 
+### GitHub Copilot (VS Code)
+
+Copy the template to your workspace:
+
+```bash
+cp config/vscode-mcp.example.json .vscode/mcp.json
+```
+
+VS Code will auto-detect `.vscode/mcp.json` and register the server. The template uses `${workspaceFolder}` so no path editing is needed.
+
+> **Note:** `.vscode/mcp.json` is listed in `.gitignore` — your local configuration won't be committed.
+
 ### Cline (VSCode)
 
 Edit: `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`

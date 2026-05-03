@@ -214,9 +214,7 @@ export class KiCADMcpServer {
     logger.info("Registering KiCAD tools, resources, and prompts...");
 
     // Register router tools FIRST (for tool discovery and execution)
-    // NOTE: Router disabled — causes Claude to hallucinate tool schemas via search_tools/execute_tool.
-    // All tools are registered directly below and are immediately visible to Claude.
-    // registerRouterTools(this.server, this.callKicadScript.bind(this));
+    registerRouterTools(this.server, this.callKicadScript.bind(this));
 
     // Register all tools
     registerProjectTools(this.server, this.callKicadScript.bind(this));
@@ -248,7 +246,6 @@ export class KiCADMcpServer {
     registerFootprintPrompts(this.server);
 
     logger.info("All KiCAD tools, resources, and prompts registered");
-    logger.info("Router pattern enabled: 4 router tools + direct tools for discovery");
   }
 
   /**
