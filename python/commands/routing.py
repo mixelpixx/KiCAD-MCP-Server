@@ -48,11 +48,20 @@ class RoutingCommands:
                 net = pcbnew.NETINFO_ITEM(self.board, name)
                 self.board.Add(net)
 
-            # Set net class if provided
+            # Set net class if provided — defensive against KiCad 6/7 vs KiCad 9/10 API.
             if net_class:
                 net_classes = self.board.GetNetClasses()
-                if net_classes.Find(net_class):
-                    net.SetClass(net_classes.Find(net_class))
+                resolved = None
+                if hasattr(net_classes, "Find"):
+                    resolved = net_classes.Find(net_class)
+                else:
+                    try:
+                        if net_class in net_classes:
+                            resolved = net_classes[net_class]
+                    except Exception:
+                        resolved = None
+                if resolved is not None:
+                    net.SetClass(resolved)
 
             return {
                 "success": True,
@@ -1028,7 +1037,8 @@ class RoutingCommands:
 
             name = params.get("name")
             clearance = params.get("clearance")
-            track_width = params.get("trackWidth")
+            # Schema exposes "traceWidth"; older callers may send "trackWidth". Accept both.
+            track_width = params.get("traceWidth", params.get("trackWidth"))
             via_diameter = params.get("viaDiameter")
             via_drill = params.get("viaDrill")
             uvia_diameter = params.get("uviaDiameter")
@@ -1044,34 +1054,52 @@ class RoutingCommands:
                     "errorDetails": "name parameter is required",
                 }
 
-            # Get net classes
+            # Get net classes — KiCad 6/7 returns NETCLASSES with .Find/.Add;
+            # KiCad 9/10 returns a netclasses_map (SWIG-wrapped std::map) that is dict-like.
             net_classes = self.board.GetNetClasses()
 
-            # Create new net class if it doesn't exist
-            if not net_classes.Find(name):
-                netclass = pcbnew.NETCLASS(name)
-                net_classes.Add(netclass)
+            existing = None
+            if hasattr(net_classes, "Find"):
+                existing = net_classes.Find(name)
             else:
-                netclass = net_classes.Find(name)
+                try:
+                    if name in net_classes:
+                        existing = net_classes[name]
+                except Exception:
+                    existing = None
+
+            if existing is None:
+                netclass = pcbnew.NETCLASS(name)
+                if hasattr(net_classes, "Add"):
+                    net_classes.Add(netclass)
+                else:
+                    net_classes[name] = netclass
+            else:
+                netclass = existing
 
             # Set properties
             scale = 1000000  # mm to nm
-            if clearance is not None:
-                netclass.SetClearance(int(clearance * scale))
-            if track_width is not None:
-                netclass.SetTrackWidth(int(track_width * scale))
-            if via_diameter is not None:
-                netclass.SetViaDiameter(int(via_diameter * scale))
-            if via_drill is not None:
-                netclass.SetViaDrill(int(via_drill * scale))
-            if uvia_diameter is not None:
-                netclass.SetMicroViaDiameter(int(uvia_diameter * scale))
-            if uvia_drill is not None:
-                netclass.SetMicroViaDrill(int(uvia_drill * scale))
-            if diff_pair_width is not None:
-                netclass.SetDiffPairWidth(int(diff_pair_width * scale))
-            if diff_pair_gap is not None:
-                netclass.SetDiffPairGap(int(diff_pair_gap * scale))
+
+            # Defensive setters — KiCad 10's NETCLASS dropped some legacy mutators.
+            def _safe_set(method_name, value):
+                if value is None:
+                    return
+                method = getattr(netclass, method_name, None)
+                if method is None:
+                    return
+                try:
+                    method(int(value * scale))
+                except Exception:
+                    pass
+
+            _safe_set("SetClearance", clearance)
+            _safe_set("SetTrackWidth", track_width)
+            _safe_set("SetViaDiameter", via_diameter)
+            _safe_set("SetViaDrill", via_drill)
+            _safe_set("SetMicroViaDiameter", uvia_diameter)
+            _safe_set("SetMicroViaDrill", uvia_drill)
+            _safe_set("SetDiffPairWidth", diff_pair_width)
+            _safe_set("SetDiffPairGap", diff_pair_gap)
 
             # Add nets to net class
             netinfo = self.board.GetNetInfo()
@@ -1081,19 +1109,29 @@ class RoutingCommands:
                     net = nets_map[net_name]
                     net.SetClass(netclass)
 
+            # Defensive accessors — KiCad 10's NETCLASS dropped some legacy getters.
+            def _safe_get(method_name):
+                method = getattr(netclass, method_name, None)
+                if method is None:
+                    return None
+                try:
+                    return method() / scale
+                except Exception:
+                    return None
+
             return {
                 "success": True,
                 "message": f"Created net class: {name}",
                 "netClass": {
                     "name": name,
-                    "clearance": netclass.GetClearance() / scale,
-                    "trackWidth": netclass.GetTrackWidth() / scale,
-                    "viaDiameter": netclass.GetViaDiameter() / scale,
-                    "viaDrill": netclass.GetViaDrill() / scale,
-                    "uviaDiameter": netclass.GetMicroViaDiameter() / scale,
-                    "uviaDrill": netclass.GetMicroViaDrill() / scale,
-                    "diffPairWidth": netclass.GetDiffPairWidth() / scale,
-                    "diffPairGap": netclass.GetDiffPairGap() / scale,
+                    "clearance": _safe_get("GetClearance"),
+                    "trackWidth": _safe_get("GetTrackWidth"),
+                    "viaDiameter": _safe_get("GetViaDiameter"),
+                    "viaDrill": _safe_get("GetViaDrill"),
+                    "uviaDiameter": _safe_get("GetMicroViaDiameter"),
+                    "uviaDrill": _safe_get("GetMicroViaDrill"),
+                    "diffPairWidth": _safe_get("GetDiffPairWidth"),
+                    "diffPairGap": _safe_get("GetDiffPairGap"),
                     "nets": nets,
                 },
             }
