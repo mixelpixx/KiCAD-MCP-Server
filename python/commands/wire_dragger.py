@@ -75,14 +75,17 @@ class WireDragger:
             if not (isinstance(item, list) and item and item[0] == sym_k):
                 continue
 
-            # Check Reference property
+            # Check Reference property.
+            # kicad-skip may write a trailing "_" on references (e.g. "R1_") when
+            # cloning symbols; strip it so callers passing the canonical "R1"
+            # still find the symbol. Mirrors the rstrip in PinLocator.get_pin_location.
             ref_val = None
             for sub in item[1:]:
                 if isinstance(sub, list) and len(sub) >= 3 and sub[0] == prop_k:
                     if str(sub[1]).strip('"') == "Reference":
                         ref_val = str(sub[2]).strip('"')
                         break
-            if ref_val != reference:
+            if ref_val is None or ref_val.rstrip("_") != reference:
                 continue
 
             old_x = old_y = rotation = 0.0
