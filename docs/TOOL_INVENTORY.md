@@ -1,20 +1,18 @@
 # KiCAD MCP Server - Complete Tool Inventory
 
-**Version:** 2.2.3
-**Total Tools:** 134 (verified via actual `tools/list` MCP protocol call — see note below)
-**Last Updated:** 2026-05-01
+**Version:** 2.1.0-alpha
+**Total Tools:** 137 (verifiziert via VS Code MCP Discovery Log)
+**Last Updated:** 2026-05-02
 
 ## How Tools Are Organized
 
-Tools are registered directly via `server.tool()` — **all 134 are always visible** to the AI.
+Tools are registered directly via `server.tool()`
 
 The `Access` column below uses legacy labels from when a router pattern was planned:
 
 - **Direct** — High-frequency tools, originally intended as always-visible
 - **Routed** — Originally planned for router dispatch; now also registered directly
 - **Additional** — Registered directly (always visible)
-
-> **Note on 134 vs 138:** The source files contain 138 `server.tool()` call sites. The 4 router meta-tools (`list_tool_categories`, `get_category_tools`, `search_tools`, `execute_tool`) exist in `src/tools/router.ts` but their registration function `registerRouterTools()` is **commented out** in `src/server.ts` line 228. Therefore only 134 tools are actually registered and returned by `tools/list`. Confirmed via direct MCP protocol call (NDJSON, `initialize` → `tools/list`).
 
 ---
 
@@ -324,55 +322,54 @@ _Source: `src/tools/ui.ts`_
 
 ---
 
-## Router Tools (4 tools — NOT REGISTERED)
+## Router / Discovery Tools (3 tools)
 
 _Source: `src/tools/router.ts`_
 
-These meta-tools exist in source but are **not registered** at runtime. `registerRouterTools()` is commented out in `src/server.ts:228` because the router pattern caused Claude to hallucinate tool schemas.
+Registriert via `registerRouterTools()` in `src/server.ts`. Ermöglichen Tool-Discovery durch den LLM.
 
-| Tool                   | Description                          |
-| ---------------------- | ------------------------------------ |
-| `list_tool_categories` | Browse all available tool categories |
-| `get_category_tools`   | View tools in a specific category    |
-| `search_tools`         | Find tools by keyword                |
-| `execute_tool`         | Run any routed tool with parameters  |
+| Tool                   | Description                          | Access |
+| ---------------------- | ------------------------------------ | ------ |
+| `list_tool_categories` | Browse all available tool categories | Direct |
+| `get_category_tools`   | View tools in a specific category    | Direct |
+| `search_tools`         | Find tools by keyword                | Direct |
 
 ---
 
 ## Summary by Access Type
 
-| Access Type             | Count   | Description                                                           |
-| ----------------------- | ------- | --------------------------------------------------------------------- |
-| Direct                  | 18      | Always visible                                                        |
-| Routed                  | 72      | Always visible (router pattern disabled — registered directly)        |
-| Additional              | 44      | Always visible, registered directly                                   |
-| **Total registered**    | **134** | Verified via `tools/list` MCP call                                    |
-| Router (not registered) | 4       | Defined in `router.ts`, registration commented out in `server.ts:228` |
+| Access Type          | Count   | Description                              |
+| -------------------- | ------- | ---------------------------------------- |
+| Direct               | 21      | Always visible                           |
+| Routed               | 72      | Always visible (registered directly)     |
+| Additional           | 44      | Always visible, registered directly      |
+| Router/Discovery     | 3       | Tool-Discovery (`router.ts`, registered) |
+| **Total registered** | **137** | Verifiziert via VS Code MCP Discovery    |
 
 ## Summary by Category
 
-| Category                | Tool Count |
-| ----------------------- | ---------- |
-| Project Management      | 5          |
-| Board Management        | 12         |
-| Component Management    | 16         |
-| Routing                 | 13         |
-| Design Rules / DRC      | 8          |
-| Export                  | 8          |
-| Schematic               | 43         |
-| Footprint Libraries     | 4          |
-| Symbol Libraries        | 4          |
-| Footprint Creator       | 4          |
-| Symbol Creator          | 4          |
-| Datasheet               | 2          |
-| JLCPCB Integration      | 5          |
-| Freerouting             | 4          |
-| UI Management           | 2          |
-| Router (not registered) | 4          |
-| **Total registered**    | **134**    |
+| Category             | Tool Count |
+| -------------------- | ---------- |
+| Project Management   | 5          |
+| Board Management     | 12         |
+| Component Management | 16         |
+| Routing              | 13         |
+| Design Rules / DRC   | 8          |
+| Export               | 8          |
+| Schematic            | 43         |
+| Footprint Libraries  | 4          |
+| Symbol Libraries     | 4          |
+| Footprint Creator    | 4          |
+| Symbol Creator       | 4          |
+| Datasheet            | 2          |
+| JLCPCB Integration   | 5          |
+| Freerouting          | 4          |
+| UI Management        | 2          |
+| Router / Discovery   | 3          |
+| **Total registered** | **137**    |
 
-> **Verified:** Actual `tools/list` MCP response (NDJSON protocol, `initialize` → `tools/list`) returns exactly **134** tools. Source files contain 138 `server.tool()` call sites, but the 4 router tools in `src/tools/router.ts` are never registered because `registerRouterTools()` is commented out in `src/server.ts:228`. Each of the 134 registered tools belongs to exactly **one** source file.
+> **Verified:** VS Code MCP Discovery Log meldet **137** registrierte Tools.
 
 ## Token Impact
 
-All 134 registered tools are always visible to the AI (~87K tokens in context). The router pattern (`src/tools/router.ts`) was implemented but disabled (`src/server.ts:228`) because it caused Claude to hallucinate tool schemas.
+Alle 137 registrierten Tools sind stets für den LLM sichtbar. Die Discovery-Tools in `router.ts` ermöglichen dem Modell, Tools nach Kategorie oder Stichwort zu durchsuchen.

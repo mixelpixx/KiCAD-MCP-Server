@@ -193,21 +193,10 @@ export class KiCADMcpServer {
     }
 
     // Initialize the MCP server
-    const projectRoot = dirname(dirname(this.kicadScriptPath));
-    const iconPath = join(projectRoot, "resources", "images", "KiCAD-MCP-Server.png").replace(
-      /\\/g,
-      "/",
-    );
     this.server = new McpServer({
       name: "kicad-mcp-server",
       version: "1.0.0",
       description: "MCP server for KiCAD PCB design operations",
-      icons: [
-        {
-          src: `file:///${iconPath}`,
-          mimeType: "image/png",
-        },
-      ],
     });
 
     // Initialize STDIO transport
