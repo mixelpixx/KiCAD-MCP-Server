@@ -59,7 +59,7 @@ _SCH_EMPTY = "(kicad_sch (version 20231120))"
 
 
 def _build_sch_with_instances(
-    instances: "list[tuple[str, str, float, float, float]]" = (),
+    instances: "list[tuple[str, str, float, float, float]] | None" = None,
 ) -> str:
     """Build a .kicad_sch text with TestLib:R lib_symbols + the given symbol instances.
 
@@ -70,7 +70,7 @@ def _build_sch_with_instances(
     the kicad-skip cache that the tests mock for labels/wires).
     """
     parts = ["(kicad_sch (version 20231120)", _LIB_SYMBOLS_BLOCK]
-    for i, (ref, lib_id, x, y, rot) in enumerate(instances, start=1):
+    for i, (ref, lib_id, x, y, rot) in enumerate(instances or [], start=1):
         uuid = f"00000000-0000-0000-0000-{i:012d}"
         parts.append(
             f'  (symbol (lib_id "{lib_id}") (at {x} {y} {rot}) (unit 1)\n'
