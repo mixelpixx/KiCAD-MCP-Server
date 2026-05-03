@@ -136,6 +136,39 @@ class TestWireManagerAddText:
         content = sch.read_text(encoding="utf-8")
         assert r"He said \"hello\"" in content
 
+    def test_escapes_newlines_in_multiline_text(self, tmp_path):
+        """Raw newlines in quoted string literals break kicad-cli's parser
+        (silently in eeschema, but kicad-cli sch reports 'Failed to load
+        schematic'). They must be escaped to the two-character \\n sequence."""
+        from commands.wire_manager import WireManager
+
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_MINIMAL_SCH, encoding="utf-8")
+
+        WireManager.add_text(sch, "line one\nline two\r\nline three", [10.0, 10.0])
+
+        content = sch.read_text(encoding="utf-8")
+        # The text S-expression's quoted argument must not contain a literal
+        # newline. Find the (text "...") and check its first quoted arg.
+        text_start = content.index('(text "') + len('(text "')
+        # Find matching close-quote, respecting backslash escapes.
+        i = text_start
+        while i < len(content):
+            if content[i] == "\\":
+                i += 2
+                continue
+            if content[i] == '"':
+                break
+            i += 1
+        quoted = content[text_start:i]
+        assert (
+            "\n" not in quoted and "\r" not in quoted
+        ), f"Quoted text still contains a raw newline: {quoted!r}"
+        assert "\\n" in quoted, "Newline should be escaped to \\n"
+
+        # And the file must round-trip through the s-expression parser cleanly.
+        sexpdata.loads(content)
+
     def test_result_is_valid_sexp(self, tmp_path):
         from commands.wire_manager import WireManager
 

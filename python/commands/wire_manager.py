@@ -1045,7 +1045,15 @@ class WireManager:
     ) -> bool:
         """Add a free-form text annotation (SCH_TEXT) to a KiCad schematic."""
         try:
-            text_escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+            # KiCad's parser rejects raw newlines inside quoted string literals,
+            # so escape them along with backslashes and quotes. Order matters:
+            # backslashes first, otherwise we double-escape our own escapes.
+            text_escaped = (
+                text.replace("\\", "\\\\")
+                .replace('"', '\\"')
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+            )
             uid = str(uuid.uuid4())
             font_attrs = f"\n\t\t\t\t(size {font_size} {font_size})"
             if bold:
