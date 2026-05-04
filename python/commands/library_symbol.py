@@ -164,6 +164,7 @@ class SymbolLibraryManager:
             "KICAD10_3RD_PARTY": self._find_3rd_party_dir(),
             "KICAD9_3RD_PARTY": self._find_3rd_party_dir(),
             "KICAD8_3RD_PARTY": self._find_3rd_party_dir(),
+            "KICAD_3RD_PARTY": self._find_3rd_party_dir(),
             "KISYSSYM": self._find_kicad_symbol_dir(),
         }
 
@@ -227,6 +228,8 @@ class SymbolLibraryManager:
             possible_paths.insert(0, os.environ["KICAD9_3RD_PARTY"])
         if "KICAD8_3RD_PARTY" in os.environ:
             possible_paths.insert(0, os.environ["KICAD8_3RD_PARTY"])
+        if "KICAD_3RD_PARTY" in os.environ:
+            possible_paths.insert(0, os.environ["KICAD_3RD_PARTY"])
 
         for path in possible_paths:
             if os.path.isdir(path):
