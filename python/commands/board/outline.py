@@ -216,6 +216,7 @@ class BoardOutlineCommands:
             diameter = params.get("diameter")
             pad_diameter = params.get("padDiameter")
             plated = params.get("plated", False)
+            footprint_lib_id = params.get("footprintLibId")
 
             if not position or not diameter:
                 return {
@@ -247,6 +248,19 @@ class BoardOutlineCommands:
             module.SetReference(f"MH{next_num}")
             module.SetValue(f"MountingHole_{diameter}mm")
 
+            # Set a real library:name FPID. Without this, the footprint is
+            # written as `(footprint "" ...)` and KiCad's GUI Move tool refuses
+            # to select it (no library link → not draggable in the editor).
+            if not footprint_lib_id:
+                # Strip trailing zeros so 3.2 → "3.2" not "3.20"
+                footprint_lib_id = f"MountingHole:MountingHole_{diameter:g}mm"
+            if ":" in footprint_lib_id:
+                lib_name, fp_name = footprint_lib_id.split(":", 1)
+            else:
+                lib_name = "MountingHole"
+                fp_name = footprint_lib_id
+            module.SetFPID(pcbnew.LIB_ID(lib_name, fp_name))
+
             # Create the pad for the hole
             pad = pcbnew.PAD(module)
             pad.SetNumber(1)
@@ -255,6 +269,18 @@ class BoardOutlineCommands:
             pad.SetSize(pcbnew.VECTOR2I(pad_diameter_nm, pad_diameter_nm))
             pad.SetDrillSize(pcbnew.VECTOR2I(diameter_nm, diameter_nm))
             pad.SetPosition(pcbnew.VECTOR2I(0, 0))  # Position relative to module
+
+            if not plated:
+                # NPTH must not include *.Cu in pad layers. The default LSET
+                # for a circular pad is *.Cu + *.Mask; on a NPTH with
+                # padDiameter > diameter that produces phantom copper annular
+                # rings on every Cu layer, which trip clearance DRC against
+                # neighbouring nets.
+                mask_only = pcbnew.LSET()
+                mask_only.AddLayer(pcbnew.F_Mask)
+                mask_only.AddLayer(pcbnew.B_Mask)
+                pad.SetLayerSet(mask_only)
+
             module.Add(pad)
 
             # Position the mounting hole
@@ -271,6 +297,7 @@ class BoardOutlineCommands:
                     "diameter": diameter,
                     "padDiameter": pad_diameter or diameter + 1,
                     "plated": plated,
+                    "footprintLibId": f"{lib_name}:{fp_name}",
                 },
             }
 
