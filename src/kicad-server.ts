@@ -4,6 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { spawn, ChildProcess } from "child_process";
 import { existsSync } from "fs";
+import { fileURLToPath } from "url";
 import path from "path";
 
 // Import all tool definitions for reference
@@ -25,7 +26,7 @@ class KiCADServer {
   constructor() {
     // Set absolute path to the Python KiCAD interface script
     this.kicadScriptPath = process.env.KICAD_SCRIPT_PATH ||
-      path.join(path.dirname(new URL(import.meta.url).pathname), "../python/kicad_interface.py");
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "../python/kicad_interface.py");
 
     // Check if script exists
     if (!existsSync(this.kicadScriptPath)) {
