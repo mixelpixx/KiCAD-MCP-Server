@@ -24,8 +24,8 @@ class KiCADServer {
 
   constructor() {
     // Set absolute path to the Python KiCAD interface script
-    // Using a hardcoded path to avoid cwd() issues when running from Cline
-    this.kicadScriptPath = "c:/repo/KiCAD-MCP/python/kicad_interface.py";
+    this.kicadScriptPath = process.env.KICAD_SCRIPT_PATH ||
+      path.join(path.dirname(new URL(import.meta.url).pathname), "../python/kicad_interface.py");
 
     // Check if script exists
     if (!existsSync(this.kicadScriptPath)) {
