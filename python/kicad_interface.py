@@ -393,6 +393,7 @@ class KiCADInterface:
             "add_schematic_net_label": self._handle_add_schematic_net_label,
             "connect_to_net": self._handle_connect_to_net,
             "connect_pins": self._handle_connect_pins,
+            "connect_component_to_nets": self._handle_connect_component_to_nets,
             "connect_passthrough": self._handle_connect_passthrough,
             "get_schematic_pin_locations": self._handle_get_schematic_pin_locations,
             "get_net_connections": self._handle_get_net_connections,
@@ -586,6 +587,7 @@ class KiCADInterface:
         "connect_passthrough",
         "connect_to_net",
         "connect_pins",
+        "connect_component_to_nets",
     }
 
     def _auto_save_board(self) -> None:
@@ -2172,6 +2174,51 @@ class KiCADInterface:
             return result
         except Exception as e:
             logger.error(f"Error in connect_pins: {str(e)}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_connect_component_to_nets(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Connect all pins of one component to their respective nets in a single call."""
+        try:
+            from pathlib import Path
+
+            schematic_path = params.get("schematicPath")
+            component_ref = params.get("componentRef")
+            connections = params.get("connections", {})
+
+            if not schematic_path:
+                return {"success": False, "message": "Missing required parameter: schematicPath"}
+            if not component_ref:
+                return {"success": False, "message": "Missing required parameter: componentRef"}
+            if not connections:
+                return {"success": False, "message": "connections map is empty"}
+
+            result = ConnectionManager.connect_component_to_nets(
+                Path(schematic_path), component_ref, connections
+            )
+
+            # Mirror PCB pad assignments for each newly connected pin
+            if self.board and result.get("success"):
+                pcb_assigned = 0
+                for entry in result.get("connected", []):
+                    # entry format: "ref/pin → net"
+                    try:
+                        pin_part, net_name = entry.split(" → ", 1)
+                        _, pin = pin_part.split("/", 1)
+                        if self._assign_net_to_pad(component_ref, pin, net_name):
+                            pcb_assigned += 1
+                    except Exception:
+                        pass
+                if pcb_assigned:
+                    result["message"] = (
+                        result.get("message", "") + f" ({pcb_assigned} PCB pads updated)"
+                    )
+
+            return result
+        except Exception as e:
+            logger.error(f"Error in connect_component_to_nets: {str(e)}")
             import traceback
 
             logger.error(traceback.format_exc())
@@ -4076,9 +4123,87 @@ class KiCADInterface:
         )
         return pad_net_map, all_net_names
 
+    def _auto_import_footprints_from_schematic(
+        self, board, schematic_path: str, board_path: str
+    ) -> Dict[str, Any]:
+        """
+        Read all components from the schematic and place any missing from the board.
+        Components are arranged in a grid above the board area (y < 0).
+        Called by sync_schematic_to_board when the board has no footprints.
+        """
+        from pathlib import Path
+
+        from skip import Schematic
+
+        try:
+            sch = Schematic(schematic_path)
+        except Exception as e:
+            return {"placed": [], "errors": [f"Could not read schematic: {e}"], "skipped": 0}
+
+        # Build set of references already on board
+        existing_refs = {fp.GetReference() for fp in board.GetFootprints()}
+
+        # Collect components that need placing
+        to_place = []
+        skipped = 0
+        for sym in getattr(sch, "symbol", None) or []:
+            try:
+                ref = sym.property.Reference.value
+                if ref.startswith("#"):
+                    continue
+                if ref in existing_refs:
+                    skipped += 1
+                    continue
+                fp_str = ""
+                if hasattr(sym.property, "Footprint"):
+                    fp_str = sym.property.Footprint.value
+                if not fp_str:
+                    continue
+                value = sym.property.Value.value if hasattr(sym.property, "Value") else ""
+                to_place.append({"ref": ref, "footprint": fp_str, "value": value})
+            except Exception:
+                continue
+
+        if not to_place:
+            return {"placed": [], "errors": [], "skipped": skipped}
+
+        placed: List[str] = []
+        errors: List[str] = []
+
+        # Grid layout: 5 per row, 15 mm spacing, above y=0
+        COLS, SPACING = 5, 15.0
+        START_X, START_Y = 5.0, -20.0
+
+        for i, comp in enumerate(to_place):
+            col = i % COLS
+            row = i // COLS
+            x = START_X + col * SPACING
+            y = START_Y - row * SPACING
+
+            result = self._handle_place_component({
+                "componentId": comp["footprint"],
+                "position": {"x": x, "y": y, "unit": "mm"},
+                "reference": comp["ref"],
+                "value": comp["value"],
+                "footprint": comp["footprint"],
+                "rotation": 0,
+                "layer": "F.Cu",
+                "boardPath": board_path,
+            })
+            if result.get("success"):
+                placed.append(comp["ref"])
+            else:
+                errors.append(
+                    f"{comp['ref']}: {result.get('errorDetails', result.get('message', 'unknown'))}"
+                )
+
+        return {"placed": placed, "errors": errors, "skipped": skipped}
+
     def _handle_sync_schematic_to_board(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Sync schematic netlist to PCB board (equivalent to KiCAD F8 'Update PCB from Schematic').
         Reads net connections from the schematic and assigns them to the matching pads in the PCB.
+        When the board has no footprints, automatically imports them from the schematic first
+        (pass autoImport=false to suppress this behaviour).
         """
         logger.info("Syncing schematic to board")
         try:
@@ -4120,6 +4245,30 @@ class KiCADInterface:
                     "message": f"Schematic not found. Provide schematicPath. Tried: {schematic_path}",
                 }
 
+            # ── Auto-import footprints ────────────────────────────────────────
+            # Default: auto-import when board has zero footprints (first-time sync).
+            # Override with autoImport=true (always import missing) or false (never).
+            auto_import_param = params.get("autoImport", None)
+            board_fp_count = len(list(board.GetFootprints()))
+            should_import = (
+                auto_import_param is True
+                or (auto_import_param is None and board_fp_count == 0)
+            )
+            import_summary: Dict[str, Any] = {}
+            if should_import:
+                logger.info("Board has no footprints — auto-importing from schematic")
+                import_summary = self._auto_import_footprints_from_schematic(
+                    board, schematic_path, board_path
+                )
+                n_placed = len(import_summary.get("placed", []))
+                if n_placed:
+                    logger.info(f"Auto-imported {n_placed} footprints; saving board")
+                    board.Save(board_path)
+                if import_summary.get("errors"):
+                    logger.warning(
+                        f"Auto-import errors: {import_summary['errors']}"
+                    )
+
             # Build hierarchical pad→net map (walks all sub-sheets)
             pad_net_map, net_names = self._build_hierarchical_pad_net_map(schematic_path)
 
@@ -4160,17 +4309,29 @@ class KiCADInterface:
                 self.board = board
                 self._update_command_handlers()
 
+            n_imported = len(import_summary.get("placed", []))
+            import_errors = import_summary.get("errors", [])
             logger.info(
-                f"sync_schematic_to_board: {len(added_nets)} nets added, {assigned_pads} pads assigned"
+                f"sync_schematic_to_board: {n_imported} footprints imported, "
+                f"{len(added_nets)} nets added, {assigned_pads} pads assigned"
             )
-            return {
+            msg = f"PCB nets synced from schematic: {len(added_nets)} nets added, {assigned_pads} pads assigned"
+            if n_imported:
+                msg = f"Auto-imported {n_imported} footprints; " + msg
+            result: Dict[str, Any] = {
                 "success": True,
-                "message": f"PCB nets synced from schematic: {len(added_nets)} nets added, {assigned_pads} pads assigned",
+                "message": msg,
                 "nets_added": added_nets,
                 "nets_total": len(net_names),
                 "pads_assigned": assigned_pads,
                 "unmatched_pads_sample": unmatched[:10],
             }
+            if import_summary:
+                result["footprints_imported"] = import_summary.get("placed", [])
+                result["footprints_skipped"] = import_summary.get("skipped", 0)
+                if import_errors:
+                    result["footprint_import_errors"] = import_errors
+            return result
 
         except Exception as e:
             logger.error(f"Error in sync_schematic_to_board: {e}")

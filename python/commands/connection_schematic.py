@@ -389,6 +389,75 @@ class ConnectionManager:
             return []
 
     @staticmethod
+    def connect_component_to_nets(
+        schematic_path: Path,
+        component_ref: str,
+        connections: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """
+        Connect all pins of one component to their respective nets in a single call.
+
+        Args:
+            schematic_path: Path to .kicad_sch file
+            component_ref: Reference designator (e.g. "U1", "R3")
+            connections: Mapping of pin name/number → net name,
+                         e.g. {"1": "GND", "8": "VCC", "3": "OUTPUT"}
+
+        Returns:
+            {success, connected, already_connected, failed, message}
+        """
+        if not WIRE_MANAGER_AVAILABLE:
+            return {"success": False, "message": "WireManager/PinLocator not available"}
+        if not connections:
+            return {"success": False, "message": "connections map is empty"}
+
+        connected: List[str] = []
+        already_connected: List[str] = []
+        failed: List[Dict] = []
+
+        for pin_name, net_name in connections.items():
+            existing = ConnectionManager.get_pin_net(schematic_path, component_ref, pin_name)
+            key = f"{component_ref}/{pin_name}"
+
+            if existing == net_name:
+                already_connected.append(key)
+                continue
+
+            if existing is not None:
+                failed.append({
+                    "pin": key,
+                    "reason": f"already on net '{existing}' (conflicts with '{net_name}')",
+                })
+                continue
+
+            result = ConnectionManager.connect_to_net(
+                schematic_path, component_ref, pin_name, net_name
+            )
+            if result.get("success"):
+                connected.append(f"{key} → {net_name}")
+            else:
+                failed.append({"pin": key, "reason": result.get("message", "unknown")})
+
+        parts: List[str] = []
+        if connected:
+            parts.append(f"{len(connected)} connected")
+        if already_connected:
+            parts.append(f"{len(already_connected)} already done")
+        if failed:
+            parts.append(f"{len(failed)} failed")
+
+        return {
+            "success": len(failed) == 0,
+            "connected": connected,
+            "already_connected": already_connected,
+            "failed": failed,
+            "message": (
+                f"{component_ref} pin connections: "
+                + (", ".join(parts) if parts else "nothing to do")
+            ),
+        }
+
+    @staticmethod
     def get_pin_net(schematic_path: Path, component_ref: str, pin_name: str) -> Optional[str]:
         """
         Return the net label connected to this pin via the wire+label graph, or None.

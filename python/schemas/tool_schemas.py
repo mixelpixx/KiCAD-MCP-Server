@@ -1533,6 +1533,40 @@ SCHEMATIC_TOOLS = [
         },
     },
     {
+        "name": "connect_component_to_nets",
+        "title": "Connect Component Pins to Nets",
+        "description": (
+            "Connect all pins of one component to their respective nets in a single call, "
+            "instead of one connect_to_net call per pin. "
+            "Pass connections as a pin→net map, e.g. {\"1\": \"GND\", \"8\": \"VCC\", \"3\": \"OUTPUT\"}. "
+            "Pins already on the correct net are skipped (idempotent). "
+            "Pins already on a *different* net are reported in failed. "
+            "Returns connected, already_connected, and failed lists."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to schematic file",
+                },
+                "componentRef": {
+                    "type": "string",
+                    "description": "Component reference designator (e.g. R1, U1)",
+                },
+                "connections": {
+                    "type": "object",
+                    "description": (
+                        "Map of pin name/number to net name, "
+                        "e.g. {\"1\": \"GND\", \"8\": \"VCC\", \"3\": \"OUTPUT\"}"
+                    ),
+                    "additionalProperties": {"type": "string"},
+                },
+            },
+            "required": ["schematicPath", "componentRef", "connections"],
+        },
+    },
+    {
         "name": "get_net_connections",
         "title": "Get Net Connections",
         "description": "Returns all components and pins connected to a specified net.",
@@ -1688,7 +1722,16 @@ SCHEMATIC_TOOLS = [
     {
         "name": "sync_schematic_to_board",
         "title": "Sync Schematic to PCB (F8)",
-        "description": "Reads net connections from the schematic and assigns them to matching component pads in the PCB board file. Equivalent to KiCAD Pcbnew F8 'Update PCB from Schematic'. Must be called after placing components and before routing traces, so that pad-to-net assignments are correct.",
+        "description": (
+            "Reads net connections from the schematic and assigns them to matching component "
+            "pads in the PCB board file. Equivalent to KiCAD Pcbnew F8 'Update PCB from "
+            "Schematic'. "
+            "When the board has no footprints yet (first-time sync), missing footprints are "
+            "automatically imported from the schematic and arranged in a grid before net "
+            "assignment — eliminating the need for individual place_component calls. "
+            "Pass autoImport=false to suppress auto-import, or autoImport=true to always "
+            "import any missing components even on subsequent syncs."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1699,6 +1742,13 @@ SCHEMATIC_TOOLS = [
                 "boardPath": {
                     "type": "string",
                     "description": "Path to .kicad_pcb file. If omitted, uses currently loaded board.",
+                },
+                "autoImport": {
+                    "type": "boolean",
+                    "description": (
+                        "Import footprints missing from the board before syncing nets. "
+                        "Default: true when board has no footprints, false otherwise."
+                    ),
                 },
             },
         },
