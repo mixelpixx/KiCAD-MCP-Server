@@ -36,8 +36,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 #   pin "2"  at ( 1.27,  0)   → wire connects on the right
 # ---------------------------------------------------------------------------
 
-_SCH_WITH_TESTLIB_R = textwrap.dedent("""\
-    (kicad_sch (version 20231120)
+_LIB_SYMBOLS_BLOCK = textwrap.dedent("""\
       (lib_symbols
         (symbol "TestLib:R"
           (symbol "TestLib:R_1_1"
@@ -52,10 +51,38 @@ _SCH_WITH_TESTLIB_R = textwrap.dedent("""\
           )
         )
       )
-    )
 """)
 
+_SCH_WITH_TESTLIB_R = "(kicad_sch (version 20231120)\n" + _LIB_SYMBOLS_BLOCK + ")\n"
+
 _SCH_EMPTY = "(kicad_sch (version 20231120))"
+
+
+def _build_sch_with_instances(
+    instances: "list[tuple[str, str, float, float, float]] | None" = None,
+) -> str:
+    """Build a .kicad_sch text with TestLib:R lib_symbols + the given symbol instances.
+
+    Each instance tuple: (reference, lib_id, x, y, rotation).
+
+    Required because PinLocator._get_symbol_transform reads the symbol position,
+    rotation, and lib_id directly from disk via sexpdata (it does not consult
+    the kicad-skip cache that the tests mock for labels/wires).
+    """
+    parts = ["(kicad_sch (version 20231120)", _LIB_SYMBOLS_BLOCK]
+    for i, (ref, lib_id, x, y, rot) in enumerate(instances or [], start=1):
+        uuid = f"00000000-0000-0000-0000-{i:012d}"
+        parts.append(
+            f'  (symbol (lib_id "{lib_id}") (at {x} {y} {rot}) (unit 1)\n'
+            f"    (uuid {uuid})\n"
+            f'    (property "Reference" "{ref}" (at {x} {y - 2.54} 0))\n'
+            f'    (property "Value" "~" (at {x} {y + 2.54} 0))\n'
+            f'    (pin "1" (uuid {uuid[:-1]}a))\n'
+            f'    (pin "2" (uuid {uuid[:-1]}b))\n'
+            f"  )\n"
+        )
+    parts.append(")\n")
+    return "".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +203,7 @@ class TestLabelAtPin:
     def test_global_label_pin1(self, iface, tmp_path):
         """Global label at pin-1 position → (R1, 1) in map."""
         sch = tmp_path / "top.kicad_sch"
-        sch.write_text(_SCH_WITH_TESTLIB_R)
+        sch.write_text(_build_sch_with_instances([("R1", "TestLib:R", 10.0, 10.0, 0)]))
         # R1 at (10, 10); pin 1 abs = (10 − 1.27, 10) = (8.73, 10)
         mock_sch = _sch_mock(
             symbols=[_sym_mock("R1", "TestLib:R", 10.0, 10.0)],
@@ -189,7 +216,7 @@ class TestLabelAtPin:
     def test_global_label_pin2(self, iface, tmp_path):
         """Global label at pin-2 position → (R1, 2) in map."""
         sch = tmp_path / "top.kicad_sch"
-        sch.write_text(_SCH_WITH_TESTLIB_R)
+        sch.write_text(_build_sch_with_instances([("R1", "TestLib:R", 10.0, 10.0, 0)]))
         # pin 2 abs = (10 + 1.27, 10) = (11.27, 10)
         mock_sch = _sch_mock(
             symbols=[_sym_mock("R1", "TestLib:R", 10.0, 10.0)],
@@ -202,7 +229,7 @@ class TestLabelAtPin:
     def test_both_pins_mapped(self, iface, tmp_path):
         """Labels at both pin positions → both (ref, pin) keys present."""
         sch = tmp_path / "top.kicad_sch"
-        sch.write_text(_SCH_WITH_TESTLIB_R)
+        sch.write_text(_build_sch_with_instances([("R1", "TestLib:R", 10.0, 10.0, 0)]))
         mock_sch = _sch_mock(
             symbols=[_sym_mock("R1", "TestLib:R", 10.0, 10.0)],
             global_labels=[
@@ -217,7 +244,7 @@ class TestLabelAtPin:
     def test_local_label_also_works(self, iface, tmp_path):
         """Local (net) labels are treated identically to global labels."""
         sch = tmp_path / "top.kicad_sch"
-        sch.write_text(_SCH_WITH_TESTLIB_R)
+        sch.write_text(_build_sch_with_instances([("R1", "TestLib:R", 10.0, 10.0, 0)]))
         mock_sch = _sch_mock(
             symbols=[_sym_mock("R1", "TestLib:R", 10.0, 10.0)],
             labels=[_lbl_mock("LOCAL_NET", 8.73, 10.0)],
@@ -228,7 +255,7 @@ class TestLabelAtPin:
     def test_hierarchical_label_also_works(self, iface, tmp_path):
         """Hierarchical labels are treated identically to global labels."""
         sch = tmp_path / "top.kicad_sch"
-        sch.write_text(_SCH_WITH_TESTLIB_R)
+        sch.write_text(_build_sch_with_instances([("R1", "TestLib:R", 10.0, 10.0, 0)]))
         mock_sch = _sch_mock(
             symbols=[_sym_mock("R1", "TestLib:R", 10.0, 10.0)],
             hier_labels=[_lbl_mock("HIER_NET", 8.73, 10.0)],
@@ -249,7 +276,7 @@ class TestLabelViaWire:
     def test_label_one_hop_away(self, iface, tmp_path):
         """Label at wire start, wire end at pin → net assigned."""
         sch = tmp_path / "top.kicad_sch"
-        sch.write_text(_SCH_WITH_TESTLIB_R)
+        sch.write_text(_build_sch_with_instances([("R1", "TestLib:R", 10.0, 10.0, 0)]))
         # pin 1 at (8.73, 10); label at (5.0, 10); wire (5.0,10)→(8.73,10)
         mock_sch = _sch_mock(
             symbols=[_sym_mock("R1", "TestLib:R", 10.0, 10.0)],
@@ -262,7 +289,7 @@ class TestLabelViaWire:
     def test_label_two_hops_away(self, iface, tmp_path):
         """Net propagates through two chained wire segments."""
         sch = tmp_path / "top.kicad_sch"
-        sch.write_text(_SCH_WITH_TESTLIB_R)
+        sch.write_text(_build_sch_with_instances([("R1", "TestLib:R", 10.0, 10.0, 0)]))
         # label at (3.0, 10); wire1: 3→6; wire2: 6→8.73 → pin 1
         mock_sch = _sch_mock(
             symbols=[_sym_mock("R1", "TestLib:R", 10.0, 10.0)],
@@ -330,7 +357,7 @@ class TestMultipleSubsheets:
         sub_dir = tmp_path / "sheets"
         sub_dir.mkdir()
         sub = sub_dir / "component_sheet.kicad_sch"
-        sub.write_text(_SCH_WITH_TESTLIB_R)
+        sub.write_text(_build_sch_with_instances([("R2", "TestLib:R", 10.0, 10.0, 0)]))
 
         top_mock = _sch_mock()  # top sheet has no components
         sub_mock = _sch_mock(
@@ -340,6 +367,7 @@ class TestMultipleSubsheets:
 
         def _factory(path: str) -> MagicMock:
             from pathlib import Path as _P
+
             return sub_mock if _P(path).name == "component_sheet.kicad_sch" else top_mock
 
         with (
@@ -354,11 +382,11 @@ class TestMultipleSubsheets:
     def test_top_and_sub_components_merged(self, iface, tmp_path):
         """Components from both top-level and sub-sheet appear in the same map."""
         top = tmp_path / "top.kicad_sch"
-        top.write_text(_SCH_WITH_TESTLIB_R)
+        top.write_text(_build_sch_with_instances([("R1", "TestLib:R", 10.0, 10.0, 0)]))
         sub_dir = tmp_path / "sheets"
         sub_dir.mkdir()
         sub = sub_dir / "component_sheet.kicad_sch"
-        sub.write_text(_SCH_WITH_TESTLIB_R)
+        sub.write_text(_build_sch_with_instances([("R2", "TestLib:R", 10.0, 10.0, 0)]))
 
         top_mock = _sch_mock(
             symbols=[_sym_mock("R1", "TestLib:R", 10.0, 10.0)],
@@ -371,6 +399,7 @@ class TestMultipleSubsheets:
 
         def _factory(path: str) -> MagicMock:
             from pathlib import Path as _P
+
             return sub_mock if _P(path).name == "component_sheet.kicad_sch" else top_mock
 
         with (
@@ -391,17 +420,19 @@ class TestMultipleSubsheets:
 @pytest.mark.unit
 class TestRotatedSymbol:
     def test_90_degree_rotation(self, iface, tmp_path):
-        """A 90° CCW rotation maps pin (-1.27, 0) → (0, -1.27) in local coords."""
+        """eeschema rot=90 is CCW in screen Y-down: TRANSFORM(0,1,-1,0).
+        Pin 1 lib (-1.27, 0) → internal (-1.27, 0) → (0,1,-1,0) applied = (0, 1.27)
+            → world (10.0, 11.27).
+        Pin 2 lib ( 1.27, 0) → internal ( 1.27, 0) → (0,1,-1,0) applied = (0, -1.27)
+            → world (10.0, 8.73).
+        Verified vs kicad-cli netlist on a Device:D rotated 90."""
         sch = tmp_path / "top.kicad_sch"
-        sch.write_text(_SCH_WITH_TESTLIB_R)
-        # R1 at (10, 10), rotation=90°
-        # pin 1 (-1.27, 0) rotated 90° CCW → (0, -1.27) → abs (10.0, 8.73)
-        # pin 2 ( 1.27, 0) rotated 90° CCW → (0,  1.27) → abs (10.0, 11.27)
+        sch.write_text(_build_sch_with_instances([("R1", "TestLib:R", 10.0, 10.0, 90)]))
         mock_sch = _sch_mock(
             symbols=[_sym_mock("R1", "TestLib:R", 10.0, 10.0, rotation=90)],
             global_labels=[
-                _lbl_mock("UP_NET", 10.0, 8.73),
-                _lbl_mock("DN_NET", 10.0, 11.27),
+                _lbl_mock("UP_NET", 10.0, 11.27),
+                _lbl_mock("DN_NET", 10.0, 8.73),
             ],
         )
         pad_net_map, _ = _call(iface, sch, mock_sch)

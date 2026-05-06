@@ -23,6 +23,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "place_component",
+    "Place a footprint component onto the PCB at the specified position. Optionally set reference, value, footprint, rotation and layer.",
     {
       componentId: z
         .string()
@@ -77,6 +78,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "move_component",
+    "Move a PCB component to a new position. Optionally update rotation or flip to a different copper layer.",
     {
       reference: z.string().describe("Reference designator of the component (e.g., 'R5')"),
       position: z
@@ -119,6 +121,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "rotate_component",
+    "Rotate a PCB component to an absolute angle in degrees.",
     {
       reference: z.string().describe("Reference designator of the component (e.g., 'R5')"),
       angle: z.number().describe("Rotation angle in degrees (absolute, not relative)"),
@@ -146,6 +149,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "delete_component",
+    "Remove a component from the PCB by its reference designator.",
     {
       reference: z
         .string()
@@ -171,6 +175,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "edit_component",
+    "Edit properties of an existing PCB component (reference, value, footprint).",
     {
       reference: z.string().describe("Reference designator of the component (e.g., 'R5')"),
       newReference: z.string().optional().describe("Optional new reference designator"),
@@ -202,6 +207,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "find_component",
+    "Search for a PCB component by reference designator or value and return its position and properties.",
     {
       reference: z.string().optional().describe("Reference designator to search for"),
       value: z.string().optional().describe("Component value to search for"),
@@ -231,6 +237,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "get_component_properties",
+    "Return all properties of a PCB component (position, rotation, layer, value, footprint).",
     {
       reference: z.string().describe("Reference designator of the component (e.g., 'R5')"),
     },
@@ -256,6 +263,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "add_component_annotation",
+    "Add a text annotation or comment to a PCB component.",
     {
       reference: z.string().describe("Reference designator of the component (e.g., 'R5')"),
       annotation: z.string().describe("Annotation or comment text to add"),
@@ -288,6 +296,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "group_components",
+    "Group multiple PCB components together by name for easier selection and manipulation.",
     {
       references: z.array(z.string()).describe("Reference designators of components to group"),
       groupName: z.string().describe("Name for the component group"),
@@ -315,6 +324,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "replace_component",
+    "Replace an existing PCB component with a different component type, optionally changing footprint and value.",
     {
       reference: z.string().describe("Reference designator of the component to replace"),
       newComponentId: z.string().describe("ID of the new component to use"),
@@ -346,6 +356,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "get_component_pads",
+    "Return all pads of a PCB component with their positions, net assignments and sizes.",
     {
       reference: z.string().describe("Reference designator of the component (e.g., 'U1')"),
       unit: z.enum(["mm", "inch"]).optional().describe("Unit for coordinates (default: mm)"),
@@ -373,6 +384,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "get_component_list",
+    "Return a list of all components on the PCB, optionally filtered by layer or bounding box region.",
     {
       layer: z.string().optional().describe("Filter by layer (e.g., 'F.Cu', 'B.Cu')"),
       boundingBox: z
@@ -411,6 +423,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "get_pad_position",
+    "Return the exact XY position of a specific pad on a PCB component. Use this before routing to get accurate start/end coordinates.",
     {
       reference: z.string().describe("Component reference designator (e.g., 'U1')"),
       pad: z.string().describe("Pad number or name (e.g., '1', 'A1')"),
@@ -440,6 +453,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "place_component_array",
+    "Place a rectangular grid array of identical components on the PCB with configurable row/column spacing.",
     {
       componentId: z.string().describe("Component identifier"),
       startPosition: z
@@ -500,6 +514,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "align_components",
+    "Align multiple PCB components horizontally, vertically or on a grid with optional spacing.",
     {
       references: z.array(z.string()).describe("Array of component references to align"),
       alignmentType: z.enum(["horizontal", "vertical", "grid"]).describe("Type of alignment"),
@@ -531,6 +546,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "duplicate_component",
+    "Duplicate an existing PCB component at an offset position, optionally with a new reference designator.",
     {
       reference: z.string().describe("Reference of component to duplicate"),
       offset: z

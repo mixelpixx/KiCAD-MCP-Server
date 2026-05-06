@@ -392,6 +392,7 @@ class KiCADInterface:
             "get_schematic_component": self._handle_get_schematic_component,
             "add_schematic_wire": self._handle_add_schematic_wire,
             "add_schematic_net_label": self._handle_add_schematic_net_label,
+            "add_no_connect": self._handle_add_no_connect,
             "connect_to_net": self._handle_connect_to_net,
             "connect_pins": self._handle_connect_pins,
             "connect_component_to_nets": self._handle_connect_component_to_nets,
@@ -2141,6 +2142,66 @@ class KiCADInterface:
                 "errorDetails": traceback.format_exc(),
             }
 
+    def _handle_add_no_connect(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a no-connect flag (X marker) to an unconnected pin in the schematic."""
+        logger.info("Adding no-connect flag to schematic")
+        try:
+            from pathlib import Path
+
+            from commands.pin_locator import PinLocator
+            from commands.wire_manager import WireManager
+
+            schematic_path = params.get("schematicPath")
+            position = params.get("position")
+            component_ref = params.get("componentRef")
+            pin_number = params.get("pinNumber")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+
+            # Snap to pin endpoint when componentRef + pinNumber are provided
+            snapped_to_pin = None
+            if component_ref and pin_number is not None:
+                locator = PinLocator()
+                pin_loc = locator.get_pin_location(
+                    Path(schematic_path), component_ref, str(pin_number)
+                )
+                if pin_loc is None:
+                    return {
+                        "success": False,
+                        "message": f"Could not locate pin {pin_number} on {component_ref}",
+                    }
+                position = pin_loc
+                snapped_to_pin = {"component": component_ref, "pin": str(pin_number)}
+            elif position is None:
+                return {
+                    "success": False,
+                    "message": "Provide either position [x, y] or componentRef + pinNumber",
+                }
+
+            success = WireManager.add_no_connect(Path(schematic_path), position)
+            if success:
+                result = {
+                    "success": True,
+                    "message": f"Added no-connect flag at {position}",
+                    "actual_position": position,
+                }
+                if snapped_to_pin:
+                    result["snapped_to_pin"] = snapped_to_pin
+                return result
+            else:
+                return {"success": False, "message": "Failed to add no-connect flag"}
+
+        except Exception as e:
+            import traceback
+
+            logger.error(f"Error adding no-connect: {e}")
+            return {
+                "success": False,
+                "message": str(e),
+                "errorDetails": traceback.format_exc(),
+            }
+
     def _handle_connect_to_net(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Connect a component pin to a named net using wire stub and label,
         and also assign the net to the corresponding pad on the PCB board so
@@ -2379,9 +2440,7 @@ class KiCADInterface:
                             f"Assigned net '{net_name}' to pad {component_ref}/{pin_name} on PCB"
                         )
                         return True
-                logger.warning(
-                    f"Pad '{pin_name}' not found on footprint '{component_ref}'"
-                )
+                logger.warning(f"Pad '{pin_name}' not found on footprint '{component_ref}'")
                 return False
 
         logger.warning(f"Footprint '{component_ref}' not found on board")
@@ -2989,8 +3048,8 @@ class KiCADInterface:
                 new_mirror_y = old_mirror_y
                 effective_mirror = "x" if old_mirror_x else ("y" if old_mirror_y else None)
             else:
-                new_mirror_x = (mirror == "x")
-                new_mirror_y = (mirror == "y")
+                new_mirror_x = mirror == "x"
+                new_mirror_y = mirror == "y"
                 effective_mirror = mirror
 
             # Compute pin world positions before and after the transform
@@ -3015,7 +3074,9 @@ class KiCADInterface:
             drag_summary = WireDragger.drag_wires(sch_data, old_to_new)
 
             # Update the symbol's rotation and mirror token in sexpdata
-            WireDragger.update_symbol_rotation_mirror(sch_data, reference, float(angle), effective_mirror)
+            WireDragger.update_symbol_rotation_mirror(
+                sch_data, reference, float(angle), effective_mirror
+            )
 
             WireManager.sync_junctions(sch_data)
 

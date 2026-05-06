@@ -25,6 +25,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   server.tool(
     "set_board_size",
+    "Set the PCB board dimensions (width and height) in the specified unit.",
     {
       width: z.number().describe("Board width"),
       height: z.number().describe("Board height"),
@@ -54,6 +55,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   server.tool(
     "add_layer",
+    "Add a new copper or technical layer to the PCB stackup.",
     {
       name: z.string().describe("Layer name"),
       type: z.enum(["copper", "technical", "user", "signal"]).describe("Layer type"),
@@ -85,6 +87,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   server.tool(
     "set_active_layer",
+    "Set the currently active PCB layer by name (e.g. F.Cu, B.Cu).",
     {
       layer: z.string().describe("Layer name to set as active"),
     },
@@ -106,42 +109,53 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   // Get Board Info Tool
   // ------------------------------------------------------
-  server.tool("get_board_info", {}, async () => {
-    logger.debug("Getting board information");
-    const result = await callKicadScript("get_board_info", {});
+  server.tool(
+    "get_board_info",
+    "Retrieve general information about the current PCB board (dimensions, layer count, DRC status).",
+    {},
+    async () => {
+      logger.debug("Getting board information");
+      const result = await callKicadScript("get_board_info", {});
 
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(result),
-        },
-      ],
-    };
-  });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
 
   // ------------------------------------------------------
   // Get Layer List Tool
   // ------------------------------------------------------
-  server.tool("get_layer_list", {}, async () => {
-    logger.debug("Getting layer list");
-    const result = await callKicadScript("get_layer_list", {});
+  server.tool(
+    "get_layer_list",
+    "Return the list of all layers defined in the current PCB board.",
+    {},
+    async () => {
+      logger.debug("Getting layer list");
+      const result = await callKicadScript("get_layer_list", {});
 
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(result),
-        },
-      ],
-    };
-  });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
 
   // ------------------------------------------------------
   // Add Board Outline Tool
   // ------------------------------------------------------
   server.tool(
     "add_board_outline",
+    "Draw the PCB board outline (Edge.Cuts layer) as a rectangle, rounded rectangle, circle or polygon.",
     {
       shape: z
         .enum(["rectangle", "circle", "polygon", "rounded_rectangle"])
@@ -196,6 +210,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   server.tool(
     "add_mounting_hole",
+    "Place a mounting hole (NPTH or PTH) at the specified position on the PCB.",
     {
       position: z
         .object({
@@ -231,6 +246,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   server.tool(
     "add_board_text",
+    "Add a text label to a PCB layer (e.g. silkscreen, fab, courtyard).",
     {
       text: z.string().describe("Text content"),
       position: z
@@ -274,6 +290,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   server.tool(
     "add_zone",
+    "Create a copper fill zone (pour) on a PCB layer for a specified net.",
     {
       layer: z.string().describe("Layer for the zone"),
       net: z.string().describe("Net name for the zone"),
@@ -321,6 +338,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   server.tool(
     "get_board_extents",
+    "Return the bounding box (min/max X and Y) of all objects on the current PCB board.",
     {
       unit: z.enum(["mm", "inch"]).optional().describe("Unit of measurement for the result"),
     },
@@ -344,6 +362,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   server.tool(
     "get_board_2d_view",
+    "Render a 2D image of the current PCB board and return it as PNG, JPG or SVG.",
     {
       layers: z.array(z.string()).optional().describe("Optional array of layer names to include"),
       width: z.number().optional().describe("Optional width of the image in pixels"),
