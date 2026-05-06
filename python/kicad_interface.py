@@ -736,6 +736,7 @@ class KiCADInterface:
             x = component.get("x", 0)
             y = component.get("y", 0)
             unit = component.get("unit", 1)
+            rotation = component.get("rotation", 0)
 
             # Derive project path from schematic path for project-local library resolution.
             # Walk up from the schematic file to find the directory that owns the project
@@ -760,6 +761,7 @@ class KiCADInterface:
                 x=x,
                 y=y,
                 unit=unit,
+                rotation=rotation,
                 project_path=derived_project_path,
             )
 
@@ -1900,10 +1902,12 @@ class KiCADInterface:
                 }
 
             snapped_to_pin: Optional[Dict[str, Any]] = None
+            auto_stub_added = False
 
             if component_ref and pin_number:
                 # Snap position to exact pin endpoint using PinLocator
                 from commands.pin_locator import PinLocator
+                from commands.wire_manager import WireManager as WM
 
                 locator = PinLocator()
                 pin_loc = locator.get_pin_location(
@@ -1917,7 +1921,33 @@ class KiCADInterface:
                             "Check the reference and pin number."
                         ),
                     }
-                position = pin_loc
+
+                # Connector pins (J* reference prefix) need a wire stub or the label
+                # won't make an electrical connection (ERC "not connected" false positive).
+                # Use the pin's outward angle to extend the stub 2.54mm away from the body.
+                is_connector = component_ref.upper().startswith("J")
+                if is_connector:
+                    import math
+                    angle = locator.get_pin_angle(Path(schematic_path), component_ref, str(pin_number))
+                    if angle is not None:
+                        stub_len = 2.54
+                        rad = math.radians(angle)
+                        stub_end = [
+                            round(pin_loc[0] + stub_len * math.cos(rad), 4),
+                            round(pin_loc[1] - stub_len * math.sin(rad), 4),
+                        ]
+                        WM.add_wire(Path(schematic_path), pin_loc, stub_end)
+                        position = stub_end
+                        auto_stub_added = True
+                        logger.info(
+                            f"Added auto wire stub for connector {component_ref}/{pin_number}: "
+                            f"{pin_loc} → {stub_end} (angle={angle}°)"
+                        )
+                    else:
+                        position = pin_loc
+                else:
+                    position = pin_loc
+
                 snapped_to_pin = {"component": component_ref, "pin": str(pin_number)}
                 logger.info(
                     f"Snapped label '{net_name}' to pin {component_ref}/{pin_number} at {position}"
@@ -1981,6 +2011,9 @@ class KiCADInterface:
                     f"Added net label '{net_name}' at exact pin endpoint "
                     f"{component_ref}/{pin_number} ({position[0]}, {position[1]})"
                 )
+                if auto_stub_added:
+                    response["auto_wire_stub"] = True
+                    response["message"] += " (wire stub auto-added for connector pin)"
             if case_warnings:
                 response["case_warnings"] = case_warnings
             return response
@@ -3494,7 +3527,12 @@ class KiCADInterface:
                     erc_data = json.load(f)
 
                 violations = []
+                noise_violations = []
                 severity_counts = {"error": 0, "warning": 0, "info": 0}
+
+                # These types produce high-volume false positives (e.g. off-grid
+                # pins from upstream symbol files) and obscure real errors.
+                NOISE_TYPES = {"endpoint_off_grid", "lib_symbol_issues"}
 
                 # KiCad 9 nests violations under sheets[].violations
                 # instead of (or in addition to) the top-level violations
@@ -3508,29 +3546,38 @@ class KiCADInterface:
                     items = v.get("items", [])
                     loc = {}
                     if items and "pos" in items[0]:
+                        # kicad-cli reports coordinates in 1/100 mm units;
+                        # multiply by 100 to get actual schematic mm position.
+                        raw_x = items[0]["pos"].get("x", 0)
+                        raw_y = items[0]["pos"].get("y", 0)
                         loc = {
-                            "x": items[0]["pos"].get("x", 0),
-                            "y": items[0]["pos"].get("y", 0),
+                            "x_mm": round(raw_x * 100, 2),
+                            "y_mm": round(raw_y * 100, 2),
                         }
-                    violations.append(
-                        {
-                            "type": v.get("type", "unknown"),
-                            "severity": vseverity,
-                            "message": v.get("description", ""),
-                            "location": loc,
-                        }
-                    )
-                    if vseverity in severity_counts:
-                        severity_counts[vseverity] += 1
+                    entry = {
+                        "type": v.get("type", "unknown"),
+                        "severity": vseverity,
+                        "message": v.get("description", ""),
+                        "location": loc,
+                    }
+                    vtype = v.get("type", "")
+                    if vtype in NOISE_TYPES:
+                        noise_violations.append(entry)
+                    else:
+                        violations.append(entry)
+                        if vseverity in severity_counts:
+                            severity_counts[vseverity] += 1
 
                 return {
                     "success": True,
-                    "message": f"ERC complete: {len(violations)} violation(s)",
+                    "message": f"ERC complete: {len(violations)} violation(s) ({len(noise_violations)} cosmetic/noise suppressed)",
                     "summary": {
                         "total": len(violations),
                         "by_severity": severity_counts,
+                        "noise_suppressed": len(noise_violations),
                     },
                     "violations": violations,
+                    "noise_violations": noise_violations,
                 }
 
             finally:

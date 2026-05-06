@@ -55,6 +55,10 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
         .min(1)
         .optional()
         .describe("Unit number for multi-unit symbols (1=A, 2=B, 3=C, …). Defaults to 1."),
+      rotation: z
+        .number()
+        .optional()
+        .describe("Rotation in degrees (0, 90, 180, 270). Defaults to 0."),
     },
     async (args: {
       schematicPath: string;
@@ -64,6 +68,7 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
       footprint?: string;
       position?: { x: number; y: number };
       unit?: number;
+      rotation?: number;
     }) => {
       // Transform to what Python backend expects
       const [library, symbolName] = args.symbol.includes(":")
@@ -82,6 +87,7 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
           x: args.position?.x ?? 0,
           y: args.position?.y ?? 0,
           unit: args.unit ?? 1,
+          rotation: args.rotation ?? 0,
         },
       };
 

@@ -7,7 +7,10 @@ and providing search functionality for component selection.
 
 import logging
 import os
+import pickle
 import re
+import threading
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -54,7 +57,10 @@ class SymbolLibraryManager:
         self.project_path = project_path
         self.libraries: Dict[str, str] = {}  # nickname -> path mapping
         self.symbol_cache: Dict[str, List[SymbolInfo]] = {}  # library -> [SymbolInfo]
+        self._cache_lock = threading.Lock()
         self._load_libraries()
+        self._load_disk_cache()
+        self._start_cache_warming()
 
     def _load_libraries(self) -> None:
         """Load libraries from sym-lib-table files"""
@@ -269,19 +275,25 @@ class SymbolLibraryManager:
                 # Find the start position of this symbol
                 start_pos = match.start()
 
-                # Walk forward tracking parenthesis depth to find the true end of the block
+                # Walk forward tracking parenthesis depth to find the true end of the block.
+                # Must skip content inside double-quoted strings: KiCAD pin alternate-function
+                # descriptions (e.g. "TIM1_CH4(N)") contain ( ) that throw off a naive counter.
                 depth = 0
                 i = start_pos
                 end_pos = start_pos
+                in_string = False
                 while i < len(content):
                     ch = content[i]
-                    if ch == "(":
-                        depth += 1
-                    elif ch == ")":
-                        depth -= 1
-                        if depth == 0:
-                            end_pos = i + 1
-                            break
+                    if ch == '"':
+                        in_string = not in_string
+                    elif not in_string:
+                        if ch == "(":
+                            depth += 1
+                        elif ch == ")":
+                            depth -= 1
+                            if depth == 0:
+                                end_pos = i + 1
+                                break
                     i += 1
 
                 if end_pos == start_pos:
@@ -344,6 +356,94 @@ class SymbolLibraryManager:
         """Get filesystem path for a library nickname"""
         return self.libraries.get(nickname)
 
+    def _disk_cache_path(self) -> Optional[Path]:
+        """Return a writable path for the symbol disk cache, or None if no writable location found."""
+        candidates = [
+            Path.home() / ".cache" / "kicad-mcp",
+            Path(os.environ.get("TMPDIR", "/tmp")) / "kicad-mcp",
+        ]
+        for candidate in candidates:
+            try:
+                candidate.mkdir(parents=True, exist_ok=True)
+                return candidate / "symbol_cache.pkl"
+            except OSError:
+                continue
+        return None
+
+    def _disk_cache_is_valid(self, cache_path: Optional[Path]) -> bool:
+        """Return True if the disk cache exists and is newer than all library files."""
+        if not cache_path.exists():
+            return False
+        cache_mtime = cache_path.stat().st_mtime
+        for lib_path in self.libraries.values():
+            try:
+                if Path(lib_path).stat().st_mtime > cache_mtime:
+                    return False
+            except OSError:
+                pass
+        return True
+
+    def _load_disk_cache(self) -> None:
+        cache_path = self._disk_cache_path()
+        if cache_path is None or not self._disk_cache_is_valid(cache_path):
+            return
+        try:
+            t0 = time.monotonic()
+            with open(cache_path, "rb") as f:
+                cached: Dict[str, List[SymbolInfo]] = pickle.load(f)
+            # Only accept entries whose library is still registered
+            with self._cache_lock:
+                for nick, symbols in cached.items():
+                    if nick in self.libraries:
+                        self.symbol_cache[nick] = symbols
+            logger.info(
+                f"Loaded symbol cache from disk: {len(self.symbol_cache)} libraries "
+                f"in {time.monotonic()-t0:.2f}s"
+            )
+        except Exception as e:
+            logger.warning(f"Could not load symbol disk cache: {e}")
+
+    def _save_disk_cache(self) -> None:
+        cache_path = self._disk_cache_path()
+        if cache_path is None:
+            logger.warning("No writable location for symbol disk cache")
+            return
+        try:
+            with self._cache_lock:
+                snapshot = dict(self.symbol_cache)
+            tmp = cache_path.with_suffix(".tmp")
+            with open(tmp, "wb") as f:
+                pickle.dump(snapshot, f, protocol=pickle.HIGHEST_PROTOCOL)
+            tmp.replace(cache_path)
+            logger.info(f"Saved symbol cache to disk ({len(snapshot)} libraries)")
+        except Exception as e:
+            logger.warning(f"Could not save symbol disk cache: {e}")
+
+    def _start_cache_warming(self) -> None:
+        """Warm the symbol cache in a background thread so search_symbols is fast on first call.
+        Saves a persistent disk cache on completion so subsequent server startups are instant."""
+        with self._cache_lock:
+            already_cached = set(self.symbol_cache.keys())
+        remaining = [n for n in self.libraries if n not in already_cached]
+        if not remaining:
+            logger.info("Symbol cache fully loaded from disk, no warming needed")
+            return
+
+        def _warm():
+            logger.info(f"Background symbol cache warming: {len(remaining)} libraries to parse")
+            for nickname in remaining:
+                try:
+                    symbols = self._parse_kicad_sym_file(self.libraries[nickname], nickname)
+                    with self._cache_lock:
+                        self.symbol_cache[nickname] = symbols
+                except Exception as e:
+                    logger.warning(f"Failed to cache library {nickname}: {e}")
+            logger.info("Background symbol cache warming complete — saving to disk")
+            self._save_disk_cache()
+
+        t = threading.Thread(target=_warm, daemon=True, name="symbol-cache-warmer")
+        t.start()
+
     def list_symbols(self, library_nickname: str) -> List[SymbolInfo]:
         """
         List all symbols in a library
@@ -354,20 +454,19 @@ class SymbolLibraryManager:
         Returns:
             List of SymbolInfo objects
         """
-        # Check cache first
-        if library_nickname in self.symbol_cache:
-            return self.symbol_cache[library_nickname]
+        with self._cache_lock:
+            if library_nickname in self.symbol_cache:
+                return self.symbol_cache[library_nickname]
 
         library_path = self.libraries.get(library_nickname)
         if not library_path:
             logger.warning(f"Library not found: {library_nickname}")
             return []
 
-        # Parse the library file
         symbols = self._parse_kicad_sym_file(library_path, library_nickname)
 
-        # Cache the results
-        self.symbol_cache[library_nickname] = symbols
+        with self._cache_lock:
+            self.symbol_cache[library_nickname] = symbols
 
         return symbols
 
