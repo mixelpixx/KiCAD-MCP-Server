@@ -392,6 +392,7 @@ class KiCADInterface:
             "add_schematic_wire": self._handle_add_schematic_wire,
             "add_schematic_net_label": self._handle_add_schematic_net_label,
             "connect_to_net": self._handle_connect_to_net,
+            "connect_pins": self._handle_connect_pins,
             "connect_passthrough": self._handle_connect_passthrough,
             "get_schematic_pin_locations": self._handle_get_schematic_pin_locations,
             "get_net_connections": self._handle_get_net_connections,
@@ -584,6 +585,7 @@ class KiCADInterface:
         "sync_schematic_to_board",
         "connect_passthrough",
         "connect_to_net",
+        "connect_pins",
     }
 
     def _auto_save_board(self) -> None:
@@ -2134,6 +2136,46 @@ class KiCADInterface:
                 "message": str(e),
                 "errorDetails": traceback.format_exc(),
             }
+
+    def _handle_connect_pins(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Connect multiple pins to the same net, reusing any existing label."""
+        try:
+            from pathlib import Path
+
+            schematic_path = params.get("schematicPath")
+            pins = params.get("pins", [])
+            net_name = params.get("netName")
+
+            if not schematic_path:
+                return {"success": False, "message": "Missing required parameter: schematicPath"}
+            if not pins:
+                return {"success": False, "message": "pins must be a non-empty list"}
+
+            result = ConnectionManager.connect_pins(Path(schematic_path), pins, net_name)
+
+            # Mirror PCB pad assignments for every newly connected pin
+            if self.board and result.get("net_used"):
+                resolved_net = result["net_used"]
+                pcb_assigned = 0
+                for pin_desc in result.get("connected", []):
+                    try:
+                        ref, pin = pin_desc.split("/", 1)
+                        if self._assign_net_to_pad(ref, pin, resolved_net):
+                            pcb_assigned += 1
+                    except Exception:
+                        pass
+                if pcb_assigned:
+                    result["message"] = (
+                        result.get("message", "") + f" ({pcb_assigned} PCB pads updated)"
+                    )
+
+            return result
+        except Exception as e:
+            logger.error(f"Error in connect_pins: {str(e)}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
 
     def _handle_connect_passthrough(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Connect all pins of source connector to matching pins of target connector"""
@@ -3958,6 +4000,60 @@ class KiCADInterface:
                     if neighbor not in visited:
                         visited.add(neighbor)
                         queue.append(neighbor)
+
+            # ── 2.5. Auto-name unlabeled wire clusters ───────────────────────
+            # Wire clusters with no label anywhere have no BFS seed above and
+            # would leave connected pins unmatched.  Synthesise KiCAD-style
+            # "Net-(ref-Padpin)" names for each such cluster so that pure-wire
+            # connections still receive a net assignment.
+            if all_wire_pts:
+                # Build pin registry for all non-power symbols
+                pin_registry = []  # [(ref, pin_num, snap_pt), ...]
+                for sym2 in getattr(sch, "symbol", None) or []:
+                    try:
+                        ref2 = sym2.property.Reference.value
+                        if ref2.startswith("#"):
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        locs2 = pin_locator.get_all_symbol_pins(sch_path, ref2)
+                        for pn, (px, py) in locs2.items():
+                            pin_registry.append((ref2, pn, snap(px, py)))
+                    except Exception:
+                        pass
+
+                unvisited = {p for p in all_wire_pts if p not in point_net}
+                while unvisited:
+                    seed = next(iter(unvisited))
+                    # BFS this unlabeled cluster
+                    cluster: set = set()
+                    q2 = [seed]
+                    while q2:
+                        p = q2.pop()
+                        if p in cluster:
+                            continue
+                        cluster.add(p)
+                        for nb in point_adj.get(p, ()):
+                            if nb not in cluster and nb not in point_net:
+                                q2.append(nb)
+                    unvisited -= cluster
+
+                    # Find the first pin inside this cluster
+                    auto_name = None
+                    for ref2, pn, sp in pin_registry:
+                        if sp in cluster or any(
+                            abs(sp[0] - cp[0]) < TOLERANCE
+                            and abs(sp[1] - cp[1]) < TOLERANCE
+                            for cp in cluster
+                        ):
+                            auto_name = f"Net-({ref2}-Pad{pn})"
+                            break
+
+                    if auto_name:
+                        for cp in cluster:
+                            point_net[cp] = auto_name
+                        all_net_names.add(auto_name)
 
             # ── 3. Match component pin positions to net names ────────────────
             for sym in getattr(sch, "symbol", None) or []:

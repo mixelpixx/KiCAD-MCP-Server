@@ -389,6 +389,204 @@ class ConnectionManager:
             return []
 
     @staticmethod
+    def get_pin_net(schematic_path: Path, component_ref: str, pin_name: str) -> Optional[str]:
+        """
+        Return the net label connected to this pin via the wire+label graph, or None.
+
+        Walks the wire network from the pin endpoint via BFS and returns the first
+        label found on any reachable node. Used by connect_pins to detect existing
+        net assignments before placing new labels.
+        """
+        try:
+            if not WIRE_MANAGER_AVAILABLE:
+                return None
+            locator = ConnectionManager.get_pin_locator()
+            if not locator:
+                return None
+
+            pin_loc = locator.get_pin_location(schematic_path, component_ref, pin_name)
+            if not pin_loc:
+                return None
+
+            sch = Schematic(str(schematic_path))
+            TOLS = 0.5  # mm
+
+            def close(a: tuple, b: tuple) -> bool:
+                return abs(a[0] - b[0]) < TOLS and abs(a[1] - b[1]) < TOLS
+
+            # Collect wire edges as pairs of (x, y) tuples
+            wire_edges: List[tuple] = []
+            all_wire_pts: List[tuple] = []
+            for wire in getattr(sch, "wire", None) or []:
+                xy_list = getattr(getattr(wire, "pts", None), "xy", [])
+                pts_: List[tuple] = []
+                for pt in xy_list:
+                    v = getattr(pt, "value", None)
+                    if v:
+                        pts_.append((float(v[0]), float(v[1])))
+                for i in range(len(pts_) - 1):
+                    wire_edges.append((pts_[i], pts_[i + 1]))
+                    all_wire_pts.extend([pts_[i], pts_[i + 1]])
+
+            # Collect label positions → net name
+            label_map: List[tuple] = []  # [(pos_tuple, net_name)]
+            for lbl in getattr(sch, "label", None) or []:
+                at = getattr(lbl, "at", None)
+                v = getattr(at, "value", None) if at else None
+                name = getattr(lbl, "value", None)
+                if v and name:
+                    label_map.append(((float(v[0]), float(v[1])), name))
+
+            pin_pt = (pin_loc[0], pin_loc[1])
+
+            # Seed BFS: pin endpoint itself plus any wire point coincident with pin
+            seeds: List[tuple] = [pin_pt] + [p for p in all_wire_pts if close(p, pin_pt)]
+
+            # Check seeds directly for a label
+            for seed in seeds:
+                for lpos, lname in label_map:
+                    if close(seed, lpos):
+                        return lname
+
+            # BFS through wire adjacency
+            visited: List[tuple] = list(seeds)
+            queue: List[tuple] = list(seeds)
+            while queue:
+                current = queue.pop()
+                for ea, eb in wire_edges:
+                    if close(ea, current):
+                        neighbor = eb
+                    elif close(eb, current):
+                        neighbor = ea
+                    else:
+                        continue
+                    for lpos, lname in label_map:
+                        if close(neighbor, lpos):
+                            return lname
+                    if not any(close(neighbor, v) for v in visited):
+                        visited.append(neighbor)
+                        queue.append(neighbor)
+
+            return None
+        except Exception as e:
+            logger.warning(f"get_pin_net({component_ref}/{pin_name}): {e}")
+            return None
+
+    @staticmethod
+    def connect_pins(
+        schematic_path: Path,
+        pins: List[Dict[str, str]],
+        net_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Connect two or more component pins to the same named net.
+
+        If net_name is omitted, existing labels on any of the listed pins are
+        discovered first; a human-readable name takes priority over an
+        auto-generated "Net-(...)" name.  If two pins already carry *different*
+        human-readable nets the call fails with a conflict error.
+
+        Handles the A→B→C orphan case: connect_pins([B, C]) detects B's existing
+        label and reuses it for C, leaving A's connection intact.
+
+        Returns dict with keys:
+            success, net_used, connected, already_connected, failed, message
+        """
+        if not WIRE_MANAGER_AVAILABLE:
+            return {"success": False, "message": "WireManager/PinLocator not available"}
+        if not pins:
+            return {"success": False, "message": "pins list is empty"}
+
+        # Phase 1: discover current net on each pin (single file-read per pin)
+        existing: Dict[str, Optional[str]] = {}
+        for p in pins:
+            ref, pin = p.get("ref", ""), p.get("pin", "")
+            if ref and pin:
+                existing[f"{ref}/{pin}"] = ConnectionManager.get_pin_net(
+                    schematic_path, ref, pin
+                )
+
+        # Phase 2: resolve target net
+        resolved_net: Optional[str]
+        if net_name:
+            resolved_net = net_name
+        else:
+            found_nets = {v for v in existing.values() if v is not None}
+            if not found_nets:
+                return {
+                    "success": False,
+                    "message": (
+                        "No existing net labels found on any of the specified pins "
+                        "and no netName provided."
+                    ),
+                }
+            human_nets = sorted(n for n in found_nets if not n.startswith("Net-("))
+            if len(human_nets) > 1:
+                return {
+                    "success": False,
+                    "message": (
+                        f"Net conflict: pins carry different nets {human_nets}. "
+                        "Specify netName to resolve."
+                    ),
+                    "conflicting_nets": human_nets,
+                }
+            resolved_net = human_nets[0] if human_nets else next(iter(found_nets))
+
+        # Phase 3: apply label to each pin that needs it
+        connected: List[str] = []
+        already_connected: List[str] = []
+        failed: List[Dict] = []
+
+        for p in pins:
+            ref, pin = p.get("ref", ""), p.get("pin", "")
+            if not ref or not pin:
+                failed.append({"pin": f"{ref}/{pin}", "reason": "missing ref or pin"})
+                continue
+
+            key = f"{ref}/{pin}"
+            current = existing.get(key)
+
+            if current == resolved_net:
+                already_connected.append(key)
+                continue
+
+            if current is not None:
+                failed.append({
+                    "pin": key,
+                    "reason": (
+                        f"already on net '{current}' "
+                        f"(conflicts with target '{resolved_net}')"
+                    ),
+                })
+                continue
+
+            result = ConnectionManager.connect_to_net(schematic_path, ref, pin, resolved_net)
+            if result.get("success"):
+                connected.append(key)
+            else:
+                failed.append({"pin": key, "reason": result.get("message", "unknown")})
+
+        parts: List[str] = []
+        if connected:
+            parts.append(f"{len(connected)} connected")
+        if already_connected:
+            parts.append(f"{len(already_connected)} already on net")
+        if failed:
+            parts.append(f"{len(failed)} failed")
+
+        return {
+            "success": len(failed) == 0,
+            "net_used": resolved_net,
+            "connected": connected,
+            "already_connected": already_connected,
+            "failed": failed,
+            "message": (
+                f"connect_pins to '{resolved_net}': "
+                + (", ".join(parts) if parts else "nothing to do")
+            ),
+        }
+
+    @staticmethod
     def generate_netlist(
         schematic: Schematic, schematic_path: Optional[Path] = None
     ) -> Dict[str, Any]:

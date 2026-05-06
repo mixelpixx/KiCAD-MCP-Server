@@ -1482,6 +1482,57 @@ SCHEMATIC_TOOLS = [
         },
     },
     {
+        "name": "connect_pins",
+        "title": "Connect Pins to Net",
+        "description": (
+            "Connect two or more component pins to the same named net. "
+            "If netName is omitted, existing net labels on any of the listed pins are "
+            "detected automatically — a human-readable name takes priority over an "
+            "auto-generated 'Net-(...)' name. "
+            "Handles chained connections safely: connect_pins([B, C]) detects B's "
+            "existing label and reuses it for C, so A (already on B's net) is not orphaned. "
+            "Conflict detection: if two pins carry *different* human-readable nets the call "
+            "fails and lists conflicting_nets. Pins already on the target net are skipped "
+            "(idempotent). Returns: net_used, connected, already_connected, failed lists."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to schematic file",
+                },
+                "pins": {
+                    "type": "array",
+                    "description": "List of pins to connect, each as {ref, pin}",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "ref": {
+                                "type": "string",
+                                "description": "Component reference designator (e.g. R1, U3)",
+                            },
+                            "pin": {
+                                "type": "string",
+                                "description": "Pin number or name",
+                            },
+                        },
+                        "required": ["ref", "pin"],
+                    },
+                    "minItems": 2,
+                },
+                "netName": {
+                    "type": "string",
+                    "description": (
+                        "Net name to use. Optional: if omitted, auto-detected from "
+                        "existing labels on the listed pins."
+                    ),
+                },
+            },
+            "required": ["schematicPath", "pins"],
+        },
+    },
+    {
         "name": "get_net_connections",
         "title": "Get Net Connections",
         "description": "Returns all components and pins connected to a specified net.",
