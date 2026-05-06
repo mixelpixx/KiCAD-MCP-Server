@@ -712,6 +712,39 @@ class KiCADInterface:
 
         return self.component_commands.place_component(params)
 
+    @staticmethod
+    def _snap_to_grid(v: float, grid: float = 1.27) -> float:
+        """Round v to the nearest multiple of grid (default 1.27 mm = 50 mil)."""
+        return round(round(v / grid) * grid, 4)
+
+    @staticmethod
+    def _check_schematic_collision(
+        schematic_path: str, x: float, y: float, min_dist: float = 1.27
+    ) -> Optional[str]:
+        """
+        Return a description of any existing placed symbol whose centre is
+        within min_dist mm of (x, y), or None if the position is clear.
+        Reads the schematic file directly to avoid any cache inconsistency.
+        """
+        import re
+        try:
+            content = open(schematic_path, encoding="utf-8").read()
+            # Match placed symbol instances: (symbol (lib_id "...") (at X Y rot)
+            for m in re.finditer(
+                r'\(symbol\s*\(lib_id\s*"[^"]+"\)\s*\(at\s+([-\d.]+)\s+([-\d.]+)',
+                content,
+            ):
+                sx, sy = float(m.group(1)), float(m.group(2))
+                if (sx - x) ** 2 + (sy - y) ** 2 < min_dist ** 2:
+                    # Find the Reference property near this match
+                    chunk = content[m.start(): m.start() + 500]
+                    ref_m = re.search(r'"Reference"\s+"([^"]+)"', chunk)
+                    ref = ref_m.group(1) if ref_m else "unknown"
+                    return f"{ref} at ({sx}, {sy})"
+        except Exception:
+            pass
+        return None
+
     def _handle_add_schematic_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add a component to a schematic using text-based injection (no sexpdata)"""
         logger.info("Adding component to schematic")
@@ -733,10 +766,31 @@ class KiCADInterface:
             reference = component.get("reference", "X?")
             value = component.get("value", comp_type)
             footprint = component.get("footprint", "")
-            x = component.get("x", 0)
-            y = component.get("y", 0)
+            x_raw = component.get("x", 0)
+            y_raw = component.get("y", 0)
             unit = component.get("unit", 1)
             rotation = component.get("rotation", 0)
+
+            # Snap requested coordinates to the KiCAD 1.27 mm (50-mil) connection grid.
+            # Off-grid placement causes ~25 ERC warnings ("Symbol pin or wire end off
+            # connection grid") for every component, burying real errors.
+            x = self._snap_to_grid(x_raw)
+            y = self._snap_to_grid(y_raw)
+            snapped = (x != x_raw or y != y_raw)
+
+            # Refuse to place if another component centre is within 1.27 mm (one grid
+            # step) of the snapped position — that would produce an invisible collision.
+            collision = self._check_schematic_collision(schematic_path, x, y)
+            if collision:
+                return {
+                    "success": False,
+                    "message": (
+                        f"Placement collision: {collision} is within 1.27 mm of "
+                        f"the snapped position ({x}, {y}). Choose a different location."
+                    ),
+                    "requested_position": [x_raw, y_raw],
+                    "snapped_position": [x, y],
+                }
 
             # Derive project path from schematic path for project-local library resolution.
             # Walk up from the schematic file to find the directory that owns the project
@@ -765,11 +819,19 @@ class KiCADInterface:
                 project_path=derived_project_path,
             )
 
-            return {
+            result: Dict[str, Any] = {
                 "success": True,
                 "component_reference": reference,
                 "symbol_source": f"{library}:{comp_type}",
+                "placed_at": [x, y],
             }
+            if snapped:
+                result["snapped_from"] = [x_raw, y_raw]
+                result["snap_note"] = (
+                    f"Coordinates snapped from ({x_raw}, {y_raw}) to ({x}, {y}) "
+                    "to align with the 1.27 mm KiCAD connection grid."
+                )
+            return result
         except Exception as e:
             logger.error(f"Error adding component to schematic: {str(e)}")
             import traceback
