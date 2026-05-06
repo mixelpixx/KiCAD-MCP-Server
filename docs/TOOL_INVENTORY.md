@@ -1,8 +1,8 @@
 # KiCAD MCP Server - Complete Tool Inventory
 
-**Version:** 2.1.0-alpha
-**Total Tools:** 137 (verifiziert via VS Code MCP Discovery Log)
-**Last Updated:** 2026-05-02
+**Version:** 2.2.0-alpha
+**Total Tools:** 140
+**Last Updated:** 2026-05-06
 
 ## How Tools Are Organized
 
@@ -144,6 +144,7 @@ _Source: `src/tools/schematic.ts`_
 | `delete_schematic_component`          | Remove component from schematic                                                                                    | Additional         |
 | `edit_schematic_component`            | Edit footprint, value, reference, label positions, and arbitrary custom properties (MPN, Manufacturer, DigiKey, …) | Additional         |
 | `set_schematic_component_property`    | Add or update a single custom property (BOM/sourcing field) on a component                                         | Additional         |
+| `set_schematic_component_properties`  | Set multiple properties on multiple components in one call (`{ref: {prop: value}}` map)                            | Additional         |
 | `remove_schematic_component_property` | Delete a single custom property from a component                                                                   | Additional         |
 | `get_schematic_component`             | Get component info: built-in fields + all custom properties + label positions                                      | Additional         |
 | `list_schematic_components`           | List all components in schematic                                                                                   | Direct             |
@@ -151,20 +152,22 @@ _Source: `src/tools/schematic.ts`_
 | `rotate_schematic_component`          | Rotate component                                                                                                   | Routed (schematic) |
 | `annotate_schematic`                  | Auto-annotate reference designators                                                                                | Direct             |
 
-### Wiring and Connections (10)
+### Wiring and Connections (12)
 
-| Tool                          | Description                                          | Access             |
-| ----------------------------- | ---------------------------------------------------- | ------------------ |
-| `add_schematic_wire`          | Add wire segment between two points                  | Routed (schematic) |
-| `delete_schematic_wire`       | Delete wire segment                                  | Routed (schematic) |
-| `add_schematic_net_label`     | Add net label to schematic                           | Direct             |
-| `delete_schematic_net_label`  | Delete net label                                     | Routed (schematic) |
-| `add_no_connect`              | Add no-connect flag (X marker) to an unconnected pin | Direct             |
-| `move_schematic_net_label`    | Move net label to new position                       | Routed (schematic) |
-| `connect_to_net`              | Connect component pin to named net                   | Direct             |
-| `connect_passthrough`         | Connect all matching pins between two connectors     | Direct             |
-| `get_schematic_pin_locations` | Get pin locations for a component                    | Additional         |
-| `get_wire_connections`        | Get all connections at a wire endpoint               | Additional         |
+| Tool                              | Description                                                                             | Access             |
+| --------------------------------- | --------------------------------------------------------------------------------------- | ------------------ |
+| `add_schematic_wire`              | Add wire segment between two points                                                     | Routed (schematic) |
+| `delete_schematic_wire`           | Delete wire segment                                                                     | Routed (schematic) |
+| `add_schematic_net_label`         | Add net label to schematic                                                              | Direct             |
+| `delete_schematic_net_label`      | Delete net label                                                                        | Routed (schematic) |
+| `add_no_connect`                  | Add no-connect flag (X marker) to an unconnected pin                                   | Direct             |
+| `move_schematic_net_label`        | Move net label to new position                                                          | Routed (schematic) |
+| `connect_to_net`                  | Connect component pin to named net                                                      | Direct             |
+| `connect_pins`                    | Connect N pins to a shared net in one call; auto-discovers existing labels via BFS      | Direct             |
+| `connect_component_to_nets`       | Connect all pins of one component via a `{pin: net}` map in one call                   | Direct             |
+| `connect_passthrough`             | Connect all matching pins between two connectors                                        | Direct             |
+| `get_schematic_pin_locations`     | Get pin locations for a component                                                       | Additional         |
+| `get_wire_connections`            | Get all connections at a wire endpoint                                                  | Additional         |
 
 ### Hierarchical Schematics (2)
 

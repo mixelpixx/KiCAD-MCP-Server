@@ -4,6 +4,73 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Bug Fixes (this branch: fixes/mcp-server-improvements)
+
+- **`search_symbols` 30 s timeout** — Background cache warming writes all 224 symbol libraries
+  to a persistent disk cache (`~/.cache/kicad-mcp/symbol_cache.pkl`). Cold startup warms in the
+  background (~80 s); warm startups load from disk in <50 ms. Cache is invalidated by `.kicad_sym`
+  file mtimes.
+
+- **Symbol parser drops MCU libraries** — Naive parenthesis counter did not skip content inside
+  quoted strings. STM32H5/H7 pin alternate-function names like `TIM1_CH4(N)` inflated the depth
+  counter so entire symbol library blocks were silently discarded. Fixed with a string-aware walker.
+
+- **`add_schematic_component` off-grid placement / ERC noise** — `x`/`y` coordinates now snapped
+  to the nearest 1.27 mm (50-mil) grid before writing `(at x y rot)`. Off-grid placement caused
+  ~25 ERC "pin or wire end off connection grid" warnings per component. Placement refused when
+  another symbol is within one grid step. Response includes `placed_at`, `snapped_from`, `snap_note`.
+
+- **`add_schematic_component` missing rotation** — `rotation` parameter was accepted by the schema
+  but never threaded to the S-expression writer. Now writes `(at x y angle)` correctly.
+
+- **`get_schematic_pin_locations` y-axis sign error** — `.kicad_sym` uses y-UP; `.kicad_sch` uses
+  y-DOWN. The previous formula mirrored all pin positions around the symbol centre (VCC/GND, TRIG/RESET
+  all transposed). Also fixes `mirror_y` which was incorrectly negating `ly` instead of `lx`.
+
+- **`run_erc` coordinate units** — kicad-cli reports positions in 1/100 mm; now multiplied by 100
+  and reported as `x_mm`/`y_mm`.
+
+- **`run_erc` noise filtering** — `endpoint_off_grid`, `lib_symbol_issues`, and `lib_symbol_mismatch`
+  moved to `noise_violations` array and excluded from `severity_counts`. New `includeNoise` boolean
+  parameter re-enables all suppressed types.
+
+- **`add_schematic_net_label` connector stubs** — When `componentRef` starts with `J`, automatically
+  adds a 2.54 mm wire stub in the pin's outward direction before placing the label. Fixes ERC
+  not-connected false positives on connector pins.
+
+- **`sync_schematic_to_board` unlabeled wire clusters** — BFS only propagated from labeled seed
+  points; wire clusters with no label were never named, leaving pads unmatched. Added a step that
+  synthesises `Net-(ref-Padpin)` names for unlabeled clusters, mirroring KiCAD's own behaviour.
+
+- **`export_gerber` layer files silently discarded** — `PLOT_CONTROLLER` was missing `OpenPlotfile()`
+  per layer so all copper/mask/silk Gerbers were dropped. Switched to `kicad-cli pcb export gerbers`.
+
+- **`save_project` saved PCB only** — Now auto-detects and round-trips the matching `.kicad_sch`.
+  Accepts `schematicPath` for schematic-only workflows. Returns list of saved files.
+
+- **`export_bom` custom properties unavailable** — Custom properties (LCSC, MPN, etc.) are on
+  schematic symbols and not synced to PCB footprints. New `schematicPath` parameter reads directly
+  from `.kicad_sch`. `includeAttributes` now works. `groupByValue` carries attributes through.
+  `references` serialised as semicolon-separated string.
+
+- **`list_schematic_labels` no net context** — Each label entry now includes `connected_pins`
+  (component refs + pin numbers reachable via wire BFS).
+
+### New MCP Tools (this branch)
+
+- **`connect_pins`** — Connect N pins to a single net. Discovers existing labels via BFS before
+  writing, avoids duplicate/orphaned labels, handles A→B→C orphan case, detects conflicts,
+  idempotent.
+
+- **`connect_component_to_nets`** — Connect all pins of one component via a `{pin: net}` map.
+  Replaces N individual `connect_to_net` calls. Same guarantees as `connect_pins`.
+
+- **`set_schematic_component_properties`** (plural) — Set multiple properties on multiple components
+  in one call via a `{ref: {prop: value}}` map. The singular `set_schematic_component_property` also
+  received a proper schema (was skeleton-only; its parameters were not advertised to the model).
+
+---
+
 ### Bug Fixes
 
 - **Schematic symbol lookup**: `get_schematic_component`,
