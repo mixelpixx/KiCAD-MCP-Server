@@ -387,6 +387,7 @@ class KiCADInterface:
             "delete_schematic_component": self._handle_delete_schematic_component,
             "edit_schematic_component": self._handle_edit_schematic_component,
             "set_schematic_component_property": self._handle_set_schematic_component_property,
+            "set_schematic_component_properties": self._handle_set_schematic_component_properties,
             "remove_schematic_component_property": self._handle_remove_schematic_component_property,
             "get_schematic_component": self._handle_get_schematic_component,
             "add_schematic_wire": self._handle_add_schematic_wire,
@@ -1422,6 +1423,51 @@ class KiCADInterface:
                 "properties": {name: spec},
             }
         )
+
+    def _handle_set_schematic_component_properties(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Set multiple properties on one or more components in a single call."""
+        schematic_path = params.get("schematicPath")
+        components_map = params.get("components", {})
+        hide_new = params.get("hideNewProperties", True)
+
+        if not schematic_path:
+            return {"success": False, "message": "schematicPath is required"}
+        if not components_map:
+            return {"success": False, "message": "components map is empty"}
+
+        succeeded: List[str] = []
+        failed: List[Dict] = []
+
+        for ref, props in components_map.items():
+            if not isinstance(props, dict):
+                failed.append({"ref": ref, "reason": "props must be a {name: value} dict"})
+                continue
+            for prop_name, prop_value in props.items():
+                result = self._handle_set_schematic_component_property({
+                    "schematicPath": schematic_path,
+                    "reference": ref,
+                    "name": prop_name,
+                    "value": str(prop_value),
+                    "hide": hide_new,
+                })
+                if result.get("success"):
+                    succeeded.append(f"{ref}.{prop_name}")
+                else:
+                    failed.append({
+                        "ref": ref,
+                        "property": prop_name,
+                        "reason": result.get("message", "unknown"),
+                    })
+
+        return {
+            "success": len(failed) == 0,
+            "set": succeeded,
+            "failed": failed,
+            "message": (
+                f"set_schematic_component_properties: "
+                f"{len(succeeded)} set, {len(failed)} failed"
+            ),
+        }
 
     def _handle_remove_schematic_component_property(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Remove a single custom property from a placed schematic symbol.

@@ -462,20 +462,103 @@ class ExportCommands:
                 "errorDetails": str(e),
             }
 
-    def export_bom(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Export Bill of Materials"""
-        try:
-            if not self.board:
-                return {
-                    "success": False,
-                    "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first",
-                }
+    def _read_components_from_schematic(
+        self, schematic_path: str, include_attributes: List[str]
+    ) -> List[Dict[str, Any]]:
+        """Read component list with all custom properties from a .kicad_sch file.
+        This is the authoritative source for custom properties like LCSC that are
+        set on schematic symbols but not automatically synced to the PCB footprints.
+        """
+        import re
 
+        with open(schematic_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        def _find_matching_paren(s: str, start: int) -> int:
+            depth = 0
+            i = start
+            in_str = False
+            escape = False
+            while i < len(s):
+                c = s[i]
+                if escape:
+                    escape = False
+                elif c == "\\" and in_str:
+                    escape = True
+                elif c == '"':
+                    in_str = not in_str
+                elif not in_str:
+                    if c == "(":
+                        depth += 1
+                    elif c == ")":
+                        depth -= 1
+                        if depth == 0:
+                            return i
+                i += 1
+            return -1
+
+        # Bounds of (lib_symbols ...) block — skip it (contains templates, not placed symbols)
+        lib_sym_pos = content.find("(lib_symbols")
+        lib_sym_end = _find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
+
+        prop_pattern = re.compile(r'\(property\s+"([^"]*)"\s+"([^"]*)"')
+        sym_pattern = re.compile(r"\(symbol\s+\(")
+
+        components: List[Dict[str, Any]] = []
+        search_start = 0
+
+        while True:
+            m = sym_pattern.search(content, search_start)
+            if not m:
+                break
+            pos = m.start()
+
+            if lib_sym_pos >= 0 and lib_sym_pos <= pos <= lib_sym_end:
+                search_start = lib_sym_end + 1
+                continue
+
+            end = _find_matching_paren(content, pos)
+            if end < 0:
+                search_start = pos + 1
+                continue
+
+            block = content[pos : end + 1]
+            props: Dict[str, str] = {}
+            for pm in prop_pattern.finditer(block):
+                props[pm.group(1)] = pm.group(2)
+
+            ref = props.get("Reference", "")
+            if not ref or ref.startswith("#"):
+                search_start = end + 1
+                continue
+
+            comp: Dict[str, Any] = {
+                "reference": ref,
+                "value": props.get("Value", ""),
+                "footprint": props.get("Footprint", ""),
+            }
+            for attr in include_attributes:
+                comp[attr] = props.get(attr, "")
+
+            components.append(comp)
+            search_start = end + 1
+
+        return components
+
+    def export_bom(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export Bill of Materials.
+
+        When schematicPath is provided the BOM is read from the .kicad_sch file,
+        which is the authoritative source for custom component properties such as
+        LCSC part numbers.  Without schematicPath the BOM is derived from the
+        PCB board (custom properties not available via that path).
+        """
+        try:
             output_path = params.get("outputPath")
             format = params.get("format", "CSV")
             group_by_value = params.get("groupByValue", True)
             include_attributes = params.get("includeAttributes", [])
+            schematic_path = params.get("schematicPath")
 
             if not output_path:
                 return {
@@ -488,38 +571,63 @@ class ExportCommands:
             output_path = os.path.abspath(os.path.expanduser(output_path))
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-            # Get all components
-            components = []
-            for module in self.board.GetFootprints():
-                component = {
-                    "reference": module.GetReference(),
-                    "value": module.GetValue(),
-                    "footprint": module.GetFPID().GetUniStringLibId(),
-                    "layer": self.board.GetLayerName(module.GetLayer()),
+            # Read components — prefer schematic (has custom props) over PCB board
+            components: List[Dict[str, Any]] = []
+            if schematic_path and os.path.exists(schematic_path):
+                components = self._read_components_from_schematic(
+                    schematic_path, include_attributes
+                )
+            else:
+                if not self.board:
+                    return {
+                        "success": False,
+                        "message": "No board loaded and no schematicPath provided",
+                        "errorDetails": "Provide schematicPath or load a board first",
+                    }
+                for module in self.board.GetFootprints():
+                    component: Dict[str, Any] = {
+                        "reference": module.GetReference(),
+                        "value": module.GetValue(),
+                        "footprint": module.GetFPID().GetUniStringLibId(),
+                        "layer": self.board.GetLayerName(module.GetLayer()),
+                    }
+                    for attr in include_attributes:
+                        val: Any = ""
+                        if hasattr(module, f"Get{attr}"):
+                            val = getattr(module, f"Get{attr}")()
+                        else:
+                            try:
+                                val = module.GetProperty(attr)
+                            except Exception:
+                                pass
+                        component[attr] = val
+                    components.append(component)
+
+            if not components:
+                return {
+                    "success": False,
+                    "message": "No components found",
+                    "errorDetails": "Schematic or board contains no placeable components",
                 }
-
-                # Add requested attributes
-                for attr in include_attributes:
-                    if hasattr(module, f"Get{attr}"):
-                        component[attr] = getattr(module, f"Get{attr}")()
-
-                components.append(component)
 
             # Group by value if requested
             if group_by_value:
-                grouped = {}
+                grouped: Dict[str, Dict[str, Any]] = {}
                 for comp in components:
                     key = f"{comp['value']}_{comp['footprint']}"
                     if key not in grouped:
-                        grouped[key] = {
+                        entry: Dict[str, Any] = {
                             "value": comp["value"],
                             "footprint": comp["footprint"],
                             "quantity": 1,
-                            "references": [comp["reference"]],
+                            "references": comp["reference"],
                         }
+                        for attr in include_attributes:
+                            entry[attr] = comp.get(attr, "")
+                        grouped[key] = entry
                     else:
                         grouped[key]["quantity"] += 1
-                        grouped[key]["references"].append(comp["reference"])
+                        grouped[key]["references"] += f";{comp['reference']}"
                 components = list(grouped.values())
 
             # Export based on format

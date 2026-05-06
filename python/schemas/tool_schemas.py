@@ -1274,7 +1274,16 @@ EXPORT_TOOLS = [
     {
         "name": "export_bom",
         "title": "Export Bill of Materials",
-        "description": "Generates a bill of materials (BOM) listing all components with references, values, and footprints.",
+        "description": (
+            "Generates a bill of materials (BOM) listing all components with references, "
+            "values, and footprints. "
+            "Provide schematicPath to read component data from the .kicad_sch file — this "
+            "is required to include custom properties such as LCSC part numbers, since those "
+            "are stored on schematic symbols and are not automatically synced to the PCB. "
+            "When groupByValue is true (default), components with the same value+footprint "
+            "are merged into one row; references become a semicolon-separated list. "
+            "includeAttributes lists extra property names to add as columns (e.g. ['LCSC'])."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1282,16 +1291,29 @@ EXPORT_TOOLS = [
                     "type": "string",
                     "description": "Path for output BOM file",
                 },
+                "schematicPath": {
+                    "type": "string",
+                    "description": (
+                        "Path to .kicad_sch file. Required to include custom properties "
+                        "(LCSC, datasheet, etc.) in the BOM."
+                    ),
+                },
                 "format": {
                     "type": "string",
-                    "enum": ["csv", "xml", "html"],
+                    "enum": ["CSV", "XML", "HTML", "JSON"],
                     "description": "BOM output format",
-                    "default": "csv",
+                    "default": "CSV",
                 },
                 "groupByValue": {
                     "type": "boolean",
-                    "description": "Group components with same value together",
+                    "description": "Group components with same value+footprint; references become semicolon-separated",
                     "default": True,
+                },
+                "includeAttributes": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Additional property names to include as columns, e.g. [\"LCSC\"]",
+                    "default": [],
                 },
             },
             "required": ["outputPath"],
@@ -2000,6 +2022,64 @@ SCHEMATIC_TOOLS = [
                 },
             },
             "required": ["schematicPath"],
+        },
+    },
+    {
+        "name": "set_schematic_component_property",
+        "title": "Set Schematic Component Property",
+        "description": (
+            "Add or update a single property on a placed schematic symbol "
+            "(e.g. Value, Footprint, LCSC, Datasheet). "
+            "The property is created if it does not exist. "
+            "To set multiple properties on one component in one call, "
+            "use set_schematic_component_properties (plural) instead."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {"type": "string", "description": "Path to .kicad_sch file"},
+                "reference": {"type": "string", "description": "Component reference (e.g. R1, U1)"},
+                "name": {"type": "string", "description": "Property name (e.g. LCSC, Footprint)"},
+                "value": {"type": "string", "description": "Property value to set"},
+                "hide": {"type": "boolean", "description": "Hide the property label on schematic", "default": True},
+            },
+            "required": ["schematicPath", "reference", "name", "value"],
+        },
+    },
+    {
+        "name": "set_schematic_component_properties",
+        "title": "Set Multiple Schematic Component Properties",
+        "description": (
+            "Set multiple properties on one or more schematic components in a single call. "
+            "Pass a components dict mapping each reference to a {property: value} dict. "
+            "Eliminates the need for one set_schematic_component_property call per field. "
+            "Example: {\"R1\": {\"Footprint\": \"...\", \"LCSC\": \"C21190\"}, "
+            "\"U1\": {\"LCSC\": \"C19708138\"}}. "
+            "Returns per-component success/failure breakdown."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {"type": "string", "description": "Path to .kicad_sch file"},
+                "components": {
+                    "type": "object",
+                    "description": (
+                        "Map of reference → {property: value} pairs. "
+                        "Example: {\"R1\": {\"Footprint\": \"Resistor_SMD:R_0603_1608Metric\", "
+                        "\"LCSC\": \"C21190\"}}"
+                    ),
+                    "additionalProperties": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                    },
+                },
+                "hideNewProperties": {
+                    "type": "boolean",
+                    "description": "Hide newly-added property labels on the schematic (default true)",
+                    "default": True,
+                },
+            },
+            "required": ["schematicPath", "components"],
         },
     },
 ]
