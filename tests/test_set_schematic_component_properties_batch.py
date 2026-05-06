@@ -159,9 +159,7 @@ class TestBatchPropertiesHandler:
         iface = _make_iface()
 
         # Mock the singular handler to always return success
-        iface._handle_set_schematic_component_property = MagicMock(
-            return_value={"success": True}
-        )
+        iface._handle_set_schematic_component_property = MagicMock(return_value={"success": True})
 
         result = iface._handle_set_schematic_component_properties(
             {"schematicPath": str(sch), "components": {"R1": {"LCSC": "C12345"}}}
@@ -194,13 +192,15 @@ class TestBatchPropertiesHandler:
         mock_single = MagicMock(return_value={"success": True})
         iface._handle_set_schematic_component_property = mock_single
 
-        iface._handle_set_schematic_component_properties({
-            "schematicPath": str(sch),
-            "components": {
-                "R1": {"LCSC": "C12345", "MPN": "RC0603FR-0710KL"},
-                "C1": {"LCSC": "C19702"},
-            },
-        })
+        iface._handle_set_schematic_component_properties(
+            {
+                "schematicPath": str(sch),
+                "components": {
+                    "R1": {"LCSC": "C12345", "MPN": "RC0603FR-0710KL"},
+                    "C1": {"LCSC": "C19702"},
+                },
+            }
+        )
 
         # 3 total property calls
         assert mock_single.call_count == 3
@@ -209,14 +209,14 @@ class TestBatchPropertiesHandler:
         sch = _make_test_schematic(tmp_path)
         iface = _make_iface()
 
-        iface._handle_set_schematic_component_property = MagicMock(
-            return_value={"success": True}
-        )
+        iface._handle_set_schematic_component_property = MagicMock(return_value={"success": True})
 
-        result = iface._handle_set_schematic_component_properties({
-            "schematicPath": str(sch),
-            "components": {"R1": {"LCSC": "C12345"}},
-        })
+        result = iface._handle_set_schematic_component_properties(
+            {
+                "schematicPath": str(sch),
+                "components": {"R1": {"LCSC": "C12345"}},
+            }
+        )
 
         assert result["success"] is True
         assert "R1.LCSC" in result["set"]
@@ -230,10 +230,12 @@ class TestBatchPropertiesHandler:
             return_value={"success": False, "message": "component not found"}
         )
 
-        result = iface._handle_set_schematic_component_properties({
-            "schematicPath": str(sch),
-            "components": {"X99": {"LCSC": "C00000"}},
-        })
+        result = iface._handle_set_schematic_component_properties(
+            {
+                "schematicPath": str(sch),
+                "components": {"X99": {"LCSC": "C00000"}},
+            }
+        )
 
         assert result["success"] is False
         assert len(result["failed"]) == 1
@@ -250,13 +252,15 @@ class TestBatchPropertiesHandler:
 
         iface._handle_set_schematic_component_property = MagicMock(side_effect=_side_effect)
 
-        result = iface._handle_set_schematic_component_properties({
-            "schematicPath": str(sch),
-            "components": {
-                "R1": {"LCSC": "C12345"},
-                "X99": {"LCSC": "C00000"},
-            },
-        })
+        result = iface._handle_set_schematic_component_properties(
+            {
+                "schematicPath": str(sch),
+                "components": {
+                    "R1": {"LCSC": "C12345"},
+                    "X99": {"LCSC": "C00000"},
+                },
+            }
+        )
 
         assert result["success"] is False
         assert any("R1" in s for s in result["set"])
@@ -266,14 +270,14 @@ class TestBatchPropertiesHandler:
         sch = _make_test_schematic(tmp_path)
         iface = _make_iface()
 
-        iface._handle_set_schematic_component_property = MagicMock(
-            return_value={"success": True}
-        )
+        iface._handle_set_schematic_component_property = MagicMock(return_value={"success": True})
 
-        result = iface._handle_set_schematic_component_properties({
-            "schematicPath": str(sch),
-            "components": {"R1": "not-a-dict"},
-        })
+        result = iface._handle_set_schematic_component_properties(
+            {
+                "schematicPath": str(sch),
+                "components": {"R1": "not-a-dict"},
+            }
+        )
 
         assert any(f["ref"] == "R1" for f in result["failed"])
 
@@ -284,11 +288,13 @@ class TestBatchPropertiesHandler:
         mock_single = MagicMock(return_value={"success": True})
         iface._handle_set_schematic_component_property = mock_single
 
-        iface._handle_set_schematic_component_properties({
-            "schematicPath": str(sch),
-            "components": {"R1": {"LCSC": "C12345"}},
-            "hideNewProperties": False,
-        })
+        iface._handle_set_schematic_component_properties(
+            {
+                "schematicPath": str(sch),
+                "components": {"R1": {"LCSC": "C12345"}},
+                "hideNewProperties": False,
+            }
+        )
 
         call_params = mock_single.call_args[0][0]
         assert call_params.get("hide") is False
@@ -305,13 +311,15 @@ class TestBatchPropertiesIntegration:
         sch = _make_test_schematic(tmp_path)
         iface = _make_iface()
 
-        result = iface._handle_set_schematic_component_properties({
-            "schematicPath": str(sch),
-            "components": {
-                "R1": {"LCSC": "C12345"},
-                "C1": {"MPN": "GRM155R71E104KA88D"},
-            },
-        })
+        result = iface._handle_set_schematic_component_properties(
+            {
+                "schematicPath": str(sch),
+                "components": {
+                    "R1": {"LCSC": "C12345"},
+                    "C1": {"MPN": "GRM155R71E104KA88D"},
+                },
+            }
+        )
 
         assert result["success"] is True, f"Failed: {result}"
 
@@ -323,12 +331,14 @@ class TestBatchPropertiesIntegration:
         sch = _make_test_schematic(tmp_path)
         iface = _make_iface()
 
-        result = iface._handle_set_schematic_component_properties({
-            "schematicPath": str(sch),
-            "components": {
-                "R1": {"LCSC": "C12345", "Manufacturer": "Yageo"},
-            },
-        })
+        result = iface._handle_set_schematic_component_properties(
+            {
+                "schematicPath": str(sch),
+                "components": {
+                    "R1": {"LCSC": "C12345", "Manufacturer": "Yageo"},
+                },
+            }
+        )
 
         assert result["success"] is True, f"Failed: {result}"
 
@@ -340,13 +350,15 @@ class TestBatchPropertiesIntegration:
         sch = _make_test_schematic(tmp_path)
         iface = _make_iface()
 
-        result = iface._handle_set_schematic_component_properties({
-            "schematicPath": str(sch),
-            "components": {
-                "R1": {"LCSC": "C12345"},
-                "C1": {"LCSC": "C19702"},
-            },
-        })
+        result = iface._handle_set_schematic_component_properties(
+            {
+                "schematicPath": str(sch),
+                "components": {
+                    "R1": {"LCSC": "C12345"},
+                    "C1": {"LCSC": "C19702"},
+                },
+            }
+        )
 
         assert result["success"] is True
         assert len(result["set"]) == 2
@@ -356,13 +368,15 @@ class TestBatchPropertiesIntegration:
         sch = _make_test_schematic(tmp_path)
         iface = _make_iface()
 
-        result = iface._handle_set_schematic_component_properties({
-            "schematicPath": str(sch),
-            "components": {
-                "R1": {"LCSC": "C12345"},
-                "XXXX": {"LCSC": "C99999"},
-            },
-        })
+        result = iface._handle_set_schematic_component_properties(
+            {
+                "schematicPath": str(sch),
+                "components": {
+                    "R1": {"LCSC": "C12345"},
+                    "XXXX": {"LCSC": "C99999"},
+                },
+            }
+        )
 
         # R1 should succeed; XXXX should fail (not in schematic)
         assert any("R1" in s for s in result["set"])

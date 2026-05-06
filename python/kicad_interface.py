@@ -733,6 +733,7 @@ class KiCADInterface:
         Reads the schematic file directly to avoid any cache inconsistency.
         """
         import re
+
         try:
             content = open(schematic_path, encoding="utf-8").read()
             # Match placed symbol instances: (symbol (lib_id "...") (at X Y rot)
@@ -741,9 +742,9 @@ class KiCADInterface:
                 content,
             ):
                 sx, sy = float(m.group(1)), float(m.group(2))
-                if (sx - x) ** 2 + (sy - y) ** 2 < min_dist ** 2:
+                if (sx - x) ** 2 + (sy - y) ** 2 < min_dist**2:
                     # Find the Reference property near this match
-                    chunk = content[m.start(): m.start() + 500]
+                    chunk = content[m.start() : m.start() + 500]
                     ref_m = re.search(r'"Reference"\s+"([^"]+)"', chunk)
                     ref = ref_m.group(1) if ref_m else "unknown"
                     return f"{ref} at ({sx}, {sy})"
@@ -782,7 +783,7 @@ class KiCADInterface:
             # connection grid") for every component, burying real errors.
             x = self._snap_to_grid(x_raw)
             y = self._snap_to_grid(y_raw)
-            snapped = (x != x_raw or y != y_raw)
+            snapped = x != x_raw or y != y_raw
 
             # Refuse to place if another component centre is within 1.27 mm (one grid
             # step) of the snapped position — that would produce an invisible collision.
@@ -1444,21 +1445,25 @@ class KiCADInterface:
                 failed.append({"ref": ref, "reason": "props must be a {name: value} dict"})
                 continue
             for prop_name, prop_value in props.items():
-                result = self._handle_set_schematic_component_property({
-                    "schematicPath": schematic_path,
-                    "reference": ref,
-                    "name": prop_name,
-                    "value": str(prop_value),
-                    "hide": hide_new,
-                })
+                result = self._handle_set_schematic_component_property(
+                    {
+                        "schematicPath": schematic_path,
+                        "reference": ref,
+                        "name": prop_name,
+                        "value": str(prop_value),
+                        "hide": hide_new,
+                    }
+                )
                 if result.get("success"):
                     succeeded.append(f"{ref}.{prop_name}")
                 else:
-                    failed.append({
-                        "ref": ref,
-                        "property": prop_name,
-                        "reason": result.get("message", "unknown"),
-                    })
+                    failed.append(
+                        {
+                            "ref": ref,
+                            "property": prop_name,
+                            "reason": result.get("message", "unknown"),
+                        }
+                    )
 
         return {
             "success": len(failed) == 0,
@@ -2041,7 +2046,10 @@ class KiCADInterface:
                 is_connector = component_ref.upper().startswith("J")
                 if is_connector:
                     import math
-                    angle = locator.get_pin_angle(Path(schematic_path), component_ref, str(pin_number))
+
+                    angle = locator.get_pin_angle(
+                        Path(schematic_path), component_ref, str(pin_number)
+                    )
                     if angle is not None:
                         stub_len = 2.54
                         rad = math.radians(angle)
@@ -4220,8 +4228,7 @@ class KiCADInterface:
                     auto_name = None
                     for ref2, pn, sp in pin_registry:
                         if sp in cluster or any(
-                            abs(sp[0] - cp[0]) < TOLERANCE
-                            and abs(sp[1] - cp[1]) < TOLERANCE
+                            abs(sp[0] - cp[0]) < TOLERANCE and abs(sp[1] - cp[1]) < TOLERANCE
                             for cp in cluster
                         ):
                             auto_name = f"Net-({ref2}-Pad{pn})"
@@ -4310,16 +4317,18 @@ class KiCADInterface:
             x = START_X + col * SPACING
             y = START_Y - row * SPACING
 
-            result = self._handle_place_component({
-                "componentId": comp["footprint"],
-                "position": {"x": x, "y": y, "unit": "mm"},
-                "reference": comp["ref"],
-                "value": comp["value"],
-                "footprint": comp["footprint"],
-                "rotation": 0,
-                "layer": "F.Cu",
-                "boardPath": board_path,
-            })
+            result = self._handle_place_component(
+                {
+                    "componentId": comp["footprint"],
+                    "position": {"x": x, "y": y, "unit": "mm"},
+                    "reference": comp["ref"],
+                    "value": comp["value"],
+                    "footprint": comp["footprint"],
+                    "rotation": 0,
+                    "layer": "F.Cu",
+                    "boardPath": board_path,
+                }
+            )
             if result.get("success"):
                 placed.append(comp["ref"])
             else:
@@ -4380,9 +4389,8 @@ class KiCADInterface:
             # Override with autoImport=true (always import missing) or false (never).
             auto_import_param = params.get("autoImport", None)
             board_fp_count = len(list(board.GetFootprints()))
-            should_import = (
-                auto_import_param is True
-                or (auto_import_param is None and board_fp_count == 0)
+            should_import = auto_import_param is True or (
+                auto_import_param is None and board_fp_count == 0
             )
             import_summary: Dict[str, Any] = {}
             if should_import:
@@ -4395,9 +4403,7 @@ class KiCADInterface:
                     logger.info(f"Auto-imported {n_placed} footprints; saving board")
                     board.Save(board_path)
                 if import_summary.get("errors"):
-                    logger.warning(
-                        f"Auto-import errors: {import_summary['errors']}"
-                    )
+                    logger.warning(f"Auto-import errors: {import_summary['errors']}")
 
             # Build hierarchical pad→net map (walks all sub-sheets)
             pad_net_map, net_names = self._build_hierarchical_pad_net_map(schematic_path)

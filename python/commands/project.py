@@ -212,6 +212,7 @@ class ProjectCommands:
                 if os.path.exists(schematic_path):
                     try:
                         import skip  # type: ignore
+
                         sch = skip.Schematic(schematic_path)
                         sch.to_file()
                         saved.append(schematic_path)

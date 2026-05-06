@@ -1322,7 +1322,7 @@ EXPORT_TOOLS = [
                 "includeAttributes": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Additional property names to include as columns, e.g. [\"LCSC\"]",
+                    "description": 'Additional property names to include as columns, e.g. ["LCSC"]',
                     "default": [],
                 },
             },
@@ -1570,7 +1570,7 @@ SCHEMATIC_TOOLS = [
         "description": (
             "Connect all pins of one component to their respective nets in a single call, "
             "instead of one connect_to_net call per pin. "
-            "Pass connections as a pin→net map, e.g. {\"1\": \"GND\", \"8\": \"VCC\", \"3\": \"OUTPUT\"}. "
+            'Pass connections as a pin→net map, e.g. {"1": "GND", "8": "VCC", "3": "OUTPUT"}. '
             "Pins already on the correct net are skipped (idempotent). "
             "Pins already on a *different* net are reported in failed. "
             "Returns connected, already_connected, and failed lists."
@@ -1590,7 +1590,7 @@ SCHEMATIC_TOOLS = [
                     "type": "object",
                     "description": (
                         "Map of pin name/number to net name, "
-                        "e.g. {\"1\": \"GND\", \"8\": \"VCC\", \"3\": \"OUTPUT\"}"
+                        'e.g. {"1": "GND", "8": "VCC", "3": "OUTPUT"}'
                     ),
                     "additionalProperties": {"type": "string"},
                 },
@@ -2055,7 +2055,11 @@ SCHEMATIC_TOOLS = [
                 "reference": {"type": "string", "description": "Component reference (e.g. R1, U1)"},
                 "name": {"type": "string", "description": "Property name (e.g. LCSC, Footprint)"},
                 "value": {"type": "string", "description": "Property value to set"},
-                "hide": {"type": "boolean", "description": "Hide the property label on schematic", "default": True},
+                "hide": {
+                    "type": "boolean",
+                    "description": "Hide the property label on schematic",
+                    "default": True,
+                },
             },
             "required": ["schematicPath", "reference", "name", "value"],
         },
@@ -2067,8 +2071,8 @@ SCHEMATIC_TOOLS = [
             "Set multiple properties on one or more schematic components in a single call. "
             "Pass a components dict mapping each reference to a {property: value} dict. "
             "Eliminates the need for one set_schematic_component_property call per field. "
-            "Example: {\"R1\": {\"Footprint\": \"...\", \"LCSC\": \"C21190\"}, "
-            "\"U1\": {\"LCSC\": \"C19708138\"}}. "
+            'Example: {"R1": {"Footprint": "...", "LCSC": "C21190"}, '
+            '"U1": {"LCSC": "C19708138"}}. '
             "Returns per-component success/failure breakdown."
         ),
         "inputSchema": {
@@ -2079,8 +2083,8 @@ SCHEMATIC_TOOLS = [
                     "type": "object",
                     "description": (
                         "Map of reference → {property: value} pairs. "
-                        "Example: {\"R1\": {\"Footprint\": \"Resistor_SMD:R_0603_1608Metric\", "
-                        "\"LCSC\": \"C21190\"}}"
+                        'Example: {"R1": {"Footprint": "Resistor_SMD:R_0603_1608Metric", '
+                        '"LCSC": "C21190"}}'
                     ),
                     "additionalProperties": {
                         "type": "object",

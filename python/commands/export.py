@@ -79,9 +79,14 @@ class ExportCommands:
             import subprocess
 
             cmd = [
-                kicad_cli, "pcb", "export", "gerbers",
-                "--output", output_dir,
-                "--layers", ",".join(layer_list),
+                kicad_cli,
+                "pcb",
+                "export",
+                "gerbers",
+                "--output",
+                output_dir,
+                "--layers",
+                ",".join(layer_list),
             ]
             if use_protel_extensions:
                 cmd.append("--use-protel-file-extension")
@@ -100,25 +105,34 @@ class ExportCommands:
 
             # Collect files written (kicad-cli doesn't enumerate them; scan dir)
             plotted_layers = [
-                f for f in os.listdir(output_dir)
-                if not f.endswith((".drl", ".cnc", ".gbrjob"))
+                f for f in os.listdir(output_dir) if not f.endswith((".drl", ".cnc", ".gbrjob"))
             ]
 
             # Generate drill files if requested (kicad_cli/board_file already resolved above)
             drill_files = []
             if generate_drill_files:
                 drill_cmd = [
-                    kicad_cli, "pcb", "export", "drill",
-                    "--output", output_dir,
-                    "--format", "excellon",
-                    "--drill-origin", "absolute",
+                    kicad_cli,
+                    "pcb",
+                    "export",
+                    "drill",
+                    "--output",
+                    output_dir,
+                    "--format",
+                    "excellon",
+                    "--drill-origin",
+                    "absolute",
                     "--excellon-separate-th",
                     board_file,
                 ]
                 try:
-                    drill_result = subprocess.run(drill_cmd, capture_output=True, text=True, timeout=60)
+                    drill_result = subprocess.run(
+                        drill_cmd, capture_output=True, text=True, timeout=60
+                    )
                     if drill_result.returncode == 0:
-                        drill_files = [f for f in os.listdir(output_dir) if f.endswith((".drl", ".cnc"))]
+                        drill_files = [
+                            f for f in os.listdir(output_dir) if f.endswith((".drl", ".cnc"))
+                        ]
                     else:
                         logger.warning(f"Drill file generation failed: {drill_result.stderr}")
                 except Exception as drill_error:

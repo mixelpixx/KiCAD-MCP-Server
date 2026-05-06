@@ -41,11 +41,11 @@ def _symbol_block(ref: str, x: float, y: float) -> str:
     """Minimal placed-symbol block for collision testing."""
     return (
         f'  (symbol (lib_id "Device:R") (at {x} {y} 0) (unit 1)\n'
-        f'    (in_bom yes) (on_board yes) (dnp no)\n'
+        f"    (in_bom yes) (on_board yes) (dnp no)\n"
         f'    (uuid "snap-test-{ref.lower()}-000000000000")\n'
         f'    (property "Reference" "{ref}" (at {x + 1.27} {y - 2.54} 0))\n'
         f'    (property "Value" "10k" (at {x + 1.27} {y + 2.54} 0))\n'
-        f'  )\n'
+        f"  )\n"
     )
 
 

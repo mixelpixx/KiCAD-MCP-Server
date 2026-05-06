@@ -424,10 +424,12 @@ class ConnectionManager:
                 continue
 
             if existing is not None:
-                failed.append({
-                    "pin": key,
-                    "reason": f"already on net '{existing}' (conflicts with '{net_name}')",
-                })
+                failed.append(
+                    {
+                        "pin": key,
+                        "reason": f"already on net '{existing}' (conflicts with '{net_name}')",
+                    }
+                )
                 continue
 
             result = ConnectionManager.connect_to_net(
@@ -571,9 +573,7 @@ class ConnectionManager:
         for p in pins:
             ref, pin = p.get("ref", ""), p.get("pin", "")
             if ref and pin:
-                existing[f"{ref}/{pin}"] = ConnectionManager.get_pin_net(
-                    schematic_path, ref, pin
-                )
+                existing[f"{ref}/{pin}"] = ConnectionManager.get_pin_net(schematic_path, ref, pin)
 
         # Phase 2: resolve target net
         resolved_net: Optional[str]
@@ -620,13 +620,15 @@ class ConnectionManager:
                 continue
 
             if current is not None:
-                failed.append({
-                    "pin": key,
-                    "reason": (
-                        f"already on net '{current}' "
-                        f"(conflicts with target '{resolved_net}')"
-                    ),
-                })
+                failed.append(
+                    {
+                        "pin": key,
+                        "reason": (
+                            f"already on net '{current}' "
+                            f"(conflicts with target '{resolved_net}')"
+                        ),
+                    }
+                )
                 continue
 
             result = ConnectionManager.connect_to_net(schematic_path, ref, pin, resolved_net)

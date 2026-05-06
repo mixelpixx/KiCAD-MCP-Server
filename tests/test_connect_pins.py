@@ -128,6 +128,7 @@ class TestConnectPins:
     @property
     def _CM(self):
         from commands.connection_schematic import ConnectionManager
+
         return ConnectionManager
 
     def test_empty_pins_returns_failure(self):
@@ -140,12 +141,18 @@ class TestConnectPins:
         with patch.object(self._CM, "get_pin_net", return_value=None):
             result = self._CM.connect_pins(_FAKE_SCH, pins)
         assert result["success"] is False
-        assert "no existing net" in result["message"].lower() or "netName" in result["message"] or "no existing" in result["message"].lower()
+        assert (
+            "no existing net" in result["message"].lower()
+            or "netName" in result["message"]
+            or "no existing" in result["message"].lower()
+        )
 
     def test_explicit_net_name_used(self):
         pins = [{"ref": "R1", "pin": "1"}, {"ref": "C1", "pin": "1"}]
-        with patch.object(self._CM, "get_pin_net", return_value=None), \
-             patch.object(self._CM, "connect_to_net", return_value={"success": True}):
+        with (
+            patch.object(self._CM, "get_pin_net", return_value=None),
+            patch.object(self._CM, "connect_to_net", return_value={"success": True}),
+        ):
             result = self._CM.connect_pins(_FAKE_SCH, pins, net_name="VCC")
         assert result["success"] is True
         assert result["net_used"] == "VCC"
@@ -159,8 +166,10 @@ class TestConnectPins:
                 return "VCC"
             return None
 
-        with patch.object(self._CM, "get_pin_net", side_effect=_get_pin_net), \
-             patch.object(self._CM, "connect_to_net", return_value={"success": True}):
+        with (
+            patch.object(self._CM, "get_pin_net", side_effect=_get_pin_net),
+            patch.object(self._CM, "connect_to_net", return_value={"success": True}),
+        ):
             result = self._CM.connect_pins(_FAKE_SCH, pins)
 
         assert result["success"] is True
@@ -176,8 +185,10 @@ class TestConnectPins:
                 return "Net-(R2-Pad1)"
             return None
 
-        with patch.object(self._CM, "get_pin_net", side_effect=_get_pin_net), \
-             patch.object(self._CM, "connect_to_net", return_value={"success": True}):
+        with (
+            patch.object(self._CM, "get_pin_net", side_effect=_get_pin_net),
+            patch.object(self._CM, "connect_to_net", return_value={"success": True}),
+        ):
             result = self._CM.connect_pins(_FAKE_SCH, pins)
 
         # "VCC" is human-readable; "Net-(R2-Pad1)" is auto-generated → VCC wins
@@ -208,8 +219,10 @@ class TestConnectPins:
                 return "VCC"
             return None
 
-        with patch.object(self._CM, "get_pin_net", side_effect=_get_pin_net), \
-             patch.object(self._CM, "connect_to_net", return_value={"success": True}):
+        with (
+            patch.object(self._CM, "get_pin_net", side_effect=_get_pin_net),
+            patch.object(self._CM, "connect_to_net", return_value={"success": True}),
+        ):
             result = self._CM.connect_pins(_FAKE_SCH, pins, net_name="VCC")
 
         assert "R1/1" in result["already_connected"]
@@ -223,8 +236,10 @@ class TestConnectPins:
                 return "GND"  # conflicts with target "VCC"
             return None
 
-        with patch.object(self._CM, "get_pin_net", side_effect=_get_pin_net), \
-             patch.object(self._CM, "connect_to_net", return_value={"success": True}):
+        with (
+            patch.object(self._CM, "get_pin_net", side_effect=_get_pin_net),
+            patch.object(self._CM, "connect_to_net", return_value={"success": True}),
+        ):
             result = self._CM.connect_pins(_FAKE_SCH, pins, net_name="VCC")
 
         failed_pins = [f["pin"] for f in result["failed"]]
@@ -233,8 +248,14 @@ class TestConnectPins:
     def test_connect_to_net_failure_goes_to_failed(self):
         pins = [{"ref": "R1", "pin": "1"}]
 
-        with patch.object(self._CM, "get_pin_net", return_value=None), \
-             patch.object(self._CM, "connect_to_net", return_value={"success": False, "message": "pin not found"}):
+        with (
+            patch.object(self._CM, "get_pin_net", return_value=None),
+            patch.object(
+                self._CM,
+                "connect_to_net",
+                return_value={"success": False, "message": "pin not found"},
+            ),
+        ):
             result = self._CM.connect_pins(_FAKE_SCH, pins, net_name="VCC")
 
         assert result["success"] is False
@@ -262,6 +283,7 @@ class TestConnectComponentToNets:
     @property
     def _CM(self):
         from commands.connection_schematic import ConnectionManager
+
         return ConnectionManager
 
     def test_empty_connections_returns_failure(self):
@@ -290,8 +312,10 @@ class TestConnectComponentToNets:
     def test_successful_connection_in_connected_list(self):
         connections = {"8": "VCC"}
 
-        with patch.object(self._CM, "get_pin_net", return_value=None), \
-             patch.object(self._CM, "connect_to_net", return_value={"success": True}):
+        with (
+            patch.object(self._CM, "get_pin_net", return_value=None),
+            patch.object(self._CM, "connect_to_net", return_value={"success": True}),
+        ):
             result = self._CM.connect_component_to_nets(_FAKE_SCH, "U1", connections)
 
         assert result["success"] is True
@@ -302,13 +326,15 @@ class TestConnectComponentToNets:
 
         def _get_pin_net(sch, ref, pin):
             if pin == "1":
-                return "GND"   # already connected
+                return "GND"  # already connected
             if pin == "8":
-                return "3V3"   # conflicts
-            return None        # needs connecting
+                return "3V3"  # conflicts
+            return None  # needs connecting
 
-        with patch.object(self._CM, "get_pin_net", side_effect=_get_pin_net), \
-             patch.object(self._CM, "connect_to_net", return_value={"success": True}):
+        with (
+            patch.object(self._CM, "get_pin_net", side_effect=_get_pin_net),
+            patch.object(self._CM, "connect_to_net", return_value={"success": True}),
+        ):
             result = self._CM.connect_component_to_nets(_FAKE_SCH, "U1", connections)
 
         assert "U1/1" in result["already_connected"]

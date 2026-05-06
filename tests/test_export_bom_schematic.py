@@ -236,9 +236,7 @@ class TestExportBomWithSchematicPath:
         sch = _make_schematic_with_components(tmp_path, _SYMBOLS_TEXT)
         out = tmp_path / "bom.json"
         ec = _make_export_commands()
-        result = ec.export_bom(
-            self._bom_params(sch, out, groupByValue=True)
-        )
+        result = ec.export_bom(self._bom_params(sch, out, groupByValue=True))
         assert result["success"] is True
         rows = self._load_json_rows(out)
         # R1 and R2 share value=10k and footprint → should be grouped
@@ -250,9 +248,7 @@ class TestExportBomWithSchematicPath:
         sch = _make_schematic_with_components(tmp_path, _SYMBOLS_TEXT)
         out = tmp_path / "bom.json"
         ec = _make_export_commands()
-        result = ec.export_bom(
-            self._bom_params(sch, out, groupByValue=True)
-        )
+        result = ec.export_bom(self._bom_params(sch, out, groupByValue=True))
         rows = self._load_json_rows(out)
         r_rows = [r for r in rows if "10k" in r.get("value", "")]
         refs_str = r_rows[0]["references"]
@@ -276,9 +272,7 @@ class TestExportBomWithSchematicPath:
         sch = _make_schematic_with_components(tmp_path, _SYMBOLS_TEXT)
         out = tmp_path / "bom.json"
         ec = _make_export_commands()
-        result = ec.export_bom(
-            self._bom_params(sch, out, groupByValue=False)
-        )
+        result = ec.export_bom(self._bom_params(sch, out, groupByValue=False))
         rows = self._load_json_rows(out)
         refs = {r["reference"] for r in rows}
         assert "R1" in refs
@@ -289,9 +283,7 @@ class TestExportBomWithSchematicPath:
         sch = _make_schematic_with_components(tmp_path, _SYMBOLS_TEXT)
         out = tmp_path / "bom.json"
         ec = _make_export_commands()
-        result = ec.export_bom(
-            self._bom_params(sch, out, groupByValue=False)
-        )
+        result = ec.export_bom(self._bom_params(sch, out, groupByValue=False))
         rows = self._load_json_rows(out)
         refs = {r["reference"] for r in rows}
         assert "#PWR01" not in refs
@@ -306,9 +298,7 @@ class TestExportBomWithSchematicPath:
         sch = _make_schematic_with_components(tmp_path, _SYMBOLS_TEXT)
         out = tmp_path / "bom.json"
         ec = _make_export_commands()
-        result = ec.export_bom(
-            self._bom_params(sch, out, groupByValue=False)
-        )
+        result = ec.export_bom(self._bom_params(sch, out, groupByValue=False))
         assert result["success"] is True
         # R1, R2, C1 = 3 components (#PWR01 excluded)
         assert result["file"]["componentCount"] == 3

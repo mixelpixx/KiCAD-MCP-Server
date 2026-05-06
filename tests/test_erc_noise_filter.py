@@ -51,7 +51,9 @@ def _mock_erc_run(erc_json: dict, returncode: int = 1):
 # ---------------------------------------------------------------------------
 
 
-def _violation(vtype: str, severity: str = "error", description: str = "", x: float = 1.0, y: float = 2.0) -> dict:
+def _violation(
+    vtype: str, severity: str = "error", description: str = "", x: float = 1.0, y: float = 2.0
+) -> dict:
     return {
         "type": vtype,
         "severity": severity,
