@@ -59,14 +59,24 @@ PROJECT_TOOLS = [
     {
         "name": "save_project",
         "title": "Save Current Project",
-        "description": "Saves the current board to disk. Can optionally save to a new location.",
+        "description": (
+            "Saves the PCB and/or schematic to disk. When a board is loaded the PCB is always saved; "
+            "the matching .kicad_sch is auto-detected and saved too. "
+            "Pass schematicPath explicitly when working schematic-only (no board loaded). "
+            "Note: schematic operations (add_schematic_component, connect_to_net, etc.) already "
+            "auto-save after each call, so this is mainly needed to flush the PCB."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "filename": {
                     "type": "string",
-                    "description": "Optional new path to save the board (if not provided, saves to current location)",
-                }
+                    "description": "Optional new path for the board file (renames board on save)",
+                },
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to .kicad_sch to save. Auto-derived from board path when omitted.",
+                },
             },
         },
     },
@@ -1736,7 +1746,11 @@ SCHEMATIC_TOOLS = [
                 "schematicPath": {
                     "type": "string",
                     "description": "Path to the .kicad_sch schematic file",
-                }
+                },
+                "includeNoise": {
+                    "type": "boolean",
+                    "description": "When true, includes suppressed cosmetic/noise violation types (endpoint_off_grid, lib_symbol_issues, lib_symbol_mismatch) in the main violations list instead of noise_violations. Default false.",
+                },
             },
             "required": ["schematicPath"],
         },

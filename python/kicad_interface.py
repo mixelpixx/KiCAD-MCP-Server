@@ -2845,6 +2845,24 @@ class KiCADInterface:
             if label_type is not None:
                 labels = [lbl for lbl in labels if lbl["type"] == label_type]
 
+            # Enrich each label with connected component pins (once per unique net name)
+            try:
+                from commands.wire_connectivity import get_connections_for_net
+
+                schematic_obj = SchematicManager.load_schematic(schematic_path)
+                unique_nets = {lbl["name"] for lbl in labels}
+                net_connections: Dict[str, list] = {}
+                for nname in unique_nets:
+                    try:
+                        conns = get_connections_for_net(schematic_obj, schematic_path, nname)
+                        net_connections[nname] = conns
+                    except Exception:
+                        net_connections[nname] = []
+                for lbl in labels:
+                    lbl["connected_pins"] = net_connections.get(lbl["name"], [])
+            except Exception as enrich_err:
+                logger.debug(f"Could not enrich label connectivity: {enrich_err}")
+
             return {"success": True, "labels": labels, "count": len(labels)}
 
         except Exception as e:
@@ -3727,9 +3745,14 @@ class KiCADInterface:
                 noise_violations = []
                 severity_counts = {"error": 0, "warning": 0, "info": 0}
 
-                # These types produce high-volume false positives (e.g. off-grid
-                # pins from upstream symbol files) and obscure real errors.
-                NOISE_TYPES = {"endpoint_off_grid", "lib_symbol_issues"}
+                # These types produce high-volume false positives and obscure
+                # real errors. Pass includeNoise=true to re-enable them.
+                include_noise = params.get("includeNoise", False)
+                NOISE_TYPES = (
+                    set()
+                    if include_noise
+                    else {"endpoint_off_grid", "lib_symbol_issues", "lib_symbol_mismatch"}
+                )
 
                 # KiCad 9 nests violations under sheets[].violations
                 # instead of (or in addition to) the top-level violations

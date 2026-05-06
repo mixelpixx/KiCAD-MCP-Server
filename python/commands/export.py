@@ -49,75 +49,80 @@ class ExportCommands:
             output_dir = os.path.abspath(os.path.expanduser(output_dir))
             os.makedirs(output_dir, exist_ok=True)
 
-            # Create plot controller
-            plotter = pcbnew.PLOT_CONTROLLER(self.board)
+            # Use kicad-cli for gerber export — the PLOT_CONTROLLER Python API
+            # requires OpenPlotfile() per layer and has had signature instability
+            # across KiCAD versions; kicad-cli is more reliable.
+            board_file = self.board.GetFileName()
+            kicad_cli = self._find_kicad_cli()
 
-            # Set up plot options
-            plot_opts = plotter.GetPlotOptions()
-            plot_opts.SetOutputDirectory(output_dir)
-            plot_opts.SetFormat(pcbnew.PLOT_FORMAT_GERBER)
-            plot_opts.SetUseGerberProtelExtensions(use_protel_extensions)
-            plot_opts.SetUseAuxOrigin(use_aux_origin)
-            plot_opts.SetCreateGerberJobFile(generate_map_file)
-            plot_opts.SetSubtractMaskFromSilk(True)
-
-            # Plot specified layers or all copper layers
             plotted_layers = []
+
+            if not kicad_cli or not board_file or not os.path.exists(board_file):
+                return {
+                    "success": False,
+                    "message": "kicad-cli not available for Gerber export",
+                    "errorDetails": (
+                        f"kicad-cli={'found' if kicad_cli else 'missing'}, "
+                        f"board_file={board_file!r}"
+                    ),
+                }
+
+            # Build layer list: explicit or all enabled board layers
             if layers:
-                for layer_name in layers:
-                    layer_id = self.board.GetLayerID(layer_name)
-                    if layer_id >= 0:
-                        plotter.SetLayer(layer_id)
-                        plotter.PlotLayer()
-                        plotted_layers.append(layer_name)
+                layer_list = layers
             else:
+                layer_list = []
                 for layer_id in range(pcbnew.PCB_LAYER_ID_COUNT):
                     if self.board.IsLayerEnabled(layer_id):
-                        layer_name = self.board.GetLayerName(layer_id)
-                        plotter.SetLayer(layer_id)
-                        plotter.PlotLayer()
-                        plotted_layers.append(layer_name)
+                        layer_list.append(self.board.GetLayerName(layer_id))
 
-            # Generate drill files if requested
+            import subprocess
+
+            cmd = [
+                kicad_cli, "pcb", "export", "gerbers",
+                "--output", output_dir,
+                "--layers", ",".join(layer_list),
+            ]
+            if use_protel_extensions:
+                cmd.append("--use-protel-file-extension")
+            if use_aux_origin:
+                cmd.append("--use-drill-file-origin")
+
+            cmd.append(board_file)
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": "kicad-cli gerber export failed",
+                    "errorDetails": result.stderr.strip() or result.stdout.strip(),
+                }
+
+            # Collect files written (kicad-cli doesn't enumerate them; scan dir)
+            plotted_layers = [
+                f for f in os.listdir(output_dir)
+                if not f.endswith((".drl", ".cnc", ".gbrjob"))
+            ]
+
+            # Generate drill files if requested (kicad_cli/board_file already resolved above)
             drill_files = []
             if generate_drill_files:
-                # KiCAD 9.0: Use kicad-cli for more reliable drill file generation
-                # The Python API's EXCELLON_WRITER.SetOptions() signature changed
-                board_file = self.board.GetFileName()
-                kicad_cli = self._find_kicad_cli()
-
-                if kicad_cli and board_file and os.path.exists(board_file):
-                    import subprocess
-
-                    # Generate drill files using kicad-cli
-                    cmd = [
-                        kicad_cli,
-                        "pcb",
-                        "export",
-                        "drill",
-                        "--output",
-                        output_dir,
-                        "--format",
-                        "excellon",
-                        "--drill-origin",
-                        "absolute",
-                        "--excellon-separate-th",  # Separate plated/non-plated
-                        board_file,
-                    ]
-
-                    try:
-                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-                        if result.returncode == 0:
-                            # Get list of generated drill files
-                            for file in os.listdir(output_dir):
-                                if file.endswith((".drl", ".cnc")):
-                                    drill_files.append(file)
-                        else:
-                            logger.warning(f"Drill file generation failed: {result.stderr}")
-                    except Exception as drill_error:
-                        logger.warning(f"Could not generate drill files: {str(drill_error)}")
-                else:
-                    logger.warning("kicad-cli not available for drill file generation")
+                drill_cmd = [
+                    kicad_cli, "pcb", "export", "drill",
+                    "--output", output_dir,
+                    "--format", "excellon",
+                    "--drill-origin", "absolute",
+                    "--excellon-separate-th",
+                    board_file,
+                ]
+                try:
+                    drill_result = subprocess.run(drill_cmd, capture_output=True, text=True, timeout=60)
+                    if drill_result.returncode == 0:
+                        drill_files = [f for f in os.listdir(output_dir) if f.endswith((".drl", ".cnc"))]
+                    else:
+                        logger.warning(f"Drill file generation failed: {drill_result.stderr}")
+                except Exception as drill_error:
+                    logger.warning(f"Could not generate drill files: {str(drill_error)})")
 
             # DEV MODE: copy MCP server log into project folder for later analysis
             if os.environ.get("KICAD_MCP_DEV") == "1":

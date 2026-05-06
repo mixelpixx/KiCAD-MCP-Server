@@ -182,32 +182,62 @@ class ProjectCommands:
             }
 
     def save_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Save the current KiCAD project"""
+        """Save the current KiCAD project (PCB and/or schematic)"""
         try:
-            if not self.board:
+            filename = params.get("filename")
+            schematic_path = params.get("schematicPath")
+            saved = []
+            warnings = []
+
+            # --- PCB save ---
+            if self.board:
+                if filename:
+                    filename = os.path.abspath(os.path.expanduser(filename))
+                    self.board.SetFileName(filename)
+                pcbnew.SaveBoard(self.board.GetFileName(), self.board)
+                saved.append(self.board.GetFileName())
+
+                # Auto-derive schematic path if not explicitly given
+                if not schematic_path:
+                    board_file = self.board.GetFileName()
+                    candidate = os.path.splitext(board_file)[0] + ".kicad_sch"
+                    if os.path.exists(candidate):
+                        schematic_path = candidate
+
+            # --- Schematic save ---
+            # Schematic ops write to disk immediately, so this is a round-trip
+            # confirmation rather than a flush of in-memory state.
+            if schematic_path:
+                schematic_path = os.path.abspath(os.path.expanduser(schematic_path))
+                if os.path.exists(schematic_path):
+                    try:
+                        import skip  # type: ignore
+                        sch = skip.Schematic(schematic_path)
+                        sch.to_file()
+                        saved.append(schematic_path)
+                    except Exception as sch_err:
+                        warnings.append(f"Schematic save failed: {sch_err}")
+                else:
+                    warnings.append(f"Schematic path not found: {schematic_path}")
+
+            if not saved:
                 return {
                     "success": False,
-                    "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first",
+                    "message": "Nothing to save",
+                    "errorDetails": (
+                        "No board is loaded and no schematicPath was provided. "
+                        "Note: schematic operations auto-save to disk after each call."
+                    ),
                 }
 
-            filename = params.get("filename")
-            if filename:
-                # Save to new location
-                filename = os.path.abspath(os.path.expanduser(filename))
-                self.board.SetFileName(filename)
-
-            # Save the board
-            pcbnew.SaveBoard(self.board.GetFileName(), self.board)
-
-            return {
+            result = {
                 "success": True,
-                "message": f"Saved project to: {self.board.GetFileName()}",
-                "project": {
-                    "name": os.path.splitext(os.path.basename(self.board.GetFileName()))[0],
-                    "path": self.board.GetFileName(),
-                },
+                "message": f"Saved: {', '.join(os.path.basename(p) for p in saved)}",
+                "saved": saved,
             }
+            if warnings:
+                result["warnings"] = warnings
+            return result
 
         except Exception as e:
             logger.error(f"Error saving project: {str(e)}")
