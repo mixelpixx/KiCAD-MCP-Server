@@ -161,7 +161,9 @@ class WireDragger:
         if mirror_y:
             ly = -ly
         rx, ry = _rotate(lx, ly, rotation)
-        return sym_x + rx, sym_y + ry
+        # .kicad_sym uses y-UP convention; schematic uses y-DOWN.
+        # Negate the rotated y to convert: world_y = sym_y - ry.
+        return sym_x + rx, sym_y - ry
 
     @staticmethod
     def compute_pin_positions(
