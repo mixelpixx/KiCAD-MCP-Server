@@ -853,6 +853,71 @@ class IPCBoardAPI(BoardAPI):
             logger.error(f"Failed to add track: {e}")
             return False
 
+    def add_arc_track(
+        self,
+        start_x: float,
+        start_y: float,
+        mid_x: float,
+        mid_y: float,
+        end_x: float,
+        end_y: float,
+        width: float = 0.25,
+        layer: str = "F.Cu",
+        net_name: Optional[str] = None,
+    ) -> bool:
+        """Add a copper arc track to the board."""
+        try:
+            from kipy.board_types import ArcTrack
+            from kipy.geometry import Vector2
+            from kipy.proto.board.board_types_pb2 import BoardLayer
+            from kipy.util.units import from_mm
+
+            board = self._get_board()
+
+            arc = ArcTrack()
+            arc.start = Vector2.from_xy(from_mm(start_x), from_mm(start_y))
+            arc.mid = Vector2.from_xy(from_mm(mid_x), from_mm(mid_y))
+            arc.end = Vector2.from_xy(from_mm(end_x), from_mm(end_y))
+            arc.width = from_mm(width)
+
+            layer_map = {
+                "F.Cu": BoardLayer.BL_F_Cu,
+                "B.Cu": BoardLayer.BL_B_Cu,
+                "In1.Cu": BoardLayer.BL_In1_Cu,
+                "In2.Cu": BoardLayer.BL_In2_Cu,
+            }
+            arc.layer = layer_map.get(layer, BoardLayer.BL_F_Cu)
+
+            if net_name:
+                nets = board.get_nets()
+                for net in nets:
+                    if net.name == net_name:
+                        arc.net = net
+                        break
+
+            commit = board.begin_commit()
+            board.create_items(arc)
+            board.push_commit(commit, "Added arc track")
+
+            self._notify(
+                "arc_track_added",
+                {
+                    "start": {"x": start_x, "y": start_y},
+                    "mid": {"x": mid_x, "y": mid_y},
+                    "end": {"x": end_x, "y": end_y},
+                    "width": width,
+                    "layer": layer,
+                    "net": net_name,
+                },
+            )
+            logger.info(
+                f"Added arc track start=({start_x}, {start_y}) mid=({mid_x}, {mid_y}) end=({end_x}, {end_y}) mm"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to add arc track: {e}")
+            return False
+
     def add_via(
         self,
         x: float,

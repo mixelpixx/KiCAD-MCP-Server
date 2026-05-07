@@ -342,6 +342,81 @@ class RoutingCommands:
                 "errorDetails": str(e),
             }
 
+    def route_arc_trace(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Route a copper arc trace from start/mid/end points."""
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first",
+                }
+
+            start = params.get("start")
+            mid = params.get("mid")
+            end = params.get("end")
+            layer = params.get("layer", "F.Cu")
+            width = params.get("width")
+            net = params.get("net")
+
+            if not start or not mid or not end:
+                return {
+                    "success": False,
+                    "message": "Missing parameters",
+                    "errorDetails": "start, mid and end points are required",
+                }
+
+            layer_id = self.board.GetLayerID(layer)
+            if layer_id < 0:
+                return {
+                    "success": False,
+                    "message": "Invalid layer",
+                    "errorDetails": f"Layer '{layer}' does not exist",
+                }
+
+            start_point = self._get_point(start)
+            mid_point = self._get_point(mid)
+            end_point = self._get_point(end)
+
+            arc = pcbnew.PCB_ARC(self.board)
+            arc.SetStart(start_point)
+            arc.SetMid(mid_point)
+            arc.SetEnd(end_point)
+            arc.SetLayer(layer_id)
+
+            if width:
+                arc.SetWidth(int(width * 1000000))
+            else:
+                arc.SetWidth(self.board.GetDesignSettings().GetCurrentTrackWidth())
+
+            if net:
+                netinfo = self.board.GetNetInfo()
+                nets_map = netinfo.NetsByName()
+                if nets_map.has_key(net):
+                    arc.SetNet(nets_map[net])
+
+            self.board.Add(arc)
+
+            return {
+                "success": True,
+                "message": "Added arc trace",
+                "arc": {
+                    "start": {"x": start_point.x / 1000000, "y": start_point.y / 1000000, "unit": "mm"},
+                    "mid": {"x": mid_point.x / 1000000, "y": mid_point.y / 1000000, "unit": "mm"},
+                    "end": {"x": end_point.x / 1000000, "y": end_point.y / 1000000, "unit": "mm"},
+                    "layer": layer,
+                    "width": arc.GetWidth() / 1000000,
+                    "net": net,
+                },
+            }
+        except Exception as e:
+            logger.error(f"Error routing arc trace: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to route arc trace",
+                "errorDetails": str(e),
+            }
+
     def add_via(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add a via at the specified location"""
         try:

@@ -349,6 +349,7 @@ class KiCADInterface:
             # Routing commands
             "add_net": self.routing_commands.add_net,
             "route_trace": self.routing_commands.route_trace,
+            "route_arc_trace": self.routing_commands.route_arc_trace,
             "add_via": self.routing_commands.add_via,
             "delete_trace": self.routing_commands.delete_trace,
             "query_traces": self.routing_commands.query_traces,
@@ -473,6 +474,7 @@ class KiCADInterface:
     IPC_CAPABLE_COMMANDS = {
         # Routing commands
         "route_trace": "_ipc_route_trace",
+        "route_arc_trace": "_ipc_route_arc_trace",
         "add_via": "_ipc_add_via",
         "add_net": "_ipc_add_net",
         "delete_trace": "_ipc_delete_trace",
@@ -591,6 +593,7 @@ class KiCADInterface:
         "rotate_component",
         "delete_component",
         "route_trace",
+        "route_arc_trace",
         "route_pad_to_pad",
         "add_via",
         "delete_trace",
@@ -4804,6 +4807,61 @@ print("ok")
             }
         except Exception as e:
             logger.error(f"IPC route_trace error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_route_arc_trace(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """IPC handler for route_arc_trace - adds copper arc with real-time UI update"""
+        try:
+            start = params.get("start", {})
+            mid = params.get("mid", {})
+            end = params.get("end", {})
+            layer = params.get("layer", "F.Cu")
+            width = params.get("width", 0.25)
+            net = params.get("net")
+
+            start_x = start.get("x", 0)
+            start_y = start.get("y", 0)
+            mid_x = mid.get("x", 0)
+            mid_y = mid.get("y", 0)
+            end_x = end.get("x", 0)
+            end_y = end.get("y", 0)
+
+            if not hasattr(self.ipc_board_api, "add_arc_track"):
+                return {
+                    "success": False,
+                    "message": "IPC backend does not support arc track on this installation",
+                }
+
+            success = self.ipc_board_api.add_arc_track(
+                start_x=start_x,
+                start_y=start_y,
+                mid_x=mid_x,
+                mid_y=mid_y,
+                end_x=end_x,
+                end_y=end_y,
+                width=width,
+                layer=layer,
+                net_name=net,
+            )
+
+            return {
+                "success": success,
+                "message": (
+                    "Added arc trace (visible in KiCAD UI)"
+                    if success
+                    else "Failed to add arc trace"
+                ),
+                "arc": {
+                    "start": {"x": start_x, "y": start_y, "unit": "mm"},
+                    "mid": {"x": mid_x, "y": mid_y, "unit": "mm"},
+                    "end": {"x": end_x, "y": end_y, "unit": "mm"},
+                    "layer": layer,
+                    "width": width,
+                    "net": net,
+                },
+            }
+        except Exception as e:
+            logger.error(f"IPC route_arc_trace error: {e}")
             return {"success": False, "message": str(e)}
 
     def _ipc_add_via(self, params: Dict[str, Any]) -> Dict[str, Any]:
