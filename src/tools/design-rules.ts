@@ -253,7 +253,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
             .object({
               x: z.number().optional(),
               y: z.number().optional(),
-              unit: z.enum(["mm", "inch"]).optional(),
+              unit: z.enum(["mm", "mil", "inch"]).optional(),
             })
             .optional()
             .describe("Position to check (if ID not provided)"),
@@ -270,7 +270,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
             .object({
               x: z.number().optional(),
               y: z.number().optional(),
-              unit: z.enum(["mm", "inch"]).optional(),
+              unit: z.enum(["mm", "mil", "inch"]).optional(),
             })
             .optional()
             .describe("Position to check (if ID not provided)"),

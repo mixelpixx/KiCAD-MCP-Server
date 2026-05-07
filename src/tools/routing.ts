@@ -30,7 +30,7 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   // Route trace tool
   server.tool(
     "route_trace",
-    "Route a trace segment between two XY points on a fixed layer. WARNING: Does NOT handle layer changes — if start and end are on different copper layers, use route_pad_to_pad instead, which automatically inserts a via.",
+    "Route a trace segment between two XY points on a fixed layer. WARNING: Does NOT handle layer changes â€” if start and end are on different copper layers, use route_pad_to_pad instead, which automatically inserts a via.",
     {
       start: z
         .object({
@@ -129,7 +129,7 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
         .object({
           x: z.number(),
           y: z.number(),
-          unit: z.enum(["mm", "inch"]).optional(),
+          unit: z.enum(["mm", "inch", "mil"]).optional(),
         })
         .optional()
         .describe("Delete trace nearest to this position"),
@@ -163,11 +163,11 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
           y1: z.number(),
           x2: z.number(),
           y2: z.number(),
-          unit: z.enum(["mm", "inch"]).optional(),
+          unit: z.enum(["mm", "inch", "mil"]).optional(),
         })
         .optional()
         .describe("Filter by bounding box region"),
-      unit: z.enum(["mm", "inch"]).optional().describe("Unit for coordinates"),
+      unit: z.enum(["mm", "inch", "mil"]).optional().describe("Unit for coordinates"),
     },
     async (args: any) => {
       const result = await callKicadScript("query_traces", args);
@@ -191,7 +191,7 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
         .boolean()
         .optional()
         .describe("Include statistics (track count, total length, etc.)"),
-      unit: z.enum(["mm", "inch"]).optional().describe("Unit for length measurements"),
+      unit: z.enum(["mm", "mil", "inch"]).optional().describe("Unit for length measurements"),
     },
     async (args: any) => {
       const result = await callKicadScript("get_nets_list", args);
@@ -310,7 +310,7 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   // Route pad to pad tool
   server.tool(
     "route_pad_to_pad",
-    "PREFERRED tool for pad-to-pad routing. Looks up pad positions automatically, detects the net from the pad, and — critically — if the two pads are on different copper layers (e.g. J1 on F.Cu and J2 on B.Cu) automatically inserts a via at the midpoint so the connection is complete. Always use this instead of route_trace when routing between named component pads.",
+    "PREFERRED tool for pad-to-pad routing. Looks up pad positions automatically, detects the net from the pad, and â€” critically â€” if the two pads are on different copper layers (e.g. J1 on F.Cu and J2 on B.Cu) automatically inserts a via at the midpoint so the connection is complete. Always use this instead of route_trace when routing between named component pads.",
     {
       fromRef: z.string().describe("Reference of the source component (e.g. 'U2')"),
       fromPad: z
