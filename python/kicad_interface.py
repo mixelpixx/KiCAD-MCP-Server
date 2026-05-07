@@ -5058,9 +5058,8 @@ print("ok")
             if not target:
                 return {"success": False, "message": f"Component {reference} not found"}
 
-            # Calculate new rotation
-            current_rotation = target.get("rotation", 0)
-            new_rotation = (current_rotation + angle) % 360
+            # Use angle as absolute rotation (matches schema description)
+            new_rotation = angle % 360
 
             # Use move_component with new rotation (position stays the same)
             success = self.ipc_board_api.move_component(
