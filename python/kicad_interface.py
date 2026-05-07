@@ -15,6 +15,21 @@ import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+# Fix cairo DLL loading on Windows before any cairocffi import.
+# cairocffi uses cffi's ffi.dlopen('cairo-2') which needs the DLL on PATH.
+if sys.platform == "win32":
+    for _bin_dir in [
+        os.environ.get("PYTHONPATH", ""),
+        os.path.dirname(sys.executable),
+        r"C:\Program Files\KiCad\9.0\bin",
+        r"C:\Program Files\KiCad\8.0\bin",
+    ]:
+        if _bin_dir and os.path.isfile(os.path.join(_bin_dir, "cairo-2.dll")):
+            _current_path = os.environ.get("PATH", "")
+            if _bin_dir not in _current_path:
+                os.environ["PATH"] = _bin_dir + os.pathsep + _current_path
+            break
+
 import sexpdata
 from annotations import AnnotationLoader
 from commands.wire_manager import WireManager
