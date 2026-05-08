@@ -69,6 +69,45 @@ class TestPathGeneration:
         assert cache_dir.exists(), f"Cache dir should exist: {cache_dir}"
         assert cache_dir.is_dir(), f"Cache dir should be a directory: {cache_dir}"
 
+    def test_data_dir_exists_after_ensure(self):
+        """Test that data directory is created"""
+        PlatformHelper.ensure_directories()
+        data_dir = PlatformHelper.get_data_dir()
+        assert data_dir.exists(), f"Data dir should exist: {data_dir}"
+        assert data_dir.is_dir(), f"Data dir should be a directory: {data_dir}"
+
+    def test_data_dir_is_platform_appropriate(self):
+        """Test that data directory follows platform conventions"""
+        data_dir = PlatformHelper.get_data_dir()
+
+        if PlatformHelper.is_linux():
+            # Should be ~/.local/share/kicad-mcp or $XDG_DATA_HOME/kicad-mcp
+            xdg = os.environ.get("XDG_DATA_HOME")
+            if xdg and Path(xdg).is_absolute():
+                expected = Path(xdg) / "kicad-mcp"
+            else:
+                expected = Path.home() / ".local" / "share" / "kicad-mcp"
+            assert data_dir == expected
+
+        elif PlatformHelper.is_windows():
+            # Should be %USERPROFILE%\.kicad-mcp\data
+            expected = Path.home() / ".kicad-mcp" / "data"
+            assert data_dir == expected
+
+        elif PlatformHelper.is_macos():
+            # Should be ~/Library/Application Support/kicad-mcp
+            expected = Path.home() / "Library" / "Application Support" / "kicad-mcp"
+            assert data_dir == expected
+
+    def test_data_dir_ignores_relative_xdg_data_home(self, monkeypatch):
+        """Relative XDG_DATA_HOME should be ignored on Linux."""
+        monkeypatch.setattr(PlatformHelper, "is_linux", staticmethod(lambda: True))
+        monkeypatch.setattr(PlatformHelper, "is_windows", staticmethod(lambda: False))
+        monkeypatch.setattr(PlatformHelper, "is_macos", staticmethod(lambda: False))
+        monkeypatch.setenv("XDG_DATA_HOME", "relative/data")
+
+        assert PlatformHelper.get_data_dir() == Path.home() / ".local" / "share" / "kicad-mcp"
+
     def test_config_dir_is_platform_appropriate(self):
         """Test that config directory follows platform conventions"""
         config_dir = PlatformHelper.get_config_dir()
@@ -146,6 +185,7 @@ class TestDetectPlatform:
             "config_dir",
             "log_dir",
             "cache_dir",
+            "data_dir",
             "kicad_python_paths",
         ]
         for key in required_keys:
