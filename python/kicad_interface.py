@@ -3979,6 +3979,15 @@ class KiCADInterface:
             # Build hierarchical pad→net map (walks all sub-sheets)
             pad_net_map, net_names = self._build_hierarchical_pad_net_map(schematic_path)
 
+            # Add missing footprints from the schematic to the board *before*
+            # we add nets and assign pads — F8 in KiCad does this implicitly
+            # ("Update PCB from Schematic"), but our previous implementation
+            # only mutated nets, leaving newly-added schematic symbols with no
+            # PCB footprint at all.
+            added_footprints, skipped_footprints = self._add_missing_footprints_from_schematic(
+                board, schematic_path
+            )
+
             # Add all nets to board
             netinfo = board.GetNetInfo()
             nets_by_name = netinfo.NetsByName()
@@ -3993,7 +4002,7 @@ class KiCADInterface:
             netinfo = board.GetNetInfo()
             nets_by_name = netinfo.NetsByName()
 
-            # Assign nets to pads
+            # Assign nets to pads (now also covers any footprints we just added)
             assigned_pads = 0
             unmatched = []
             for fp in board.GetFootprints():
@@ -4017,15 +4026,21 @@ class KiCADInterface:
                 self._update_command_handlers()
 
             logger.info(
-                f"sync_schematic_to_board: {len(added_nets)} nets added, {assigned_pads} pads assigned"
+                f"sync_schematic_to_board: {len(added_nets)} nets added, "
+                f"{len(added_footprints)} footprints added, {assigned_pads} pads assigned"
             )
             return {
                 "success": True,
-                "message": f"PCB nets synced from schematic: {len(added_nets)} nets added, {assigned_pads} pads assigned",
+                "message": (
+                    f"PCB updated from schematic: {len(added_footprints)} footprints added, "
+                    f"{len(added_nets)} nets added, {assigned_pads} pads assigned"
+                ),
                 "nets_added": added_nets,
                 "nets_total": len(net_names),
                 "pads_assigned": assigned_pads,
                 "unmatched_pads_sample": unmatched[:10],
+                "footprints_added": added_footprints,
+                "footprints_skipped": skipped_footprints,
             }
 
         except Exception as e:
@@ -4034,6 +4049,155 @@ class KiCADInterface:
 
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
+
+    def _extract_components_from_schematic(self, schematic_path: str) -> List[Dict[str, str]]:
+        """Run kicad-cli netlist export and return the flat list of components.
+
+        Each entry: {"reference": str, "value": str, "footprint": str}
+        Empty list on any failure (kicad-cli missing, parse error, etc.) — the
+        caller treats that as "no missing footprints to add".
+        """
+        import subprocess
+        import tempfile
+        import xml.etree.ElementTree as ET
+
+        kicad_cli = self._find_kicad_cli_static()
+        if not kicad_cli:
+            logger.warning("kicad-cli not found — sync will not add new footprints")
+            return []
+
+        with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            cmd = [
+                kicad_cli,
+                "sch",
+                "export",
+                "netlist",
+                "--format",
+                "kicadxml",
+                "--output",
+                tmp_path,
+                schematic_path,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if result.returncode != 0:
+                logger.warning(
+                    f"kicad-cli netlist export failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}"
+                )
+                return []
+
+            tree = ET.parse(tmp_path)
+            root = tree.getroot()
+            components = []
+            for comp in root.findall("./components/comp"):
+                components.append(
+                    {
+                        "reference": comp.get("ref", ""),
+                        "value": comp.findtext("value", ""),
+                        "footprint": comp.findtext("footprint", ""),
+                    }
+                )
+            return components
+        except Exception as e:
+            logger.warning(f"Failed to extract components from schematic: {e}")
+            return []
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    def _add_missing_footprints_from_schematic(
+        self, board: Any, schematic_path: str
+    ) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+        """Add footprints to ``board`` for any schematic component not yet present.
+
+        New footprints are placed at the board origin so the user can move them
+        into position. Power/flag references (``#PWR``, ``#FLG``) are skipped —
+        they have no PCB representation.
+
+        Returns ``(added, skipped)``: each entry is
+        ``{"reference": str, "footprint": str, "reason": str?}``.
+        """
+        from pathlib import Path
+
+        from commands.library import LibraryManager
+
+        added: List[Dict[str, str]] = []
+        skipped: List[Dict[str, str]] = []
+
+        components = self._extract_components_from_schematic(schematic_path)
+        if not components:
+            return added, skipped
+
+        existing_refs = {fp.GetReference() for fp in board.GetFootprints()}
+        project_dir = Path(schematic_path).parent
+        library_manager = LibraryManager(project_path=project_dir)
+
+        for comp in components:
+            ref = comp["reference"]
+            fp_str = comp["footprint"]
+            if not ref or ref.startswith("#"):
+                # Power flags / global indicators — no PCB footprint expected.
+                continue
+            if ref in existing_refs:
+                continue
+            if not fp_str or ":" not in fp_str:
+                skipped.append(
+                    {
+                        "reference": ref,
+                        "footprint": fp_str,
+                        "reason": "no Library:Name footprint set on schematic symbol",
+                    }
+                )
+                continue
+
+            lib_name, fp_name = fp_str.split(":", 1)
+            library_path = library_manager.libraries.get(lib_name)
+            if not library_path:
+                skipped.append(
+                    {
+                        "reference": ref,
+                        "footprint": fp_str,
+                        "reason": f"library '{lib_name}' not in fp-lib-table",
+                    }
+                )
+                continue
+
+            try:
+                module = pcbnew.FootprintLoad(library_path, fp_name)
+            except Exception as e:
+                skipped.append(
+                    {"reference": ref, "footprint": fp_str, "reason": f"FootprintLoad failed: {e}"}
+                )
+                continue
+
+            if not module:
+                skipped.append(
+                    {
+                        "reference": ref,
+                        "footprint": fp_str,
+                        "reason": f"footprint '{fp_name}' not in '{lib_name}'",
+                    }
+                )
+                continue
+
+            module.SetReference(ref)
+            if comp["value"]:
+                module.SetValue(comp["value"])
+            module.SetFPID(pcbnew.LIB_ID(lib_name, fp_name))
+            # Place at board origin; user / autoplacer can position from there.
+            module.SetPosition(pcbnew.VECTOR2I(0, 0))
+
+            board.Add(module)
+            existing_refs.add(ref)
+            added.append({"reference": ref, "footprint": fp_str})
+
+        if added:
+            logger.info(f"_add_missing_footprints_from_schematic: added {len(added)} footprints")
+        return added, skipped
 
     # ===================================================================
     # Schematic analysis tools (read-only)
