@@ -201,34 +201,34 @@ class TestFindSymbol:
 @pytest.mark.unit
 class TestComputePinPositions:
     def test_resistor_at_origin_no_rotation(self) -> None:
-        """Device:R at (0, 0) rot=0 — pins at (0, 3.81) and (0, -3.81)."""
+        """Device:R at (0, 0) rot=0. Lib pins are Y-up; schematic is Y-down,
+        so pin 1 (lib y=+3.81) lands at world y=-3.81 and pin 2 (lib y=-3.81)
+        at world y=+3.81. See test_pin_locator_y_flip for the canonical case."""
         sch = _make_sch_data([_make_symbol("R1", 0, 0)])
         positions = WireDragger.compute_pin_positions(sch, "R1", 10, 20)
         assert "1" in positions and "2" in positions
         old1, new1 = positions["1"]
         old2, new2 = positions["2"]
-        # Pin 1 old: (0 + 0, 0 + 3.81)
+        # Pin 1 old: (0, 0 - 3.81)
         assert abs(old1[0] - 0) < 1e-4
-        assert abs(old1[1] - 3.81) < 1e-4
-        # Pin 2 old: (0 + 0, 0 - 3.81)
+        assert abs(old1[1] - (-3.81)) < 1e-4
+        # Pin 2 old: (0, 0 + 3.81)
         assert abs(old2[0] - 0) < 1e-4
-        assert abs(old2[1] - (-3.81)) < 1e-4
+        assert abs(old2[1] - 3.81) < 1e-4
         # New positions shifted by (10, 20)
         assert abs(new1[0] - 10) < 1e-4
-        assert abs(new1[1] - 23.81) < 1e-4
+        assert abs(new1[1] - 16.19) < 1e-4
         assert abs(new2[0] - 10) < 1e-4
-        assert abs(new2[1] - 16.19) < 1e-4
+        assert abs(new2[1] - 23.81) < 1e-4
 
     def test_resistor_rotated_90(self) -> None:
-        """Device:R at (100, 100) rot=90 — pins should be at (100+3.81, 100) and (100-3.81, 100)."""
+        """Device:R at (100, 100) rot=90. Pin 1 lib (0, +3.81), Y-flip → (0, -3.81),
+        eeschema rot=90 TRANSFORM(0,1,-1,0): (0*0+1*-3.81, -1*0+0*-3.81) = (-3.81, 0).
+        World (96.19, 100). Verified vs kicad-cli netlist."""
         sch = _make_sch_data([_make_symbol("R1", 100, 100, rotation=90)])
         positions = WireDragger.compute_pin_positions(sch, "R1", 100, 100)
         old1, _ = positions["1"]
         old2, _ = positions["2"]
-        # rotate(0, 3.81, 90) = (0*cos90 - 3.81*sin90, 0*sin90 + 3.81*cos90) = (-3.81, 0)
-        # Wait — pin 1 is at local (0, 3.81), rotated 90° CCW:
-        # x' = 0*cos90 - 3.81*sin90 = -3.81, y' = 0*sin90 + 3.81*cos90 ≈ 0
-        # world: (100 - 3.81, 100 + 0) = (96.19, 100)
         assert abs(old1[0] - 96.19) < 1e-3
         assert abs(old1[1] - 100) < 1e-3
 
@@ -691,19 +691,18 @@ class TestSynthesizeTouchingPinWires:
 
     def test_touching_pin_gap_generates_wire(self) -> None:
         """
-        R1 at (0, 0) pin2 at (0, -3.81).
-        R2 at (0, -7.62) pin1 at (0, -3.81).  ← pins touch
-        Moving R1 to (10, 0) causes pin2 to move to (10, -3.81).
-        A wire from (0, -3.81) to (10, -3.81) should be synthesized.
+        With Y-flip applied (lib Y-up → schematic Y-down):
+          R1 at (0, 0) pin2 (lib y=-3.81) lands at world (0, +3.81).
+          R2 at (0, +7.62) pin1 (lib y=+3.81) lands at world (0, +3.81).  ← pins touch
+        Moving R1 to (10, 0) drags pin2 to (10, +3.81).
+        A wire from (0, +3.81) to (10, +3.81) should be synthesized.
         """
-        # R2 pin1 is at (0, -7.62 + 3.81) = (0, -3.81)
-        sch = self._make_two_resistors(0, 0, 0, -7.62)
+        sch = self._make_two_resistors(0, 0, 0, 7.62)
 
-        # Verify the touching: R1 pin2 old = (0, -3.81), R2 pin1 = (0, -3.81)
         pin_positions = WireDragger.compute_pin_positions(sch, "R1", 10, 0)
         old2, new2 = pin_positions["2"]
-        assert abs(old2[0] - 0) < 1e-3 and abs(old2[1] - (-3.81)) < 1e-3
-        assert abs(new2[0] - 10) < 1e-3 and abs(new2[1] - (-3.81)) < 1e-3
+        assert abs(old2[0] - 0) < 1e-3 and abs(old2[1] - 3.81) < 1e-3
+        assert abs(new2[0] - 10) < 1e-3 and abs(new2[1] - 3.81) < 1e-3
 
         wire_count_before = sum(
             1 for item in sch if isinstance(item, list) and item and item[0] == _sym("wire")
@@ -716,7 +715,6 @@ class TestSynthesizeTouchingPinWires:
         ]
         assert len(wires) == wire_count_before + 1
 
-        # The new wire should span (0, -3.81) → (10, -3.81)
         new_wire = wires[-1]
         pts = next(s for s in new_wire[1:] if isinstance(s, list) and s and s[0] == _sym("pts"))
         xys = [p for p in pts[1:] if isinstance(p, list) and len(p) >= 3 and p[0] == _sym("xy")]
@@ -725,11 +723,11 @@ class TestSynthesizeTouchingPinWires:
             (round(float(xys[0][1]), 3), round(float(xys[0][2]), 3)),
             (round(float(xys[1][1]), 3), round(float(xys[1][2]), 3)),
         }
-        assert (0.0, -3.81) in endpoints, f"Expected (0, -3.81) in wire endpoints, got {endpoints}"
+        assert (0.0, 3.81) in endpoints, f"Expected (0, 3.81) in wire endpoints, got {endpoints}"
         assert (
             10.0,
-            -3.81,
-        ) in endpoints, f"Expected (10, -3.81) in wire endpoints, got {endpoints}"
+            3.81,
+        ) in endpoints, f"Expected (10, 3.81) in wire endpoints, got {endpoints}"
 
     def test_no_wire_when_pin_didnt_move(self) -> None:
         """

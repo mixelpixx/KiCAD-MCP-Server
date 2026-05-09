@@ -25,6 +25,7 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
   // ------------------------------------------------------
   server.tool(
     "export_gerber",
+    "Export PCB Gerber manufacturing files to a directory. Optionally include drill files, map files and choose layer subset.",
     {
       outputDir: z.string().describe("Directory to save Gerber files"),
       layers: z
@@ -73,6 +74,7 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
   // ------------------------------------------------------
   server.tool(
     "export_pdf",
+    "Export the PCB layout as a PDF document, optionally selecting layers, page size and colour mode.",
     {
       outputPath: z.string().describe("Path to save the PDF file"),
       layers: z
@@ -112,6 +114,7 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
   // ------------------------------------------------------
   server.tool(
     "export_svg",
+    "Export the PCB layout as an SVG vector image, optionally selecting layers and colour mode.",
     {
       outputPath: z.string().describe("Path to save the SVG file"),
       layers: z
@@ -146,6 +149,7 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
   // ------------------------------------------------------
   server.tool(
     "export_3d",
+    "Export the PCB as a 3D model (STEP, STL, VRML or OBJ) including optional copper, solder mask, silkscreen and component 3D models.",
     {
       outputPath: z.string().describe("Path to save the 3D model file"),
       format: z.enum(["STEP", "STL", "VRML", "OBJ"]).describe("3D model format"),
@@ -188,6 +192,7 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
   // ------------------------------------------------------
   server.tool(
     "export_bom",
+    "Export a Bill of Materials (BOM) from the PCB in CSV, XML, HTML or JSON format.",
     {
       outputPath: z.string().describe("Path to save the BOM file"),
       format: z.enum(["CSV", "XML", "HTML", "JSON"]).describe("BOM file format"),
@@ -255,6 +260,7 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
   // ------------------------------------------------------
   server.tool(
     "export_position_file",
+    "Export a component placement/position file (pick-and-place) for PCB assembly in CSV or ASCII format.",
     {
       outputPath: z.string().describe("Path to save the position file"),
       format: z.enum(["CSV", "ASCII"]).optional().describe("File format (default: CSV)"),
@@ -289,6 +295,7 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
   // ------------------------------------------------------
   server.tool(
     "export_vrml",
+    "Export the PCB as a VRML 3D model for use in web viewers or simulation tools.",
     {
       outputPath: z.string().describe("Path to save the VRML file"),
       includeComponents: z.boolean().optional().describe("Whether to include 3D component models"),

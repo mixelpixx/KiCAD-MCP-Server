@@ -25,6 +25,7 @@ class PinLocator:
         """Initialize pin locator with empty cache"""
         self.pin_definition_cache = {}  # Cache: "lib_id:symbol_name" -> pin_data
         self._schematic_cache: Dict[str, object] = {}  # Cache: path -> loaded Schematic
+        self._sexp_cache: Dict[str, Any] = {}  # Cache: path -> parsed sexpdata (mirror-aware)
 
     @staticmethod
     def parse_symbol_definition(symbol_def: list) -> Dict[str, Dict]:
@@ -126,16 +127,42 @@ class PinLocator:
                 logger.error("No lib_symbols section found in schematic")
                 return {}
 
-            # Find the specific symbol definition
-            for item in lib_symbols[1:]:  # Skip 'lib_symbols' itself
-                if isinstance(item, list) and len(item) > 1 and item[0] == Symbol("symbol"):
-                    symbol_name = str(item[1]).strip('"')
-                    if symbol_name == lib_id:
-                        # Found the symbol, parse pins
-                        pins = self.parse_symbol_definition(item)
-                        self.pin_definition_cache[cache_key] = pins
-                        logger.info(f"Extracted {len(pins)} pins from {lib_id}")
-                        return pins
+            # Find the specific symbol definition.
+            # KiCad lib_symbols may use a different name than the instance lib_id:
+            #   instance lib_id:  "stat-tis-custom:BAT_18650"
+            #   lib_symbols name: "BAT_18650_3"  (prefix stripped, unit suffix added)
+            # Strategy: exact match first, then bare-name prefix match.
+            bare_name = lib_id.split(":")[-1] if ":" in lib_id else lib_id
+
+            best_match = None
+            for item in lib_symbols[1:]:
+                if not (isinstance(item, list) and len(item) > 1 and item[0] == Symbol("symbol")):
+                    continue
+                symbol_name = str(item[1]).strip('"')
+                if symbol_name == lib_id:
+                    best_match = item
+                    break
+                if best_match is None:
+                    sn_bare = symbol_name.split(":")[-1] if ":" in symbol_name else symbol_name
+                    if sn_bare == bare_name or (
+                        sn_bare.startswith(bare_name)
+                        and len(sn_bare) > len(bare_name)
+                        and sn_bare[len(bare_name)] == "_"
+                        and sn_bare[len(bare_name) + 1 :].isdigit()
+                    ):
+                        best_match = item
+
+            if best_match is not None:
+                matched_name = str(best_match[1]).strip('"')
+                pins = self.parse_symbol_definition(best_match)
+                self.pin_definition_cache[cache_key] = pins
+                if matched_name != lib_id:
+                    logger.info(
+                        f"Matched {lib_id} → lib_symbols '{matched_name}' ({len(pins)} pins)"
+                    )
+                else:
+                    logger.info(f"Extracted {len(pins)} pins from {lib_id}")
+                return pins
 
             logger.warning(f"Symbol {lib_id} not found in lib_symbols")
             return {}
@@ -167,6 +194,10 @@ class PinLocator:
         cos_a = math.cos(angle_rad)
         sin_a = math.sin(angle_rad)
 
+        # Standard counter-clockwise rotation (math convention, Y-up).
+        # Callers are responsible for any y-axis negation required to convert
+        # library coordinates (y-up) to schematic coordinates (y-down) before
+        # passing values here — see get_pin_location and _transform_local_point.
         rotated_x = x * cos_a - y * sin_a
         rotated_y = x * sin_a + y * cos_a
 
@@ -180,11 +211,40 @@ class PinLocator:
                 self._schematic_cache[sch_key] = Schematic(sch_key)
             sch = self._schematic_cache[sch_key]
             for symbol in sch.symbol:
-                if symbol.property.Reference.value == symbol_reference:
+                if symbol.property.Reference.value.rstrip("_") == symbol_reference:
                     return symbol.lib_id.value if hasattr(symbol, "lib_id") else None
         except Exception:
             pass
         return None
+
+    def _get_symbol_transform(
+        self, schematic_path: Path, symbol_reference: str
+    ) -> Optional[Tuple[float, float, float, bool, bool, str]]:
+        """
+        Read symbol position, rotation, mirror flags, and lib_id directly from the
+        .kicad_sch file via sexpdata (authoritative — not kicad-skip cache, which
+        does not reflect mirror/rotation changes made by rotate_schematic_component).
+
+        Returns (x, y, rotation, mirror_x, mirror_y, lib_id) or None.
+        """
+        import sexpdata as _sexpdata
+        from commands.wire_dragger import WireDragger
+
+        sch_key = str(schematic_path)
+        try:
+            if sch_key not in self._sexp_cache:
+                with open(schematic_path, "r", encoding="utf-8") as f:
+                    self._sexp_cache[sch_key] = _sexpdata.loads(f.read())
+        except Exception as e:
+            logger.error(f"_get_symbol_transform: failed to parse {schematic_path}: {e}")
+            return None
+
+        found = WireDragger.find_symbol(self._sexp_cache[sch_key], symbol_reference)
+        if found is None:
+            return None
+
+        _, sym_x, sym_y, rotation, lib_id, mirror_x, mirror_y = found
+        return sym_x, sym_y, rotation, mirror_x, mirror_y, lib_id
 
     def get_pin_angle(
         self, schematic_path: Path, symbol_reference: str, pin_number: str
@@ -193,27 +253,16 @@ class PinLocator:
         Get the outward angle of a pin endpoint in degrees (0=right, 90=up, 180=left, 270=down).
         This is the direction a wire stub must extend to stay connected to the pin.
 
+        Accounts for mirror flags read directly from the .kicad_sch file.
+
         Returns angle in degrees, or None if pin not found.
         """
         try:
-            sch_key = str(schematic_path)
-            if sch_key not in self._schematic_cache:
-                self._schematic_cache[sch_key] = Schematic(sch_key)
-            sch = self._schematic_cache[sch_key]
-
-            target_symbol = None
-            for symbol in sch.symbol:
-                if symbol.property.Reference.value == symbol_reference:
-                    target_symbol = symbol
-                    break
-
-            if not target_symbol:
+            transform = self._get_symbol_transform(schematic_path, symbol_reference)
+            if transform is None:
                 return None
 
-            symbol_at = target_symbol.at.value
-            symbol_rotation = float(symbol_at[2]) if len(symbol_at) > 2 else 0.0
-
-            lib_id = target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
+            _, _, symbol_rotation, mirror_x, mirror_y, lib_id = transform
             if not lib_id:
                 return None
 
@@ -228,9 +277,28 @@ class PinLocator:
                 else:
                     return None
 
-            # Pin definition angle + symbol rotation = absolute outward direction
             pin_def_angle = pins[pin_number].get("angle", 0)
-            absolute_angle = (pin_def_angle + symbol_rotation) % 360
+
+            # Mirror this exactly the way WireDragger.pin_world_xy does, in the
+            # same order: Y-flip (lib Y-up → screen Y-down) → mirror → rotate.
+            #
+            # Y-flip on an angle: negate it (reflects across X axis).
+            pin_def_angle = (-pin_def_angle) % 360
+
+            # eeschema (symbol.h:43-44):
+            #   (mirror x) = SYM_MIRROR_X = TRANSFORM(1,0,0,-1) → negates Y →
+            #     reflect angle across X axis → -angle.
+            #   (mirror y) = SYM_MIRROR_Y = TRANSFORM(-1,0,0,1) → negates X →
+            #     reflect angle across Y axis → 180 - angle.
+            if mirror_x:
+                pin_def_angle = (-pin_def_angle) % 360
+            if mirror_y:
+                pin_def_angle = (180 - pin_def_angle) % 360
+
+            # eeschema's rotation TRANSFORM is screen-CCW in Y-down, which is
+            # math-CW in standard atan2 convention — so subtract the rotation
+            # to match `pin_world_xy`'s `_rotate(..., -rotation)` call.
+            absolute_angle = (pin_def_angle - symbol_rotation) % 360
             return absolute_angle
 
         except Exception:
@@ -258,10 +326,11 @@ class PinLocator:
                 self._schematic_cache[sch_key] = Schematic(sch_key)
             sch = self._schematic_cache[sch_key]
 
-            # Find the symbol instance
+            # Find the symbol instance.
+            # skip may write references with a trailing "_" (e.g. "R1_") — strip it when comparing.
             target_symbol = None
             for symbol in sch.symbol:
-                ref = symbol.property.Reference.value
+                ref = symbol.property.Reference.value.rstrip("_")
                 if ref == symbol_reference:
                     target_symbol = symbol
                     break
@@ -270,20 +339,21 @@ class PinLocator:
                 logger.error(f"Symbol {symbol_reference} not found in schematic")
                 return None
 
-            # Get symbol position and rotation
-            symbol_at = target_symbol.at.value
-            symbol_x = float(symbol_at[0])
-            symbol_y = float(symbol_at[1])
-            symbol_rotation = float(symbol_at[2]) if len(symbol_at) > 2 else 0.0
+            # Get symbol transform from sexpdata (authoritative: reflects mirror state
+            # after rotate_schematic_component, which kicad-skip cache does not).
+            transform = self._get_symbol_transform(schematic_path, symbol_reference)
+            if transform is None:
+                logger.error(f"Could not read transform for {symbol_reference}")
+                return None
+            symbol_x, symbol_y, symbol_rotation, mirror_x, mirror_y, lib_id = transform
 
-            # Get symbol lib_id
-            lib_id = target_symbol.lib_id.value if hasattr(target_symbol, "lib_id") else None
             if not lib_id:
                 logger.error(f"Symbol {symbol_reference} has no lib_id")
                 return None
 
             logger.debug(
-                f"Symbol {symbol_reference}: pos=({symbol_x}, {symbol_y}), rot={symbol_rotation}, lib_id={lib_id}"
+                f"Symbol {symbol_reference}: pos=({symbol_x}, {symbol_y}), rot={symbol_rotation}, "
+                f"mirror_x={mirror_x}, mirror_y={mirror_y}, lib_id={lib_id}"
             )
 
             # Get pin definitions for this symbol
@@ -312,21 +382,17 @@ class PinLocator:
                     return None
 
             pin_data = pins[pin_number]
+            from commands.wire_dragger import WireDragger
 
-            # Get pin position relative to symbol origin
-            pin_rel_x = pin_data["x"]
-            pin_rel_y = pin_data["y"]
-
-            logger.debug(f"Pin {pin_number} relative position: ({pin_rel_x}, {pin_rel_y})")
-
-            # Apply symbol rotation to pin position
-            if symbol_rotation != 0:
-                pin_rel_x, pin_rel_y = self.rotate_point(pin_rel_x, pin_rel_y, symbol_rotation)
-                logger.debug(f"After rotation {symbol_rotation}°: ({pin_rel_x}, {pin_rel_y})")
-
-            # Calculate absolute position
-            abs_x = symbol_x + pin_rel_x
-            abs_y = symbol_y + pin_rel_y
+            abs_x, abs_y = WireDragger.pin_world_xy(
+                pin_data["x"],
+                pin_data["y"],
+                symbol_x,
+                symbol_y,
+                symbol_rotation,
+                mirror_x,
+                mirror_y,
+            )
 
             logger.info(f"Pin {symbol_reference}/{pin_number} located at ({abs_x}, {abs_y})")
             return [abs_x, abs_y]
@@ -361,7 +427,7 @@ class PinLocator:
             # Find symbol
             target_symbol = None
             for symbol in sch.symbol:
-                if symbol.property.Reference.value == symbol_reference:
+                if symbol.property.Reference.value.rstrip("_") == symbol_reference:
                     target_symbol = symbol
                     break
 
@@ -412,9 +478,7 @@ if __name__ == "__main__":
 
     # Create test schematic with components (cross-platform temp directory)
     test_path = Path(tempfile.gettempdir()) / "test_pin_locator.kicad_sch"
-    template_path = (
-        Path(__file__).parent.parent / "templates" / "template_with_symbols_expanded.kicad_sch"
-    )
+    template_path = Path(__file__).parent.parent / "templates" / "template_with_symbols.kicad_sch"
 
     shutil.copy(template_path, test_path)
     print(f"\n✓ Created test schematic: {test_path}")

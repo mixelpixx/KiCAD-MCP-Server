@@ -450,11 +450,11 @@ class RoutingCommands:
                     "errorDetails": "One of traceUuid, position, or net must be provided",
                 }
 
-            # Delete by net name (bulk delete)
+            # Delete by net name (bulk delete), use "*" to delete all tracks
             if net_name:
                 tracks_to_remove = []
                 for track in list(self.board.Tracks()):
-                    if track.GetNetname() != net_name:
+                    if net_name != "*" and track.GetNetname() != net_name:
                         continue
 
                     # Skip vias if not requested

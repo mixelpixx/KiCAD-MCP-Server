@@ -75,14 +75,17 @@ class WireDragger:
             if not (isinstance(item, list) and item and item[0] == sym_k):
                 continue
 
-            # Check Reference property
+            # Check Reference property.
+            # kicad-skip may write a trailing "_" on references (e.g. "R1_") when
+            # cloning symbols; strip it so callers passing the canonical "R1"
+            # still find the symbol. Mirrors the rstrip in PinLocator.get_pin_location.
             ref_val = None
             for sub in item[1:]:
                 if isinstance(sub, list) and len(sub) >= 3 and sub[0] == prop_k:
                     if str(sub[1]).strip('"') == "Reference":
                         ref_val = str(sub[2]).strip('"')
                         break
-            if ref_val != reference:
+            if ref_val is None or ref_val.rstrip("_") != reference:
                 continue
 
             old_x = old_y = rotation = 0.0
@@ -152,15 +155,23 @@ class WireDragger:
         """
         Compute the world coordinate of a pin given the symbol transform.
 
-        KiCAD applies mirror first (in local space), then rotation, then translation.
-        mirror_x negates the local X axis; mirror_y negates the local Y axis.
+        Library pins are stored Y-up; the schematic is Y-down. Order matches
+        eeschema: Y-flip to screen → mirror → rotate (screen-CCW) → translate.
+
+        eeschema's TRANSFORM matrix for rotation 90 is (0, 1, -1, 0) —
+        i.e. screen-CCW in Y-down: (x, y) → (y, -x). Our `_rotate` helper is
+        standard math (Y-up CCW), so we negate the rotation angle to convert.
+
+        Mirror axis semantics match eeschema's symbol.h:
+          (mirror x) = SYM_MIRROR_X = TRANSFORM(1, 0, 0, -1) → negates Y.
+          (mirror y) = SYM_MIRROR_Y = TRANSFORM(-1, 0, 0, 1) → negates X.
         """
-        lx, ly = px, py
+        lx, ly = px, -py  # Y-flip: lib Y-up → screen Y-down
         if mirror_x:
-            lx = -lx
+            ly = -ly  # SYM_MIRROR_X negates screen-Y
         if mirror_y:
-            ly = -ly
-        rx, ry = _rotate(lx, ly, rotation)
+            lx = -lx  # SYM_MIRROR_Y negates screen-X
+        rx, ry = _rotate(lx, ly, -rotation)  # negate angle: math-CCW → screen-CCW
         return sym_x + rx, sym_y + ry
 
     @staticmethod
@@ -196,6 +207,80 @@ class WireDragger:
                 (round(new_wx, 6), round(new_wy, 6)),
             )
         return result
+
+    @staticmethod
+    def compute_pin_positions_for_rotation(
+        sch_data: list,
+        reference: str,
+        new_rotation: float,
+        new_mirror_x: bool,
+        new_mirror_y: bool,
+    ) -> Dict[str, Tuple[Tuple[float, float], Tuple[float, float]]]:
+        """
+        Compute world pin positions before and after a rotation/mirror change.
+
+        The symbol stays at the same (x, y); only the rotation and mirror state change.
+        Returns {pin_num: (old_world_xy, new_world_xy)}.
+        """
+        found = WireDragger.find_symbol(sch_data, reference)
+        if found is None:
+            return {}
+        _, sym_x, sym_y, old_rotation, lib_id, old_mirror_x, old_mirror_y = found
+
+        pins = WireDragger.get_pin_defs(sch_data, lib_id)
+        result: Dict[str, Tuple] = {}
+        for pin_num, pin in pins.items():
+            px, py = pin["x"], pin["y"]
+            old_wx, old_wy = WireDragger.pin_world_xy(
+                px, py, sym_x, sym_y, old_rotation, old_mirror_x, old_mirror_y
+            )
+            new_wx, new_wy = WireDragger.pin_world_xy(
+                px, py, sym_x, sym_y, new_rotation, new_mirror_x, new_mirror_y
+            )
+            result[pin_num] = (
+                (round(old_wx, 6), round(old_wy, 6)),
+                (round(new_wx, 6), round(new_wy, 6)),
+            )
+        return result
+
+    @staticmethod
+    def update_symbol_rotation_mirror(
+        sch_data: list,
+        reference: str,
+        new_rotation: float,
+        new_mirror: Optional[str],
+    ) -> bool:
+        """
+        Update the rotation in (at x y rot) and the (mirror x/y) token for a symbol.
+
+        new_mirror: "x", "y", or None (removes any existing mirror token).
+        Returns True if the symbol was found and updated.
+        """
+        found = WireDragger.find_symbol(sch_data, reference)
+        if found is None:
+            return False
+        item = found[0]
+        at_k = _K["at"]
+        mirror_k = _K["mirror"]
+
+        # Update rotation in (at x y rot)
+        for sub in item[1:]:
+            if isinstance(sub, list) and sub and sub[0] == at_k and len(sub) >= 4:
+                sub[3] = new_rotation
+                break
+
+        # Remove existing (mirror ...) token(s)
+        to_remove = [
+            i for i, sub in enumerate(item) if isinstance(sub, list) and sub and sub[0] == mirror_k
+        ]
+        for i in reversed(to_remove):
+            del item[i]
+
+        # Insert new mirror token if requested
+        if new_mirror in ("x", "y"):
+            item.append([mirror_k, Symbol(new_mirror)])
+
+        return True
 
     @staticmethod
     def drag_wires(

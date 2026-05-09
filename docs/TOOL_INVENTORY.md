@@ -1,16 +1,18 @@
 # KiCAD MCP Server - Complete Tool Inventory
 
-**Version:** 2.2.3
-**Total Tools:** 122 (18 direct + 65 routed + 4 router + 35 additional)
-**Last Updated:** 2026-03-21
+**Version:** 2.1.0-alpha
+**Total Tools:** 137 (verifiziert via VS Code MCP Discovery Log)
+**Last Updated:** 2026-05-02
 
 ## How Tools Are Organized
 
-The server uses a **router pattern** to reduce AI context usage. Tools fall into three groups:
+Tools are registered directly via `server.tool()`
 
-- **Direct tools** - Always visible to the AI. High-frequency operations used in most sessions.
-- **Routed tools** - Organized into categories. Discovered via the router tools (`list_tool_categories`, `get_category_tools`, `search_tools`) and invoked via `execute_tool`.
-- **Additional tools** - Registered directly (always visible) but not part of the router categories.
+The `Access` column below uses legacy labels from when a router pattern was planned:
+
+- **Direct** — High-frequency tools, originally intended as always-visible
+- **Routed** — Originally planned for router dispatch; now also registered directly
+- **Additional** — Registered directly (always visible)
 
 ---
 
@@ -130,62 +132,86 @@ _Source: `src/tools/export.ts`_
 
 ---
 
-## Schematic (27 tools)
+## Schematic (43 tools)
 
 _Source: `src/tools/schematic.ts`_
 
-### Component Operations
+### Component Operations (10)
 
-| Tool                         | Description                                             | Access             |
-| ---------------------------- | ------------------------------------------------------- | ------------------ |
-| `add_schematic_component`    | Add component to schematic (symbol from library)        | Direct             |
-| `delete_schematic_component` | Remove component from schematic                         | Additional         |
-| `edit_schematic_component`   | Edit component properties (footprint, value, reference) | Additional         |
-| `get_schematic_component`    | Get component info with field positions                 | Additional         |
-| `list_schematic_components`  | List all components in schematic                        | Direct             |
-| `move_schematic_component`   | Move component to new position                          | Routed (schematic) |
-| `rotate_schematic_component` | Rotate component                                        | Routed (schematic) |
-| `annotate_schematic`         | Auto-annotate reference designators                     | Direct             |
+| Tool                                  | Description                                                                                                        | Access             |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------ |
+| `add_schematic_component`             | Add component to schematic (symbol from library)                                                                   | Direct             |
+| `delete_schematic_component`          | Remove component from schematic                                                                                    | Additional         |
+| `edit_schematic_component`            | Edit footprint, value, reference, label positions, and arbitrary custom properties (MPN, Manufacturer, DigiKey, …) | Additional         |
+| `set_schematic_component_property`    | Add or update a single custom property (BOM/sourcing field) on a component                                         | Additional         |
+| `remove_schematic_component_property` | Delete a single custom property from a component                                                                   | Additional         |
+| `get_schematic_component`             | Get component info: built-in fields + all custom properties + label positions                                      | Additional         |
+| `list_schematic_components`           | List all components in schematic                                                                                   | Direct             |
+| `move_schematic_component`            | Move component to new position                                                                                     | Routed (schematic) |
+| `rotate_schematic_component`          | Rotate component                                                                                                   | Routed (schematic) |
+| `annotate_schematic`                  | Auto-annotate reference designators                                                                                | Direct             |
 
-### Wiring and Connections
+### Wiring and Connections (10)
 
-| Tool                          | Description                                      | Access             |
-| ----------------------------- | ------------------------------------------------ | ------------------ |
-| `add_wire`                    | Add wire connection between two points           | Routed (schematic) |
-| `delete_schematic_wire`       | Delete wire segment                              | Routed (schematic) |
-| `add_schematic_connection`    | Connect two component pins with wire             | Routed (schematic) |
-| `add_schematic_net_label`     | Add net label to schematic                       | Direct             |
-| `delete_schematic_net_label`  | Delete net label                                 | Routed (schematic) |
-| `connect_to_net`              | Connect component pin to named net               | Direct             |
-| `connect_passthrough`         | Connect all matching pins between two connectors | Direct             |
-| `get_schematic_pin_locations` | Get pin locations for a component                | Additional         |
+| Tool                          | Description                                          | Access             |
+| ----------------------------- | ---------------------------------------------------- | ------------------ |
+| `add_schematic_wire`          | Add wire segment between two points                  | Routed (schematic) |
+| `delete_schematic_wire`       | Delete wire segment                                  | Routed (schematic) |
+| `add_schematic_net_label`     | Add net label to schematic                           | Direct             |
+| `delete_schematic_net_label`  | Delete net label                                     | Routed (schematic) |
+| `add_no_connect`              | Add no-connect flag (X marker) to an unconnected pin | Direct             |
+| `move_schematic_net_label`    | Move net label to new position                       | Routed (schematic) |
+| `connect_to_net`              | Connect component pin to named net                   | Direct             |
+| `connect_passthrough`         | Connect all matching pins between two connectors     | Direct             |
+| `get_schematic_pin_locations` | Get pin locations for a component                    | Additional         |
+| `get_wire_connections`        | Get all connections at a wire endpoint               | Additional         |
 
-### Net Analysis
+### Hierarchical Schematics (2)
 
-| Tool                    | Description                   | Access             |
-| ----------------------- | ----------------------------- | ------------------ |
-| `get_net_connections`   | Get all connections for a net | Routed (schematic) |
-| `list_schematic_nets`   | List all nets in schematic    | Routed (schematic) |
-| `list_schematic_wires`  | List all wires in schematic   | Routed (schematic) |
-| `list_schematic_labels` | List all net labels           | Routed (schematic) |
+| Tool                               | Description                                        | Access             |
+| ---------------------------------- | -------------------------------------------------- | ------------------ |
+| `add_schematic_hierarchical_label` | Add hierarchical label for multi-sheet connections | Routed (schematic) |
+| `add_sheet_pin`                    | Add a sheet pin to a hierarchical sheet symbol     | Routed (schematic) |
 
-### Text Annotations
+### Net Analysis (5)
+
+| Tool                    | Description                          | Access             |
+| ----------------------- | ------------------------------------ | ------------------ |
+| `get_net_connections`   | Get all connections for a net        | Routed (schematic) |
+| `get_net_at_point`      | Get the net name at an XY coordinate | Additional         |
+| `list_schematic_nets`   | List all nets in schematic           | Routed (schematic) |
+| `list_schematic_wires`  | List all wires in schematic          | Routed (schematic) |
+| `list_schematic_labels` | List all net labels                  | Routed (schematic) |
+
+### Text Annotations (2)
 
 | Tool                   | Description                                      | Access             |
 | ---------------------- | ------------------------------------------------ | ------------------ |
 | `add_schematic_text`   | Add free-form text annotation to schematic       | Routed (schematic) |
 | `list_schematic_texts` | List all text annotations (with optional filter) | Routed (schematic) |
 
-### Schematic Creation and Export
+### Visual / Geometry Helpers (8)
 
-| Tool                   | Description                      | Access             |
-| ---------------------- | -------------------------------- | ------------------ |
-| `create_schematic`     | Create a new schematic file      | Routed (schematic) |
-| `get_schematic_view`   | Get schematic as image (PNG/SVG) | Routed (schematic) |
-| `export_schematic_svg` | Export schematic to SVG          | Routed (schematic) |
-| `export_schematic_pdf` | Export schematic to PDF          | Routed (schematic) |
+| Tool                          | Description                                               | Access             |
+| ----------------------------- | --------------------------------------------------------- | ------------------ |
+| `get_schematic_view`          | Render schematic as image (PNG/SVG)                       | Routed (schematic) |
+| `get_schematic_view_region`   | Render a specific region of the schematic as image        | Additional         |
+| `find_overlapping_elements`   | Find schematic elements that visually overlap             | Additional         |
+| `get_elements_in_region`      | Get all elements inside an XY bounding box                | Additional         |
+| `find_wires_crossing_symbols` | Find wires that cross through symbol bodies (DRC helper)  | Additional         |
+| `list_floating_labels`        | List net labels not connected to any wire                 | Additional         |
+| `find_orphaned_wires`         | Find wire segments not connected at one or both ends      | Additional         |
+| `snap_to_grid`                | Snap an XY coordinate to the nearest schematic grid point | Additional         |
 
-### Validation and Synchronization
+### Schematic Creation and Export (3)
+
+| Tool                   | Description                 | Access             |
+| ---------------------- | --------------------------- | ------------------ |
+| `create_schematic`     | Create a new schematic file | Routed (schematic) |
+| `export_schematic_svg` | Export schematic to SVG     | Routed (schematic) |
+| `export_schematic_pdf` | Export schematic to PDF     | Routed (schematic) |
+
+### Validation and Synchronization (3)
 
 | Tool                      | Description                                           | Access             |
 | ------------------------- | ----------------------------------------------------- | ------------------ |
@@ -296,30 +322,29 @@ _Source: `src/tools/ui.ts`_
 
 ---
 
-## Router Tools (4 tools)
+## Router / Discovery Tools (3 tools)
 
 _Source: `src/tools/router.ts`_
 
-These meta-tools provide discovery and execution of routed tools:
+Registriert via `registerRouterTools()` in `src/server.ts`. Ermöglichen Tool-Discovery durch den LLM.
 
-| Tool                   | Description                          |
-| ---------------------- | ------------------------------------ |
-| `list_tool_categories` | Browse all available tool categories |
-| `get_category_tools`   | View tools in a specific category    |
-| `search_tools`         | Find tools by keyword                |
-| `execute_tool`         | Run any routed tool with parameters  |
+| Tool                   | Description                          | Access |
+| ---------------------- | ------------------------------------ | ------ |
+| `list_tool_categories` | Browse all available tool categories | Direct |
+| `get_category_tools`   | View tools in a specific category    | Direct |
+| `search_tools`         | Find tools by keyword                | Direct |
 
 ---
 
 ## Summary by Access Type
 
-| Access Type | Count   | Description                                         |
-| ----------- | ------- | --------------------------------------------------- |
-| Direct      | 18      | Always visible, no router needed                    |
-| Routed      | 65      | Discovered via router, invoked via `execute_tool`   |
-| Router      | 4       | Meta-tools for discovering and running routed tools |
-| Additional  | 35      | Always visible, registered directly                 |
-| **Total**   | **122** |                                                     |
+| Access Type          | Count   | Description                              |
+| -------------------- | ------- | ---------------------------------------- |
+| Direct               | 21      | Always visible                           |
+| Routed               | 72      | Always visible (registered directly)     |
+| Additional           | 44      | Always visible, registered directly      |
+| Router/Discovery     | 3       | Tool-Discovery (`router.ts`, registered) |
+| **Total registered** | **137** | Verifiziert via VS Code MCP Discovery    |
 
 ## Summary by Category
 
@@ -331,7 +356,7 @@ These meta-tools provide discovery and execution of routed tools:
 | Routing              | 13         |
 | Design Rules / DRC   | 8          |
 | Export               | 8          |
-| Schematic            | 27         |
+| Schematic            | 43         |
 | Footprint Libraries  | 4          |
 | Symbol Libraries     | 4          |
 | Footprint Creator    | 4          |
@@ -340,11 +365,11 @@ These meta-tools provide discovery and execution of routed tools:
 | JLCPCB Integration   | 5          |
 | Freerouting          | 4          |
 | UI Management        | 2          |
-| Router               | 4          |
-| **Total**            | **122**    |
+| Router / Discovery   | 3          |
+| **Total registered** | **137**    |
+
+> **Verified:** VS Code MCP Discovery Log meldet **137** registrierte Tools.
 
 ## Token Impact
 
-**Before Router Pattern:** All 122 tools in context = ~80K+ tokens
-**With Router Pattern:** 18 direct + 35 additional + 4 router = 57 always-visible tools
-**On-Demand:** 65 routed tools loaded only when their category is requested
+Alle 137 registrierten Tools sind stets für den LLM sichtbar. Die Discovery-Tools in `router.ts` ermöglichen dem Modell, Tools nach Kategorie oder Stichwort zu durchsuchen.

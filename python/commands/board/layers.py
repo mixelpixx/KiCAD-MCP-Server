@@ -39,9 +39,6 @@ class BoardLayerCommands:
                     "errorDetails": "name, type, and position are required",
                 }
 
-            # Get layer stack
-            layer_stack = self.board.GetLayerStack()
-
             # Determine layer ID based on position and number
             layer_id = None
             if position == "inner":
@@ -64,12 +61,16 @@ class BoardLayerCommands:
                     "errorDetails": "position must be 'top', 'bottom', or 'inner'",
                 }
 
-            # Set layer properties
-            layer_stack.SetLayerName(layer_id, name)
-            layer_stack.SetLayerType(layer_id, self._get_layer_type(layer_type))
+            # Enable inner copper layers by increasing copper layer count (KiCAD 9.0 API)
+            if position == "inner":
+                current_count = self.board.GetCopperLayerCount()
+                needed_count = 2 + (number or 0)  # F.Cu + B.Cu + inner layers
+                if needed_count > current_count:
+                    self.board.SetCopperLayerCount(needed_count)
 
-            # Enable the layer
-            self.board.SetLayerEnabled(layer_id, True)
+            # Set layer properties directly on board (GetLayerStack removed in KiCAD 9.0)
+            self.board.SetLayerName(layer_id, name)
+            self.board.SetLayerType(layer_id, self._get_layer_type(layer_type))
 
             return {
                 "success": True,
