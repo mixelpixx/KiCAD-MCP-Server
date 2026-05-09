@@ -445,9 +445,16 @@ class DynamicSymbolLoader:
         insert_marker = "(sheet_instances"
         insert_at = content.rfind(insert_marker)
         if insert_at == -1:
-            raise ValueError("Could not find insertion point in schematic")
-
-        content = content[:insert_at] + instance_block + "\n  " + content[insert_at:]
+            # Hierarchical sub-sheets don't carry (sheet_instances ...) — only the
+            # root .kicad_sch does. Fall back to inserting just before the final
+            # closing paren of the outer (kicad_sch ...) form.
+            stripped = content.rstrip()
+            if not stripped.endswith(")"):
+                raise ValueError("Could not find insertion point in schematic")
+            insert_at = len(stripped) - 1
+            content = content[:insert_at] + instance_block + "\n" + content[insert_at:]
+        else:
+            content = content[:insert_at] + instance_block + "\n  " + content[insert_at:]
 
         with open(schematic_path, "w", encoding="utf-8") as f:
             f.write(content)
