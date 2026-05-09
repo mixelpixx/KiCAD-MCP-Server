@@ -197,6 +197,103 @@ class TestHandlerAddSchematicComponent:
 
 
 # ---------------------------------------------------------------------------
+# Hierarchical sub-sheets — no (sheet_instances ...) block
+# ---------------------------------------------------------------------------
+
+
+# Minimal sub-sheet: same outer (kicad_sch ...) form as a root schematic but
+# WITHOUT (sheet_instances ...). Hierarchical KiCad designs only carry that
+# block in the root .kicad_sch — every child sheet ends after lib_symbols /
+# any placed (symbol ...) blocks. The fix under test must insert new symbol
+# instances before the closing paren of (kicad_sch ...) when the marker is
+# missing.
+SUB_SHEET_NO_SHEET_INSTANCES = """(kicad_sch
+\t(version 20260306)
+\t(generator "eeschema")
+\t(generator_version "10.0")
+\t(uuid "bbbb2222-2222-2222-2222-bbbbbbbbbbbb")
+\t(paper "A4")
+\t(lib_symbols)
+)
+"""
+
+
+@pytest.mark.unit
+class TestCreateComponentInstanceSubSheet:
+    """Hierarchical sub-sheets don't have (sheet_instances ...).
+
+    Before the fix, create_component_instance raised
+    'Could not find insertion point in schematic' on any sub-sheet, blocking
+    every add_schematic_component call into a hierarchical design's child
+    sheet.
+    """
+
+    def setup_method(self) -> None:
+        from commands.dynamic_symbol_loader import DynamicSymbolLoader
+
+        self.DynamicSymbolLoader = DynamicSymbolLoader
+
+    def _loader(self) -> Any:
+        return self.DynamicSymbolLoader()
+
+    def test_sub_sheet_insertion_succeeds(self, tmp_path: Any) -> None:
+        sch = tmp_path / "child.kicad_sch"
+        sch.write_text(SUB_SHEET_NO_SHEET_INSTANCES, encoding="utf-8")
+
+        ok = self._loader().create_component_instance(
+            sch, "Device", "R", reference="R_TEST", value="100k", x=50, y=50
+        )
+
+        assert ok is True
+        content = sch.read_text(encoding="utf-8")
+        assert '"R_TEST"' in content
+        assert "100k" in content
+
+    def test_sub_sheet_keeps_outer_form_balanced(self, tmp_path: Any) -> None:
+        """The new symbol must land inside (kicad_sch ...), with parens balanced."""
+        sch = tmp_path / "child.kicad_sch"
+        sch.write_text(SUB_SHEET_NO_SHEET_INSTANCES, encoding="utf-8")
+
+        self._loader().create_component_instance(
+            sch, "Device", "R", reference="R_TEST", value="1k", x=10, y=10
+        )
+
+        content = sch.read_text(encoding="utf-8")
+        assert content.count("(") == content.count(
+            ")"
+        ), "Inserting into a sub-sheet must keep parens balanced"
+        # The outer form must still parse via sexpdata.
+        import sexpdata
+
+        parsed = sexpdata.loads(content)
+        assert isinstance(parsed, list)
+        assert parsed[0] == sexpdata.Symbol("kicad_sch")
+
+    def test_sub_sheet_round_trips_via_sexpdata(self, tmp_path: Any) -> None:
+        """The injected symbol must survive a sexpdata load+dump round-trip."""
+        import sexpdata
+
+        sch = tmp_path / "child.kicad_sch"
+        sch.write_text(SUB_SHEET_NO_SHEET_INSTANCES, encoding="utf-8")
+
+        self._loader().create_component_instance(
+            sch, "Device", "R", reference="R_TEST", value="1k", x=10, y=10
+        )
+
+        parsed = sexpdata.loads(sch.read_text(encoding="utf-8"))
+        # The placed (symbol (lib_id ...) ...) block must be a top-level child of kicad_sch.
+        symbol_items = [
+            item
+            for item in parsed[1:]
+            if isinstance(item, list) and len(item) > 0 and item[0] == sexpdata.Symbol("symbol")
+        ]
+        # Confirm at least one of those carries our reference.
+        assert any(
+            sexpdata.dumps(s).find('"R_TEST"') >= 0 for s in symbol_items
+        ), "Reference 'R_TEST' should appear in a top-level (symbol ...) child"
+
+
+# ---------------------------------------------------------------------------
 # Mirror parameter — known gap
 # ---------------------------------------------------------------------------
 
