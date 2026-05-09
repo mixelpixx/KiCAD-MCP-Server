@@ -174,7 +174,9 @@ class WireManager:
                 start_point, end_point, stroke_width, stroke_type
             )
 
-            # Find insertion point (before sheet_instances)
+            # Find insertion point (before sheet_instances on the root sheet,
+            # or appended to the end on a hierarchical sub-sheet which has no
+            # sheet_instances block).
             sheet_instances_index = None
             for i, item in enumerate(sch_data):
                 if isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SHEET_INSTANCES:
@@ -182,10 +184,10 @@ class WireManager:
                     break
 
             if sheet_instances_index is None:
-                logger.error("No sheet_instances section found in schematic")
-                return False
+                # Sub-sheets in hierarchical designs don't have (sheet_instances).
+                sheet_instances_index = len(sch_data)
 
-            # Insert wire before sheet_instances
+            # Insert wire before sheet_instances (or at end for sub-sheets)
             sch_data.insert(sheet_instances_index, wire_sexp)
             logger.info(f"Injected wire from {start_point} to {end_point}")
 
@@ -249,7 +251,9 @@ class WireManager:
                 for i in range(len(points) - 1)
             ]
 
-            # Find insertion point
+            # Find insertion point (before sheet_instances on the root sheet,
+            # or appended to the end on a hierarchical sub-sheet which has no
+            # sheet_instances block).
             sheet_instances_index = None
             for i, item in enumerate(sch_data):
                 if isinstance(item, list) and len(item) > 0 and item[0] == _SYM_SHEET_INSTANCES:
@@ -257,8 +261,8 @@ class WireManager:
                     break
 
             if sheet_instances_index is None:
-                logger.error("No sheet_instances section found in schematic")
-                return False
+                # Sub-sheets in hierarchical designs don't have (sheet_instances).
+                sheet_instances_index = len(sch_data)
 
             # Insert all segments (in reverse so order is preserved after inserts)
             for wire_sexp in reversed(wire_sexps):
