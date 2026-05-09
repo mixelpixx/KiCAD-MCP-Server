@@ -3,13 +3,11 @@ Board view command implementations for KiCAD interface
 """
 
 import base64
-import io
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import pcbnew
-from PIL import Image
 
 logger = logging.getLogger("kicad_interface")
 
@@ -73,95 +71,85 @@ class BoardViewCommands:
             }
 
     def get_board_2d_view(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get a 2D image of the PCB"""
+        """Render PCB to PNG/SVG via kicad-cli (no pcbnew/cffi dependency)."""
+        import glob
+        import subprocess
+        import tempfile
+
         try:
-            if not self.board:
+            pcb_path = params.get("pcbPath")
+            if not pcb_path:
+                # fall back to loaded board path
+                if self.board:
+                    pcb_path = self.board.GetFileName()
+                if not pcb_path:
+                    return {"success": False, "message": "pcbPath required"}
+
+            if not os.path.exists(pcb_path):
+                return {"success": False, "message": f"PCB file not found: {pcb_path}"}
+
+            width = params.get("width", 1600)
+            height = params.get("height", 1200)
+            fmt = params.get("format", "png")
+            layers: List[str] = params.get("layers", [])
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                cmd = [
+                    "kicad-cli",
+                    "pcb",
+                    "export",
+                    "svg",
+                    "--output",
+                    tmpdir,
+                    "--black-and-white",
+                ]
+                if layers:
+                    cmd += ["--layers", ",".join(layers)]
+                cmd.append(pcb_path)
+
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                if result.returncode != 0:
+                    return {
+                        "success": False,
+                        "message": f"kicad-cli failed: {result.stderr.strip()}",
+                    }
+
+                svg_files = glob.glob(os.path.join(tmpdir, "*.svg"))
+                if not svg_files:
+                    return {"success": False, "message": "kicad-cli produced no SVG output"}
+
+                svg_path = svg_files[0]
+
+                if fmt == "svg":
+                    with open(svg_path, "r", encoding="utf-8") as f:
+                        return {"success": True, "imageData": f.read(), "format": "svg"}
+
+                # Convert SVG → PNG via cairosvg
+                try:
+                    from cairosvg import svg2png
+                except ImportError:
+                    with open(svg_path, "r", encoding="utf-8") as f:
+                        return {
+                            "success": True,
+                            "imageData": f.read(),
+                            "format": "svg",
+                            "message": "cairosvg not installed — returning SVG. Install: pip install cairosvg",
+                        }
+
+                png_data = svg2png(url=svg_path, output_width=width, output_height=height)
                 return {
-                    "success": False,
-                    "message": "No board is loaded",
-                    "errorDetails": "Load or create a board first",
+                    "success": True,
+                    "imageData": base64.b64encode(png_data).decode("utf-8"),
+                    "format": "png",
+                    "width": width,
+                    "height": height,
                 }
 
-            # Get parameters
-            width = params.get("width", 800)
-            height = params.get("height", 600)
-            format = params.get("format", "png")
-            layers = params.get("layers", [])
-
-            # Create plot controller
-            plotter = pcbnew.PLOT_CONTROLLER(self.board)
-
-            # Set up plot options
-            plot_opts = plotter.GetPlotOptions()
-            plot_opts.SetOutputDirectory(os.path.dirname(self.board.GetFileName()))
-            plot_opts.SetScale(1)
-            plot_opts.SetMirror(False)
-            # Note: SetExcludeEdgeLayer() removed in KiCAD 9.0 - default behavior includes all layers
-            plot_opts.SetPlotFrameRef(False)
-            plot_opts.SetPlotValue(True)
-            plot_opts.SetPlotReference(True)
-
-            # Plot to SVG first (for vector output)
-            # Note: KiCAD 9.0 prepends the project name to the filename, so we use GetPlotFileName() to get the actual path
-            plotter.OpenPlotfile("temp_view", pcbnew.PLOT_FORMAT_SVG, "Temporary View")
-
-            # Plot specified layers or all enabled layers
-            # Note: In KiCAD 9.0, SetLayer() must be called before PlotLayer()
-            if layers:
-                for layer_name in layers:
-                    layer_id = self.board.GetLayerID(layer_name)
-                    if layer_id >= 0 and self.board.IsLayerEnabled(layer_id):
-                        plotter.SetLayer(layer_id)
-                        plotter.PlotLayer()
-            else:
-                for layer_id in range(pcbnew.PCB_LAYER_ID_COUNT):
-                    if self.board.IsLayerEnabled(layer_id):
-                        plotter.SetLayer(layer_id)
-                        plotter.PlotLayer()
-
-            # Get the actual filename that was created (includes project name prefix)
-            temp_svg = plotter.GetPlotFileName()
-
-            plotter.ClosePlot()
-
-            # Convert SVG to requested format
-            if format == "svg":
-                with open(temp_svg, "r") as f:
-                    svg_data = f.read()
-                os.remove(temp_svg)
-                return {"success": True, "imageData": svg_data, "format": "svg"}
-            else:
-                # Use PIL to convert SVG to PNG/JPG
-                from cairosvg import svg2png
-
-                png_data = svg2png(url=temp_svg, output_width=width, output_height=height)
-                os.remove(temp_svg)
-
-                if format == "jpg":
-                    # Convert PNG to JPG
-                    img = Image.open(io.BytesIO(png_data))
-                    jpg_buffer = io.BytesIO()
-                    img.convert("RGB").save(jpg_buffer, format="JPEG")
-                    jpg_data = jpg_buffer.getvalue()
-                    return {
-                        "success": True,
-                        "imageData": base64.b64encode(jpg_data).decode("utf-8"),
-                        "format": "jpg",
-                    }
-                else:
-                    return {
-                        "success": True,
-                        "imageData": base64.b64encode(png_data).decode("utf-8"),
-                        "format": "png",
-                    }
-
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
         except Exception as e:
-            logger.error(f"Error getting board 2D view: {str(e)}")
-            return {
-                "success": False,
-                "message": "Failed to get board 2D view",
-                "errorDetails": str(e),
-            }
+            logger.error(f"Error getting board 2D view: {e}")
+            return {"success": False, "message": str(e)}
 
     def _get_layer_type_name(self, type_id: int) -> str:
         """Convert KiCAD layer type constant to name"""
