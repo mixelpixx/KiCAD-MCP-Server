@@ -131,50 +131,53 @@ class BoardViewCommands:
     def get_board_2d_view(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Render PCB to PNG/SVG via kicad-cli (no pcbnew/cffi dependency)."""
         import glob
+        import shutil
         import subprocess
         import tempfile
 
         try:
             pcb_path = params.get("pcbPath")
             if not pcb_path:
-                # fall back to loaded board path
                 if self.board:
                     pcb_path = self.board.GetFileName()
                 if not pcb_path:
-                    return {"success": False, "message": "pcbPath required"}
+                    return {"success": False, "message": "pcbPath required", "errorDetails": "Provide pcbPath or load a board first"}
 
             if not os.path.exists(pcb_path):
-                return {"success": False, "message": f"PCB file not found: {pcb_path}"}
+                return {"success": False, "message": f"PCB file not found: {pcb_path}", "errorDetails": pcb_path}
 
             width = params.get("width", 1600)
             height = params.get("height", 1200)
             fmt = params.get("format", "png")
+            if fmt not in ("png", "svg"):
+                return {"success": False, "message": f"Unsupported format '{fmt}'. Use 'png' or 'svg'.", "errorDetails": f"Got: {fmt}"}
             layers: List[str] = params.get("layers", [])
 
+            kicad_cli = shutil.which("kicad-cli") or shutil.which("kicad-cli.exe")
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH", "errorDetails": "Install KiCad and ensure kicad-cli is on PATH"}
+
             with tempfile.TemporaryDirectory() as tmpdir:
-                cmd = [
-                    "kicad-cli",
-                    "pcb",
-                    "export",
-                    "svg",
-                    "--output",
-                    tmpdir,
-                    "--black-and-white",
-                ]
+                cmd = [kicad_cli, "pcb", "export", "svg", "--output", tmpdir, "--black-and-white"]
                 if layers:
                     cmd += ["--layers", ",".join(layers)]
                 cmd.append(pcb_path)
 
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                except subprocess.TimeoutExpired:
+                    return {"success": False, "message": "kicad-cli timed out after 60 s", "errorDetails": " ".join(cmd)}
+
                 if result.returncode != 0:
                     return {
                         "success": False,
-                        "message": f"kicad-cli failed: {result.stderr.strip()}",
+                        "message": "kicad-cli SVG export failed",
+                        "errorDetails": result.stderr.strip() or result.stdout.strip(),
                     }
 
                 svg_files = glob.glob(os.path.join(tmpdir, "*.svg"))
                 if not svg_files:
-                    return {"success": False, "message": "kicad-cli produced no SVG output"}
+                    return {"success": False, "message": "kicad-cli produced no SVG output", "errorDetails": result.stdout.strip()}
 
                 svg_path = svg_files[0]
 
@@ -189,7 +192,7 @@ class BoardViewCommands:
                             "success": True,
                             "imageData": f.read(),
                             "format": "svg",
-                            "message": "No PNG converter available. Install pymupdf, inkscape, or imagemagick.",
+                            "message": "No PNG converter available — returning SVG. Install pymupdf, inkscape, or imagemagick.",
                         }
                 return {
                     "success": True,
@@ -199,11 +202,9 @@ class BoardViewCommands:
                     "height": height,
                 }
 
-        except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
         except Exception as e:
             logger.error(f"Error getting board 2D view: {e}")
-            return {"success": False, "message": str(e)}
+            return {"success": False, "message": "Failed to get board 2D view", "errorDetails": str(e)}
 
     def _get_layer_type_name(self, type_id: int) -> str:
         """Convert KiCAD layer type constant to name"""

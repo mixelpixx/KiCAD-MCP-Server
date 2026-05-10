@@ -382,9 +382,10 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
 
       if (result.success) {
         if (result.format === "svg") {
-          return {
-            content: [{ type: "text" as const, text: result.imageData || "" }],
-          };
+          const parts: { type: "text"; text: string }[] = [];
+          if (result.message) parts.push({ type: "text" as const, text: result.message });
+          parts.push({ type: "text" as const, text: result.imageData || "" });
+          return { content: parts };
         }
         return {
           content: [
