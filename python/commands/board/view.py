@@ -12,6 +12,64 @@ import pcbnew
 logger = logging.getLogger("kicad_interface")
 
 
+def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
+    """Convert SVG to PNG. No cffi dependency.
+
+    Priority:
+      1. pymupdf (fitz) — bundled MuPDF renderer, pure Python, no system deps
+      2. Inkscape CLI — accurate KiCAD SVG rendering
+      3. ImageMagick convert — broad availability fallback
+    Returns PNG bytes or None if all converters fail.
+    """
+    import subprocess
+    import tempfile
+
+    try:
+        import fitz
+
+        doc = fitz.open(svg_path)
+        page = doc[0]
+        mat = fitz.Matrix(width / page.rect.width, height / page.rect.height)
+        return page.get_pixmap(matrix=mat).tobytes("png")
+    except Exception:
+        pass
+
+    out_path = os.path.join(tempfile.mkdtemp(), "out.png")
+
+    try:
+        r = subprocess.run(
+            [
+                "inkscape",
+                svg_path,
+                "--export-type=png",
+                f"--export-width={width}",
+                f"--export-height={height}",
+                f"--export-filename={out_path}",
+            ],
+            capture_output=True,
+            timeout=60,
+        )
+        if r.returncode == 0 and os.path.exists(out_path):
+            with open(out_path, "rb") as f:
+                return f.read()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    try:
+        r = subprocess.run(
+            ["convert", "-density", "150", svg_path, "-resize", f"{width}x{height}", out_path],
+            capture_output=True,
+            timeout=60,
+        )
+        if r.returncode == 0 and os.path.exists(out_path):
+            with open(out_path, "rb") as f:
+                return f.read()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    return None
+
+
 class BoardViewCommands:
     """Handles board viewing operations"""
 
@@ -124,19 +182,15 @@ class BoardViewCommands:
                     with open(svg_path, "r", encoding="utf-8") as f:
                         return {"success": True, "imageData": f.read(), "format": "svg"}
 
-                # Convert SVG → PNG via cairosvg
-                try:
-                    from cairosvg import svg2png
-                except ImportError:
+                png_data = _svg_to_png(svg_path, width, height)
+                if png_data is None:
                     with open(svg_path, "r", encoding="utf-8") as f:
                         return {
                             "success": True,
                             "imageData": f.read(),
                             "format": "svg",
-                            "message": "cairosvg not installed — returning SVG. Install: pip install cairosvg",
+                            "message": "No PNG converter available. Install pymupdf, inkscape, or imagemagick.",
                         }
-
-                png_data = svg2png(url=svg_path, output_width=width, output_height=height)
                 return {
                     "success": True,
                     "imageData": base64.b64encode(png_data).decode("utf-8"),
