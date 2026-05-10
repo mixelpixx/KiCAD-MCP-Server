@@ -567,6 +567,47 @@ class KiCADInterface:
                         logger.info("Updating board reference...")
                         # Get board from the project commands handler
                         self.board = self.project_commands.board
+
+                        # Detect SWIG dehydration before claiming success.
+                        # Without this, every later board op sees a raw
+                        # SwigPyObject and raises AttributeError, while the
+                        # MCP keeps reporting "Opened project" — the exact
+                        # symptom users hit on KiCAD nightlies.
+                        if not self._is_board_healthy():
+                            board_path = (result.get("project") or {}).get("boardPath")
+                            recovered = None
+                            if board_path:
+                                logger.warning(
+                                    "Board after %s is SWIG-dehydrated; attempting recovery",
+                                    command,
+                                )
+                                recovered = self._safe_load_board(board_path)
+                            if recovered is not None:
+                                self.board = recovered
+                                self.project_commands.board = recovered
+                                result.setdefault("warnings", []).append(
+                                    "SWIG board proxy was dehydrated on load; "
+                                    "recovered via pcbnew module reload"
+                                )
+                            else:
+                                # Surface the truth — never claim success when
+                                # the board is unusable.
+                                return {
+                                    "success": False,
+                                    "message": (
+                                        f"{command} loaded the board but the SWIG "
+                                        "proxy is dehydrated and recovery failed"
+                                    ),
+                                    "errorDetails": (
+                                        "pcbnew.LoadBoard returned a BOARD whose "
+                                        "method dispatch is missing (raw SwigPyObject). "
+                                        "This indicates SWIG state corruption in the "
+                                        "current Python process — restart the MCP "
+                                        "server to recover."
+                                    ),
+                                    "_backend": "swig",
+                                    "_realtime": False,
+                                }
                         self._update_command_handlers()
                         # Record the file's signature so subsequent auto-saves
                         # can detect external modifications and refuse to
@@ -694,6 +735,9 @@ class KiCADInterface:
             (rotating, keeps the most recent `_auto_save_backup_keep`),
             then call pcbnew.SaveBoard().
           * Update the recorded signature on success.
+          * If SaveBoard leaves the in-memory BOARD dehydrated (observed on
+            KiCAD nightlies after delete_trace + auto-save), reload from disk
+            so the next command sees a usable proxy instead of a SwigPyObject.
 
         Returns a status dict that handle_command merges into the caller's
         response so warnings about refused saves are visible:
@@ -772,10 +816,29 @@ class KiCADInterface:
             pcbnew.SaveBoard(board_path, self.board)
             logger.debug(f"Auto-saved board to: {board_path}")
             self._board_disk_signature = self._disk_signature(board_path)
-            return {"saved": True, "boardPath": board_path, "backup": backup_path}
         except Exception as e:
             logger.warning(f"Auto-save failed: {e}")
             return {"saved": False, "error": str(e), "backup": backup_path}
+
+        # Post-save dehydration check. If the BOARD lost its bindings during
+        # save, reload from disk while we still know the path. board_path is
+        # guaranteed non-empty here (we returned early above otherwise).
+        if not self._is_board_healthy():
+            logger.warning(
+                "Board became dehydrated during auto-save; reloading from %s",
+                board_path,
+            )
+            recovered = self._safe_load_board(board_path)
+            if recovered is not None:
+                self.board = recovered
+                self._update_command_handlers()
+            else:
+                logger.error(
+                    "Board dehydration after auto-save is unrecoverable — "
+                    "subsequent commands will fail until MCP restart"
+                )
+
+        return {"saved": True, "boardPath": board_path, "backup": backup_path}
 
     def _update_command_handlers(self) -> None:
         """Update board reference in all command handlers"""
@@ -787,6 +850,70 @@ class KiCADInterface:
         self.design_rule_commands.board = self.board
         self.export_commands.board = self.board
         self.freerouting_commands.board = self.board
+
+    # Stable BOARD methods used to detect SWIG dehydration. Newer KiCAD nightly
+    # builds occasionally return a raw SwigPyObject from pcbnew.LoadBoard after
+    # certain mutating sequences (delete_trace, refill_zones, …) — the proxy
+    # type-checks but every method access raises AttributeError. Probing for
+    # these methods catches that state without segfaulting.
+    _BOARD_HEALTH_METHODS = (
+        "GetDesignSettings",
+        "GetBoardEdgesBoundingBox",
+        "GetFileName",
+    )
+
+    def _is_board_healthy(self, board: Optional[Any] = None) -> bool:
+        """Return True if the board (default self.board) has live SWIG dispatch."""
+        target = board if board is not None else self.board
+        if target is None:
+            return False
+        return all(hasattr(target, m) for m in self._BOARD_HEALTH_METHODS)
+
+    def _safe_load_board(self, path: str) -> Optional[Any]:
+        """Load a board from disk, recovering from SWIG dehydration if pcbnew is broken.
+
+        If pcbnew.LoadBoard returns a dehydrated proxy, reload the pcbnew
+        module once and retry. Returns the new board, or None if recovery
+        is impossible (caller must surface a real failure rather than fake
+        success).
+        """
+        global pcbnew
+        try:
+            board = pcbnew.LoadBoard(path)
+        except Exception as e:
+            logger.error(f"LoadBoard({path!r}) raised: {e}")
+            return None
+
+        if self._is_board_healthy(board):
+            return board
+
+        logger.warning(
+            f"LoadBoard({path!r}) returned a dehydrated SWIG proxy; "
+            "reloading pcbnew module and retrying"
+        )
+        try:
+            import importlib
+
+            pcbnew = importlib.reload(pcbnew)
+        except Exception as e:
+            logger.error(f"pcbnew module reload failed: {e}")
+            return None
+
+        try:
+            board = pcbnew.LoadBoard(path)
+        except Exception as e:
+            logger.error(f"LoadBoard retry after pcbnew reload failed: {e}")
+            return None
+
+        if not self._is_board_healthy(board):
+            logger.error(
+                "Board still dehydrated after pcbnew reload; SWIG state is "
+                "unrecoverable in this process — restart the MCP server"
+            )
+            return None
+
+        logger.info("Recovered from SWIG dehydration via pcbnew reload")
+        return board
 
     # Schematic command handlers
     def _handle_create_schematic(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -921,17 +1048,19 @@ class KiCADInterface:
             current_board_file = str(Path(self.board.GetFileName()).resolve()) if self.board else ""
             if board_path_norm != current_board_file:
                 logger.info(f"boardPath differs from current board — reloading: {board_path}")
-                try:
-                    self.board = pcbnew.LoadBoard(board_path)
-                    self._update_command_handlers()
-                    logger.info("Board reloaded from boardPath")
-                except Exception as e:
-                    logger.error(f"Failed to reload board from boardPath: {e}")
+                reloaded = self._safe_load_board(board_path)
+                if reloaded is None:
                     return {
                         "success": False,
                         "message": f"Could not load board from boardPath: {board_path}",
-                        "errorDetails": str(e),
+                        "errorDetails": (
+                            "pcbnew.LoadBoard failed or returned a dehydrated "
+                            "SWIG proxy that could not be recovered"
+                        ),
                     }
+                self.board = reloaded
+                self._update_command_handlers()
+                logger.info("Board reloaded from boardPath")
 
             project_path = Path(board_path).parent
             if project_path != getattr(self, "_current_project_path", None):
@@ -4197,7 +4326,16 @@ class KiCADInterface:
             # Determine board to work with
             board = None
             if board_path:
-                board = pcbnew.LoadBoard(board_path)
+                board = self._safe_load_board(board_path)
+                if board is None:
+                    return {
+                        "success": False,
+                        "message": f"Could not load board from {board_path}",
+                        "errorDetails": (
+                            "pcbnew.LoadBoard failed or returned a dehydrated "
+                            "SWIG proxy that could not be recovered"
+                        ),
+                    }
             elif self.board:
                 board = self.board
                 board_path = board.GetFileName() if not board_path else board_path
@@ -4764,14 +4902,15 @@ class KiCADInterface:
             # call would overwrite the file with the stale in-memory state, erasing the
             # logo.  Reload the board from disk so pcbnew's memory matches the file.
             if result.get("success") and self.board:
-                try:
-                    self.board = pcbnew.LoadBoard(pcb_path)
-                    # Propagate updated board reference to all command handlers
+                reloaded = self._safe_load_board(pcb_path)
+                if reloaded is not None:
+                    self.board = reloaded
                     self._update_command_handlers()
                     logger.info("Reloaded board into pcbnew after SVG logo import")
-                except Exception as reload_err:
+                else:
                     logger.warning(
-                        f"Board reload after SVG import failed (non-fatal): {reload_err}"
+                        "Board reload after SVG import failed (non-fatal); "
+                        "next mutation may operate on stale in-memory state"
                     )
 
             return result
@@ -4868,12 +5007,19 @@ class KiCADInterface:
             return {"success": False, "message": str(e)}
 
     def _handle_check_kicad_ui(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Check if KiCAD UI is running"""
+        """Check if KiCAD UI is running.
+
+        `processes` is the single source of truth — `running` is derived from
+        its length so the two fields cannot disagree. Previously they came
+        from separate detection methods (pgrep regex vs. ps-aux substring) and
+        could race or use different filters, producing the confusing
+        `running=True, processes=[]` state users hit after quitting KiCAD.
+        """
         logger.info("Checking if KiCAD UI is running")
         try:
             manager = KiCADProcessManager()
-            is_running = manager.is_running()
-            processes = manager.get_process_info() if is_running else []
+            processes = manager.get_process_info()
+            is_running = len(processes) > 0
 
             return {
                 "success": True,
@@ -4956,7 +5102,18 @@ print("ok")
                 )
                 if result.returncode == 0 and "ok" in result.stdout:
                     # Reload board after subprocess modified it
-                    self.board = pcbnew.LoadBoard(board_path)
+                    reloaded = self._safe_load_board(board_path)
+                    if reloaded is None:
+                        return {
+                            "success": False,
+                            "message": (
+                                "Zone fill subprocess succeeded but the board "
+                                "could not be reloaded into pcbnew (SWIG state "
+                                "is corrupt — restart the MCP server)"
+                            ),
+                            "zoneCount": zone_count,
+                        }
+                    self.board = reloaded
                     self._update_command_handlers()
                     logger.info("Zone fill subprocess succeeded")
                     return {
