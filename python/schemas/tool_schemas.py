@@ -856,6 +856,39 @@ ROUTING_TOOLS = [
         },
     },
     {
+        "name": "query_zones",
+        "title": "Query Zones",
+        "description": "Queries copper zones (filled pours) on the board with optional filters by net, layer, or bounding box. Returns one entry per zone with net, layers, priority, fill state, and bounding box. Useful for auditing power planes and GND pours, which 'query_traces' does not include.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {
+                    "type": "string",
+                    "description": "Filter by net name (e.g., 'GND', '+3V3')",
+                },
+                "layer": {
+                    "type": "string",
+                    "description": "Filter by layer name (e.g., 'In1.Cu', 'B.Cu'). Matches zones that include this layer in their layer set.",
+                },
+                "boundingBox": {
+                    "type": "object",
+                    "description": "Filter to zones whose bounding box overlaps this region",
+                    "properties": {
+                        "x1": {"type": "number", "description": "Left X coordinate"},
+                        "y1": {"type": "number", "description": "Top Y coordinate"},
+                        "x2": {"type": "number", "description": "Right X coordinate"},
+                        "y2": {"type": "number", "description": "Bottom Y coordinate"},
+                        "unit": {
+                            "type": "string",
+                            "enum": ["mm", "inch"],
+                            "default": "mm",
+                        },
+                    },
+                },
+            },
+        },
+    },
+    {
         "name": "modify_trace",
         "title": "Modify Trace",
         "description": "Modifies properties of an existing trace. Find trace by UUID or position, then change width, layer, or net assignment.",
