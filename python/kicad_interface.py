@@ -7,11 +7,14 @@ and KiCAD's Python API (pcbnew). It receives commands via stdin as
 JSON and returns responses via stdout also as JSON.
 """
 
+import hashlib
 import json
 import logging
 import os
+import shutil
 import sys
 import traceback
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -259,6 +262,12 @@ class KiCADInterface:
         """Initialize the interface and command handlers"""
         self.board = None
         self.project_filename = None
+        # On-disk signature (mtime_ns, sha256_hex) of self.board's file as of
+        # last load or successful auto-save.  Used by _auto_save_board() to
+        # detect external modifications and refuse to clobber them.
+        self._board_disk_signature: Optional[Tuple[int, str]] = None
+        # Number of timestamped backups to keep in .mcp-backups/ per board file.
+        self._auto_save_backup_keep = 20
         self.use_ipc = USE_IPC_BACKEND
         self.ipc_backend = ipc_backend
         self.ipc_board_api = None
@@ -539,11 +548,22 @@ class KiCADInterface:
                         # Get board from the project commands handler
                         self.board = self.project_commands.board
                         self._update_command_handlers()
+                        # Record the file's signature so subsequent auto-saves
+                        # can detect external modifications and refuse to
+                        # overwrite them.
+                        self._record_board_signature()
                     elif command in self._BOARD_MUTATING_COMMANDS:
                         # Auto-save after every board mutation via SWIG.
                         # Prevents data loss if Claude hits context limit before
-                        # an explicit save_project call.
-                        self._auto_save_board()
+                        # an explicit save_project call.  When auto-save refuses
+                        # because the on-disk file changed externally, surface
+                        # a warning to the caller so they don't believe their
+                        # mutation was persisted.
+                        save_status = self._auto_save_board()
+                        if isinstance(result, dict) and not save_status.get("saved"):
+                            if save_status.get("warning"):
+                                result.setdefault("warnings", []).append(save_status["warning"])
+                            result["autoSave"] = save_status
 
                 return result
             else:
@@ -587,19 +607,133 @@ class KiCADInterface:
         "connect_to_net",
     }
 
-    def _auto_save_board(self) -> None:
-        """Save board to disk after SWIG mutations.
-        Called automatically after every board-mutating SWIG command so that
-        data is not lost if Claude hits the context limit before save_project.
-        """
+    @staticmethod
+    def _disk_signature(path: str) -> Optional[Tuple[int, str]]:
+        """Return (mtime_ns, sha256_hex) for the file, or None if missing/unreadable."""
         try:
-            if self.board:
-                board_path = self.board.GetFileName()
-                if board_path:
-                    pcbnew.SaveBoard(board_path, self.board)
-                    logger.debug(f"Auto-saved board to: {board_path}")
+            st = os.stat(path)
+            h = hashlib.sha256()
+            with open(path, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    h.update(chunk)
+            return (st.st_mtime_ns, h.hexdigest())
+        except OSError:
+            return None
+
+    def _record_board_signature(self) -> None:
+        """Record the current on-disk signature of self.board's file.
+
+        Call this after a fresh load (open_project / create_project) or after
+        any save we perform ourselves, so that _auto_save_board() can detect
+        when an external actor has modified the file in between.
+        """
+        if not self.board:
+            self._board_disk_signature = None
+            return
+        try:
+            path = self.board.GetFileName()
+        except Exception:
+            path = None
+        self._board_disk_signature = self._disk_signature(path) if path else None
+
+    def _prune_auto_save_backups(self, backup_dir: str, base_name: str) -> None:
+        """Keep only the most recent `_auto_save_backup_keep` backups for `base_name`."""
+        try:
+            entries = [
+                os.path.join(backup_dir, f)
+                for f in os.listdir(backup_dir)
+                if f.startswith(base_name + ".")
+            ]
+            entries.sort(key=os.path.getmtime, reverse=True)
+            for old in entries[self._auto_save_backup_keep :]:
+                try:
+                    os.remove(old)
+                except OSError:
+                    pass
+        except OSError as e:
+            logger.debug(f"Backup pruning skipped: {e}")
+
+    def _auto_save_board(self) -> Dict[str, Any]:
+        """Save the in-memory board to disk after a SWIG-path mutation.
+
+        Behaviour:
+          * If the file's on-disk signature has diverged from the one we
+            recorded at load (or at our last successful save), refuse to
+            overwrite — an external actor (KiCad GUI, another process, git)
+            has touched the file and saving would clobber their changes.
+          * Otherwise, copy the existing file to ``<dir>/.mcp-backups/<name>.<ts>``
+            (rotating, keeps the most recent `_auto_save_backup_keep`),
+            then call pcbnew.SaveBoard().
+          * Update the recorded signature on success.
+
+        Returns a status dict that handle_command merges into the caller's
+        response so warnings about refused saves are visible:
+          {"saved": True,  "boardPath": ..., "backup": <path-or-None>}
+          {"saved": False, "skipped": <reason>}                      -- nothing to save
+          {"saved": False, "warning": ..., "diskChangedExternally": True, ...}
+          {"saved": False, "error": ...}                             -- pcbnew error
+        """
+        if not self.board:
+            return {"saved": False, "skipped": "no board loaded"}
+
+        try:
+            board_path = self.board.GetFileName()
+        except Exception as e:
+            return {"saved": False, "skipped": f"GetFileName failed: {e}"}
+
+        if not board_path:
+            return {"saved": False, "skipped": "no board path"}
+
+        expected = self._board_disk_signature
+        current = self._disk_signature(board_path)
+
+        # If we have a recorded signature and disk has diverged, refuse to save.
+        # (If expected is None we treat this as "first save" and proceed —
+        # otherwise users with pre-existing setups would never be able to save.)
+        if expected is not None and current is not None and expected != current:
+            warning = (
+                "Auto-save refused: the on-disk PCB file changed externally "
+                "since this MCP session loaded it. To avoid clobbering those "
+                "changes, the in-memory mutation has NOT been written to disk. "
+                "Reload via open_project to refresh, then re-apply the change."
+            )
+            logger.warning(f"{warning} ({board_path})")
+            logger.warning(f"  expected mtime_ns={expected[0]} sha256={expected[1][:12]}…")
+            logger.warning(f"  current  mtime_ns={current[0]} sha256={current[1][:12]}…")
+            return {
+                "saved": False,
+                "warning": warning,
+                "boardPath": board_path,
+                "diskChangedExternally": True,
+                "expectedMtimeNs": expected[0],
+                "currentMtimeNs": current[0],
+                "memChangesUnsaved": True,
+            }
+
+        # Make a rotating backup of the existing file (best-effort).
+        backup_path: Optional[str] = None
+        if current is not None:
+            try:
+                backup_dir = os.path.join(os.path.dirname(board_path) or ".", ".mcp-backups")
+                os.makedirs(backup_dir, exist_ok=True)
+                stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
+                base = os.path.basename(board_path)
+                backup_path = os.path.join(backup_dir, f"{base}.{stamp}")
+                shutil.copy2(board_path, backup_path)
+                self._prune_auto_save_backups(backup_dir, base)
+            except OSError as e:
+                logger.warning(f"Auto-save backup failed (continuing): {e}")
+                backup_path = None
+
+        # Write the board.
+        try:
+            pcbnew.SaveBoard(board_path, self.board)
+            logger.debug(f"Auto-saved board to: {board_path}")
+            self._board_disk_signature = self._disk_signature(board_path)
+            return {"saved": True, "boardPath": board_path, "backup": backup_path}
         except Exception as e:
             logger.warning(f"Auto-save failed: {e}")
+            return {"saved": False, "error": str(e), "backup": backup_path}
 
     def _update_command_handlers(self) -> None:
         """Update board reference in all command handlers"""
