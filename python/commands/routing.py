@@ -707,6 +707,113 @@ class RoutingCommands:
                 "errorDetails": str(e),
             }
 
+    def query_zones(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Query copper zones (filled pours) by net, layer, or bounding box.
+
+        Returns one entry per zone with its net, layers, priority, fill state,
+        and bounding box. Useful for auditing power planes / GND pours that
+        ``query_traces`` does not report (zones are PCB_ZONE_T, not tracks).
+        """
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first",
+                }
+
+            net_name = params.get("net")
+            layer = params.get("layer")
+            bbox = params.get("boundingBox")
+
+            scale = 1000000  # nm -> mm
+            target_layer_id = None
+            if layer:
+                target_layer_id = self.board.GetLayerID(layer)
+
+            bbox_box = None
+            if bbox:
+                bbox_unit = bbox.get("unit", "mm")
+                bbox_scale = scale if bbox_unit == "mm" else 25400000
+                bbox_box = (
+                    int(bbox.get("x1", 0) * bbox_scale),
+                    int(bbox.get("y1", 0) * bbox_scale),
+                    int(bbox.get("x2", 0) * bbox_scale),
+                    int(bbox.get("y2", 0) * bbox_scale),
+                )
+
+            zones_out = []
+            for zone in list(self.board.Zones()):
+                try:
+                    z_net = zone.GetNetname()
+                    if net_name and z_net != net_name:
+                        continue
+
+                    # A zone can span multiple copper layers; collect them.
+                    layer_names = []
+                    try:
+                        layer_set = zone.GetLayerSet()
+                        seq = layer_set.CuStack() if hasattr(layer_set, "CuStack") else layer_set.Seq()
+                        for lid in seq:
+                            layer_names.append(self.board.GetLayerName(lid))
+                    except Exception:
+                        layer_names = [self.board.GetLayerName(zone.GetLayer())]
+
+                    if target_layer_id is not None:
+                        if target_layer_id not in [self.board.GetLayerID(n) for n in layer_names]:
+                            continue
+
+                    bb = zone.GetBoundingBox()
+                    bb_x1, bb_y1 = bb.GetLeft(), bb.GetTop()
+                    bb_x2, bb_y2 = bb.GetRight(), bb.GetBottom()
+
+                    if bbox_box is not None:
+                        x1, y1, x2, y2 = bbox_box
+                        # Reject if no overlap with filter bbox.
+                        if bb_x2 < x1 or bb_x1 > x2 or bb_y2 < y1 or bb_y1 > y2:
+                            continue
+
+                    entry = {
+                        "uuid": zone.m_Uuid.AsString(),
+                        "net": z_net,
+                        "netCode": zone.GetNetCode(),
+                        "layers": layer_names,
+                        "priority": zone.GetAssignedPriority() if hasattr(zone, "GetAssignedPriority") else 0,
+                        "isFilled": bool(zone.IsFilled()),
+                        "minThickness": zone.GetMinThickness() / scale,
+                        "boundingBox": {
+                            "x1": bb_x1 / scale,
+                            "y1": bb_y1 / scale,
+                            "x2": bb_x2 / scale,
+                            "y2": bb_y2 / scale,
+                            "unit": "mm",
+                        },
+                    }
+                    # Area is only available when zone is filled.
+                    try:
+                        entry["filledArea"] = zone.GetFilledArea() / (scale * scale)
+                    except Exception:
+                        pass
+
+                    zones_out.append(entry)
+                except Exception as zone_err:
+                    logger.warning(f"Skipping invalid zone object: {zone_err}")
+                    continue
+
+            return {
+                "success": True,
+                "zoneCount": len(zones_out),
+                "zones": zones_out,
+            }
+
+        except Exception as e:
+            logger.error(f"Error querying zones: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to query zones",
+                "errorDetails": str(e),
+            }
+
     def modify_trace(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Modify properties of an existing trace
 

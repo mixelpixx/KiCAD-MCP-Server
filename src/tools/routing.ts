@@ -182,6 +182,40 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
     },
   );
 
+  // Query zones tool
+  server.tool(
+    "query_zones",
+    "Query copper zones (filled pours) on the board with optional filters by net, layer, or bounding box. Returns zone net, layers, priority, fill state, and bounding box. Useful for auditing power planes and GND pours that query_traces does not include.",
+    {
+      net: z.string().optional().describe("Filter by net name"),
+      layer: z
+        .string()
+        .optional()
+        .describe("Filter by layer name (matches zones that include this layer)"),
+      boundingBox: z
+        .object({
+          x1: z.number(),
+          y1: z.number(),
+          x2: z.number(),
+          y2: z.number(),
+          unit: z.enum(["mm", "inch"]).optional(),
+        })
+        .optional()
+        .describe("Filter to zones whose bounding box overlaps this region"),
+    },
+    async (args: any) => {
+      const result = await callKicadScript("query_zones", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
   // Get nets list tool
   server.tool(
     "get_nets_list",

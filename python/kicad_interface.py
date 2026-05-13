@@ -343,6 +343,7 @@ class KiCADInterface:
             "add_via": self.routing_commands.add_via,
             "delete_trace": self.routing_commands.delete_trace,
             "query_traces": self.routing_commands.query_traces,
+            "query_zones": self.routing_commands.query_zones,
             "modify_trace": self.routing_commands.modify_trace,
             "copy_routing_pattern": self.routing_commands.copy_routing_pattern,
             "get_nets_list": self.routing_commands.get_nets_list,

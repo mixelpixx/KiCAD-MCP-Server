@@ -35,6 +35,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New MCP Tools
 
+- `query_zones` — Query copper zones (filled pours) on the board with optional
+  filters by net, layer, or bounding box. Returns one entry per zone with its
+  net, layers, priority, fill state, min thickness, bounding box, and filled
+  area. Complements `query_traces`, which only reports tracks/vias and silently
+  omits power-plane and GND pours — making layer-usage audits incomplete on any
+  board that uses copper zones.
+
 - `set_schematic_component_property` — Add or update a single custom property
   (BOM / sourcing field) on a placed schematic symbol. Convenience wrapper
   around `edit_schematic_component` for the common case of attaching one MPN /
