@@ -25,7 +25,8 @@ class KiCADServer {
 
   constructor() {
     // Set absolute path to the Python KiCAD interface script
-    this.kicadScriptPath = process.env.KICAD_SCRIPT_PATH ||
+    this.kicadScriptPath =
+      process.env.KICAD_SCRIPT_PATH ||
       path.join(path.dirname(fileURLToPath(import.meta.url)), "../python/kicad_interface.py");
 
     // Check if script exists
