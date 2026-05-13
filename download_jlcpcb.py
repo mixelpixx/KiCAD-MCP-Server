@@ -19,11 +19,14 @@ import sys
 import time
 from pathlib import Path
 
-DATA_DIR = Path(__file__).parent / "data"
-DATA_DIR.mkdir(exist_ok=True)
+sys.path.insert(0, str(Path(__file__).parent / "python"))
+from utils.platform_helper import PlatformHelper  # noqa: E402
+
+DATA_DIR = PlatformHelper.get_data_dir()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 CACHE_DIR = DATA_DIR / "jlcparts_cache"
-CACHE_DIR.mkdir(exist_ok=True)
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 BASE_URL = "https://yaqwsx.github.io/jlcparts/data"
 MAX_PARTS = 30  # probe up to this many split volumes

@@ -262,12 +262,44 @@ class PlatformHelper:
             return PlatformHelper.get_config_dir() / "cache"
 
     @staticmethod
+    def get_data_dir() -> Path:
+        r"""
+        Get appropriate data directory for current platform
+
+        Used for application state that should persist across runs and is not
+        a transient cache (e.g. the JLCPCB parts database).
+
+        Follows platform conventions:
+        - Windows: %USERPROFILE%\.kicad-mcp\data
+        - Linux: $XDG_DATA_HOME/kicad-mcp or ~/.local/share/kicad-mcp
+        - macOS: ~/Library/Application Support/kicad-mcp
+
+        Returns:
+            Path to data directory
+        """
+        if PlatformHelper.is_windows():
+            return PlatformHelper.get_config_dir() / "data"
+        elif PlatformHelper.is_linux():
+            xdg_data = os.environ.get("XDG_DATA_HOME")
+            if xdg_data:
+                xdg_data_path = Path(xdg_data).expanduser()
+                if xdg_data_path.is_absolute():
+                    return xdg_data_path / "kicad-mcp"
+                logger.warning("Ignoring relative XDG_DATA_HOME: %s", xdg_data)
+            return Path.home() / ".local" / "share" / "kicad-mcp"
+        elif PlatformHelper.is_macos():
+            return Path.home() / "Library" / "Application Support" / "kicad-mcp"
+        else:
+            return PlatformHelper.get_config_dir() / "data"
+
+    @staticmethod
     def ensure_directories() -> None:
         """Create all necessary directories if they don't exist"""
         dirs_to_create = [
             PlatformHelper.get_config_dir(),
             PlatformHelper.get_log_dir(),
             PlatformHelper.get_cache_dir(),
+            PlatformHelper.get_data_dir(),
         ]
 
         for directory in dirs_to_create:
@@ -317,6 +349,7 @@ def detect_platform() -> dict:
         "config_dir": str(PlatformHelper.get_config_dir()),
         "log_dir": str(PlatformHelper.get_log_dir()),
         "cache_dir": str(PlatformHelper.get_cache_dir()),
+        "data_dir": str(PlatformHelper.get_data_dir()),
         "kicad_python_paths": [str(p) for p in PlatformHelper.get_kicad_python_paths()],
     }
 
