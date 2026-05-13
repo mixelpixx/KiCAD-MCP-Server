@@ -10,10 +10,17 @@ export function registerSymbolLibraryTools(server: McpServer, callKicadScript: F
   // List available symbol libraries
   server.tool(
     "list_symbol_libraries",
-    "List all available KiCAD symbol libraries from global sym-lib-table",
-    {},
-    async () => {
-      const result = await callKicadScript("list_symbol_libraries", {});
+    "List all available KiCAD symbol libraries from global sym-lib-table, plus the project's sym-lib-table when projectPath (or any related file) is supplied or a project has been opened.",
+    {
+      projectPath: z
+        .string()
+        .optional()
+        .describe(
+          "Optional: project directory or .kicad_pro/.kicad_pcb/.kicad_sch path. Including this exposes project-scope sym-lib-table libraries.",
+        ),
+    },
+    async (args: { projectPath?: string }) => {
+      const result = await callKicadScript("list_symbol_libraries", args);
       if (result.success && result.libraries) {
         return {
           content: [
@@ -51,8 +58,14 @@ Returns symbol references that can be used directly in schematics.`,
         .optional()
         .describe("Optional: filter to specific library name pattern (e.g., 'JLCPCB')"),
       limit: z.number().optional().default(20).describe("Maximum number of results to return"),
+      projectPath: z
+        .string()
+        .optional()
+        .describe(
+          "Optional: project directory or .kicad_pro/.kicad_pcb/.kicad_sch path so project-scope sym-lib-table libraries are searched too.",
+        ),
     },
-    async (args: { query: string; library?: string; limit?: number }) => {
+    async (args: { query: string; library?: string; limit?: number; projectPath?: string }) => {
       const result = await callKicadScript("search_symbols", args);
       if (result.success && result.symbols) {
         if (result.symbols.length === 0) {
@@ -99,11 +112,17 @@ Returns symbol references that can be used directly in schematics.`,
   // List symbols in a specific library
   server.tool(
     "list_library_symbols",
-    "List all symbols in a specific KiCAD symbol library",
+    "List all symbols in a specific KiCAD symbol library (global or project-scope when projectPath is supplied or a project has been opened).",
     {
       library: z.string().describe("Library name (e.g., 'Device', 'PCM_JLCPCB-MCUs')"),
+      projectPath: z
+        .string()
+        .optional()
+        .describe(
+          "Optional: project directory or .kicad_pro/.kicad_pcb/.kicad_sch path to resolve project-scope libraries.",
+        ),
     },
-    async (args: { library: string }) => {
+    async (args: { library: string; projectPath?: string }) => {
       const result = await callKicadScript("list_library_symbols", args);
       if (result.success && result.symbols) {
         const symbolList = result.symbols
@@ -137,13 +156,19 @@ Returns symbol references that can be used directly in schematics.`,
   // Get detailed information about a specific symbol
   server.tool(
     "get_symbol_info",
-    "Get detailed information about a specific symbol",
+    "Get detailed information about a specific symbol (global or project-scope when projectPath is supplied or a project has been opened).",
     {
       symbol: z
         .string()
         .describe("Symbol specification (e.g., 'Device:R' or 'PCM_JLCPCB-MCUs:STM32F103C8T6')"),
+      projectPath: z
+        .string()
+        .optional()
+        .describe(
+          "Optional: project directory or .kicad_pro/.kicad_pcb/.kicad_sch path so project-scope libraries are searched.",
+        ),
     },
-    async (args: { symbol: string }) => {
+    async (args: { symbol: string; projectPath?: string }) => {
       const result = await callKicadScript("get_symbol_info", args);
       if (result.success && result.symbol_info) {
         const info = result.symbol_info;

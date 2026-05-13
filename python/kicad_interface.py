@@ -305,8 +305,8 @@ class KiCADInterface:
         # Command routing dictionary
         self.command_routes = {
             # Project commands
-            "create_project": self.project_commands.create_project,
-            "open_project": self.project_commands.open_project,
+            "create_project": self._handle_create_project,
+            "open_project": self._handle_open_project,
             "save_project": self.project_commands.save_project,
             "snapshot_project": self._handle_snapshot_project,
             "get_project_info": self.project_commands.get_project_info,
@@ -677,6 +677,59 @@ class KiCADInterface:
         except Exception as e:
             logger.error(f"Error loading schematic: {str(e)}")
             return {"success": False, "message": str(e)}
+
+    def _project_path_from_filename(self, filename: Optional[str]) -> Optional[Path]:
+        """Resolve a project directory from a filename param.
+
+        Accepts a .kicad_pro file, a .kicad_pcb file, or a directory.
+        """
+        if not filename:
+            return None
+        try:
+            p = Path(filename).expanduser()
+        except Exception:
+            return None
+        if p.is_file() or p.suffix in (".kicad_pro", ".kicad_pcb", ".kicad_sch"):
+            return p.parent
+        return p
+
+    def _refresh_symbol_library_for_project(self, project_path: Optional[Path]) -> None:
+        """Rebuild SymbolLibraryCommands' manager so project-scope sym-lib-table
+        is visible to subsequent search/list/info calls. No-op if unchanged."""
+        if project_path is None:
+            return
+        self._current_project_path = project_path
+        try:
+            self.symbol_library_commands.use_project(project_path)
+        except Exception as e:
+            logger.warning(f"Failed to refresh symbol library for project {project_path}: {e}")
+
+    def _handle_open_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Wrap project_commands.open_project so project-scope symbol libraries
+        become visible to subsequent search_symbols / list_symbol_libraries /
+        get_symbol_info calls."""
+        result = self.project_commands.open_project(params)
+        if result.get("success"):
+            project_info = result.get("project") or {}
+            project_path = self._project_path_from_filename(
+                project_info.get("path") or project_info.get("boardPath") or params.get("filename")
+            )
+            self._refresh_symbol_library_for_project(project_path)
+        return result
+
+    def _handle_create_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Wrap project_commands.create_project for the same reason as open_project."""
+        result = self.project_commands.create_project(params)
+        if result.get("success"):
+            project_info = result.get("project") or {}
+            project_path = self._project_path_from_filename(
+                project_info.get("path")
+                or project_info.get("boardPath")
+                or params.get("path")
+                or params.get("filename")
+            )
+            self._refresh_symbol_library_for_project(project_path)
+        return result
 
     def _handle_place_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Place a component on the PCB, with project-local fp-lib-table support.
