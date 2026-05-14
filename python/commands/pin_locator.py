@@ -80,9 +80,21 @@ class PinLocator:
                         elif item[0] == Symbol("number") and len(item) >= 2:
                             pin_data["number"] = str(item[1]).strip('"')
 
-                # Store by pin number
+                # Store by pin number. When the same pin number is defined
+                # more than once in a single symbol — which happens in some
+                # community-generated symbols (e.g.,
+                # ``PCM_Diode_Schottky_AKL:MBRS130``) where an inner
+                # zero-length "ghost" pin overlaps the real outer pin — keep
+                # the definition with the greater ``length``. That is the pin
+                # with a visible stub; its ``at`` coordinate is the wire-
+                # connection endpoint that matches where labels and wires
+                # are actually placed. Ties resolve to first-encountered, so
+                # legitimate same-length duplicates (e.g., per-unit
+                # repetitions in multi-unit symbols) retain stable ordering.
                 if pin_data["number"]:
-                    pins[pin_data["number"]] = pin_data
+                    existing = pins.get(pin_data["number"])
+                    if existing is None or pin_data["length"] > existing["length"]:
+                        pins[pin_data["number"]] = pin_data
 
             # Recurse into sublists
             for item in sexp:
