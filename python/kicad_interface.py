@@ -609,7 +609,15 @@ class KiCADInterface:
 
     @staticmethod
     def _disk_signature(path: str) -> Optional[Tuple[int, str]]:
-        """Return (mtime_ns, sha256_hex) for the file, or None if missing/unreadable."""
+        """Return (mtime_ns, sha256_hex) for the file, or None if missing/unreadable.
+
+        The sha256 is always recomputed from disk: the conflict guard in
+        ``_auto_save_board`` compares hashes (content), not mtime, so we
+        cannot use mtime as a cache key without re-introducing the bug
+        where two writes inside one mtime tick on a coarse-resolution
+        filesystem (FAT32, network mounts, etc.) would mask a real
+        content change.
+        """
         try:
             st = os.stat(path)
             h = hashlib.sha256()
@@ -687,19 +695,27 @@ class KiCADInterface:
         expected = self._board_disk_signature
         current = self._disk_signature(board_path)
 
-        # If we have a recorded signature and disk has diverged, refuse to save.
-        # (If expected is None we treat this as "first save" and proceed —
-        # otherwise users with pre-existing setups would never be able to save.)
-        if expected is not None and current is not None and expected != current:
+        # Only refuse if the file's CONTENT (sha256) has actually diverged
+        # from what we recorded. mtime alone is not a conflict signal —
+        # `touch`, atime-driven backups, or even some MCP read paths can
+        # advance mtime without changing content, and refusing on that
+        # basis traps users in a state where every write needs an explicit
+        # save_project workaround.
+        #
+        # If expected is None, treat this as "first save" and proceed —
+        # otherwise pre-existing setups (open_project ran before this guard
+        # was introduced) would never be able to save.
+        if expected is not None and current is not None and expected[1] != current[1]:
             warning = (
-                "Auto-save refused: the on-disk PCB file changed externally "
-                "since this MCP session loaded it. To avoid clobbering those "
-                "changes, the in-memory mutation has NOT been written to disk. "
-                "Reload via open_project to refresh, then re-apply the change."
+                "Auto-save refused: the on-disk PCB file's contents changed "
+                "externally since this MCP session loaded it. To avoid "
+                "clobbering those changes, the in-memory mutation has NOT "
+                "been written to disk. Reload via open_project to refresh, "
+                "then re-apply the change."
             )
             logger.warning(f"{warning} ({board_path})")
-            logger.warning(f"  expected mtime_ns={expected[0]} sha256={expected[1][:12]}…")
-            logger.warning(f"  current  mtime_ns={current[0]} sha256={current[1][:12]}…")
+            logger.warning(f"  expected sha256={expected[1][:12]}… mtime_ns={expected[0]}")
+            logger.warning(f"  current  sha256={current[1][:12]}… mtime_ns={current[0]}")
             return {
                 "saved": False,
                 "warning": warning,
@@ -709,6 +725,11 @@ class KiCADInterface:
                 "currentMtimeNs": current[0],
                 "memChangesUnsaved": True,
             }
+
+        # Content matches but mtime advanced (e.g. external `touch`): refresh
+        # the recorded mtime so we don't re-hash on every subsequent call.
+        if expected is not None and current is not None and expected != current:
+            self._board_disk_signature = current
 
         # Make a rotating backup of the existing file (best-effort).
         backup_path: Optional[str] = None
