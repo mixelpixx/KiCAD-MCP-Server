@@ -236,7 +236,9 @@ def _parse_virtual_connections(
                 if not hasattr(symbol, "property") or not hasattr(symbol.property, "Reference"):
                     continue
                 ref = symbol.property.Reference.value
-                if not (ref.startswith("#PWR") or ref.startswith("#FLG")):
+                is_pwr_port = ref.startswith("#PWR")
+                is_pwr_flag = ref.startswith("#FLG")
+                if not (is_pwr_port or is_pwr_flag):
                     continue
                 if ref.startswith("_TEMPLATE"):
                     continue
@@ -248,8 +250,28 @@ def _parse_virtual_connections(
                     continue
                 pin_data = all_pins["1"]
                 pt = _to_iu(float(pin_data[0]), float(pin_data[1]))
-                point_to_label[pt] = name
-                label_to_points.setdefault(name, []).append(pt)
+
+                if is_pwr_port:
+                    # Power-port symbol: Value is the net name (+BATT, GND, ...).
+                    # Register in both maps so BFS-via-label-jump can bridge to
+                    # other instances of the same named power net.
+                    point_to_label[pt] = name
+                    label_to_points.setdefault(name, []).append(pt)
+                else:
+                    # Power-flag symbol (#FLG*): Value is always "PWR_FLAG" — an
+                    # ERC marker, not a net name. The pin position is registered
+                    # in point_to_label so find_orphaned_wires accepts wire ends
+                    # terminating on a PWR_FLAG as valid anchors. It is NOT added
+                    # to label_to_points: doing so would let BFS-via-label-jump
+                    # virtually bridge every distinct power rail that has a
+                    # pwr-flag into one mega-net (since every #FLG shares
+                    # Value="PWR_FLAG"). The pwr-flag remains electrically
+                    # connected to its rail via the wire-graph BFS through the
+                    # wire it sits on; the label-bridge mechanism is unneeded
+                    # and actively harmful here.
+                    # setdefault avoids clobbering an upstream power-port label
+                    # in the unlikely case that one sits at the same point.
+                    point_to_label.setdefault(pt, name)
             except Exception as e:
                 logger.warning(f"Error parsing power symbol: {e}")
 
