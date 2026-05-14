@@ -255,6 +255,67 @@ except ImportError as e:
     sys.exit(1)
 
 
+def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
+    """Convert SVG to PNG. No cffi dependency.
+
+    Priority:
+      1. pymupdf (fitz) — bundled MuPDF renderer, pure Python, no system deps
+      2. Inkscape CLI — accurate KiCAD SVG rendering
+      3. ImageMagick convert — broad availability fallback
+    Returns PNG bytes or None if all converters fail.
+    """
+    import subprocess
+    import tempfile
+
+    # 1. pymupdf — no system tools needed
+    try:
+        import fitz
+
+        doc = fitz.open(svg_path)
+        page = doc[0]
+        mat = fitz.Matrix(width / page.rect.width, height / page.rect.height)
+        return page.get_pixmap(matrix=mat).tobytes("png")
+    except Exception:
+        pass
+
+    out_path = os.path.join(tempfile.mkdtemp(), "out.png")
+
+    # 2. Inkscape 1.x
+    try:
+        r = subprocess.run(
+            [
+                "inkscape",
+                svg_path,
+                "--export-type=png",
+                f"--export-width={width}",
+                f"--export-height={height}",
+                f"--export-filename={out_path}",
+            ],
+            capture_output=True,
+            timeout=60,
+        )
+        if r.returncode == 0 and os.path.exists(out_path):
+            with open(out_path, "rb") as f:
+                return f.read()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # 3. ImageMagick
+    try:
+        r = subprocess.run(
+            ["convert", "-density", "150", svg_path, "-resize", f"{width}x{height}", out_path],
+            capture_output=True,
+            timeout=60,
+        )
+        if r.returncode == 0 and os.path.exists(out_path):
+            with open(out_path, "rb") as f:
+                return f.read()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    return None
+
+
 class KiCADInterface:
     """Main interface class to handle KiCAD operations"""
 
@@ -2514,21 +2575,17 @@ class KiCADInterface:
                         svg_data = f.read()
                     return {"success": True, "imageData": svg_data, "format": "svg"}
 
-                # Step 2: Convert SVG to PNG using cairosvg
-                try:
-                    from cairosvg import svg2png
-                except ImportError:
-                    # Fallback: return SVG data with a note
+                # Step 2: Convert SVG to PNG via CLI (no cffi dependency)
+                png_data = _svg_to_png(svg_path, width, height)
+                if png_data is None:
                     with open(svg_path, "r", encoding="utf-8") as f:
                         svg_data = f.read()
                     return {
                         "success": True,
                         "imageData": svg_data,
                         "format": "svg",
-                        "message": "cairosvg not installed — returning SVG instead of PNG. Install with: pip install cairosvg",
+                        "message": "No PNG converter available — returning SVG. Install inkscape or imagemagick.",
                     }
-
-                png_data = svg2png(url=svg_path, output_width=width, output_height=height)
 
                 return {
                     "success": True,
@@ -4314,16 +4371,12 @@ class KiCADInterface:
                         svg_data = f.read()
                     return {"success": True, "imageData": svg_data, "format": "svg"}
                 else:
-                    try:
-                        from cairosvg import svg2png
-                    except ImportError:
+                    png_data = _svg_to_png(cropped_svg_path, width, height)
+                    if png_data is None:
                         return {
                             "success": False,
-                            "message": "PNG export requires the 'cairosvg' package. Install it with: pip install cairosvg",
+                            "message": "No PNG converter available. Install inkscape or imagemagick.",
                         }
-                    png_data = svg2png(
-                        url=cropped_svg_path, output_width=width, output_height=height
-                    )
                     return {
                         "success": True,
                         "imageData": base64.b64encode(png_data).decode("utf-8"),

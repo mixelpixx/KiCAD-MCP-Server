@@ -362,29 +362,49 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   server.tool(
     "get_board_2d_view",
-    "Render a 2D image of the current PCB board and return it as PNG, JPG or SVG.",
+    "Render a 2D image of the PCB using kicad-cli. Returns a PNG (or SVG) you can inspect visually. Use layers parameter to filter — e.g. [\"F.Cu\",\"B.Cu\",\"Edge.Cuts\"] to see only copper and board outline. Call this after zone fills, routing changes, or any time you need visual confirmation of board state.",
     {
-      layers: z.array(z.string()).optional().describe("Optional array of layer names to include"),
-      width: z.number().optional().describe("Optional width of the image in pixels"),
-      height: z.number().optional().describe("Optional height of the image in pixels"),
-      format: z.enum(["png", "jpg", "svg"]).optional().describe("Image format"),
+      pcbPath: z.string().describe("Absolute path to the .kicad_pcb file"),
+      layers: z.array(z.string()).optional().describe("Layer names to include, e.g. [\"F.Cu\",\"B.Cu\",\"Edge.Cuts\"]. Omit for all layers."),
+      width: z.number().optional().describe("Output image width in pixels (default: 1600)"),
+      height: z.number().optional().describe("Output image height in pixels (default: 1200)"),
+      format: z.enum(["png", "svg"]).optional().describe("Output format: png (default, visible to Claude) or svg"),
     },
-    async ({ layers, width, height, format }) => {
+    async ({ pcbPath, layers, width, height, format }) => {
       logger.debug("Getting 2D board view");
       const result = await callKicadScript("get_board_2d_view", {
+        pcbPath,
         layers,
         width,
         height,
         format,
       });
 
+      if (result.success) {
+        if (result.format === "svg") {
+          const parts: { type: "text"; text: string }[] = [];
+          if (result.message) parts.push({ type: "text" as const, text: result.message });
+          parts.push({ type: "text" as const, text: result.imageData || "" });
+          return { content: parts };
+        }
+        return {
+          content: [
+            {
+              type: "image" as const,
+              data: result.imageData,
+              mimeType: "image/png",
+            },
+          ],
+        };
+      }
       return {
         content: [
           {
-            type: "text",
-            text: JSON.stringify(result),
+            type: "text" as const,
+            text: `Failed to get board view: ${result.message || result.errorDetails || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
