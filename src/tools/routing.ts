@@ -63,6 +63,49 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
     },
   );
 
+  // Route arc trace tool
+  server.tool(
+    "route_arc_trace",
+    "Route a copper arc trace defined by start/mid/end points. Uses true PCB arc primitives when available.",
+    {
+      start: z
+        .object({
+          x: z.number(),
+          y: z.number(),
+          unit: z.string().optional(),
+        })
+        .describe("Arc start position"),
+      mid: z
+        .object({
+          x: z.number(),
+          y: z.number(),
+          unit: z.string().optional(),
+        })
+        .describe("A point on arc midpoint"),
+      end: z
+        .object({
+          x: z.number(),
+          y: z.number(),
+          unit: z.string().optional(),
+        })
+        .describe("Arc end position"),
+      layer: z.string().describe("PCB layer"),
+      width: z.number().describe("Trace width in mm"),
+      net: z.string().optional().describe("Net name"),
+    },
+    async (args: any) => {
+      const result = await callKicadScript("route_arc_trace", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
   // Add via tool
   server.tool(
     "add_via",
