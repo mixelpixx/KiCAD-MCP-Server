@@ -10,6 +10,7 @@ sub-sheet files and bridging nets via hierarchical labels / sheet pins.
 """
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -20,6 +21,22 @@ from sexpdata import Symbol
 logger = logging.getLogger("kicad_interface")
 
 _IU_PER_MM = 10000  # KiCad schematic internal units per millimeter
+_SEXP_CACHE: Dict[str, Tuple[int, int, list]] = {}
+
+
+@dataclass
+class SheetConnectivity:
+    """Parsed schematic data reused while answering a single net-list request."""
+
+    schematic: Any
+    schematic_path: str
+    sexp: list
+    all_wires: List[List[Tuple[int, int]]]
+    adjacency: List[Set[int]]
+    iu_to_wires: Dict[Tuple[int, int], Set[int]]
+    point_to_label: Dict[Tuple[int, int], str]
+    label_to_points: Dict[str, List[Tuple[int, int]]]
+    symbol_instances: List[Dict]
 
 
 def _to_iu(x_mm: float, y_mm: float) -> Tuple[int, int]:
@@ -27,10 +44,30 @@ def _to_iu(x_mm: float, y_mm: float) -> Tuple[int, int]:
     return (round(x_mm * _IU_PER_MM), round(y_mm * _IU_PER_MM))
 
 
+def _canonical_schematic_path(schematic_path: Any) -> str:
+    """Return a stable absolute path string for cache keys and de-duplication."""
+    return str(Path(schematic_path).expanduser().resolve())
+
+
+def _clear_sexp_cache() -> None:
+    """Clear the module-level S-expression cache used by tests and long sessions."""
+    _SEXP_CACHE.clear()
+
+
 def _load_sexp(schematic_path: str) -> list:
     """Load and cache the raw sexpdata tree for a schematic file."""
-    with open(schematic_path, "r", encoding="utf-8") as f:
-        return sexpdata.loads(f.read())
+    canonical_path = _canonical_schematic_path(schematic_path)
+    path = Path(canonical_path)
+    stat_result = path.stat()
+    cached = _SEXP_CACHE.get(canonical_path)
+    if cached and cached[0] == stat_result.st_mtime_ns and cached[1] == stat_result.st_size:
+        return cached[2]
+
+    with open(path, "r", encoding="utf-8") as schematic_file:
+        sexp = sexpdata.loads(schematic_file.read())
+
+    _SEXP_CACHE[canonical_path] = (stat_result.st_mtime_ns, stat_result.st_size, sexp)
+    return sexp
 
 
 def _parse_wires_sexp(sexp: list) -> List[List[Tuple[int, int]]]:
@@ -176,7 +213,10 @@ def _build_adjacency(
 
 
 def _parse_virtual_connections(
-    schematic: Any, schematic_path: Any, sexp: Optional[list] = None
+    schematic: Any,
+    schematic_path: Any,
+    sexp: Optional[list] = None,
+    locator: Optional[PinLocator] = None,
 ) -> Tuple[Dict[Tuple[int, int], str], Dict[str, List[Tuple[int, int]]]]:
     """Return virtual connectivity from net labels, global labels, and power symbols.
 
@@ -230,7 +270,7 @@ def _parse_virtual_connections(
                     logger.warning(f"Error parsing net label: {e}")
 
     if hasattr(schematic, "symbol"):
-        locator = PinLocator()
+        pin_locator = locator or PinLocator()
         for symbol in schematic.symbol:
             try:
                 if not hasattr(symbol, "property") or not hasattr(symbol.property, "Reference"):
@@ -243,7 +283,7 @@ def _parse_virtual_connections(
                 if not hasattr(symbol.property, "Value"):
                     continue
                 name = symbol.property.Value.value
-                all_pins = locator.get_all_symbol_pins(Path(schematic_path), ref)
+                all_pins = pin_locator.get_all_symbol_pins(Path(schematic_path), ref)
                 if not all_pins or "1" not in all_pins:
                     continue
                 pin_data = all_pins["1"]
@@ -379,6 +419,8 @@ def _find_pins_on_net(
     schematic_path: Any,
     schematic: Any,
     sexp: Optional[list] = None,
+    locator: Optional[PinLocator] = None,
+    symbol_instances: Optional[List[Dict]] = None,
 ) -> List[Dict]:
     """Find component pins that land on net points.
 
@@ -405,8 +447,8 @@ def _find_pins_on_net(
 
     logger.debug(f"Searching {len(net_points)} net points for matching pins")
 
-    locator = PinLocator()
-    instances = _parse_symbol_instances_sexp(sexp)
+    pin_locator = locator or PinLocator()
+    instances = symbol_instances if symbol_instances is not None else _parse_symbol_instances_sexp(sexp)
     logger.debug(f"Found {len(instances)} symbol instances via sexpdata")
 
     pins: List[Dict] = []
@@ -419,7 +461,7 @@ def _find_pins_on_net(
                 continue
 
             lib_id = inst["lib_id"]
-            pin_defs = locator.get_symbol_pins(Path(schematic_path), lib_id)
+            pin_defs = pin_locator.get_symbol_pins(Path(schematic_path), lib_id)
             if not pin_defs:
                 logger.debug(f"  {ref}: no pin definitions for lib_id={lib_id}")
                 continue
@@ -439,7 +481,7 @@ def _find_pins_on_net(
                 if mirror_y:
                     px = -px
                 if sym_rot != 0:
-                    px, py = locator.rotate_point(px, py, sym_rot)
+                    px, py = pin_locator.rotate_point(px, py, sym_rot)
                 abs_x = sym_x + px
                 abs_y = sym_y + py
                 if _on_net(abs_x, abs_y):
@@ -451,6 +493,48 @@ def _find_pins_on_net(
             logger.warning(f"Error checking pins for {ref}: {e}")
 
     return pins
+
+
+def _build_sheet_connectivity(
+    schematic: Any,
+    schematic_path: str,
+    locator: Optional[PinLocator] = None,
+) -> Optional[SheetConnectivity]:
+    """Parse a schematic sheet once and reuse the result across net queries."""
+    try:
+        canonical_path = _canonical_schematic_path(schematic_path)
+        sexp = _load_sexp(canonical_path)
+    except Exception as e:
+        logger.warning(f"Could not load sexp for {schematic_path}: {e}")
+        return None
+
+    all_wires = _parse_wires_sexp(sexp)
+    logger.debug(f"Parsed {len(all_wires)} wires from {canonical_path}")
+
+    if all_wires:
+        adjacency, iu_to_wires = _build_adjacency(all_wires)
+    else:
+        adjacency, iu_to_wires = [], {}
+
+    point_to_label, label_to_points = _parse_virtual_connections(
+        schematic,
+        canonical_path,
+        sexp=sexp,
+        locator=locator,
+    )
+    symbol_instances = _parse_symbol_instances_sexp(sexp)
+
+    return SheetConnectivity(
+        schematic=schematic,
+        schematic_path=canonical_path,
+        sexp=sexp,
+        all_wires=all_wires,
+        adjacency=adjacency,
+        iu_to_wires=iu_to_wires,
+        point_to_label=point_to_label,
+        label_to_points=label_to_points,
+        symbol_instances=symbol_instances,
+    )
 
 
 def get_wire_connections(
@@ -741,20 +825,22 @@ def get_net_at_point(
 # ---------------------------------------------------------------------------
 
 
-def _discover_sub_sheets(schematic_path: str) -> List[str]:
+def _discover_sub_sheets(schematic_path: str, _seen: Optional[Set[str]] = None) -> List[str]:
     """Recursively discover all sub-sheet .kicad_sch files referenced by the schematic.
 
     Returns a list of absolute paths to sub-sheet files (does NOT include the
     top-level schematic_path itself).
     """
-    parent_dir = Path(schematic_path).parent
+    canonical_path = _canonical_schematic_path(schematic_path)
+    if _seen is None:
+        _seen = {canonical_path}
+
+    parent_dir = Path(canonical_path).parent
     result: List[str] = []
     try:
-        with open(schematic_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        sexp = sexpdata.loads(content)
+        sexp = _load_sexp(canonical_path)
     except Exception as e:
-        logger.warning(f"Could not parse {schematic_path} for sub-sheets: {e}")
+        logger.warning(f"Could not parse {canonical_path} for sub-sheets: {e}")
         return result
 
     for item in sexp:
@@ -771,8 +857,11 @@ def _discover_sub_sheets(schematic_path: str) -> List[str]:
                 sheet_path = parent_dir / sheet_file
                 if sheet_path.exists():
                     abs_path = str(sheet_path.resolve())
+                    if abs_path in _seen:
+                        continue
+                    _seen.add(abs_path)
                     result.append(abs_path)
-                    result.extend(_discover_sub_sheets(abs_path))
+                    result.extend(_discover_sub_sheets(abs_path, _seen))
                 else:
                     logger.warning(f"Sub-sheet not found: {sheet_path}")
     return result
@@ -788,9 +877,7 @@ def _parse_hierarchical_labels_sexp(
     """
     result: Dict[str, List[Tuple[int, int]]] = {}
     try:
-        with open(schematic_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        sexp = sexpdata.loads(content)
+        sexp = _load_sexp(schematic_path)
     except Exception as e:
         logger.warning(f"Could not parse {schematic_path} for hierarchical labels: {e}")
         return result
@@ -815,6 +902,8 @@ def _process_single_sheet(
     schematic: Any,
     schematic_path: str,
     net_name: str,
+    sheet_state: Optional[SheetConnectivity] = None,
+    locator: Optional[PinLocator] = None,
 ) -> List[Dict]:
     """Find pins connected to *net_name* on a single schematic sheet.
 
@@ -822,27 +911,13 @@ def _process_single_sheet(
     All wire and label data is parsed directly from the raw .kicad_sch file
     via sexpdata for maximum reliability.
     """
-    try:
-        sexp = _load_sexp(schematic_path)
-    except Exception as e:
-        logger.warning(f"Could not load sexp for {schematic_path}: {e}")
+    state = sheet_state or _build_sheet_connectivity(schematic, schematic_path, locator=locator)
+    if state is None:
         return []
 
-    all_wires = _parse_wires_sexp(sexp)
-    logger.debug(f"Parsed {len(all_wires)} wires from {schematic_path}")
-
-    adjacency: List[Set[int]] = []
-    iu_to_wires: Dict[Tuple[int, int], Set[int]] = {}
-    if all_wires:
-        adjacency, iu_to_wires = _build_adjacency(all_wires)
-
-    point_to_label, label_to_points = _parse_virtual_connections(
-        schematic, schematic_path, sexp=sexp
-    )
-
-    seed_positions = label_to_points.get(net_name, [])
+    seed_positions = state.label_to_points.get(net_name, [])
     if not seed_positions:
-        logger.debug(f"No label positions found for net '{net_name}' in {schematic_path}")
+        logger.debug(f"No label positions found for net '{net_name}' in {state.schematic_path}")
         return []
 
     logger.debug(
@@ -854,16 +929,16 @@ def _process_single_sheet(
 
     for seed_pt in seed_positions:
         net_points.add(seed_pt)
-        if not all_wires:
+        if not state.all_wires:
             continue
         visited, pts = _find_connected_wires(
             seed_pt[0] / _IU_PER_MM,
             seed_pt[1] / _IU_PER_MM,
-            all_wires,
-            iu_to_wires,
-            adjacency,
-            point_to_label=point_to_label,
-            label_to_points=label_to_points,
+            state.all_wires,
+            state.iu_to_wires,
+            state.adjacency,
+            point_to_label=state.point_to_label,
+            label_to_points=state.label_to_points,
         )
         if pts:
             logger.debug(
@@ -879,7 +954,14 @@ def _process_single_sheet(
 
     logger.debug(f"Net '{net_name}': total {len(net_points)} IU points in net after BFS")
 
-    return _find_pins_on_net(net_points, schematic_path, schematic, sexp=sexp)
+    return _find_pins_on_net(
+        net_points,
+        state.schematic_path,
+        state.schematic,
+        sexp=state.sexp,
+        locator=locator,
+        symbol_instances=state.symbol_instances,
+    )
 
 
 def get_connections_for_net(schematic: Any, schematic_path: str, net_name: str) -> List[Dict]:
@@ -895,6 +977,7 @@ def get_connections_for_net(schematic: Any, schematic_path: str, net_name: str) 
 
     seen: Set[Tuple[str, str]] = set()
     all_pins: List[Dict] = []
+    locator = PinLocator()
 
     def _collect(pins: List[Dict]) -> None:
         for pin in pins:
@@ -903,13 +986,33 @@ def get_connections_for_net(schematic: Any, schematic_path: str, net_name: str) 
                 seen.add(key)
                 all_pins.append(pin)
 
-    _collect(_process_single_sheet(schematic, schematic_path, net_name))
+    root_state = _build_sheet_connectivity(schematic, schematic_path, locator=locator)
+    if root_state is not None:
+        _collect(
+            _process_single_sheet(
+                schematic,
+                schematic_path,
+                net_name,
+                sheet_state=root_state,
+                locator=locator,
+            )
+        )
 
     sub_sheets = _discover_sub_sheets(schematic_path)
     for sub_path in sub_sheets:
         try:
             sub_sch = SkipSchematic(sub_path)
-            _collect(_process_single_sheet(sub_sch, sub_path, net_name))
+            sub_state = _build_sheet_connectivity(sub_sch, sub_path, locator=locator)
+            if sub_state is not None:
+                _collect(
+                    _process_single_sheet(
+                        sub_sch,
+                        sub_path,
+                        net_name,
+                        sheet_state=sub_state,
+                        locator=locator,
+                    )
+                )
         except Exception as e:
             logger.warning(f"Error processing sub-sheet {sub_path}: {e}")
 

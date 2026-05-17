@@ -15,6 +15,7 @@ const __dirname = dirname(__filename);
 
 // Default config location
 const DEFAULT_CONFIG_PATH = join(dirname(__dirname), "config", "default-config.json");
+const LogLevelSchema = z.enum(["error", "warn", "info", "debug"]);
 
 /**
  * Server configuration schema
@@ -25,7 +26,7 @@ const ConfigSchema = z.object({
   description: z.string().default("MCP server for KiCAD PCB design operations"),
   pythonPath: z.string().optional(),
   kicadPath: z.string().optional(),
-  logLevel: z.enum(["error", "warn", "info", "debug"]).default("info"),
+  logLevel: LogLevelSchema.default("info"),
   logDir: z.string().optional(),
 });
 
@@ -33,6 +34,31 @@ const ConfigSchema = z.object({
  * Server configuration type
  */
 export type Config = z.infer<typeof ConfigSchema>;
+
+function getEnvLogLevel(): Config["logLevel"] | undefined {
+  const rawLevel = process.env.KICAD_MCP_LOG_LEVEL ?? process.env.LOG_LEVEL;
+  if (!rawLevel) {
+    return undefined;
+  }
+
+  const normalized = rawLevel.trim().toLowerCase();
+  const level = normalized === "warning" ? "warn" : normalized;
+  const parsed = LogLevelSchema.safeParse(level);
+  if (!parsed.success) {
+    logger.warn(`Ignoring invalid LOG_LEVEL value: ${rawLevel}`);
+    return undefined;
+  }
+
+  return parsed.data;
+}
+
+function applyEnvironmentOverrides(config: Config): Config {
+  const envLogLevel = getEnvLogLevel();
+  if (!envLogLevel) {
+    return config;
+  }
+  return { ...config, logLevel: envLogLevel };
+}
 
 /**
  * Load configuration from file
@@ -48,7 +74,7 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     // Check if file exists
     if (!existsSync(filePath)) {
       logger.warn(`Configuration file not found: ${filePath}, using defaults`);
-      return ConfigSchema.parse({});
+      return applyEnvironmentOverrides(ConfigSchema.parse({}));
     }
 
     // Read and parse configuration
@@ -56,11 +82,11 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     const config = JSON.parse(configData);
 
     // Validate configuration
-    return ConfigSchema.parse(config);
+    return applyEnvironmentOverrides(ConfigSchema.parse(config));
   } catch (error) {
     logger.error(`Error loading configuration: ${error}`);
 
     // Return default configuration
-    return ConfigSchema.parse({});
+    return applyEnvironmentOverrides(ConfigSchema.parse({}));
   }
 }

@@ -22,6 +22,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
+from commands import wire_connectivity as wire_connectivity_module
 from commands.wire_connectivity import (
     _build_adjacency,
     _parse_virtual_connections,
@@ -64,6 +65,101 @@ def _make_schematic_no_labels_no_symbols(*wires: Any) -> MagicMock:
     del sch.label
     del sch.symbol
     return sch
+
+
+def _write_schematic(path: Path, body: str) -> None:
+    path.write_text(f"(kicad_sch\n{body}\n)\n", encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# TestSchematicNetTraversalEfficiency
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSchematicNetTraversalEfficiency:
+    """Regression tests for repeated hierarchy parsing in list_schematic_nets."""
+
+    def setup_method(self) -> None:
+        wire_connectivity_module._clear_sexp_cache()
+
+    def teardown_method(self) -> None:
+        wire_connectivity_module._clear_sexp_cache()
+
+    def test_load_sexp_caches_unchanged_file(self, tmp_path: Path) -> None:
+        sch_path = tmp_path / "cached.kicad_sch"
+        _write_schematic(sch_path, '  (label "NET_A" (at 0 0 0))')
+
+        with patch.object(
+            wire_connectivity_module.sexpdata,
+            "loads",
+            wraps=wire_connectivity_module.sexpdata.loads,
+        ) as loads:
+            first = wire_connectivity_module._load_sexp(str(sch_path))
+            second = wire_connectivity_module._load_sexp(str(sch_path))
+
+        assert first is second
+        assert loads.call_count == 1
+
+    def test_discover_sub_sheets_deduplicates_repeated_sheet_files(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        root_path = tmp_path / "left.kicad_sch"
+        sub_path = tmp_path / "switch.kicad_sch"
+        _write_schematic(
+            root_path,
+            """
+  (sheet (at 0 0) (size 10 10) (property "Sheetfile" "switch.kicad_sch"))
+  (sheet (at 20 0) (size 10 10) (property "Sheetfile" "switch.kicad_sch"))
+""",
+        )
+        _write_schematic(sub_path, '  (label "ROW" (at 1 1 0))')
+
+        result = wire_connectivity_module._discover_sub_sheets(str(root_path))
+
+        assert result == [str(sub_path.resolve())]
+
+    def test_list_schematic_nets_prepares_each_unique_sheet_once(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        root_path = tmp_path / "left.kicad_sch"
+        sub_path = tmp_path / "switch.kicad_sch"
+        _write_schematic(
+            root_path,
+            """
+  (label "NET_A" (at 0 0 0))
+  (label "NET_B" (at 10 0 0))
+  (sheet (at 0 20) (size 10 10) (property "Sheetfile" "switch.kicad_sch"))
+  (sheet (at 20 20) (size 10 10) (property "Sheetfile" "switch.kicad_sch"))
+""",
+        )
+        _write_schematic(sub_path, '  (label "SUB_NET" (at 1 1 0))')
+
+        root_schematic = MagicMock()
+        root_schematic.symbol = []
+        sub_schematic = MagicMock()
+        sub_schematic.symbol = []
+
+        with patch("kicad_interface.USE_IPC_BACKEND", False):
+            from kicad_interface import KiCADInterface
+
+            iface = KiCADInterface.__new__(KiCADInterface)
+
+        with (
+            patch("kicad_interface.SchematicManager.load_schematic", return_value=root_schematic),
+            patch("skip.Schematic", return_value=sub_schematic),
+            patch(
+                "commands.wire_connectivity._build_sheet_connectivity",
+                wraps=wire_connectivity_module._build_sheet_connectivity,
+            ) as build_sheet_connectivity,
+        ):
+            result = iface._handle_list_schematic_nets({"schematicPath": str(root_path)})
+
+        assert result["success"] is True
+        assert {net["name"] for net in result["nets"]} == {"NET_A", "NET_B", "SUB_NET"}
+        assert build_sheet_connectivity.call_count == 2
 
 
 # ---------------------------------------------------------------------------
