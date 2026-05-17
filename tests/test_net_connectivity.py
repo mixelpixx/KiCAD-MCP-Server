@@ -22,6 +22,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
+from commands import wire_connectivity as wire_connectivity_module
 from commands.wire_connectivity import (
     _build_adjacency,
     _parse_virtual_connections,
@@ -64,6 +65,356 @@ def _make_schematic_no_labels_no_symbols(*wires: Any) -> MagicMock:
     del sch.label
     del sch.symbol
     return sch
+
+
+def _write_schematic(path: Path, body: str) -> None:
+    path.write_text(f"(kicad_sch\n{body}\n)\n", encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# TestSchematicNetTraversalEfficiency
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSchematicNetTraversalEfficiency:
+    """Regression tests for repeated hierarchy parsing in list_schematic_nets."""
+
+    def setup_method(self) -> None:
+        wire_connectivity_module._clear_sexp_cache()
+
+    def teardown_method(self) -> None:
+        wire_connectivity_module._clear_sexp_cache()
+
+    def test_load_sexp_caches_unchanged_file(self, tmp_path: Path) -> None:
+        sch_path = tmp_path / "cached.kicad_sch"
+        _write_schematic(sch_path, '  (label "NET_A" (at 0 0 0))')
+
+        with patch.object(
+            wire_connectivity_module.sexpdata,
+            "loads",
+            wraps=wire_connectivity_module.sexpdata.loads,
+        ) as loads:
+            first = wire_connectivity_module._load_sexp(str(sch_path))
+            second = wire_connectivity_module._load_sexp(str(sch_path))
+
+        assert first is second
+        assert loads.call_count == 1
+
+    def test_discover_sub_sheets_deduplicates_repeated_sheet_files(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        root_path = tmp_path / "left.kicad_sch"
+        sub_path = tmp_path / "switch.kicad_sch"
+        _write_schematic(
+            root_path,
+            """
+  (sheet (at 0 0) (size 10 10) (property "Sheetfile" "switch.kicad_sch"))
+  (sheet (at 20 0) (size 10 10) (property "Sheetfile" "switch.kicad_sch"))
+""",
+        )
+        _write_schematic(sub_path, '  (label "ROW" (at 1 1 0))')
+
+        result = wire_connectivity_module._discover_sub_sheets(str(root_path))
+
+        assert result == [str(sub_path.resolve())]
+
+    def test_collect_sheet_traversals_preserves_repeated_sheet_instances(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        root_path = tmp_path / "left.kicad_sch"
+        sub_path = tmp_path / "switch.kicad_sch"
+        _write_schematic(
+            root_path,
+            """
+  (label "NET_A" (at 0 0 0))
+  (label "NET_B" (at 10 0 0))
+  (sheet
+    (at 0 20) (size 10 10)
+    (property "Sheetname" "Left")
+    (property "Sheetfile" "switch.kicad_sch")
+  )
+  (sheet
+    (at 20 20) (size 10 10)
+    (property "Sheetname" "Right")
+    (property "Sheetfile" "switch.kicad_sch")
+  )
+""",
+        )
+        _write_schematic(sub_path, '  (label "SUB_NET" (at 1 1 0))')
+
+        root_schematic = MagicMock()
+        root_schematic.symbol = []
+        sub_schematic = MagicMock()
+        sub_schematic.symbol = []
+
+        with (
+            patch("skip.Schematic", return_value=sub_schematic),
+            patch(
+                "commands.wire_connectivity._build_sheet_connectivity",
+                wraps=wire_connectivity_module._build_sheet_connectivity,
+            ) as build_sheet_connectivity,
+        ):
+            traversals = wire_connectivity_module.collect_sheet_traversals(
+                root_schematic,
+                str(root_path),
+            )
+
+        assert [traversal.instance_path for traversal in traversals] == [
+            "/",
+            "/Left",
+            "/Right",
+        ]
+        assert build_sheet_connectivity.call_count == 2
+
+    def test_list_schematic_nets_maps_parent_sheet_pin_to_child_label(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        root_path = tmp_path / "root.kicad_sch"
+        sub_path = tmp_path / "child.kicad_sch"
+        _write_schematic(
+            root_path,
+            """
+  (label "ROW0" (at 0 0 0))
+  (sheet
+    (at 0 20) (size 10 10)
+    (property "Sheetname" "Switches")
+    (property "Sheetfile" "child.kicad_sch")
+    (pin "IN" input (at 0 0 0))
+  )
+""",
+        )
+        _write_schematic(
+            sub_path,
+            """
+  (hierarchical_label "IN" (at 1 1 0))
+  (symbol (lib_id "Test:Switch") (at 1 1 0) (property "Reference" "SW1"))
+""",
+        )
+
+        root_schematic = MagicMock()
+        root_schematic.symbol = []
+        sub_schematic = MagicMock()
+        sub_schematic.symbol = []
+
+        with patch("kicad_interface.USE_IPC_BACKEND", False):
+            from kicad_interface import KiCADInterface
+
+            iface = KiCADInterface.__new__(KiCADInterface)
+
+        with (
+            patch("kicad_interface.SchematicManager.load_schematic", return_value=root_schematic),
+            patch("skip.Schematic", return_value=sub_schematic),
+            patch(
+                "commands.pin_locator.PinLocator.get_symbol_pins",
+                return_value={"1": {"x": 0.0, "y": 0.0}},
+            ),
+        ):
+            result = iface._handle_list_schematic_nets({"schematicPath": str(root_path)})
+
+        assert result["success"] is True
+        nets = {net["name"]: net for net in result["nets"]}
+        assert set(nets) == {"ROW0"}
+        assert nets["ROW0"]["connections"] == [
+            {
+                "component": "SW1",
+                "pin": "1",
+                "sheet_instance": "/Switches",
+                "sheet_path": str(sub_path.resolve()),
+            }
+        ]
+        assert nets["ROW0"]["connected_pin_count"] == 1
+
+    def test_list_schematic_nets_maps_wired_parent_sheet_pin(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        root_path = tmp_path / "root.kicad_sch"
+        sub_path = tmp_path / "child.kicad_sch"
+        _write_schematic(
+            root_path,
+            """
+  (label "ROW0" (at 0 0 0))
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (sheet
+    (at 0 20) (size 10 10)
+    (property "Sheetname" "Switches")
+    (property "Sheetfile" "child.kicad_sch")
+    (pin "IN" input (at 10 0 0))
+  )
+""",
+        )
+        _write_schematic(
+            sub_path,
+            """
+  (hierarchical_label "IN" (at 1 1 0))
+  (symbol (lib_id "Test:Switch") (at 1 1 0) (property "Reference" "SW1"))
+""",
+        )
+
+        root_schematic = MagicMock()
+        root_schematic.symbol = []
+        sub_schematic = MagicMock()
+        sub_schematic.symbol = []
+
+        with patch("kicad_interface.USE_IPC_BACKEND", False):
+            from kicad_interface import KiCADInterface
+
+            iface = KiCADInterface.__new__(KiCADInterface)
+
+        with (
+            patch("kicad_interface.SchematicManager.load_schematic", return_value=root_schematic),
+            patch("skip.Schematic", return_value=sub_schematic),
+            patch(
+                "commands.pin_locator.PinLocator.get_symbol_pins",
+                return_value={"1": {"x": 0.0, "y": 0.0}},
+            ),
+        ):
+            result = iface._handle_list_schematic_nets({"schematicPath": str(root_path)})
+
+        assert result["success"] is True
+        nets = {net["name"]: net for net in result["nets"]}
+        assert set(nets) == {"ROW0"}
+        assert nets["ROW0"]["connections"][0]["component"] == "SW1"
+        assert nets["ROW0"]["connected_pin_count"] == 1
+
+    def test_list_schematic_nets_propagates_nested_local_aliases(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        root_path = tmp_path / "root.kicad_sch"
+        mid_path = tmp_path / "mid.kicad_sch"
+        leaf_path = tmp_path / "leaf.kicad_sch"
+        _write_schematic(
+            root_path,
+            """
+  (label "ROW0" (at 0 0 0))
+  (sheet
+    (at 0 20) (size 10 10)
+    (property "Sheetname" "Mid")
+    (property "Sheetfile" "mid.kicad_sch")
+    (pin "IN" input (at 0 0 0))
+  )
+""",
+        )
+        _write_schematic(
+            mid_path,
+            """
+  (hierarchical_label "IN" (at 0 0 0))
+  (label "LOCAL" (at 5 0 0))
+  (wire (pts (xy 0 0) (xy 10 0)))
+  (sheet
+    (at 0 20) (size 10 10)
+    (property "Sheetname" "Leaf")
+    (property "Sheetfile" "leaf.kicad_sch")
+    (pin "OUT" input (at 10 0 0))
+  )
+""",
+        )
+        _write_schematic(
+            leaf_path,
+            """
+  (hierarchical_label "OUT" (at 1 1 0))
+  (symbol (lib_id "Test:Switch") (at 1 1 0) (property "Reference" "SW1"))
+""",
+        )
+
+        root_schematic = MagicMock()
+        root_schematic.symbol = []
+        nested_schematic = MagicMock()
+        nested_schematic.symbol = []
+
+        with patch("kicad_interface.USE_IPC_BACKEND", False):
+            from kicad_interface import KiCADInterface
+
+            iface = KiCADInterface.__new__(KiCADInterface)
+
+        with (
+            patch("kicad_interface.SchematicManager.load_schematic", return_value=root_schematic),
+            patch("skip.Schematic", return_value=nested_schematic),
+            patch(
+                "commands.pin_locator.PinLocator.get_symbol_pins",
+                return_value={"1": {"x": 0.0, "y": 0.0}},
+            ),
+        ):
+            result = iface._handle_list_schematic_nets({"schematicPath": str(root_path)})
+
+        assert result["success"] is True
+        nets = {net["name"]: net for net in result["nets"]}
+        assert set(nets) == {"ROW0"}
+        assert nets["ROW0"]["connections"] == [
+            {
+                "component": "SW1",
+                "pin": "1",
+                "sheet_instance": "/Mid/Leaf",
+                "sheet_path": str(leaf_path.resolve()),
+            }
+        ]
+        assert nets["ROW0"]["connected_pin_count"] == 1
+
+    def test_list_schematic_nets_keeps_repeated_sheet_instances_distinct(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        root_path = tmp_path / "root.kicad_sch"
+        sub_path = tmp_path / "switch.kicad_sch"
+        _write_schematic(
+            root_path,
+            """
+  (label "ROW0" (at 0 0 0))
+  (label "ROW1" (at 10 0 0))
+  (sheet
+    (at 0 20) (size 10 10)
+    (property "Sheetname" "Left")
+    (property "Sheetfile" "switch.kicad_sch")
+    (pin "IN" input (at 0 0 0))
+  )
+  (sheet
+    (at 20 20) (size 10 10)
+    (property "Sheetname" "Right")
+    (property "Sheetfile" "switch.kicad_sch")
+    (pin "IN" input (at 10 0 0))
+  )
+""",
+        )
+        _write_schematic(
+            sub_path,
+            """
+  (hierarchical_label "IN" (at 1 1 0))
+  (symbol (lib_id "Test:Switch") (at 1 1 0) (property "Reference" "SW1"))
+""",
+        )
+
+        root_schematic = MagicMock()
+        root_schematic.symbol = []
+        sub_schematic = MagicMock()
+        sub_schematic.symbol = []
+
+        with patch("kicad_interface.USE_IPC_BACKEND", False):
+            from kicad_interface import KiCADInterface
+
+            iface = KiCADInterface.__new__(KiCADInterface)
+
+        with (
+            patch("kicad_interface.SchematicManager.load_schematic", return_value=root_schematic),
+            patch("skip.Schematic", return_value=sub_schematic),
+            patch(
+                "commands.pin_locator.PinLocator.get_symbol_pins",
+                return_value={"1": {"x": 0.0, "y": 0.0}},
+            ),
+        ):
+            result = iface._handle_list_schematic_nets({"schematicPath": str(root_path)})
+
+        assert result["success"] is True
+        nets = {net["name"]: net for net in result["nets"]}
+        assert set(nets) == {"ROW0", "ROW1"}
+        assert nets["ROW0"]["connections"][0]["sheet_instance"] == "/Left"
+        assert nets["ROW1"]["connections"][0]["sheet_instance"] == "/Right"
+        assert nets["ROW0"]["connected_pin_count"] == 1
+        assert nets["ROW1"]["connected_pin_count"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -438,6 +789,37 @@ class TestListSchematicNetsConnectedPinCount:
 
         assert result["success"] is True
         assert result["nets"][0]["connected_pin_count"] == 0
+
+    def test_fallback_connections_match_connected_pin_count(self) -> None:
+        handler = self._make_handler()
+
+        wire = _make_wire(0.0, 0.0, 2.0, 0.0)
+        label = _make_label("SCL", 0.0, 0.0)
+        symbol = MagicMock()
+        symbol.property = MagicMock()
+        symbol.property.Reference = MagicMock()
+        symbol.property.Reference.value = "U1"
+
+        mock_sch = MagicMock()
+        mock_sch.wire = [wire]
+        mock_sch.label = [label]
+        del mock_sch.global_label
+        mock_sch.symbol = [symbol]
+
+        with (
+            patch("kicad_interface.SchematicManager.load_schematic", return_value=mock_sch),
+            patch(
+                "commands.pin_locator.PinLocator.get_all_symbol_pins",
+                return_value={"3": (2.0, 0.0)},
+            ),
+        ):
+            result = handler({"schematicPath": "/tmp/nonexistent.kicad_sch"})
+
+        assert result["success"] is True
+        net = result["nets"][0]
+        assert net["name"] == "SCL"
+        assert net["connections"] == [{"component": "U1", "pin": "3"}]
+        assert net["connected_pin_count"] == 1
 
 
 # ---------------------------------------------------------------------------

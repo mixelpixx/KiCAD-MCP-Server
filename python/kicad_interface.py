@@ -15,6 +15,7 @@ import shutil
 import sys
 import traceback
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -28,6 +29,45 @@ from schemas.tool_schemas import TOOL_SCHEMAS
 
 _annotation_loader = AnnotationLoader()
 
+
+def _parse_log_level() -> int:
+    """Return the configured Python log level from the MCP environment."""
+    raw_level = os.environ.get("KICAD_MCP_LOG_LEVEL") or os.environ.get("LOG_LEVEL") or "INFO"
+    normalized = raw_level.strip().upper()
+    aliases = {
+        "WARN": "WARNING",
+        "FATAL": "CRITICAL",
+        "OFF": "OFF",
+        "NONE": "OFF",
+        "FALSE": "OFF",
+        "0": "OFF",
+    }
+    normalized = aliases.get(normalized, normalized)
+    if normalized == "OFF":
+        return logging.CRITICAL + 1
+    return {
+        "CRITICAL": logging.CRITICAL,
+        "ERROR": logging.ERROR,
+        "WARNING": logging.WARNING,
+        "INFO": logging.INFO,
+        "DEBUG": logging.DEBUG,
+    }.get(normalized, logging.INFO)
+
+
+def _parse_positive_int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return value if value >= 0 else default
+
+
+def _env_flag_enabled(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+_LOG_LEVEL = _parse_log_level()
+
 # Configure logging
 # Try to set up a file handler in ~/.kicad-mcp/logs. If that directory isn't
 # writable (e.g. sandboxed test environments, restricted CI runners), fall
@@ -36,17 +76,36 @@ try:
     log_dir = os.path.join(os.path.expanduser("~"), ".kicad-mcp", "logs")
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, "kicad_interface.log")
+    max_log_bytes = _parse_positive_int_env("KICAD_MCP_LOG_MAX_BYTES", 10 * 1024 * 1024)
+    backup_count = _parse_positive_int_env("KICAD_MCP_LOG_BACKUP_COUNT", 3)
+    if max_log_bytes:
+        log_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=max_log_bytes,
+            backupCount=backup_count,
+            encoding="utf-8",
+        )
+    else:
+        log_handler = logging.FileHandler(log_file, encoding="utf-8")
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=_LOG_LEVEL,
         format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[logging.FileHandler(log_file)],
+        handlers=[log_handler],
+        force=True,
     )
 except (OSError, PermissionError):
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=_LOG_LEVEL,
         format="%(asctime)s [%(levelname)s] %(message)s",
+        force=True,
     )
 logger = logging.getLogger("kicad_interface")
+
+# kicad-skip's S-expression parser can emit per-node DEBUG logs large enough to
+# fill disks during hierarchy traversal. Keep it quiet unless explicitly enabled.
+_SKIP_LOG_LEVEL = logging.DEBUG if _env_flag_enabled("KICAD_MCP_DEBUG_SKIP") else logging.WARNING
+for _skip_logger_name in ("skip", "skip.sexp", "skip.sexp.parser", "skip.sexp.sourcefile"):
+    logging.getLogger(_skip_logger_name).setLevel(_SKIP_LOG_LEVEL)
 
 # Log Python environment details
 logger.info(f"Python version: {sys.version}")
@@ -2646,14 +2705,13 @@ class KiCADInterface:
         try:
             from commands.wire_connectivity import (
                 _build_adjacency,
-                _discover_sub_sheets,
-                _load_sexp,
-                _parse_labels_sexp,
                 _parse_virtual_connections,
                 _parse_wires,
-                count_pins_on_net,
-                get_connections_for_net,
+                collect_sheet_traversals,
+                find_pin_connections_on_net,
+                pins_for_traversal_net,
             )
+            from commands.pin_locator import PinLocator
 
             schematic_path = params.get("schematicPath")
             if not schematic_path:
@@ -2663,19 +2721,19 @@ class KiCADInterface:
             if not schematic:
                 return {"success": False, "message": "Failed to load schematic"}
 
-            # Collect net names from the top-level sheet using sexpdata.
-            # Falls back to kicad-skip's label collections when the file
-            # cannot be read (e.g. mocked schematics in unit tests).
+            # Build parsed sheet state once per request. This keeps repeated
+            # hierarchical sheet references from multiplying full-file parses
+            # across every net name.
+            locator = PinLocator()
+            sheet_traversals = []
             net_names: set = set()
-            sexp_loaded = False
-            try:
-                sexp = _load_sexp(schematic_path)
-                sexp_loaded = True
-                _, label_to_points = _parse_labels_sexp(sexp)
-                net_names.update(label_to_points.keys())
-            except Exception as e:
+            sheet_traversals = collect_sheet_traversals(schematic, schematic_path, locator=locator)
+            for traversal in sheet_traversals:
+                net_names.update(traversal.net_name_map.keys())
+
+            if not sheet_traversals:
                 logger.debug(
-                    f"Could not parse labels from {schematic_path} via sexp ({e}); "
+                    f"Could not prepare parsed sheet state for {schematic_path}; "
                     "falling back to kicad-skip label collections"
                 )
                 for attr in ("label", "global_label"):
@@ -2685,39 +2743,47 @@ class KiCADInterface:
                         if hasattr(label, "value"):
                             net_names.add(label.value)
 
-            # Collect net names from all sub-sheets (only when the parent
-            # sheet was readable; fake/mock paths skip recursion entirely).
-            if sexp_loaded:
-                sub_sheets = _discover_sub_sheets(schematic_path)
-                for sub_path in sub_sheets:
-                    try:
-                        sub_sexp = _load_sexp(sub_path)
-                        _, sub_label_to_points = _parse_labels_sexp(sub_sexp)
-                        net_names.update(sub_label_to_points.keys())
-                    except Exception as e:
-                        logger.warning(f"Error reading sub-sheet {sub_path}: {e}")
-
-            # Pre-build shared wire graph structures for efficiency
-            all_wires = _parse_wires(schematic)
-            if all_wires:
-                adjacency, iu_to_wires = _build_adjacency(all_wires)
-            else:
-                adjacency, iu_to_wires = [], {}
-            point_to_label, label_to_points = _parse_virtual_connections(schematic, schematic_path)
+            all_wires = []
+            adjacency = []
+            iu_to_wires = {}
+            point_to_label = {}
+            label_to_points = {}
+            if not sheet_traversals:
+                # Fallback path for mocked/non-file schematics in tests.
+                all_wires = _parse_wires(schematic)
+                if all_wires:
+                    adjacency, iu_to_wires = _build_adjacency(all_wires)
+                point_to_label, label_to_points = _parse_virtual_connections(
+                    schematic, schematic_path
+                )
 
             nets = []
             for net_name in sorted(net_names):
-                connections = get_connections_for_net(schematic, schematic_path, net_name)
-                pin_count = count_pins_on_net(
-                    schematic,
-                    schematic_path,
-                    net_name,
-                    all_wires,
-                    iu_to_wires,
-                    adjacency,
-                    point_to_label,
-                    label_to_points,
-                )
+                seen_connections = set()
+                connections = []
+                for traversal in sheet_traversals:
+                    for pin in pins_for_traversal_net(traversal, net_name, locator=locator):
+                        key = (traversal.instance_path, pin["component"], pin["pin"])
+                        if key in seen_connections:
+                            continue
+                        seen_connections.add(key)
+                        connections.append(pin)
+
+                if sheet_traversals:
+                    pin_count = len(connections)
+                else:
+                    connections = find_pin_connections_on_net(
+                        schematic,
+                        schematic_path,
+                        net_name,
+                        all_wires,
+                        iu_to_wires,
+                        adjacency,
+                        point_to_label,
+                        label_to_points,
+                        locator=locator,
+                    )
+                    pin_count = len(connections)
                 nets.append(
                     {
                         "name": net_name,

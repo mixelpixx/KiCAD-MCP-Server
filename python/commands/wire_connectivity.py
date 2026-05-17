@@ -10,6 +10,8 @@ sub-sheet files and bridging nets via hierarchical labels / sheet pins.
 """
 
 import logging
+from collections import OrderedDict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -20,6 +22,51 @@ from sexpdata import Symbol
 logger = logging.getLogger("kicad_interface")
 
 _IU_PER_MM = 10000  # KiCad schematic internal units per millimeter
+_SEXP_CACHE_MAX_SIZE = 128
+_SEXP_CACHE: "OrderedDict[str, Tuple[int, int, list]]" = OrderedDict()
+
+
+@dataclass
+class SheetConnectivity:
+    """Parsed schematic data reused while answering a single net-list request."""
+
+    schematic: Any
+    schematic_path: str
+    sexp: list
+    all_wires: List[List[Tuple[int, int]]]
+    adjacency: List[Set[int]]
+    iu_to_wires: Dict[Tuple[int, int], Set[int]]
+    point_to_label: Dict[Tuple[int, int], str]
+    label_to_points: Dict[str, List[Tuple[int, int]]]
+    hierarchical_label_to_points: Dict[str, List[Tuple[int, int]]]
+    symbol_instances: List[Dict]
+
+
+@dataclass
+class SheetPinReference:
+    """A sheet pin on a parent sheet symbol."""
+
+    name: str
+    position: Tuple[int, int]
+
+
+@dataclass
+class SheetReference:
+    """A concrete sheet instance referenced by a parent schematic."""
+
+    sheet_name: str
+    sheet_path: str
+    instance_path: str
+    pins: List[SheetPinReference]
+
+
+@dataclass
+class SheetTraversal:
+    """Prepared sheet state plus instance-local net-name mapping."""
+
+    state: SheetConnectivity
+    instance_path: str
+    net_name_map: Dict[str, Set[str]]
 
 
 def _to_iu(x_mm: float, y_mm: float) -> Tuple[int, int]:
@@ -27,10 +74,34 @@ def _to_iu(x_mm: float, y_mm: float) -> Tuple[int, int]:
     return (round(x_mm * _IU_PER_MM), round(y_mm * _IU_PER_MM))
 
 
+def _canonical_schematic_path(schematic_path: Any) -> str:
+    """Return a stable absolute path string for cache keys and de-duplication."""
+    return str(Path(schematic_path).expanduser().resolve())
+
+
+def _clear_sexp_cache() -> None:
+    """Clear the module-level S-expression cache used by tests and long sessions."""
+    _SEXP_CACHE.clear()
+
+
 def _load_sexp(schematic_path: str) -> list:
     """Load and cache the raw sexpdata tree for a schematic file."""
-    with open(schematic_path, "r", encoding="utf-8") as f:
-        return sexpdata.loads(f.read())
+    canonical_path = _canonical_schematic_path(schematic_path)
+    path = Path(canonical_path)
+    stat_result = path.stat()
+    cached = _SEXP_CACHE.get(canonical_path)
+    if cached and cached[0] == stat_result.st_mtime_ns and cached[1] == stat_result.st_size:
+        _SEXP_CACHE.move_to_end(canonical_path)
+        return cached[2]
+
+    with open(path, "r", encoding="utf-8") as schematic_file:
+        sexp = sexpdata.loads(schematic_file.read())
+
+    _SEXP_CACHE[canonical_path] = (stat_result.st_mtime_ns, stat_result.st_size, sexp)
+    _SEXP_CACHE.move_to_end(canonical_path)
+    while len(_SEXP_CACHE) > _SEXP_CACHE_MAX_SIZE:
+        _SEXP_CACHE.popitem(last=False)
+    return sexp
 
 
 def _parse_wires_sexp(sexp: list) -> List[List[Tuple[int, int]]]:
@@ -78,18 +149,13 @@ def _parse_wires(schematic: Any) -> List[List[Tuple[int, int]]]:
     return all_wires
 
 
-def _parse_labels_sexp(
+def _parse_labels_for_types_sexp(
     sexp: list,
+    label_types: Set[Symbol],
 ) -> Tuple[Dict[Tuple[int, int], str], Dict[str, List[Tuple[int, int]]]]:
-    """Parse label, global_label, and hierarchical_label from raw sexpdata.
-
-    Returns (point_to_label, label_to_points) in IU coordinates.
-    Bypasses kicad-skip which may not iterate all labels correctly.
-    """
+    """Parse the requested label S-expression types into IU-coordinate maps."""
     point_to_label: Dict[Tuple[int, int], str] = {}
     label_to_points: Dict[str, List[Tuple[int, int]]] = {}
-
-    label_types = {Symbol("label"), Symbol("global_label"), Symbol("hierarchical_label")}
 
     for item in sexp:
         if not isinstance(item, list) or len(item) < 2:
@@ -109,6 +175,20 @@ def _parse_labels_sexp(
                 break
 
     return point_to_label, label_to_points
+
+
+def _parse_labels_sexp(
+    sexp: list,
+) -> Tuple[Dict[Tuple[int, int], str], Dict[str, List[Tuple[int, int]]]]:
+    """Parse label, global_label, and hierarchical_label from raw sexpdata.
+
+    Returns (point_to_label, label_to_points) in IU coordinates.
+    Bypasses kicad-skip which may not iterate all labels correctly.
+    """
+    return _parse_labels_for_types_sexp(
+        sexp,
+        {Symbol("label"), Symbol("global_label"), Symbol("hierarchical_label")},
+    )
 
 
 def _point_on_segment(px: int, py: int, ax: int, ay: int, bx: int, by: int) -> bool:
@@ -176,7 +256,10 @@ def _build_adjacency(
 
 
 def _parse_virtual_connections(
-    schematic: Any, schematic_path: Any, sexp: Optional[list] = None
+    schematic: Any,
+    schematic_path: Any,
+    sexp: Optional[list] = None,
+    locator: Optional[PinLocator] = None,
 ) -> Tuple[Dict[Tuple[int, int], str], Dict[str, List[Tuple[int, int]]]]:
     """Return virtual connectivity from net labels, global labels, and power symbols.
 
@@ -230,7 +313,7 @@ def _parse_virtual_connections(
                     logger.warning(f"Error parsing net label: {e}")
 
     if hasattr(schematic, "symbol"):
-        locator = PinLocator()
+        pin_locator = locator or PinLocator()
         for symbol in schematic.symbol:
             try:
                 if not hasattr(symbol, "property") or not hasattr(symbol.property, "Reference"):
@@ -243,7 +326,7 @@ def _parse_virtual_connections(
                 if not hasattr(symbol.property, "Value"):
                     continue
                 name = symbol.property.Value.value
-                all_pins = locator.get_all_symbol_pins(Path(schematic_path), ref)
+                all_pins = pin_locator.get_all_symbol_pins(Path(schematic_path), ref)
                 if not all_pins or "1" not in all_pins:
                     continue
                 pin_data = all_pins["1"]
@@ -379,6 +462,8 @@ def _find_pins_on_net(
     schematic_path: Any,
     schematic: Any,
     sexp: Optional[list] = None,
+    locator: Optional[PinLocator] = None,
+    symbol_instances: Optional[List[Dict]] = None,
 ) -> List[Dict]:
     """Find component pins that land on net points.
 
@@ -405,8 +490,10 @@ def _find_pins_on_net(
 
     logger.debug(f"Searching {len(net_points)} net points for matching pins")
 
-    locator = PinLocator()
-    instances = _parse_symbol_instances_sexp(sexp)
+    pin_locator = locator or PinLocator()
+    instances = (
+        symbol_instances if symbol_instances is not None else _parse_symbol_instances_sexp(sexp)
+    )
     logger.debug(f"Found {len(instances)} symbol instances via sexpdata")
 
     pins: List[Dict] = []
@@ -419,7 +506,7 @@ def _find_pins_on_net(
                 continue
 
             lib_id = inst["lib_id"]
-            pin_defs = locator.get_symbol_pins(Path(schematic_path), lib_id)
+            pin_defs = pin_locator.get_symbol_pins(Path(schematic_path), lib_id)
             if not pin_defs:
                 logger.debug(f"  {ref}: no pin definitions for lib_id={lib_id}")
                 continue
@@ -439,7 +526,7 @@ def _find_pins_on_net(
                 if mirror_y:
                     px = -px
                 if sym_rot != 0:
-                    px, py = locator.rotate_point(px, py, sym_rot)
+                    px, py = pin_locator.rotate_point(px, py, sym_rot)
                 abs_x = sym_x + px
                 abs_y = sym_y + py
                 if _on_net(abs_x, abs_y):
@@ -451,6 +538,53 @@ def _find_pins_on_net(
             logger.warning(f"Error checking pins for {ref}: {e}")
 
     return pins
+
+
+def _build_sheet_connectivity(
+    schematic: Any,
+    schematic_path: str,
+    locator: Optional[PinLocator] = None,
+) -> Optional[SheetConnectivity]:
+    """Parse a schematic sheet once and reuse the result across net queries."""
+    try:
+        canonical_path = _canonical_schematic_path(schematic_path)
+        sexp = _load_sexp(canonical_path)
+    except Exception as e:
+        logger.warning(f"Could not load sexp for {schematic_path}: {e}")
+        return None
+
+    all_wires = _parse_wires_sexp(sexp)
+    logger.debug(f"Parsed {len(all_wires)} wires from {canonical_path}")
+
+    if all_wires:
+        adjacency, iu_to_wires = _build_adjacency(all_wires)
+    else:
+        adjacency, iu_to_wires = [], {}
+
+    point_to_label, label_to_points = _parse_virtual_connections(
+        schematic,
+        canonical_path,
+        sexp=sexp,
+        locator=locator,
+    )
+    _, hierarchical_label_to_points = _parse_labels_for_types_sexp(
+        sexp,
+        {Symbol("hierarchical_label")},
+    )
+    symbol_instances = _parse_symbol_instances_sexp(sexp)
+
+    return SheetConnectivity(
+        schematic=schematic,
+        schematic_path=canonical_path,
+        sexp=sexp,
+        all_wires=all_wires,
+        adjacency=adjacency,
+        iu_to_wires=iu_to_wires,
+        point_to_label=point_to_label,
+        label_to_points=label_to_points,
+        hierarchical_label_to_points=hierarchical_label_to_points,
+        symbol_instances=symbol_instances,
+    )
 
 
 def get_wire_connections(
@@ -540,21 +674,35 @@ def count_pins_on_net(
 
     Returns the count of distinct (component, pin_num) pairs on this net.
     """
-    label_positions = label_to_points.get(net_name, [])
-    if not label_positions:
-        return 0
+    return len(
+        find_pin_connections_on_net(
+            schematic,
+            schematic_path,
+            net_name,
+            all_wires,
+            iu_to_wires,
+            adjacency,
+            point_to_label,
+            label_to_points,
+        )
+    )
 
-    # Collect the union of all net-points across all label positions for this net
+
+def _collect_net_points_for_net(
+    net_name: str,
+    all_wires: List[List[Tuple[int, int]]],
+    iu_to_wires: Dict[Tuple[int, int], Set[int]],
+    adjacency: List[Set[int]],
+    point_to_label: Dict[Tuple[int, int], str],
+    label_to_points: Dict[str, List[Tuple[int, int]]],
+) -> Set[Tuple[int, int]]:
+    """Collect all schematic points reachable from labels for a named net."""
     all_net_points: Set[Tuple[int, int]] = set()
-    for lx, ly in label_positions:
-        # Include the label anchor itself so pins directly at the label count
+    for lx, ly in label_to_points.get(net_name, []):
         all_net_points.add((lx, ly))
-        # Trace from this label position into the wire graph
-        x_mm = lx / _IU_PER_MM
-        y_mm = ly / _IU_PER_MM
-        visited, net_points = _find_connected_wires(
-            x_mm,
-            y_mm,
+        _visited, net_points = _find_connected_wires(
+            lx / _IU_PER_MM,
+            ly / _IU_PER_MM,
             all_wires,
             iu_to_wires,
             adjacency,
@@ -563,12 +711,48 @@ def count_pins_on_net(
         )
         if net_points:
             all_net_points |= net_points
+    return all_net_points
 
-    if not hasattr(schematic, "symbol"):
-        return 0
 
-    locator = PinLocator()
+def find_pin_connections_on_net(
+    schematic: Any,
+    schematic_path: str,
+    net_name: str,
+    all_wires: List[List[Tuple[int, int]]],
+    iu_to_wires: Dict[Tuple[int, int], Set[int]],
+    adjacency: List[Set[int]],
+    point_to_label: Dict[Tuple[int, int], str],
+    label_to_points: Dict[str, List[Tuple[int, int]]],
+    locator: Optional[PinLocator] = None,
+) -> List[Dict]:
+    """Return component-pin connections for a named net using kicad-skip objects."""
+    all_net_points = _collect_net_points_for_net(
+        net_name,
+        all_wires,
+        iu_to_wires,
+        adjacency,
+        point_to_label,
+        label_to_points,
+    )
+    if not all_net_points or not hasattr(schematic, "symbol"):
+        return []
+
+    pin_locator = locator or PinLocator()
+    try:
+        return _find_pins_on_net(
+            all_net_points,
+            schematic_path,
+            schematic,
+            locator=pin_locator,
+        )
+    except Exception as e:
+        logger.debug(
+            f"Could not use sexp pin matching for {schematic_path}; "
+            f"falling back to kicad-skip pins: {e}"
+        )
+
     seen: Set[Tuple[str, str]] = set()
+    connections: List[Dict] = []
     ref = None
     for symbol in schematic.symbol:
         try:
@@ -577,7 +761,7 @@ def count_pins_on_net(
             ref = symbol.property.Reference.value
             if ref.startswith("_TEMPLATE"):
                 continue
-            all_pins = locator.get_all_symbol_pins(Path(schematic_path), ref)
+            all_pins = pin_locator.get_all_symbol_pins(Path(schematic_path), ref)
             if not all_pins:
                 continue
             for pin_num, pin_data in all_pins.items():
@@ -586,12 +770,13 @@ def count_pins_on_net(
                     key = (ref, pin_num)
                     if key not in seen:
                         seen.add(key)
+                        connections.append({"component": ref, "pin": pin_num})
         except Exception as e:
             logger.warning(
                 f"Error checking pins for {ref if ref is not None else '<unknown>'}: {e}"
             )
 
-    return len(seen)
+    return connections
 
 
 def list_floating_labels(schematic: Any, schematic_path: str) -> List[Dict[str, Any]]:
@@ -741,20 +926,99 @@ def get_net_at_point(
 # ---------------------------------------------------------------------------
 
 
-def _discover_sub_sheets(schematic_path: str) -> List[str]:
+def _sexp_text(value: Any) -> str:
+    """Return a KiCad S-expression atom as plain text."""
+    return str(value).strip('"')
+
+
+def _join_instance_path(parent_instance_path: str, sheet_name: str, index: int) -> str:
+    """Build a stable logical sheet-instance path for de-duplication."""
+    token = sheet_name or f"sheet{index}"
+    parent = parent_instance_path.rstrip("/")
+    if not parent:
+        return f"/{token}"
+    return f"{parent}/{token}"
+
+
+def _parse_sheet_references(
+    schematic_path: str,
+    instance_path: str = "/",
+    sexp: Optional[list] = None,
+) -> List[SheetReference]:
+    """Parse concrete child sheet instances from a parent schematic."""
+    canonical_path = _canonical_schematic_path(schematic_path)
+    parent_dir = Path(canonical_path).parent
+    if sexp is None:
+        sexp = _load_sexp(canonical_path)
+
+    result: List[SheetReference] = []
+    sheet_index = 0
+    for item in sexp:
+        if not isinstance(item, list) or not item or item[0] != Symbol("sheet"):
+            continue
+        sheet_index += 1
+        sheet_name = ""
+        sheet_file = ""
+        pins: List[SheetPinReference] = []
+        for sub in item[1:]:
+            if not isinstance(sub, list) or not sub:
+                continue
+            tag = sub[0]
+            if tag == Symbol("property") and len(sub) >= 3:
+                prop_name = _sexp_text(sub[1])
+                if prop_name == "Sheetname":
+                    sheet_name = _sexp_text(sub[2])
+                elif prop_name == "Sheetfile":
+                    sheet_file = _sexp_text(sub[2])
+            elif tag == Symbol("pin") and len(sub) >= 2:
+                pin_name = _sexp_text(sub[1])
+                for pin_part in sub[2:]:
+                    if (
+                        isinstance(pin_part, list)
+                        and len(pin_part) >= 3
+                        and pin_part[0] == Symbol("at")
+                    ):
+                        pins.append(
+                            SheetPinReference(
+                                name=pin_name,
+                                position=_to_iu(float(pin_part[1]), float(pin_part[2])),
+                            )
+                        )
+                        break
+
+        if not sheet_file:
+            continue
+        sheet_path = parent_dir / sheet_file
+        if not sheet_path.exists():
+            logger.warning(f"Sub-sheet not found: {sheet_path}")
+            continue
+        result.append(
+            SheetReference(
+                sheet_name=sheet_name,
+                sheet_path=str(sheet_path.resolve()),
+                instance_path=_join_instance_path(instance_path, sheet_name, sheet_index),
+                pins=pins,
+            )
+        )
+    return result
+
+
+def _discover_sub_sheets(schematic_path: str, _seen: Optional[Set[str]] = None) -> List[str]:
     """Recursively discover all sub-sheet .kicad_sch files referenced by the schematic.
 
     Returns a list of absolute paths to sub-sheet files (does NOT include the
     top-level schematic_path itself).
     """
-    parent_dir = Path(schematic_path).parent
+    canonical_path = _canonical_schematic_path(schematic_path)
+    if _seen is None:
+        _seen = {canonical_path}
+
+    parent_dir = Path(canonical_path).parent
     result: List[str] = []
     try:
-        with open(schematic_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        sexp = sexpdata.loads(content)
+        sexp = _load_sexp(canonical_path)
     except Exception as e:
-        logger.warning(f"Could not parse {schematic_path} for sub-sheets: {e}")
+        logger.warning(f"Could not parse {canonical_path} for sub-sheets: {e}")
         return result
 
     for item in sexp:
@@ -771,11 +1035,236 @@ def _discover_sub_sheets(schematic_path: str) -> List[str]:
                 sheet_path = parent_dir / sheet_file
                 if sheet_path.exists():
                     abs_path = str(sheet_path.resolve())
+                    if abs_path in _seen:
+                        continue
+                    _seen.add(abs_path)
                     result.append(abs_path)
-                    result.extend(_discover_sub_sheets(abs_path))
+                    result.extend(_discover_sub_sheets(abs_path, _seen))
                 else:
                     logger.warning(f"Sub-sheet not found: {sheet_path}")
     return result
+
+
+def _identity_net_name_map(state: SheetConnectivity) -> Dict[str, Set[str]]:
+    """Map each public net name on a sheet to the same local label name."""
+    return {name: {name} for name in state.label_to_points}
+
+
+def _external_names_for_local_net(
+    local_net_name: str,
+    net_name_map: Dict[str, Set[str]],
+) -> List[str]:
+    """Return public net names represented by a local sheet net."""
+    external_names = [
+        external_name
+        for external_name, local_names in net_name_map.items()
+        if local_net_name in local_names
+    ]
+    return external_names or [local_net_name]
+
+
+def _label_point_touches_wires(
+    label_point: Tuple[int, int],
+    all_wires: List[List[Tuple[int, int]]],
+    wire_indices: Set[int],
+) -> bool:
+    """Return whether a label point lies on any visited wire segment."""
+    if label_point in {pt for idx in wire_indices for pt in all_wires[idx]}:
+        return True
+    for wire_idx in wire_indices:
+        pts = all_wires[wire_idx]
+        if len(pts) >= 2 and _point_on_segment(
+            label_point[0],
+            label_point[1],
+            pts[0][0],
+            pts[0][1],
+            pts[-1][0],
+            pts[-1][1],
+        ):
+            return True
+    return False
+
+
+def _local_net_names_at_iu_point(
+    state: SheetConnectivity,
+    point: Tuple[int, int],
+) -> Set[str]:
+    """Resolve all local label names on the net at a sheet-pin coordinate."""
+    local_net_names: Set[str] = set()
+    direct_label = state.point_to_label.get(point)
+    if direct_label is not None:
+        local_net_names.add(direct_label)
+
+    visited, net_points = _find_connected_wires(
+        point[0] / _IU_PER_MM,
+        point[1] / _IU_PER_MM,
+        state.all_wires,
+        state.iu_to_wires,
+        state.adjacency,
+        point_to_label=state.point_to_label,
+        label_to_points=state.label_to_points,
+    )
+    if not net_points or visited is None:
+        return local_net_names
+
+    for label_name, label_points in state.label_to_points.items():
+        for label_point in label_points:
+            if label_point in net_points or _label_point_touches_wires(
+                label_point,
+                state.all_wires,
+                visited,
+            ):
+                local_net_names.add(label_name)
+                break
+    return local_net_names
+
+
+def _local_net_names_for_label(
+    state: SheetConnectivity,
+    label_name: str,
+) -> Set[str]:
+    """Resolve every local label name electrically tied to a named label."""
+    local_net_names = {label_name}
+    for label_point in state.label_to_points.get(label_name, []):
+        local_net_names.update(_local_net_names_at_iu_point(state, label_point))
+    return local_net_names
+
+
+def _build_child_net_name_map(
+    parent_state: SheetConnectivity,
+    parent_net_name_map: Dict[str, Set[str]],
+    sheet_ref: SheetReference,
+    child_state: SheetConnectivity,
+) -> Dict[str, Set[str]]:
+    """Map public parent net names to child-local hierarchical label names."""
+    child_map = _identity_net_name_map(child_state)
+    for sheet_pin in sheet_ref.pins:
+        parent_local_nets = _local_net_names_at_iu_point(parent_state, sheet_pin.position)
+        if not parent_local_nets:
+            continue
+        external_nets: Set[str] = set()
+        for parent_local_net in parent_local_nets:
+            external_nets.update(
+                _external_names_for_local_net(parent_local_net, parent_net_name_map)
+            )
+        child_local_nets = _local_net_names_for_label(child_state, sheet_pin.name)
+        for external_net in external_nets:
+            child_map.setdefault(external_net, set()).update(child_local_nets)
+            for child_local_net in child_local_nets:
+                if external_net == child_local_net:
+                    continue
+                identity_names = child_map.get(child_local_net)
+                if identity_names is not None:
+                    identity_names.discard(child_local_net)
+                    if not identity_names:
+                        del child_map[child_local_net]
+    return child_map
+
+
+def collect_sheet_traversals(
+    root_schematic: Any,
+    schematic_path: str,
+    locator: Optional[PinLocator] = None,
+) -> List[SheetTraversal]:
+    """Build per-instance traversal states while caching parsed data per file."""
+    from skip import Schematic as SkipSchematic
+
+    pin_locator = locator or PinLocator()
+    state_cache: Dict[str, Optional[SheetConnectivity]] = {}
+    schematic_cache: Dict[str, Any] = {}
+    traversals: List[SheetTraversal] = []
+
+    root_path = _canonical_schematic_path(schematic_path)
+    schematic_cache[root_path] = root_schematic
+
+    def _load_schematic(canonical_path: str) -> Any:
+        cached = schematic_cache.get(canonical_path)
+        if cached is not None:
+            return cached
+        loaded = SkipSchematic(canonical_path)
+        schematic_cache[canonical_path] = loaded
+        return loaded
+
+    def _state_for(canonical_path: str, schematic: Any) -> Optional[SheetConnectivity]:
+        if canonical_path not in state_cache:
+            state_cache[canonical_path] = _build_sheet_connectivity(
+                schematic,
+                canonical_path,
+                locator=pin_locator,
+            )
+        return state_cache[canonical_path]
+
+    def _visit(
+        state: SheetConnectivity,
+        instance_path: str,
+        net_name_map: Dict[str, Set[str]],
+        file_stack: Set[str],
+    ) -> None:
+        traversals.append(
+            SheetTraversal(
+                state=state,
+                instance_path=instance_path,
+                net_name_map=net_name_map,
+            )
+        )
+        for sheet_ref in _parse_sheet_references(
+            state.schematic_path,
+            instance_path=instance_path,
+            sexp=state.sexp,
+        ):
+            child_path = _canonical_schematic_path(sheet_ref.sheet_path)
+            if child_path in file_stack:
+                logger.warning(f"Skipping recursive sheet reference: {child_path}")
+                continue
+            try:
+                child_schematic = _load_schematic(child_path)
+                child_state = _state_for(child_path, child_schematic)
+                if child_state is None:
+                    continue
+                child_map = _build_child_net_name_map(
+                    state,
+                    net_name_map,
+                    sheet_ref,
+                    child_state,
+                )
+                _visit(
+                    child_state,
+                    sheet_ref.instance_path,
+                    child_map,
+                    {*file_stack, child_path},
+                )
+            except Exception as e:
+                logger.warning(f"Error reading sub-sheet {sheet_ref.sheet_path}: {e}")
+
+    root_state = _state_for(root_path, root_schematic)
+    if root_state is None:
+        return []
+
+    _visit(root_state, "/", _identity_net_name_map(root_state), {root_path})
+    return traversals
+
+
+def pins_for_traversal_net(
+    traversal: SheetTraversal,
+    net_name: str,
+    locator: Optional[PinLocator] = None,
+) -> List[Dict]:
+    """Return pins for a public net name on one concrete sheet instance."""
+    pins: List[Dict] = []
+    for local_net_name in sorted(traversal.net_name_map.get(net_name, set())):
+        for pin in _process_single_sheet(
+            traversal.state.schematic,
+            traversal.state.schematic_path,
+            local_net_name,
+            sheet_state=traversal.state,
+            locator=locator,
+        ):
+            annotated_pin = dict(pin)
+            if traversal.instance_path != "/":
+                annotated_pin.setdefault("sheet_instance", traversal.instance_path)
+                annotated_pin.setdefault("sheet_path", traversal.state.schematic_path)
+            pins.append(annotated_pin)
+    return pins
 
 
 def _parse_hierarchical_labels_sexp(
@@ -788,9 +1277,7 @@ def _parse_hierarchical_labels_sexp(
     """
     result: Dict[str, List[Tuple[int, int]]] = {}
     try:
-        with open(schematic_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        sexp = sexpdata.loads(content)
+        sexp = _load_sexp(schematic_path)
     except Exception as e:
         logger.warning(f"Could not parse {schematic_path} for hierarchical labels: {e}")
         return result
@@ -815,6 +1302,8 @@ def _process_single_sheet(
     schematic: Any,
     schematic_path: str,
     net_name: str,
+    sheet_state: Optional[SheetConnectivity] = None,
+    locator: Optional[PinLocator] = None,
 ) -> List[Dict]:
     """Find pins connected to *net_name* on a single schematic sheet.
 
@@ -822,27 +1311,13 @@ def _process_single_sheet(
     All wire and label data is parsed directly from the raw .kicad_sch file
     via sexpdata for maximum reliability.
     """
-    try:
-        sexp = _load_sexp(schematic_path)
-    except Exception as e:
-        logger.warning(f"Could not load sexp for {schematic_path}: {e}")
+    state = sheet_state or _build_sheet_connectivity(schematic, schematic_path, locator=locator)
+    if state is None:
         return []
 
-    all_wires = _parse_wires_sexp(sexp)
-    logger.debug(f"Parsed {len(all_wires)} wires from {schematic_path}")
-
-    adjacency: List[Set[int]] = []
-    iu_to_wires: Dict[Tuple[int, int], Set[int]] = {}
-    if all_wires:
-        adjacency, iu_to_wires = _build_adjacency(all_wires)
-
-    point_to_label, label_to_points = _parse_virtual_connections(
-        schematic, schematic_path, sexp=sexp
-    )
-
-    seed_positions = label_to_points.get(net_name, [])
+    seed_positions = state.label_to_points.get(net_name, [])
     if not seed_positions:
-        logger.debug(f"No label positions found for net '{net_name}' in {schematic_path}")
+        logger.debug(f"No label positions found for net '{net_name}' in {state.schematic_path}")
         return []
 
     logger.debug(
@@ -854,16 +1329,16 @@ def _process_single_sheet(
 
     for seed_pt in seed_positions:
         net_points.add(seed_pt)
-        if not all_wires:
+        if not state.all_wires:
             continue
         visited, pts = _find_connected_wires(
             seed_pt[0] / _IU_PER_MM,
             seed_pt[1] / _IU_PER_MM,
-            all_wires,
-            iu_to_wires,
-            adjacency,
-            point_to_label=point_to_label,
-            label_to_points=label_to_points,
+            state.all_wires,
+            state.iu_to_wires,
+            state.adjacency,
+            point_to_label=state.point_to_label,
+            label_to_points=state.label_to_points,
         )
         if pts:
             logger.debug(
@@ -879,7 +1354,14 @@ def _process_single_sheet(
 
     logger.debug(f"Net '{net_name}': total {len(net_points)} IU points in net after BFS")
 
-    return _find_pins_on_net(net_points, schematic_path, schematic, sexp=sexp)
+    return _find_pins_on_net(
+        net_points,
+        state.schematic_path,
+        state.schematic,
+        sexp=state.sexp,
+        locator=locator,
+        symbol_instances=state.symbol_instances,
+    )
 
 
 def get_connections_for_net(schematic: Any, schematic_path: str, net_name: str) -> List[Dict]:
@@ -891,26 +1373,21 @@ def get_connections_for_net(schematic: Any, schematic_path: str, net_name: str) 
 
     Returns a list of {"component": ref, "pin": pin_num} dicts.
     """
-    from skip import Schematic as SkipSchematic
-
-    seen: Set[Tuple[str, str]] = set()
+    seen: Set[Tuple[str, str, str]] = set()
     all_pins: List[Dict] = []
+    locator = PinLocator()
 
-    def _collect(pins: List[Dict]) -> None:
+    def _collect(instance_path: str, pins: List[Dict]) -> None:
         for pin in pins:
-            key = (pin["component"], pin["pin"])
+            key = (instance_path, pin["component"], pin["pin"])
             if key not in seen:
                 seen.add(key)
                 all_pins.append(pin)
 
-    _collect(_process_single_sheet(schematic, schematic_path, net_name))
-
-    sub_sheets = _discover_sub_sheets(schematic_path)
-    for sub_path in sub_sheets:
-        try:
-            sub_sch = SkipSchematic(sub_path)
-            _collect(_process_single_sheet(sub_sch, sub_path, net_name))
-        except Exception as e:
-            logger.warning(f"Error processing sub-sheet {sub_path}: {e}")
+    for traversal in collect_sheet_traversals(schematic, schematic_path, locator=locator):
+        _collect(
+            traversal.instance_path,
+            pins_for_traversal_net(traversal, net_name, locator=locator),
+        )
 
     return all_pins
