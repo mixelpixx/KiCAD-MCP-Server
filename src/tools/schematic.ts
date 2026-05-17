@@ -5,6 +5,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+function formatConnection(connection: any): string {
+  const base = `${connection.component}/${connection.pin}`;
+  return connection.sheet_instance ? `${base} @ ${connection.sheet_instance}` : base;
+}
+
 export function registerSchematicTools(server: McpServer, callKicadScript: Function) {
   // Create schematic tool
   server.tool(
@@ -920,7 +925,7 @@ edit_schematic_component and set its value to an empty string.`,
           };
         }
         const lines = nets.map((n: any) => {
-          const conns = (n.connections || []).map((c: any) => `${c.component}/${c.pin}`).join(", ");
+          const conns = (n.connections || []).map(formatConnection).join(", ");
           const pinCount =
             n.connected_pin_count !== undefined ? ` [${n.connected_pin_count} pin(s)]` : "";
           return `  ${n.name}${pinCount}: ${conns || "(no connections)"}`;
@@ -1464,9 +1469,7 @@ edit_schematic_component and set its value to an empty string.`,
           ),
           `\nNets (${netlist.nets.length}):`,
           ...netlist.nets.map((net: any) => {
-            const connections = net.connections
-              .map((conn: any) => `${conn.component}/${conn.pin}`)
-              .join(", ");
+            const connections = net.connections.map(formatConnection).join(", ");
             return `  ${net.name}: ${connections}`;
           }),
         ].join("\n");

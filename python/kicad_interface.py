@@ -2705,15 +2705,13 @@ class KiCADInterface:
         try:
             from commands.wire_connectivity import (
                 _build_adjacency,
-                _build_sheet_connectivity,
-                _discover_sub_sheets,
                 _parse_virtual_connections,
                 _parse_wires,
-                _process_single_sheet,
-                count_pins_on_net,
+                collect_sheet_traversals,
+                find_pin_connections_on_net,
+                pins_for_traversal_net,
             )
             from commands.pin_locator import PinLocator
-            from skip import Schematic as SkipSchematic
 
             schematic_path = params.get("schematicPath")
             if not schematic_path:
@@ -2727,29 +2725,13 @@ class KiCADInterface:
             # hierarchical sheet references from multiplying full-file parses
             # across every net name.
             locator = PinLocator()
-            sheet_states = []
+            sheet_traversals = []
             net_names: set = set()
-            root_state = _build_sheet_connectivity(schematic, schematic_path, locator=locator)
-            if root_state is not None:
-                sheet_states.append(root_state)
-                net_names.update(root_state.label_to_points.keys())
+            sheet_traversals = collect_sheet_traversals(schematic, schematic_path, locator=locator)
+            for traversal in sheet_traversals:
+                net_names.update(traversal.net_name_map.keys())
 
-                sub_sheets = _discover_sub_sheets(schematic_path)
-                for sub_path in sub_sheets:
-                    try:
-                        sub_sch = SkipSchematic(sub_path)
-                        sub_state = _build_sheet_connectivity(
-                            sub_sch,
-                            sub_path,
-                            locator=locator,
-                        )
-                        if sub_state is None:
-                            continue
-                        sheet_states.append(sub_state)
-                        net_names.update(sub_state.label_to_points.keys())
-                    except Exception as e:
-                        logger.warning(f"Error reading sub-sheet {sub_path}: {e}")
-            else:
+            if not sheet_traversals:
                 logger.debug(
                     f"Could not prepare parsed sheet state for {schematic_path}; "
                     "falling back to kicad-skip label collections"
@@ -2766,35 +2748,31 @@ class KiCADInterface:
             iu_to_wires = {}
             point_to_label = {}
             label_to_points = {}
-            if not sheet_states:
+            if not sheet_traversals:
                 # Fallback path for mocked/non-file schematics in tests.
                 all_wires = _parse_wires(schematic)
                 if all_wires:
                     adjacency, iu_to_wires = _build_adjacency(all_wires)
-                point_to_label, label_to_points = _parse_virtual_connections(schematic, schematic_path)
+                point_to_label, label_to_points = _parse_virtual_connections(
+                    schematic, schematic_path
+                )
 
             nets = []
             for net_name in sorted(net_names):
                 seen_connections = set()
                 connections = []
-                for sheet_state in sheet_states:
-                    for pin in _process_single_sheet(
-                        sheet_state.schematic,
-                        sheet_state.schematic_path,
-                        net_name,
-                        sheet_state=sheet_state,
-                        locator=locator,
-                    ):
-                        key = (pin["component"], pin["pin"])
+                for traversal in sheet_traversals:
+                    for pin in pins_for_traversal_net(traversal, net_name, locator=locator):
+                        key = (traversal.instance_path, pin["component"], pin["pin"])
                         if key in seen_connections:
                             continue
                         seen_connections.add(key)
                         connections.append(pin)
 
-                if sheet_states:
+                if sheet_traversals:
                     pin_count = len(connections)
                 else:
-                    pin_count = count_pins_on_net(
+                    connections = find_pin_connections_on_net(
                         schematic,
                         schematic_path,
                         net_name,
@@ -2803,7 +2781,9 @@ class KiCADInterface:
                         adjacency,
                         point_to_label,
                         label_to_points,
+                        locator=locator,
                     )
+                    pin_count = len(connections)
                 nets.append(
                     {
                         "name": net_name,

@@ -15,7 +15,8 @@ const __dirname = dirname(__filename);
 
 // Default config location
 const DEFAULT_CONFIG_PATH = join(dirname(__dirname), "config", "default-config.json");
-const LogLevelSchema = z.enum(["error", "warn", "info", "debug"]);
+const LOG_LEVEL_VALUES = ["error", "warn", "info", "debug"] as const;
+const LogLevelSchema = z.enum(LOG_LEVEL_VALUES);
 
 /**
  * Server configuration schema
@@ -36,20 +37,27 @@ const ConfigSchema = z.object({
 export type Config = z.infer<typeof ConfigSchema>;
 
 function getEnvLogLevel(): Config["logLevel"] | undefined {
-  const rawLevel = process.env.KICAD_MCP_LOG_LEVEL ?? process.env.LOG_LEVEL;
-  if (!rawLevel) {
-    return undefined;
+  for (const envName of ["KICAD_MCP_LOG_LEVEL", "LOG_LEVEL"] as const) {
+    const rawLevel = process.env[envName];
+    if (!rawLevel) {
+      continue;
+    }
+
+    const normalized = rawLevel.trim().toLowerCase();
+    const level = normalized === "warning" ? "warn" : normalized;
+    const parsed = LogLevelSchema.safeParse(level);
+    if (!parsed.success) {
+      const acceptedValues = [...LOG_LEVEL_VALUES, "warning"].join(", ");
+      logger.warn(
+        `Ignoring invalid ${envName} value: ${rawLevel}. Expected one of: ${acceptedValues}`,
+      );
+      continue;
+    }
+
+    return parsed.data;
   }
 
-  const normalized = rawLevel.trim().toLowerCase();
-  const level = normalized === "warning" ? "warn" : normalized;
-  const parsed = LogLevelSchema.safeParse(level);
-  if (!parsed.success) {
-    logger.warn(`Ignoring invalid LOG_LEVEL value: ${rawLevel}`);
-    return undefined;
-  }
-
-  return parsed.data;
+  return undefined;
 }
 
 function applyEnvironmentOverrides(config: Config): Config {
