@@ -13,6 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from utils.platform_helper import PlatformHelper
+
 logger = logging.getLogger("kicad_interface")
 
 
@@ -28,13 +30,13 @@ class JLCPCBPartsManager:
         Initialize parts database manager
 
         Args:
-            db_path: Path to SQLite database file (default: data/jlcpcb_parts.db)
+            db_path: Path to SQLite database file (default: platform-specific
+                user data directory, e.g. ~/.local/share/kicad-mcp/jlcpcb_parts.db
+                on Linux). See PlatformHelper.get_data_dir() for platform paths.
         """
         if db_path is None:
-            # Default to data directory in project root
-            project_root = Path(__file__).parent.parent.parent
-            data_dir = project_root / "data"
-            data_dir.mkdir(exist_ok=True)
+            data_dir = PlatformHelper.get_data_dir()
+            data_dir.mkdir(parents=True, exist_ok=True)
             db_path = str(data_dir / "jlcpcb_parts.db")
 
         self.db_path = db_path
