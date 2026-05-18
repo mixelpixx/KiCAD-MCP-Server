@@ -445,7 +445,7 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
               text: [
                 result.message,
                 `Polygons: ${result.polygon_count}`,
-                `Size: ${result.logo_width_mm?.toFixed(2)} Ã— ${result.logo_height_mm?.toFixed(2)} mm`,
+                `Size: ${result.logo_width_mm?.toFixed(2)} × ${result.logo_height_mm?.toFixed(2)} mm`,
                 `Layer: ${result.layer}`,
               ].join("\n"),
             },
