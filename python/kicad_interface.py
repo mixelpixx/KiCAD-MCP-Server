@@ -1471,6 +1471,28 @@ class KiCADInterface:
                     rf'\1"{escaped_r}"',
                     block_text,
                 )
+                # Also update the (reference "...") leaves inside the symbol's
+                # (instances) → (project) → (path) subtree. KiCad reads those
+                # entries — not the (property "Reference" ...) field — when
+                # generating netlists and syncing the PCB via "Update PCB from
+                # Schematic", so leaving them stale produces a silent
+                # reference mismatch where eeschema shows the new ref but ERC
+                # / netlist export / PCB sync all use the old one. See #126.
+                instances_pos = block_text.find("(instances")
+                if instances_pos >= 0:
+                    instances_end = self._find_matching_paren(block_text, instances_pos)
+                    if instances_end >= 0:
+                        instances_block = block_text[instances_pos : instances_end + 1]
+                        updated_instances = re.sub(
+                            r'(\(reference\s+)"' + re.escape(reference) + r'"',
+                            rf'\1"{escaped_r}"',
+                            instances_block,
+                        )
+                        block_text = (
+                            block_text[:instances_pos]
+                            + updated_instances
+                            + block_text[instances_end + 1 :]
+                        )
             if field_positions is not None:
                 for field_name, pos in field_positions.items():
                     x = pos.get("x", 0)
