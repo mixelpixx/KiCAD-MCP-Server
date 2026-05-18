@@ -362,20 +362,33 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   server.tool(
     "get_board_2d_view",
-    "Render a 2D image of the current PCB board and return it as PNG, JPG or SVG.",
+    [
+      "Render a 2D image of the current PCB board and return it as PNG, JPG or SVG.",
+      "Use responseMode to choose how the image is delivered:",
+      '  "inline" (default) — base64-encoded bytes returned in imageData; works well for small boards.',
+      '  "file" — image written next to the .kicad_pcb as <board>_2d_view.<ext>; filePath is returned.',
+      "Use file mode for large boards to avoid hitting MCP message-size limits.",
+    ].join(" "),
     {
       layers: z.array(z.string()).optional().describe("Optional array of layer names to include"),
       width: z.number().optional().describe("Optional width of the image in pixels"),
       height: z.number().optional().describe("Optional height of the image in pixels"),
       format: z.enum(["png", "jpg", "svg"]).optional().describe("Image format"),
+      responseMode: z
+        .enum(["inline", "file"])
+        .optional()
+        .describe(
+          'How to return the image: "inline" (default) returns base64 imageData; "file" writes to disk and returns filePath',
+        ),
     },
-    async ({ layers, width, height, format }) => {
+    async ({ layers, width, height, format, responseMode }) => {
       logger.debug("Getting 2D board view");
       const result = await callKicadScript("get_board_2d_view", {
         layers,
         width,
         height,
         format,
+        responseMode,
       });
 
       return {

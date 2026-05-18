@@ -1,13 +1,14 @@
-"""Test that ``get_board_2d_view`` writes the rendered image to a file
-next to the PCB instead of returning base64-encoded data inline.
+"""Tests for ``get_board_2d_view`` responseMode parameter.
 
-The original implementation returned the rendered PNG/JPG/SVG inside the
-JSON response as ``imageData`` (base64), which routinely exceeded MCP
-message-size limits on real boards. The change writes
-``<board_name>_2d_view.<ext>`` next to the ``.kicad_pcb`` and returns a
-``filePath`` pointing at it.
+Two modes are supported:
+- ``responseMode="inline"`` (default): image bytes are base64-encoded and returned in the
+  ``imageData`` field of the response.  No file is written to disk.
+- ``responseMode="file"``: image is written next to the ``.kicad_pcb`` file as
+  ``<board_name>_2d_view.<ext>`` and ``filePath`` is returned.  No ``imageData`` field is
+  present.
 """
 
+import base64
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -15,6 +16,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
 
 
 def _make_view_cmd(tmp_path: Path):
@@ -30,54 +36,134 @@ def _make_view_cmd(tmp_path: Path):
 
 
 def _patched_plotter(temp_svg: Path):
-    """Return a context manager that patches PLOT_CONTROLLER to write the
-    given temp SVG when ClosePlot is called.
-    """
+    """Context manager that stubs PLOT_CONTROLLER to return the given temp SVG path."""
     plotter = MagicMock()
     plotter.GetPlotFileName.return_value = str(temp_svg)
     plotter.OpenPlotfile.return_value = True
-    plot_options = MagicMock()
-    plotter.GetPlotOptions.return_value = plot_options
+    plotter.GetPlotOptions.return_value = MagicMock()
     return patch("commands.board.view.pcbnew.PLOT_CONTROLLER", return_value=plotter)
 
 
-def test_svg_format_writes_file_next_to_pcb(tmp_path):
+_FAKE_SVG = b"<svg><rect/></svg>"
+_FAKE_PNG = b"\x89PNG\r\n\x1a\n" + b"fakepngbytes"
+
+
+def _install_cairosvg_stub(png_bytes: bytes) -> None:
+    """Inject a cairosvg stub into sys.modules if the real library is absent."""
+    if "cairosvg" not in sys.modules:
+        stub = MagicMock()
+        stub.svg2png.return_value = png_bytes
+        sys.modules["cairosvg"] = stub
+
+
+# ---------------------------------------------------------------------------
+# inline mode tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_inline_png_returns_base64_image_data(tmp_path):
+    """responseMode='inline' with format='png' returns valid base64 in imageData."""
     cmd, root = _make_view_cmd(tmp_path)
     temp_svg = root / "scratch.svg"
-    temp_svg.write_text("<svg/>")
+    temp_svg.write_bytes(_FAKE_SVG)
+    _install_cairosvg_stub(_FAKE_PNG)
+
+    with (
+        _patched_plotter(temp_svg),
+        patch("cairosvg.svg2png", return_value=_FAKE_PNG, create=True),
+    ):
+        result = cmd.get_board_2d_view({"format": "png", "responseMode": "inline"})
+
+    assert result["success"] is True
+    assert result["format"] == "png"
+    assert "imageData" in result
+    decoded = base64.b64decode(result["imageData"])
+    assert decoded == _FAKE_PNG
+    # No file should have been written for inline mode
+    assert not (root / "MyBoard_2d_view.png").exists()
+    assert "filePath" not in result
+
+
+@pytest.mark.unit
+def test_inline_svg_returns_base64_image_data(tmp_path):
+    """responseMode='inline' with format='svg' returns valid base64 in imageData."""
+    cmd, root = _make_view_cmd(tmp_path)
+    temp_svg = root / "scratch.svg"
+    temp_svg.write_bytes(_FAKE_SVG)
 
     with _patched_plotter(temp_svg):
-        result = cmd.get_board_2d_view({"format": "svg"})
+        result = cmd.get_board_2d_view({"format": "svg", "responseMode": "inline"})
+
+    assert result["success"] is True
+    assert result["format"] == "svg"
+    assert "imageData" in result
+    decoded = base64.b64decode(result["imageData"])
+    assert decoded == _FAKE_SVG
+    assert "filePath" not in result
+
+
+@pytest.mark.unit
+def test_default_response_mode_is_inline(tmp_path):
+    """Omitting responseMode defaults to inline behavior (imageData, no filePath)."""
+    cmd, root = _make_view_cmd(tmp_path)
+    temp_svg = root / "scratch.svg"
+    temp_svg.write_bytes(_FAKE_SVG)
+    _install_cairosvg_stub(_FAKE_PNG)
+
+    with (
+        _patched_plotter(temp_svg),
+        patch("cairosvg.svg2png", return_value=_FAKE_PNG, create=True),
+    ):
+        result = cmd.get_board_2d_view({"format": "png"})
+
+    assert result["success"] is True
+    assert "imageData" in result
+    assert "filePath" not in result
+
+
+# ---------------------------------------------------------------------------
+# file mode tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_file_mode_svg_writes_file_and_returns_path(tmp_path):
+    """responseMode='file' with format='svg' writes the file and returns filePath."""
+    cmd, root = _make_view_cmd(tmp_path)
+    temp_svg = root / "scratch.svg"
+    temp_svg.write_bytes(_FAKE_SVG)
+
+    with _patched_plotter(temp_svg):
+        result = cmd.get_board_2d_view({"format": "svg", "responseMode": "file"})
 
     assert result["success"] is True
     assert result["format"] == "svg"
     expected = root / "MyBoard_2d_view.svg"
     assert Path(result["filePath"]).resolve() == expected.resolve()
     assert expected.exists()
-    # Old contract removed
+    assert expected.read_bytes() == _FAKE_SVG
     assert "imageData" not in result
 
 
-def test_png_format_writes_file_next_to_pcb(tmp_path):
+@pytest.mark.unit
+def test_file_mode_png_writes_file_and_returns_path(tmp_path):
+    """responseMode='file' with format='png' writes the PNG and returns filePath."""
     cmd, root = _make_view_cmd(tmp_path)
     temp_svg = root / "scratch.svg"
-    temp_svg.write_text("<svg/>")
-
-    fake_png_bytes = b"\x89PNG\r\n\x1a\n" + b"fakeimagebytes"
+    temp_svg.write_bytes(_FAKE_SVG)
+    _install_cairosvg_stub(_FAKE_PNG)
 
     with (
         _patched_plotter(temp_svg),
-        patch("cairosvg.svg2png", return_value=fake_png_bytes, create=True),
+        patch("cairosvg.svg2png", return_value=_FAKE_PNG, create=True),
     ):
-        # cairosvg is imported lazily inside the function, install a stub if missing
-        if "cairosvg" not in sys.modules:
-            sys.modules["cairosvg"] = MagicMock(svg2png=lambda **kwargs: fake_png_bytes)
-        result = cmd.get_board_2d_view({"format": "png", "width": 1000, "height": 800})
+        result = cmd.get_board_2d_view({"format": "png", "responseMode": "file"})
 
     assert result["success"] is True
     assert result["format"] == "png"
     expected = root / "MyBoard_2d_view.png"
     assert Path(result["filePath"]).resolve() == expected.resolve()
     assert expected.exists()
-    assert expected.read_bytes() == fake_png_bytes
+    assert expected.read_bytes() == _FAKE_PNG
     assert "imageData" not in result

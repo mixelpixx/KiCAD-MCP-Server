@@ -73,7 +73,12 @@ class BoardViewCommands:
             }
 
     def get_board_2d_view(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get a 2D image of the PCB"""
+        """Get a 2D image of the PCB.
+
+        responseMode controls how the image is returned:
+        - "inline" (default): image bytes are base64-encoded and returned as ``imageData``.
+        - "file": image is written next to the .kicad_pcb file and ``filePath`` is returned.
+        """
         try:
             if not self.board:
                 return {
@@ -87,6 +92,7 @@ class BoardViewCommands:
             height = params.get("height", 600)
             format = params.get("format", "png")
             layers = params.get("layers", [])
+            response_mode = params.get("responseMode", "inline")
 
             # Create plot controller
             plotter = pcbnew.PLOT_CONTROLLER(self.board)
@@ -128,39 +134,43 @@ class BoardViewCommands:
             board_dir = os.path.dirname(self.board.GetFileName())
             board_name = os.path.splitext(os.path.basename(self.board.GetFileName()))[0]
 
-            # Convert SVG to requested format
+            # --- Render to bytes (shared for both response modes) ---
             if format == "svg":
-                output_path = os.path.join(board_dir, f"{board_name}_2d_view.svg")
-                if os.path.exists(output_path):
-                    os.remove(output_path)
-                os.rename(temp_svg, output_path)
+                with open(temp_svg, "rb") as f:
+                    image_bytes = f.read()
+                os.remove(temp_svg)
+                mime_format = "svg"
+            else:
+                from cairosvg import svg2png
+
+                image_bytes = svg2png(url=temp_svg, output_width=width, output_height=height)
+                os.remove(temp_svg)
+
+                if format == "jpg":
+                    img = Image.open(io.BytesIO(image_bytes))
+                    buf = io.BytesIO()
+                    img.convert("RGB").save(buf, format="JPEG")
+                    image_bytes = buf.getvalue()
+                mime_format = format
+
+            # --- Package response according to responseMode ---
+            if response_mode == "file":
+                output_path = os.path.join(board_dir, f"{board_name}_2d_view.{mime_format}")
+                with open(output_path, "wb") as f:
+                    f.write(image_bytes)
                 return {
                     "success": True,
-                    "format": "svg",
+                    "format": mime_format,
                     "filePath": output_path,
                     "message": f"2D view saved to {output_path}",
                 }
             else:
-                # Use cairosvg to convert SVG to PNG
-                from cairosvg import svg2png
-
-                png_data = svg2png(url=temp_svg, output_width=width, output_height=height)
-                os.remove(temp_svg)
-
-                if format == "jpg":
-                    output_path = os.path.join(board_dir, f"{board_name}_2d_view.jpg")
-                    img = Image.open(io.BytesIO(png_data))
-                    img.convert("RGB").save(output_path, format="JPEG")
-                else:
-                    output_path = os.path.join(board_dir, f"{board_name}_2d_view.png")
-                    with open(output_path, "wb") as f:
-                        f.write(png_data)
-
+                # inline mode: base64-encode and return imageData
+                image_b64 = base64.b64encode(image_bytes).decode("utf-8")
                 return {
                     "success": True,
-                    "format": format,
-                    "filePath": output_path,
-                    "message": f"2D view saved to {output_path}",
+                    "format": mime_format,
+                    "imageData": image_b64,
                 }
 
         except Exception as e:
