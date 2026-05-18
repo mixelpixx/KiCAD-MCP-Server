@@ -266,19 +266,46 @@ BOARD_TOOLS = [
     {
         "name": "add_mounting_hole",
         "title": "Add Mounting Hole",
-        "description": "Adds a mounting hole (non-plated through hole) at the specified position with given diameter.",
+        "description": "Adds a mounting hole at the specified position with given diameter. Defaults to non-plated (NPTH) with mask-only pad layers; set plated=true for a PTH with copper pad.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "x": {"type": "number", "description": "X coordinate in millimeters"},
-                "y": {"type": "number", "description": "Y coordinate in millimeters"},
+                "position": {
+                    "type": "object",
+                    "description": "Position of the mounting hole",
+                    "properties": {
+                        "x": {"type": "number", "description": "X coordinate"},
+                        "y": {"type": "number", "description": "Y coordinate"},
+                        "unit": {
+                            "type": "string",
+                            "enum": ["mm", "inch"],
+                            "default": "mm",
+                            "description": "Unit for x/y (default mm)",
+                        },
+                    },
+                    "required": ["x", "y"],
+                },
                 "diameter": {
                     "type": "number",
-                    "description": "Hole diameter in millimeters",
+                    "description": "Hole (drill) diameter in millimeters",
                     "minimum": 0.1,
                 },
+                "padDiameter": {
+                    "type": "number",
+                    "description": "Pad diameter in millimeters (defaults to diameter + 1mm). For NPTH this only affects the solder-mask opening, not copper.",
+                    "minimum": 0.1,
+                },
+                "plated": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "True for plated through-hole (PTH) with copper pad; false (default) for NPTH (mask only).",
+                },
+                "footprintLibId": {
+                    "type": "string",
+                    "description": "Optional library:name FPID (e.g. 'MountingHole:MountingHole_3.2mm'). Defaults to MountingHole:MountingHole_<diameter>mm. A non-empty FPID is required for the footprint to be selectable in KiCad's GUI Move tool.",
+                },
             },
-            "required": ["x", "y", "diameter"],
+            "required": ["position", "diameter"],
         },
     },
     {
