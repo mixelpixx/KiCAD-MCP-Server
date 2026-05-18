@@ -410,7 +410,11 @@ class RoutingCommands:
                 "success": True,
                 "message": "Added arc trace",
                 "arc": {
-                    "start": {"x": start_point.x / 1000000, "y": start_point.y / 1000000, "unit": "mm"},
+                    "start": {
+                        "x": start_point.x / 1000000,
+                        "y": start_point.y / 1000000,
+                        "unit": "mm",
+                    },
                     "mid": {"x": mid_point.x / 1000000, "y": mid_point.y / 1000000, "unit": "mm"},
                     "end": {"x": end_point.x / 1000000, "y": end_point.y / 1000000, "unit": "mm"},
                     "layer": layer,
@@ -454,7 +458,11 @@ class RoutingCommands:
             via = pcbnew.PCB_VIA(self.board)
 
             # Set position
-            scale = 1000000 if position["unit"] == "mm" else 25400000  # mm or inch to nm
+            scale = (
+                1000000
+                if position["unit"] == "mm"
+                else (25400 if position["unit"] == "mil" else 25400000)
+            )  # mm, mil, or inch to nm
             x_nm = int(position["x"] * scale)
             y_nm = int(position["y"] * scale)
             via.SetPosition(pcbnew.VECTOR2I(x_nm, y_nm))
@@ -596,7 +604,11 @@ class RoutingCommands:
 
             # Find track by position
             if position:
-                scale = 1000000 if position["unit"] == "mm" else 25400000  # mm or inch to nm
+                scale = (
+                    1000000
+                    if position["unit"] == "mm"
+                    else (25400 if position["unit"] == "mil" else 25400000)
+                )  # mm, mil, or inch to nm
                 x_nm = int(position["x"] * scale)
                 y_nm = int(position["y"] * scale)
                 point = pcbnew.VECTOR2I(x_nm, y_nm)
@@ -713,7 +725,11 @@ class RoutingCommands:
                     # Filter by bounding box
                     if bbox:
                         bbox_unit = bbox.get("unit", "mm")
-                        bbox_scale = scale if bbox_unit == "mm" else 25400000
+                        bbox_scale = (
+                            scale
+                            if bbox_unit == "mm"
+                            else (25400 if bbox_unit == "mil" else 25400000)
+                        )
                         x1 = int(bbox.get("x1", 0) * bbox_scale)
                         y1 = int(bbox.get("y1", 0) * bbox_scale)
                         x2 = int(bbox.get("x2", 0) * bbox_scale)
@@ -837,7 +853,11 @@ class RoutingCommands:
                     layer_names = []
                     try:
                         layer_set = zone.GetLayerSet()
-                        seq = layer_set.CuStack() if hasattr(layer_set, "CuStack") else layer_set.Seq()
+                        seq = (
+                            layer_set.CuStack()
+                            if hasattr(layer_set, "CuStack")
+                            else layer_set.Seq()
+                        )
                         for lid in seq:
                             layer_names.append(self.board.GetLayerName(lid))
                     except Exception:
@@ -862,7 +882,11 @@ class RoutingCommands:
                         "net": z_net,
                         "netCode": zone.GetNetCode(),
                         "layers": layer_names,
-                        "priority": zone.GetAssignedPriority() if hasattr(zone, "GetAssignedPriority") else 0,
+                        "priority": (
+                            zone.GetAssignedPriority()
+                            if hasattr(zone, "GetAssignedPriority")
+                            else 0
+                        ),
                         "isFilled": bool(zone.IsFilled()),
                         "minThickness": zone.GetMinThickness() / scale,
                         "boundingBox": {
@@ -940,7 +964,9 @@ class RoutingCommands:
                         break
             elif position:
                 pos_unit = position.get("unit", "mm")
-                pos_scale = scale if pos_unit == "mm" else 25400000
+                pos_scale = (
+                    scale if pos_unit == "mm" else (25400 if pos_unit == "mil" else 25400000)
+                )
                 x_nm = int(position["x"] * pos_scale)
                 y_nm = int(position["y"] * pos_scale)
                 point = pcbnew.VECTOR2I(x_nm, y_nm)
@@ -1124,7 +1150,7 @@ class RoutingCommands:
                     if track.GetNetname() not in source_nets:
                         continue
                 else:
-                    # Fallback: geometric filter – trace start OR end inside source bbox
+                    # Fallback: geometric filter — trace start OR end inside source bbox
                     if is_via:
                         pos = track.GetPosition()
                         if not point_in_bbox(pos.x, pos.y):
@@ -1422,7 +1448,11 @@ class RoutingCommands:
 
             # Add points to outline
             for point in points:
-                scale = 1000000 if point.get("unit", "mm") == "mm" else 25400000
+                scale = (
+                    1000000
+                    if point.get("unit", "mm") == "mm"
+                    else (25400 if point.get("unit", "mm") == "mil" else 25400000)
+                )
                 x_nm = int(point["x"] * scale)
                 y_nm = int(point["y"] * scale)
                 outline.Append(pcbnew.VECTOR2I(x_nm, y_nm))  # Add point to outline
@@ -1605,7 +1635,11 @@ class RoutingCommands:
     def _get_point(self, point_spec: Dict[str, Any]) -> pcbnew.VECTOR2I:
         """Convert point specification to KiCAD point"""
         if "x" in point_spec and "y" in point_spec:
-            scale = 1000000 if point_spec.get("unit", "mm") == "mm" else 25400000
+            scale = (
+                1000000
+                if point_spec.get("unit", "mm") == "mm"
+                else (25400 if point_spec.get("unit", "mm") == "mil" else 25400000)
+            )
             x_nm = int(point_spec["x"] * scale)
             y_nm = int(point_spec["y"] * scale)
             return pcbnew.VECTOR2I(x_nm, y_nm)
