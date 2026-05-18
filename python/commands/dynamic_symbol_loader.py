@@ -62,7 +62,12 @@ class DynamicSymbolLoader:
 
         Search order:
         1. Project-specific sym-lib-table (if project_path is set)
-        2. Global KiCad symbol library directories
+        2. Global KiCad sym-lib-table (~/AppData/Roaming/kicad/<ver>/sym-lib-table on
+           Windows, ~/.config/kicad/<ver>/sym-lib-table on Linux,
+           ~/Library/Preferences/kicad/<ver>/sym-lib-table on macOS) — covers user-
+           registered libraries that live outside the bundled symbol directories
+           (e.g. company libraries in OneDrive, network shares, custom paths).
+        3. Bundled / well-known KiCad symbol library directories.
         """
         # 1. Check project-specific sym-lib-table
         if self.project_path:
@@ -73,7 +78,17 @@ class DynamicSymbolLoader:
                     logger.info(f"Found '{library_name}' in project sym-lib-table: {resolved}")
                     return resolved
 
-        # 2. Fall back to global KiCad symbol directories
+        # 2. Check global user sym-lib-table
+        for global_table in self._global_sym_lib_table_paths():
+            if global_table.exists():
+                resolved = self._resolve_library_from_table(global_table, library_name)
+                if resolved:
+                    logger.info(
+                        f"Found '{library_name}' in global sym-lib-table {global_table}: {resolved}"
+                    )
+                    return resolved
+
+        # 3. Fall back to bundled / well-known KiCad symbol directories
         for lib_dir in self.find_kicad_symbol_libraries():
             lib_file = lib_dir / f"{library_name}.kicad_sym"
             if lib_file.exists():
@@ -82,20 +97,43 @@ class DynamicSymbolLoader:
         logger.warning(f"Library file not found: {library_name}.kicad_sym")
         return None
 
+    def _global_sym_lib_table_paths(self) -> list:
+        """Candidate paths for the user-global sym-lib-table, newest version first."""
+        home = Path.home()
+        versions = ["10.0", "9.0", "8.0"]
+        bases = []
+        if os.name == "nt":
+            bases.append(home / "AppData" / "Roaming" / "kicad")
+        else:
+            bases.append(home / ".config" / "kicad")
+            bases.append(home / "Library" / "Preferences" / "kicad")  # macOS
+        candidates = []
+        for base in bases:
+            for v in versions:
+                candidates.append(base / v / "sym-lib-table")
+        return candidates
+
     def _resolve_library_from_table(self, table_path: Path, library_name: str) -> Optional[Path]:
         """Parse a sym-lib-table file and return the resolved path for the given library nickname."""
         try:
             with open(table_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
+            # Name and URI may be quoted (with embedded spaces, e.g. OneDrive paths)
+            # or bare. Match a quoted "..." form first, otherwise a bareword that
+            # excludes whitespace and parens.
             lib_pattern = (
-                r'\(lib\s+\(name\s+"?([^"\)\s]+)"?\)\s*\(type\s+[^)]+\)\s*\(uri\s+"?([^"\)\s]+)"?'
+                r"\(lib\s+"
+                r'\(name\s+(?:"([^"]+)"|([^"\)\s]+))\)\s*'
+                r"\(type\s+[^)]+\)\s*"
+                r'\(uri\s+(?:"([^"]+)"|([^"\)\s]+))'
             )
             for match in re.finditer(lib_pattern, content, re.IGNORECASE):
-                nickname = match.group(1)
+                # Groups: 1=quoted name, 2=bare name, 3=quoted uri, 4=bare uri
+                nickname = match.group(1) or match.group(2)
                 if nickname != library_name:
                     continue
-                uri = match.group(2)
+                uri = match.group(3) or match.group(4)
                 resolved = self._resolve_sym_uri(uri)
                 if resolved and Path(resolved).exists():
                     return Path(resolved)
