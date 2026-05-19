@@ -718,6 +718,88 @@ COMPONENT_TOOLS = [
         },
     },
     {
+        "name": "check_courtyard_overlaps",
+        "title": "Check Courtyard Overlaps",
+        "description": (
+            "Detects courtyard overlaps between footprints and (optionally) flags "
+            "footprints whose courtyard extends past the board outline. "
+            "Returns overlap pairs with intersection extents and per-component "
+            "boundary violations, both in mm. Accepts a 'positions' dict to "
+            "evaluate a HYPOTHETICAL placement without modifying the board — "
+            "use this before committing a move_component / place_component call "
+            "to know if it will trigger DRC. "
+            "Approach ported from morningfire-pcb-automation "
+            "(https://github.com/NiNjA-CodE/morningfire-pcb-automation, "
+            "scripts/placement/check_overlaps.py); this version reads real "
+            "courtyard polygons from the board (not a static lookup table) and "
+            "supports virtual placement + rotation + clearance margin."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "positions": {
+                    "type": "object",
+                    "description": (
+                        "Virtual placements: map of reference designator to "
+                        "[x, y] or [x, y, rotation_degrees] in mm. Each listed "
+                        "ref is checked AS IF it were at the given coordinates. "
+                        "Unspecified refs use their current board position."
+                    ),
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 2,
+                        "maxItems": 3,
+                    },
+                },
+                "refs": {
+                    "type": "array",
+                    "description": (
+                        "Limit the check to these refs (default: every "
+                        "footprint on the board)."
+                    ),
+                    "items": {"type": "string"},
+                },
+                "margin": {
+                    "type": "number",
+                    "description": (
+                        "Extra clearance in mm added around every courtyard "
+                        "(default 0). Useful to enforce a manufacturing keepout "
+                        "wider than the symbol's declared courtyard."
+                    ),
+                    "default": 0,
+                },
+                "include_boundary": {
+                    "type": "boolean",
+                    "description": (
+                        "Also flag courtyards that extend past the board outline "
+                        "(default true)."
+                    ),
+                    "default": True,
+                },
+                "board_outline": {
+                    "type": "object",
+                    "description": (
+                        "Optional override for the board outline bbox. Default: "
+                        "derived from Edge.Cuts."
+                    ),
+                    "properties": {
+                        "x1": {"type": "number"},
+                        "y1": {"type": "number"},
+                        "x2": {"type": "number"},
+                        "y2": {"type": "number"},
+                        "unit": {
+                            "type": "string",
+                            "enum": ["mm", "inch"],
+                            "default": "mm",
+                        },
+                    },
+                    "required": ["x1", "y1", "x2", "y2"],
+                },
+            },
+        },
+    },
+    {
         "name": "duplicate_component",
         "title": "Duplicate Component",
         "description": "Creates a copy of an existing component with new reference designator.",
