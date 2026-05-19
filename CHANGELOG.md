@@ -80,6 +80,28 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Tool Enhancements
 
+- `autoroute`: best-of-N support. New optional parameters `attempts`,
+  `targetNets`, and `passSchedule`. When `attempts > 1`, Freerouting is
+  invoked multiple times with varied `--max-passes` values, each result
+  is scored by `(nets_routed * 1000) + segments` plus a 50,000-point
+  bonus when every `targetNets` entry is routed, and the winning SES is
+  imported into the board. Single-attempt behaviour is unchanged when
+  `attempts` is omitted, so existing callers don't need updates.
+
+  Motivation: on dense boards a single Freerouting run routinely leaves
+  1–7 nets unrouted. Cycling through a few `-mp` values typically drives
+  the unrouted count to zero. Empirically, 3 attempts is usually enough
+  for 4-layer designs; 5–8 for stubborn cases.
+
+  The scoring approach and the default `passSchedule` are ported from
+  [morningfire-pcb-automation](https://github.com/NiNjA-CodE/morningfire-pcb-automation)
+  (`scripts/routing/freeroute_runner.py`). The MCP version adds:
+  cleaner per-attempt result reporting, automatic single-thread
+  optimisation (`-mt 1`) during scored attempts so the multi-threaded
+  optimiser's known clearance-violation bug doesn't distort the
+  comparison, and graceful degradation when one attempt errors out
+  (the run continues and the best of the remainder wins).
+
 - `edit_schematic_component`: extended with two new optional parameters that
   promote arbitrary custom properties to first-class citizens:
   - **`properties`** — map of property name to either a string value or a full

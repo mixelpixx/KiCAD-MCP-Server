@@ -9,9 +9,17 @@ import { z } from "zod";
 
 export function registerFreeroutingTools(server: McpServer, callKicadScript: Function) {
   // Full autoroute: export DSN -> run Freerouting -> import SES
+  //
+  // Best-of-N support (the `attempts` / `targetNets` / `passSchedule`
+  // parameters) is ported from morningfire-pcb-automation:
+  //   https://github.com/NiNjA-CodE/morningfire-pcb-automation
+  //   (scripts/routing/freeroute_runner.py — `score_ses` + run loop)
+  // On dense boards a single attempt regularly leaves 1–7 nets unrouted;
+  // cycling through a few `--max-passes` values typically drives the
+  // unrouted count to zero.
   server.tool(
     "autoroute",
-    "Run Freerouting autorouter on the current PCB. Exports to Specctra DSN, runs Freerouting CLI, and imports the routed SES result. Requires Java 11+ and freerouting.jar (see check_freerouting).",
+    "Run Freerouting autorouter on the current PCB. Exports to Specctra DSN, runs Freerouting CLI, and imports the routed SES result. Requires Java 11+ and freerouting.jar (see check_freerouting). Set `attempts` > 1 to run best-of-N: Freerouting is invoked multiple times with varied `--max-passes`, each result is scored by (nets_routed * 1000 + segments, +50000 bonus when every `targetNets` entry routed), and the winning SES is imported. Single-attempt behaviour is unchanged when `attempts` is omitted.",
     {
       boardPath: z.string().optional().describe("Path to .kicad_pcb file (default: current board)"),
       freeroutingJar: z
@@ -20,8 +28,30 @@ export function registerFreeroutingTools(server: McpServer, callKicadScript: Fun
         .describe(
           "Path to freerouting.jar (default: ~/.kicad-mcp/freerouting.jar or FREEROUTING_JAR env)",
         ),
-      maxPasses: z.number().optional().describe("Maximum routing passes (default: 20)"),
-      timeout: z.number().optional().describe("Timeout in seconds (default: 300)"),
+      maxPasses: z.number().optional().describe(
+        "Maximum routing passes for single-attempt mode (default: 20). Ignored when `attempts` > 1; use `passSchedule` instead.",
+      ),
+      timeout: z.number().optional().describe("Per-attempt timeout in seconds (default: 300)"),
+      attempts: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe(
+          "Number of Freerouting runs to try (default: 1 — backward-compatible). When > 1, runs best-of-N: scores each attempt by routing completeness and keeps the SES with the highest score. Recommended: 3–5 for dense boards.",
+        ),
+      targetNets: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Optional list of critical net names. An attempt that routes all of them earns a 50,000-point scoring bonus, breaking ties in favour of designs that include the must-have nets.",
+        ),
+      passSchedule: z
+        .array(z.number())
+        .optional()
+        .describe(
+          "Per-attempt `--max-passes` values to cycle through (default: [50, 60, 65, 70, 75, 80, 85, 90, 55, 95]). The list wraps if `attempts` exceeds its length.",
+        ),
     },
     async (args: any) => {
       const result = await callKicadScript("autoroute", args);
