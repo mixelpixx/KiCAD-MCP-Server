@@ -6,6 +6,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`rotate_component` now treats `angle` as an absolute target rotation**,
+  matching its schema description. Previously the IPC backend added the
+  supplied angle to the current rotation, so two consecutive
+  `rotate_component(angle=90)` calls would rotate the part to 180° instead
+  of leaving it at 90°. Workflows that relied on the additive behavior will
+  need to be updated.
+
 - **Project-scope `sym-lib-table` is now visible to symbol-discovery tools**:
   `search_symbols`, `list_symbol_libraries`, `list_library_symbols`, and
   `get_symbol_info` previously only consulted the global `sym-lib-table`. A
