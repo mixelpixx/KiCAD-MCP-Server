@@ -6,6 +6,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`rotate_component` now treats `angle` as an absolute target rotation**,
+  matching its schema description. Previously the IPC backend added the
+  supplied angle to the current rotation, so two consecutive
+  `rotate_component(angle=90)` calls would rotate the part to 180° instead
+  of leaving it at 90°. Workflows that relied on the additive behavior will
+  need to be updated.
+
 - **Project-scope `sym-lib-table` is now visible to symbol-discovery tools**:
   `search_symbols`, `list_symbol_libraries`, `list_library_symbols`, and
   `get_symbol_info` previously only consulted the global `sym-lib-table`. A
@@ -35,6 +42,30 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New MCP Tools
 
+- `check_courtyard_overlaps` — Detect courtyard overlaps between footprints
+  and (optionally) flag courtyards that extend past the board outline.
+  Returns overlap pairs with intersection extents (mm), per-component
+  boundary violations, and a placement summary. Accepts a `positions` dict
+  of hypothetical placements (with optional rotation) so an AI agent can
+  validate a proposed `move_component` / `place_component` before
+  committing it — closing the feedback loop that previously required
+  writing the move, running DRC, parsing violations, and reverting.
+
+  Approach ported from
+  [morningfire-pcb-automation](https://github.com/NiNjA-CodE/morningfire-pcb-automation)
+  (`scripts/placement/check_overlaps.py`). The original uses a static
+  per-footprint-type courtyard lookup table; this implementation reads
+  the real courtyard polygons (or pad bounding box fallback) from the
+  loaded board for accuracy on custom and rotated footprints, and adds
+  virtual placement + clearance margin support.
+
+- `query_zones` — Query copper zones (filled pours) on the board with optional
+  filters by net, layer, or bounding box. Returns one entry per zone with its
+  net, layers, priority, fill state, min thickness, bounding box, and filled
+  area. Complements `query_traces`, which only reports tracks/vias and silently
+  omits power-plane and GND pours — making layer-usage audits incomplete on any
+  board that uses copper zones.
+
 - `set_schematic_component_property` — Add or update a single custom property
   (BOM / sourcing field) on a placed schematic symbol. Convenience wrapper
   around `edit_schematic_component` for the common case of attaching one MPN /
@@ -48,6 +79,28 @@ All notable changes to the KiCAD MCP Server project are documented here.
   setting their value to `""` via `edit_schematic_component` instead.
 
 ### Tool Enhancements
+
+- `autoroute`: best-of-N support. New optional parameters `attempts`,
+  `targetNets`, and `passSchedule`. When `attempts > 1`, Freerouting is
+  invoked multiple times with varied `--max-passes` values, each result
+  is scored by `(nets_routed * 1000) + segments` plus a 50,000-point
+  bonus when every `targetNets` entry is routed, and the winning SES is
+  imported into the board. Single-attempt behaviour is unchanged when
+  `attempts` is omitted, so existing callers don't need updates.
+
+  Motivation: on dense boards a single Freerouting run routinely leaves
+  1–7 nets unrouted. Cycling through a few `-mp` values typically drives
+  the unrouted count to zero. Empirically, 3 attempts is usually enough
+  for 4-layer designs; 5–8 for stubborn cases.
+
+  The scoring approach and the default `passSchedule` are ported from
+  [morningfire-pcb-automation](https://github.com/NiNjA-CodE/morningfire-pcb-automation)
+  (`scripts/routing/freeroute_runner.py`). The MCP version adds:
+  cleaner per-attempt result reporting, automatic single-thread
+  optimisation (`-mt 1`) during scored attempts so the multi-threaded
+  optimiser's known clearance-violation bug doesn't distort the
+  comparison, and graceful degradation when one attempt errors out
+  (the run continues and the best of the remainder wins).
 
 - `edit_schematic_component`: extended with two new optional parameters that
   promote arbitrary custom properties to first-class citizens:

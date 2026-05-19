@@ -145,6 +145,7 @@ class LibraryManager:
             "KICAD10_3RD_PARTY": self._find_kicad_3rdparty_dir(),
             "KICAD9_3RD_PARTY": self._find_kicad_3rdparty_dir(),
             "KICAD8_3RD_PARTY": self._find_kicad_3rdparty_dir(),
+            "KICAD_3RD_PARTY": self._find_kicad_3rdparty_dir(),
         }
 
         # Project directory
@@ -205,10 +206,11 @@ class LibraryManager:
         import json
 
         # 1. Check shell environment variable first
-        if "KICAD9_3RD_PARTY" in os.environ:
-            path = os.environ["KICAD9_3RD_PARTY"]
-            if os.path.isdir(path):
-                return path
+        for var in ("KICAD10_3RD_PARTY", "KICAD9_3RD_PARTY", "KICAD8_3RD_PARTY", "KICAD_3RD_PARTY"):
+            if var in os.environ:
+                path = os.environ[var]
+                if os.path.isdir(path):
+                    return path
 
         # 2. Check kicad_common.json for user-defined variables
         kicad_common_paths = [

@@ -48,11 +48,20 @@ class RoutingCommands:
                 net = pcbnew.NETINFO_ITEM(self.board, name)
                 self.board.Add(net)
 
-            # Set net class if provided
+            # Set net class if provided — defensive against KiCad 6/7 vs KiCad 9/10 API.
             if net_class:
                 net_classes = self.board.GetNetClasses()
-                if net_classes.Find(net_class):
-                    net.SetClass(net_classes.Find(net_class))
+                resolved = None
+                if hasattr(net_classes, "Find"):
+                    resolved = net_classes.Find(net_class)
+                else:
+                    try:
+                        if net_class in net_classes:
+                            resolved = net_classes[net_class]
+                    except Exception:
+                        resolved = None
+                if resolved is not None:
+                    net.SetClass(resolved)
 
             return {
                 "success": True,
@@ -782,6 +791,113 @@ class RoutingCommands:
                 "errorDetails": str(e),
             }
 
+    def query_zones(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Query copper zones (filled pours) by net, layer, or bounding box.
+
+        Returns one entry per zone with its net, layers, priority, fill state,
+        and bounding box. Useful for auditing power planes / GND pours that
+        ``query_traces`` does not report (zones are PCB_ZONE_T, not tracks).
+        """
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first",
+                }
+
+            net_name = params.get("net")
+            layer = params.get("layer")
+            bbox = params.get("boundingBox")
+
+            scale = 1000000  # nm -> mm
+            target_layer_id = None
+            if layer:
+                target_layer_id = self.board.GetLayerID(layer)
+
+            bbox_box = None
+            if bbox:
+                bbox_unit = bbox.get("unit", "mm")
+                bbox_scale = scale if bbox_unit == "mm" else 25400000
+                bbox_box = (
+                    int(bbox.get("x1", 0) * bbox_scale),
+                    int(bbox.get("y1", 0) * bbox_scale),
+                    int(bbox.get("x2", 0) * bbox_scale),
+                    int(bbox.get("y2", 0) * bbox_scale),
+                )
+
+            zones_out = []
+            for zone in list(self.board.Zones()):
+                try:
+                    z_net = zone.GetNetname()
+                    if net_name and z_net != net_name:
+                        continue
+
+                    # A zone can span multiple copper layers; collect them.
+                    layer_names = []
+                    try:
+                        layer_set = zone.GetLayerSet()
+                        seq = layer_set.CuStack() if hasattr(layer_set, "CuStack") else layer_set.Seq()
+                        for lid in seq:
+                            layer_names.append(self.board.GetLayerName(lid))
+                    except Exception:
+                        layer_names = [self.board.GetLayerName(zone.GetLayer())]
+
+                    if target_layer_id is not None:
+                        if target_layer_id not in [self.board.GetLayerID(n) for n in layer_names]:
+                            continue
+
+                    bb = zone.GetBoundingBox()
+                    bb_x1, bb_y1 = bb.GetLeft(), bb.GetTop()
+                    bb_x2, bb_y2 = bb.GetRight(), bb.GetBottom()
+
+                    if bbox_box is not None:
+                        x1, y1, x2, y2 = bbox_box
+                        # Reject if no overlap with filter bbox.
+                        if bb_x2 < x1 or bb_x1 > x2 or bb_y2 < y1 or bb_y1 > y2:
+                            continue
+
+                    entry = {
+                        "uuid": zone.m_Uuid.AsString(),
+                        "net": z_net,
+                        "netCode": zone.GetNetCode(),
+                        "layers": layer_names,
+                        "priority": zone.GetAssignedPriority() if hasattr(zone, "GetAssignedPriority") else 0,
+                        "isFilled": bool(zone.IsFilled()),
+                        "minThickness": zone.GetMinThickness() / scale,
+                        "boundingBox": {
+                            "x1": bb_x1 / scale,
+                            "y1": bb_y1 / scale,
+                            "x2": bb_x2 / scale,
+                            "y2": bb_y2 / scale,
+                            "unit": "mm",
+                        },
+                    }
+                    # Area is only available when zone is filled.
+                    try:
+                        entry["filledArea"] = zone.GetFilledArea() / (scale * scale)
+                    except Exception:
+                        pass
+
+                    zones_out.append(entry)
+                except Exception as zone_err:
+                    logger.warning(f"Skipping invalid zone object: {zone_err}")
+                    continue
+
+            return {
+                "success": True,
+                "zoneCount": len(zones_out),
+                "zones": zones_out,
+            }
+
+        except Exception as e:
+            logger.error(f"Error querying zones: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to query zones",
+                "errorDetails": str(e),
+            }
+
     def modify_trace(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Modify properties of an existing trace
 
@@ -1103,7 +1219,8 @@ class RoutingCommands:
 
             name = params.get("name")
             clearance = params.get("clearance")
-            track_width = params.get("trackWidth")
+            # Schema exposes "traceWidth"; older callers may send "trackWidth". Accept both.
+            track_width = params.get("traceWidth", params.get("trackWidth"))
             via_diameter = params.get("viaDiameter")
             via_drill = params.get("viaDrill")
             uvia_diameter = params.get("uviaDiameter")
@@ -1119,34 +1236,52 @@ class RoutingCommands:
                     "errorDetails": "name parameter is required",
                 }
 
-            # Get net classes
+            # Get net classes — KiCad 6/7 returns NETCLASSES with .Find/.Add;
+            # KiCad 9/10 returns a netclasses_map (SWIG-wrapped std::map) that is dict-like.
             net_classes = self.board.GetNetClasses()
 
-            # Create new net class if it doesn't exist
-            if not net_classes.Find(name):
-                netclass = pcbnew.NETCLASS(name)
-                net_classes.Add(netclass)
+            existing = None
+            if hasattr(net_classes, "Find"):
+                existing = net_classes.Find(name)
             else:
-                netclass = net_classes.Find(name)
+                try:
+                    if name in net_classes:
+                        existing = net_classes[name]
+                except Exception:
+                    existing = None
+
+            if existing is None:
+                netclass = pcbnew.NETCLASS(name)
+                if hasattr(net_classes, "Add"):
+                    net_classes.Add(netclass)
+                else:
+                    net_classes[name] = netclass
+            else:
+                netclass = existing
 
             # Set properties
             scale = 1000000  # mm to nm
-            if clearance is not None:
-                netclass.SetClearance(int(clearance * scale))
-            if track_width is not None:
-                netclass.SetTrackWidth(int(track_width * scale))
-            if via_diameter is not None:
-                netclass.SetViaDiameter(int(via_diameter * scale))
-            if via_drill is not None:
-                netclass.SetViaDrill(int(via_drill * scale))
-            if uvia_diameter is not None:
-                netclass.SetMicroViaDiameter(int(uvia_diameter * scale))
-            if uvia_drill is not None:
-                netclass.SetMicroViaDrill(int(uvia_drill * scale))
-            if diff_pair_width is not None:
-                netclass.SetDiffPairWidth(int(diff_pair_width * scale))
-            if diff_pair_gap is not None:
-                netclass.SetDiffPairGap(int(diff_pair_gap * scale))
+
+            # Defensive setters — KiCad 10's NETCLASS dropped some legacy mutators.
+            def _safe_set(method_name, value):
+                if value is None:
+                    return
+                method = getattr(netclass, method_name, None)
+                if method is None:
+                    return
+                try:
+                    method(int(value * scale))
+                except Exception:
+                    pass
+
+            _safe_set("SetClearance", clearance)
+            _safe_set("SetTrackWidth", track_width)
+            _safe_set("SetViaDiameter", via_diameter)
+            _safe_set("SetViaDrill", via_drill)
+            _safe_set("SetMicroViaDiameter", uvia_diameter)
+            _safe_set("SetMicroViaDrill", uvia_drill)
+            _safe_set("SetDiffPairWidth", diff_pair_width)
+            _safe_set("SetDiffPairGap", diff_pair_gap)
 
             # Add nets to net class
             netinfo = self.board.GetNetInfo()
@@ -1156,19 +1291,29 @@ class RoutingCommands:
                     net = nets_map[net_name]
                     net.SetClass(netclass)
 
+            # Defensive accessors — KiCad 10's NETCLASS dropped some legacy getters.
+            def _safe_get(method_name):
+                method = getattr(netclass, method_name, None)
+                if method is None:
+                    return None
+                try:
+                    return method() / scale
+                except Exception:
+                    return None
+
             return {
                 "success": True,
                 "message": f"Created net class: {name}",
                 "netClass": {
                     "name": name,
-                    "clearance": netclass.GetClearance() / scale,
-                    "trackWidth": netclass.GetTrackWidth() / scale,
-                    "viaDiameter": netclass.GetViaDiameter() / scale,
-                    "viaDrill": netclass.GetViaDrill() / scale,
-                    "uviaDiameter": netclass.GetMicroViaDiameter() / scale,
-                    "uviaDrill": netclass.GetMicroViaDrill() / scale,
-                    "diffPairWidth": netclass.GetDiffPairWidth() / scale,
-                    "diffPairGap": netclass.GetDiffPairGap() / scale,
+                    "clearance": _safe_get("GetClearance"),
+                    "trackWidth": _safe_get("GetTrackWidth"),
+                    "viaDiameter": _safe_get("GetViaDiameter"),
+                    "viaDrill": _safe_get("GetViaDrill"),
+                    "uviaDiameter": _safe_get("GetMicroViaDiameter"),
+                    "uviaDrill": _safe_get("GetMicroViaDrill"),
+                    "diffPairWidth": _safe_get("GetDiffPairWidth"),
+                    "diffPairGap": _safe_get("GetDiffPairGap"),
                     "nets": nets,
                 },
             }

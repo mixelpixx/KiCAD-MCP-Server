@@ -18,6 +18,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+# Fix cairo DLL loading on Windows before any cairocffi import.
+# cairocffi uses cffi's ffi.dlopen('cairo-2') which needs the DLL on PATH.
+if sys.platform == "win32":
+    for _bin_dir in [
+        os.environ.get("PYTHONPATH", ""),
+        os.path.dirname(sys.executable),
+        r"C:\Program Files\KiCad\9.0\bin",
+        r"C:\Program Files\KiCad\8.0\bin",
+    ]:
+        if _bin_dir and os.path.isfile(os.path.join(_bin_dir, "cairo-2.dll")):
+            _current_path = os.environ.get("PATH", "")
+            if _bin_dir not in _current_path:
+                os.environ["PATH"] = _bin_dir + os.pathsep + _current_path
+            break
+
 import sexpdata
 from annotations import AnnotationLoader
 from commands.wire_manager import WireManager
@@ -345,6 +360,7 @@ class KiCADInterface:
             "get_pad_position": self.component_commands.get_pad_position,
             "place_component_array": self.component_commands.place_component_array,
             "align_components": self.component_commands.align_components,
+            "check_courtyard_overlaps": self.component_commands.check_courtyard_overlaps,
             "duplicate_component": self.component_commands.duplicate_component,
             # Routing commands
             "add_net": self.routing_commands.add_net,
@@ -353,6 +369,7 @@ class KiCADInterface:
             "add_via": self.routing_commands.add_via,
             "delete_trace": self.routing_commands.delete_trace,
             "query_traces": self.routing_commands.query_traces,
+            "query_zones": self.routing_commands.query_zones,
             "modify_trace": self.routing_commands.modify_trace,
             "copy_routing_pattern": self.routing_commands.copy_routing_pattern,
             "get_nets_list": self.routing_commands.get_nets_list,
@@ -612,7 +629,15 @@ class KiCADInterface:
 
     @staticmethod
     def _disk_signature(path: str) -> Optional[Tuple[int, str]]:
-        """Return (mtime_ns, sha256_hex) for the file, or None if missing/unreadable."""
+        """Return (mtime_ns, sha256_hex) for the file, or None if missing/unreadable.
+
+        The sha256 is always recomputed from disk: the conflict guard in
+        ``_auto_save_board`` compares hashes (content), not mtime, so we
+        cannot use mtime as a cache key without re-introducing the bug
+        where two writes inside one mtime tick on a coarse-resolution
+        filesystem (FAT32, network mounts, etc.) would mask a real
+        content change.
+        """
         try:
             st = os.stat(path)
             h = hashlib.sha256()
@@ -690,19 +715,27 @@ class KiCADInterface:
         expected = self._board_disk_signature
         current = self._disk_signature(board_path)
 
-        # If we have a recorded signature and disk has diverged, refuse to save.
-        # (If expected is None we treat this as "first save" and proceed —
-        # otherwise users with pre-existing setups would never be able to save.)
-        if expected is not None and current is not None and expected != current:
+        # Only refuse if the file's CONTENT (sha256) has actually diverged
+        # from what we recorded. mtime alone is not a conflict signal —
+        # `touch`, atime-driven backups, or even some MCP read paths can
+        # advance mtime without changing content, and refusing on that
+        # basis traps users in a state where every write needs an explicit
+        # save_project workaround.
+        #
+        # If expected is None, treat this as "first save" and proceed —
+        # otherwise pre-existing setups (open_project ran before this guard
+        # was introduced) would never be able to save.
+        if expected is not None and current is not None and expected[1] != current[1]:
             warning = (
-                "Auto-save refused: the on-disk PCB file changed externally "
-                "since this MCP session loaded it. To avoid clobbering those "
-                "changes, the in-memory mutation has NOT been written to disk. "
-                "Reload via open_project to refresh, then re-apply the change."
+                "Auto-save refused: the on-disk PCB file's contents changed "
+                "externally since this MCP session loaded it. To avoid "
+                "clobbering those changes, the in-memory mutation has NOT "
+                "been written to disk. Reload via open_project to refresh, "
+                "then re-apply the change."
             )
             logger.warning(f"{warning} ({board_path})")
-            logger.warning(f"  expected mtime_ns={expected[0]} sha256={expected[1][:12]}…")
-            logger.warning(f"  current  mtime_ns={current[0]} sha256={current[1][:12]}…")
+            logger.warning(f"  expected sha256={expected[1][:12]}… mtime_ns={expected[0]}")
+            logger.warning(f"  current  sha256={current[1][:12]}… mtime_ns={current[0]}")
             return {
                 "saved": False,
                 "warning": warning,
@@ -712,6 +745,11 @@ class KiCADInterface:
                 "currentMtimeNs": current[0],
                 "memChangesUnsaved": True,
             }
+
+        # Content matches but mtime advanced (e.g. external `touch`): refresh
+        # the recorded mtime so we don't re-hash on every subsequent call.
+        if expected is not None and current is not None and expected != current:
+            self._board_disk_signature = current
 
         # Make a rotating backup of the existing file (best-effort).
         backup_path: Optional[str] = None
@@ -1434,6 +1472,28 @@ class KiCADInterface:
                     rf'\1"{escaped_r}"',
                     block_text,
                 )
+                # Also update the (reference "...") leaves inside the symbol's
+                # (instances) → (project) → (path) subtree. KiCad reads those
+                # entries — not the (property "Reference" ...) field — when
+                # generating netlists and syncing the PCB via "Update PCB from
+                # Schematic", so leaving them stale produces a silent
+                # reference mismatch where eeschema shows the new ref but ERC
+                # / netlist export / PCB sync all use the old one. See #126.
+                instances_pos = block_text.find("(instances")
+                if instances_pos >= 0:
+                    instances_end = self._find_matching_paren(block_text, instances_pos)
+                    if instances_end >= 0:
+                        instances_block = block_text[instances_pos : instances_end + 1]
+                        updated_instances = re.sub(
+                            r'(\(reference\s+)"' + re.escape(reference) + r'"',
+                            rf'\1"{escaped_r}"',
+                            instances_block,
+                        )
+                        block_text = (
+                            block_text[:instances_pos]
+                            + updated_instances
+                            + block_text[instances_end + 1 :]
+                        )
             if field_positions is not None:
                 for field_name, pos in field_positions.items():
                     x = pos.get("x", 0)
@@ -4169,6 +4229,15 @@ class KiCADInterface:
             # Build hierarchical pad→net map (walks all sub-sheets)
             pad_net_map, net_names = self._build_hierarchical_pad_net_map(schematic_path)
 
+            # Add missing footprints from the schematic to the board *before*
+            # we add nets and assign pads — F8 in KiCad does this implicitly
+            # ("Update PCB from Schematic"), but our previous implementation
+            # only mutated nets, leaving newly-added schematic symbols with no
+            # PCB footprint at all.
+            added_footprints, skipped_footprints = self._add_missing_footprints_from_schematic(
+                board, schematic_path
+            )
+
             # Add all nets to board
             netinfo = board.GetNetInfo()
             nets_by_name = netinfo.NetsByName()
@@ -4183,7 +4252,7 @@ class KiCADInterface:
             netinfo = board.GetNetInfo()
             nets_by_name = netinfo.NetsByName()
 
-            # Assign nets to pads
+            # Assign nets to pads (now also covers any footprints we just added)
             assigned_pads = 0
             unmatched = []
             for fp in board.GetFootprints():
@@ -4207,15 +4276,21 @@ class KiCADInterface:
                 self._update_command_handlers()
 
             logger.info(
-                f"sync_schematic_to_board: {len(added_nets)} nets added, {assigned_pads} pads assigned"
+                f"sync_schematic_to_board: {len(added_nets)} nets added, "
+                f"{len(added_footprints)} footprints added, {assigned_pads} pads assigned"
             )
             return {
                 "success": True,
-                "message": f"PCB nets synced from schematic: {len(added_nets)} nets added, {assigned_pads} pads assigned",
+                "message": (
+                    f"PCB updated from schematic: {len(added_footprints)} footprints added, "
+                    f"{len(added_nets)} nets added, {assigned_pads} pads assigned"
+                ),
                 "nets_added": added_nets,
                 "nets_total": len(net_names),
                 "pads_assigned": assigned_pads,
                 "unmatched_pads_sample": unmatched[:10],
+                "footprints_added": added_footprints,
+                "footprints_skipped": skipped_footprints,
             }
 
         except Exception as e:
@@ -4224,6 +4299,155 @@ class KiCADInterface:
 
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
+
+    def _extract_components_from_schematic(self, schematic_path: str) -> List[Dict[str, str]]:
+        """Run kicad-cli netlist export and return the flat list of components.
+
+        Each entry: {"reference": str, "value": str, "footprint": str}
+        Empty list on any failure (kicad-cli missing, parse error, etc.) — the
+        caller treats that as "no missing footprints to add".
+        """
+        import subprocess
+        import tempfile
+        import xml.etree.ElementTree as ET
+
+        kicad_cli = self._find_kicad_cli_static()
+        if not kicad_cli:
+            logger.warning("kicad-cli not found — sync will not add new footprints")
+            return []
+
+        with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            cmd = [
+                kicad_cli,
+                "sch",
+                "export",
+                "netlist",
+                "--format",
+                "kicadxml",
+                "--output",
+                tmp_path,
+                schematic_path,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if result.returncode != 0:
+                logger.warning(
+                    f"kicad-cli netlist export failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}"
+                )
+                return []
+
+            tree = ET.parse(tmp_path)
+            root = tree.getroot()
+            components = []
+            for comp in root.findall("./components/comp"):
+                components.append(
+                    {
+                        "reference": comp.get("ref", ""),
+                        "value": comp.findtext("value", ""),
+                        "footprint": comp.findtext("footprint", ""),
+                    }
+                )
+            return components
+        except Exception as e:
+            logger.warning(f"Failed to extract components from schematic: {e}")
+            return []
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    def _add_missing_footprints_from_schematic(
+        self, board: Any, schematic_path: str
+    ) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+        """Add footprints to ``board`` for any schematic component not yet present.
+
+        New footprints are placed at the board origin so the user can move them
+        into position. Power/flag references (``#PWR``, ``#FLG``) are skipped —
+        they have no PCB representation.
+
+        Returns ``(added, skipped)``: each entry is
+        ``{"reference": str, "footprint": str, "reason": str?}``.
+        """
+        from pathlib import Path
+
+        from commands.library import LibraryManager
+
+        added: List[Dict[str, str]] = []
+        skipped: List[Dict[str, str]] = []
+
+        components = self._extract_components_from_schematic(schematic_path)
+        if not components:
+            return added, skipped
+
+        existing_refs = {fp.GetReference() for fp in board.GetFootprints()}
+        project_dir = Path(schematic_path).parent
+        library_manager = LibraryManager(project_path=project_dir)
+
+        for comp in components:
+            ref = comp["reference"]
+            fp_str = comp["footprint"]
+            if not ref or ref.startswith("#"):
+                # Power flags / global indicators — no PCB footprint expected.
+                continue
+            if ref in existing_refs:
+                continue
+            if not fp_str or ":" not in fp_str:
+                skipped.append(
+                    {
+                        "reference": ref,
+                        "footprint": fp_str,
+                        "reason": "no Library:Name footprint set on schematic symbol",
+                    }
+                )
+                continue
+
+            lib_name, fp_name = fp_str.split(":", 1)
+            library_path = library_manager.libraries.get(lib_name)
+            if not library_path:
+                skipped.append(
+                    {
+                        "reference": ref,
+                        "footprint": fp_str,
+                        "reason": f"library '{lib_name}' not in fp-lib-table",
+                    }
+                )
+                continue
+
+            try:
+                module = pcbnew.FootprintLoad(library_path, fp_name)
+            except Exception as e:
+                skipped.append(
+                    {"reference": ref, "footprint": fp_str, "reason": f"FootprintLoad failed: {e}"}
+                )
+                continue
+
+            if not module:
+                skipped.append(
+                    {
+                        "reference": ref,
+                        "footprint": fp_str,
+                        "reason": f"footprint '{fp_name}' not in '{lib_name}'",
+                    }
+                )
+                continue
+
+            module.SetReference(ref)
+            if comp["value"]:
+                module.SetValue(comp["value"])
+            module.SetFPID(pcbnew.LIB_ID(lib_name, fp_name))
+            # Place at board origin; user / autoplacer can position from there.
+            module.SetPosition(pcbnew.VECTOR2I(0, 0))
+
+            board.Add(module)
+            existing_refs.add(ref)
+            added.append({"reference": ref, "footprint": fp_str})
+
+        if added:
+            logger.info(f"_add_missing_footprints_from_schematic: added {len(added)} footprints")
+        return added, skipped
 
     # ===================================================================
     # Schematic analysis tools (read-only)
@@ -5061,9 +5285,15 @@ print("ok")
             position = params.get("position", {})
             x = position.get("x", 0) if isinstance(position, dict) else params.get("x", 0)
             y = position.get("y", 0) if isinstance(position, dict) else params.get("y", 0)
+            unit = position.get("unit", "mm") if isinstance(position, dict) else "mm"
             rotation = params.get("rotation", 0)
             layer = params.get("layer", "F.Cu")
             value = params.get("value", "")
+
+            # Convert inches to mm since ipc_backend expects mm
+            if unit == "inch":
+                x = x * 25.4
+                y = y * 25.4
 
             success = self.ipc_board_api.place_component(
                 reference=reference,
@@ -5101,7 +5331,13 @@ print("ok")
             position = params.get("position", {})
             x = position.get("x", 0) if isinstance(position, dict) else params.get("x", 0)
             y = position.get("y", 0) if isinstance(position, dict) else params.get("y", 0)
+            unit = position.get("unit", "mm") if isinstance(position, dict) else "mm"
             rotation = params.get("rotation")
+
+            # Convert inches to mm since ipc_backend.move_component expects mm
+            if unit == "inch":
+                x = x * 25.4
+                y = y * 25.4
 
             success = self.ipc_board_api.move_component(
                 reference=reference, x=x, y=y, rotation=rotation
@@ -5142,6 +5378,19 @@ print("ok")
         """IPC handler for get_component_list"""
         try:
             components = self.ipc_board_api.list_components()
+
+            # If IPC didn't provide bounding boxes, enrich from SWIG backend
+            if self.board and components and not components[0].get("boundingBox"):
+                try:
+                    swig_result = self.component_commands.get_component_list(params)
+                    if swig_result.get("success"):
+                        swig_map = {c["reference"]: c for c in swig_result.get("components", [])}
+                        for comp in components:
+                            swig_comp = swig_map.get(comp.get("reference"))
+                            if swig_comp and swig_comp.get("boundingBox"):
+                                comp["boundingBox"] = swig_comp["boundingBox"]
+                except Exception:
+                    pass
 
             return {"success": True, "components": components, "count": len(components)}
         except Exception as e:
@@ -5303,9 +5552,8 @@ print("ok")
             if not target:
                 return {"success": False, "message": f"Component {reference} not found"}
 
-            # Calculate new rotation
-            current_rotation = target.get("rotation", 0)
-            new_rotation = (current_rotation + angle) % 360
+            # Use angle as absolute rotation (matches schema description)
+            new_rotation = angle % 360
 
             # Use move_component with new rotation (position stays the same)
             success = self.ipc_board_api.move_component(
@@ -5342,6 +5590,17 @@ print("ok")
 
             if not target:
                 return {"success": False, "message": f"Component {reference} not found"}
+
+            # If IPC didn't provide bounding box, try SWIG backend as fallback
+            if not target.get("boundingBox") and self.board:
+                try:
+                    swig_result = self.component_commands.get_component_properties(params)
+                    if swig_result.get("success"):
+                        swig_comp = swig_result.get("component", {})
+                        target["boundingBox"] = swig_comp.get("boundingBox")
+                        target["courtyard"] = swig_comp.get("courtyard")
+                except Exception:
+                    pass
 
             return {"success": True, "component": target}
         except Exception as e:

@@ -228,7 +228,16 @@ BOARD_TOOLS = [
     {
         "name": "get_board_2d_view",
         "title": "Render Board Preview",
-        "description": "Generates a 2D visual representation of the current board state as a PNG image.",
+        "description": (
+            "Generates a 2D visual representation of the current board state as a PNG, JPG, or SVG image. "
+            "Use responseMode to control how the image is returned. "
+            'responseMode="inline" (default) returns the image bytes as a base64-encoded imageData '
+            "string in the JSON response — convenient for small boards but may exceed message-size limits on "
+            "large designs. "
+            'responseMode="file" writes the image next to the .kicad_pcb file as '
+            "<board>_2d_view.<ext> and returns a filePath; callers that can open local files should "
+            "prefer this mode for large boards."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -243,6 +252,27 @@ BOARD_TOOLS = [
                     "description": "Image height in pixels (default: 600)",
                     "minimum": 100,
                     "default": 600,
+                },
+                "format": {
+                    "type": "string",
+                    "enum": ["png", "jpg", "svg"],
+                    "description": "Output image format (default: png)",
+                    "default": "png",
+                },
+                "layers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional list of layer names to include; all enabled layers if omitted",
+                },
+                "responseMode": {
+                    "type": "string",
+                    "enum": ["inline", "file"],
+                    "default": "inline",
+                    "description": (
+                        "How to return the image. "
+                        '"inline" (default): base64-encoded bytes in the imageData response field. '
+                        '"file": write to <board>_2d_view.<ext> next to the PCB and return filePath.'
+                    ),
                 },
             },
         },
@@ -266,19 +296,46 @@ BOARD_TOOLS = [
     {
         "name": "add_mounting_hole",
         "title": "Add Mounting Hole",
-        "description": "Adds a mounting hole (non-plated through hole) at the specified position with given diameter.",
+        "description": "Adds a mounting hole at the specified position with given diameter. Defaults to non-plated (NPTH) with mask-only pad layers; set plated=true for a PTH with copper pad.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "x": {"type": "number", "description": "X coordinate in millimeters"},
-                "y": {"type": "number", "description": "Y coordinate in millimeters"},
+                "position": {
+                    "type": "object",
+                    "description": "Position of the mounting hole",
+                    "properties": {
+                        "x": {"type": "number", "description": "X coordinate"},
+                        "y": {"type": "number", "description": "Y coordinate"},
+                        "unit": {
+                            "type": "string",
+                            "enum": ["mm", "inch"],
+                            "default": "mm",
+                            "description": "Unit for x/y (default mm)",
+                        },
+                    },
+                    "required": ["x", "y"],
+                },
                 "diameter": {
                     "type": "number",
-                    "description": "Hole diameter in millimeters",
+                    "description": "Hole (drill) diameter in millimeters",
                     "minimum": 0.1,
                 },
+                "padDiameter": {
+                    "type": "number",
+                    "description": "Pad diameter in millimeters (defaults to diameter + 1mm). For NPTH this only affects the solder-mask opening, not copper.",
+                    "minimum": 0.1,
+                },
+                "plated": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "True for plated through-hole (PTH) with copper pad; false (default) for NPTH (mask only).",
+                },
+                "footprintLibId": {
+                    "type": "string",
+                    "description": "Optional library:name FPID (e.g. 'MountingHole:MountingHole_3.2mm'). Defaults to MountingHole:MountingHole_<diameter>mm. A non-empty FPID is required for the footprint to be selectable in KiCad's GUI Move tool.",
+                },
             },
-            "required": ["x", "y", "diameter"],
+            "required": ["position", "diameter"],
         },
     },
     {
@@ -661,6 +718,88 @@ COMPONENT_TOOLS = [
         },
     },
     {
+        "name": "check_courtyard_overlaps",
+        "title": "Check Courtyard Overlaps",
+        "description": (
+            "Detects courtyard overlaps between footprints and (optionally) flags "
+            "footprints whose courtyard extends past the board outline. "
+            "Returns overlap pairs with intersection extents and per-component "
+            "boundary violations, both in mm. Accepts a 'positions' dict to "
+            "evaluate a HYPOTHETICAL placement without modifying the board — "
+            "use this before committing a move_component / place_component call "
+            "to know if it will trigger DRC. "
+            "Approach ported from morningfire-pcb-automation "
+            "(https://github.com/NiNjA-CodE/morningfire-pcb-automation, "
+            "scripts/placement/check_overlaps.py); this version reads real "
+            "courtyard polygons from the board (not a static lookup table) and "
+            "supports virtual placement + rotation + clearance margin."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "positions": {
+                    "type": "object",
+                    "description": (
+                        "Virtual placements: map of reference designator to "
+                        "[x, y] or [x, y, rotation_degrees] in mm. Each listed "
+                        "ref is checked AS IF it were at the given coordinates. "
+                        "Unspecified refs use their current board position."
+                    ),
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 2,
+                        "maxItems": 3,
+                    },
+                },
+                "refs": {
+                    "type": "array",
+                    "description": (
+                        "Limit the check to these refs (default: every "
+                        "footprint on the board)."
+                    ),
+                    "items": {"type": "string"},
+                },
+                "margin": {
+                    "type": "number",
+                    "description": (
+                        "Extra clearance in mm added around every courtyard "
+                        "(default 0). Useful to enforce a manufacturing keepout "
+                        "wider than the symbol's declared courtyard."
+                    ),
+                    "default": 0,
+                },
+                "include_boundary": {
+                    "type": "boolean",
+                    "description": (
+                        "Also flag courtyards that extend past the board outline "
+                        "(default true)."
+                    ),
+                    "default": True,
+                },
+                "board_outline": {
+                    "type": "object",
+                    "description": (
+                        "Optional override for the board outline bbox. Default: "
+                        "derived from Edge.Cuts."
+                    ),
+                    "properties": {
+                        "x1": {"type": "number"},
+                        "y1": {"type": "number"},
+                        "x2": {"type": "number"},
+                        "y2": {"type": "number"},
+                        "unit": {
+                            "type": "string",
+                            "enum": ["mm", "inch"],
+                            "default": "mm",
+                        },
+                    },
+                    "required": ["x1", "y1", "x2", "y2"],
+                },
+            },
+        },
+    },
+    {
         "name": "duplicate_component",
         "title": "Duplicate Component",
         "description": "Creates a copy of an existing component with new reference designator.",
@@ -851,6 +990,39 @@ ROUTING_TOOLS = [
                     "type": "boolean",
                     "description": "Include vias in the result",
                     "default": False,
+                },
+            },
+        },
+    },
+    {
+        "name": "query_zones",
+        "title": "Query Zones",
+        "description": "Queries copper zones (filled pours) on the board with optional filters by net, layer, or bounding box. Returns one entry per zone with net, layers, priority, fill state, and bounding box. Useful for auditing power planes and GND pours, which 'query_traces' does not include.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {
+                    "type": "string",
+                    "description": "Filter by net name (e.g., 'GND', '+3V3')",
+                },
+                "layer": {
+                    "type": "string",
+                    "description": "Filter by layer name (e.g., 'In1.Cu', 'B.Cu'). Matches zones that include this layer in their layer set.",
+                },
+                "boundingBox": {
+                    "type": "object",
+                    "description": "Filter to zones whose bounding box overlaps this region",
+                    "properties": {
+                        "x1": {"type": "number", "description": "Left X coordinate"},
+                        "y1": {"type": "number", "description": "Top Y coordinate"},
+                        "x2": {"type": "number", "description": "Right X coordinate"},
+                        "y2": {"type": "number", "description": "Bottom Y coordinate"},
+                        "unit": {
+                            "type": "string",
+                            "enum": ["mm", "inch"],
+                            "default": "mm",
+                        },
+                    },
                 },
             },
         },
