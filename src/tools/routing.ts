@@ -259,6 +259,96 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
     },
   );
 
+  // ------------------------------------------------------
+  // Add GND Stitching Vias Tool
+  //
+  // Drops GND stitching vias across the board with full-stackup
+  // collision detection: every non-GND segment, via, and pad on every
+  // copper layer is checked, because a PTH via penetrates the whole
+  // board. Three combinable strategies: regular grid, around named
+  // refs (densify under MCUs / regulators / RF parts), and in-zones
+  // only (vias land on actual GND copper, not silkscreen). Supports
+  // dryRun to preview placements without writing.
+  //
+  // Approach ported from morningfire-pcb-automation:
+  //   https://github.com/NiNjA-CodE/morningfire-pcb-automation
+  //   (scripts/ground/add_gnd_vias.py)
+  // ------------------------------------------------------
+  server.tool(
+    "add_gnd_stitching_vias",
+    "Drop GND stitching vias across the board with collision checking against every non-GND segment, via, and pad on every copper layer (PTH vias penetrate the full stackup, so missing any one layer is the classic silent-short failure mode). Three combinable strategies: `grid` (regular grid across the interior), `around_refs` (densify around named ICs), and `in_zones` (only place vias inside an actual GND copper zone). Supports `dryRun` to preview placements without writing.",
+    {
+      gndNet: z
+        .string()
+        .optional()
+        .describe(
+          "Name of the ground net (default: auto-detect GND / GROUND / VSS / /GND).",
+        ),
+      strategies: z
+        .array(z.enum(["grid", "around_refs", "in_zones"]))
+        .optional()
+        .describe(
+          "Which placement strategies to combine (default: ['grid']). Pass ['grid', 'around_refs', 'in_zones'] for full coverage.",
+        ),
+      viaSize: z.number().optional().describe("Via pad diameter in mm (default 0.6)."),
+      viaDrill: z
+        .number()
+        .optional()
+        .describe("Via drill diameter in mm (default 0.3). Must be smaller than viaSize."),
+      clearance: z
+        .number()
+        .optional()
+        .describe(
+          "Extra clearance beyond required between each new via and existing copper, in mm (default 0.2).",
+        ),
+      spacing: z
+        .number()
+        .optional()
+        .describe(
+          "Grid spacing in mm for `grid` and `around_refs` strategies (default 5.0).",
+        ),
+      densifyRefs: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Reference designators to densify ground around (used by `around_refs`). Targets: MCUs, switching regulators, RF parts.",
+        ),
+      densifyRadius: z
+        .number()
+        .int()
+        .optional()
+        .describe(
+          "How many grid cells around each ref to try (default 2 = 5x5 candidate field per ref).",
+        ),
+      edgeMargin: z
+        .number()
+        .optional()
+        .describe("Keep-out from the board edge in mm (default 0.5)."),
+      maxVias: z
+        .number()
+        .int()
+        .optional()
+        .describe("Cap on total placements across all strategies (default unlimited)."),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, return the placements that would be made but don't modify the board (default false).",
+        ),
+    },
+    async (args: any) => {
+      const result = await callKicadScript("add_gnd_stitching_vias", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
   // Get nets list tool
   server.tool(
     "get_nets_list",

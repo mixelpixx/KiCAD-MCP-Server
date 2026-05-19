@@ -42,6 +42,42 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New MCP Tools
 
+- `add_gnd_stitching_vias` — Drop GND stitching vias across the board with
+  collision checking against every non-GND segment, via, and pad on every
+  copper layer. PTH vias penetrate the full stackup, so an F.Cu-only check
+  (the most common shortcut) silently creates shorts on inner / B.Cu
+  copper — this implementation explicitly walks all layers.
+
+  Combines three placement strategies, freely composable:
+
+  - `grid` — regular grid across the board interior.
+  - `around_refs` — densify around named footprints (good for tucking
+    extra ground under MCUs, switching regulators, or RF parts).
+  - `in_zones` — restrict candidates to points inside the filled
+    polygons of GND copper zones, so each new via actually stitches
+    real ground polygons together rather than floating on silkscreen.
+
+  Also supports per-via geometry control (`viaSize`, `viaDrill`,
+  `clearance`, `edgeMargin`), an `maxVias` cap for incremental work,
+  auto-detection of the GND net (tries `GND` / `GROUND` / `VSS` /
+  `/GND`), and a `dryRun` mode that returns the placements that
+  *would* be made without modifying the board — useful for previewing
+  before committing.
+
+  Returns `{ placed: [{x, y, unit}, ...], summary: {placed_count,
+  candidates_evaluated, skipped_by_zone_membership,
+  skipped_by_collision, ...} }`.
+
+  Approach ported from
+  [morningfire-pcb-automation](https://github.com/NiNjA-CodE/morningfire-pcb-automation)
+  (`scripts/ground/add_gnd_vias.py`). The original parses the PCB
+  text with regex and writes new vias by string concatenation; this
+  port reads obstacles via the pcbnew API so it handles rotated
+  footprints correctly, integrates with the in-memory board (two
+  sequential calls see each other's placements), picks up net codes
+  from the live board, and adds the `in_zones` strategy + the
+  `maxVias` cap + dry-run.
+
 - `check_courtyard_overlaps` — Detect courtyard overlaps between footprints
   and (optionally) flag courtyards that extend past the board outline.
   Returns overlap pairs with intersection extents (mm), per-component
