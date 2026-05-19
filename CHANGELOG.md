@@ -35,6 +35,23 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New MCP Tools
 
+- `check_courtyard_overlaps` — Detect courtyard overlaps between footprints
+  and (optionally) flag courtyards that extend past the board outline.
+  Returns overlap pairs with intersection extents (mm), per-component
+  boundary violations, and a placement summary. Accepts a `positions` dict
+  of hypothetical placements (with optional rotation) so an AI agent can
+  validate a proposed `move_component` / `place_component` before
+  committing it — closing the feedback loop that previously required
+  writing the move, running DRC, parsing violations, and reverting.
+
+  Approach ported from
+  [morningfire-pcb-automation](https://github.com/NiNjA-CodE/morningfire-pcb-automation)
+  (`scripts/placement/check_overlaps.py`). The original uses a static
+  per-footprint-type courtyard lookup table; this implementation reads
+  the real courtyard polygons (or pad bounding box fallback) from the
+  loaded board for accuracy on custom and rotated footprints, and adds
+  virtual placement + clearance margin support.
+
 - `query_zones` — Query copper zones (filled pours) on the board with optional
   filters by net, layer, or bounding box. Returns one entry per zone with its
   net, layers, priority, fill state, min thickness, bounding box, and filled

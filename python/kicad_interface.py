@@ -360,6 +360,7 @@ class KiCADInterface:
             "get_pad_position": self.component_commands.get_pad_position,
             "place_component_array": self.component_commands.place_component_array,
             "align_components": self.component_commands.align_components,
+            "check_courtyard_overlaps": self.component_commands.check_courtyard_overlaps,
             "duplicate_component": self.component_commands.duplicate_component,
             # Routing commands
             "add_net": self.routing_commands.add_net,

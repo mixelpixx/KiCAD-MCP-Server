@@ -542,6 +542,70 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   );
 
   // ------------------------------------------------------
+  // Check Courtyard Overlaps Tool
+  //
+  // Lets the caller validate a placement plan before committing it. The
+  // `positions` parameter accepts hypothetical {ref: [x, y]} or
+  // [x, y, rotation_degrees] entries; the board file is not modified.
+  //
+  // Approach ported from morningfire-pcb-automation
+  //   https://github.com/NiNjA-CodE/morningfire-pcb-automation
+  //   (scripts/placement/check_overlaps.py)
+  // ------------------------------------------------------
+  server.tool(
+    "check_courtyard_overlaps",
+    "Detect courtyard overlaps between footprints and (optionally) flag courtyards that extend past the board outline. Accepts a `positions` dict of hypothetical placements so an AI can validate a proposed move_component / place_component before committing it. Returns overlap pairs with intersection extents (mm) and per-component boundary violations.",
+    {
+      positions: z
+        .record(z.string(), z.array(z.number()).min(2).max(3))
+        .optional()
+        .describe(
+          "Virtual placements: map of reference designator to [x, y] or [x, y, rotation_degrees] in mm. Each listed ref is checked AS IF it were at the given coordinates. Unspecified refs use their current board position.",
+        ),
+      refs: z
+        .array(z.string())
+        .optional()
+        .describe("Limit the check to these refs (default: every footprint on the board)."),
+      margin: z
+        .number()
+        .optional()
+        .describe(
+          "Extra clearance in mm added around every courtyard (default 0). Useful to enforce a manufacturing keepout wider than the symbol's declared courtyard.",
+        ),
+      include_boundary: z
+        .boolean()
+        .optional()
+        .describe("Also flag courtyards that extend past the board outline (default true)."),
+      board_outline: z
+        .object({
+          x1: z.number(),
+          y1: z.number(),
+          x2: z.number(),
+          y2: z.number(),
+          unit: z.enum(["mm", "inch"]).optional(),
+        })
+        .optional()
+        .describe("Optional board outline bbox override. Default: derived from Edge.Cuts."),
+    },
+    async (args) => {
+      logger.debug(
+        `Checking courtyard overlaps (virtual=${
+          args.positions ? Object.keys(args.positions).length : 0
+        })`,
+      );
+      const result = await callKicadScript("check_courtyard_overlaps", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
+  // ------------------------------------------------------
   // Duplicate Component Tool
   // ------------------------------------------------------
   server.tool(
