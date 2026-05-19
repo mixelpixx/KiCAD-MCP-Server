@@ -11,11 +11,12 @@ Supports two execution modes:
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 logger = logging.getLogger("kicad_interface")
 
@@ -26,6 +27,12 @@ DEFAULT_FREEROUTING_JAR = os.environ.get(
 )
 
 DOCKER_IMAGE = "eclipse-temurin:21-jre"
+
+# Default schedule of `-mp` (max passes) values used when ``attempts`` > 1.
+# Cycles through a range that empirically produces enough variation between
+# runs to surface a better result than any single fixed value. Ported from
+# morningfire-pcb-automation/scripts/routing/freeroute_runner.py.
+DEFAULT_PASS_SCHEDULE = [50, 60, 65, 70, 75, 80, 85, 90, 55, 95]
 
 
 def _find_java() -> Optional[str]:
@@ -91,8 +98,17 @@ def _build_freerouting_cmd(
     ses_path: str,
     passes: int,
     use_docker: bool,
+    single_thread: bool = False,
 ) -> List[str]:
-    """Build the command to run Freerouting."""
+    """Build the command to run Freerouting.
+
+    ``single_thread`` forces ``-mt 1`` (single-threaded optimisation).
+    Freerouting 2.x's multi-threaded optimiser is documented to produce
+    clearance violations in some cases (the runtime even prints a warning);
+    best-of-N callers should pass this so each attempt's score reflects a
+    valid routed board, not an artefact of MT optimisation.
+    """
+    extra = ["-mt", "1"] if single_thread else []
     if use_docker:
         docker_exe = _find_docker()
         if docker_exe is None:
@@ -119,6 +135,7 @@ def _build_freerouting_cmd(
             f"/work/{ses_name}",
             "-mp",
             str(passes),
+            *extra,
         ]
     else:
         java_exe = _find_java()
@@ -134,7 +151,62 @@ def _build_freerouting_cmd(
             ses_path,
             "-mp",
             str(passes),
+            *extra,
         ]
+
+
+# ---------------------------------------------------------------------------
+# Best-of-N scoring helpers (ported from morningfire-pcb-automation)
+# ---------------------------------------------------------------------------
+#
+# Approach lifted from
+#   https://github.com/NiNjA-CodE/morningfire-pcb-automation
+#   scripts/routing/freeroute_runner.py::score_ses
+#
+# Single-shot Freerouting on dense boards routinely leaves 1–7 nets
+# unrouted. Re-running with varied --max-passes values surfaces a better
+# solution most of the time; the scoring function below picks the best
+# SES across attempts.
+# ---------------------------------------------------------------------------
+
+_SES_NET_RE = re.compile(r'\(net\s+(\S+)\s*\n\s*\(wire')
+
+
+def _score_ses(ses_text: str, target_nets: Iterable[str]) -> Dict[str, Any]:
+    """Score a Specctra SES file by routing completeness.
+
+    Score = (nets_routed * 1000) + segments + 50000_if_all_targets_routed
+
+    The ``nets_routed * 1000`` term dominates segment count so an attempt
+    that routes one more net always beats an attempt with marginally more
+    segments. The target-net bonus is huge so any attempt that routes all
+    critical nets wins, regardless of segment count.
+
+    Returns: ``{"score": int, "nets": int, "segments": int, "vias": int,
+                "targets_found": [...], "targets_missing": [...]}``
+    """
+    nets = set(_SES_NET_RE.findall(ses_text))
+    # Strip wrapping quotes if Freerouting emits them.
+    clean_nets = {n.strip('"') for n in nets}
+    segments = len(re.findall(r'\(wire', ses_text))
+    vias = len(re.findall(r'\(via ', ses_text))
+
+    targets = set(target_nets) if target_nets else set()
+    found = sorted(targets & clean_nets)
+    missing = sorted(targets - clean_nets)
+
+    score = len(clean_nets) * 1000 + segments
+    if targets and not missing:
+        score += 50_000
+
+    return {
+        "score": score,
+        "nets": len(clean_nets),
+        "segments": segments,
+        "vias": vias,
+        "targets_found": found,
+        "targets_missing": missing,
+    }
 
 
 class FreeroutingCommands:
@@ -174,11 +246,30 @@ class FreeroutingCommands:
     def autoroute(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Run Freerouting autorouter on the current board.
 
-        Flow:
-        1. Export board to Specctra DSN
-        2. Run Freerouting CLI on DSN -> SES
-        3. Import SES back into the board
-        4. Save the board
+        Single-attempt flow (default):
+            1. Export board to Specctra DSN
+            2. Run Freerouting CLI on DSN -> SES (one pass with ``maxPasses``)
+            3. Import SES back into the board
+            4. Save the board
+
+        Best-of-N flow (``attempts > 1``):
+            1. Export DSN once
+            2. Run Freerouting ``attempts`` times, varying ``--max-passes``
+               per the ``passSchedule`` (defaults to a built-in schedule
+               of 10 spread-out values).
+            3. Score each SES by (nets_routed * 1000) + segments, plus a
+               50,000-point bonus when every ``targetNets`` entry routed.
+            4. Keep the highest-scoring SES; import that one into the board.
+
+        Single-attempt behaviour is unchanged when ``attempts`` is omitted
+        or set to 1, so existing callers do not need updates.
+
+        The best-of-N scoring approach is ported from
+        morningfire-pcb-automation
+        (https://github.com/NiNjA-CodE/morningfire-pcb-automation,
+        scripts/routing/freeroute_runner.py). On dense boards a single
+        run regularly leaves 1–7 nets unrouted; cycling through a few
+        ``-mp`` values typically gets the count to zero.
         """
         try:
             import pcbnew
@@ -211,6 +302,27 @@ class FreeroutingCommands:
         timeout = params.get("timeout", 300)
         passes = params.get("maxPasses", 20)
 
+        # Best-of-N parameters
+        attempts_raw = params.get("attempts", 1)
+        try:
+            attempts = int(attempts_raw) if attempts_raw is not None else 1
+        except (TypeError, ValueError):
+            return {
+                "success": False,
+                "message": "Invalid attempts value",
+                "errorDetails": f"attempts must be a positive integer; got {attempts_raw!r}",
+            }
+        if attempts < 1:
+            return {
+                "success": False,
+                "message": "Invalid attempts value",
+                "errorDetails": "attempts must be >= 1",
+            }
+        target_nets = list(params.get("targetNets") or [])
+        pass_schedule = list(params.get("passSchedule") or DEFAULT_PASS_SCHEDULE)
+        if not pass_schedule:
+            pass_schedule = [passes]
+
         # Validate Freerouting JAR
         if not os.path.isfile(jar_path):
             return {
@@ -239,8 +351,9 @@ class FreeroutingCommands:
         board_stem = Path(board_path).stem
         dsn_path = os.path.join(board_dir, f"{board_stem}.dsn")
         ses_path = os.path.join(board_dir, f"{board_stem}.ses")
+        best_ses_path = os.path.join(board_dir, f"{board_stem}_best.ses")
 
-        # Step 1: Export DSN
+        # Step 1: Export DSN (once, regardless of attempt count)
         logger.info(f"Exporting DSN to {dsn_path}")
         try:
             result = pcbnew.ExportSpecctraDSN(self.board, dsn_path)
@@ -267,57 +380,149 @@ class FreeroutingCommands:
         dsn_size = os.path.getsize(dsn_path)
         logger.info(f"DSN exported: {dsn_size} bytes")
 
-        # Step 2: Run Freerouting
-        cmd = _build_freerouting_cmd(jar_path, dsn_path, ses_path, passes, use_docker)
-
+        # Step 2: Run Freerouting (single or multiple attempts)
         mode_label = "docker" if use_docker else "direct"
-        logger.info(f"Running Freerouting ({mode_label}): {' '.join(cmd)}")
-        start_time = time.time()
+        total_start = time.time()
+        attempt_results: List[Dict[str, Any]] = []
+        best_score = -1
+        best_attempt_idx = -1
+        best_proc_stdout = ""
 
-        try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                cwd=board_dir,
+        # If only one attempt, use the legacy maxPasses value (preserves
+        # exact backward-compatible behaviour). Otherwise cycle through
+        # passSchedule. Always run single-threaded when scoring multiple
+        # attempts so the optimiser doesn't introduce clearance violations
+        # that would distort the comparison.
+        for idx in range(attempts):
+            if attempts == 1:
+                attempt_passes = passes
+                single_thread = False
+            else:
+                attempt_passes = pass_schedule[idx % len(pass_schedule)]
+                single_thread = True
+
+            cmd = _build_freerouting_cmd(
+                jar_path, dsn_path, ses_path, attempt_passes, use_docker,
+                single_thread=single_thread,
             )
-            elapsed = round(time.time() - start_time, 1)
+            logger.info(
+                f"Freerouting attempt {idx + 1}/{attempts} "
+                f"(mp={attempt_passes}, mode={mode_label})"
+            )
 
-            if proc.returncode != 0:
+            attempt_start = time.time()
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    cwd=board_dir,
+                )
+                attempt_elapsed = round(time.time() - attempt_start, 1)
+            except subprocess.TimeoutExpired:
                 return {
                     "success": False,
-                    "message": (f"Freerouting exited with code " f"{proc.returncode}"),
-                    "errorDetails": proc.stderr or proc.stdout,
-                    "elapsed_seconds": elapsed,
-                    "mode": mode_label,
+                    "message": f"Freerouting timed out after {timeout}s",
+                    "errorDetails": "Increase timeout or reduce board complexity",
+                    "attempts_completed": idx,
                 }
-        except subprocess.TimeoutExpired:
+            except Exception as e:
+                return {
+                    "success": False,
+                    "message": "Failed to run Freerouting",
+                    "errorDetails": str(e),
+                    "attempts_completed": idx,
+                }
+
+            if proc.returncode != 0:
+                # Don't abort the whole best-of-N just because one attempt
+                # exits nonzero — record it and move on.
+                attempt_results.append({
+                    "attempt": idx + 1,
+                    "max_passes": attempt_passes,
+                    "elapsed_seconds": attempt_elapsed,
+                    "ok": False,
+                    "exit_code": proc.returncode,
+                    "stderr": (proc.stderr or "")[:200],
+                })
+                if attempts == 1:
+                    return {
+                        "success": False,
+                        "message": f"Freerouting exited with code {proc.returncode}",
+                        "errorDetails": proc.stderr or proc.stdout,
+                        "elapsed_seconds": attempt_elapsed,
+                        "mode": mode_label,
+                    }
+                continue
+
+            if not os.path.isfile(ses_path):
+                attempt_results.append({
+                    "attempt": idx + 1,
+                    "max_passes": attempt_passes,
+                    "elapsed_seconds": attempt_elapsed,
+                    "ok": False,
+                    "error": "no SES produced",
+                })
+                if attempts == 1:
+                    return {
+                        "success": False,
+                        "message": "Freerouting did not produce SES output",
+                        "errorDetails": (
+                            f"Expected at: {ses_path}. Stdout: {proc.stdout[:500]}"
+                        ),
+                        "elapsed_seconds": attempt_elapsed,
+                    }
+                continue
+
+            # Score this attempt
+            with open(ses_path, "r", encoding="utf-8", errors="replace") as fh:
+                ses_text = fh.read()
+            score_info = _score_ses(ses_text, target_nets)
+            score = score_info["score"]
+            attempt_results.append({
+                "attempt": idx + 1,
+                "max_passes": attempt_passes,
+                "elapsed_seconds": attempt_elapsed,
+                "ok": True,
+                **score_info,
+            })
+            logger.info(
+                f"  attempt {idx + 1}: score={score} "
+                f"({score_info['nets']} nets, {score_info['segments']} segs, "
+                f"{score_info['vias']} vias)"
+            )
+
+            if score > best_score:
+                best_score = score
+                best_attempt_idx = idx
+                best_proc_stdout = proc.stdout or ""
+                # Snapshot the SES that produced this score so later
+                # attempts (which overwrite ses_path) don't clobber it.
+                shutil.copy2(ses_path, best_ses_path)
+
+        elapsed = round(time.time() - total_start, 1)
+
+        if best_attempt_idx == -1:
             return {
                 "success": False,
-                "message": (f"Freerouting timed out after {timeout}s"),
-                "errorDetails": ("Increase timeout or reduce board complexity"),
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "message": "Failed to run Freerouting",
-                "errorDetails": str(e),
+                "message": "All Freerouting attempts failed",
+                "errorDetails": "No attempt produced a usable SES file",
+                "elapsed_seconds": elapsed,
+                "attempts": attempt_results,
             }
 
-        # Check SES output
-        if not os.path.isfile(ses_path):
-            return {
-                "success": False,
-                "message": "Freerouting did not produce SES output",
-                "errorDetails": (f"Expected at: {ses_path}. " f"Stdout: {proc.stdout[:500]}"),
-                "elapsed_seconds": elapsed,
-            }
+        # Restore the winning SES as the canonical output file
+        if attempts > 1:
+            shutil.copy2(best_ses_path, ses_path)
 
         ses_size = os.path.getsize(ses_path)
-        logger.info(f"SES produced: {ses_size} bytes in {elapsed}s")
+        logger.info(
+            f"Best SES: attempt {best_attempt_idx + 1}, score={best_score}, "
+            f"{ses_size} bytes (total {elapsed}s)"
+        )
 
-        # Step 3: Import SES
+        # Step 3: Import the winning SES
         logger.info(f"Importing SES from {ses_path}")
         try:
             result = pcbnew.ImportSpecctraSES(self.board, ses_path)
@@ -325,8 +530,9 @@ class FreeroutingCommands:
                 return {
                     "success": False,
                     "message": "SES import failed",
-                    "errorDetails": (f"ImportSpecctraSES returned: {result}"),
+                    "errorDetails": f"ImportSpecctraSES returned: {result}",
                     "elapsed_seconds": elapsed,
+                    "attempts": attempt_results,
                 }
         except Exception as e:
             return {
@@ -334,6 +540,7 @@ class FreeroutingCommands:
                 "message": "SES import failed",
                 "errorDetails": str(e),
                 "elapsed_seconds": elapsed,
+                "attempts": attempt_results,
             }
 
         # Step 4: Save board
@@ -352,7 +559,7 @@ class FreeroutingCommands:
             else:
                 track_count += 1
 
-        return {
+        response: Dict[str, Any] = {
             "success": True,
             "message": f"Autoroute completed in {elapsed}s",
             "mode": mode_label,
@@ -363,8 +570,14 @@ class FreeroutingCommands:
                 "tracks": track_count,
                 "vias": via_count,
             },
-            "freerouting_stdout": (proc.stdout[:1000] if proc.stdout else ""),
+            "freerouting_stdout": best_proc_stdout[:1000],
         }
+        if attempts > 1:
+            response["attempts"] = attempt_results
+            response["best_attempt"] = best_attempt_idx + 1
+            response["best_score"] = best_score
+            response["best_ses_path"] = best_ses_path
+        return response
 
     def export_dsn(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Export the board to Specctra DSN format only."""
