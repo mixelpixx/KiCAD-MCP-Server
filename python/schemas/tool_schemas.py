@@ -1028,6 +1028,122 @@ ROUTING_TOOLS = [
         },
     },
     {
+        "name": "add_gnd_stitching_vias",
+        "title": "Add GND Stitching Vias",
+        "description": (
+            "Drop GND stitching vias across the board with collision "
+            "checking against every non-GND segment, via, and pad on "
+            "every copper layer (PTH vias penetrate the full stackup, "
+            "so missing one layer is the classic silent-short failure "
+            "mode that other GND-stitching tools have). Combines three "
+            "strategies: a regular `grid` across the interior, "
+            "`around_refs` (densify around named ICs like an MCU or "
+            "switching regulator), and `in_zones` (only place vias "
+            "where they actually land on a GND copper zone so they "
+            "stitch real polygons together rather than floating on "
+            "silkscreen). Supports `dryRun` to preview placements "
+            "without writing to the board. "
+            "Approach ported from morningfire-pcb-automation "
+            "(https://github.com/NiNjA-CodE/morningfire-pcb-automation, "
+            "scripts/ground/add_gnd_vias.py); this version reads "
+            "obstacles via the pcbnew API (handles rotation, picks up "
+            "net classes, integrates with the live in-memory board) "
+            "and adds the in-zones strategy + maxVias cap + dry-run."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "gndNet": {
+                    "type": "string",
+                    "description": (
+                        "Name of the ground net (default: auto-detect "
+                        "GND / GROUND / VSS / /GND)."
+                    ),
+                },
+                "strategies": {
+                    "type": "array",
+                    "description": (
+                        "Which placement strategies to combine (default: "
+                        "['grid']). Pass ['grid', 'around_refs', "
+                        "'in_zones'] for full coverage."
+                    ),
+                    "items": {
+                        "type": "string",
+                        "enum": ["grid", "around_refs", "in_zones"],
+                    },
+                },
+                "viaSize": {
+                    "type": "number",
+                    "description": "Via pad diameter in mm (default 0.6).",
+                    "default": 0.6,
+                },
+                "viaDrill": {
+                    "type": "number",
+                    "description": (
+                        "Via drill diameter in mm (default 0.3). "
+                        "Must be smaller than viaSize."
+                    ),
+                    "default": 0.3,
+                },
+                "clearance": {
+                    "type": "number",
+                    "description": (
+                        "Extra clearance beyond required between each new "
+                        "via and existing copper, in mm. Default 0.2."
+                    ),
+                    "default": 0.2,
+                },
+                "spacing": {
+                    "type": "number",
+                    "description": (
+                        "Grid spacing in mm for the `grid` and "
+                        "`around_refs` strategies. Default 5.0."
+                    ),
+                    "default": 5.0,
+                },
+                "densifyRefs": {
+                    "type": "array",
+                    "description": (
+                        "Reference designators to densify ground around "
+                        "(used by `around_refs` strategy). Good targets: "
+                        "MCUs, switching regulators, RF parts."
+                    ),
+                    "items": {"type": "string"},
+                },
+                "densifyRadius": {
+                    "type": "integer",
+                    "description": (
+                        "How many grid cells around each ref to try "
+                        "(default 2 = 5x5 candidate field per ref)."
+                    ),
+                    "default": 2,
+                },
+                "edgeMargin": {
+                    "type": "number",
+                    "description": (
+                        "Keep-out from the board edge in mm. Default 0.5."
+                    ),
+                    "default": 0.5,
+                },
+                "maxVias": {
+                    "type": "integer",
+                    "description": (
+                        "Cap on total placements across all strategies "
+                        "(default unlimited). Useful when iterating."
+                    ),
+                },
+                "dryRun": {
+                    "type": "boolean",
+                    "description": (
+                        "If true, return the placements that would be "
+                        "made but don't modify the board. Default false."
+                    ),
+                    "default": False,
+                },
+            },
+        },
+    },
+    {
         "name": "modify_trace",
         "title": "Modify Trace",
         "description": "Modifies properties of an existing trace. Find trace by UUID or position, then change width, layer, or net assignment.",
