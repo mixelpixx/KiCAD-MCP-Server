@@ -326,6 +326,9 @@ class KiCADInterface:
         # Schematic-related classes don't need board reference
         # as they operate directly on schematic files
 
+        # Start a background thread that auto-dismisses KiCad reload dialogs
+        self._start_kicad_dialog_watcher()
+
         # Command routing dictionary
         self.command_routes = {
             # Project commands
@@ -496,6 +499,7 @@ class KiCADInterface:
         "add_via": "_ipc_add_via",
         "add_net": "_ipc_add_net",
         "delete_trace": "_ipc_delete_trace",
+        "query_traces": "_ipc_query_traces",
         "get_nets_list": "_ipc_get_nets_list",
         # Zone commands
         "add_copper_pour": "_ipc_add_copper_pour",
@@ -519,12 +523,99 @@ class KiCADInterface:
         "save_project": "_ipc_save_project",
     }
 
+    # Commands that are implemented by the explicit IPC command handlers in
+    # command_routes, rather than by the generic IPC_CAPABLE_COMMANDS fast path.
+    IPC_DIRECT_COMMANDS = {
+        "ipc_add_track",
+        "ipc_add_via",
+        "ipc_add_text",
+        "ipc_list_components",
+        "ipc_get_tracks",
+        "ipc_get_vias",
+        "ipc_save_board",
+    }
+
+    def _refresh_ipc_board_api(self) -> bool:
+        """Refresh the IPC board API after KiCAD or a board becomes available."""
+        ipc_backend = getattr(self, "ipc_backend", None)
+        if not ipc_backend or not ipc_backend.is_connected():
+            self.ipc_board_api = None
+            return False
+
+        try:
+            self.ipc_board_api = ipc_backend.get_board()
+            return True
+        except Exception as e:
+            logger.warning(f"Connected to KiCAD IPC, but no board API is available yet: {e}")
+            self.ipc_board_api = None
+            return False
+
+    def _try_enable_ipc_backend(self, force: bool = False) -> bool:
+        """Try to switch an already-running interface to IPC when KiCAD is available."""
+        if KICAD_BACKEND == "swig":
+            return False
+
+        ipc_backend = getattr(self, "ipc_backend", None)
+        if self.use_ipc and ipc_backend and ipc_backend.is_connected():
+            self._refresh_ipc_board_api()
+            return True
+
+        if not force and not KiCADProcessManager.is_running():
+            return False
+
+        try:
+            from kicad_api.ipc_backend import IPCBackend
+
+            backend = ipc_backend or IPCBackend()
+            if not backend.is_connected():
+                backend.connect()
+
+            self.ipc_backend = backend
+            self.use_ipc = True
+            self._refresh_ipc_board_api()
+            logger.info("Switched to IPC backend after KiCAD became available")
+            return True
+        except Exception as e:
+            logger.info(f"Runtime IPC connection not available: {e}")
+            return False
+
+    def _backend_status(self) -> Dict[str, Any]:
+        """Return backend status fields for command responses."""
+        ipc_backend = getattr(self, "ipc_backend", None)
+        ipc_connected = ipc_backend.is_connected() if ipc_backend else False
+        return {
+            "backend": "ipc" if self.use_ipc and ipc_connected else "swig",
+            "realtime_sync": self.use_ipc and ipc_connected,
+            "ipc_connected": ipc_connected,
+        }
+
+    @staticmethod
+    def _normalize_ipc_layer_name(layer: Any) -> str:
+        """Convert KiCad IPC layer enum strings to common layer names."""
+        layer_name = str(layer)
+        if layer_name.startswith("BL_"):
+            return layer_name[3:].replace("_", ".")
+        return layer_name
+
+    def _result_backend_for_command(self, command: str, result: Dict[str, Any]) -> str:
+        """Return the backend label for a command result."""
+        if command in {"get_backend_info", "check_kicad_ui", "launch_kicad_ui"}:
+            return result.get("backend", "ipc" if self.use_ipc else "swig")
+
+        if command in self.IPC_DIRECT_COMMANDS:
+            return "ipc" if self.use_ipc else "unavailable"
+
+        return "swig"
+
     def handle_command(self, command: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Route command to appropriate handler, preferring IPC when available"""
         logger.info(f"Handling command: {command}")
         logger.debug(f"Command parameters: {params}")
 
         try:
+            if command in self.IPC_CAPABLE_COMMANDS:
+                self._try_enable_ipc_backend()
+
             # Check if we can use IPC for this command (real-time UI sync)
             if self.use_ipc and self.ipc_board_api and command in self.IPC_CAPABLE_COMMANDS:
                 ipc_handler_name = self.IPC_CAPABLE_COMMANDS[command]
@@ -558,8 +649,11 @@ class KiCADInterface:
 
                 # Add backend indicator
                 if isinstance(result, dict):
-                    result["_backend"] = "swig"
-                    result["_realtime"] = False
+                    backend = self._result_backend_for_command(command, result)
+                    result["_backend"] = backend
+                    result["_realtime"] = bool(
+                        backend == "ipc" and result.get("realtime", self.use_ipc)
+                    )
 
                 # Update board reference if command was successful
                 if result.get("success", False):
@@ -942,6 +1036,196 @@ class KiCADInterface:
 
         return self.component_commands.place_component(params)
 
+    # ------------------------------------------------------------------
+    # Windows-only helper: ask KiCAD schematic editor to reload from disk
+    # so that file-based changes become visible immediately without the
+    # user having to close/reopen the schematic.
+    # ------------------------------------------------------------------
+    def _start_kicad_dialog_watcher(self) -> None:
+        """Start a daemon thread that auto-dismisses KiCad reload dialogs.
+
+        Runs only on Windows.  The thread polls every 500 ms and clicks
+        Yes/Ja on any visible dialog owned by KiCad's Schematic Editor that
+        asks whether to reload or discard changes.
+        """
+        if os.name != "nt":
+            return
+        import threading
+
+        def _watcher_loop() -> None:
+            try:
+                import win32api
+                import win32con
+                import win32gui
+            except ImportError:
+                logger.warning("pywin32 not available – dialog watcher disabled")
+                return
+
+            YES_LABELS = {"OK", "Yes", "&Yes", "&OK", "Ja", "&Ja",
+                          "Reload", "&Reload", "Neu laden"}
+
+            # Keywords in dialog window titles that indicate a reload/revert dialog
+            RELOAD_KEYWORDS = (
+                "Revert", "Discard", "Unsaved", "Reload", "modified",
+                "Laden", "geändert", "verworfen", "Warnung", "Warning",
+                "Information", "Confirmation",
+            )
+            # KiCad top-level window titles we treat as "parent" context
+            KICAD_PARENTS = {"KiCad", "Schematic Editor", "Confirmation"}
+
+            import time
+
+            logger.info("KiCad dialog watcher started")
+            while True:
+                try:
+                    time.sleep(0.5)
+                    dismissed: list[str] = []
+
+                    def _scan(hwnd: int, _: object) -> None:
+                        if not win32gui.IsWindowVisible(hwnd):
+                            return
+                        title = win32gui.GetWindowText(hwnd)
+                        if not title:
+                            return
+
+                        is_kicad_dialog = (
+                            title in KICAD_PARENTS
+                            or any(kw in title for kw in RELOAD_KEYWORDS)
+                        )
+                        if not is_kicad_dialog:
+                            return
+
+                        def _click_yes(child: int, _: object) -> None:
+                            ct = win32gui.GetWindowText(child)
+                            if ct in YES_LABELS:
+                                win32api.PostMessage(child, win32con.BM_CLICK, 0, 0)
+                                dismissed.append(f"'{ct}' in '{title}'")
+
+                        try:
+                            win32gui.EnumChildWindows(hwnd, _click_yes, None)
+                        except Exception:
+                            pass
+
+                    win32gui.EnumWindows(_scan, None)
+
+                    for info in dismissed:
+                        logger.info(f"dialog watcher: clicked {info}")
+
+                except Exception as exc:
+                    logger.debug(f"dialog watcher iteration error: {exc}")
+
+        t = threading.Thread(target=_watcher_loop, daemon=True, name="kicad-dialog-watcher")
+        t.start()
+        logger.info("KiCad dialog watcher thread launched")
+
+    def _reload_kicad_schematic(self) -> None:
+        """Reload the KiCAD Schematic Editor after an external file change.
+
+        Strategy:
+          1. Wait briefly for KiCad to detect the on-disk change and show its
+             own "File has been modified – reload?" dialog.
+          2. Auto-click the Yes/Ja/OK button on that dialog.
+          3. If no such dialog appeared, fall back to sending File > Revert
+             (WM_COMMAND 20236) and dismiss any confirmation that follows.
+
+        Works only on Windows via pywin32; silently skips elsewhere.
+        """
+        if os.name != "nt":
+            return
+        try:
+            import time
+            import win32api
+            import win32con
+            import win32gui
+
+            REVERT_CMD_ID = 20236
+
+            # Accepted button labels (EN + DE)
+            YES_LABELS = {"OK", "Yes", "&Yes", "&OK", "Ja", "&Ja",
+                          "Reload", "&Reload", "Neu laden"}
+
+            def _click_yes_in(hwnd: int) -> bool:
+                """Click first Yes-like button that is a child of hwnd.
+                Returns True if a button was clicked."""
+                clicked: list[bool] = [False]
+
+                def _visit(child: int, _: object) -> None:
+                    if not clicked[0]:
+                        txt = win32gui.GetWindowText(child)
+                        if txt in YES_LABELS:
+                            win32api.PostMessage(child, win32con.BM_CLICK, 0, 0)
+                            clicked[0] = True
+
+                try:
+                    win32gui.EnumChildWindows(hwnd, _visit, None)
+                except Exception:
+                    pass
+                return clicked[0]
+
+            def _find_and_dismiss() -> bool:
+                """Enumerate all top-level windows; dismiss KiCad dialogs.
+                Returns True if any dialog was dismissed."""
+                dismissed: list[bool] = [False]
+
+                def _check(hwnd: int, _: object) -> None:
+                    if dismissed[0]:
+                        return
+                    if not win32gui.IsWindowVisible(hwnd):
+                        return
+                    title = win32gui.GetWindowText(hwnd)
+                    # Match any KiCad-related dialog window
+                    is_kicad_dialog = (
+                        title in ("KiCad", "Schematic Editor", "Warning",
+                                  "Information", "Confirmation")
+                        or any(kw in title for kw in
+                               ("Schematic", "Revert", "Discard", "Unsaved",
+                                "modified", "reload", "Laden", "geändert",
+                                "verworfen", "Warnung", "Confirmation"))
+                    )
+                    if is_kicad_dialog:
+                        if _click_yes_in(hwnd):
+                            logger.info(
+                                f"_reload_kicad_schematic: dismissed dialog '{title}' hwnd={hex(hwnd)}"
+                            )
+                            dismissed[0] = True
+
+                win32gui.EnumWindows(_check, None)
+                return dismissed[0]
+
+            # ── step 1: wait for KiCad's own file-change dialog ──────────────
+            # KiCad polls for external changes; give it up to 0.8 s.
+            time.sleep(0.25)
+            if _find_and_dismiss():
+                return
+
+            # ── step 2: no dialog yet – send Revert command ──────────────────
+            schematic_hwnd: Optional[int] = None
+
+            def _find_sch(hwnd: int, _: object) -> None:
+                nonlocal schematic_hwnd
+                if "Schematic Editor" in win32gui.GetWindowText(hwnd):
+                    schematic_hwnd = hwnd
+
+            win32gui.EnumWindows(_find_sch, None)
+
+            if schematic_hwnd is None:
+                logger.debug("_reload_kicad_schematic: Schematic Editor not found")
+                return
+
+            win32api.PostMessage(schematic_hwnd, win32con.WM_COMMAND, REVERT_CMD_ID, 0)
+            logger.info(
+                f"_reload_kicad_schematic: sent Revert cmd to hwnd={hex(schematic_hwnd)}"
+            )
+
+            # Wait for the Revert confirmation dialog and dismiss it
+            for _ in range(6):
+                time.sleep(0.15)
+                if _find_and_dismiss():
+                    return
+
+        except Exception as exc:
+            logger.warning(f"_reload_kicad_schematic failed (non-critical): {exc}")
+
     def _handle_add_schematic_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add a component to a schematic using text-based injection (no sexpdata)"""
         logger.info("Adding component to schematic")
@@ -966,6 +1250,8 @@ class KiCADInterface:
             x = component.get("x", 0)
             y = component.get("y", 0)
             unit = component.get("unit", 1)
+            angle = float(component.get("angle", 0))
+            mirror_y = bool(component.get("mirrorY", False))
 
             # Derive project path from schematic path for project-local library resolution.
             # Walk up from the schematic file to find the directory that owns the project
@@ -990,8 +1276,14 @@ class KiCADInterface:
                 x=x,
                 y=y,
                 unit=unit,
+                angle=angle,
+                mirror_y=mirror_y,
                 project_path=derived_project_path,
             )
+
+            # Trigger an immediate reload in the open KiCAD Schematic Editor
+            # so the user sees the new component without manual refresh.
+            self._reload_kicad_schematic()
 
             return {
                 "success": True,
@@ -1791,22 +2083,26 @@ class KiCADInterface:
                 locator = PinLocator()
                 sch_path = Path(schematic_path)
 
-                # Load schematic to iterate all symbols
-                from skip import Schematic as SkipSchematic
-
-                sch = SkipSchematic(str(sch_path))
-
-                # Collect all pin locations: list of (ref, pin_num, [x, y])
+                # Collect all pin locations.
+                # We read refs directly from the file (regex) to avoid skip-parser
+                # failures on schematics that contain (mirror y) attributes.
+                import re as _re
+                _sch_text = sch_path.read_text(encoding="utf-8")
+                _refs_found = _re.findall(
+                    r'\(property\s+"Reference"\s+"([^"]+)"', _sch_text
+                )
                 all_pins = []
-                for symbol in sch.symbol:
-                    if not hasattr(symbol.property, "Reference"):
+                seen_refs: set = set()
+                for ref in _refs_found:
+                    if ref.startswith("#") or ref.startswith("_TEMPLATE") or ref in seen_refs:
                         continue
-                    ref = symbol.property.Reference.value
-                    if ref.startswith("_TEMPLATE"):
-                        continue
-                    pin_locs = locator.get_all_symbol_pins(sch_path, ref)
-                    for pin_num, coords in pin_locs.items():
-                        all_pins.append((ref, pin_num, coords))
+                    seen_refs.add(ref)
+                    try:
+                        pin_locs = locator.get_all_symbol_pins(sch_path, ref)
+                        for pin_num, coords in pin_locs.items():
+                            all_pins.append((ref, pin_num, coords))
+                    except Exception:
+                        pass
 
                 def find_nearest_pin(point: Any, tolerance: Any) -> Any:
                     """Find the nearest pin within tolerance of a point."""
@@ -1868,6 +2164,8 @@ class KiCADInterface:
                 message = "Wire added successfully"
                 if snapped_info:
                     message += "; " + "; ".join(snapped_info)
+                # Reload KiCad so the wire appears immediately
+                self._reload_kicad_schematic()
                 return {"success": True, "message": message}
             else:
                 return {"success": False, "message": "Failed to add wire"}
@@ -4874,12 +5172,15 @@ class KiCADInterface:
             manager = KiCADProcessManager()
             is_running = manager.is_running()
             processes = manager.get_process_info() if is_running else []
+            if is_running:
+                self._try_enable_ipc_backend()
 
             return {
                 "success": True,
                 "running": is_running,
                 "processes": processes,
                 "message": "KiCAD is running" if is_running else "KiCAD is not running",
+                **self._backend_status(),
             }
         except Exception as e:
             logger.error(f"Error checking KiCAD UI status: {str(e)}")
@@ -4898,8 +5199,10 @@ class KiCADInterface:
             path_obj = Path(project_path) if project_path else None
 
             result = check_and_launch_kicad(path_obj, auto_launch)
+            if result.get("running"):
+                self._try_enable_ipc_backend(force=True)
 
-            return {"success": True, **result}
+            return {"success": True, **result, **self._backend_status()}
         except Exception as e:
             logger.error(f"Error launching KiCAD UI: {str(e)}")
             return {"success": False, "message": str(e)}
@@ -5418,6 +5721,85 @@ print("ok")
         logger.info("delete_trace: Falling back to SWIG (IPC doesn't support trace deletion)")
         return self.routing_commands.delete_trace(params)
 
+    def _ipc_query_traces(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """IPC handler for query_traces - reads traces from the live KiCAD board."""
+        try:
+            net_name = params.get("net")
+            layer_filter = params.get("layer")
+            bbox = params.get("boundingBox")
+            include_vias = params.get("includeVias", False)
+
+            def point_in_bbox(point: Dict[str, Any]) -> bool:
+                if not bbox:
+                    return True
+                unit_scale = 25.4 if bbox.get("unit", "mm") == "inch" else 1.0
+                x1 = bbox.get("x1", 0) * unit_scale
+                y1 = bbox.get("y1", 0) * unit_scale
+                x2 = bbox.get("x2", 0) * unit_scale
+                y2 = bbox.get("y2", 0) * unit_scale
+                low_x, high_x = sorted((x1, x2))
+                low_y, high_y = sorted((y1, y2))
+                return low_x <= point.get("x", 0) <= high_x and low_y <= point.get("y", 0) <= high_y
+
+            traces = []
+            for track in self.ipc_board_api.get_tracks():
+                if net_name and track.get("net") != net_name:
+                    continue
+
+                layer = self._normalize_ipc_layer_name(track.get("layer", ""))
+                if layer_filter and layer != layer_filter:
+                    continue
+
+                start = track.get("start", {})
+                end = track.get("end", {})
+                if bbox and not (point_in_bbox(start) or point_in_bbox(end)):
+                    continue
+
+                start_with_unit = {**start, "unit": "mm"}
+                end_with_unit = {**end, "unit": "mm"}
+                dx = end.get("x", 0) - start.get("x", 0)
+                dy = end.get("y", 0) - start.get("y", 0)
+                traces.append(
+                    {
+                        "uuid": track.get("id", ""),
+                        "net": track.get("net", ""),
+                        "netCode": track.get("netCode", 0),
+                        "layer": layer,
+                        "width": track.get("width", 0),
+                        "start": start_with_unit,
+                        "end": end_with_unit,
+                        "length": (dx**2 + dy**2) ** 0.5,
+                    }
+                )
+
+            result = {"success": True, "traceCount": len(traces), "traces": traces}
+
+            if include_vias:
+                vias = []
+                for via in self.ipc_board_api.get_vias():
+                    if net_name and via.get("net") != net_name:
+                        continue
+                    position = via.get("position", {})
+                    if bbox and not point_in_bbox(position):
+                        continue
+                    vias.append(
+                        {
+                            "uuid": via.get("id", ""),
+                            "position": {**position, "unit": "mm"},
+                            "net": via.get("net", ""),
+                            "netCode": via.get("netCode", 0),
+                            "diameter": via.get("diameter", 0),
+                            "drill": via.get("drill", 0),
+                        }
+                    )
+                result["viaCount"] = len(vias)
+                result["vias"] = vias
+
+            return result
+        except Exception as e:
+            logger.error(f"IPC query_traces error: {e}")
+            return {"success": False, "message": str(e)}
+
     def _ipc_get_nets_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for get_nets_list - gets nets with real-time data"""
         try:
@@ -5614,15 +5996,17 @@ print("ok")
 
     def _handle_get_backend_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get information about the current backend"""
+        if KiCADProcessManager.is_running():
+            self._try_enable_ipc_backend()
+        status = self._backend_status()
+        ipc_backend = getattr(self, "ipc_backend", None)
         return {
             "success": True,
-            "backend": "ipc" if self.use_ipc else "swig",
-            "realtime_sync": self.use_ipc,
-            "ipc_connected": (self.ipc_backend.is_connected() if self.ipc_backend else False),
-            "version": self.ipc_backend.get_version() if self.ipc_backend else "N/A",
+            **status,
+            "version": ipc_backend.get_version() if ipc_backend else "N/A",
             "message": (
                 "Using IPC backend with real-time UI sync"
-                if self.use_ipc
+                if status["backend"] == "ipc"
                 else "Using SWIG backend (requires manual reload)"
             ),
         }
