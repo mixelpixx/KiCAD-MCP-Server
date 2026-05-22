@@ -187,6 +187,13 @@ class DesignRuleCommands:
                 }
 
             report_path = params.get("reportPath")
+            # Caller-overridable timeout (seconds). Defaults to 600s for big boards
+            # but smaller MCP transport budgets (e.g. 120s) can lower it explicitly.
+            try:
+                timeout_sec = int(params.get("timeoutSec", 600))
+            except (TypeError, ValueError):
+                timeout_sec = 600
+            timeout_sec = max(10, min(timeout_sec, 1800))  # clamp to [10, 1800]
 
             # Get the board file path
             board_file = self.board.GetFileName()
@@ -225,14 +232,14 @@ class DesignRuleCommands:
                     board_file,
                 ]
 
-                logger.info(f"Running DRC command: {' '.join(cmd)}")
+                logger.info(f"Running DRC command (timeout={timeout_sec}s): {' '.join(cmd)}")
 
-                # Run DRC
+                # Run DRC. subprocess.run kills the child on TimeoutExpired.
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
-                    timeout=600,  # 10 minute timeout for large boards (21MB PCB needs time)
+                    timeout=timeout_sec,
                 )
 
                 if result.returncode != 0:
@@ -318,7 +325,7 @@ class DesignRuleCommands:
                         "mm",
                         board_file,
                     ]
-                    subprocess.run(cmd_report, capture_output=True, timeout=600)
+                    subprocess.run(cmd_report, capture_output=True, timeout=timeout_sec)
 
                 # Return summary only (not full violations list)
                 return {
@@ -339,11 +346,14 @@ class DesignRuleCommands:
                     os.unlink(json_output)
 
         except subprocess.TimeoutExpired:
-            logger.error("DRC command timed out")
+            logger.error(f"DRC command timed out after {timeout_sec}s")
             return {
                 "success": False,
                 "message": "DRC command timed out",
-                "errorDetails": "Command took longer than 600 seconds (10 minutes)",
+                "errorDetails": (
+                    f"Command took longer than {timeout_sec} seconds; "
+                    "raise timeoutSec param for very large boards"
+                ),
             }
         except Exception as e:
             logger.error(f"Error running DRC: {str(e)}")
