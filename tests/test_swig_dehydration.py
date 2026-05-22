@@ -58,6 +58,12 @@ def _make_iface() -> Any:
         iface = KiCADInterface.__new__(KiCADInterface)
         iface.use_ipc = False
         iface.ipc_board_api = None
+        # __init__ is skipped here, so initialise the auto-save signature
+        # attribute that _auto_save_board's content-divergence guard reads.
+        # (The guard came from the #151/#172 auto-save work that #173 was
+        # merged on top of; without this the dehydration recovery test trips
+        # an AttributeError before reaching the code under test.)
+        iface._board_disk_signature = None
         return iface
 
 
