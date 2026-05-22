@@ -410,7 +410,11 @@ class RoutingCommands:
                 "success": True,
                 "message": "Added arc trace",
                 "arc": {
-                    "start": {"x": start_point.x / 1000000, "y": start_point.y / 1000000, "unit": "mm"},
+                    "start": {
+                        "x": start_point.x / 1000000,
+                        "y": start_point.y / 1000000,
+                        "unit": "mm",
+                    },
                     "mid": {"x": mid_point.x / 1000000, "y": mid_point.y / 1000000, "unit": "mm"},
                     "end": {"x": end_point.x / 1000000, "y": end_point.y / 1000000, "unit": "mm"},
                     "layer": layer,
@@ -454,7 +458,11 @@ class RoutingCommands:
             via = pcbnew.PCB_VIA(self.board)
 
             # Set position
-            scale = 1000000 if position["unit"] == "mm" else 25400000  # mm or inch to nm
+            scale = (
+                1000000
+                if position["unit"] == "mm"
+                else (25400 if position["unit"] == "mil" else 25400000)
+            )  # mm, mil, or inch to nm
             x_nm = int(position["x"] * scale)
             y_nm = int(position["y"] * scale)
             via.SetPosition(pcbnew.VECTOR2I(x_nm, y_nm))
@@ -596,7 +604,11 @@ class RoutingCommands:
 
             # Find track by position
             if position:
-                scale = 1000000 if position["unit"] == "mm" else 25400000  # mm or inch to nm
+                scale = (
+                    1000000
+                    if position["unit"] == "mm"
+                    else (25400 if position["unit"] == "mil" else 25400000)
+                )  # mm, mil, or inch to nm
                 x_nm = int(position["x"] * scale)
                 y_nm = int(position["y"] * scale)
                 point = pcbnew.VECTOR2I(x_nm, y_nm)
@@ -713,7 +725,11 @@ class RoutingCommands:
                     # Filter by bounding box
                     if bbox:
                         bbox_unit = bbox.get("unit", "mm")
-                        bbox_scale = scale if bbox_unit == "mm" else 25400000
+                        bbox_scale = (
+                            scale
+                            if bbox_unit == "mm"
+                            else (25400 if bbox_unit == "mil" else 25400000)
+                        )
                         x1 = int(bbox.get("x1", 0) * bbox_scale)
                         y1 = int(bbox.get("y1", 0) * bbox_scale)
                         x2 = int(bbox.get("x2", 0) * bbox_scale)
@@ -837,7 +853,11 @@ class RoutingCommands:
                     layer_names = []
                     try:
                         layer_set = zone.GetLayerSet()
-                        seq = layer_set.CuStack() if hasattr(layer_set, "CuStack") else layer_set.Seq()
+                        seq = (
+                            layer_set.CuStack()
+                            if hasattr(layer_set, "CuStack")
+                            else layer_set.Seq()
+                        )
                         for lid in seq:
                             layer_names.append(self.board.GetLayerName(lid))
                     except Exception:
@@ -862,7 +882,11 @@ class RoutingCommands:
                         "net": z_net,
                         "netCode": zone.GetNetCode(),
                         "layers": layer_names,
-                        "priority": zone.GetAssignedPriority() if hasattr(zone, "GetAssignedPriority") else 0,
+                        "priority": (
+                            zone.GetAssignedPriority()
+                            if hasattr(zone, "GetAssignedPriority")
+                            else 0
+                        ),
                         "isFilled": bool(zone.IsFilled()),
                         "minThickness": zone.GetMinThickness() / scale,
                         "boundingBox": {
@@ -940,7 +964,9 @@ class RoutingCommands:
                         break
             elif position:
                 pos_unit = position.get("unit", "mm")
-                pos_scale = scale if pos_unit == "mm" else 25400000
+                pos_scale = (
+                    scale if pos_unit == "mm" else (25400 if pos_unit == "mil" else 25400000)
+                )
                 x_nm = int(position["x"] * pos_scale)
                 y_nm = int(position["y"] * pos_scale)
                 point = pcbnew.VECTOR2I(x_nm, y_nm)
@@ -1124,7 +1150,7 @@ class RoutingCommands:
                     if track.GetNetname() not in source_nets:
                         continue
                 else:
-                    # Fallback: geometric filter – trace start OR end inside source bbox
+                    # Fallback: geometric filter — trace start OR end inside source bbox
                     if is_via:
                         pos = track.GetPosition()
                         if not point_in_bbox(pos.x, pos.y):
@@ -1422,7 +1448,11 @@ class RoutingCommands:
 
             # Add points to outline
             for point in points:
-                scale = 1000000 if point.get("unit", "mm") == "mm" else 25400000
+                scale = (
+                    1000000
+                    if point.get("unit", "mm") == "mm"
+                    else (25400 if point.get("unit", "mm") == "mil" else 25400000)
+                )
                 x_nm = int(point["x"] * scale)
                 y_nm = int(point["y"] * scale)
                 outline.Append(pcbnew.VECTOR2I(x_nm, y_nm))  # Add point to outline
@@ -1605,7 +1635,11 @@ class RoutingCommands:
     def _get_point(self, point_spec: Dict[str, Any]) -> pcbnew.VECTOR2I:
         """Convert point specification to KiCAD point"""
         if "x" in point_spec and "y" in point_spec:
-            scale = 1000000 if point_spec.get("unit", "mm") == "mm" else 25400000
+            scale = (
+                1000000
+                if point_spec.get("unit", "mm") == "mm"
+                else (25400 if point_spec.get("unit", "mm") == "mil" else 25400000)
+            )
             x_nm = int(point_spec["x"] * scale)
             y_nm = int(point_spec["y"] * scale)
             return pcbnew.VECTOR2I(x_nm, y_nm)
@@ -1721,9 +1755,8 @@ class RoutingCommands:
             return self._do_add_gnd_stitching(params)
         except Exception as e:
             import traceback
-            logger.error(
-                f"add_gnd_stitching_vias failed: {e}\n{traceback.format_exc()}"
-            )
+
+            logger.error(f"add_gnd_stitching_vias failed: {e}\n{traceback.format_exc()}")
             return {
                 "success": False,
                 "message": "add_gnd_stitching_vias failed",
@@ -1791,8 +1824,7 @@ class RoutingCommands:
                     "success": False,
                     "message": "No GND net detected",
                     "errorDetails": (
-                        "Pass gndNet explicitly. Auto-detect tries "
-                        "GND / GROUND / VSS / /GND."
+                        "Pass gndNet explicitly. Auto-detect tries " "GND / GROUND / VSS / /GND."
                     ),
                 }
         gnd_net_code = gnd_net.GetNetCode()
@@ -1866,10 +1898,7 @@ class RoutingCommands:
         )
 
         # --- In-zone test (cached per call) ---
-        gnd_zones = [
-            z for z in self.board.Zones()
-            if z.GetNetCode() == gnd_net_code
-        ]
+        gnd_zones = [z for z in self.board.Zones() if z.GetNetCode() == gnd_net_code]
 
         def in_any_gnd_zone(x_nm: int, y_nm: int) -> bool:
             pt = pcbnew.VECTOR2I(x_nm, y_nm)
@@ -1880,8 +1909,10 @@ class RoutingCommands:
                 except Exception:
                     # API variant: take any zone in whose bbox we sit
                     bb = z.GetBoundingBox()
-                    if (bb.GetLeft() <= x_nm <= bb.GetRight()
-                            and bb.GetTop() <= y_nm <= bb.GetBottom()):
+                    if (
+                        bb.GetLeft() <= x_nm <= bb.GetRight()
+                        and bb.GetTop() <= y_nm <= bb.GetBottom()
+                    ):
                         return True
             return False
 
@@ -1929,9 +1960,7 @@ class RoutingCommands:
         candidates: List[tuple] = []
         if "around_refs" in strategies:
             if not densify_refs:
-                logger.warning(
-                    "around_refs strategy requested but densifyRefs is empty"
-                )
+                logger.warning("around_refs strategy requested but densifyRefs is empty")
             fps_by_ref = {fp.GetReference(): fp for fp in self.board.GetFootprints()}
             for ref in densify_refs:
                 fp = fps_by_ref.get(ref)
@@ -1969,11 +1998,13 @@ class RoutingCommands:
                 skipped_by_collision += 1
                 continue
             placed_via_centres.append((cx, cy))
-            placed_meta.append({
-                "x": round(cx / scale, 3),
-                "y": round(cy / scale, 3),
-                "unit": "mm",
-            })
+            placed_meta.append(
+                {
+                    "x": round(cx / scale, 3),
+                    "y": round(cy / scale, 3),
+                    "unit": "mm",
+                }
+            )
 
         # --- Write to board ---
         if not dry_run:
@@ -2011,9 +2042,8 @@ class RoutingCommands:
 # Module-level geometry helper (used by add_gnd_stitching_vias collision check)
 # ---------------------------------------------------------------------------
 
-def _point_to_segment_distance_nm(
-    px: int, py: int, x1: int, y1: int, x2: int, y2: int
-) -> float:
+
+def _point_to_segment_distance_nm(px: int, py: int, x1: int, y1: int, x2: int, y2: int) -> float:
     """Shortest distance (nm) from point (px,py) to segment (x1,y1)-(x2,y2).
 
     Pure integer-friendly variant of the standard projection formula;
@@ -2023,8 +2053,8 @@ def _point_to_segment_distance_nm(
     dx = x2 - x1
     dy = y2 - y1
     if dx == 0 and dy == 0:
-        ex = px - x1
-        ey = py - y1
+        ex: float = px - x1
+        ey: float = py - y1
         return (ex * ex + ey * ey) ** 0.5
     denom = dx * dx + dy * dy
     t = ((px - x1) * dx + (py - y1) * dy) / denom

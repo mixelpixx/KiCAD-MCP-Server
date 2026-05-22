@@ -264,7 +264,7 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     {
       outputPath: z.string().describe("Path to save the position file"),
       format: z.enum(["CSV", "ASCII"]).optional().describe("File format (default: CSV)"),
-      units: z.enum(["mm", "inch"]).optional().describe("Units to use (default: mm)"),
+      units: z.enum(["mm", "mil", "inch"]).optional().describe("Units to use (default: mm)"),
       side: z
         .enum(["top", "bottom", "both"])
         .optional()

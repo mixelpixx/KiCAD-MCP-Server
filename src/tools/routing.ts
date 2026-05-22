@@ -172,7 +172,7 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
         .object({
           x: z.number(),
           y: z.number(),
-          unit: z.enum(["mm", "inch"]).optional(),
+          unit: z.enum(["mm", "inch", "mil"]).optional(),
         })
         .optional()
         .describe("Delete trace nearest to this position"),
@@ -206,11 +206,11 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
           y1: z.number(),
           x2: z.number(),
           y2: z.number(),
-          unit: z.enum(["mm", "inch"]).optional(),
+          unit: z.enum(["mm", "inch", "mil"]).optional(),
         })
         .optional()
         .describe("Filter by bounding box region"),
-      unit: z.enum(["mm", "inch"]).optional().describe("Unit for coordinates"),
+      unit: z.enum(["mm", "inch", "mil"]).optional().describe("Unit for coordinates"),
     },
     async (args: any) => {
       const result = await callKicadScript("query_traces", args);
@@ -358,7 +358,7 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
         .boolean()
         .optional()
         .describe("Include statistics (track count, total length, etc.)"),
-      unit: z.enum(["mm", "inch"]).optional().describe("Unit for length measurements"),
+      unit: z.enum(["mm", "mil", "inch"]).optional().describe("Unit for length measurements"),
     },
     async (args: any) => {
       const result = await callKicadScript("get_nets_list", args);

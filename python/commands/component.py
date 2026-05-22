@@ -96,7 +96,11 @@ class ComponentCommands:
                 }
 
             # Set position
-            scale = 1000000 if position["unit"] == "mm" else 25400000  # mm or inch to nm
+            scale = (
+                1000000
+                if position["unit"] == "mm"
+                else (25400 if position["unit"] == "mil" else 25400000)
+            )  # mm, mil, or inch to nm
             x_nm = int(position["x"] * scale)
             y_nm = int(position["y"] * scale)
             module.SetPosition(pcbnew.VECTOR2I(x_nm, y_nm))
@@ -196,7 +200,11 @@ class ComponentCommands:
                 }
 
             # Set new position
-            scale = 1000000 if position["unit"] == "mm" else 25400000  # mm or inch to nm
+            scale = (
+                1000000
+                if position["unit"] == "mm"
+                else (25400 if position["unit"] == "mil" else 25400000)
+            )  # mm, mil, or inch to nm
             x_nm = int(position["x"] * scale)
             y_nm = int(position["y"] * scale)
             module.SetPosition(pcbnew.VECTOR2I(x_nm, y_nm))
@@ -987,7 +995,11 @@ class ComponentCommands:
 
             # Set position if provided, otherwise use offset from original
             if position:
-                scale = 1000000 if position.get("unit", "mm") == "mm" else 25400000
+                scale = (
+                    1000000
+                    if position.get("unit", "mm") == "mm"
+                    else (25400 if position.get("unit", "mm") == "mil" else 25400000)
+                )  # mm, mil, or inch to nm
                 x_nm = int(position["x"] * scale)
                 y_nm = int(position["y"] * scale)
                 new_module.SetPosition(pcbnew.VECTOR2I(x_nm, y_nm))
@@ -1048,7 +1060,9 @@ class ComponentCommands:
 
         # Convert spacing to nm
         unit = start_position.get("unit", "mm")
-        scale = 1000000 if unit == "mm" else 25400000  # mm or inch to nm
+        scale = (
+            1000000 if unit == "mm" else (25400 if unit == "mil" else 25400000)
+        )  # mm, mil, or inch to nm
         spacing_x_nm = int(spacing_x * scale)
         spacing_y_nm = int(spacing_y * scale)
 
