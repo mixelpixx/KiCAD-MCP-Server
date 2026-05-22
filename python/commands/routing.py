@@ -1755,9 +1755,8 @@ class RoutingCommands:
             return self._do_add_gnd_stitching(params)
         except Exception as e:
             import traceback
-            logger.error(
-                f"add_gnd_stitching_vias failed: {e}\n{traceback.format_exc()}"
-            )
+
+            logger.error(f"add_gnd_stitching_vias failed: {e}\n{traceback.format_exc()}")
             return {
                 "success": False,
                 "message": "add_gnd_stitching_vias failed",
@@ -1825,8 +1824,7 @@ class RoutingCommands:
                     "success": False,
                     "message": "No GND net detected",
                     "errorDetails": (
-                        "Pass gndNet explicitly. Auto-detect tries "
-                        "GND / GROUND / VSS / /GND."
+                        "Pass gndNet explicitly. Auto-detect tries " "GND / GROUND / VSS / /GND."
                     ),
                 }
         gnd_net_code = gnd_net.GetNetCode()
@@ -1900,10 +1898,7 @@ class RoutingCommands:
         )
 
         # --- In-zone test (cached per call) ---
-        gnd_zones = [
-            z for z in self.board.Zones()
-            if z.GetNetCode() == gnd_net_code
-        ]
+        gnd_zones = [z for z in self.board.Zones() if z.GetNetCode() == gnd_net_code]
 
         def in_any_gnd_zone(x_nm: int, y_nm: int) -> bool:
             pt = pcbnew.VECTOR2I(x_nm, y_nm)
@@ -1914,8 +1909,10 @@ class RoutingCommands:
                 except Exception:
                     # API variant: take any zone in whose bbox we sit
                     bb = z.GetBoundingBox()
-                    if (bb.GetLeft() <= x_nm <= bb.GetRight()
-                            and bb.GetTop() <= y_nm <= bb.GetBottom()):
+                    if (
+                        bb.GetLeft() <= x_nm <= bb.GetRight()
+                        and bb.GetTop() <= y_nm <= bb.GetBottom()
+                    ):
                         return True
             return False
 
@@ -1963,9 +1960,7 @@ class RoutingCommands:
         candidates: List[tuple] = []
         if "around_refs" in strategies:
             if not densify_refs:
-                logger.warning(
-                    "around_refs strategy requested but densifyRefs is empty"
-                )
+                logger.warning("around_refs strategy requested but densifyRefs is empty")
             fps_by_ref = {fp.GetReference(): fp for fp in self.board.GetFootprints()}
             for ref in densify_refs:
                 fp = fps_by_ref.get(ref)
@@ -2003,11 +1998,13 @@ class RoutingCommands:
                 skipped_by_collision += 1
                 continue
             placed_via_centres.append((cx, cy))
-            placed_meta.append({
-                "x": round(cx / scale, 3),
-                "y": round(cy / scale, 3),
-                "unit": "mm",
-            })
+            placed_meta.append(
+                {
+                    "x": round(cx / scale, 3),
+                    "y": round(cy / scale, 3),
+                    "unit": "mm",
+                }
+            )
 
         # --- Write to board ---
         if not dry_run:
@@ -2045,9 +2042,8 @@ class RoutingCommands:
 # Module-level geometry helper (used by add_gnd_stitching_vias collision check)
 # ---------------------------------------------------------------------------
 
-def _point_to_segment_distance_nm(
-    px: int, py: int, x1: int, y1: int, x2: int, y2: int
-) -> float:
+
+def _point_to_segment_distance_nm(px: int, py: int, x1: int, y1: int, x2: int, y2: int) -> float:
     """Shortest distance (nm) from point (px,py) to segment (x1,y1)-(x2,y2).
 
     Pure integer-friendly variant of the standard projection formula;
@@ -2057,8 +2053,8 @@ def _point_to_segment_distance_nm(
     dx = x2 - x1
     dy = y2 - y1
     if dx == 0 and dy == 0:
-        ex = px - x1
-        ey = py - y1
+        ex: float = px - x1
+        ey: float = py - y1
         return (ex * ex + ey * ey) ** 0.5
     denom = dx * dx + dy * dy
     t = ((px - x1) * dx + (py - y1) * dy) / denom

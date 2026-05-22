@@ -140,7 +140,7 @@ class ComponentCommands:
                 if layer_id >= 0:
                     module.SetLayer(layer_id)
 
-            # Add to board first â€” Flip() requires board context in KiCAD 9
+            # Add to board first — Flip() requires board context in KiCAD 9
             self.board.Add(module)
 
             # Flip to B.Cu after add (board context needed, otherwise hangs 30s)
