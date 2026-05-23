@@ -762,6 +762,158 @@ Use the same configuration format as Claude Desktop above.
 
 Claude Code automatically detects MCP servers in the current directory. No additional configuration needed.
 
+### OpenCode (Windows)
+
+OpenCode uses a different MCP configuration schema than Claude Desktop. Use
+`setup-windows-opencode.ps1` to verify the local setup and write the correct
+OpenCode `mcp` entry.
+
+OpenCode project configuration is written to `opencode.json` in the target
+project root. The script keeps the KiCAD MCP server repository separate from the
+target project:
+
+- `McpServerPath` is this repository, where `dist/index.js` is built
+- `ProjectPath` is the project that should receive `opencode.json`
+
+**When this is useful:**
+
+- You use [OpenCode](https://opencode.ai/) as your MCP client on Windows
+- You want a project-local MCP server available only in one project
+- You want a global OpenCode MCP server available from any workspace
+- You need to verify KiCAD Python (`pcbnew`), Node.js, and `dist/index.js`
+  before changing OpenCode configuration
+
+#### Verify setup without changes
+
+Use this first when diagnosing installation or path problems. It detects KiCAD,
+tests `pcbnew`, checks Node.js, and verifies the built MCP entrypoint.
+
+```powershell
+.\setup-windows-opencode.ps1 -Verify -SkipInstall -SkipBuild
+```
+
+#### Preview OpenCode configuration
+
+Use dry run mode when you want to inspect the exact JSON before writing it.
+
+```powershell
+.\setup-windows-opencode.ps1 -DryRun -SkipInstall -SkipBuild
+```
+
+Example generated OpenCode shape:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "kicad": {
+      "type": "local",
+      "command": ["node", "C:\\path\\to\\KiCAD-MCP-Server\\dist\\index.js"],
+      "environment": {
+        "NODE_ENV": "production",
+        "LOG_LEVEL": "info",
+        "KICAD_AUTO_LAUNCH": "false",
+        "KICAD_MCP_DEV": "0",
+        "PYTHONPATH": "C:\\Program Files\\KiCad\\10.0\\bin\\Lib\\site-packages"
+      },
+      "enabled": true,
+      "timeout": 30000
+    }
+  }
+}
+```
+
+A copyable template is also provided at `config/opencode.json`. Replace the
+placeholder paths before using it directly.
+
+#### Apply project-local configuration
+
+Use this when you only want KiCAD MCP enabled for one project. The script writes
+`opencode.json` in the target project root and backs up an existing file before
+changing it.
+
+```powershell
+.\setup-windows-opencode.ps1 -Apply -Scope project
+```
+
+By default, `ProjectPath` is the current working directory.
+
+To configure another project, pass `-ProjectPath`:
+
+```powershell
+.\setup-windows-opencode.ps1 -Apply -Scope project -ProjectPath "C:\path\to\your-project"
+```
+
+If the setup script is not located in the KiCAD MCP Server repository, pass
+`-McpServerPath` so the generated config points to the correct `dist/index.js`:
+
+```powershell
+.\setup-windows-opencode.ps1 `
+  -Apply `
+  -Scope project `
+  -ProjectPath "C:\path\to\your-project" `
+  -McpServerPath "C:\path\to\KiCAD-MCP-Server"
+```
+
+#### Apply global OpenCode configuration
+
+Use this when you want the KiCAD MCP server available from any OpenCode
+workspace. The script writes `%USERPROFILE%\.config\opencode\opencode.json`.
+
+```powershell
+.\setup-windows-opencode.ps1 -Apply -Scope global
+```
+
+#### Use a custom MCP server name
+
+Use this when testing multiple forks or keeping separate development and stable
+KiCAD MCP entries.
+
+```powershell
+.\setup-windows-opencode.ps1 -Apply -Scope project -Name kicad-dev
+```
+
+#### Use a custom KiCAD installation path
+
+Use this when KiCAD is installed outside the standard Windows locations.
+
+```powershell
+.\setup-windows-opencode.ps1 -Apply -Scope project -KiCadRoot "D:\Apps\KiCad\10.0"
+```
+
+#### Skip install or build steps
+
+Use these flags when dependencies are already installed or the project is
+already built.
+
+```powershell
+.\setup-windows-opencode.ps1 -Apply -Scope project -SkipInstall -SkipBuild
+```
+
+#### After applying configuration
+
+1. Fully quit OpenCode.
+2. Start OpenCode again so it reloads `opencode.json`.
+3. Ask OpenCode to use the `kicad` MCP server and run `check_kicad_ui`.
+
+#### Disable the OpenCode MCP server
+
+To disable the server without removing the full configuration, set the entry to
+`enabled: false` and restart OpenCode.
+
+```json
+{
+  "mcp": {
+    "kicad": {
+      "enabled": false
+    }
+  }
+}
+```
+
+If OpenCode is running, the MCP server process is managed by OpenCode and
+normally stops when OpenCode exits.
+
 ### JLCPCB Integration Setup (Optional)
 
 The JLCPCB integration provides two modes that can be used independently or together:
