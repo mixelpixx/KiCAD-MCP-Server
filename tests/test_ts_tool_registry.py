@@ -59,3 +59,10 @@ class TestTsToolRegistry:
         assert SRC_TOOLS_DIR.is_dir(), f"src/tools/ not found at {SRC_TOOLS_DIR}"
         ts_files = list(SRC_TOOLS_DIR.glob("**/*.ts"))
         assert ts_files, "No .ts files found in src/tools/"
+
+    def test_backend_state_tool_is_registered(self):
+        """Backend observability must be exposed as a first-class MCP tool."""
+        registrations = self._collect_registrations()
+        tool_names = {name for name, _, _ in registrations}
+
+        assert "get_backend_state" in tool_names
