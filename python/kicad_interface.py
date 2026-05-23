@@ -170,7 +170,8 @@ if not USE_IPC_BACKEND and KICAD_BACKEND != "ipc":
         import pcbnew  # type: ignore
 
         logger.info(f"Successfully imported pcbnew module from: {pcbnew.__file__}")
-        logger.info(f"pcbnew version: {pcbnew.GetBuildVersion()}")
+        # Deferred — GetBuildVersion() triggers 55-65 s wxApp init on macOS.
+        # The _warmup handler pays this cost during startup (not on first tool call).
         logger.warning("Using SWIG backend - changes require manual reload in KiCAD UI")
     except ImportError as e:
         logger.error(f"Failed to import pcbnew module: {e}")
@@ -460,6 +461,8 @@ class KiCADInterface:
             # UI/Process management commands
             "check_kicad_ui": self._handle_check_kicad_ui,
             "launch_kicad_ui": self._handle_launch_kicad_ui,
+            # Internal warm-up (pays wxApp init cost during startup)
+            "_warmup": self._handle_warmup,
             # IPC-specific commands (real-time operations)
             "get_backend_info": self._handle_get_backend_info,
             "ipc_add_track": self._handle_ipc_add_track,
@@ -5952,6 +5955,35 @@ print("ok")
 
     # =========================================================================
     # Legacy IPC command handlers (explicit ipc_* commands)
+
+    def _handle_warmup(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Force full pcbnew/wxApp initialisation.
+
+        On macOS the wxApp singleton is created lazily on the first
+        pcbnew operation that needs it (not on ``import pcbnew``).
+        That first call can take 55-65 s outside the KiCad GUI, which
+        exceeds the 30 s default MCP-client tool-call timeout.
+
+        This handler is called by the TypeScript server during startup
+        (with a 120 s timeout) so the cost is paid before any user
+        tools are registered with the MCP client.
+        """
+        import time
+        start = time.monotonic()
+        try:
+            # pcbnew.BOARD() triggers wxApp creation on macOS.
+            # GetBuildVersion() alone is too cheap — it doesn't
+            # force the wxWidgets event loop to materialise.
+            board = pcbnew.BOARD()
+            del board
+            ver = pcbnew.GetBuildVersion()
+            elapsed = time.monotonic() - start
+            logger.info(f"Warm-up complete: pcbnew {ver} ({elapsed:.1f}s)")
+            return {"success": True, "version": ver, "elapsed_s": round(elapsed, 1)}
+        except Exception as exc:
+            elapsed = time.monotonic() - start
+            logger.error(f"Warm-up failed after {elapsed:.1f}s: {exc}")
+            return {"success": False, "message": str(exc), "elapsed_s": round(elapsed, 1)}
     # =========================================================================
 
     def _handle_get_backend_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -6328,6 +6360,8 @@ def main() -> None:
 
     logger.info("Starting KiCAD interface...")
     interface = KiCADInterface()
+    # Signal to the TypeScript server that the stdin loop is live.
+    _write_response(_response_fd, {"type": "ready"})
 
     try:
         logger.info("Processing commands from stdin...")
