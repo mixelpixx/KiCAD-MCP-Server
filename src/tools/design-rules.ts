@@ -7,6 +7,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { logger } from "../logger.js";
+import { formatKicadResult } from "./tool-response.js";
 
 // Command function type for KiCAD script calls
 type CommandFunction = (command: string, params: Record<string, unknown>) => Promise<any>;
@@ -52,14 +53,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
       logger.debug("Setting design rules");
       const result = await callKicadScript("set_design_rules", params);
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-        ],
-      };
+      return formatKicadResult(result);
     },
   );
 
@@ -74,14 +68,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
       logger.debug("Getting design rules");
       const result = await callKicadScript("get_design_rules", {});
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-        ],
-      };
+      return formatKicadResult(result);
     },
   );
 
@@ -98,14 +85,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
       logger.debug("Running DRC check");
       const result = await callKicadScript("run_drc", { reportPath });
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-        ],
-      };
+      return formatKicadResult(result);
     },
   );
 
@@ -162,14 +142,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
         nets,
       });
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-        ],
-      };
+      return formatKicadResult(result);
     },
   );
 
@@ -190,14 +163,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
         netClass,
       });
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-        ],
-      };
+      return formatKicadResult(result);
     },
   );
 
@@ -224,14 +190,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
         minViaDrill,
       });
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-        ],
-      };
+      return formatKicadResult(result);
     },
   );
 
@@ -284,14 +243,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
         item2,
       });
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-        ],
-      };
+      return formatKicadResult(result);
     },
   );
 
@@ -311,14 +263,7 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
       logger.debug("Getting DRC violations");
       const result = await callKicadScript("get_drc_violations", { severity });
 
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-        ],
-      };
+      return formatKicadResult(result);
     },
   );
 
