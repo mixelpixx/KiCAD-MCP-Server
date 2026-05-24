@@ -41,13 +41,18 @@ provider. Re-run with force=true to refresh.`,
                 `✓ Successfully downloaded JLCPCB parts database\n\n` +
                 `Source: ${result.source}\n` +
                 (result.catalog_last_modified
-                  ? `Catalog dated: ${result.catalog_last_modified}\n`
+                  ? `Catalog dated: ${result.catalog_last_modified}` +
+                    (typeof result.catalog_age_days === "number"
+                      ? ` (~${result.catalog_age_days} days old)`
+                      : "") +
+                    `\n`
                   : "") +
                 `Total parts: ${result.total_parts}\n` +
                 `Basic parts: ${result.basic_parts}\n` +
                 `Extended parts: ${result.extended_parts}\n` +
                 `Database size: ${result.db_size_mb} MB\n` +
-                `Database path: ${result.db_path}`,
+                `Database path: ${result.db_path}` +
+                (result.warning ? `\n\n⚠ ${result.warning}` : ""),
             },
           ],
         };

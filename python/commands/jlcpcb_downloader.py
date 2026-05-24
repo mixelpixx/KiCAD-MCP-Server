@@ -412,6 +412,29 @@ def _download_official(target: Path, force: bool, progress: ProgressFn) -> Dict[
     )
 
 
+# Warn if the catalog is older than this (CDFER's pipeline has stalled for
+# weeks at a time, so a "fresh download" can still be stale data).
+STALE_AFTER_DAYS = 14
+
+
+def _catalog_age_days(last_modified: Optional[str]) -> Optional[int]:
+    """Parse an HTTP Last-Modified date and return its age in whole days."""
+    if not last_modified:
+        return None
+    try:
+        from email.utils import parsedate_to_datetime
+        from datetime import datetime, timezone
+
+        dt = parsedate_to_datetime(last_modified)
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return max(0, (datetime.now(timezone.utc) - dt).days)
+    except (TypeError, ValueError):
+        return None
+
+
 def _result(
     source: str,
     target: Path,
@@ -421,7 +444,7 @@ def _result(
     last_modified: Optional[str],
 ) -> Dict[str, Any]:
     db_size_mb = round(target.stat().st_size / (1024 * 1024), 2) if target.exists() else 0
-    return {
+    result: Dict[str, Any] = {
         "success": True,
         "source": source,
         "total_parts": total,
@@ -431,6 +454,19 @@ def _result(
         "db_path": str(target),
         "catalog_last_modified": last_modified,
     }
+    age_days = _catalog_age_days(last_modified)
+    if age_days is not None:
+        result["catalog_age_days"] = age_days
+        if age_days >= STALE_AFTER_DAYS:
+            warning = (
+                f"Catalog from '{source}' is ~{age_days} days old (dated {last_modified}). "
+                "Its upstream pipeline may have stalled. For fresher data, re-run with "
+                "source='yaqwsx' (needs a 7z CLI) or source='official' (needs JLCPCB API creds)."
+            )
+            result["stale"] = True
+            result["warning"] = warning
+            logger.warning(warning)
+    return result
 
 
 # ---------------------------------------------------------------------------

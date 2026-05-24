@@ -170,3 +170,40 @@ def test_download_database_prefer_cdfer_converts(tmp_path, monkeypatch):
     assert result["basic_parts"] == 1
     assert result["catalog_last_modified"].startswith("Thu, 02 Apr 2026")
     assert (tmp_path / "jlcpcb_parts.db").exists()
+
+
+def _http_date(days_ago: int) -> str:
+    from datetime import datetime, timedelta, timezone
+    from email.utils import format_datetime
+
+    return format_datetime(datetime.now(timezone.utc) - timedelta(days=days_ago))
+
+
+def test_result_flags_stale_catalog_and_leaves_fresh_alone(tmp_path, monkeypatch):
+    """A catalog older than STALE_AFTER_DAYS must be flagged; a fresh one must not."""
+    monkeypatch.setattr(
+        jlcpcb_downloader.PlatformHelper, "get_data_dir", staticmethod(lambda: tmp_path)
+    )
+
+    def _fake_cdfer_dated(http_date):
+        def _impl(cache_dir, progress=None):
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            src = cache_dir / "cdfer.sqlite3"
+            _make_cdfer_like_source(src)
+            return src, http_date
+
+        return _impl
+
+    # Stale: 60 days old
+    monkeypatch.setattr(jlcpcb_downloader, "download_cdfer", _fake_cdfer_dated(_http_date(60)))
+    stale = jlcpcb_downloader.download_database(prefer_source="cdfer")
+    assert stale.get("stale") is True
+    assert "warning" in stale
+    assert stale["catalog_age_days"] >= jlcpcb_downloader.STALE_AFTER_DAYS
+
+    # Fresh: 1 day old
+    monkeypatch.setattr(jlcpcb_downloader, "download_cdfer", _fake_cdfer_dated(_http_date(1)))
+    fresh = jlcpcb_downloader.download_database(prefer_source="cdfer")
+    assert fresh.get("stale") is not True
+    assert "warning" not in fresh
+    assert fresh["catalog_age_days"] <= 1
