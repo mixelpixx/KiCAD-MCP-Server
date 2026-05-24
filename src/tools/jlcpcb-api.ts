@@ -10,21 +10,27 @@ export function registerJLCPCBApiTools(server: McpServer, callKicadScript: Funct
   // Download JLCPCB parts database
   server.tool(
     "download_jlcpcb_database",
-    `Download the complete JLCPCB parts catalog to local database.
+    `Download the JLCPCB parts catalog to a local SQLite database for fast offline search.
 
-This is a one-time setup that downloads ~2.5M+ parts from JLCSearch API.
-No API credentials required - uses public JLCSearch API.
+Uses a prebuilt catalog (no API credentials required by default):
+  - Primary: CDFER prebuilt SQLite (single file, no extra tools needed)
+  - Fallback: yaqwsx/jlcparts split archive (requires a 7z CLI)
+  - Optional: official JLCPCB API if JLCPCB_APP_ID/JLCPCB_API_KEY/JLCPCB_API_SECRET are set
 
-The download takes 5-10 minutes and creates a local SQLite database
-for fast offline searching.`,
+This is a one-time setup (downloads ~1.5 GB). Optionally pass source to force one
+provider. Re-run with force=true to refresh.`,
     {
       force: z
         .boolean()
         .optional()
         .default(false)
         .describe("Force re-download even if database exists"),
+      source: z
+        .enum(["cdfer", "yaqwsx", "official"])
+        .optional()
+        .describe("Force a single source instead of the default cdfer→yaqwsx→official order"),
     },
-    async (args: { force?: boolean }) => {
+    async (args: { force?: boolean; source?: "cdfer" | "yaqwsx" | "official" }) => {
       const result = await callKicadScript("download_jlcpcb_database", args);
       if (result.success) {
         return {
@@ -33,6 +39,10 @@ for fast offline searching.`,
               type: "text",
               text:
                 `✓ Successfully downloaded JLCPCB parts database\n\n` +
+                `Source: ${result.source}\n` +
+                (result.catalog_last_modified
+                  ? `Catalog dated: ${result.catalog_last_modified}\n`
+                  : "") +
                 `Total parts: ${result.total_parts}\n` +
                 `Basic parts: ${result.basic_parts}\n` +
                 `Extended parts: ${result.extended_parts}\n` +
@@ -46,9 +56,7 @@ for fast offline searching.`,
         content: [
           {
             type: "text",
-            text:
-              `✗ Failed to download JLCPCB database: ${result.message || "Unknown error"}\n\n` +
-              `Make sure JLCPCB_API_KEY and JLCPCB_API_SECRET environment variables are set.`,
+            text: `✗ Failed to download JLCPCB database: ${result.message || "Unknown error"}`,
           },
         ],
       };
