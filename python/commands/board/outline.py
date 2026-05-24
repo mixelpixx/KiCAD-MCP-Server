@@ -38,7 +38,7 @@ class BoardOutlineCommands:
             height = inner.get("height")
             radius = inner.get("radius")
             # Accept both "cornerRadius" and "radius" regardless of shape name.
-            # The AI often sends shape="rectangle" with radius=2.5 — we treat that as rounded_rectangle.
+            # The AI often sends shape=”rectangle” with radius=2.5 — we treat that as rounded_rectangle.
             corner_radius = inner.get("cornerRadius", inner.get("radius", 0))
             if shape == "rectangle" and corner_radius > 0:
                 shape = "rounded_rectangle"
@@ -74,7 +74,9 @@ class BoardOutlineCommands:
                 }
 
             # Convert to internal units (nanometers)
-            scale = 1000000 if unit == "mm" else 25400000  # mm or inch to nm
+            scale = (
+                1000000 if unit == "mm" else (25400 if unit == "mil" else 25400000)
+            )  # mm, mil, or inch to nm
 
             # Create drawing for edge cuts
             edge_layer = self.board.GetLayerID("Edge.Cuts")
@@ -226,7 +228,11 @@ class BoardOutlineCommands:
                 }
 
             # Convert to internal units (nanometers)
-            scale = 1000000 if position.get("unit", "mm") == "mm" else 25400000  # mm or inch to nm
+            scale = (
+                1000000
+                if position.get("unit", "mm") == "mm"
+                else (25400 if position.get("unit", "mm") == "mil" else 25400000)
+            )  # mm, mil, or inch to nm
             x_nm = int(position["x"] * scale)
             y_nm = int(position["y"] * scale)
             diameter_nm = int(diameter * scale)
@@ -335,7 +341,11 @@ class BoardOutlineCommands:
                 }
 
             # Convert to internal units (nanometers)
-            scale = 1000000 if position.get("unit", "mm") == "mm" else 25400000  # mm or inch to nm
+            scale = (
+                1000000
+                if position.get("unit", "mm") == "mm"
+                else (25400 if position.get("unit", "mm") == "mil" else 25400000)
+            )  # mm, mil, or inch to nm
             x_nm = int(position["x"] * scale)
             y_nm = int(position["y"] * scale)
             size_nm = int(size * scale)

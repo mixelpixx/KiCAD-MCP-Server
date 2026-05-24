@@ -92,7 +92,7 @@ class PinLocator:
                 # legitimate same-length duplicates (e.g., per-unit
                 # repetitions in multi-unit symbols) retain stable ordering.
                 if pin_data["number"]:
-                    existing = pins.get(pin_data["number"])
+                    existing = pins.get(str(pin_data["number"]))
                     if existing is None or pin_data["length"] > existing["length"]:
                         pins[pin_data["number"]] = pin_data
 

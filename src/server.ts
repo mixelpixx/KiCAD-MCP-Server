@@ -6,7 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import express from "express";
 import { spawn, exec, execSync, ChildProcess } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import { logger } from "./logger.js";
 
@@ -40,9 +40,41 @@ import { registerRoutingPrompts } from "./prompts/routing.js";
 import { registerDesignPrompts } from "./prompts/design.js";
 import { registerFootprintPrompts } from "./prompts/footprint.js";
 
+function getWindowsKiCadPythonCandidates(): string[] {
+  const roots = [
+    process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "Programs", "KiCad") : undefined,
+    "C:\\Program Files\\KiCad",
+    "C:\\Program Files (x86)\\KiCad",
+  ].filter((root): root is string => Boolean(root));
+
+  const candidates: string[] = [];
+
+  for (const root of roots) {
+    if (!existsSync(root)) {
+      continue;
+    }
+
+    try {
+      const versionDirs = readdirSync(root, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+
+      for (const versionDir of versionDirs) {
+        candidates.push(join(root, versionDir, "bin", "python.exe"));
+      }
+    } catch (error: any) {
+      logger.warn(`Failed to inspect KiCAD install directory ${root}: ${error.message}`);
+    }
+  }
+
+  return [...new Set(candidates)];
+}
+
 /**
- * Find the Python executable to use
- * Prioritizes virtual environment if available, falls back to system Python
+ * Find the Python executable to use.
+ * Prioritizes project venvs, then explicit overrides, then KiCAD-bundled Python
+ * before falling back to system Python.
  */
 function findPythonExecutable(scriptPath: string): string {
   const isWindows = process.platform === "win32";
@@ -73,11 +105,12 @@ function findPythonExecutable(scriptPath: string): string {
 
   // Platform-specific KiCAD bundled Python detection
   if (isWindows) {
-    // Windows: Always prefer KiCAD's bundled Python (pcbnew.pyd is compiled for it)
-    const kicadPython = "C:\\Program Files\\KiCad\\9.0\\bin\\python.exe";
-    if (existsSync(kicadPython)) {
-      logger.info(`Found KiCAD bundled Python at: ${kicadPython}`);
-      return kicadPython;
+    // Windows: Always prefer KiCAD's bundled Python (pcbnew.pyd is compiled for it).
+    for (const kicadPython of getWindowsKiCadPythonCandidates()) {
+      if (existsSync(kicadPython)) {
+        logger.info(`Found KiCAD bundled Python at: ${kicadPython}`);
+        return kicadPython;
+      }
     }
   } else if (isMac) {
     // macOS: Try KiCAD's bundled Python (check multiple versions and locations)
@@ -177,6 +210,15 @@ export class KiCADMcpServer {
     timeoutHandle: NodeJS.Timeout;
   } | null = null;
 
+  /** Resolved when Python prints {"type":"ready"} — stdin loop is live. */
+  private readyPromise: Promise<void>;
+  private resolveReady!: () => void;
+  private rejectReady!: (err: Error) => void;
+  /** Accumulates stdout until the READY marker is seen. */
+  private startupBuffer: string = "";
+  /** True after READY marker detected; persistent handler takes over. */
+  private readyDetected: boolean = false;
+
   /**
    * Constructor for the KiCAD MCP Server
    * @param kicadScriptPath Path to the Python KiCAD interface script
@@ -197,6 +239,11 @@ export class KiCADMcpServer {
       name: "kicad-mcp-server",
       version: "1.0.0",
       description: "MCP server for KiCAD PCB design operations",
+    });
+    // Create the ready promise (resolved when Python sends {"type":"ready"})
+    this.readyPromise = new Promise((resolve, reject) => {
+      this.resolveReady = resolve;
+      this.rejectReady = reject;
     });
 
     // Initialize STDIO transport
@@ -259,10 +306,12 @@ export class KiCADMcpServer {
     // Check if Python executable exists (for absolute paths) or is executable (for commands)
     const isAbsolutePath =
       pythonExe.startsWith("/") || pythonExe.startsWith("C:") || pythonExe.startsWith("\\");
+    let pythonExecutableAvailable = true;
 
     if (isAbsolutePath) {
       // Absolute path: use existsSync
       if (!existsSync(pythonExe)) {
+        pythonExecutableAvailable = false;
         errors.push(`Python executable not found: ${pythonExe}`);
 
         if (isWindows) {
@@ -299,6 +348,7 @@ export class KiCADMcpServer {
 
         logger.info(`Python version check passed: ${stdout.trim()}`);
       } catch (error: any) {
+        pythonExecutableAvailable = false;
         errors.push(`Python executable not found in PATH: ${pythonExe}`);
         errors.push(`Error: ${error.message}`);
         errors.push("Set KICAD_PYTHON environment variable to specify full path");
@@ -325,7 +375,7 @@ export class KiCADMcpServer {
     }
 
     // Try to test pcbnew import (quick validation)
-    if (existsSync(pythonExe) && existsSync(this.kicadScriptPath)) {
+    if (pythonExecutableAvailable && existsSync(this.kicadScriptPath)) {
       logger.info("Validating pcbnew module access...");
 
       const testCommand = `"${pythonExe}" -c "import pcbnew; print('OK')"`;
@@ -452,14 +502,50 @@ export class KiCADMcpServer {
         });
       }
 
-      // Set up persistent stdout handler (instead of adding/removing per request)
+      // ——— Phase 1: stdout handler that detects the READY marker ———
+      // Before Python reaches main() it may spend 55-65 s on wxApp init.
+      // The stdin loop is only live after main() prints {"type":"ready"}.
+      // Until then we buffer everything and scan for that exact JSON line.
       if (this.pythonProcess.stdout) {
         this.pythonProcess.stdout.on("data", (data: Buffer) => {
-          this.handlePythonResponse(data);
+          if (this.readyDetected) {
+            // Persistent handler (post-warm-up)
+            this.handlePythonResponse(data);
+          } else {
+            this.startupBuffer += data.toString();
+            const lines = this.startupBuffer.split("\n");
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i].trim();
+              if (!line) continue;
+              try {
+                const obj = JSON.parse(line);
+                if (obj.type === "ready") {
+                  logger.info("Python process READY — stdin loop is live");
+                  this.readyDetected = true;
+                  // Replay any remaining buffered lines through the persistent handler
+                  const remaining = lines.slice(i + 1).join("\n");
+                  if (remaining.trim()) {
+                    this.handlePythonResponse(Buffer.from(remaining));
+                  }
+                  this.resolveReady();
+                  return;
+                }
+              } catch {
+                // Not valid JSON yet; keep buffering
+              }
+            }
+          }
         });
       }
 
-      // Connect server to STDIO transport
+      // ——— Phase 2: wait for Python READY, then send warm-up ———
+      logger.info("Waiting for Python process to be ready...");
+      await this.waitForReady(120_000);
+      logger.info("Python process is ready. Sending warm-up command...");
+      await this.runWarmup(120_000);
+      logger.info("Warm-up complete — pcbnew/wxApp initialised");
+
+      // ——— Phase 3: only now connect to MCP transport ———
       logger.info("Connecting MCP server to STDIO transport...");
       try {
         await this.server.connect(this.stdioTransport);
@@ -468,6 +554,7 @@ export class KiCADMcpServer {
         logger.error(`Failed to connect to STDIO transport: ${error}`);
         throw error;
       }
+
 
       // Write a ready message to stderr (for debugging)
       process.stderr.write("KiCAD MCP SERVER READY\n");
@@ -492,6 +579,89 @@ export class KiCADMcpServer {
     }
 
     logger.info("KiCAD MCP server stopped");
+  }
+
+  /**
+   * Wait for the Python process to print {"type":"ready"} on stdout,
+   * signalling that the stdin loop is live and the process can accept
+   * commands.
+   */
+  private async waitForReady(timeoutMs: number): Promise<void> {
+    return new Promise((_resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error(
+          `Python process did not send READY within ${timeoutMs / 1000} s`
+        ));
+      }, timeoutMs);
+      this.readyPromise.then(() => {
+        clearTimeout(timeout);
+        _resolve();
+      }).catch(reject);
+    });
+  }
+
+  /**
+   * Send a _warmup command to the Python process to force full
+   * pcbnew/wxApp initialisation.  On macOS this can take 55-65 s;
+   * we use a generous timeout so the cost is paid during startup
+   * rather than on the first user tool call.
+   *
+   * Wires into the existing request infrastructure so the persistent
+   * stdout handler (already active post-READY) processes the response.
+   */
+  private async runWarmup(timeoutMs: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      if (!this.pythonProcess || !this.pythonProcess.stdin) {
+        logger.warn("Python process not running — skipping warm-up");
+        resolve();
+        return;
+      }
+
+      const requestStr = JSON.stringify({ command: "_warmup", params: {} });
+      this.responseBuffer = "";
+
+      const timeoutHandle = setTimeout(() => {
+        logger.warn(
+          `Warm-up timed out after ${timeoutMs / 1000} s — ` +
+          "continuing without full initialisation"
+        );
+        this.responseBuffer = "";
+        this.processingRequest = false;
+        this.currentRequestHandler = null;
+        resolve();
+      }, timeoutMs);
+
+      // Use the existing request infrastructure to avoid race conditions
+      // with the persistent stdout handler.
+      this.processingRequest = true;
+      this.currentRequestHandler = {
+        resolve: (result: any) => {
+          clearTimeout(timeoutHandle);
+          this.processingRequest = false;
+          this.currentRequestHandler = null;
+          if (result?.success) {
+            logger.info(
+              `Warm-up succeeded: pcbnew ${result.version} (${result.elapsed_s}s)`
+            );
+          } else {
+            logger.warn(
+              `Warm-up returned failure: ${result?.message || "unknown"} — continuing`
+            );
+          }
+          resolve();
+        },
+        reject: (err: Error) => {
+          clearTimeout(timeoutHandle);
+          this.processingRequest = false;
+          this.currentRequestHandler = null;
+          logger.warn(`Warm-up failed: ${err.message} — continuing`);
+          resolve(); // don't fail the whole server
+        },
+        timeoutHandle,
+      };
+
+      this.pythonProcess.stdin.write(requestStr + "\n");
+    });
   }
 
   /**
