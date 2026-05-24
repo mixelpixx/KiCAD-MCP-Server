@@ -14,7 +14,11 @@ def _make_iface(command_routes, use_ipc=False):
     iface.use_ipc = use_ipc
     iface.ipc_backend = None
     iface.ipc_board_api = None
+    iface.board = None
     iface.command_routes = command_routes
+    iface._board_disk_signature = None
+    iface._current_project_path = None
+    iface._last_auto_save_status = None
     return iface
 
 
@@ -45,6 +49,20 @@ class _FakeIPCBoardAPI:
 
     def get_enabled_layers(self):
         return ["F.Cu", "B.Cu"]
+
+
+class _FakeBoard:
+    def __init__(self, filename):
+        self._filename = str(filename)
+
+    def GetFileName(self):
+        return self._filename
+
+    def GetDesignSettings(self):
+        return object()
+
+    def GetBoardEdgesBoundingBox(self):
+        return object()
 
 
 class _FakeIPCBackend:
@@ -210,6 +228,127 @@ def test_backend_info_uses_reported_backend_for_metadata():
 
     result = iface.handle_command("get_backend_info", {})
 
+    assert result["_backend"] == "ipc"
+    assert result["_realtime"] is True
+
+
+def test_backend_state_without_board_reports_loaded_flags(monkeypatch):
+    """Backend state must explicitly say when no board/project is loaded."""
+    import kicad_interface
+
+    monkeypatch.setattr(kicad_interface.KiCADProcessManager, "is_running", lambda: False)
+
+    iface = _make_iface({}, use_ipc=False)
+    iface.command_routes["get_backend_state"] = iface._handle_get_backend_state
+
+    result = iface.handle_command("get_backend_state", {})
+
+    assert result["success"] is True
+    assert result["backend"] == "swig"
+    assert result["realtime"] is False
+    assert result["loadedProject"] is False
+    assert result["loadedBoard"] is False
+    assert result["projectPath"] is None
+    assert result["boardPath"] is None
+    assert result["dirty"] is False
+    assert result["_backend"] == "swig"
+    assert result["_realtime"] is False
+
+
+def test_backend_state_reports_loaded_project_board_and_clean_signature(tmp_path, monkeypatch):
+    """A loaded board with a matching disk signature should be visible and clean."""
+    import kicad_interface
+
+    monkeypatch.setattr(kicad_interface.KiCADProcessManager, "is_running", lambda: False)
+
+    board_path = tmp_path / "demo.kicad_pcb"
+    project_path = tmp_path / "demo.kicad_pro"
+    board_path.write_text("(kicad_pcb demo)\n", encoding="utf-8")
+    project_path.write_text("{}\n", encoding="utf-8")
+
+    iface = _make_iface({}, use_ipc=False)
+    iface.board = _FakeBoard(board_path)
+    iface._current_project_path = tmp_path
+    iface._record_board_signature()
+    iface.command_routes["get_backend_state"] = iface._handle_get_backend_state
+
+    result = iface.handle_command("get_backend_state", {})
+
+    assert result["loadedProject"] is True
+    assert result["loadedBoard"] is True
+    assert result["projectPath"] == str(project_path.resolve())
+    assert result["boardPath"] == str(board_path.resolve())
+    assert result["dirty"] is False
+    assert result["diskChangedExternally"] is False
+
+
+def test_backend_state_reports_disk_divergence_as_dirty(tmp_path, monkeypatch):
+    """If the board file changed after load, callers need a loud dirty signal."""
+    import kicad_interface
+
+    monkeypatch.setattr(kicad_interface.KiCADProcessManager, "is_running", lambda: False)
+
+    board_path = tmp_path / "demo.kicad_pcb"
+    board_path.write_text("(kicad_pcb original)\n", encoding="utf-8")
+
+    iface = _make_iface({}, use_ipc=False)
+    iface.board = _FakeBoard(board_path)
+    iface._record_board_signature()
+    board_path.write_text("(kicad_pcb changed)\n", encoding="utf-8")
+    iface.command_routes["get_backend_state"] = iface._handle_get_backend_state
+
+    result = iface.handle_command("get_backend_state", {})
+
+    assert result["loadedBoard"] is True
+    assert result["dirty"] is True
+    assert result["diskChangedExternally"] is True
+    assert "changed on disk" in result["dirtyReason"]
+
+
+def test_backend_state_reports_unsaved_memory_after_refused_autosave(tmp_path, monkeypatch):
+    """Auto-save refusal means the MCP has memory changes that are not persisted."""
+    import kicad_interface
+
+    monkeypatch.setattr(kicad_interface.KiCADProcessManager, "is_running", lambda: False)
+
+    board_path = tmp_path / "demo.kicad_pcb"
+    board_path.write_text("(kicad_pcb demo)\n", encoding="utf-8")
+
+    iface = _make_iface({}, use_ipc=False)
+    iface.board = _FakeBoard(board_path)
+    iface._record_board_signature()
+    iface._last_auto_save_status = {
+        "saved": False,
+        "memChangesUnsaved": True,
+        "diskChangedExternally": True,
+    }
+    iface.command_routes["get_backend_state"] = iface._handle_get_backend_state
+
+    result = iface.handle_command("get_backend_state", {})
+
+    assert result["dirty"] is True
+    assert result["diskChangedExternally"] is True
+    assert "memory changes" in result["dirtyReason"]
+
+
+def test_backend_state_reports_ipc_connection_without_loaded_board(monkeypatch):
+    """Backend state separates IPC connectivity from whether a board is loaded."""
+    import kicad_interface
+
+    monkeypatch.setattr(kicad_interface.KiCADProcessManager, "is_running", lambda: False)
+
+    backend = _FakeIPCBackend()
+    backend.connected = True
+    iface = _make_iface({}, use_ipc=True)
+    iface.ipc_backend = backend
+    iface.command_routes["get_backend_state"] = iface._handle_get_backend_state
+
+    result = iface.handle_command("get_backend_state", {})
+
+    assert result["backend"] == "ipc"
+    assert result["realtime"] is True
+    assert result["ipcConnected"] is True
+    assert result["loadedBoard"] is False
     assert result["_backend"] == "ipc"
     assert result["_realtime"] is True
 

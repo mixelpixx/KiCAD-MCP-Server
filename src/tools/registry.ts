@@ -165,6 +165,7 @@ export const directToolNames = [
   "sync_schematic_to_board",
 
   // UI management
+  "get_backend_state",
   "check_kicad_ui",
 ];
 

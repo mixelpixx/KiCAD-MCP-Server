@@ -2197,6 +2197,12 @@ SCHEMATIC_TOOLS = [
 
 UI_TOOLS = [
     {
+        "name": "get_backend_state",
+        "title": "Get Backend State",
+        "description": ("Returns backend, realtime, loaded project/board paths, and dirty state."),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "check_kicad_ui",
         "title": "Check KiCAD UI Status",
         "description": "Checks if KiCAD user interface is currently running and returns process information.",

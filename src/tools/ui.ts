@@ -7,6 +7,25 @@ import { z } from "zod";
 import { logger } from "../logger.js";
 
 export function registerUITools(server: McpServer, callKicadScript: Function) {
+  // Get MCP/KiCAD backend and loaded file state
+  server.tool(
+    "get_backend_state",
+    "Return the active backend, realtime status, loaded project/board paths, and dirty state.",
+    {},
+    async () => {
+      logger.info("Getting KiCAD backend state");
+      const result = await callKicadScript("get_backend_state", {});
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
   // Check if KiCAD UI is running
   server.tool("check_kicad_ui", "Check if KiCAD UI is currently running", {}, async () => {
     logger.info("Checking KiCAD UI status");
