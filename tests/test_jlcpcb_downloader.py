@@ -117,6 +117,65 @@ def test_convert_source_sqlite_produces_manager_schema(tmp_path):
     con.close()
 
 
+def _make_yaqwsx_like_source(path: Path) -> None:
+    """Create a SQLite mirroring yaqwsx's FULL-catalog schema: normalized, NO view.
+
+    category/manufacturer are IDs in sibling tables (no v_components view), which
+    is what the real ~10GB cache.sqlite3 looks like.
+    """
+    con = sqlite3.connect(str(path))
+    con.executescript("""
+        CREATE TABLE manufacturers (id INTEGER PRIMARY KEY, name TEXT);
+        CREATE TABLE categories (id INTEGER PRIMARY KEY, category TEXT, subcategory TEXT);
+        CREATE TABLE components (
+            lcsc INTEGER PRIMARY KEY,
+            category_id INTEGER,
+            mfr TEXT,
+            package TEXT,
+            joints INTEGER,
+            manufacturer_id INTEGER,
+            basic INTEGER,
+            preferred INTEGER,
+            description TEXT,
+            datasheet TEXT,
+            stock INTEGER,
+            price TEXT
+        );
+        """)
+    con.execute("INSERT INTO manufacturers VALUES (7, 'Texas Instruments')")
+    con.execute("INSERT INTO categories VALUES (3, 'ICs', 'LDO Regulators')")
+    con.execute(
+        "INSERT INTO components VALUES (12345, 3, 'TLV70033', 'SOT-23-5', 5, 7, 0, 0, "
+        "'3.3V LDO', 'http://ds/12345', 0, ?)",
+        (json.dumps([{"qFrom": 1, "qTo": None, "price": 0.12}]),),
+    )
+    con.commit()
+    con.close()
+
+
+def test_convert_yaqwsx_schema_populates_category_and_manufacturer(tmp_path):
+    """Full-catalog (yaqwsx) source has no v_components view; the join must be built."""
+    source = tmp_path / "cache.sqlite3"
+    target = tmp_path / "jlcpcb_parts.db"
+    _make_yaqwsx_like_source(source)
+
+    stats = jlcpcb_downloader.convert_source_sqlite(source, target)
+    assert stats["total"] == 1
+
+    con = sqlite3.connect(str(target))
+    con.row_factory = sqlite3.Row
+    row = dict(con.execute("SELECT * FROM components WHERE lcsc='C12345'").fetchone())
+    con.close()
+
+    # These would be blank without the built v_components join:
+    assert row["category"] == "ICs"
+    assert row["subcategory"] == "LDO Regulators"
+    assert row["manufacturer"] == "Texas Instruments"
+    assert row["mfr_part"] == "TLV70033"
+    assert row["library_type"] == "Extended"
+    assert json.loads(row["price_json"]) == [{"qty": 1, "price": 0.12}]
+
+
 def test_normalize_price_json_handles_scalar_and_array_and_empty():
     assert json.loads(jlcpcb_downloader.normalize_price_json(None)) == []
     assert json.loads(jlcpcb_downloader.normalize_price_json("")) == []

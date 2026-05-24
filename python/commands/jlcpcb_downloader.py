@@ -98,19 +98,57 @@ def _library_type(is_basic: Any, is_preferred: Any) -> str:
     return "Extended"
 
 
+def _relation_names(src: sqlite3.Connection) -> List[str]:
+    # Include temp objects so the v_components view built by _ensure_components_view
+    # (a TEMP view) is visible to _pick_source_relation.
+    return [
+        r[0]
+        for r in src.execute(
+            "SELECT name FROM sqlite_master WHERE type IN ('table','view') "
+            "UNION SELECT name FROM sqlite_temp_master WHERE type IN ('table','view')"
+        ).fetchall()
+    ]
+
+
+def _ensure_components_view(src: sqlite3.Connection) -> None:
+    """Create a denormalized ``v_components`` view for yaqwsx-style sources.
+
+    CDFER ships a ``v_components`` view, but yaqwsx's raw ``cache.sqlite3`` (the
+    FULL catalog) stores category/manufacturer as IDs in sibling ``categories``
+    and ``manufacturers`` tables. Without this join the full-catalog convert
+    would leave category/subcategory/manufacturer blank. We build the same view
+    shape CDFER exposes so the rest of the converter is source-agnostic.
+    """
+    names = _relation_names(src)
+    if "v_components" in names:
+        return
+    if not ({"components", "categories", "manufacturers"} <= set(names)):
+        return
+    comp_cols = {r[1] for r in src.execute("PRAGMA table_info([components])").fetchall()}
+    if not ({"category_id", "manufacturer_id"} <= comp_cols):
+        return
+    try:
+        src.execute("""
+            CREATE TEMP VIEW v_components AS
+            SELECT c.*, cat.category AS category, cat.subcategory AS subcategory,
+                   m.name AS manufacturer
+            FROM components c
+            LEFT JOIN categories cat ON cat.id = c.category_id
+            LEFT JOIN manufacturers m ON m.id = c.manufacturer_id
+            """)
+        logger.info("Built v_components join view for yaqwsx-style source")
+    except sqlite3.Error as exc:  # pragma: no cover - defensive
+        logger.debug(f"could not build v_components view: {exc}")
+
+
 def _pick_source_relation(src: sqlite3.Connection) -> str:
     """Choose which table/view to read from the source database.
 
-    Prefers CDFER's denormalized ``v_components`` view (which exposes category,
-    subcategory and manufacturer names directly). Falls back to the largest
-    table for yaqwsx-style schemas.
+    Prefers a denormalized ``v_components`` view (CDFER ships one; for yaqwsx we
+    build an equivalent in ``_ensure_components_view``). Falls back to the
+    largest table.
     """
-    names = [
-        r[0]
-        for r in src.execute(
-            "SELECT name FROM sqlite_master WHERE type IN ('table','view')"
-        ).fetchall()
-    ]
+    names = _relation_names(src)
     if "v_components" in names:
         return "v_components"
     if "components" in names:
@@ -146,6 +184,7 @@ def convert_source_sqlite(
     src = sqlite3.connect(str(source_path))
     src.row_factory = sqlite3.Row
     try:
+        _ensure_components_view(src)
         relation = _pick_source_relation(src)
         _progress(progress, f"Converting from source relation '{relation}'...")
 
@@ -287,8 +326,16 @@ def _head_last_modified(url: str) -> Optional[str]:
     return None
 
 
-def download_cdfer(cache_dir: Path, progress: ProgressFn = None) -> Tuple[Path, Optional[str]]:
-    """Stream-download CDFER's single uncompressed SQLite. Returns (path, last_modified)."""
+def download_cdfer(
+    cache_dir: Path, progress: ProgressFn = None, max_retries: int = 5
+) -> Tuple[Path, Optional[str]]:
+    """Stream-download CDFER's single uncompressed SQLite, with resume + retry.
+
+    Stalls/drops were a recurring complaint, so this uses a read timeout and, on
+    a network error, retries while *resuming* from the partial file via an HTTP
+    Range request (GitHub Pages supports ranged GETs) instead of restarting.
+    Returns (path, last_modified).
+    """
     import requests
 
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -301,23 +348,48 @@ def download_cdfer(cache_dir: Path, progress: ProgressFn = None) -> Tuple[Path, 
         + "...",
     )
 
-    with requests.get(CDFER_SQLITE_URL, stream=True, timeout=60) as resp:
-        resp.raise_for_status()
-        last_modified = last_modified or resp.headers.get("Last-Modified")
-        # NOTE: GitHub Pages' Content-Length can understate the real transfer
-        # size (compressed transfer accounting), so we report MB downloaded
-        # rather than a misleading percentage.
-        written = 0
-        next_mark = 50 * 1024 * 1024  # log every ~50 MB
-        with open(dest, "wb") as fh:
-            for chunk in resp.iter_content(chunk_size=1024 * 1024):
-                if not chunk:
-                    continue
-                fh.write(chunk)
-                written += len(chunk)
-                if written >= next_mark:
-                    _progress(progress, f"Downloaded {written // (1024 * 1024)} MB...")
-                    next_mark += 50 * 1024 * 1024
+    attempt = 0
+    while True:
+        attempt += 1
+        resume_from = dest.stat().st_size if dest.exists() else 0
+        headers = {"Range": f"bytes={resume_from}-"} if resume_from else {}
+        try:
+            # (connect timeout, read timeout): a stalled socket raises after 120s
+            # of no data, so we can resume rather than hang forever.
+            with requests.get(
+                CDFER_SQLITE_URL, stream=True, timeout=(30, 120), headers=headers
+            ) as resp:
+                # If we asked to resume but the server ignored Range (200, not
+                # 206), start the file over to avoid a corrupt append.
+                if resume_from and resp.status_code == 200:
+                    resume_from = 0
+                resp.raise_for_status()
+                last_modified = last_modified or resp.headers.get("Last-Modified")
+                mode = "ab" if resume_from else "wb"
+                written = resume_from
+                next_mark = ((written // (50 * 1024 * 1024)) + 1) * 50 * 1024 * 1024
+                with open(dest, mode) as fh:
+                    for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                        if not chunk:
+                            continue
+                        fh.write(chunk)
+                        written += len(chunk)
+                        if written >= next_mark:
+                            _progress(progress, f"Downloaded {written // (1024 * 1024)} MB...")
+                            next_mark += 50 * 1024 * 1024
+            break  # clean end of stream
+        except requests.RequestException as exc:
+            if attempt > max_retries:
+                raise RuntimeError(
+                    f"CDFER download failed after {max_retries} retries: {exc}"
+                ) from exc
+            have_mb = (dest.stat().st_size // (1024 * 1024)) if dest.exists() else 0
+            _progress(
+                progress,
+                f"Download interrupted ({exc}); resuming from {have_mb} MB "
+                f"(attempt {attempt}/{max_retries})...",
+            )
+            time.sleep(min(2 * attempt, 10))
 
     if dest.stat().st_size < 1_000_000:
         raise RuntimeError("CDFER download too small to be valid")
@@ -345,8 +417,26 @@ def download_yaqwsx(cache_dir: Path, progress: ProgressFn = None) -> Path:
     _progress(progress, "Downloading yaqwsx split archive (~421 MB)...")
 
     def _curl(url: str, dst: Path) -> bool:
+        # -C - resumes a partial file; --retry handles transient stalls/drops.
         return (
-            subprocess.run(["curl", "-L", "-f", "-o", str(dst), "--progress-bar", url]).returncode
+            subprocess.run(
+                [
+                    "curl",
+                    "-L",
+                    "-f",
+                    "-C",
+                    "-",
+                    "--retry",
+                    "5",
+                    "--retry-delay",
+                    "2",
+                    "--retry-connrefused",
+                    "-o",
+                    str(dst),
+                    "--progress-bar",
+                    url,
+                ]
+            ).returncode
             == 0
         )
 

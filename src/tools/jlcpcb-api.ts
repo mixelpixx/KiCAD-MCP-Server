@@ -12,13 +12,16 @@ export function registerJLCPCBApiTools(server: McpServer, callKicadScript: Funct
     "download_jlcpcb_database",
     `Download the JLCPCB parts catalog to a local SQLite database for fast offline search.
 
-Uses a prebuilt catalog (no API credentials required by default):
-  - Primary: CDFER prebuilt SQLite (single file, no extra tools needed)
-  - Fallback: yaqwsx/jlcparts split archive (requires a 7z CLI)
-  - Optional: official JLCPCB API if JLCPCB_APP_ID/JLCPCB_API_KEY/JLCPCB_API_SECRET are set
+Sources (no API credentials required by default):
+  - cdfer (default): in-stock subset (~600k parts, ~1.5 GB download). Single file,
+    no extra tools — the most reliable path, especially on Windows.
+  - yaqwsx: the FULL catalog (all parts incl. out-of-stock, ~10 GB extracted).
+    Use source="yaqwsx" if you specifically want everything. Requires a 7z CLI.
+  - official: official JLCPCB API, used only if JLCPCB_APP_ID/JLCPCB_API_KEY/
+    JLCPCB_API_SECRET are set.
 
-This is a one-time setup (downloads ~1.5 GB). Optionally pass source to force one
-provider. Re-run with force=true to refresh.`,
+One-time setup; downloads resume automatically if interrupted. Re-run with
+force=true to refresh.`,
     {
       force: z
         .boolean()
@@ -28,7 +31,10 @@ provider. Re-run with force=true to refresh.`,
       source: z
         .enum(["cdfer", "yaqwsx", "official"])
         .optional()
-        .describe("Force a single source instead of the default cdfer→yaqwsx→official order"),
+        .describe(
+          'Force one source. "cdfer" (default) = in-stock subset, no 7z needed. ' +
+            '"yaqwsx" = FULL ~10GB catalog (needs a 7z CLI). "official" = JLCPCB API (needs creds).',
+        ),
     },
     async (args: { force?: boolean; source?: "cdfer" | "yaqwsx" | "official" }) => {
       const result = await callKicadScript("download_jlcpcb_database", args);
