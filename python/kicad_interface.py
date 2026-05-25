@@ -6075,6 +6075,11 @@ print("ok")
             board = pcbnew.BOARD()
             del board
             ver = pcbnew.GetBuildVersion()
+            # Pre-parse symbol libraries so first search_symbols is fast.
+            # This can take 30-120 s on first run (232 libraries); running
+            # it here during the warm-up phase (120 s internal timeout)
+            # avoids paying the cost on the first user tool call.
+            self.symbol_library_commands._manager._warm_cache()
             elapsed = time.monotonic() - start
             logger.info(f"Warm-up complete: pcbnew {ver} ({elapsed:.1f}s)")
             return {"success": True, "version": ver, "elapsed_s": round(elapsed, 1)}

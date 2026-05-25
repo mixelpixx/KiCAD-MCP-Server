@@ -54,8 +54,8 @@ class SymbolLibraryManager:
         self.project_path = project_path
         self.libraries: Dict[str, str] = {}  # nickname -> path mapping
         self.symbol_cache: Dict[str, List[SymbolInfo]] = {}  # library -> [SymbolInfo]
+        self._warmed = False
         self._load_libraries()
-        self._warm_cache()
 
     def _warm_cache(self) -> None:
         """Pre-parse all symbol libraries so the first search is fast.
@@ -65,11 +65,14 @@ class SymbolLibraryManager:
         200+ libraries.  By populating the cache here (during startup,
         before the READY handshake) the cost is paid once.
         """
+        if self._warmed:
+            return
         for nickname in list(self.libraries.keys()):
             try:
                 self.list_symbols(nickname)
             except Exception:
                 logger.debug("Skipping unparseable library: %s", nickname)
+        self._warmed = True
 
     def _load_libraries(self) -> None:
         """Load libraries from sym-lib-table files"""
@@ -403,6 +406,7 @@ class SymbolLibraryManager:
         Returns:
             List of SymbolInfo objects sorted by relevance
         """
+        self._warm_cache()
         results = []
         query_lower = query.lower()
 
