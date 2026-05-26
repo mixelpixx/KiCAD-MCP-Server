@@ -185,6 +185,7 @@ Claude:
 | Variable            | Default     | Description                    |
 | ------------------- | ----------- | ------------------------------ |
 | `KICAD_AUTO_LAUNCH` | `false`     | Auto-launch KiCAD when needed  |
+| `KICAD_INTERACTIVE_SCHEMATIC` | `false` | Windows: auto-reload schematic after MCP edits (dialog watcher) |
 | `KICAD_EXECUTABLE`  | auto-detect | Override KiCAD executable path |
 
 ### Custom Executable Path

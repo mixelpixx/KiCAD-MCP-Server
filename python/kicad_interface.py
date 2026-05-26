@@ -133,6 +133,12 @@ AUTO_LAUNCH_KICAD = os.environ.get("KICAD_AUTO_LAUNCH", "false").lower() == "tru
 if AUTO_LAUNCH_KICAD:
     logger.info("KiCAD auto-launch enabled")
 
+# Interactive schematic reload (Windows): auto-dismiss KiCad reload dialogs and
+# send Revert after MCP edits. Opt-in — defaults off (PR review feedback).
+INTERACTIVE_SCHEMATIC = os.environ.get("KICAD_INTERACTIVE_SCHEMATIC", "false").lower() == "true"
+if INTERACTIVE_SCHEMATIC:
+    logger.info("KiCAD interactive schematic reload enabled (KICAD_INTERACTIVE_SCHEMATIC=true)")
+
 # Check which backend to use
 # KICAD_BACKEND can be: 'auto', 'ipc', or 'swig'
 KICAD_BACKEND = os.environ.get("KICAD_BACKEND", "auto").lower()
@@ -328,8 +334,9 @@ class KiCADInterface:
         # Schematic-related classes don't need board reference
         # as they operate directly on schematic files
 
-        # Start a background thread that auto-dismisses KiCad reload dialogs
-        self._start_kicad_dialog_watcher()
+        # Opt-in: Windows dialog watcher for interactive schematic reload
+        if INTERACTIVE_SCHEMATIC:
+            self._start_kicad_dialog_watcher()
 
         # Command routing dictionary
         self.command_routes = {
@@ -6550,6 +6557,8 @@ print("ok")
 
     def _reload_kicad_schematic(self) -> None:
         """Reload the KiCAD Schematic Editor after an external file change."""
+        if not INTERACTIVE_SCHEMATIC:
+            return
         if os.name != "nt":
             return
         try:
