@@ -282,6 +282,7 @@ class KiCADInterface:
         # last load or successful auto-save.  Used by _auto_save_board() to
         # detect external modifications and refuse to clobber them.
         self._board_disk_signature: Optional[Tuple[int, str]] = None
+        self._last_auto_save_status: Optional[Dict[str, Any]] = None
         # Number of timestamped backups to keep in .mcp-backups/ per board file.
         self._auto_save_backup_keep = 20
         self.use_ipc = USE_IPC_BACKEND
@@ -459,6 +460,7 @@ class KiCADInterface:
             "add_sheet_pin": self._handle_add_sheet_pin,
             "import_svg_logo": self._handle_import_svg_logo,
             # UI/Process management commands
+            "get_backend_state": self._handle_get_backend_state,
             "check_kicad_ui": self._handle_check_kicad_ui,
             "launch_kicad_ui": self._handle_launch_kicad_ui,
             # Internal warm-up (pays wxApp init cost during startup)
@@ -599,7 +601,12 @@ class KiCADInterface:
 
     def _result_backend_for_command(self, command: str, result: Dict[str, Any]) -> str:
         """Return the backend label for a command result."""
-        if command in {"get_backend_info", "check_kicad_ui", "launch_kicad_ui"}:
+        if command in {
+            "get_backend_info",
+            "get_backend_state",
+            "check_kicad_ui",
+            "launch_kicad_ui",
+        }:
             return result.get("backend", "ipc" if self.use_ipc else "swig")
 
         if command in self.IPC_DIRECT_COMMANDS:
@@ -707,6 +714,10 @@ class KiCADInterface:
                         # can detect external modifications and refuse to
                         # overwrite them.
                         self._record_board_signature()
+                        self._last_auto_save_status = None
+                    elif command == "save_project":
+                        self._record_board_signature()
+                        self._last_auto_save_status = None
                     elif command in self._BOARD_MUTATING_COMMANDS:
                         # Auto-save after every board mutation via SWIG.
                         # Prevents data loss if Claude hits context limit before
@@ -715,6 +726,7 @@ class KiCADInterface:
                         # a warning to the caller so they don't believe their
                         # mutation was persisted.
                         save_status = self._auto_save_board()
+                        self._last_auto_save_status = save_status
                         if isinstance(result, dict) and not save_status.get("saved"):
                             if save_status.get("warning"):
                                 result.setdefault("warnings", []).append(save_status["warning"])
@@ -799,6 +811,91 @@ class KiCADInterface:
         except Exception:
             path = None
         self._board_disk_signature = self._disk_signature(path) if path else None
+
+    def _current_board_path(self) -> Optional[str]:
+        """Return the current board file path, if a healthy board is loaded."""
+        board = getattr(self, "board", None)
+        if not board or not self._is_board_healthy(board):
+            return None
+        try:
+            path = board.GetFileName()
+        except Exception:
+            return None
+        return os.path.abspath(path) if path else None
+
+    def _current_project_file_path(self, board_path: Optional[str]) -> Optional[str]:
+        """Best-effort project file path for the currently loaded board."""
+        candidates = []
+        project_path = getattr(self, "_current_project_path", None)
+
+        if project_path:
+            project_path = Path(project_path)
+            if project_path.suffix == ".kicad_pro":
+                candidates.append(project_path)
+            elif board_path:
+                candidates.append(project_path / (Path(board_path).stem + ".kicad_pro"))
+            elif project_path.is_dir():
+                candidates.extend(project_path.glob("*.kicad_pro"))
+
+        if board_path and board_path.endswith(".kicad_pcb"):
+            candidates.append(Path(board_path).with_suffix(".kicad_pro"))
+
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate.resolve())
+
+        return str(Path(candidates[0]).resolve()) if candidates else None
+
+    def _dirty_state(self, board_path: Optional[str]) -> Dict[str, Any]:
+        """Return the best-known dirty state for the loaded board.
+
+        dirty is intentionally tri-state: True/False when the MCP has evidence,
+        None when no reliable disk signature exists.
+        """
+        if not board_path:
+            return {
+                "dirty": False,
+                "dirtyReason": "No board is loaded",
+                "diskChangedExternally": False,
+            }
+
+        last_auto_save = getattr(self, "_last_auto_save_status", None) or {}
+        if last_auto_save.get("memChangesUnsaved"):
+            return {
+                "dirty": True,
+                "dirtyReason": "Auto-save refused after a board mutation; memory changes are not saved",
+                "diskChangedExternally": bool(last_auto_save.get("diskChangedExternally")),
+            }
+
+        expected = getattr(self, "_board_disk_signature", None)
+        current = self._disk_signature(board_path)
+
+        if expected is None:
+            return {
+                "dirty": None,
+                "dirtyReason": "No recorded disk signature for the loaded board",
+                "diskChangedExternally": False,
+            }
+
+        if current is None:
+            return {
+                "dirty": None,
+                "dirtyReason": "Board file is missing or unreadable on disk",
+                "diskChangedExternally": False,
+            }
+
+        if expected[1] != current[1]:
+            return {
+                "dirty": True,
+                "dirtyReason": "Board file contents changed on disk since this MCP session loaded it",
+                "diskChangedExternally": True,
+            }
+
+        return {
+            "dirty": False,
+            "dirtyReason": "Board file matches the MCP recorded disk signature",
+            "diskChangedExternally": False,
+        }
 
     def _prune_auto_save_backups(self, backup_dir: str, base_name: str) -> None:
         """Keep only the most recent `_auto_save_backup_keep` backups for `base_name`."""
@@ -5969,6 +6066,7 @@ print("ok")
         tools are registered with the MCP client.
         """
         import time
+
         start = time.monotonic()
         try:
             # pcbnew.BOARD() triggers wxApp creation on macOS.
@@ -5984,6 +6082,7 @@ print("ok")
             elapsed = time.monotonic() - start
             logger.error(f"Warm-up failed after {elapsed:.1f}s: {exc}")
             return {"success": False, "message": str(exc), "elapsed_s": round(elapsed, 1)}
+
     # =========================================================================
 
     def _handle_get_backend_info(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -6000,6 +6099,38 @@ print("ok")
                 "Using IPC backend with real-time UI sync"
                 if status["backend"] == "ipc"
                 else "Using SWIG backend (requires manual reload)"
+            ),
+        }
+
+    def _handle_get_backend_state(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the MCP/KiCad backend state and currently loaded file state."""
+        if KiCADProcessManager.is_running():
+            self._try_enable_ipc_backend()
+
+        status = self._backend_status()
+        board_path = self._current_board_path()
+        project_path = self._current_project_file_path(board_path)
+        dirty_state = self._dirty_state(board_path)
+        loaded_board = board_path is not None
+        loaded_project = project_path is not None
+
+        return {
+            "success": True,
+            "backend": status["backend"],
+            "realtime": status["realtime_sync"],
+            "realtime_sync": status["realtime_sync"],
+            "ipcConnected": status["ipc_connected"],
+            "ipc_connected": status["ipc_connected"],
+            "loadedProject": loaded_project,
+            "loadedBoard": loaded_board,
+            "projectPath": project_path,
+            "boardPath": board_path,
+            "dirty": dirty_state["dirty"],
+            "dirtyReason": dirty_state["dirtyReason"],
+            "diskChangedExternally": dirty_state["diskChangedExternally"],
+            "message": (
+                f"{status['backend']} backend; "
+                f"{'board loaded' if loaded_board else 'no board loaded'}"
             ),
         }
 
