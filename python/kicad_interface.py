@@ -1906,6 +1906,7 @@ class KiCADInterface:
                 changes["propertiesRemoved"] = properties_removed
 
             logger.info(f"Edited schematic component {reference}: {changes}")
+            self._reload_kicad_schematic()
             return {"success": True, "reference": reference, "updated": changes}
 
         except Exception as e:
