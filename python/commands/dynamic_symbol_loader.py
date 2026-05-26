@@ -430,6 +430,102 @@ class DynamicSymbolLoader:
         logger.info(f"Injected symbol {full_name} into {sch_name}")
         return True
 
+    @staticmethod
+    def _extract_paren_block(text: str, start: int) -> str:
+        """Return the substring from text[start] up to and including the matching closing paren."""
+        depth, i = 0, start
+        while i < len(text):
+            if text[i] == "(":
+                depth += 1
+            elif text[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    return text[start : i + 1]
+            i += 1
+        return text[start:]
+
+    def _extract_lib_property_positions(
+        self,
+        schematic_path: Path,
+        library_name: str,
+        symbol_name: str,
+    ) -> dict:
+        """
+        Return {prop_name: (dx, dy, text_angle, effects_str)} from the lib_symbols
+        section of the schematic (which must already have the symbol injected).
+        effects_str is the full '(effects ...)' string to be reused in the placed
+        instance so that justify, font size, hide etc. are preserved.
+        Returns an empty dict on failure.
+        """
+        try:
+            with open(schematic_path, encoding="utf-8") as f:
+                content = f.read()
+
+            lib_start = content.find("(lib_symbols")
+            if lib_start == -1:
+                return {}
+
+            sym_start = content.find(f'(symbol "{library_name}:{symbol_name}"', lib_start)
+            if sym_start == -1:
+                return {}
+
+            sym_block = self._extract_paren_block(content, sym_start)
+
+            import re
+
+            result = {}
+            # Iterate over every top-level (property ...) block in the symbol
+            search_pos = 0
+            while True:
+                m = re.search(r'\(property\s+"([^"]+)"\s+"[^"]*"\s+\(at\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+))',
+                              sym_block[search_pos:])
+                if not m:
+                    break
+                abs_start = search_pos + m.start()
+                prop_block = self._extract_paren_block(sym_block, abs_start)
+
+                name  = m.group(1)
+                dx    = float(m.group(2))
+                dy    = float(m.group(3))
+                angle = float(m.group(4))
+
+                # Extract (effects ...) block from within this property
+                eff_pos = prop_block.find("(effects")
+                if eff_pos != -1:
+                    effects_str = self._extract_paren_block(prop_block, eff_pos)
+                    # Strip (hide ...) sub-expressions — visibility will be set
+                    # separately by the caller
+                    effects_str = re.sub(r'\s*\(hide\s+[^)]+\)', '', effects_str)
+                    effects_str = effects_str.strip()
+                else:
+                    effects_str = "(effects (font (size 1.27 1.27)))"
+
+                # Only store the first occurrence (top-level lib property, not sub-symbol)
+                if name not in result:
+                    result[name] = (dx, dy, angle, effects_str)
+
+                search_pos = abs_start + 1
+
+            return result
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _rotate_offset(dx: float, dy: float, angle_deg: float) -> tuple:
+        """
+        Rotate a 2-D offset by angle_deg degrees (KiCad CCW-in-screen, i.e. Y-axis
+        points downward).  Returns (rx, ry) rounded to 3 decimal places.
+        """
+        import math
+
+        rad = math.radians(angle_deg)
+        # Standard CCW rotation in Y-down screen coordinates:
+        #   rx =  dx * cos(a) + dy * sin(a)
+        #   ry = -dx * sin(a) + dy * cos(a)
+        rx = dx * math.cos(rad) + dy * math.sin(rad)
+        ry = -dx * math.sin(rad) + dy * math.cos(rad)
+        return round(rx, 3), round(ry, 3)
+
     def create_component_instance(
         self,
         schematic_path: Path,
@@ -441,28 +537,60 @@ class DynamicSymbolLoader:
         x: float = 0,
         y: float = 0,
         unit: int = 1,
+        angle: float = 0,
+        mirror_y: bool = False,
     ) -> bool:
         """
         Add a component instance to the schematic.
         This creates the (symbol ...) block with lib_id reference.
-        For multi-unit symbols, set unit to 1–N to place a specific unit.
+
+        Property positions and text angles are derived from the library symbol
+        definition so that RefDes/Value are always placed correctly for the
+        component orientation (e.g. rotated 90° for a vertical resistor).
+
+        Args:
+            unit:  For multi-unit symbols, which unit to place (1=A, 2=B, …).
+            angle: Placement rotation in degrees (KiCad CCW-in-screen convention).
         """
         full_lib_id = f"{library_name}:{symbol_name}"
         new_uuid = str(uuid.uuid4())
 
-        instance_block = f"""  (symbol (lib_id "{full_lib_id}") (at {x} {y} 0) (unit {unit})
+        # --- read property offsets from the already-injected lib_symbols block -----
+        lib_props = self._extract_lib_property_positions(
+            schematic_path, library_name, symbol_name
+        )
+
+        _DEFAULT_EFFECTS = "(effects (font (size 1.27 1.27)))"
+
+        def _prop_at(name: str, fallback_dx: float, fallback_dy: float,
+                     fallback_angle: float = 0) -> tuple:
+            """Return (abs_x, abs_y, text_angle, effects_str) for a property."""
+            if name in lib_props:
+                dx, dy, text_ang, eff = lib_props[name]
+            else:
+                dx, dy, text_ang, eff = fallback_dx, fallback_dy, fallback_angle, _DEFAULT_EFFECTS
+            rdx, rdy = self._rotate_offset(dx, dy, angle)
+            return round(x + rdx, 3), round(y + rdy, 3), text_ang, eff
+
+        ref_x, ref_y, ref_a, ref_eff = _prop_at("Reference", 2.032, 0,    0)
+        val_x, val_y, val_a, val_eff = _prop_at("Value",      0,     2.54, 0)
+        fp_x,  fp_y,  _,     _       = _prop_at("Footprint",  0,     0,    0)
+        ds_x,  ds_y,  _,     _       = _prop_at("Datasheet",  0,     0,    0)
+
+        mirror_str = " (mirror y)" if mirror_y else ""
+        instance_block = f"""  (symbol (lib_id "{full_lib_id}") (at {x} {y} {angle}){mirror_str} (unit {unit})
     (in_bom yes) (on_board yes) (dnp no)
     (uuid "{new_uuid}")
-    (property "Reference" "{reference}" (at {x} {y - 2.54} 0)
-      (effects (font (size 1.27 1.27)))
+    (property "Reference" "{reference}" (at {ref_x} {ref_y} {ref_a})
+      {ref_eff}
     )
-    (property "Value" "{value or symbol_name}" (at {x} {y + 2.54} 0)
-      (effects (font (size 1.27 1.27)))
+    (property "Value" "{value or symbol_name}" (at {val_x} {val_y} {val_a})
+      {val_eff}
     )
-    (property "Footprint" "{footprint}" (at {x} {y} 0)
+    (property "Footprint" "{footprint}" (at {fp_x} {fp_y} 0)
       (effects (font (size 1.27 1.27)) (hide yes))
     )
-    (property "Datasheet" "~" (at {x} {y} 0)
+    (property "Datasheet" "~" (at {ds_x} {ds_y} 0)
       (effects (font (size 1.27 1.27)) (hide yes))
     )
     (instances
@@ -541,6 +669,8 @@ class DynamicSymbolLoader:
         x: float = 0,
         y: float = 0,
         unit: int = 1,
+        angle: float = 0,
+        mirror_y: bool = False,
         project_path: Optional[Path] = None,
     ) -> bool:
         """
@@ -548,16 +678,16 @@ class DynamicSymbolLoader:
         This is the main entry point for adding components.
 
         Args:
-            unit: For multi-unit symbols, which unit to place (1=A, 2=B, …). Default 1.
-            project_path: Optional project directory. When set, project-specific
-                          sym-lib-table is also searched for the library file.
+            unit:  For multi-unit symbols, which unit to place (1=A, 2=B, …). Default 1.
+            angle: Placement rotation in degrees (KiCad CCW-in-screen). Default 0.
+            project_path: Optional project directory for project-local sym-lib-table.
         """
         if project_path:
             self.project_path = project_path
         # Ensure symbol definition is in lib_symbols
         self.inject_symbol_into_schematic(schematic_path, library_name, symbol_name)
 
-        # Add the component instance
+        # Add the component instance (property positions come from the injected lib def)
         return self.create_component_instance(
             schematic_path,
             library_name,
@@ -568,6 +698,8 @@ class DynamicSymbolLoader:
             x=x,
             y=y,
             unit=unit,
+            angle=angle,
+            mirror_y=mirror_y,
         )
 
 
