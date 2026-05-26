@@ -168,14 +168,21 @@ class PlatformHelper:
 
         if PlatformHelper.is_windows():
             patterns = [
+                # KiCAD 8/9 single-file libraries
                 "C:/Program Files/KiCad/*/share/kicad/symbols/*.kicad_sym",
                 "C:/Program Files (x86)/KiCad/*/share/kicad/symbols/*.kicad_sym",
+                # KiCAD 10 per-symbol directory libraries
+                "C:/Program Files/KiCad/*/share/kicad/symbols/*.kicad_symdir/*.kicad_sym",
+                "C:/Program Files (x86)/KiCad/*/share/kicad/symbols/*.kicad_symdir/*.kicad_sym",
             ]
         elif PlatformHelper.is_linux():
             patterns = [
                 "/usr/share/kicad/symbols/*.kicad_sym",
                 "/usr/local/share/kicad/symbols/*.kicad_sym",
                 str(Path.home() / ".local/share/kicad/symbols/*.kicad_sym"),
+                # KiCAD 10 per-symbol directory libraries
+                "/usr/share/kicad/symbols/*.kicad_symdir/*.kicad_sym",
+                "/usr/local/share/kicad/symbols/*.kicad_symdir/*.kicad_sym",
             ]
         elif PlatformHelper.is_macos():
             patterns = [
@@ -185,10 +192,15 @@ class PlatformHelper:
                     Path.home()
                     / "Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym"
                 ),
+                # KiCAD 10 per-symbol directory libraries
+                "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_symdir/*.kicad_sym",
             ]
 
         # Add user library paths for all platforms
         patterns.append(str(Path.home() / "Documents" / "KiCad" / "*" / "symbols" / "*.kicad_sym"))
+        patterns.append(
+            str(Path.home() / "Documents" / "KiCad" / "*" / "symbols" / "*.kicad_symdir" / "*.kicad_sym")
+        )
 
         return patterns
 
