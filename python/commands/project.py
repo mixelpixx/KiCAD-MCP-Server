@@ -5,15 +5,177 @@ Project-related command implementations for KiCAD interface
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
-from typing import Any, Dict, Optional
+import uuid as uuid_module
+from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import pcbnew  # type: ignore
 
 logger = logging.getLogger("kicad_interface")
+
+# Candidate KiCad installation roots, newest first
+_KICAD_INSTALL_ROOTS: List[Path] = []
+if sys.platform == "win32":
+    for _v in ("10.0", "9.0", "8.0"):
+        _p = Path(f"C:/Program Files/KiCad/{_v}")
+        if _p.exists():
+            _KICAD_INSTALL_ROOTS.append(_p)
+else:
+    for _v in ("10.0", "9.0", "8.0"):
+        for _base in ("/usr/share/kicad", f"/usr/local/share/kicad", f"/opt/kicad/{_v}"):
+            _p = Path(_base)
+            if _p.exists():
+                _KICAD_INSTALL_ROOTS.append(_p)
+                break
+
+
+def _kicad_share_dir() -> Optional[Path]:
+    """Return the KiCad share/kicad directory for the newest installed version."""
+    for root in _KICAD_INSTALL_ROOTS:
+        candidate = root / "share" / "kicad"
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _kicad_cli() -> Optional[Path]:
+    """Return path to kicad-cli executable, or None."""
+    for root in _KICAD_INSTALL_ROOTS:
+        cli = root / "bin" / ("kicad-cli.exe" if sys.platform == "win32" else "kicad-cli")
+        if cli.exists():
+            return cli
+    return None
+
+
+def _minimal_sch_content() -> str:
+    """Return a minimal valid KiCad schematic suitable for upgrading with kicad-cli."""
+    new_uuid = str(uuid_module.uuid4())
+    return (
+        f'(kicad_sch\n'
+        f'\t(version 20250114)\n'
+        f'\t(generator "eeschema")\n'
+        f'\t(generator_version "9.0")\n'
+        f'\t(uuid "{new_uuid}")\n'
+        f'\t(paper "A4")\n'
+        f'\t(lib_symbols\n'
+        f'\t)\n'
+        f'\t(sheet_instances\n'
+        f'\t\t(path "/"\n'
+        f'\t\t\t(page "1")\n'
+        f'\t\t)\n'
+        f'\t)\n'
+        f')\n'
+    )
+
+
+def _minimal_pcb_content() -> str:
+    """Return a minimal valid KiCad PCB suitable for upgrading with kicad-cli."""
+    new_uuid = str(uuid_module.uuid4())
+    return (
+        f'(kicad_pcb\n'
+        f'\t(version 20241229)\n'
+        f'\t(generator "pcbnew")\n'
+        f'\t(generator_version "9.0")\n'
+        f'\t(general\n'
+        f'\t\t(thickness 1.6)\n'
+        f'\t)\n'
+        f'\t(paper "A4")\n'
+        f'\t(layers\n'
+        f'\t\t(0 "F.Cu" signal)\n'
+        f'\t\t(31 "B.Cu" signal)\n'
+        f'\t\t(32 "B.Adhes" user "B.Adhesive")\n'
+        f'\t\t(33 "F.Adhes" user "F.Adhesive")\n'
+        f'\t\t(34 "B.Paste" user)\n'
+        f'\t\t(35 "F.Paste" user)\n'
+        f'\t\t(36 "B.SilkS" user "B.Silkscreen")\n'
+        f'\t\t(37 "F.SilkS" user "F.Silkscreen")\n'
+        f'\t\t(38 "B.Mask" user)\n'
+        f'\t\t(39 "F.Mask" user)\n'
+        f'\t\t(40 "Dwgs.User" user "User.Drawings")\n'
+        f'\t\t(41 "Cmts.User" user "User.Comments")\n'
+        f'\t\t(42 "Eco1.User" user "User.Eco1")\n'
+        f'\t\t(43 "Eco2.User" user "User.Eco2")\n'
+        f'\t\t(44 "Edge.Cuts" user)\n'
+        f'\t\t(45 "Margin" user)\n'
+        f'\t\t(46 "B.CrtYd" user "B.Courtyard")\n'
+        f'\t\t(47 "F.CrtYd" user "F.Courtyard")\n'
+        f'\t\t(48 "B.Fab" user)\n'
+        f'\t\t(49 "F.Fab" user)\n'
+        f'\t)\n'
+        f'\t(setup\n'
+        f'\t\t(pad_to_mask_clearance 0)\n'
+        f'\t)\n'
+        f'\t(net 0 "")\n'
+        f')\n'
+    )
+
+
+def _upgrade_with_kicad_cli(file_path: str, doc_type: str) -> bool:
+    """
+    Run `kicad-cli {doc_type} upgrade --force FILE` to convert to the latest KiCad format.
+    Returns True on success.  doc_type is "sch" or "pcb".
+    """
+    cli = _kicad_cli()
+    if not cli:
+        logger.warning("kicad-cli not found; skipping format upgrade")
+        return False
+    try:
+        result = subprocess.run(
+            [str(cli), doc_type, "upgrade", "--force", file_path],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            logger.info(f"kicad-cli {doc_type} upgrade OK: {file_path}")
+            return True
+        else:
+            logger.warning(
+                f"kicad-cli {doc_type} upgrade failed (rc={result.returncode}): "
+                f"{result.stderr.strip()}"
+            )
+            return False
+    except Exception as e:
+        logger.warning(f"kicad-cli {doc_type} upgrade error: {e}")
+        return False
+
+
+def _kicad_pro_content(project_name: str, board_filename: str, sch_filename: str) -> str:
+    """Return a properly structured .kicad_pro JSON matching KiCad 10 format."""
+    data = {
+        "board": {
+            "design_settings": {
+                "defaults": {},
+                "diff_pair_dimensions": [],
+                "drc_exclusions": [],
+                "rules": {},
+                "track_widths": [],
+                "via_dimensions": [],
+            }
+        },
+        "boards": [],
+        "libraries": {
+            "pinned_footprint_libs": [],
+            "pinned_symbol_libs": [],
+        },
+        "meta": {
+            "filename": f"{project_name}.kicad_pro",
+            "version": 1,
+        },
+        "net_settings": {
+            "classes": [],
+            "meta": {"version": 0},
+        },
+        "pcbnew": {
+            "page_layout_descr_file": "",
+        },
+        "sheets": [],
+        "text_variables": {},
+    }
+    return json.dumps(data, indent=2) + "\n"
 
 
 class ProjectCommands:
@@ -24,109 +186,61 @@ class ProjectCommands:
         self.board = board
 
     def create_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new KiCAD project"""
+        """
+        Create a new KiCAD project.
+
+        Files are created as minimal valid S-expressions, then converted to the
+        current installed KiCad format by running:
+            kicad-cli sch upgrade --force  <file.kicad_sch>
+            kicad-cli pcb upgrade --force  <file.kicad_pcb>
+        This guarantees the files are in the native KiCad format for the
+        installed version (e.g. schematic version 20260306 for KiCad 10.0.3),
+        without relying on templates that may carry an older format number.
+        """
         try:
-            # Accept both 'name' (from MCP tool) and 'projectName' (legacy)
             project_name = params.get("name") or params.get("projectName", "New_Project")
             path = params.get("path", os.getcwd())
             template = params.get("template")
 
-            # Generate the full project path
-            project_path = os.path.join(path, project_name)
-            if not project_path.endswith(".kicad_pro"):
-                project_path += ".kicad_pro"
+            project_dir = os.path.join(path, project_name)
+            os.makedirs(project_dir, exist_ok=True)
 
-            # Create project directory if it doesn't exist
-            os.makedirs(os.path.dirname(project_path), exist_ok=True)
+            project_path   = os.path.join(project_dir, f"{project_name}.kicad_pro")
+            board_path     = os.path.join(project_dir, f"{project_name}.kicad_pcb")
+            schematic_path = os.path.join(project_dir, f"{project_name}.kicad_sch")
 
-            # Create a new board
-            board = pcbnew.BOARD()
+            # ── Schematic ──────────────────────────────────────────────────────
+            # Write a minimal valid schematic, then upgrade to the current format
+            # via kicad-cli.  This is equivalent to KiCad creating the file itself.
+            with open(schematic_path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(_minimal_sch_content())
+            _upgrade_with_kicad_cli(schematic_path, "sch")
+            logger.info(f"Schematic: {schematic_path}")
 
-            # Set project properties
-            board.GetTitleBlock().SetTitle(project_name)
-
-            # Set current date with proper parameter
-            from datetime import datetime
-
-            current_date = datetime.now().strftime("%Y-%m-%d")
-            board.GetTitleBlock().SetDate(current_date)
-
-            # If template is specified, try to load it
+            # ── PCB ────────────────────────────────────────────────────────────
+            # Same strategy: minimal PCB + kicad-cli upgrade.
+            # If a user-supplied template is provided, use that.
+            pcb_written = False
             if template:
-                template_path = os.path.expanduser(template)
-                if os.path.exists(template_path):
-                    template_board = pcbnew.LoadBoard(template_path)
-                    # Copy settings from template
-                    board.SetDesignSettings(template_board.GetDesignSettings())
-                    board.SetLayerStack(template_board.GetLayerStack())
+                tmpl = os.path.expanduser(template)
+                if tmpl.endswith(".kicad_pcb") and os.path.exists(tmpl):
+                    shutil.copy(tmpl, board_path)
+                    pcb_written = True
+            if not pcb_written:
+                with open(board_path, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(_minimal_pcb_content())
+                _upgrade_with_kicad_cli(board_path, "pcb")
+                logger.info(f"PCB: {board_path}")
 
-            # Save the board
-            board_path = project_path.replace(".kicad_pro", ".kicad_pcb")
-            board.SetFileName(board_path)
-            pcbnew.SaveBoard(board_path, board)
+            # ── Project file ───────────────────────────────────────────────────
+            with open(project_path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(_kicad_pro_content(
+                    project_name,
+                    os.path.basename(board_path),
+                    os.path.basename(schematic_path),
+                ))
 
-            # Create schematic from template (use expanded template with symbol definitions)
-            schematic_path = project_path.replace(".kicad_pro", ".kicad_sch")
-            template_sch_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                "..",
-                "templates",
-                "template_with_symbols_expanded.kicad_sch",
-            )
-
-            if os.path.exists(template_sch_path):
-                # Copy template schematic
-                shutil.copy(template_sch_path, schematic_path)
-
-                # Regenerate UUID to ensure uniqueness for each created project
-                import re
-                import uuid as uuid_module
-
-                with open(schematic_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                new_uuid = str(uuid_module.uuid4())
-                content = re.sub(
-                    r"\(uuid [0-9a-fA-F-]+\)",
-                    f"(uuid {new_uuid})",
-                    content,
-                    count=1,  # Only replace first (schematic) UUID
-                )
-                with open(schematic_path, "w", encoding="utf-8", newline="\n") as f:
-                    f.write(content)
-
-                logger.info(f"Created schematic from template: {schematic_path}")
-            else:
-                # Fallback: create minimal schematic
-                logger.warning(
-                    f"Template not found at {template_sch_path}, creating minimal schematic"
-                )
-                import uuid as uuid_module
-
-                schematic_uuid = str(uuid_module.uuid4())
-                with open(schematic_path, "w", encoding="utf-8", newline="\n") as f:
-                    f.write('(kicad_sch (version 20250114) (generator "KiCAD-MCP-Server")\n\n')
-                    f.write(f"  (uuid {schematic_uuid})\n\n")
-                    f.write('  (paper "A4")\n\n')
-                    f.write("  (lib_symbols\n  )\n\n")
-                    f.write('  (sheet_instances\n    (path "/" (page "1"))\n  )\n')
-                    f.write(")\n")
-
-            # Create project file with schematic reference
-            with open(project_path, "w") as f:
-                f.write("{\n")
-                f.write('  "board": {\n')
-                f.write(f'    "filename": "{os.path.basename(board_path)}"\n')
-                f.write("  },\n")
-                f.write('  "sheets": [\n')
-                f.write(f'    ["root", "{os.path.basename(schematic_path)}"]\n')
-                f.write("  ]\n")
-                f.write("}\n")
-
-            # Upgrade schematic and board files to current KiCad format
-            self._upgrade_files_with_kicad_cli(schematic_path, board_path)
-
-            self.board = board
-
+            logger.info(f"Created KiCad project: {project_path}")
             return {
                 "success": True,
                 "message": f"Created project: {project_name}",
@@ -260,116 +374,3 @@ class ProjectCommands:
                 "message": "Failed to get project information",
                 "errorDetails": str(e),
             }
-
-    def _upgrade_files_with_kicad_cli(
-        self, schematic_path: str, board_path: str
-    ) -> bool:
-        """
-        Upgrade schematic and board files to the current KiCad format using kicad-cli.
-        
-        KiCad 10+ requires files in the latest format for full feature support.
-        This uses the kicad-cli upgrade command to ensure compatibility.
-        
-        Args:
-            schematic_path: Path to .kicad_sch file
-            board_path: Path to .kicad_pcb file
-        
-        Returns:
-            True if upgrade succeeded, False otherwise
-        """
-        try:
-            kicad_cli = self._find_kicad_cli()
-            if not kicad_cli:
-                logger.warning("kicad-cli not found; skipping file format upgrade")
-                return False
-
-            # Upgrade schematic
-            if os.path.exists(schematic_path):
-                try:
-                    subprocess.run(
-                        [kicad_cli, "sch", "upgrade", "--force", schematic_path],
-                        check=True,
-                        capture_output=True,
-                        timeout=30,
-                    )
-                    logger.info(f"Upgraded schematic: {schematic_path}")
-                except subprocess.CalledProcessError as e:
-                    logger.warning(
-                        f"Failed to upgrade schematic: {e.stderr.decode('utf-8', errors='replace')}"
-                    )
-                except subprocess.TimeoutExpired:
-                    logger.warning(f"Timeout upgrading schematic: {schematic_path}")
-
-            # Upgrade board
-            if os.path.exists(board_path):
-                try:
-                    subprocess.run(
-                        [kicad_cli, "pcb", "upgrade", "--force", board_path],
-                        check=True,
-                        capture_output=True,
-                        timeout=30,
-                    )
-                    logger.info(f"Upgraded board: {board_path}")
-                except subprocess.CalledProcessError as e:
-                    logger.warning(
-                        f"Failed to upgrade board: {e.stderr.decode('utf-8', errors='replace')}"
-                    )
-                except subprocess.TimeoutExpired:
-                    logger.warning(f"Timeout upgrading board: {board_path}")
-
-            return True
-
-        except Exception as e:
-            logger.debug(f"Error in file upgrade: {e}")
-            return False
-
-    def _find_kicad_cli(self) -> Optional[str]:
-        """
-        Find the kicad-cli executable.
-        
-        Searches in common installation paths for Windows, Linux, and macOS.
-        
-        Returns:
-            Path to kicad-cli if found, None otherwise
-        """
-        # Possible installation paths
-        search_paths = []
-
-        if sys.platform == "win32":
-            # Windows KiCad installations
-            search_paths.extend([
-                r"C:\Program Files\KiCad\9.0\bin\kicad-cli.exe",
-                r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe",
-                r"C:\Program Files\KiCad\11.0\bin\kicad-cli.exe",
-                r"C:\Program Files (x86)\KiCad\9.0\bin\kicad-cli.exe",
-                r"C:\Program Files (x86)\KiCad\10.0\bin\kicad-cli.exe",
-            ])
-        elif sys.platform == "darwin":
-            # macOS KiCad installations
-            search_paths.extend([
-                "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
-                "/usr/local/bin/kicad-cli",
-                "/opt/homebrew/bin/kicad-cli",
-            ])
-        else:
-            # Linux KiCad installations
-            search_paths.extend([
-                "/usr/bin/kicad-cli",
-                "/usr/local/bin/kicad-cli",
-                "/snap/bin/kicad-cli",
-            ])
-
-        # Check environment PATH
-        if "PATH" in os.environ:
-            for path in os.environ["PATH"].split(os.pathsep):
-                candidate = os.path.join(path, "kicad-cli")
-                if sys.platform == "win32":
-                    candidate += ".exe"
-                search_paths.append(candidate)
-
-        # Return first found executable
-        for path in search_paths:
-            if os.path.isfile(path) and os.access(path, os.X_OK):
-                return path
-
-        return None
