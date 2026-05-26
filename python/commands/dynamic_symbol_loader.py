@@ -477,7 +477,7 @@ class DynamicSymbolLoader:
             # Iterate over every top-level (property ...) block in the symbol
             search_pos = 0
             while True:
-                m = re.search(r'\(property\s+"([^"]+)"\s+"[^"]*"\s+\(at\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+))',
+                m = re.search(r'\(property\s+"([^"]+)"\s+"[^"]*"\s+\(at\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)',
                               sym_block[search_pos:])
                 if not m:
                     break
