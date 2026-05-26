@@ -2,10 +2,14 @@
 Project-related command implementations for KiCAD interface
 """
 
+import json
 import logging
 import os
 import shutil
+import subprocess
+import sys
 from typing import Any, Dict, Optional
+from pathlib import Path
 
 import pcbnew  # type: ignore
 
@@ -117,6 +121,9 @@ class ProjectCommands:
                 f.write(f'    ["root", "{os.path.basename(schematic_path)}"]\n')
                 f.write("  ]\n")
                 f.write("}\n")
+
+            # Upgrade schematic and board files to current KiCad format
+            self._upgrade_files_with_kicad_cli(schematic_path, board_path)
 
             self.board = board
 
@@ -253,3 +260,116 @@ class ProjectCommands:
                 "message": "Failed to get project information",
                 "errorDetails": str(e),
             }
+
+    def _upgrade_files_with_kicad_cli(
+        self, schematic_path: str, board_path: str
+    ) -> bool:
+        """
+        Upgrade schematic and board files to the current KiCad format using kicad-cli.
+        
+        KiCad 10+ requires files in the latest format for full feature support.
+        This uses the kicad-cli upgrade command to ensure compatibility.
+        
+        Args:
+            schematic_path: Path to .kicad_sch file
+            board_path: Path to .kicad_pcb file
+        
+        Returns:
+            True if upgrade succeeded, False otherwise
+        """
+        try:
+            kicad_cli = self._find_kicad_cli()
+            if not kicad_cli:
+                logger.warning("kicad-cli not found; skipping file format upgrade")
+                return False
+
+            # Upgrade schematic
+            if os.path.exists(schematic_path):
+                try:
+                    subprocess.run(
+                        [kicad_cli, "sch", "upgrade", "--force", schematic_path],
+                        check=True,
+                        capture_output=True,
+                        timeout=30,
+                    )
+                    logger.info(f"Upgraded schematic: {schematic_path}")
+                except subprocess.CalledProcessError as e:
+                    logger.warning(
+                        f"Failed to upgrade schematic: {e.stderr.decode('utf-8', errors='replace')}"
+                    )
+                except subprocess.TimeoutExpired:
+                    logger.warning(f"Timeout upgrading schematic: {schematic_path}")
+
+            # Upgrade board
+            if os.path.exists(board_path):
+                try:
+                    subprocess.run(
+                        [kicad_cli, "pcb", "upgrade", "--force", board_path],
+                        check=True,
+                        capture_output=True,
+                        timeout=30,
+                    )
+                    logger.info(f"Upgraded board: {board_path}")
+                except subprocess.CalledProcessError as e:
+                    logger.warning(
+                        f"Failed to upgrade board: {e.stderr.decode('utf-8', errors='replace')}"
+                    )
+                except subprocess.TimeoutExpired:
+                    logger.warning(f"Timeout upgrading board: {board_path}")
+
+            return True
+
+        except Exception as e:
+            logger.debug(f"Error in file upgrade: {e}")
+            return False
+
+    def _find_kicad_cli(self) -> Optional[str]:
+        """
+        Find the kicad-cli executable.
+        
+        Searches in common installation paths for Windows, Linux, and macOS.
+        
+        Returns:
+            Path to kicad-cli if found, None otherwise
+        """
+        # Possible installation paths
+        search_paths = []
+
+        if sys.platform == "win32":
+            # Windows KiCad installations
+            search_paths.extend([
+                r"C:\Program Files\KiCad\9.0\bin\kicad-cli.exe",
+                r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe",
+                r"C:\Program Files\KiCad\11.0\bin\kicad-cli.exe",
+                r"C:\Program Files (x86)\KiCad\9.0\bin\kicad-cli.exe",
+                r"C:\Program Files (x86)\KiCad\10.0\bin\kicad-cli.exe",
+            ])
+        elif sys.platform == "darwin":
+            # macOS KiCad installations
+            search_paths.extend([
+                "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
+                "/usr/local/bin/kicad-cli",
+                "/opt/homebrew/bin/kicad-cli",
+            ])
+        else:
+            # Linux KiCad installations
+            search_paths.extend([
+                "/usr/bin/kicad-cli",
+                "/usr/local/bin/kicad-cli",
+                "/snap/bin/kicad-cli",
+            ])
+
+        # Check environment PATH
+        if "PATH" in os.environ:
+            for path in os.environ["PATH"].split(os.pathsep):
+                candidate = os.path.join(path, "kicad-cli")
+                if sys.platform == "win32":
+                    candidate += ".exe"
+                search_paths.append(candidate)
+
+        # Return first found executable
+        for path in search_paths:
+            if os.path.isfile(path) and os.access(path, os.X_OK):
+                return path
+
+        return None
