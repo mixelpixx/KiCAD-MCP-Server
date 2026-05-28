@@ -9,6 +9,7 @@ Two modes are supported:
 """
 
 import base64
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -17,14 +18,16 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
 
+_FAKE_SVG = b"<svg><rect/></svg>"
+_FAKE_PNG = b"\x89PNG\r\n\x1a\n" + b"fakepngbytes"
+
 
 def _make_view_cmd(tmp_path: Path):
-    """Build a BoardViewCommands instance with a fake board."""
+    """Build a BoardViewCommands instance with a real PCB file and optional fake board."""
     from commands.board.view import BoardViewCommands
 
     board_path = tmp_path / "MyBoard.kicad_pcb"
@@ -32,28 +35,24 @@ def _make_view_cmd(tmp_path: Path):
 
     fake_board = MagicMock()
     fake_board.GetFileName.return_value = str(board_path)
-    return BoardViewCommands(board=fake_board), tmp_path
+    return BoardViewCommands(board=fake_board), tmp_path, board_path
 
 
-def _patched_plotter(temp_svg: Path):
-    """Context manager that stubs PLOT_CONTROLLER to return the given temp SVG path."""
-    plotter = MagicMock()
-    plotter.GetPlotFileName.return_value = str(temp_svg)
-    plotter.OpenPlotfile.return_value = True
-    plotter.GetPlotOptions.return_value = MagicMock()
-    return patch("commands.board.view.pcbnew.PLOT_CONTROLLER", return_value=plotter)
+def _patch_kicad_cli(svg_dir: Path):
+    """Stubs that make kicad-cli appear to succeed and produce an SVG in svg_dir."""
+    svg_path = svg_dir / "MyBoard.svg"
+    svg_path.write_bytes(_FAKE_SVG)
 
+    fake_result = MagicMock()
+    fake_result.returncode = 0
+    fake_result.stderr = ""
+    fake_result.stdout = ""
 
-_FAKE_SVG = b"<svg><rect/></svg>"
-_FAKE_PNG = b"\x89PNG\r\n\x1a\n" + b"fakepngbytes"
-
-
-def _install_cairosvg_stub(png_bytes: bytes) -> None:
-    """Inject a cairosvg stub into sys.modules if the real library is absent."""
-    if "cairosvg" not in sys.modules:
-        stub = MagicMock()
-        stub.svg2png.return_value = png_bytes
-        sys.modules["cairosvg"] = stub
+    return (
+        patch("shutil.which", return_value="/usr/bin/kicad-cli"),
+        patch("subprocess.run", return_value=fake_result),
+        patch("glob.glob", return_value=[str(svg_path)]),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -64,58 +63,48 @@ def _install_cairosvg_stub(png_bytes: bytes) -> None:
 @pytest.mark.unit
 def test_inline_png_returns_base64_image_data(tmp_path):
     """responseMode='inline' with format='png' returns valid base64 in imageData."""
-    cmd, root = _make_view_cmd(tmp_path)
-    temp_svg = root / "scratch.svg"
-    temp_svg.write_bytes(_FAKE_SVG)
-    _install_cairosvg_stub(_FAKE_PNG)
+    cmd, root, board_path = _make_view_cmd(tmp_path)
+    w1, w2, w3 = _patch_kicad_cli(root)
 
-    with (
-        _patched_plotter(temp_svg),
-        patch("cairosvg.svg2png", return_value=_FAKE_PNG, create=True),
-    ):
-        result = cmd.get_board_2d_view({"format": "png", "responseMode": "inline"})
+    with w1, w2, w3, patch("commands.board.view._svg_to_png", return_value=_FAKE_PNG):
+        result = cmd.get_board_2d_view(
+            {"pcbPath": str(board_path), "format": "png", "responseMode": "inline"}
+        )
 
     assert result["success"] is True
     assert result["format"] == "png"
     assert "imageData" in result
-    decoded = base64.b64decode(result["imageData"])
-    assert decoded == _FAKE_PNG
-    # No file should have been written for inline mode
+    assert base64.b64decode(result["imageData"]) == _FAKE_PNG
     assert not (root / "MyBoard_2d_view.png").exists()
     assert "filePath" not in result
 
 
 @pytest.mark.unit
 def test_inline_svg_returns_base64_image_data(tmp_path):
-    """responseMode='inline' with format='svg' returns valid base64 in imageData."""
-    cmd, root = _make_view_cmd(tmp_path)
-    temp_svg = root / "scratch.svg"
-    temp_svg.write_bytes(_FAKE_SVG)
+    """responseMode='inline' with format='svg' returns base64-encoded SVG in imageData."""
+    cmd, root, board_path = _make_view_cmd(tmp_path)
+    w1, w2, w3 = _patch_kicad_cli(root)
 
-    with _patched_plotter(temp_svg):
-        result = cmd.get_board_2d_view({"format": "svg", "responseMode": "inline"})
+    with w1, w2, w3:
+        result = cmd.get_board_2d_view(
+            {"pcbPath": str(board_path), "format": "svg", "responseMode": "inline"}
+        )
 
     assert result["success"] is True
     assert result["format"] == "svg"
     assert "imageData" in result
-    decoded = base64.b64decode(result["imageData"])
-    assert decoded == _FAKE_SVG
+    assert base64.b64decode(result["imageData"]) == _FAKE_SVG
     assert "filePath" not in result
 
 
 @pytest.mark.unit
 def test_default_response_mode_is_inline(tmp_path):
     """Omitting responseMode defaults to inline behavior (imageData, no filePath)."""
-    cmd, root = _make_view_cmd(tmp_path)
-    temp_svg = root / "scratch.svg"
-    temp_svg.write_bytes(_FAKE_SVG)
-    _install_cairosvg_stub(_FAKE_PNG)
+    cmd, root, board_path = _make_view_cmd(tmp_path)
+    w1, w2, w3 = _patch_kicad_cli(root)
 
-    with (
-        _patched_plotter(temp_svg),
-        patch("cairosvg.svg2png", return_value=_FAKE_PNG, create=True),
-    ):
-        result = cmd.get_board_2d_view({"format": "png"})
+    with w1, w2, w3, patch("commands.board.view._svg_to_png", return_value=_FAKE_PNG):
+        result = cmd.get_board_2d_view({"pcbPath": str(board_path), "format": "png"})
 
     assert result["success"] is True
     assert "imageData" in result
@@ -130,12 +119,13 @@ def test_default_response_mode_is_inline(tmp_path):
 @pytest.mark.unit
 def test_file_mode_svg_writes_file_and_returns_path(tmp_path):
     """responseMode='file' with format='svg' writes the file and returns filePath."""
-    cmd, root = _make_view_cmd(tmp_path)
-    temp_svg = root / "scratch.svg"
-    temp_svg.write_bytes(_FAKE_SVG)
+    cmd, root, board_path = _make_view_cmd(tmp_path)
+    w1, w2, w3 = _patch_kicad_cli(root)
 
-    with _patched_plotter(temp_svg):
-        result = cmd.get_board_2d_view({"format": "svg", "responseMode": "file"})
+    with w1, w2, w3:
+        result = cmd.get_board_2d_view(
+            {"pcbPath": str(board_path), "format": "svg", "responseMode": "file"}
+        )
 
     assert result["success"] is True
     assert result["format"] == "svg"
@@ -149,16 +139,13 @@ def test_file_mode_svg_writes_file_and_returns_path(tmp_path):
 @pytest.mark.unit
 def test_file_mode_png_writes_file_and_returns_path(tmp_path):
     """responseMode='file' with format='png' writes the PNG and returns filePath."""
-    cmd, root = _make_view_cmd(tmp_path)
-    temp_svg = root / "scratch.svg"
-    temp_svg.write_bytes(_FAKE_SVG)
-    _install_cairosvg_stub(_FAKE_PNG)
+    cmd, root, board_path = _make_view_cmd(tmp_path)
+    w1, w2, w3 = _patch_kicad_cli(root)
 
-    with (
-        _patched_plotter(temp_svg),
-        patch("cairosvg.svg2png", return_value=_FAKE_PNG, create=True),
-    ):
-        result = cmd.get_board_2d_view({"format": "png", "responseMode": "file"})
+    with w1, w2, w3, patch("commands.board.view._svg_to_png", return_value=_FAKE_PNG):
+        result = cmd.get_board_2d_view(
+            {"pcbPath": str(board_path), "format": "png", "responseMode": "file"}
+        )
 
     assert result["success"] is True
     assert result["format"] == "png"

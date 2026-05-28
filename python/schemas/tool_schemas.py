@@ -229,29 +229,32 @@ BOARD_TOOLS = [
         "name": "get_board_2d_view",
         "title": "Render Board Preview",
         "description": (
-            "Generates a 2D visual representation of the current board state as a PNG, JPG, or SVG image. "
+            "Renders a 2D image of the PCB via kicad-cli (no pcbnew/cffi dependency). "
+            "Supports PNG, JPG, and SVG output. "
             "Use responseMode to control how the image is returned. "
-            'responseMode="inline" (default) returns the image bytes as a base64-encoded imageData '
-            "string in the JSON response — convenient for small boards but may exceed message-size limits on "
-            "large designs. "
+            'responseMode="inline" (default) returns the image as base64-encoded imageData — '
+            "convenient for small boards but may exceed message-size limits on large designs. "
             'responseMode="file" writes the image next to the .kicad_pcb file as '
-            "<board>_2d_view.<ext> and returns a filePath; callers that can open local files should "
-            "prefer this mode for large boards."
+            "<board>_2d_view.<ext> and returns a filePath; prefer this mode for large boards."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
+                "pcbPath": {
+                    "type": "string",
+                    "description": "Absolute path to the .kicad_pcb file. Falls back to the currently loaded board if omitted.",
+                },
                 "width": {
                     "type": "number",
-                    "description": "Image width in pixels (default: 800)",
+                    "description": "Image width in pixels (default: 1600)",
                     "minimum": 100,
-                    "default": 800,
+                    "default": 1600,
                 },
                 "height": {
                     "type": "number",
-                    "description": "Image height in pixels (default: 600)",
+                    "description": "Image height in pixels (default: 1200)",
                     "minimum": 100,
-                    "default": 600,
+                    "default": 1200,
                 },
                 "format": {
                     "type": "string",
@@ -262,7 +265,7 @@ BOARD_TOOLS = [
                 "layers": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Optional list of layer names to include; all enabled layers if omitted",
+                    "description": "Layer names to include, e.g. [\"F.Cu\",\"B.Cu\",\"Edge.Cuts\"]. Omit for all layers.",
                 },
                 "responseMode": {
                     "type": "string",
@@ -270,7 +273,7 @@ BOARD_TOOLS = [
                     "default": "inline",
                     "description": (
                         "How to return the image. "
-                        '"inline" (default): base64-encoded bytes in the imageData response field. '
+                        '"inline" (default): base64-encoded bytes in imageData. '
                         '"file": write to <board>_2d_view.<ext> next to the PCB and return filePath.'
                     ),
                 },
