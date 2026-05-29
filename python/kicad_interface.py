@@ -1408,19 +1408,11 @@ class KiCADInterface:
             with open(sch_file, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            def find_matching_paren(s: str, start: int) -> int:
-                """Find the closing paren matching the opening paren at start."""
-                depth = 0
-                i = start
-                while i < len(s):
-                    if s[i] == "(":
-                        depth += 1
-                    elif s[i] == ")":
-                        depth -= 1
-                        if depth == 0:
-                            return i
-                    i += 1
-                return -1
+            # String-aware paren matcher (see _find_matching_paren): a naive
+            # counter over-runs on unescaped parens inside quoted strings (e.g.
+            # MCU pin names like "PA13(JTMS"), which would extend lib_symbols to
+            # EOF and make every placed-symbol lookup fail.
+            find_matching_paren = self._find_matching_paren
 
             # Skip lib_symbols section
             lib_sym_pos = content.find("(lib_symbols")
@@ -1511,16 +1503,33 @@ class KiCADInterface:
     def _find_matching_paren(s: str, start: int) -> int:
         """Return the index of the closing paren matching the opening paren at `start`.
 
-        Returns -1 if no match is found. Does not understand string literals — that's
-        fine for KiCAD .kicad_sch files because property values cannot contain a
-        bare `(` or `)` character (they would be backslash-escaped).
+        String-aware: parens inside double-quoted tokens are ignored. KiCAD does
+        NOT backslash-escape bare parens inside quoted strings — e.g. MCU pin
+        names like "PA13(JTMS" or descriptions like "Vin(fwd) 40V" appear raw in
+        .kicad_sch / .kicad_sym files. A naive depth counter treats such an
+        in-string "(" as real structure, so it never rebalances and runs to EOF.
+        When that happens to the (lib_symbols ...) block, every placed symbol —
+        which follows lib_symbols — looks like it lives *inside* it and gets
+        skipped, so reference lookups silently fail for the whole schematic.
+
+        Returns -1 if no match is found.
         """
         depth = 0
         i = start
+        in_string = False
         while i < len(s):
-            if s[i] == "(":
+            ch = s[i]
+            if in_string:
+                if ch == "\\":
+                    i += 2  # skip escaped char (e.g. \" or \\)
+                    continue
+                if ch == '"':
+                    in_string = False
+            elif ch == '"':
+                in_string = True
+            elif ch == "(":
                 depth += 1
-            elif s[i] == ")":
+            elif ch == ")":
                 depth -= 1
                 if depth == 0:
                     return i
@@ -2028,18 +2037,11 @@ class KiCADInterface:
             with open(sch_file, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            def find_matching_paren(s: str, start: int) -> int:
-                depth = 0
-                i = start
-                while i < len(s):
-                    if s[i] == "(":
-                        depth += 1
-                    elif s[i] == ")":
-                        depth -= 1
-                        if depth == 0:
-                            return i
-                    i += 1
-                return -1
+            # String-aware paren matcher (see _find_matching_paren): a naive
+            # counter over-runs on unescaped parens inside quoted strings (e.g.
+            # MCU pin names like "PA13(JTMS"), which would extend lib_symbols to
+            # EOF and make every placed-symbol lookup fail.
+            find_matching_paren = self._find_matching_paren
 
             # Skip lib_symbols section
             lib_sym_pos = content.find("(lib_symbols")
