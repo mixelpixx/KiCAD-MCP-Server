@@ -20,12 +20,16 @@ class LibraryManager:
             # Default library paths based on common KiCAD installations
             # This would need to be configured for the specific environment
             search_paths = [
-                "C:/Program Files/KiCad/*/share/kicad/symbols/*.kicad_sym",  # Windows path pattern
-                "/usr/share/kicad/symbols/*.kicad_sym",  # Linux path pattern
-                "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym",  # macOS path pattern
-                os.path.expanduser(
-                    "~/Documents/KiCad/*/symbols/*.kicad_sym"
-                ),  # User libraries pattern
+                # KiCAD 8/9 single-file libraries
+                "C:/Program Files/KiCad/*/share/kicad/symbols/*.kicad_sym",
+                "/usr/share/kicad/symbols/*.kicad_sym",
+                "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_sym",
+                os.path.expanduser("~/Documents/KiCad/*/symbols/*.kicad_sym"),
+                # KiCAD 10 per-symbol directory libraries
+                "C:/Program Files/KiCad/*/share/kicad/symbols/*.kicad_symdir/*.kicad_sym",
+                "/usr/share/kicad/symbols/*.kicad_symdir/*.kicad_sym",
+                "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols/*.kicad_symdir/*.kicad_sym",
+                os.path.expanduser("~/Documents/KiCad/*/symbols/*.kicad_symdir/*.kicad_sym"),
             ]
 
         libraries = []

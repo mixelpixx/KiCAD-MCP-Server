@@ -36,8 +36,10 @@ class DynamicSymbolLoader:
     def find_kicad_symbol_libraries(self) -> List[Path]:
         """Find all KiCad symbol library directories"""
         possible_paths = [
+            Path("C:/Program Files/KiCad/10.0/share/kicad/symbols"),
             Path("/usr/share/kicad/symbols"),
             Path("/usr/local/share/kicad/symbols"),
+            Path("C:/Program Files/KiCad/10.0/share/kicad/symbols"),
             Path("C:/Program Files/KiCad/9.0/share/kicad/symbols"),
             Path("C:/Program Files/KiCad/8.0/share/kicad/symbols"),
             Path("/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols"),
@@ -90,11 +92,16 @@ class DynamicSymbolLoader:
 
         # 3. Fall back to bundled / well-known KiCad symbol directories
         for lib_dir in self.find_kicad_symbol_libraries():
+            # Classic single-file library (KiCAD 8/9)
             lib_file = lib_dir / f"{library_name}.kicad_sym"
             if lib_file.exists():
                 return lib_file
+            # KiCAD 10 per-symbol directory library
+            lib_symdir = lib_dir / f"{library_name}.kicad_symdir"
+            if lib_symdir.exists() and lib_symdir.is_dir():
+                return lib_symdir
 
-        logger.warning(f"Library file not found: {library_name}.kicad_sym")
+        logger.warning(f"Library file not found: {library_name}.kicad_sym / {library_name}.kicad_symdir")
         return None
 
     def _global_sym_lib_table_paths(self) -> list:
@@ -339,12 +346,23 @@ class DynamicSymbolLoader:
         if not lib_path:
             return None
 
-        with open(lib_path, "r", encoding="utf-8") as f:
-            lib_content = f.read()
+        # KiCAD 10 directory library: each symbol is its own file
+        if lib_path.is_dir():
+            sym_file = lib_path / f"{symbol_name}.kicad_sym"
+            if not sym_file.exists():
+                logger.warning(
+                    f"Symbol '{symbol_name}' not found in directory library {lib_path}"
+                )
+                return None
+            with open(sym_file, "r", encoding="utf-8") as f:
+                lib_content = f.read()
+        else:
+            with open(lib_path, "r", encoding="utf-8") as f:
+                lib_content = f.read()
 
         block = self._extract_symbol_block(lib_content, symbol_name)
         if block is None:
-            logger.warning(f"Symbol '{symbol_name}' not found in {library_name}.kicad_sym")
+            logger.warning(f"Symbol '{symbol_name}' not found in {library_name}")
             return None
 
         # If the symbol uses (extends "ParentName"), inline the parent content
