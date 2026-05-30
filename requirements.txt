@@ -1,8 +1,11 @@
 # KiCAD MCP Server - Python Dependencies
 # Production dependencies only
 
-# KiCAD Python API (IPC - for future migration)
-# kicad-python>=0.5.0  # Uncomment when migrating to IPC API
+# KiCAD Python API (IPC / real-time UI sync)
+kicad-python>=0.5.0
+
+# S-expression parsing used by the MCP runtime
+sexpdata>=1.0.2
 
 # Schematic manipulation
 kicad-skip>=0.1.0

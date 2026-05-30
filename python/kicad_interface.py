@@ -1408,19 +1408,11 @@ class KiCADInterface:
             with open(sch_file, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            def find_matching_paren(s: str, start: int) -> int:
-                """Find the closing paren matching the opening paren at start."""
-                depth = 0
-                i = start
-                while i < len(s):
-                    if s[i] == "(":
-                        depth += 1
-                    elif s[i] == ")":
-                        depth -= 1
-                        if depth == 0:
-                            return i
-                    i += 1
-                return -1
+            # String-aware paren matcher (see _find_matching_paren): a naive
+            # counter over-runs on unescaped parens inside quoted strings (e.g.
+            # MCU pin names like "PA13(JTMS"), which would extend lib_symbols to
+            # EOF and make every placed-symbol lookup fail.
+            find_matching_paren = self._find_matching_paren
 
             # Skip lib_symbols section
             lib_sym_pos = content.find("(lib_symbols")
@@ -1511,16 +1503,33 @@ class KiCADInterface:
     def _find_matching_paren(s: str, start: int) -> int:
         """Return the index of the closing paren matching the opening paren at `start`.
 
-        Returns -1 if no match is found. Does not understand string literals — that's
-        fine for KiCAD .kicad_sch files because property values cannot contain a
-        bare `(` or `)` character (they would be backslash-escaped).
+        String-aware: parens inside double-quoted tokens are ignored. KiCAD does
+        NOT backslash-escape bare parens inside quoted strings — e.g. MCU pin
+        names like "PA13(JTMS" or descriptions like "Vin(fwd) 40V" appear raw in
+        .kicad_sch / .kicad_sym files. A naive depth counter treats such an
+        in-string "(" as real structure, so it never rebalances and runs to EOF.
+        When that happens to the (lib_symbols ...) block, every placed symbol —
+        which follows lib_symbols — looks like it lives *inside* it and gets
+        skipped, so reference lookups silently fail for the whole schematic.
+
+        Returns -1 if no match is found.
         """
         depth = 0
         i = start
+        in_string = False
         while i < len(s):
-            if s[i] == "(":
+            ch = s[i]
+            if in_string:
+                if ch == "\\":
+                    i += 2  # skip escaped char (e.g. \" or \\)
+                    continue
+                if ch == '"':
+                    in_string = False
+            elif ch == '"':
+                in_string = True
+            elif ch == "(":
                 depth += 1
-            elif s[i] == ")":
+            elif ch == ")":
                 depth -= 1
                 if depth == 0:
                     return i
@@ -2028,18 +2037,11 @@ class KiCADInterface:
             with open(sch_file, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            def find_matching_paren(s: str, start: int) -> int:
-                depth = 0
-                i = start
-                while i < len(s):
-                    if s[i] == "(":
-                        depth += 1
-                    elif s[i] == ")":
-                        depth -= 1
-                        if depth == 0:
-                            return i
-                    i += 1
-                return -1
+            # String-aware paren matcher (see _find_matching_paren): a naive
+            # counter over-runs on unescaped parens inside quoted strings (e.g.
+            # MCU pin names like "PA13(JTMS"), which would extend lib_symbols to
+            # EOF and make every placed-symbol lookup fail.
+            find_matching_paren = self._find_matching_paren
 
             # Skip lib_symbols section
             lib_sym_pos = content.find("(lib_symbols")
@@ -6312,12 +6314,18 @@ print("ok")
     # JLCPCB API handlers
 
     def _handle_download_jlcpcb_database(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Download JLCPCB parts database from JLCSearch API"""
+        """Download the JLCPCB parts catalog from a prebuilt source (issue #199).
+
+        Layered strategy (see commands.jlcpcb_downloader): CDFER single-file
+        SQLite (primary, no 7z) -> yaqwsx split-7z (fallback) -> official JLCPCB
+        API (optional, if credentials set). Replaces the broken JLCSearch
+        offset-pagination download.
+        """
+        from commands import jlcpcb_downloader
+
         try:
             force = params.get("force", False)
-
-            # Check if database exists
-            import os
+            prefer_source = params.get("source")  # optional: cdfer|yaqwsx|official
 
             stats = self.jlcpcb_parts.get_database_stats()
             if stats["total_parts"] > 0 and not force:
@@ -6327,36 +6335,38 @@ print("ok")
                     "stats": stats,
                 }
 
-            logger.info("Downloading JLCPCB parts database from JLCSearch...")
+            # The prebuilt paths recreate jlcpcb_parts.db on disk, so the open
+            # manager connection must be released first (Windows file locking),
+            # then reopened on the freshly written database.
+            self.jlcpcb_parts.close()
 
-            # Download parts from JLCSearch public API (no auth required)
-            parts = self.jlcsearch_client.download_all_components(
-                callback=lambda total, msg: logger.info(f"{msg}")
+            result = jlcpcb_downloader.download_database(
+                force=force,
+                prefer_source=prefer_source,
+                progress=lambda msg: logger.info(msg),
             )
 
-            # Import into database
-            logger.info(f"Importing {len(parts)} parts into database...")
-            self.jlcpcb_parts.import_jlcsearch_parts(
-                parts, progress_callback=lambda curr, total, msg: logger.info(msg)
-            )
+            # Reopen the manager on the new database regardless of outcome.
+            self.jlcpcb_parts = JLCPCBPartsManager()
 
-            # Get final stats
+            if not result.get("success"):
+                return result
+
+            # Refresh counts from the reopened manager (authoritative).
             stats = self.jlcpcb_parts.get_database_stats()
-
-            # Calculate database size
-            db_size_mb = os.path.getsize(self.jlcpcb_parts.db_path) / (1024 * 1024)
-
-            return {
-                "success": True,
-                "total_parts": stats["total_parts"],
-                "basic_parts": stats["basic_parts"],
-                "extended_parts": stats["extended_parts"],
-                "db_size_mb": round(db_size_mb, 2),
-                "db_path": stats["db_path"],
-            }
+            result["total_parts"] = stats["total_parts"]
+            result["basic_parts"] = stats["basic_parts"]
+            result["extended_parts"] = stats["extended_parts"]
+            result["db_path"] = stats["db_path"]
+            return result
 
         except Exception as e:
             logger.error(f"Error downloading JLCPCB database: {e}", exc_info=True)
+            # Best-effort: ensure the manager is usable after a failure.
+            try:
+                self.jlcpcb_parts = JLCPCBPartsManager()
+            except Exception:
+                pass
             return {
                 "success": False,
                 "message": f"Failed to download database: {str(e)}",
