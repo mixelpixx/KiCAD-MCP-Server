@@ -72,6 +72,29 @@ function getWindowsKiCadPythonCandidates(): string[] {
 }
 
 /**
+ * Derive the KiCAD bundled-Python site-packages path for a detected python.exe,
+ * so PYTHONPATH follows the *same* install we picked (any version, Program Files
+ * or per-user %LOCALAPPDATA%) instead of a hardcoded KiCad 9.0 path.
+ *
+ * KiCAD on Windows installs python at `<root>/<version>/bin/python.exe`, with
+ * pcbnew under `<...>/bin/Lib/site-packages` (older/alt layouts use
+ * `<version>/lib/python3/dist-packages`). Returns the first existing candidate,
+ * or undefined if pythonExe isn't a KiCAD bundled python.
+ */
+function deriveKiCadSitePackages(pythonExe: string): string | undefined {
+  if (process.platform !== "win32") return undefined;
+  const lower = pythonExe.toLowerCase();
+  if (!lower.endsWith("python.exe") || !lower.includes("kicad")) return undefined;
+  const binDir = dirname(pythonExe); // <root>/<version>/bin
+  const versionDir = dirname(binDir); // <root>/<version>
+  const candidates = [
+    join(binDir, "Lib", "site-packages"),
+    join(versionDir, "lib", "python3", "dist-packages"),
+  ];
+  return candidates.find((p) => existsSync(p));
+}
+
+/**
  * Find the Python executable to use.
  * Prioritizes project venvs, then explicit overrides, then KiCAD-bundled Python
  * before falling back to system Python.
@@ -475,12 +498,21 @@ export class KiCADMcpServer {
       if (!isValid) {
         throw new Error("Prerequisites validation failed. See logs above for details.");
       }
+      // PYTHONPATH precedence: explicit env override → site-packages derived
+      // from the detected KiCAD python (any version / install location) →
+      // legacy 9.0 fallback as a last resort.
+      const derivedSitePackages = deriveKiCadSitePackages(pythonExe);
+      if (derivedSitePackages && !process.env.PYTHONPATH) {
+        logger.info(`Using KiCAD site-packages: ${derivedSitePackages}`);
+      }
       this.pythonProcess = spawn(pythonExe, [this.kicadScriptPath], {
         stdio: ["pipe", "pipe", "pipe"],
         env: {
           ...process.env,
           PYTHONPATH:
-            process.env.PYTHONPATH || "C:/Program Files/KiCad/9.0/lib/python3/dist-packages",
+            process.env.PYTHONPATH ||
+            derivedSitePackages ||
+            "C:/Program Files/KiCad/9.0/lib/python3/dist-packages",
         },
       });
 
