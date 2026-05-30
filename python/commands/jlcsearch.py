@@ -137,59 +137,12 @@ class JLCSearchClient:
             logger.error(f"Failed to get part C{lcsc_number}: {e}")
             return None
 
-    def download_all_components(
-        self, callback: Optional[Callable[[int, str], None]] = None, batch_size: int = 100
-    ) -> List[Dict]:
-        """
-        Download all components from jlcsearch database
-
-        Note: tscircuit API has a hard-coded 100 result limit per request.
-        Full catalog download requires ~25,000 paginated requests (~40-60 minutes).
-
-        Args:
-            callback: Optional progress callback function(parts_count, status_msg)
-            batch_size: Number of parts per batch (max 100 due to API limit)
-
-        Returns:
-            List of all parts
-        """
-        all_parts = []
-        offset = 0
-
-        logger.info("Starting full jlcsearch parts database download...")
-
-        while True:
-            try:
-                batch = self.search_components("components", limit=batch_size, offset=offset)
-
-                # Stop if no results returned (end of catalog)
-                if not batch or len(batch) == 0:
-                    break
-
-                all_parts.extend(batch)
-                offset += len(batch)
-
-                if callback:
-                    callback(len(all_parts), f"Downloaded {len(all_parts)} parts...")
-                else:
-                    logger.info(f"Downloaded {len(all_parts)} parts so far...")
-
-                # Continue pagination - API returns exactly 100 results per page until exhausted
-                # Only stop when we get 0 results (handled above)
-
-                # Rate limiting - be nice to the API
-                time.sleep(0.1)
-
-            except Exception as e:
-                logger.error(f"Error downloading parts at offset {offset}: {e}")
-                if len(all_parts) > 0:
-                    logger.warning(f"Partial download available: {len(all_parts)} parts")
-                    return all_parts
-                else:
-                    raise
-
-        logger.info(f"Download complete: {len(all_parts)} parts retrieved")
-        return all_parts
+    # NOTE: bulk catalog download was removed (issue #199). The JLCSearch
+    # endpoint is a *search front-end* that ignores the ``offset`` parameter,
+    # so offset-paged "download everything" loops returned the same first 100
+    # parts forever. Full-catalog download now uses a prebuilt source via
+    # ``commands.jlcpcb_downloader.download_database()``. This client remains
+    # for interactive/parametric lookups only (search_components, etc.).
 
 
 def test_jlcsearch_connection() -> bool:
