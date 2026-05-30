@@ -61,7 +61,11 @@ function getWindowsKiCadPythonCandidates(): string[] {
         .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
 
       for (const versionDir of versionDirs) {
-        candidates.push(join(root, versionDir, "bin", "python.exe"));
+        const binDir = join(root, versionDir, "bin");
+        const python = join(binDir, "python.exe");
+        if (existsSync(python)) {
+          candidates.push(python);
+        }
       }
     } catch (error: any) {
       logger.warn(`Failed to inspect KiCAD install directory ${root}: ${error.message}`);
@@ -84,7 +88,25 @@ function findPythonExecutable(scriptPath: string): string {
   // Get the project root (parent of the python/ directory)
   const projectRoot = dirname(dirname(scriptPath));
 
-  // Check for virtual environment
+  // Allow override via KICAD_PYTHON environment variable (any platform)
+  if (process.env.KICAD_PYTHON) {
+    logger.info(`Using KICAD_PYTHON environment variable: ${process.env.KICAD_PYTHON}`);
+    return process.env.KICAD_PYTHON;
+  }
+
+  // Platform-specific KiCAD bundled Python detection
+  if (isWindows) {
+    // Windows: Always prefer KiCAD's bundled Python (pcbnew.pyd is compiled for it).
+    // Use python.exe (not pythonw.exe) — MCP needs stdin/stdout pipes.
+    for (const kicadPython of getWindowsKiCadPythonCandidates()) {
+      if (existsSync(kicadPython)) {
+        logger.info(`Found KiCAD bundled Python at: ${kicadPython}`);
+        return kicadPython;
+      }
+    }
+  }
+
+  // Check for virtual environment (after KiCAD Python on Windows)
   const venvPaths = [
     join(projectRoot, "venv", isWindows ? "Scripts" : "bin", isWindows ? "python.exe" : "python"),
     join(projectRoot, ".venv", isWindows ? "Scripts" : "bin", isWindows ? "python.exe" : "python"),
@@ -97,22 +119,7 @@ function findPythonExecutable(scriptPath: string): string {
     }
   }
 
-  // Allow override via KICAD_PYTHON environment variable (any platform)
-  if (process.env.KICAD_PYTHON) {
-    logger.info(`Using KICAD_PYTHON environment variable: ${process.env.KICAD_PYTHON}`);
-    return process.env.KICAD_PYTHON;
-  }
-
-  // Platform-specific KiCAD bundled Python detection
-  if (isWindows) {
-    // Windows: Always prefer KiCAD's bundled Python (pcbnew.pyd is compiled for it).
-    for (const kicadPython of getWindowsKiCadPythonCandidates()) {
-      if (existsSync(kicadPython)) {
-        logger.info(`Found KiCAD bundled Python at: ${kicadPython}`);
-        return kicadPython;
-      }
-    }
-  } else if (isMac) {
+  if (isMac) {
     // macOS: Try KiCAD's bundled Python (check multiple versions and locations)
     const kicadPythonVersions = ["3.9", "3.10", "3.11", "3.12", "3.13"];
 
@@ -480,7 +487,9 @@ export class KiCADMcpServer {
         env: {
           ...process.env,
           PYTHONPATH:
-            process.env.PYTHONPATH || "C:/Program Files/KiCad/9.0/lib/python3/dist-packages",
+            process.env.PYTHONPATH ||
+            "C:/Program Files/KiCad/10.0/lib/python3/dist-packages",
+          PYTHONIOENCODING: "utf-8",
         },
       });
 
@@ -538,14 +547,12 @@ export class KiCADMcpServer {
         });
       }
 
-      // ——— Phase 2: wait for Python READY, then send warm-up ———
+      // ——— Phase 2: wait for Python READY, connect MCP, warm up in background ———
       logger.info("Waiting for Python process to be ready...");
       await this.waitForReady(120_000);
-      logger.info("Python process is ready. Sending warm-up command...");
-      await this.runWarmup(120_000);
-      logger.info("Warm-up complete — pcbnew/wxApp initialised");
+      logger.info("Python process is ready.");
 
-      // ——— Phase 3: only now connect to MCP transport ———
+      // Connect MCP immediately so Cursor does not time out during warm-up (~60-90 s).
       logger.info("Connecting MCP server to STDIO transport...");
       try {
         await this.server.connect(this.stdioTransport);
@@ -555,11 +562,13 @@ export class KiCADMcpServer {
         throw error;
       }
 
-
-      // Write a ready message to stderr (for debugging)
       process.stderr.write("KiCAD MCP SERVER READY\n");
-
       logger.info("KiCAD MCP server started and ready");
+
+      // Warm-up runs in background (macOS wxApp init); do not block MCP handshake.
+      void this.runWarmup(120_000).then(() => {
+        logger.info("Warm-up complete — pcbnew/wxApp initialised");
+      });
     } catch (error) {
       logger.error(`Failed to start KiCAD MCP server: ${error}`);
       throw error;

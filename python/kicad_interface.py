@@ -133,6 +133,12 @@ AUTO_LAUNCH_KICAD = os.environ.get("KICAD_AUTO_LAUNCH", "false").lower() == "tru
 if AUTO_LAUNCH_KICAD:
     logger.info("KiCAD auto-launch enabled")
 
+# Interactive schematic reload (Windows): auto-dismiss KiCad reload dialogs and
+# send Revert after MCP edits. Opt-in — defaults off (PR review feedback).
+INTERACTIVE_SCHEMATIC = os.environ.get("KICAD_INTERACTIVE_SCHEMATIC", "false").lower() == "true"
+if INTERACTIVE_SCHEMATIC:
+    logger.info("KiCAD interactive schematic reload enabled (KICAD_INTERACTIVE_SCHEMATIC=true)")
+
 # Check which backend to use
 # KICAD_BACKEND can be: 'auto', 'ipc', or 'swig'
 KICAD_BACKEND = os.environ.get("KICAD_BACKEND", "auto").lower()
@@ -385,6 +391,10 @@ class KiCADInterface:
 
         # Schematic-related classes don't need board reference
         # as they operate directly on schematic files
+
+        # Opt-in: Windows dialog watcher for interactive schematic reload
+        if INTERACTIVE_SCHEMATIC:
+            self._start_kicad_dialog_watcher()
 
         # Command routing dictionary
         self.command_routes = {
@@ -1344,6 +1354,8 @@ class KiCADInterface:
             x = component.get("x", 0)
             y = component.get("y", 0)
             unit = component.get("unit", 1)
+            angle = float(component.get("angle", 0))
+            mirror_y = bool(component.get("mirrorY", False))
 
             # Derive project path from schematic path for project-local library resolution.
             # Walk up from the schematic file to find the directory that owns the project
@@ -1368,8 +1380,12 @@ class KiCADInterface:
                 x=x,
                 y=y,
                 unit=unit,
+                angle=angle,
+                mirror_y=mirror_y,
                 project_path=derived_project_path,
             )
+
+            self._reload_kicad_schematic()
 
             return {
                 "success": True,
@@ -1957,6 +1973,7 @@ class KiCADInterface:
                 changes["propertiesRemoved"] = properties_removed
 
             logger.info(f"Edited schematic component {reference}: {changes}")
+            self._reload_kicad_schematic()
             return {"success": True, "reference": reference, "updated": changes}
 
         except Exception as e:
@@ -2248,6 +2265,7 @@ class KiCADInterface:
                 message = "Wire added successfully"
                 if snapped_info:
                     message += "; " + "; ".join(snapped_info)
+                self._reload_kicad_schematic()
                 return {"success": True, "message": message}
             else:
                 return {"success": False, "message": "Failed to add wire"}
@@ -6119,6 +6137,8 @@ print("ok")
         """
         import time
 
+        import pcbnew
+
         start = time.monotonic()
         try:
             # pcbnew.BOARD() triggers wxApp creation on macOS.
@@ -6525,6 +6545,167 @@ print("ok")
                 "message": f"Failed to get datasheet URL: {str(e)}",
             }
 
+    def _start_kicad_dialog_watcher(self) -> None:
+        """Start a daemon thread that auto-dismisses KiCad reload dialogs."""
+        if os.name != "nt":
+            return
+        import threading
+
+        def _watcher_loop() -> None:
+            try:
+                import win32api
+                import win32con
+                import win32gui
+            except ImportError:
+                logger.warning("pywin32 not available – dialog watcher disabled")
+                return
+
+            YES_LABELS = {
+                "OK", "Yes", "&Yes", "&OK", "Ja", "&Ja",
+                "Reload", "&Reload", "Neu laden",
+            }
+            RELOAD_KEYWORDS = (
+                "Revert", "Discard", "Unsaved", "Reload", "modified",
+                "Laden", "geändert", "verworfen", "Warnung", "Warning",
+                "Information", "Confirmation",
+            )
+            KICAD_PARENTS = {"KiCad", "Schematic Editor", "Confirmation"}
+
+            import time
+
+            logger.info("KiCad dialog watcher started")
+            while True:
+                try:
+                    time.sleep(0.5)
+                    dismissed: list[str] = []
+
+                    def _scan(hwnd: int, _: object) -> None:
+                        if not win32gui.IsWindowVisible(hwnd):
+                            return
+                        title = win32gui.GetWindowText(hwnd)
+                        if not title:
+                            return
+
+                        is_kicad_dialog = (
+                            title in KICAD_PARENTS
+                            or any(kw in title for kw in RELOAD_KEYWORDS)
+                        )
+                        if not is_kicad_dialog:
+                            return
+
+                        def _click_yes(child: int, _: object) -> None:
+                            ct = win32gui.GetWindowText(child)
+                            if ct in YES_LABELS:
+                                win32api.PostMessage(child, win32con.BM_CLICK, 0, 0)
+                                dismissed.append(f"'{ct}' in '{title}'")
+
+                        try:
+                            win32gui.EnumChildWindows(hwnd, _click_yes, None)
+                        except Exception:
+                            pass
+
+                    win32gui.EnumWindows(_scan, None)
+
+                    for info in dismissed:
+                        logger.info(f"dialog watcher: clicked {info}")
+
+                except Exception as exc:
+                    logger.debug(f"dialog watcher iteration error: {exc}")
+
+        t = threading.Thread(target=_watcher_loop, daemon=True, name="kicad-dialog-watcher")
+        t.start()
+        logger.info("KiCad dialog watcher thread launched")
+
+    def _reload_kicad_schematic(self) -> None:
+        """Reload the KiCAD Schematic Editor after an external file change."""
+        if not INTERACTIVE_SCHEMATIC:
+            return
+        if os.name != "nt":
+            return
+        try:
+            import time
+            import win32api
+            import win32con
+            import win32gui
+
+            REVERT_CMD_ID = 20236
+            YES_LABELS = {
+                "OK", "Yes", "&Yes", "&OK", "Ja", "&Ja",
+                "Reload", "&Reload", "Neu laden",
+            }
+
+            def _click_yes_in(hwnd: int) -> bool:
+                clicked: list[bool] = [False]
+
+                def _visit(child: int, _: object) -> None:
+                    if not clicked[0]:
+                        txt = win32gui.GetWindowText(child)
+                        if txt in YES_LABELS:
+                            win32api.PostMessage(child, win32con.BM_CLICK, 0, 0)
+                            clicked[0] = True
+
+                try:
+                    win32gui.EnumChildWindows(hwnd, _visit, None)
+                except Exception:
+                    pass
+                return clicked[0]
+
+            def _find_and_dismiss() -> bool:
+                dismissed: list[bool] = [False]
+
+                def _check(hwnd: int, _: object) -> None:
+                    if dismissed[0]:
+                        return
+                    if not win32gui.IsWindowVisible(hwnd):
+                        return
+                    title = win32gui.GetWindowText(hwnd)
+                    is_kicad_dialog = (
+                        title in ("KiCad", "Schematic Editor", "Warning",
+                                  "Information", "Confirmation")
+                        or any(kw in title for kw in
+                               ("Schematic", "Revert", "Discard", "Unsaved",
+                                "modified", "reload", "Laden", "geändert",
+                                "verworfen", "Warnung", "Confirmation"))
+                    )
+                    if is_kicad_dialog and _click_yes_in(hwnd):
+                        logger.info(
+                            f"_reload_kicad_schematic: dismissed dialog '{title}' hwnd={hex(hwnd)}"
+                        )
+                        dismissed[0] = True
+
+                win32gui.EnumWindows(_check, None)
+                return dismissed[0]
+
+            time.sleep(0.25)
+            if _find_and_dismiss():
+                return
+
+            schematic_hwnd: Optional[int] = None
+
+            def _find_sch(hwnd: int, _: object) -> None:
+                nonlocal schematic_hwnd
+                if "Schematic Editor" in win32gui.GetWindowText(hwnd):
+                    schematic_hwnd = hwnd
+
+            win32gui.EnumWindows(_find_sch, None)
+
+            if schematic_hwnd is None:
+                logger.debug("_reload_kicad_schematic: Schematic Editor not found")
+                return
+
+            win32api.PostMessage(schematic_hwnd, win32con.WM_COMMAND, REVERT_CMD_ID, 0)
+            logger.info(
+                f"_reload_kicad_schematic: sent Revert cmd to hwnd={hex(schematic_hwnd)}"
+            )
+
+            for _ in range(6):
+                time.sleep(0.15)
+                if _find_and_dismiss():
+                    return
+
+        except Exception as exc:
+            logger.warning(f"_reload_kicad_schematic failed (non-critical): {exc}")
+
 
 def _write_response(response_fd: Any, response: Any) -> None:
     """Write a JSON response to the original stdout fd.
@@ -6550,9 +6731,10 @@ def main() -> None:
     sys.stdout = sys.stderr
 
     logger.info("Starting KiCAD interface...")
-    interface = KiCADInterface()
-    # Signal to the TypeScript server that the stdin loop is live.
+    # Signal ready before heavy init (~60-90 s on first load).  The TS host
+    # can queue _warmup on stdin while KiCADInterface() initialises.
     _write_response(_response_fd, {"type": "ready"})
+    interface = KiCADInterface()
 
     try:
         logger.info("Processing commands from stdin...")
