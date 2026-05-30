@@ -91,14 +91,19 @@ class LibraryManager:
             with open(table_path, "r") as f:
                 content = f.read()
 
-            # Simple regex-based parser for lib entries
-            # Pattern: (lib (name "NAME")(type TYPE)(uri "URI")...)
-            lib_pattern = r'\(lib\s+\(name\s+"?([^")\s]+)"?\)\s*\(type\s+"?([^")\s]+)"?\)\s*\(uri\s+"?([^")\s]+)"?'
+            # Simple regex-based parser for lib entries. Name, type, and URI
+            # may be quoted or bare; quoted URIs can contain spaces.
+            lib_pattern = (
+                r"\(lib\s+"
+                r'\(name\s+(?:"([^"]+)"|([^"\)\s]+))\)\s*'
+                r'\(type\s+(?:"([^"]+)"|([^"\)\s]+))\)\s*'
+                r'\(uri\s+(?:"([^"]+)"|([^"\)\s]+))'
+            )
 
             for match in re.finditer(lib_pattern, content, re.IGNORECASE):
-                nickname = match.group(1)
-                lib_type = match.group(2)
-                uri = match.group(3)
+                nickname = match.group(1) or match.group(2)
+                lib_type = match.group(3) or match.group(4)
+                uri = match.group(5) or match.group(6)
 
                 if lib_type.lower() == "table":
                     table_uri = uri
