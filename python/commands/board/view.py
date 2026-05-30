@@ -182,7 +182,23 @@ class BoardViewCommands:
                 }
 
             with tempfile.TemporaryDirectory() as tmpdir:
-                cmd = [kicad_cli, "pcb", "export", "svg", "--output", tmpdir, "--black-and-white"]
+                # KiCad 10 changed `pcb export svg`:
+                #  - `--output` is now a FILE path, not a directory (a directory
+                #    fails with "Failed to create file '<dir>'").
+                #  - `--mode-single` is required to merge layers into one SVG
+                #    (the default multi-file behavior is deprecated).
+                # These flags also work on KiCad 8/9, so we always pass them.
+                output_svg = os.path.join(tmpdir, "board.svg")
+                cmd = [
+                    kicad_cli,
+                    "pcb",
+                    "export",
+                    "svg",
+                    "--output",
+                    output_svg,
+                    "--mode-single",
+                    "--black-and-white",
+                ]
                 if layers:
                     cmd += ["--layers", ",".join(layers)]
                 cmd.append(pcb_path)
@@ -196,19 +212,20 @@ class BoardViewCommands:
                         "errorDetails": " ".join(cmd),
                     }
 
-                if result.returncode != 0:
+                # Do NOT gate on the exit code: KiCad 9+/10 returns exit code 2
+                # for a deprecation warning even when the SVG is written
+                # correctly. Use "was an SVG actually produced?" as the success
+                # signal instead — robust across versions and modes.
+                svg_files = (
+                    [output_svg]
+                    if os.path.exists(output_svg)
+                    else glob.glob(os.path.join(tmpdir, "*.svg"))
+                )
+                if not svg_files:
                     return {
                         "success": False,
                         "message": "kicad-cli SVG export failed",
                         "errorDetails": result.stderr.strip() or result.stdout.strip(),
-                    }
-
-                svg_files = glob.glob(os.path.join(tmpdir, "*.svg"))
-                if not svg_files:
-                    return {
-                        "success": False,
-                        "message": "kicad-cli produced no SVG output",
-                        "errorDetails": result.stdout.strip(),
                     }
 
                 svg_path = svg_files[0]
