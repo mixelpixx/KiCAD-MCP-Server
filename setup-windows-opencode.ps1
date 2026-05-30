@@ -47,8 +47,16 @@
 .PARAMETER ConfigPath
     Explicit OpenCode config path. Overrides Scope.
 
+.PARAMETER Backend
+    KiCAD backend preference for the MCP server: auto, ipc, or swig.
+    auto tries IPC first and falls back to SWIG. ipc requires KiCAD IPC to work.
+    swig uses the file-based pcbnew backend.
+
 .PARAMETER SkipInstall
     Skip npm install.
+
+.PARAMETER SkipPythonInstall
+    Skip installing KiCAD MCP Python dependencies into KiCAD's bundled Python.
 
 .PARAMETER SkipBuild
     Skip npm run build.
@@ -80,7 +88,10 @@ param(
     [string]$ProjectPath = '',
     [string]$McpServerPath = '',
     [string]$ConfigPath = '',
+    [ValidateSet('auto', 'ipc', 'swig')]
+    [string]$Backend = 'auto',
     [switch]$SkipInstall,
+    [switch]$SkipPythonInstall,
     [switch]$SkipBuild,
     [switch]$Force
 )
@@ -276,7 +287,8 @@ function Set-McpEntry {
         [System.Collections.IDictionary]$Config,
         [string]$ServerName,
         [string]$DistPath,
-        [string]$PythonPath
+        [string]$PythonPath,
+        [string]$Backend
     )
 
     if (-not $Config.Contains('mcp') -or $null -eq $Config['mcp']) {
@@ -288,6 +300,7 @@ function Set-McpEntry {
         LOG_LEVEL = 'info'
         KICAD_AUTO_LAUNCH = 'false'
         KICAD_MCP_DEV = '0'
+        KICAD_BACKEND = $Backend
     }
 
     if ($PythonPath) {
@@ -342,6 +355,10 @@ Write-Host @"
 $script:Results = [ordered]@{
     KiCadFound = $false
     PcbnewImport = $false
+    PythonDepsInstalled = $false
+    PythonDepsImport = $false
+    KipyImport = $false
+    IpcConnection = $false
     NodeFound = $false
     NpmInstall = $false
     ProjectBuilt = $false
@@ -360,6 +377,7 @@ Write-Info "MCP server path: $McpServerRoot"
 if ($Scope -eq 'project') {
     Write-Info "OpenCode project path: $TargetProjectRoot"
 }
+Write-Info "KiCAD backend preference: $Backend"
 
 Write-Step 'Step 1: Detecting KiCAD Installation'
 $kicad = Find-KiCadInstallation -ExplicitRoot $KiCadRoot
@@ -390,7 +408,95 @@ if ($kicad) {
     Write-Warning-Custom 'Skipping pcbnew test because KiCAD was not found.'
 }
 
-Write-Step 'Step 3: Checking Node.js'
+Write-Step 'Step 3: Installing and Testing KiCAD MCP Python Dependencies'
+if ($kicad) {
+    $requirementsPath = Join-Path $McpServerRoot 'requirements.txt'
+
+    try {
+        $userSiteResult = & $kicad.PythonExe -m site --user-site 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $userSite = ($userSiteResult | Select-Object -First 1).ToString().Trim()
+            if ($userSite) {
+                New-Item -ItemType Directory -Path $userSite -Force | Out-Null
+                Write-Info "KiCAD Python user site: $userSite"
+            }
+        } else {
+            Write-Warning-Custom "Could not determine KiCAD Python user site: $userSiteResult"
+        }
+    } catch {
+        Write-Warning-Custom "Could not prepare KiCAD Python user site: $($_.Exception.Message)"
+    }
+
+    if ($SkipPythonInstall) {
+        Write-Info 'Skipping Python dependency install because -SkipPythonInstall was specified.'
+        $script:Results.PythonDepsInstalled = $true
+    } elseif (Test-Path -LiteralPath $requirementsPath) {
+        Write-Info 'Installing Python packages into KiCAD bundled Python...'
+        & $kicad.PythonExe -m pip install --user -r $requirementsPath
+        if ($LASTEXITCODE -eq 0) {
+            $script:Results.PythonDepsInstalled = $true
+            Write-Success 'KiCAD MCP Python dependencies installed.'
+        } else {
+            Write-Error-Custom 'KiCAD MCP Python dependency installation failed.'
+            $script:Results.Errors += 'Python dependency install failed'
+        }
+    } else {
+        Write-Error-Custom "requirements.txt was not found: $requirementsPath"
+        $script:Results.Errors += 'requirements.txt not found'
+    }
+
+    $depsScript = "import sexpdata, skip, colorlog, pydantic; print('SUCCESS')"
+    $depsResult = & $kicad.PythonExe -c $depsScript 2>&1
+    if ($LASTEXITCODE -eq 0 -and $depsResult -match 'SUCCESS') {
+        $script:Results.PythonDepsImport = $true
+        Write-Success 'Core MCP Python dependencies import successfully.'
+    } else {
+        Write-Error-Custom 'Core MCP Python dependencies could not be imported.'
+        Write-Warning-Custom "Output: $depsResult"
+        $script:Results.Errors += 'Python dependency import failed'
+    }
+
+    if ($Backend -eq 'swig') {
+        Write-Info 'Skipping kicad-python / IPC validation because -Backend swig was selected.'
+    } else {
+        $kipyScript = "import kipy; print('SUCCESS')"
+        $kipyResult = & $kicad.PythonExe -c $kipyScript 2>&1
+        if ($LASTEXITCODE -eq 0 -and $kipyResult -match 'SUCCESS') {
+            $script:Results.KipyImport = $true
+            Write-Success 'kicad-python / kipy imports successfully.'
+        } else {
+            $message = 'kicad-python / kipy is not available; IPC real-time sync will fall back to SWIG.'
+            if ($Backend -eq 'ipc') {
+                Write-Error-Custom 'kicad-python / kipy is required when -Backend ipc is selected.'
+                $script:Results.Errors += 'kicad-python / kipy import failed'
+            } else {
+                Write-Warning-Custom $message
+            }
+            Write-Warning-Custom "Output: $kipyResult"
+        }
+    }
+
+    if ($Backend -ne 'swig' -and $script:Results.KipyImport) {
+        $ipcScript = "from kipy import KiCad; k = KiCad(); k.ping(); print('SUCCESS')"
+        $ipcResult = & $kicad.PythonExe -c $ipcScript 2>&1
+        if ($LASTEXITCODE -eq 0 -and $ipcResult -match 'SUCCESS') {
+            $script:Results.IpcConnection = $true
+            Write-Success 'KiCAD IPC connection test passed.'
+        } else {
+            if ($Backend -eq 'ipc') {
+                Write-Error-Custom 'KiCAD IPC connection is required when -Backend ipc is selected.'
+                $script:Results.Errors += 'KiCAD IPC connection failed'
+            } else {
+                Write-Warning-Custom 'KiCAD IPC connection test did not pass. This is expected if KiCAD is closed or IPC is disabled.'
+            }
+            Write-Warning-Custom "Output: $ipcResult"
+        }
+    }
+} else {
+    Write-Warning-Custom 'Skipping Python dependency setup because KiCAD was not found.'
+}
+
+Write-Step 'Step 4: Checking Node.js'
 try {
     $nodeVersion = node --version 2>$null
     if ($LASTEXITCODE -eq 0) {
@@ -408,7 +514,7 @@ try {
     $script:Results.Errors += 'Node.js not found'
 }
 
-Write-Step 'Step 4: Installing Node Dependencies'
+Write-Step 'Step 5: Installing Node Dependencies'
 if ($SkipInstall) {
     Write-Info 'Skipping npm install because -SkipInstall was specified.'
     $script:Results.NpmInstall = $true
@@ -430,7 +536,7 @@ if ($SkipInstall) {
     Write-Warning-Custom 'Skipping npm install because Node.js was not found.'
 }
 
-Write-Step 'Step 5: Building TypeScript Project'
+Write-Step 'Step 6: Building TypeScript Project'
 if ($SkipBuild) {
     Write-Info 'Skipping npm run build because -SkipBuild was specified.'
 } elseif ($script:Results.NodeFound) {
@@ -459,16 +565,19 @@ if (Test-Path -LiteralPath $DistPath) {
     $script:Results.Errors += 'dist/index.js not found'
 }
 
-Write-Step 'Step 6: Preparing OpenCode Configuration'
+Write-Step 'Step 7: Preparing OpenCode Configuration'
 $canGenerate = $script:Results.NodeFound -and $script:Results.DistFound
 if (-not $Force) {
-    $canGenerate = $canGenerate -and $script:Results.KiCadFound -and $script:Results.PcbnewImport
+    $canGenerate = $canGenerate -and $script:Results.KiCadFound -and $script:Results.PcbnewImport -and $script:Results.PythonDepsImport
+    if ($Backend -eq 'ipc') {
+        $canGenerate = $canGenerate -and $script:Results.KipyImport -and $script:Results.IpcConnection
+    }
 }
 
 if ($canGenerate) {
     $config = Read-OpenCodeConfig -Path $TargetConfigPath
     $pythonPath = if ($kicad) { $kicad.PythonLib } else { '' }
-    Set-McpEntry -Config $config -ServerName $Name -DistPath $DistPath -PythonPath $pythonPath
+    Set-McpEntry -Config $config -ServerName $Name -DistPath $DistPath -PythonPath $pythonPath -Backend $Backend
     $script:Results.ConfigReady = $true
 
     Write-Success "OpenCode MCP entry prepared for server name '$Name'."
@@ -490,8 +599,11 @@ if ($canGenerate) {
 }
 
 Write-Step 'Setup Summary'
+Write-Host "  Backend preference:  $Backend"
 Write-Host "  KiCAD Installation:  $(if ($script:Results.KiCadFound) { '[OK] Found' } else { '[ERROR] Not Found' })"
 Write-Host "  pcbnew Module:       $(if ($script:Results.PcbnewImport) { '[OK] Working' } else { '[ERROR] Failed' })"
+Write-Host "  Python deps:         $(if ($script:Results.PythonDepsImport) { '[OK] Working' } elseif ($script:Results.PythonDepsInstalled) { '[WARN] Installed, import failed' } else { '[ERROR] Failed' })"
+Write-Host "  kicad-python/IPC:    $(if ($script:Results.IpcConnection) { '[OK] Connected' } elseif ($script:Results.KipyImport) { '[WARN] Installed, not connected' } else { '[WARN] Not available' })"
 Write-Host "  Node.js:             $(if ($script:Results.NodeFound) { '[OK] Found' } else { '[ERROR] Not Found' })"
 Write-Host "  npm install:         $(if ($script:Results.NpmInstall) { '[OK] Complete/Skipped' } else { '[WARN] Not Complete' })"
 Write-Host "  TypeScript Build:    $(if ($script:Results.ProjectBuilt -or $SkipBuild) { '[OK] Complete/Skipped' } else { '[WARN] Not Complete' })"

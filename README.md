@@ -176,6 +176,10 @@ We are currently implementing and testing the KiCAD 9.0 IPC API for real-time UI
 
 Note: IPC features are under active development and testing. Enable IPC in KiCAD via Preferences > Plugins > Enable IPC API Server.
 
+For OpenCode on Windows, the backend can be configured as `auto`, `ipc`, or
+`swig` during setup. See [OpenCode (Windows)](#opencode-windows) for the
+configuration command and backend options.
+
 ### Tool Discovery & Router Pattern
 
 We've implemented an intelligent tool router to keep AI context efficient while maintaining full functionality:
@@ -454,6 +458,7 @@ Choose one:
 - [Claude Desktop](https://claude.ai/download) - Official Anthropic desktop app
 - [Claude Code](https://docs.claude.com/claude-code) - Official CLI tool
 - [Cline](https://github.com/cline/cline) - VSCode extension
+- [OpenCode](https://opencode.ai/) - Terminal-based AI coding agent with MCP support
 
 ### Supported Platforms
 
@@ -783,6 +788,24 @@ target project:
 - You need to verify KiCAD Python (`pcbnew`), Node.js, and `dist/index.js`
   before changing OpenCode configuration
 
+#### Backend selection
+
+The setup script supports three KiCAD backend preferences via `-Backend`:
+
+- `auto` - try IPC first and fall back to SWIG if IPC is unavailable (default)
+- `ipc` - require KiCAD IPC for real-time UI synchronization
+- `swig` - use the file-based `pcbnew` backend
+
+Examples:
+
+```powershell
+.\setup-windows-opencode.ps1 -Apply -Scope project -Backend auto
+.\setup-windows-opencode.ps1 -Apply -Scope project -Backend ipc
+.\setup-windows-opencode.ps1 -Apply -Scope project -Backend swig
+```
+
+For `-Backend ipc`, KiCAD must be running with the IPC API server enabled.
+
 #### Verify setup without changes
 
 Use this first when diagnosing installation or path problems. It detects KiCAD,
@@ -814,6 +837,7 @@ Example generated OpenCode shape:
         "LOG_LEVEL": "info",
         "KICAD_AUTO_LAUNCH": "false",
         "KICAD_MCP_DEV": "0",
+        "KICAD_BACKEND": "auto",
         "PYTHONPATH": "C:\\Program Files\\KiCad\\10.0\\bin\\Lib\\site-packages"
       },
       "enabled": true,
