@@ -2,7 +2,7 @@
  * Logger for KiCAD MCP server
  */
 
-import { existsSync, mkdirSync, appendFileSync } from "fs";
+import { existsSync, mkdirSync, appendFileSync, statSync, renameSync, rmSync } from "fs";
 import { join } from "path";
 import * as os from "os";
 
@@ -12,12 +12,49 @@ type LogLevel = "error" | "warn" | "info" | "debug";
 // Default log directory
 const DEFAULT_LOG_DIR = join(os.homedir(), ".kicad-mcp", "logs");
 
+/** Parse a non-negative integer env var, or fall back to a default. */
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
 /**
  * Logger class for KiCAD MCP server
  */
 class Logger {
   private logLevel: LogLevel = "info";
   private logDir: string = DEFAULT_LOG_DIR;
+  // Size cap for the per-day log files (issue #181). Same env knobs as the
+  // Python side; KICAD_MCP_LOG_MAX_BYTES=0 disables rotation.
+  private maxBytes: number = envInt("KICAD_MCP_LOG_MAX_BYTES", 10 * 1024 * 1024);
+  private backupCount: number = envInt("KICAD_MCP_LOG_BACKUP_COUNT", 3);
+
+  /**
+   * Rotate the day's log file when it exceeds maxBytes so it can't grow
+   * without bound. Best-effort — never throws (logging must not break).
+   */
+  private rotateIfNeeded(logFile: string): void {
+    if (this.maxBytes <= 0) return;
+    try {
+      if (!existsSync(logFile) || statSync(logFile).size < this.maxBytes) return;
+      if (this.backupCount <= 0) {
+        rmSync(logFile, { force: true });
+        return;
+      }
+      // Drop the oldest, shift .k -> .k+1, then current -> .1
+      const oldest = `${logFile}.${this.backupCount}`;
+      if (existsSync(oldest)) rmSync(oldest, { force: true });
+      for (let i = this.backupCount - 1; i >= 1; i--) {
+        const src = `${logFile}.${i}`;
+        if (existsSync(src)) renameSync(src, `${logFile}.${i + 1}`);
+      }
+      renameSync(logFile, `${logFile}.1`);
+    } catch {
+      // best-effort: if rotation fails, keep logging to the existing file
+    }
+  }
 
   /**
    * Set the log level
@@ -103,6 +140,7 @@ class Logger {
       }
 
       const logFile = join(this.logDir, `kicad-mcp-${new Date().toISOString().split("T")[0]}.log`);
+      this.rotateIfNeeded(logFile);
       appendFileSync(logFile, formattedMessage + "\n");
     } catch (error) {
       console.error(`Failed to write to log file: ${error}`);
