@@ -8,6 +8,7 @@ and providing search functionality for component selection.
 import logging
 import os
 import re
+import threading
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -54,22 +55,37 @@ class SymbolLibraryManager:
         self.project_path = project_path
         self.libraries: Dict[str, str] = {}  # nickname -> path mapping
         self.symbol_cache: Dict[str, List[SymbolInfo]] = {}  # library -> [SymbolInfo]
+        self._cache_lock = threading.Lock()
         self._load_libraries()
         self._warm_cache()
 
     def _warm_cache(self) -> None:
-        """Pre-parse all symbol libraries so the first search is fast.
+        """Pre-parse all symbol libraries in the background so the first search
+        is fast.
 
-        Without this, the first ``search_symbols`` call parses every
-        .kicad_sym file on demand, which can take 30-120 s across
-        200+ libraries.  By populating the cache here (during startup,
-        before the READY handshake) the cost is paid once.
+        Without warming, the first ``search_symbols`` call parses every
+        .kicad_sym file on demand, which can take tens of seconds across
+        200+ libraries. Warming pays that cost ahead of time.
+
+        Crucially this runs on a daemon thread so it does NOT block
+        ``__init__``. The interface is constructed before the process emits
+        its READY handshake to the TypeScript host; warming synchronously here
+        delayed (and on large libraries effectively prevented) that handshake,
+        so the MCP server never finished starting. ``list_symbols`` is
+        cache-locked, so on-demand parses race-free with this background warm.
         """
-        for nickname in list(self.libraries.keys()):
-            try:
-                self.list_symbols(nickname)
-            except Exception:
-                logger.debug("Skipping unparseable library: %s", nickname)
+
+        def _warm() -> None:
+            for nickname in list(self.libraries.keys()):
+                try:
+                    self.list_symbols(nickname)
+                except Exception:
+                    logger.debug("Skipping unparseable library: %s", nickname)
+            logger.info("Symbol cache warm-up complete (%d libraries)", len(self.libraries))
+
+        threading.Thread(
+            target=_warm, name="symbol-cache-warmup", daemon=True
+        ).start()
 
     def _load_libraries(self) -> None:
         """Load libraries from sym-lib-table files"""
@@ -287,13 +303,27 @@ class SymbolLibraryManager:
                 # Find the start position of this symbol
                 start_pos = match.start()
 
-                # Walk forward tracking parenthesis depth to find the true end of the block
+                # Walk forward tracking parenthesis depth to find the true end of
+                # the block. Parens inside quoted strings (e.g. a Description like
+                # "MCU (LQFP-64)") must be ignored, otherwise the depth counter
+                # never rebalances and the walk runs to EOF for every symbol —
+                # turning a multi-MB library into an O(n^2) scan (minutes per file)
+                # and falsely flagging well-formed symbols as malformed.
                 depth = 0
                 i = start_pos
                 end_pos = start_pos
+                in_string = False
                 while i < len(content):
                     ch = content[i]
-                    if ch == "(":
+                    if in_string:
+                        if ch == "\\":
+                            i += 2  # skip escaped char
+                            continue
+                        if ch == '"':
+                            in_string = False
+                    elif ch == '"':
+                        in_string = True
+                    elif ch == "(":
                         depth += 1
                     elif ch == ")":
                         depth -= 1
@@ -373,8 +403,9 @@ class SymbolLibraryManager:
             List of SymbolInfo objects
         """
         # Check cache first
-        if library_nickname in self.symbol_cache:
-            return self.symbol_cache[library_nickname]
+        cached = self.symbol_cache.get(library_nickname)
+        if cached is not None:
+            return cached
 
         library_path = self.libraries.get(library_nickname)
         if not library_path:
@@ -384,8 +415,10 @@ class SymbolLibraryManager:
         # Parse the library file
         symbols = self._parse_kicad_sym_file(library_path, library_nickname)
 
-        # Cache the results
-        self.symbol_cache[library_nickname] = symbols
+        # Cache the results. Guarded so an on-demand parse and the background
+        # warm-up thread can't corrupt the dict mid-update.
+        with self._cache_lock:
+            self.symbol_cache[library_nickname] = symbols
 
         return symbols
 
