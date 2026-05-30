@@ -1307,6 +1307,16 @@ See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix a
 **Developer Mode:**
 Set `KICAD_MCP_DEV=1` to capture MCP session logs for debugging. See CHANGELOG v2.2.3 for details.
 
+**Logging (`~/.kicad-mcp/logs/`):**
+Logs default to `INFO` and the file is size-capped so it can't grow without bound. Tune via the MCP server's environment:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `LOG_LEVEL` / `KICAD_MCP_LOG_LEVEL` | `info` | Log verbosity (`error`/`warn`/`info`/`debug`, or `off`). `KICAD_MCP_LOG_LEVEL` wins. |
+| `KICAD_MCP_LOG_MAX_BYTES` | `10485760` (10 MB) | Max size per log file before it rotates; `0` disables rotation. |
+| `KICAD_MCP_LOG_BACKUP_COUNT` | `3` | Number of rotated backups to keep. |
+| `KICAD_MCP_DEBUG_SKIP` | unset | Set to `1` to re-enable the verbose kicad-skip parser DEBUG logs (muted by default). |
+
 See [ROADMAP.md](docs/ROADMAP.md) for planned features.
 
 ## What Do You Want to See Next?

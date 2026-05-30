@@ -15,6 +15,7 @@ import shutil
 import sys
 import traceback
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -43,25 +44,92 @@ from schemas.tool_schemas import TOOL_SCHEMAS
 
 _annotation_loader = AnnotationLoader()
 
-# Configure logging
-# Try to set up a file handler in ~/.kicad-mcp/logs. If that directory isn't
-# writable (e.g. sandboxed test environments, restricted CI runners), fall
-# back to console-only logging so importing this module never crashes.
+
+def _parse_log_level() -> int:
+    """Return the configured Python log level from the MCP environment.
+
+    Honors KICAD_MCP_LOG_LEVEL (preferred) or LOG_LEVEL; defaults to INFO.
+    Accepts common aliases (WARN, FATAL) and an OFF/NONE/0 kill switch.
+    """
+    raw_level = os.environ.get("KICAD_MCP_LOG_LEVEL") or os.environ.get("LOG_LEVEL") or "INFO"
+    normalized = raw_level.strip().upper()
+    aliases = {
+        "WARN": "WARNING",
+        "FATAL": "CRITICAL",
+        "OFF": "OFF",
+        "NONE": "OFF",
+        "FALSE": "OFF",
+        "0": "OFF",
+    }
+    normalized = aliases.get(normalized, normalized)
+    if normalized == "OFF":
+        return logging.CRITICAL + 1
+    return {
+        "CRITICAL": logging.CRITICAL,
+        "ERROR": logging.ERROR,
+        "WARNING": logging.WARNING,
+        "INFO": logging.INFO,
+        "DEBUG": logging.DEBUG,
+    }.get(normalized, logging.INFO)
+
+
+def _parse_positive_int_env(name: str, default: int) -> int:
+    """Return a non-negative int from env var ``name``, or ``default``."""
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return value if value >= 0 else default
+
+
+def _env_flag_enabled(name: str) -> bool:
+    """Return True when env var ``name`` is a truthy flag (1/true/yes/on)."""
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+_LOG_LEVEL = _parse_log_level()
+
+# Configure logging.
+# The file handler rotates (default 10 MB x 3 backups) so the log can never
+# grow without bound (issue #181); the level honors the environment instead of
+# being hardcoded to DEBUG. If ~/.kicad-mcp/logs isn't writable (sandboxed test
+# envs, restricted CI runners) we fall back to console-only logging so importing
+# this module never crashes.
 try:
     log_dir = os.path.join(os.path.expanduser("~"), ".kicad-mcp", "logs")
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, "kicad_interface.log")
+    max_log_bytes = _parse_positive_int_env("KICAD_MCP_LOG_MAX_BYTES", 10 * 1024 * 1024)
+    backup_count = _parse_positive_int_env("KICAD_MCP_LOG_BACKUP_COUNT", 3)
+    if max_log_bytes:
+        log_handler: logging.Handler = RotatingFileHandler(
+            log_file,
+            maxBytes=max_log_bytes,
+            backupCount=backup_count,
+            encoding="utf-8",
+        )
+    else:
+        log_handler = logging.FileHandler(log_file, encoding="utf-8")
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=_LOG_LEVEL,
         format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[logging.FileHandler(log_file)],
+        handlers=[log_handler],
+        force=True,
     )
 except (OSError, PermissionError):
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=_LOG_LEVEL,
         format="%(asctime)s [%(levelname)s] %(message)s",
+        force=True,
     )
 logger = logging.getLogger("kicad_interface")
+
+# kicad-skip's S-expression parser emits per-node DEBUG logs that can fill disks
+# during hierarchy traversal (issue #181). Keep those quiet unless explicitly
+# enabled via KICAD_MCP_DEBUG_SKIP.
+_SKIP_LOG_LEVEL = logging.DEBUG if _env_flag_enabled("KICAD_MCP_DEBUG_SKIP") else logging.WARNING
+for _skip_logger_name in ("skip", "skip.sexp", "skip.sexp.parser", "skip.sexp.sourcefile"):
+    logging.getLogger(_skip_logger_name).setLevel(_SKIP_LOG_LEVEL)
 
 # Log Python environment details
 logger.info(f"Python version: {sys.version}")
