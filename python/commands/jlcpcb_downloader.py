@@ -314,18 +314,6 @@ def convert_source_sqlite(
 # ---------------------------------------------------------------------------
 
 
-def _head_last_modified(url: str) -> Optional[str]:
-    try:
-        import requests
-
-        resp = requests.head(url, allow_redirects=True, timeout=30)
-        if resp.ok:
-            return resp.headers.get("Last-Modified")
-    except Exception as exc:  # network/dns/etc.
-        logger.debug(f"HEAD {url} failed: {exc}")
-    return None
-
-
 def download_cdfer(
     cache_dir: Path, progress: ProgressFn = None, max_retries: int = 5
 ) -> Tuple[Path, Optional[str]]:
@@ -340,7 +328,27 @@ def download_cdfer(
 
     cache_dir.mkdir(parents=True, exist_ok=True)
     dest = cache_dir / "cdfer.sqlite3"
-    last_modified = _head_last_modified(CDFER_SQLITE_URL)
+
+    # HEAD once for the freshness date AND the total size, so we can detect a
+    # cache file that is already complete (e.g. a prior run downloaded it but
+    # died before conversion/cleanup) and skip re-downloading. Without this,
+    # resuming a complete file sends Range: bytes=<size>- which the server
+    # answers with HTTP 416, and the retry loop would spin on it until failure.
+    last_modified: Optional[str] = None
+    total_size: Optional[int] = None
+    try:
+        head = requests.head(CDFER_SQLITE_URL, allow_redirects=True, timeout=30)
+        if head.ok:
+            last_modified = head.headers.get("Last-Modified")
+            cl = head.headers.get("Content-Length")
+            total_size = int(cl) if cl and cl.isdigit() else None
+    except requests.RequestException as exc:
+        logger.debug(f"HEAD {CDFER_SQLITE_URL} failed: {exc}")
+
+    if total_size and dest.exists() and dest.stat().st_size == total_size:
+        _progress(progress, "CDFER SQLite already fully downloaded; skipping download.")
+        return dest, last_modified
+
     _progress(
         progress,
         "Downloading CDFER prebuilt SQLite (~1.5 GB)"
@@ -359,6 +367,16 @@ def download_cdfer(
             with requests.get(
                 CDFER_SQLITE_URL, stream=True, timeout=(30, 120), headers=headers
             ) as resp:
+                # HTTP 416: our partial is at/past the resource end. If it matches
+                # the known total it's genuinely complete — done. Otherwise the
+                # cached partial is stale/corrupt, so drop it and restart fresh.
+                if resume_from and resp.status_code == 416:
+                    if total_size and dest.exists() and dest.stat().st_size == total_size:
+                        _progress(progress, "Existing file already complete; download done.")
+                        break
+                    _progress(progress, "Cached partial invalid (range rejected); restarting.")
+                    dest.unlink(missing_ok=True)
+                    continue
                 # If we asked to resume but the server ignored Range (200, not
                 # 206), start the file over to avoid a corrupt append.
                 if resume_from and resp.status_code == 200:

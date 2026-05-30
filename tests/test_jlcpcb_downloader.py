@@ -266,3 +266,39 @@ def test_result_flags_stale_catalog_and_leaves_fresh_alone(tmp_path, monkeypatch
     assert fresh.get("stale") is not True
     assert "warning" not in fresh
     assert fresh["catalog_age_days"] <= 1
+
+
+def test_download_cdfer_skips_when_file_already_complete(tmp_path, monkeypatch):
+    """A complete cache file must short-circuit, not re-download (no HTTP 416 loop).
+
+    Regression for the force/resume bug: resuming a complete file sends
+    Range: bytes=<size>- which the server answers with 416; the old code retried
+    that until failure. With a HEAD size check we return immediately and never
+    call requests.get.
+    """
+    import requests
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    dest = cache_dir / "cdfer.sqlite3"
+    payload = b"x" * 4096
+    dest.write_bytes(payload)
+
+    class _Head:
+        ok = True
+        headers = {
+            "Content-Length": str(len(payload)),
+            "Last-Modified": "Wed, 01 Apr 2026 00:00:00 GMT",
+        }
+
+    monkeypatch.setattr(requests, "head", lambda *a, **k: _Head())
+
+    def _no_get(*a, **k):
+        raise AssertionError("requests.get must not run when the file is already complete")
+
+    monkeypatch.setattr(requests, "get", _no_get)
+
+    path, last_mod = jlcpcb_downloader.download_cdfer(cache_dir)
+    assert path == dest
+    assert path.stat().st_size == len(payload)  # untouched
+    assert last_mod.startswith("Wed, 01 Apr 2026")
