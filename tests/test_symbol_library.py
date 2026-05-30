@@ -7,6 +7,7 @@ Covers:
 """
 
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,9 @@ def _manager_for_fixture() -> SymbolLibraryManager:
     manager.project_path = None
     manager.libraries = {"Simulation_SPICE": str(FIXTURE)}
     manager.symbol_cache = {}
+    # list_symbols() guards cache writes with this lock (added alongside the
+    # background warm-cache). The fixture bypasses __init__, so set it here.
+    manager._cache_lock = threading.Lock()
     return manager
 
 
