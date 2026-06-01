@@ -607,7 +607,11 @@ class SymbolLibraryCommands:
         """
         if project_path is None:
             return
-        if self.library_manager.project_path == project_path:
+        # Patch (SER2RJ45): keep cache when project_path matches AND libraries were
+        # actually loaded. Original early-return skipped rebuild even when the cache
+        # was empty (e.g. first call after create_project, before sym-lib-table existed).
+        if (self.library_manager.project_path == project_path
+                and len(self.library_manager.libraries) > 0):
             return
         logger.info(f"Rebuilding SymbolLibraryManager for project: {project_path}")
         self.library_manager = SymbolLibraryManager(project_path=project_path)
