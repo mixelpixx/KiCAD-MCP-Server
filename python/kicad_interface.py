@@ -15,6 +15,7 @@ import shutil
 import sys
 import traceback
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -43,25 +44,92 @@ from schemas.tool_schemas import TOOL_SCHEMAS
 
 _annotation_loader = AnnotationLoader()
 
-# Configure logging
-# Try to set up a file handler in ~/.kicad-mcp/logs. If that directory isn't
-# writable (e.g. sandboxed test environments, restricted CI runners), fall
-# back to console-only logging so importing this module never crashes.
+
+def _parse_log_level() -> int:
+    """Return the configured Python log level from the MCP environment.
+
+    Honors KICAD_MCP_LOG_LEVEL (preferred) or LOG_LEVEL; defaults to INFO.
+    Accepts common aliases (WARN, FATAL) and an OFF/NONE/0 kill switch.
+    """
+    raw_level = os.environ.get("KICAD_MCP_LOG_LEVEL") or os.environ.get("LOG_LEVEL") or "INFO"
+    normalized = raw_level.strip().upper()
+    aliases = {
+        "WARN": "WARNING",
+        "FATAL": "CRITICAL",
+        "OFF": "OFF",
+        "NONE": "OFF",
+        "FALSE": "OFF",
+        "0": "OFF",
+    }
+    normalized = aliases.get(normalized, normalized)
+    if normalized == "OFF":
+        return logging.CRITICAL + 1
+    return {
+        "CRITICAL": logging.CRITICAL,
+        "ERROR": logging.ERROR,
+        "WARNING": logging.WARNING,
+        "INFO": logging.INFO,
+        "DEBUG": logging.DEBUG,
+    }.get(normalized, logging.INFO)
+
+
+def _parse_positive_int_env(name: str, default: int) -> int:
+    """Return a non-negative int from env var ``name``, or ``default``."""
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+    return value if value >= 0 else default
+
+
+def _env_flag_enabled(name: str) -> bool:
+    """Return True when env var ``name`` is a truthy flag (1/true/yes/on)."""
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+_LOG_LEVEL = _parse_log_level()
+
+# Configure logging.
+# The file handler rotates (default 10 MB x 3 backups) so the log can never
+# grow without bound (issue #181); the level honors the environment instead of
+# being hardcoded to DEBUG. If ~/.kicad-mcp/logs isn't writable (sandboxed test
+# envs, restricted CI runners) we fall back to console-only logging so importing
+# this module never crashes.
 try:
     log_dir = os.path.join(os.path.expanduser("~"), ".kicad-mcp", "logs")
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, "kicad_interface.log")
+    max_log_bytes = _parse_positive_int_env("KICAD_MCP_LOG_MAX_BYTES", 10 * 1024 * 1024)
+    backup_count = _parse_positive_int_env("KICAD_MCP_LOG_BACKUP_COUNT", 3)
+    if max_log_bytes:
+        log_handler: logging.Handler = RotatingFileHandler(
+            log_file,
+            maxBytes=max_log_bytes,
+            backupCount=backup_count,
+            encoding="utf-8",
+        )
+    else:
+        log_handler = logging.FileHandler(log_file, encoding="utf-8")
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=_LOG_LEVEL,
         format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[logging.FileHandler(log_file)],
+        handlers=[log_handler],
+        force=True,
     )
 except (OSError, PermissionError):
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=_LOG_LEVEL,
         format="%(asctime)s [%(levelname)s] %(message)s",
+        force=True,
     )
 logger = logging.getLogger("kicad_interface")
+
+# kicad-skip's S-expression parser emits per-node DEBUG logs that can fill disks
+# during hierarchy traversal (issue #181). Keep those quiet unless explicitly
+# enabled via KICAD_MCP_DEBUG_SKIP.
+_SKIP_LOG_LEVEL = logging.DEBUG if _env_flag_enabled("KICAD_MCP_DEBUG_SKIP") else logging.WARNING
+for _skip_logger_name in ("skip", "skip.sexp", "skip.sexp.parser", "skip.sexp.sourcefile"):
+    logging.getLogger(_skip_logger_name).setLevel(_SKIP_LOG_LEVEL)
 
 # Log Python environment details
 logger.info(f"Python version: {sys.version}")
@@ -1548,7 +1616,10 @@ class KiCADInterface:
         Args:
             block: The full text of the (symbol ...) block.
             name: Property name (e.g. "MPN", "Manufacturer").
-            spec: Dict that may contain keys: value, x, y, angle, hide, fontSize.
+            spec: Dict that may contain keys: value, x, y, angle, hide, fontSize,
+                justify.  ``justify`` is a space-separated string of KiCad
+                alignment keywords (e.g. "left", "right top"). "center" removes
+                the directive (KiCad default).
             default_position: (x, y) of the parent symbol — used as the default
                 location for newly-created properties so the field is anchored
                 near the component, not at (0, 0).
@@ -1563,6 +1634,7 @@ class KiCADInterface:
         new_y = spec.get("y")
         new_angle = spec.get("angle")
         new_hide = spec.get("hide")
+        new_justify = spec.get("justify")
         font_size = spec.get("fontSize", 1.27)
 
         existing_match = re.search(
@@ -1603,6 +1675,9 @@ class KiCADInterface:
             if new_hide is not None:
                 block = self._set_hide_on_property(block, name, bool(new_hide))
 
+            if new_justify is not None:
+                block = self._set_justify_on_property(block, name, str(new_justify))
+
             return block, "updated"
 
         # Property does not exist — append a new one after the last existing property
@@ -1621,9 +1696,16 @@ class KiCADInterface:
         escaped = self._escape_sexpr_string(str(new_value))
         escaped_name = self._escape_sexpr_string(str(name))
 
+        # Build optional (justify ...) token for the effects block.
+        justify_str = ""
+        if new_justify is not None:
+            tokens = str(new_justify).strip().split()
+            if not all(t == "center" for t in tokens):
+                justify_str = f" (justify {str(new_justify).strip()})"
+
         new_prop = (
             f'    (property "{escaped_name}" "{escaped}" (at {cx} {cy} {ca})\n'
-            f"      (effects (font (size {font_size} {font_size})) {hide_str})\n"
+            f"      (effects (font (size {font_size} {font_size})){justify_str} {hide_str})\n"
             f"    )"
         )
 
@@ -1680,6 +1762,53 @@ class KiCADInterface:
         eff_inner = re.sub(r"\s*\(hide\s+(yes|no)\)", "", eff_inner)
         eff_inner = re.sub(r"\s+hide\b(?!\s+(yes|no))", "", eff_inner)
         eff_inner = eff_inner.rstrip() + f' (hide {"yes" if hide else "no"})'
+
+        new_effects = "(" + eff_inner + ")"
+        return block[:eff_start] + new_effects + block[eff_end + 1 :]
+
+    def _set_justify_on_property(self, block: str, name: str, justify: str) -> str:
+        """Set or clear the (justify ...) directive on a named property's effects clause.
+
+        ``justify`` is a space-separated string of KiCad alignment keywords:
+            horizontal: "left" | "right" | "center"
+            vertical:   "top"  | "bottom" | "center"
+        Any combination of one or two tokens is accepted, e.g. "left", "right top".
+        Passing "center" (the KiCad default) removes the (justify ...) directive
+        entirely, which is how KiCad represents centered alignment.
+
+        Handles effects clauses that already contain a (justify ...) token, and
+        those that do not.
+        """
+        import re
+
+        prop_match = re.search(
+            r'\(property\s+"' + re.escape(name) + r'"',
+            block,
+        )
+        if not prop_match:
+            return block
+        prop_start = prop_match.start()
+        prop_end = self._find_matching_paren(block, prop_start)
+        if prop_end < 0:
+            return block
+
+        prop_segment = block[prop_start : prop_end + 1]
+        eff_match = re.search(r"\(effects\b", prop_segment)
+        if not eff_match:
+            return block
+        eff_start = prop_start + eff_match.start()
+        eff_end = self._find_matching_paren(block, eff_start)
+        if eff_end < 0:
+            return block
+
+        eff_inner = block[eff_start + 1 : eff_end]  # 'effects (font ...) ...'
+        # Remove any pre-existing (justify ...) token
+        eff_inner = re.sub(r"\s*\(justify\b[^)]*\)", "", eff_inner)
+        # "center" is the KiCad default — omitting the directive means centered
+        tokens = justify.strip().split()
+        is_center_only = all(t == "center" for t in tokens)
+        if not is_center_only:
+            eff_inner = eff_inner.rstrip() + f" (justify {justify.strip()})"
 
         new_effects = "(" + eff_inner + ")"
         return block[:eff_start] + new_effects + block[eff_end + 1 :]
@@ -1894,6 +2023,11 @@ class KiCADInterface:
                         rf"\1(at {x} {y} {angle})",
                         block_text,
                     )
+                    justify = pos.get("justify")
+                    if justify is not None:
+                        block_text = self._set_justify_on_property(
+                            block_text, field_name, str(justify)
+                        )
 
             properties_added: Dict[str, Any] = {}
             properties_updated: Dict[str, Any] = {}
@@ -1982,7 +2116,7 @@ class KiCADInterface:
             return {"success": False, "message": "value is required"}
 
         spec: Dict[str, Any] = {"value": params["value"]}
-        for key in ("x", "y", "angle", "hide", "fontSize"):
+        for key in ("x", "y", "angle", "hide", "fontSize", "justify"):
             if params.get(key) is not None:
                 spec[key] = params[key]
 
@@ -6004,7 +6138,7 @@ print("ok")
             # Create circle on Edge.Cuts layer for the hole
             circle = BoardCircle()
             circle.center = Vector2.from_xy(from_mm(x), from_mm(y))
-            circle.radius = from_mm(diameter / 2)
+            circle.radius = from_mm(diameter / 2)  # type: ignore[assignment,method-assign]
             circle.layer = BoardLayer.BL_Edge_Cuts
             circle.attributes.stroke.width = from_mm(0.1)
 
