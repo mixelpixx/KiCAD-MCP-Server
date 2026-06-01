@@ -538,14 +538,13 @@ export class KiCADMcpServer {
         });
       }
 
-      // ——— Phase 2: wait for Python READY, then send warm-up ———
+      // ——— Phase 2: wait for Python READY ———
       logger.info("Waiting for Python process to be ready...");
       await this.waitForReady(120_000);
-      logger.info("Python process is ready. Sending warm-up command...");
-      await this.runWarmup(120_000);
-      logger.info("Warm-up complete — pcbnew/wxApp initialised");
-
-      // ——— Phase 3: only now connect to MCP transport ———
+      logger.info("Python process is ready.");
+      // ——— Phase 3: connect MCP transport immediately ———
+      // The transport must be live before any client timeout fires,
+      // regardless of how long warm-up takes.
       logger.info("Connecting MCP server to STDIO transport...");
       try {
         await this.server.connect(this.stdioTransport);
@@ -554,6 +553,14 @@ export class KiCADMcpServer {
         logger.error(`Failed to connect to STDIO transport: ${error}`);
         throw error;
       }
+      // ——— Phase 4: background warm-up (does not block MCP) ———
+      // Warm-up can take 55-125 s (wxApp + symbol library parse), but
+      // the MCP transport is already live so the client timeout does not
+      // apply.  Tools invoked during warm-up will work; the first
+      // search_symbols may be slower if warm-up hasn't completed yet.
+      logger.info("Sending warm-up command (background)...");
+      await this.runWarmup(120_000);
+      logger.info("Warm-up complete — pcbnew/wxApp initialised");
 
 
       // Write a ready message to stderr (for debugging)
