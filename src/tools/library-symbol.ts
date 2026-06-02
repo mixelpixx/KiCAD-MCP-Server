@@ -207,4 +207,108 @@ Returns symbol references that can be used directly in schematics.`,
       };
     },
   );
+
+  // List pins for a symbol from the library (no schematic needed)
+  server.tool(
+    "list_symbol_pins",
+    "Return pin names, numbers, and types for a symbol directly from the library — no schematic required. Use this before add_schematic_component to discover pins for connect_to_net calls. Each pin has 'number' (e.g. '1', 'A5') and 'name' (e.g. 'FB', 'GND') — connect_to_net accepts either. Pass schematicPath to resolve project-local symbols. Returns close-match suggestions if the symbol name is slightly wrong.",
+    {
+      symbol: z
+        .string()
+        .describe("Symbol in 'Library:SymbolName' format (e.g., Device:R, Connector:Conn_01x04)"),
+      schematicPath: z
+        .string()
+        .optional()
+        .describe("Path to .kicad_sch — enables project-local sym-lib-table lookup"),
+    },
+    async (args: { symbol: string; schematicPath?: string }) => {
+      const result = await callKicadScript("list_symbol_pins", args);
+      if (result.success) {
+        if (result.pins.length === 0) {
+          return {
+            content: [{ type: "text", text: `Symbol ${result.symbol} has no pins.` }],
+          };
+        }
+        const lines = result.pins.map(
+          (p: any) => `  Pin ${p.number} (${p.name}) — type: ${p.type}`,
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: `${result.symbol} — ${result.pin_count} pin(s):\n${lines.join("\n")}`,
+            },
+          ],
+        };
+      }
+      const hint = result.suggestions?.length
+        ? `\nDid you mean: ${result.suggestions.join(", ")}?`
+        : "";
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Failed to list pins: ${result.message || "Unknown error"}${hint}`,
+          },
+        ],
+      };
+    },
+  );
+
+  // List pins for multiple symbols in one call
+  server.tool(
+    "batch_list_symbol_pins",
+    "Return pin names, numbers, types, and symbol-local coordinates for multiple symbols in a single call. Use instead of calling list_symbol_pins repeatedly when placing a subcircuit — saves 5–10 round-trips. Each result includes pins (with x/y/angle in symbol-local coords, Y-up per KiCAD lib convention) and body_bbox (bounding box of pin envelope ±1.27mm, symbol-local coords). IMPORTANT: coordinates are symbol-local (Y-up, pre-rotation); after placement use get_schematic_pin_locations for post-rotation schematic coordinates. Set compact=true for simple 2-pin passives (Device:R/C/L) to get just pin_count, body_bbox, and is_symmetric.",
+    {
+      symbols: z
+        .array(z.string())
+        .describe(
+          "Array of symbols in 'Library:SymbolName' format (e.g., ['Device:R', 'Device:C'])",
+        ),
+      schematicPath: z
+        .string()
+        .optional()
+        .describe("Path to .kicad_sch — enables project-local sym-lib-table lookup"),
+      compact: z
+        .boolean()
+        .optional()
+        .describe("If true, omit per-pin detail for standard 2-pin symmetric passives."),
+    },
+    async (args: { symbols: string[]; schematicPath?: string; compact?: boolean }) => {
+      const result = await callKicadScript("batch_list_symbol_pins", args);
+      if (result.success !== false || (result.symbols && Object.keys(result.symbols).length > 0)) {
+        const lines: string[] = [];
+        for (const [sym, data] of Object.entries(result.symbols || {})) {
+          const d = data as any;
+          const bb = d.body_bbox;
+          const bboxStr = bb ? ` | body ${bb.width.toFixed(2)}×${bb.height.toFixed(2)}mm` : "";
+          if (d.is_symmetric && d.compact) {
+            lines.push(`${sym} — ${d.pin_count} pin(s), symmetric${bboxStr}`);
+          } else {
+            const pinLines = (d.pins || []).map((p: any) => {
+              const coords = p.x !== undefined ? ` at (${p.x},${p.y}) angle=${p.angle}` : "";
+              return `    Pin ${p.number} (${p.name}) — type: ${p.type}${coords}`;
+            });
+            lines.push(`${sym} — ${d.pin_count} pin(s)${bboxStr}:`);
+            lines.push(...pinLines);
+          }
+        }
+        if (result.errors && Object.keys(result.errors).length > 0) {
+          lines.push("\nErrors:");
+          for (const [sym, err] of Object.entries(result.errors as Record<string, any>)) {
+            const hint = err.suggestions?.length
+              ? ` (did you mean: ${err.suggestions.join(", ")}?)`
+              : "";
+            lines.push(`  ${sym}: ${err.message || err}${hint}`);
+          }
+        }
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      }
+      return {
+        content: [
+          { type: "text", text: `Failed to list pins: ${result.message || "Unknown error"}` },
+        ],
+      };
+    },
+  );
 }

@@ -119,6 +119,11 @@ export const toolCategories: ToolCategory[] = [
     tools: ["list_libraries", "search_footprints", "list_library_footprints", "get_footprint_info"],
   },
   {
+    name: "symbol_pins",
+    description: "Read a symbol's pins straight from the library (no schematic needed)",
+    tools: ["list_symbol_pins", "batch_list_symbol_pins"],
+  },
+  {
     name: "routing",
     description: "Advanced routing operations: vias, copper pours",
     tools: ["add_via", "add_copper_pour"],
