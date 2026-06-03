@@ -325,6 +325,7 @@ try:
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
     from commands.schematic import SchematicManager
+    from commands.schematic_hierarchy import SchematicHierarchyCommands
     from commands.symbol_creator import SymbolCreator
     from commands.symbol_pins import SymbolPinCommands
 
@@ -447,6 +448,8 @@ class KiCADInterface:
 
         # Symbol pin discovery commands (read-only pin lookup from symbol libraries)
         self.symbol_pin_commands = SymbolPinCommands()
+        # Schematic hierarchy commands (insert sheets, scaffold sub-sheets)
+        self.hierarchy_commands = SchematicHierarchyCommands(self)
 
         # Initialize JLCPCB API integration
         self.jlcpcb_client = JLCPCBClient()  # Official API (requires auth)
@@ -534,6 +537,9 @@ class KiCADInterface:
             # Symbol pin discovery commands (read pins straight from symbol libraries)
             "list_symbol_pins": self.symbol_pin_commands.list_symbol_pins,
             "batch_list_symbol_pins": self.symbol_pin_commands.batch_list_symbol_pins,
+            # Schematic hierarchy commands (sheet insertion + subsheet scaffolding)
+            "add_hierarchical_sheet": self.hierarchy_commands.add_hierarchical_sheet,
+            "create_hierarchical_subsheet": self.hierarchy_commands.create_hierarchical_subsheet,
             # JLCPCB API commands (complete parts catalog via API)
             "download_jlcpcb_database": self._handle_download_jlcpcb_database,
             "search_jlcpcb_parts": self._handle_search_jlcpcb_parts,

@@ -124,6 +124,11 @@ export const toolCategories: ToolCategory[] = [
     tools: ["list_symbol_pins", "batch_list_symbol_pins"],
   },
   {
+    name: "schematic_hierarchy",
+    description: "Hierarchical schematic sheets: insert a sheet, scaffold a sub-sheet",
+    tools: ["add_hierarchical_sheet", "create_hierarchical_subsheet"],
+  },
+  {
     name: "routing",
     description: "Advanced routing operations: vias, copper pours",
     tools: ["add_via", "add_copper_pour"],

@@ -20,6 +20,7 @@ import { registerExportTools } from "./tools/export.js";
 import { registerSchematicTools } from "./tools/schematic.js";
 import { registerLibraryTools } from "./tools/library.js";
 import { registerSymbolLibraryTools } from "./tools/library-symbol.js";
+import { registerSchematicHierarchyTools } from "./tools/schematic-hierarchy.js";
 import { registerJLCPCBApiTools } from "./tools/jlcpcb-api.js";
 import { registerDatasheetTools } from "./tools/datasheet.js";
 import { registerFootprintTools } from "./tools/footprint.js";
@@ -296,6 +297,7 @@ export class KiCADMcpServer {
     registerSchematicTools(this.server, this.callKicadScript.bind(this));
     registerLibraryTools(this.server, this.callKicadScript.bind(this));
     registerSymbolLibraryTools(this.server, this.callKicadScript.bind(this));
+    registerSchematicHierarchyTools(this.server, this.callKicadScript.bind(this));
     registerJLCPCBApiTools(this.server, this.callKicadScript.bind(this));
     registerDatasheetTools(this.server, this.callKicadScript.bind(this));
     registerFootprintTools(this.server, this.callKicadScript.bind(this));
