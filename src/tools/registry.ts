@@ -139,6 +139,19 @@ export const toolCategories: ToolCategory[] = [
     ],
   },
   {
+    name: "schematic_batch",
+    description:
+      "Batch schematic authoring: add/edit/replace components, batch no-connects, batch connect, add-and-connect",
+    tools: [
+      "batch_add_components",
+      "batch_edit_schematic_components",
+      "replace_schematic_component",
+      "batch_add_no_connects",
+      "batch_connect",
+      "batch_add_and_connect",
+    ],
+  },
+  {
     name: "routing",
     description: "Advanced routing operations: vias, copper pours",
     tools: ["add_via", "add_copper_pour"],
