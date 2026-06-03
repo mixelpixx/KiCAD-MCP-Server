@@ -129,6 +129,16 @@ export const toolCategories: ToolCategory[] = [
     tools: ["add_hierarchical_sheet", "create_hierarchical_subsheet"],
   },
   {
+    name: "schematic_layout",
+    description:
+      "Schematic field placement: move Ref/Value fields and autoplace them clear of bodies and labels",
+    tools: [
+      "set_schematic_property_position",
+      "batch_set_schematic_property_positions",
+      "autoplace_schematic_fields",
+    ],
+  },
+  {
     name: "routing",
     description: "Advanced routing operations: vias, copper pours",
     tools: ["add_via", "add_copper_pour"],
