@@ -326,6 +326,7 @@ try:
     from commands.routing import RoutingCommands
     from commands.schematic import SchematicManager
     from commands.symbol_creator import SymbolCreator
+    from commands.symbol_pins import SymbolPinCommands
 
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
@@ -444,6 +445,9 @@ class KiCADInterface:
         # Initialize symbol library manager (for searching local KiCad symbol libraries)
         self.symbol_library_commands = SymbolLibraryCommands()
 
+        # Symbol pin discovery commands (read-only pin lookup from symbol libraries)
+        self.symbol_pin_commands = SymbolPinCommands()
+
         # Initialize JLCPCB API integration
         self.jlcpcb_client = JLCPCBClient()  # Official API (requires auth)
         from commands.jlcsearch import JLCSearchClient
@@ -527,6 +531,9 @@ class KiCADInterface:
             "search_symbols": self.symbol_library_commands.search_symbols,
             "list_library_symbols": self.symbol_library_commands.list_library_symbols,
             "get_symbol_info": self.symbol_library_commands.get_symbol_info,
+            # Symbol pin discovery commands (read pins straight from symbol libraries)
+            "list_symbol_pins": self.symbol_pin_commands.list_symbol_pins,
+            "batch_list_symbol_pins": self.symbol_pin_commands.batch_list_symbol_pins,
             # JLCPCB API commands (complete parts catalog via API)
             "download_jlcpcb_database": self._handle_download_jlcpcb_database,
             "search_jlcpcb_parts": self._handle_search_jlcpcb_parts,
