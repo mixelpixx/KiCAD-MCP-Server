@@ -154,3 +154,63 @@ def test_file_mode_png_writes_file_and_returns_path(tmp_path):
     assert expected.exists()
     assert expected.read_bytes() == _FAKE_PNG
     assert "imageData" not in result
+
+
+# ---------------------------------------------------------------------------
+# KiCad 10 kicad-cli compatibility (issue #209)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_kicad10_exit_code_2_with_svg_produced_is_success(tmp_path):
+    """KiCad 9+/10 returns exit code 2 on a deprecation warning even when the SVG
+    is written. Success must be judged by the produced SVG, not the exit code."""
+    cmd, root, board_path = _make_view_cmd(tmp_path)
+    svg_path = root / "MyBoard.svg"
+    svg_path.write_bytes(_FAKE_SVG)
+
+    fake_result = MagicMock()
+    fake_result.returncode = 2  # deprecation warning exit code
+    fake_result.stderr = "This command has deprecated behavior as of KiCad 9.0..."
+    fake_result.stdout = "Done."
+
+    with (
+        patch("shutil.which", return_value="/usr/bin/kicad-cli"),
+        patch("subprocess.run", return_value=fake_result),
+        patch("glob.glob", return_value=[str(svg_path)]),
+    ):
+        result = cmd.get_board_2d_view(
+            {"pcbPath": str(board_path), "format": "svg", "responseMode": "inline"}
+        )
+
+    assert result["success"] is True
+    assert base64.b64decode(result["imageData"]) == _FAKE_SVG
+
+
+@pytest.mark.unit
+def test_kicad10_export_cmd_uses_file_output_and_mode_single(tmp_path):
+    """The export command must pass a FILE path to --output (not a directory) and
+    include --mode-single, as required by KiCad 10."""
+    cmd, root, board_path = _make_view_cmd(tmp_path)
+    svg_path = root / "MyBoard.svg"
+    svg_path.write_bytes(_FAKE_SVG)
+
+    fake_result = MagicMock()
+    fake_result.returncode = 0
+    fake_result.stderr = ""
+    fake_result.stdout = ""
+
+    with (
+        patch("shutil.which", return_value="/usr/bin/kicad-cli"),
+        patch("subprocess.run", return_value=fake_result) as run_mock,
+        patch("glob.glob", return_value=[str(svg_path)]),
+    ):
+        cmd.get_board_2d_view(
+            {"pcbPath": str(board_path), "format": "svg", "responseMode": "inline"}
+        )
+
+    argv = run_mock.call_args[0][0]
+    assert "--mode-single" in argv
+    out_idx = argv.index("--output")
+    out_arg = argv[out_idx + 1]
+    assert out_arg.endswith(".svg")  # a file path, not a directory
