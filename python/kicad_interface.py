@@ -326,6 +326,7 @@ try:
     from commands.routing import RoutingCommands
     from commands.schematic import SchematicManager
     from commands.schematic_hierarchy import SchematicHierarchyCommands
+    from commands.schematic_field_layout import SchematicFieldLayoutCommands
     from commands.symbol_creator import SymbolCreator
     from commands.symbol_pins import SymbolPinCommands
 
@@ -450,6 +451,8 @@ class KiCADInterface:
         self.symbol_pin_commands = SymbolPinCommands()
         # Schematic hierarchy commands (insert sheets, scaffold sub-sheets)
         self.hierarchy_commands = SchematicHierarchyCommands(self)
+        # Schematic field placement / layout-check commands
+        self.field_layout_commands = SchematicFieldLayoutCommands()
 
         # Initialize JLCPCB API integration
         self.jlcpcb_client = JLCPCBClient()  # Official API (requires auth)
@@ -540,6 +543,10 @@ class KiCADInterface:
             # Schematic hierarchy commands (sheet insertion + subsheet scaffolding)
             "add_hierarchical_sheet": self.hierarchy_commands.add_hierarchical_sheet,
             "create_hierarchical_subsheet": self.hierarchy_commands.create_hierarchical_subsheet,
+            # Schematic field placement commands
+            "set_schematic_property_position": self.field_layout_commands.set_schematic_property_position,
+            "batch_set_schematic_property_positions": self.field_layout_commands.batch_set_schematic_property_positions,
+            "autoplace_schematic_fields": self.field_layout_commands.autoplace_schematic_fields,
             # JLCPCB API commands (complete parts catalog via API)
             "download_jlcpcb_database": self._handle_download_jlcpcb_database,
             "search_jlcpcb_parts": self._handle_search_jlcpcb_parts,
