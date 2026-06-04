@@ -325,7 +325,11 @@ try:
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
     from commands.schematic import SchematicManager
+    from commands.schematic_hierarchy import SchematicHierarchyCommands
+    from commands.schematic_field_layout import SchematicFieldLayoutCommands
+    from commands.schematic_batch import SchematicBatchCommands
     from commands.symbol_creator import SymbolCreator
+    from commands.symbol_pins import SymbolPinCommands
 
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
@@ -444,6 +448,16 @@ class KiCADInterface:
         # Initialize symbol library manager (for searching local KiCad symbol libraries)
         self.symbol_library_commands = SymbolLibraryCommands()
 
+        # Symbol pin discovery commands (read-only pin lookup from symbol libraries)
+        self.symbol_pin_commands = SymbolPinCommands()
+        # Schematic hierarchy commands (insert sheets, scaffold sub-sheets)
+        self.hierarchy_commands = SchematicHierarchyCommands(self)
+        # Schematic field placement / layout-check commands
+        self.field_layout_commands = SchematicFieldLayoutCommands()
+        # Batch schematic authoring commands (need an interface back-reference for the
+        # single-item add/edit/get handlers, footprint library, and sub-sheet fixer)
+        self.batch_commands = SchematicBatchCommands(self)
+
         # Initialize JLCPCB API integration
         self.jlcpcb_client = JLCPCBClient()  # Official API (requires auth)
         from commands.jlcsearch import JLCSearchClient
@@ -527,6 +541,23 @@ class KiCADInterface:
             "search_symbols": self.symbol_library_commands.search_symbols,
             "list_library_symbols": self.symbol_library_commands.list_library_symbols,
             "get_symbol_info": self.symbol_library_commands.get_symbol_info,
+            # Symbol pin discovery commands (read pins straight from symbol libraries)
+            "list_symbol_pins": self.symbol_pin_commands.list_symbol_pins,
+            "batch_list_symbol_pins": self.symbol_pin_commands.batch_list_symbol_pins,
+            # Schematic hierarchy commands (sheet insertion + subsheet scaffolding)
+            "add_hierarchical_sheet": self.hierarchy_commands.add_hierarchical_sheet,
+            "create_hierarchical_subsheet": self.hierarchy_commands.create_hierarchical_subsheet,
+            # Schematic field placement commands
+            "set_schematic_property_position": self.field_layout_commands.set_schematic_property_position,
+            "batch_set_schematic_property_positions": self.field_layout_commands.batch_set_schematic_property_positions,
+            "autoplace_schematic_fields": self.field_layout_commands.autoplace_schematic_fields,
+            # Batch schematic authoring commands
+            "batch_add_components": self.batch_commands.batch_add_components,
+            "batch_edit_schematic_components": self.batch_commands.batch_edit_schematic_components,
+            "replace_schematic_component": self.batch_commands.replace_schematic_component,
+            "batch_add_no_connects": self.batch_commands.batch_add_no_connects,
+            "batch_connect": self.batch_commands.batch_connect,
+            "batch_add_and_connect": self.batch_commands.batch_add_and_connect,
             # JLCPCB API commands (complete parts catalog via API)
             "download_jlcpcb_database": self._handle_download_jlcpcb_database,
             "search_jlcpcb_parts": self._handle_search_jlcpcb_parts,

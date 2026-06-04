@@ -119,6 +119,39 @@ export const toolCategories: ToolCategory[] = [
     tools: ["list_libraries", "search_footprints", "list_library_footprints", "get_footprint_info"],
   },
   {
+    name: "symbol_pins",
+    description: "Read a symbol's pins straight from the library (no schematic needed)",
+    tools: ["list_symbol_pins", "batch_list_symbol_pins"],
+  },
+  {
+    name: "schematic_hierarchy",
+    description: "Hierarchical schematic sheets: insert a sheet, scaffold a sub-sheet",
+    tools: ["add_hierarchical_sheet", "create_hierarchical_subsheet"],
+  },
+  {
+    name: "schematic_layout",
+    description:
+      "Schematic field placement: move Ref/Value fields and autoplace them clear of bodies and labels",
+    tools: [
+      "set_schematic_property_position",
+      "batch_set_schematic_property_positions",
+      "autoplace_schematic_fields",
+    ],
+  },
+  {
+    name: "schematic_batch",
+    description:
+      "Batch schematic authoring: add/edit/replace components, batch no-connects, batch connect, add-and-connect",
+    tools: [
+      "batch_add_components",
+      "batch_edit_schematic_components",
+      "replace_schematic_component",
+      "batch_add_no_connects",
+      "batch_connect",
+      "batch_add_and_connect",
+    ],
+  },
+  {
     name: "routing",
     description: "Advanced routing operations: vias, copper pours",
     tools: ["add_via", "add_copper_pour"],

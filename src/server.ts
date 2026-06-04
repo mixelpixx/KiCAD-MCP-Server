@@ -20,6 +20,9 @@ import { registerExportTools } from "./tools/export.js";
 import { registerSchematicTools } from "./tools/schematic.js";
 import { registerLibraryTools } from "./tools/library.js";
 import { registerSymbolLibraryTools } from "./tools/library-symbol.js";
+import { registerSchematicHierarchyTools } from "./tools/schematic-hierarchy.js";
+import { registerSchematicLayoutTools } from "./tools/schematic-layout.js";
+import { registerSchematicBatchTools } from "./tools/schematic-batch.js";
 import { registerJLCPCBApiTools } from "./tools/jlcpcb-api.js";
 import { registerDatasheetTools } from "./tools/datasheet.js";
 import { registerFootprintTools } from "./tools/footprint.js";
@@ -69,6 +72,29 @@ function getWindowsKiCadPythonCandidates(): string[] {
   }
 
   return [...new Set(candidates)];
+}
+
+/**
+ * Derive the KiCAD bundled-Python site-packages path for a detected python.exe,
+ * so PYTHONPATH follows the *same* install we picked (any version, Program Files
+ * or per-user %LOCALAPPDATA%) instead of a hardcoded KiCad 9.0 path.
+ *
+ * KiCAD on Windows installs python at `<root>/<version>/bin/python.exe`, with
+ * pcbnew under `<...>/bin/Lib/site-packages` (older/alt layouts use
+ * `<version>/lib/python3/dist-packages`). Returns the first existing candidate,
+ * or undefined if pythonExe isn't a KiCAD bundled python.
+ */
+function deriveKiCadSitePackages(pythonExe: string): string | undefined {
+  if (process.platform !== "win32") return undefined;
+  const lower = pythonExe.toLowerCase();
+  if (!lower.endsWith("python.exe") || !lower.includes("kicad")) return undefined;
+  const binDir = dirname(pythonExe); // <root>/<version>/bin
+  const versionDir = dirname(binDir); // <root>/<version>
+  const candidates = [
+    join(binDir, "Lib", "site-packages"),
+    join(versionDir, "lib", "python3", "dist-packages"),
+  ];
+  return candidates.find((p) => existsSync(p));
 }
 
 /**
@@ -273,6 +299,9 @@ export class KiCADMcpServer {
     registerSchematicTools(this.server, this.callKicadScript.bind(this));
     registerLibraryTools(this.server, this.callKicadScript.bind(this));
     registerSymbolLibraryTools(this.server, this.callKicadScript.bind(this));
+    registerSchematicHierarchyTools(this.server, this.callKicadScript.bind(this));
+    registerSchematicLayoutTools(this.server, this.callKicadScript.bind(this));
+    registerSchematicBatchTools(this.server, this.callKicadScript.bind(this));
     registerJLCPCBApiTools(this.server, this.callKicadScript.bind(this));
     registerDatasheetTools(this.server, this.callKicadScript.bind(this));
     registerFootprintTools(this.server, this.callKicadScript.bind(this));
@@ -475,12 +504,21 @@ export class KiCADMcpServer {
       if (!isValid) {
         throw new Error("Prerequisites validation failed. See logs above for details.");
       }
+      // PYTHONPATH precedence: explicit env override → site-packages derived
+      // from the detected KiCAD python (any version / install location) →
+      // legacy 9.0 fallback as a last resort.
+      const derivedSitePackages = deriveKiCadSitePackages(pythonExe);
+      if (derivedSitePackages && !process.env.PYTHONPATH) {
+        logger.info(`Using KiCAD site-packages: ${derivedSitePackages}`);
+      }
       this.pythonProcess = spawn(pythonExe, [this.kicadScriptPath], {
         stdio: ["pipe", "pipe", "pipe"],
         env: {
           ...process.env,
           PYTHONPATH:
-            process.env.PYTHONPATH || "C:/Program Files/KiCad/9.0/lib/python3/dist-packages",
+            process.env.PYTHONPATH ||
+            derivedSitePackages ||
+            "C:/Program Files/KiCad/9.0/lib/python3/dist-packages",
         },
       });
 
@@ -538,14 +576,13 @@ export class KiCADMcpServer {
         });
       }
 
-      // ——— Phase 2: wait for Python READY, then send warm-up ———
+      // ——— Phase 2: wait for Python READY ———
       logger.info("Waiting for Python process to be ready...");
       await this.waitForReady(120_000);
-      logger.info("Python process is ready. Sending warm-up command...");
-      await this.runWarmup(120_000);
-      logger.info("Warm-up complete — pcbnew/wxApp initialised");
-
-      // ——— Phase 3: only now connect to MCP transport ———
+      logger.info("Python process is ready.");
+      // ——— Phase 3: connect MCP transport immediately ———
+      // The transport must be live before any client timeout fires,
+      // regardless of how long warm-up takes.
       logger.info("Connecting MCP server to STDIO transport...");
       try {
         await this.server.connect(this.stdioTransport);
@@ -554,6 +591,14 @@ export class KiCADMcpServer {
         logger.error(`Failed to connect to STDIO transport: ${error}`);
         throw error;
       }
+      // ——— Phase 4: background warm-up (does not block MCP) ———
+      // Warm-up can take 55-125 s (wxApp + symbol library parse), but
+      // the MCP transport is already live so the client timeout does not
+      // apply.  Tools invoked during warm-up will work; the first
+      // search_symbols may be slower if warm-up hasn't completed yet.
+      logger.info("Sending warm-up command (background)...");
+      await this.runWarmup(120_000);
+      logger.info("Warm-up complete — pcbnew/wxApp initialised");
 
 
       // Write a ready message to stderr (for debugging)

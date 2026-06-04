@@ -64,6 +64,12 @@ function parseCommandLineArgs(args: string[]) {
  * Setup graceful shutdown handlers
  */
 function setupGracefulShutdown(server: KiCADMcpServer) {
+  // Handle stdin close (EOF) when parent process exits
+  process.stdin.on("close", async () => {
+    logger.info("process.stdin closed. Shutting down...");
+    await shutdownServer(server);
+  });
+
   // Handle termination signals
   process.on("SIGINT", async () => {
     logger.info("Received SIGINT signal. Shutting down...");
