@@ -785,38 +785,56 @@ class TestSynthesizeTouchingPinWires:
 class TestOldToNewCollision:
     """Verify that coincident pins do not silently overwrite each other in old_to_new."""
 
-    def test_handler_logs_warning_on_collision(self, caplog: Any) -> None:
+    def test_handler_logs_warning_on_collision(self) -> None:
         """
         When two pins share the same old position, a warning should be logged
         and the *first* mapping should be kept (not overwritten by the second).
         """
         import logging
 
-        # Build a fake pin_positions dict with a deliberate collision
-        pin_positions = {
-            "1": ((0.0, 3.81), (10.0, 23.81)),
-            "2": ((0.0, 3.81), (10.0, 16.19)),  # same old_xy as pin "1"
-        }
+        # Capture on the "kicad_interface" logger with our own handler rather
+        # than pytest's ``caplog``: the package calls
+        # ``logging.basicConfig(..., force=True)`` at import time, which detaches
+        # the root-level handler ``caplog`` reads from and silently drops records.
+        records = []
 
-        old_to_new = {}
-        with caplog.at_level(logging.WARNING, logger="kicad_interface"):
+        class _Capture(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record)
+
+        kicad_logger = logging.getLogger("kicad_interface")
+        handler = _Capture(level=logging.WARNING)
+        prev_level = kicad_logger.level
+        prev_propagate = kicad_logger.propagate
+        kicad_logger.addHandler(handler)
+        kicad_logger.setLevel(logging.WARNING)
+        kicad_logger.propagate = False  # keep the warning out of stderr/file handlers
+        try:
+            # Build a fake pin_positions dict with a deliberate collision
+            pin_positions = {
+                "1": ((0.0, 3.81), (10.0, 23.81)),
+                "2": ((0.0, 3.81), (10.0, 16.19)),  # same old_xy as pin "1"
+            }
+
+            old_to_new = {}
             for _pin, (old_xy, new_xy) in pin_positions.items():
                 if old_xy in old_to_new:
-                    import logging as _logging
-
-                    logger_inner = _logging.getLogger("kicad_interface")
-                    logger_inner.warning(
+                    kicad_logger.warning(
                         f"move_schematic_component: pin {_pin!r} shares old position {old_xy} "
                         f"with another pin; keeping first entry, skipping duplicate"
                     )
                     continue
                 old_to_new[old_xy] = new_xy
+        finally:
+            kicad_logger.removeHandler(handler)
+            kicad_logger.setLevel(prev_level)
+            kicad_logger.propagate = prev_propagate
 
         # Only one entry should exist, and it should be the first one
         assert len(old_to_new) == 1
         assert old_to_new[(0.0, 3.81)] == (10.0, 23.81)
         # Warning should have been logged
-        assert any("skipping duplicate" in r.message for r in caplog.records)
+        assert any("skipping duplicate" in r.getMessage() for r in records)
 
 
 # ---------------------------------------------------------------------------
