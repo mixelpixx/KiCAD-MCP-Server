@@ -14,7 +14,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-24.04, ubuntu-22.04, windows-latest, macos-latest]
-        node-version: [18.x, 20.x, 22.x]
+        node-version: [20.x, 22.x]
 
     steps:
       - name: Checkout code
@@ -33,6 +33,7 @@ jobs:
         run: npm run build
 
       - name: Run linter
+        shell: bash
         run: npm run lint || echo "Linter not configured yet"
 
       - name: Run TypeScript tests
@@ -88,16 +89,14 @@ jobs:
   integration-tests:
     name: Integration Tests (Linux + KiCAD)
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        kicad: ["8.0", "9.0", "10.0"]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20.x"
-          cache: "npm"
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -105,29 +104,210 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Add KiCAD PPA and Install KiCAD 9.0
+      - name: Add KiCAD PPA and Install KiCAD ${{ matrix.kicad }}
         run: |
-          sudo add-apt-repository --yes ppa:kicad/kicad-9.0-releases
+          sudo add-apt-repository --yes ppa:kicad/kicad-${{ matrix.kicad }}-releases
           sudo apt-get update
           sudo apt-get install -y kicad kicad-libraries
 
+          mapfile -t KICAD_PYTHON_PACKAGES < <(
+            {
+              apt-cache search kicad
+              apt-cache search pcbnew
+            } | awk '
+              BEGIN { IGNORECASE = 1 }
+              {
+                name = $1
+                line = tolower($0)
+                if (name !~ /nightly/ && (line ~ /kicad/ || line ~ /pcbnew/) && line ~ /python/) print name
+              }
+            ' | sort -u
+          )
+
+          if [ "${#KICAD_PYTHON_PACKAGES[@]}" -gt 0 ]; then
+            echo "Installing KiCad Python packages: ${KICAD_PYTHON_PACKAGES[*]}"
+            sudo apt-get install -y "${KICAD_PYTHON_PACKAGES[@]}"
+          fi
+
+          KICAD_PYTHONPATH="$(python3 - <<'PY'
+          import glob
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          candidates = []
+          seen = set()
+
+
+          def add_candidate(root: Path) -> None:
+              if not root.exists():
+                  return
+              root_str = str(root)
+              if root_str not in seen:
+                  seen.add(root_str)
+                  candidates.append(root_str)
+
+
+          def add_candidate_for_file(file_path: Path) -> None:
+              if file_path.name == "__init__.py" and file_path.parent.name == "pcbnew":
+                  add_candidate(file_path.parent.parent)
+                  return
+              if file_path.parent.name == "pcbnew":
+                  add_candidate(file_path.parent.parent)
+                  return
+              add_candidate(file_path.parent)
+
+
+          def looks_like_pcbnew(file_path: Path) -> bool:
+              name = file_path.name
+              if name == "pcbnew.py":
+                  return True
+              if name == "__init__.py" and file_path.parent.name == "pcbnew":
+                  return True
+              return name.endswith(".so") and (
+                  name.startswith("pcbnew") or name.startswith("_pcbnew")
+              )
+
+
+          def collect_from_package(package: str) -> None:
+              try:
+                  result = subprocess.run(
+                      ["dpkg", "-L", package],
+                      check=True,
+                      capture_output=True,
+                      text=True,
+                  )
+              except subprocess.CalledProcessError:
+                  return
+
+              for raw_path in result.stdout.splitlines():
+                  path = Path(raw_path)
+                  if path.is_file() and looks_like_pcbnew(path):
+                      add_candidate_for_file(path)
+
+
+          package_result = subprocess.run(
+              ["dpkg-query", "-W", "-f=${Package}\n"],
+              check=True,
+              capture_output=True,
+              text=True,
+          )
+          installed_packages = [
+              package
+              for package in package_result.stdout.splitlines()
+              if "kicad" in package or "pcbnew" in package
+          ]
+
+          for package in installed_packages:
+              collect_from_package(package)
+
+          file_patterns = [
+              "/usr/lib/python3/dist-packages/pcbnew.py",
+              "/usr/lib/python3/dist-packages/pcbnew*.so",
+              "/usr/lib/python3/dist-packages/_pcbnew*.so",
+              "/usr/lib/python3/dist-packages/pcbnew/__init__.py",
+              "/usr/lib/python3/dist-packages/pcbnew/_pcbnew*.so",
+              "/usr/lib/kicad*/lib/python3/dist-packages/pcbnew.py",
+              "/usr/lib/kicad*/lib/python3/dist-packages/pcbnew*.so",
+              "/usr/lib/kicad*/lib/python3/dist-packages/_pcbnew*.so",
+              "/usr/lib/kicad*/lib/python3/dist-packages/pcbnew/__init__.py",
+              "/usr/lib/kicad*/lib/python3/dist-packages/pcbnew/_pcbnew*.so",
+              "/usr/lib/*/dist-packages/pcbnew.py",
+              "/usr/lib/*/dist-packages/pcbnew*.so",
+              "/usr/lib/*/dist-packages/_pcbnew*.so",
+              "/usr/lib/*/dist-packages/pcbnew/__init__.py",
+              "/usr/lib/*/dist-packages/pcbnew/_pcbnew*.so",
+              "/usr/local/lib/python*/dist-packages/pcbnew.py",
+              "/usr/local/lib/python*/dist-packages/pcbnew*.so",
+              "/usr/local/lib/python*/dist-packages/_pcbnew*.so",
+              "/usr/local/lib/python*/dist-packages/pcbnew/__init__.py",
+              "/usr/local/lib/python*/dist-packages/pcbnew/_pcbnew*.so",
+              "/usr/share/kicad*/scripting/pcbnew.py",
+              "/usr/share/kicad*/scripting/pcbnew*.so",
+              "/usr/share/kicad*/scripting/_pcbnew*.so",
+              "/usr/share/kicad*/scripting/pcbnew/__init__.py",
+              "/usr/share/kicad*/scripting/pcbnew/_pcbnew*.so",
+          ]
+
+          for pattern in file_patterns:
+              for raw_path in glob.glob(pattern):
+                  path = Path(raw_path)
+                  if path.is_file() and looks_like_pcbnew(path):
+                      add_candidate_for_file(path)
+
+          if not candidates:
+              for file_path in Path("/usr").rglob("*"):
+                  if file_path.is_file() and looks_like_pcbnew(file_path):
+                      add_candidate_for_file(file_path)
+
+
+          def import_succeeds(candidate: str) -> bool:
+              env = os.environ.copy()
+              existing = env.get("PYTHONPATH", "")
+              env["PYTHONPATH"] = (
+                  f"{candidate}:{existing}" if existing else candidate
+              )
+              probe = subprocess.run(
+                  [
+                      sys.executable,
+                      "-c",
+                      (
+                          "import pcbnew; "
+                          "print(getattr(pcbnew, '__file__', '')); "
+                          "print(pcbnew.GetBuildVersion())"
+                      ),
+                  ],
+                  capture_output=True,
+                  text=True,
+                  env=env,
+              )
+              if probe.returncode == 0:
+                  print(
+                      f"Using pcbnew from {probe.stdout.splitlines()[0]}",
+                      file=sys.stderr,
+                  )
+                  return True
+              return False
+
+
+          working_candidates = [candidate for candidate in candidates if import_succeeds(candidate)]
+          print(":".join(working_candidates))
+          PY
+          )"
+
+          if [ -z "$KICAD_PYTHONPATH" ]; then
+            echo "Unable to locate pcbnew Python bindings after installing KiCad ${{ matrix.kicad }}" >&2
+            {
+              apt-cache search kicad
+              apt-cache search pcbnew
+            } | awk 'BEGIN { IGNORECASE = 1 } tolower($0) ~ /python/ { print }' || true
+            dpkg-query -W -f='${Package}\n' | grep -Ei 'kicad|pcbnew' || true
+            find /usr -path '*dist-packages*' \( -name 'pcbnew.py' -o -name 'pcbnew*.so' -o -name '_pcbnew*.so' \) -print || true
+            exit 1
+          fi
+
+          echo "KICAD_PYTHONPATH=$KICAD_PYTHONPATH" >> $GITHUB_ENV
+
       - name: Verify KiCAD installation
         run: |
-          kicad-cli version || echo "kicad-cli not found"
-          python3 -c "import pcbnew; print(f'pcbnew version: {pcbnew.GetBuildVersion()}')" || echo "pcbnew module not found"
+          export KICAD_CLI="kicad-cli"
+          export PYTHONPATH="$KICAD_PYTHONPATH:$PYTHONPATH"
+          "$KICAD_CLI" version
+          python3 -c "import pcbnew; print(f'pcbnew version: {pcbnew.GetBuildVersion()}')"
 
       - name: Install dependencies
         run: |
-          npm ci
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
 
-      - name: Build TypeScript
-        run: npm run build
-
-      - name: Run integration tests
+      - name: Run real pcbnew smoke tests
+        env:
+          KICAD_USE_REAL_PCBNEW: "1"
         run: |
-          echo "Integration tests not yet configured"
-          # pytest tests/integration/
+          export PYTHONPATH="$KICAD_PYTHONPATH:$PYTHONPATH"
+          pytest tests/test_real_pcbnew_matrix.py -m "integration and real_pcbnew"
 
   # Docker build test
   docker-build:
