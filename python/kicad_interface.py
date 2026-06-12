@@ -24,11 +24,11 @@ from typing import Any, Dict, List, Optional, Tuple
 if sys.platform == "win32":
     for _bin_dir in [
         os.environ.get("PYTHONPATH", ""),
-        os.path.dirname(sys.executable),
+        str(Path(sys.executable).parent),
         r"C:\Program Files\KiCad\9.0\bin",
         r"C:\Program Files\KiCad\8.0\bin",
     ]:
-        if _bin_dir and os.path.isfile(os.path.join(_bin_dir, "cairo-2.dll")):
+        if _bin_dir and Path(_bin_dir, "cairo-2.dll").is_file():
             _current_path = os.environ.get("PATH", "")
             if _bin_dir not in _current_path:
                 os.environ["PATH"] = _bin_dir + os.pathsep + _current_path
@@ -96,9 +96,9 @@ _LOG_LEVEL = _parse_log_level()
 # envs, restricted CI runners) we fall back to console-only logging so importing
 # this module never crashes.
 try:
-    log_dir = os.path.join(os.path.expanduser("~"), ".kicad-mcp", "logs")
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "kicad_interface.log")
+    log_dir = str(Path.home() / ".kicad-mcp" / "logs")
+    Path(log_dir).mkdir(parents=True, exist_ok=True)
+    log_file = str(Path(log_dir) / "kicad_interface.log")
     max_log_bytes = _parse_positive_int_env("KICAD_MCP_LOG_MAX_BYTES", 10 * 1024 * 1024)
     backup_count = _parse_positive_int_env("KICAD_MCP_LOG_BACKUP_COUNT", 3)
     if max_log_bytes:
@@ -148,19 +148,17 @@ if sys.platform == "win32":
 
     found_kicad = False
     for base_path in common_kicad_paths:
-        if os.path.exists(base_path):
+        if Path(base_path).exists():
             logger.info(f"Found KiCAD installation at: {base_path}")
             # List versions
             try:
-                versions = [
-                    d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))
-                ]
+                versions = [p.name for p in Path(base_path).iterdir() if p.is_dir()]
                 logger.info(f"  Versions found: {', '.join(versions)}")
                 for version in versions:
-                    python_path = os.path.join(
-                        base_path, version, "lib", "python3", "dist-packages"
+                    python_path = str(
+                        Path(base_path) / version / "lib" / "python3" / "dist-packages"
                     )
-                    if os.path.exists(python_path):
+                    if Path(python_path).exists():
                         logger.info(f"  ✓ Python path exists: {python_path}")
                         found_kicad = True
                     else:
@@ -177,7 +175,7 @@ if sys.platform == "win32":
     logger.info("========================================")
 
 # Add utils directory to path for imports
-utils_dir = os.path.join(os.path.dirname(__file__))
+utils_dir = str(Path(__file__).parent)
 if utils_dir not in sys.path:
     sys.path.insert(0, utils_dir)
 
@@ -325,9 +323,9 @@ try:
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
     from commands.schematic import SchematicManager
-    from commands.schematic_hierarchy import SchematicHierarchyCommands
-    from commands.schematic_field_layout import SchematicFieldLayoutCommands
     from commands.schematic_batch import SchematicBatchCommands
+    from commands.schematic_field_layout import SchematicFieldLayoutCommands
+    from commands.schematic_hierarchy import SchematicHierarchyCommands
     from commands.symbol_creator import SymbolCreator
     from commands.symbol_pins import SymbolPinCommands
 
@@ -365,7 +363,7 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
     except Exception:
         pass
 
-    out_path = os.path.join(tempfile.mkdtemp(), "out.png")
+    out_path = str(Path(tempfile.mkdtemp()) / "out.png")
 
     try:
         r = subprocess.run(
@@ -380,7 +378,7 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
             capture_output=True,
             timeout=60,
         )
-        if r.returncode == 0 and os.path.exists(out_path):
+        if r.returncode == 0 and Path(out_path).exists():
             with open(out_path, "rb") as f:
                 return f.read()
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -392,7 +390,7 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
             capture_output=True,
             timeout=60,
         )
-        if r.returncode == 0 and os.path.exists(out_path):
+        if r.returncode == 0 and Path(out_path).exists():
             with open(out_path, "rb") as f:
                 return f.read()
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -978,7 +976,7 @@ class KiCADInterface:
             path = board.GetFileName()
         except Exception:
             return None
-        return os.path.abspath(path) if path else None
+        return str(Path(path).resolve()) if path else None
 
     def _current_project_file_path(self, board_path: Optional[str]) -> Optional[str]:
         """Best-effort project file path for the currently loaded board."""
@@ -1057,15 +1055,11 @@ class KiCADInterface:
     def _prune_auto_save_backups(self, backup_dir: str, base_name: str) -> None:
         """Keep only the most recent `_auto_save_backup_keep` backups for `base_name`."""
         try:
-            entries = [
-                os.path.join(backup_dir, f)
-                for f in os.listdir(backup_dir)
-                if f.startswith(base_name + ".")
-            ]
-            entries.sort(key=os.path.getmtime, reverse=True)
+            entries = [p for p in Path(backup_dir).iterdir() if p.name.startswith(base_name + ".")]
+            entries.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             for old in entries[self._auto_save_backup_keep :]:
                 try:
-                    os.remove(old)
+                    old.unlink()
                 except OSError:
                     pass
         except OSError as e:
@@ -1148,11 +1142,13 @@ class KiCADInterface:
         backup_path: Optional[str] = None
         if current is not None:
             try:
-                backup_dir = os.path.join(os.path.dirname(board_path) or ".", ".mcp-backups")
-                os.makedirs(backup_dir, exist_ok=True)
+                backup_dir = (
+                    str(Path(board_path).parent / ".mcp-backups") if board_path else ".mcp-backups"
+                )
+                Path(backup_dir).mkdir(parents=True, exist_ok=True)
                 stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
-                base = os.path.basename(board_path)
-                backup_path = os.path.join(backup_dir, f"{base}.{stamp}")
+                base = Path(board_path).name
+                backup_path = str(Path(backup_dir) / f"{base}.{stamp}")
                 shutil.copy2(board_path, backup_path)
                 self._prune_auto_save_backups(backup_dir, base)
             except OSError as e:
@@ -1280,8 +1276,8 @@ class KiCADInterface:
                 # If filename provided, extract name and path from it
                 if filename.endswith(".kicad_sch"):
                     filename = filename[:-10]  # Remove .kicad_sch extension
-                path = os.path.dirname(filename) or "."
-                project_name = project_name or os.path.basename(filename)
+                path = str(Path(filename).parent) or "."
+                project_name = project_name or Path(filename).name
             else:
                 path = params.get("path", ".")
             metadata = params.get("metadata", {})
@@ -1300,7 +1296,7 @@ class KiCADInterface:
                 project_name if project_name.endswith(".kicad_sch") else f"{project_name}.kicad_sch"
             )
             normalized_path = path or "."
-            file_path = os.path.join(normalized_path, base_name)
+            file_path = str(Path(normalized_path) / base_name)
             success = SchematicManager.save_schematic(schematic, file_path)
 
             return {"success": success, "file_path": file_path}
@@ -2631,7 +2627,7 @@ class KiCADInterface:
             if not output_path:
                 return {"success": False, "message": "Output path is required"}
 
-            if not os.path.exists(schematic_path):
+            if not Path(schematic_path).exists():
                 return {
                     "success": False,
                     "message": f"Schematic not found: {schematic_path}",
@@ -3076,7 +3072,7 @@ class KiCADInterface:
 
         try:
             schematic_path = params.get("schematicPath")
-            if not schematic_path or not os.path.exists(schematic_path):
+            if not schematic_path or not Path(schematic_path).exists():
                 return {
                     "success": False,
                     "message": f"Schematic not found: {schematic_path}",
@@ -3088,7 +3084,7 @@ class KiCADInterface:
 
             # Step 1: Export schematic to SVG via kicad-cli
             with tempfile.TemporaryDirectory() as tmpdir:
-                svg_path = os.path.join(tmpdir, "schematic.svg")
+                svg_path = str(Path(tmpdir) / "schematic.svg")
                 cmd = [
                     "kicad-cli",
                     "sch",
@@ -3110,7 +3106,7 @@ class KiCADInterface:
                 # kicad-cli may name the file after the schematic, find it
                 import glob
 
-                svg_files = glob.glob(os.path.join(tmpdir, "*.svg"))
+                svg_files = glob.glob(str(Path(tmpdir) / "*.svg"))
                 if not svg_files:
                     return {
                         "success": False,
@@ -3890,7 +3886,7 @@ class KiCADInterface:
                     "message": "schematicPath and outputPath are required",
                 }
 
-            if not os.path.exists(schematic_path):
+            if not Path(schematic_path).exists():
                 return {
                     "success": False,
                     "message": f"Schematic not found: {schematic_path}",
@@ -3898,11 +3894,9 @@ class KiCADInterface:
 
             # kicad-cli's --output flag for SVG export expects a directory, not a file path.
             # The output file is auto-named based on the schematic name.
-            output_dir = os.path.dirname(output_path)
-            if not output_dir:
-                output_dir = "."
+            output_dir = str(Path(output_path).parent) or "."
 
-            os.makedirs(output_dir, exist_ok=True)
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
 
             cmd = [
                 "kicad-cli",
@@ -3926,7 +3920,7 @@ class KiCADInterface:
                 }
 
             # kicad-cli names the file after the schematic, so find the generated SVG
-            svg_files = glob.glob(os.path.join(output_dir, "*.svg"))
+            svg_files = glob.glob(str(Path(output_dir) / "*.svg"))
             if not svg_files:
                 return {
                     "success": False,
@@ -3936,7 +3930,7 @@ class KiCADInterface:
             generated_svg = svg_files[0]
 
             # Move/rename to the user-specified output path if it differs
-            if os.path.abspath(generated_svg) != os.path.abspath(output_path):
+            if Path(generated_svg).resolve() != Path(output_path).resolve():
                 shutil.move(generated_svg, output_path)
 
             return {"success": True, "file": {"path": output_path}}
@@ -4299,7 +4293,7 @@ class KiCADInterface:
 
         try:
             schematic_path = params.get("schematicPath")
-            if not schematic_path or not os.path.exists(schematic_path):
+            if not schematic_path or not Path(schematic_path).exists():
                 return {
                     "success": False,
                     "message": "Schematic file not found",
@@ -4335,7 +4329,8 @@ class KiCADInterface:
                 # kicad-cli returns non-zero when ERC violations are found —
                 # this is normal, not an error.  Only fail when no JSON was
                 # produced (genuine CLI failure).
-                if not os.path.exists(json_output) or os.path.getsize(json_output) == 0:
+                json_output_path = Path(json_output)
+                if not json_output_path.exists() or json_output_path.stat().st_size == 0:
                     logger.error(f"ERC command produced no output: {result.stderr}")
                     return {
                         "success": False,
@@ -4387,8 +4382,8 @@ class KiCADInterface:
                 }
 
             finally:
-                if os.path.exists(json_output):
-                    os.unlink(json_output)
+                if Path(json_output).exists():
+                    Path(json_output).unlink()
 
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "ERC timed out after 120 seconds"}
@@ -4429,7 +4424,7 @@ class KiCADInterface:
                 "/usr/local/bin/kicad-cli",
             ]
         for path in candidates:
-            if os.path.exists(path):
+            if Path(path).exists():
                 return path
         return None
 
@@ -4449,7 +4444,7 @@ class KiCADInterface:
                 return {"success": False, "message": "schematicPath is required"}
             if not output_path:
                 return {"success": False, "message": "outputPath is required"}
-            if not os.path.exists(schematic_path):
+            if not Path(schematic_path).exists():
                 return {"success": False, "message": f"Schematic not found: {schematic_path}"}
 
             kicad_cli = self._find_kicad_cli_static()
@@ -4464,7 +4459,7 @@ class KiCADInterface:
             }
             cli_format = fmt_map.get(fmt, "kicadxml")
 
-            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+            Path(output_path).resolve().parent.mkdir(parents=True, exist_ok=True)
 
             cmd = [
                 kicad_cli,
@@ -4511,7 +4506,7 @@ class KiCADInterface:
             schematic_path = params.get("schematicPath")
             if not schematic_path:
                 return {"success": False, "message": "Schematic path is required"}
-            if not os.path.exists(schematic_path):
+            if not Path(schematic_path).exists():
                 return {"success": False, "message": f"Schematic not found: {schematic_path}"}
 
             kicad_cli = self._find_kicad_cli_static()
@@ -5014,7 +5009,7 @@ class KiCADInterface:
 
         try:
             schematic_path = params.get("schematicPath")
-            if not schematic_path or not os.path.exists(schematic_path):
+            if not schematic_path or not Path(schematic_path).exists():
                 return {"success": False, "message": "Schematic file not found"}
 
             x1 = float(params.get("x1", 0))
@@ -5053,13 +5048,13 @@ class KiCADInterface:
                     }
 
                 # kicad-cli names the file after the schematic
-                svg_files = [f for f in os.listdir(tmp_dir) if f.endswith(".svg")]
+                svg_files = [p.name for p in Path(tmp_dir).iterdir() if p.suffix == ".svg"]
                 if not svg_files:
                     return {
                         "success": False,
                         "message": "kicad-cli produced no SVG output",
                     }
-                svg_output = os.path.join(tmp_dir, svg_files[0])
+                svg_output = str(Path(tmp_dir) / svg_files[0])
 
                 import xml.etree.ElementTree as ET
 
@@ -5084,7 +5079,7 @@ class KiCADInterface:
                         root.set("height", str(height))
 
                 # Write modified SVG
-                cropped_svg_path = os.path.join(tmp_dir, "cropped.svg")
+                cropped_svg_path = str(Path(tmp_dir) / "cropped.svg")
                 tree.write(cropped_svg_path, xml_declaration=True, encoding="utf-8")
 
                 if out_format == "svg":
@@ -5348,7 +5343,7 @@ class KiCADInterface:
                     project_dir = str(Path(board_file).parent)
             if not project_dir:
                 project_dir = params.get("projectPath")
-            if not project_dir or not os.path.isdir(project_dir):
+            if not project_dir or not Path(project_dir).is_dir():
                 return {
                     "success": False,
                     "message": "Could not determine project directory for snapshot",
@@ -5372,14 +5367,14 @@ class KiCADInterface:
 
             system = platform.system()
             if system == "Windows":
-                mcp_log_dir = os.path.join(os.environ.get("APPDATA", ""), "Claude", "logs")
+                mcp_log_dir = str(Path(os.environ.get("APPDATA", "")) / "Claude" / "logs")
             elif system == "Darwin":
-                mcp_log_dir = os.path.expanduser("~/Library/Logs/Claude")
+                mcp_log_dir = str(Path.home() / "Library" / "Logs" / "Claude")
             else:
-                mcp_log_dir = os.path.expanduser("~/.config/Claude/logs")
-            mcp_log_src = os.path.join(mcp_log_dir, "mcp-server-kicad.log")
+                mcp_log_dir = str(Path.home() / ".config" / "Claude" / "logs")
+            mcp_log_src = str(Path(mcp_log_dir) / "mcp-server-kicad.log")
             mcp_log_dest = None
-            if os.path.exists(mcp_log_src):
+            if Path(mcp_log_src).exists():
                 with open(mcp_log_src, "r", encoding="utf-8", errors="replace") as f:
                     all_lines = f.readlines()
                 session_start = 0

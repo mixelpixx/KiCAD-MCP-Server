@@ -1,4 +1,4 @@
-﻿"""
+"""
 Export command implementations for KiCAD interface
 """
 
@@ -7,6 +7,7 @@ import logging
 import os
 import shutil
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pcbnew
@@ -46,8 +47,8 @@ class ExportCommands:
                 }
 
             # Create output directory if it doesn't exist
-            output_dir = os.path.abspath(os.path.expanduser(output_dir))
-            os.makedirs(output_dir, exist_ok=True)
+            output_dir = str(Path(output_dir).expanduser().resolve())
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
 
             # Create plot controller
             plotter = pcbnew.PLOT_CONTROLLER(self.board)
@@ -86,7 +87,7 @@ class ExportCommands:
                 board_file = self.board.GetFileName()
                 kicad_cli = self._find_kicad_cli()
 
-                if kicad_cli and board_file and os.path.exists(board_file):
+                if kicad_cli and board_file and Path(board_file).exists():
                     import subprocess
 
                     # Generate drill files using kicad-cli
@@ -109,9 +110,9 @@ class ExportCommands:
                         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                         if result.returncode == 0:
                             # Get list of generated drill files
-                            for file in os.listdir(output_dir):
-                                if file.endswith((".drl", ".cnc")):
-                                    drill_files.append(file)
+                            for p in Path(output_dir).iterdir():
+                                if p.suffix in (".drl", ".cnc"):
+                                    drill_files.append(p.name)
                         else:
                             logger.warning(f"Drill file generation failed: {result.stderr}")
                     except Exception as drill_error:
@@ -169,15 +170,15 @@ class ExportCommands:
                 }
 
             # Create output directory if it doesn't exist
-            output_path = os.path.abspath(os.path.expanduser(output_path))
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            output_path = str(Path(output_path).expanduser().resolve())
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
             # Create plot controller
             plotter = pcbnew.PLOT_CONTROLLER(self.board)
 
             # Set up plot options
             plot_opts = plotter.GetPlotOptions()
-            plot_opts.SetOutputDirectory(os.path.dirname(output_path))
+            plot_opts.SetOutputDirectory(str(Path(output_path).parent))
             plot_opts.SetFormat(pcbnew.PLOT_FORMAT_PDF)
             plot_opts.SetPlotFrameRef(frame_reference)
             plot_opts.SetPlotValue(True)
@@ -204,7 +205,7 @@ class ExportCommands:
             # Open plot for writing
             # Note: For PDF, all layers are combined into a single file
             # KiCAD prepends the board filename to the plot file name
-            base_name = os.path.basename(output_path).replace(".pdf", "")
+            base_name = Path(output_path).name.replace(".pdf", "")
             plotter.OpenPlotfile(base_name, pcbnew.PLOT_FORMAT_PDF, "")
 
             # Plot specified layers or all enabled layers
@@ -229,9 +230,9 @@ class ExportCommands:
 
             # KiCAD automatically prepends the board name to the output file
             # Get the actual output filename that was created
-            board_name = os.path.splitext(os.path.basename(self.board.GetFileName()))[0]
+            board_name = Path(self.board.GetFileName()).stem
             actual_filename = f"{board_name}-{base_name}.pdf"
-            actual_output_path = os.path.join(os.path.dirname(output_path), actual_filename)
+            actual_output_path = str(Path(output_path).parent / actual_filename)
 
             return {
                 "success": True,
@@ -275,15 +276,15 @@ class ExportCommands:
                 }
 
             # Create output directory if it doesn't exist
-            output_path = os.path.abspath(os.path.expanduser(output_path))
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            output_path = str(Path(output_path).expanduser().resolve())
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
             # Create plot controller
             plotter = pcbnew.PLOT_CONTROLLER(self.board)
 
             # Set up plot options
             plot_opts = plotter.GetPlotOptions()
-            plot_opts.SetOutputDirectory(os.path.dirname(output_path))
+            plot_opts.SetOutputDirectory(str(Path(output_path).parent))
             plot_opts.SetFormat(pcbnew.PLOT_FORMAT_SVG)
             plot_opts.SetPlotValue(include_components)
             plot_opts.SetPlotReference(include_components)
@@ -350,7 +351,7 @@ class ExportCommands:
 
             # Get board file path
             board_file = self.board.GetFileName()
-            if not board_file or not os.path.exists(board_file):
+            if not board_file or not Path(board_file).exists():
                 return {
                     "success": False,
                     "message": "Board file not found",
@@ -358,8 +359,8 @@ class ExportCommands:
                 }
 
             # Create output directory if it doesn't exist
-            output_path = os.path.abspath(os.path.expanduser(output_path))
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            output_path = str(Path(output_path).expanduser().resolve())
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
             # Find kicad-cli executable
             kicad_cli = self._find_kicad_cli()
@@ -485,8 +486,8 @@ class ExportCommands:
                 }
 
             # Create output directory if it doesn't exist
-            output_path = os.path.abspath(os.path.expanduser(output_path))
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            output_path = str(Path(output_path).expanduser().resolve())
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
             # Get all components
             components = []
@@ -639,7 +640,7 @@ class ExportCommands:
             ]
 
         for path in possible_paths:
-            if os.path.exists(path):
+            if Path(path).exists():
                 return path
 
         return None
@@ -659,19 +660,19 @@ class ExportCommands:
         # Resolve Claude log path per platform
         system = platform.system()
         if system == "Windows":
-            log_dir = os.path.join(os.environ.get("APPDATA", ""), "Claude", "logs")
+            log_dir = str(Path(os.environ.get("APPDATA", "")) / "Claude" / "logs")
         elif system == "Darwin":
-            log_dir = os.path.expanduser("~/Library/Logs/Claude")
+            log_dir = str(Path.home() / "Library" / "Logs" / "Claude")
         else:
-            log_dir = os.path.expanduser("~/.config/Claude/logs")
+            log_dir = str(Path.home() / ".config" / "Claude" / "logs")
 
-        log_src = os.path.join(log_dir, "mcp-server-kicad.log")
-        if not os.path.exists(log_src):
+        log_src = str(Path(log_dir) / "mcp-server-kicad.log")
+        if not Path(log_src).exists():
             logger.warning(f"[DEV] MCP log not found at: {log_src}")
             return
 
         # Project dir = parent of outputDir (the Gerber subfolder)
-        project_dir = os.path.dirname(output_dir)
+        project_dir = str(Path(output_dir).parent)
 
         # Extract only lines from the current session start (find last "Initializing server")
         with open(log_src, "r", encoding="utf-8", errors="replace") as f:
@@ -686,8 +687,6 @@ class ExportCommands:
         session_lines = all_lines[session_start:]
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        from pathlib import Path
-
         logs_dir = Path(project_dir) / "logs"
         logs_dir.mkdir(exist_ok=True)
         dest = str(logs_dir / f"mcp_log_{timestamp}.txt")
