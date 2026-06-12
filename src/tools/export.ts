@@ -534,5 +534,29 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
   );
 
+  // ------------------------------------------------------
+  // Export IPC-D-356 Netlist Tool (kicad-cli)
+  // ------------------------------------------------------
+  server.tool(
+    "export_ipcd356",
+    "Generate an IPC-D-356 bare-board electrical-test netlist via kicad-cli. Consumed by flying-probe and bed-of-nails testers. Reads the last SAVED state of the .kicad_pcb.",
+    {
+      outputPath: z.string().describe("Output .ipc / netlist file path"),
+      boardPath: z.string().optional().describe("Path to the .kicad_pcb (default: current board)"),
+    },
+    async (args) => {
+      logger.debug(`Exporting IPC-D-356 netlist to: ${args.outputPath}`);
+      const result = await callKicadScript("export_ipcd356", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
   logger.info("Export tools registered");
 }
