@@ -76,6 +76,7 @@ export const toolCategories: ToolCategory[] = [
       "export_sch_dxf",
       "export_sch_hpgl",
       "export_sch_ps",
+      "export_sch_python_bom",
       "export_pdf",
       "export_svg",
       "export_3d",

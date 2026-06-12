@@ -1318,5 +1318,29 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
   );
 
+  // ------------------------------------------------------
+  // Export Schematic Python-BOM Tool (kicad-cli)
+  // ------------------------------------------------------
+  server.tool(
+    "export_sch_python_bom",
+    "Export the legacy Python-BOM intermediate XML from a schematic via kicad-cli (`sch export python-bom`). This is the XML netlist consumed by the schematic editor's Python BOM scripts. Minimal option set (output + input only). schematicPath is REQUIRED.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch (required)"),
+      outputPath: z.string().describe("Output XML file path"),
+    },
+    async (args) => {
+      logger.debug(`Exporting schematic Python-BOM to: ${args.outputPath}`);
+      const result = await callKicadScript("export_sch_python_bom", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
   logger.info("Export tools registered");
 }
