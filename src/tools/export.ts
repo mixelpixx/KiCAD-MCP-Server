@@ -795,5 +795,77 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
   );
 
+  // ------------------------------------------------------
+  // Export PCB DXF Tool (kicad-cli, full layer-plot option set)
+  // ------------------------------------------------------
+  server.tool(
+    "export_pcb_dxf",
+    "Plot the PCB layout to DXF via kicad-cli, exposing the full layer-plot option set (layer + common-layer lists, refdes/value exclusion, soldermask subtraction, use-contours, use-drill-origin, border+title, output units, DNP fab-layer modes, drill shape, single/multi output modes). Reads the last SAVED state of the .kicad_pcb.",
+    {
+      outputPath: z.string().describe("Output DXF file path (or directory in multi mode)"),
+      boardPath: z.string().optional().describe("Path to the .kicad_pcb (default: current board)"),
+      layers: z
+        .array(z.string())
+        .optional()
+        .describe("Layers to plot, untranslated names e.g. ['F.Cu','B.Cu','Edge.Cuts']"),
+      commonLayers: z
+        .array(z.string())
+        .optional()
+        .describe("Layers to include on every plot (e.g. ['Edge.Cuts'])"),
+      drawingSheet: z.string().optional().describe("Path to a drawing sheet override"),
+      defineVar: z
+        .array(z.string())
+        .optional()
+        .describe("Project variable overrides as 'KEY=VALUE' strings"),
+      excludeRefdes: z.boolean().optional().describe("Exclude reference designator text"),
+      excludeValue: z.boolean().optional().describe("Exclude value text"),
+      sketchPadsOnFabLayers: z
+        .boolean()
+        .optional()
+        .describe("Draw pad outlines and numbers on fab layers"),
+      hideDnpFootprintsOnFabLayers: z
+        .boolean()
+        .optional()
+        .describe("Don't plot DNP footprint text/graphics on fab layers"),
+      sketchDnpFootprintsOnFabLayers: z
+        .boolean()
+        .optional()
+        .describe("Plot DNP footprints in sketch mode on fab layers"),
+      crossoutDnpFootprintsOnFabLayers: z
+        .boolean()
+        .optional()
+        .describe("Plot an 'X' over DNP footprint courtyards and strike out their refdes"),
+      subtractSoldermask: z.boolean().optional().describe("Subtract soldermask from silkscreen"),
+      useContours: z.boolean().optional().describe("Plot graphic items using their contours"),
+      useDrillOrigin: z.boolean().optional().describe("Plot using the drill/place file origin"),
+      includeBorderTitle: z.boolean().optional().describe("Include the border and title block"),
+      outputUnits: z.enum(["mm", "in"]).optional().describe("Output units (default in)"),
+      drillShapeOpt: z
+        .number()
+        .optional()
+        .describe("Pad/via drill shape option (0 none, 1 small, 2 actual; default 2)"),
+      modeSingle: z
+        .boolean()
+        .optional()
+        .describe("Single file; output path is full path; LAYER_LIST controls all layers"),
+      modeMulti: z
+        .boolean()
+        .optional()
+        .describe("Multi output; output path is a directory (GUI-like plotting)"),
+    },
+    async (args) => {
+      logger.debug(`Exporting PCB DXF to: ${args.outputPath}`);
+      const result = await callKicadScript("export_pcb_dxf", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
   logger.info("Export tools registered");
 }
