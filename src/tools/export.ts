@@ -1200,5 +1200,42 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
   );
 
+  // ------------------------------------------------------
+  // Export Schematic DXF Tool (kicad-cli, full option set)
+  // ------------------------------------------------------
+  server.tool(
+    "export_sch_dxf",
+    "Export a schematic to DXF via kicad-cli (`sch export dxf`), one DXF per page into a directory. Exposes drawing-sheet override, theme, black-and-white, exclude-drawing-sheet, default-font, and page selection. schematicPath is REQUIRED.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch (required)"),
+      outputDir: z.string().describe("Output directory for the DXF files"),
+      drawingSheet: z.string().optional().describe("Path to a drawing sheet override"),
+      defineVar: z
+        .array(z.string())
+        .optional()
+        .describe("Project variable overrides as 'KEY=VALUE' strings"),
+      theme: z.string().optional().describe("Color theme to use (default: schematic settings)"),
+      blackAndWhite: z.boolean().optional().describe("Black and white only"),
+      excludeDrawingSheet: z.boolean().optional().describe("No drawing sheet"),
+      defaultFont: z.string().optional().describe("Default font name"),
+      pages: z
+        .string()
+        .optional()
+        .describe("Comma list of page numbers to print (blank = all pages)"),
+    },
+    async (args) => {
+      logger.debug(`Exporting schematic DXF to: ${args.outputDir}`);
+      const result = await callKicadScript("export_sch_dxf", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
   logger.info("Export tools registered");
 }
