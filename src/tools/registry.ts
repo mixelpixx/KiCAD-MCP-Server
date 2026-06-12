@@ -58,6 +58,7 @@ export const toolCategories: ToolCategory[] = [
     description: "File export for fabrication and documentation: Gerber, PDF, BOM, 3D models",
     tools: [
       "export_gerber",
+      "export_gerbers",
       "export_pdf",
       "export_svg",
       "export_3d",

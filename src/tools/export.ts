@@ -323,5 +323,75 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
   );
 
+  // ------------------------------------------------------
+  // Export Gerbers Tool (kicad-cli, full option set)
+  // ------------------------------------------------------
+  server.tool(
+    "export_gerbers",
+    "Plot Gerber files for a PCB via kicad-cli, exposing the full Plot-dialog option set (X2, netlist attributes, DNP handling, soldermask subtraction, precision, drill-file origin, stored board plot settings, etc). Reads the board from disk, so it reflects the last SAVED state of the .kicad_pcb.",
+    {
+      outputDir: z.string().describe("Output directory for the Gerber files"),
+      boardPath: z.string().optional().describe("Path to the .kicad_pcb (default: current board)"),
+      layers: z
+        .array(z.string())
+        .optional()
+        .describe("Layers to plot, untranslated names e.g. ['F.Cu','B.Cu','Edge.Cuts']"),
+      commonLayers: z
+        .array(z.string())
+        .optional()
+        .describe("Layers to include on every plot (e.g. ['Edge.Cuts'])"),
+      drawingSheet: z.string().optional().describe("Path to a drawing sheet override"),
+      defineVar: z
+        .array(z.string())
+        .optional()
+        .describe("Project variable overrides as 'KEY=VALUE' strings"),
+      excludeRefdes: z.boolean().optional().describe("Exclude reference designator text"),
+      excludeValue: z.boolean().optional().describe("Exclude value text"),
+      includeBorderTitle: z.boolean().optional().describe("Include border and title block"),
+      sketchPadsOnFabLayers: z
+        .boolean()
+        .optional()
+        .describe("Draw pad outlines and numbers on fab layers"),
+      hideDnpFootprintsOnFabLayers: z
+        .boolean()
+        .optional()
+        .describe("Don't plot DNP footprint text/graphics on fab layers"),
+      sketchDnpFootprintsOnFabLayers: z
+        .boolean()
+        .optional()
+        .describe("Plot DNP footprints in sketch mode on fab layers"),
+      crossoutDnpFootprintsOnFabLayers: z
+        .boolean()
+        .optional()
+        .describe("Plot an 'X' over DNP footprint courtyards and strike out their refdes"),
+      noX2: z.boolean().optional().describe("Do not use the extended X2 Gerber format"),
+      noNetlist: z.boolean().optional().describe("Do not generate netlist attributes"),
+      subtractSoldermask: z.boolean().optional().describe("Subtract soldermask from silkscreen"),
+      disableApertureMacros: z.boolean().optional().describe("Disable aperture macros"),
+      useDrillFileOrigin: z.boolean().optional().describe("Use the drill/place file origin"),
+      noProtelExt: z
+        .boolean()
+        .optional()
+        .describe("Use KiCad Gerber file extensions instead of Protel"),
+      boardPlotParams: z
+        .boolean()
+        .optional()
+        .describe("Use the Gerber plot settings already stored in the board file"),
+      precision: z.number().optional().describe("Gerber coordinate precision: 5 or 6 (default 6)"),
+    },
+    async (args) => {
+      logger.debug(`Exporting Gerbers to: ${args.outputDir}`);
+      const result = await callKicadScript("export_gerbers", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
   logger.info("Export tools registered");
 }
