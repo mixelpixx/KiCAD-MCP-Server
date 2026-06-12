@@ -390,6 +390,104 @@ class ComponentCommands:
             logger.error(f"Error editing component: {str(e)}")
             return {"success": False, "message": "Failed to edit component", "errorDetails": str(e)}
 
+    def set_footprint_type(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Set the placement type and exclusion flags of an existing PCB footprint.
+
+        The placement type controls whether a footprint appears in pick-and-place
+        (.pos) output files. KiCAD recognises three types:
+          - ``through_hole``  — PTH component (through-hole)
+          - ``smd``           — SMD component (surface-mount)
+          - ``unspecified``   — neither bit set (default for manually-placed items)
+
+        Optional exclusion flags (omit to leave unchanged):
+          - ``exclude_from_pos_files`` — suppress this ref from .pos exports
+          - ``exclude_from_bom``       — suppress this ref from BoM exports
+          - ``not_in_schematic``       — marks footprint as board-only (no schematic
+                                         symbol); KiCAD stores this as FP_BOARD_ONLY
+        """
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first",
+                }
+
+            reference = params.get("reference")
+            fp_type = params.get("type")
+
+            if not reference:
+                return {
+                    "success": False,
+                    "message": "Missing reference",
+                    "errorDetails": "reference parameter is required",
+                }
+            if fp_type not in ("smd", "through_hole", "unspecified"):
+                return {
+                    "success": False,
+                    "message": "Invalid type",
+                    "errorDetails": "type must be one of: smd, through_hole, unspecified",
+                }
+
+            # Find the footprint
+            module = self.board.FindFootprintByReference(reference)
+            if not module:
+                return {
+                    "success": False,
+                    "message": "Component not found",
+                    "errorDetails": f"Could not find component: {reference}",
+                }
+
+            # --- Placement type (mutually exclusive bits) ---
+            # Read current attributes, clear both type bits, then set the new one.
+            attrs = module.GetAttributes()
+            attrs &= ~(pcbnew.FP_THROUGH_HOLE | pcbnew.FP_SMD)
+            if fp_type == "through_hole":
+                attrs |= pcbnew.FP_THROUGH_HOLE
+            elif fp_type == "smd":
+                attrs |= pcbnew.FP_SMD
+            # "unspecified" leaves both bits clear
+            module.SetAttributes(attrs)
+
+            # --- Optional exclusion flags ---
+            # Use the dedicated setters so we don't have to manage bit masks manually.
+            if "exclude_from_pos_files" in params:
+                module.SetExcludedFromPosFiles(bool(params["exclude_from_pos_files"]))
+            if "exclude_from_bom" in params:
+                module.SetExcludedFromBOM(bool(params["exclude_from_bom"]))
+            if "not_in_schematic" in params:
+                # FP_BOARD_ONLY is the underlying bit for the "not in schematic" flag.
+                module.SetBoardOnly(bool(params["not_in_schematic"]))
+
+            # Read back the final state so the caller can verify.
+            final_attrs = module.GetAttributes()
+            if final_attrs & pcbnew.FP_THROUGH_HOLE:
+                resolved_type = "through_hole"
+            elif final_attrs & pcbnew.FP_SMD:
+                resolved_type = "smd"
+            else:
+                resolved_type = "unspecified"
+
+            return {
+                "success": True,
+                "message": f"Updated footprint type for {reference}",
+                "component": {
+                    "reference": reference,
+                    "type": resolved_type,
+                    "exclude_from_pos_files": module.IsExcludedFromPosFiles(),
+                    "exclude_from_bom": module.IsExcludedFromBOM(),
+                    "not_in_schematic": module.IsBoardOnly(),
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting footprint type: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to set footprint type",
+                "errorDetails": str(e),
+            }
+
     def get_component_properties(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get detailed properties of a component"""
         try:
@@ -454,6 +552,15 @@ class ComponentCommands:
             except Exception:
                 pass  # Courtyard may not exist or API may differ
 
+            # Resolve placement type as a human-readable string
+            raw_attrs = module.GetAttributes()
+            if raw_attrs & pcbnew.FP_THROUGH_HOLE:
+                placement_type = "through_hole"
+            elif raw_attrs & pcbnew.FP_SMD:
+                placement_type = "smd"
+            else:
+                placement_type = "unspecified"
+
             return {
                 "success": True,
                 "component": {
@@ -464,9 +571,10 @@ class ComponentCommands:
                     "rotation": module.GetOrientation().AsDegrees(),
                     "layer": self.board.GetLayerName(module.GetLayer()),
                     "attributes": {
-                        "smd": module.GetAttributes() & pcbnew.FP_SMD,
-                        "through_hole": module.GetAttributes() & pcbnew.FP_THROUGH_HOLE,
-                        "board_only": module.GetAttributes() & pcbnew.FP_BOARD_ONLY,
+                        "type": placement_type,
+                        "exclude_from_pos_files": module.IsExcludedFromPosFiles(),
+                        "exclude_from_bom": module.IsExcludedFromBOM(),
+                        "not_in_schematic": module.IsBoardOnly(),
                     },
                     "boundingBox": bbox_data,
                     "courtyard": courtyard_data,

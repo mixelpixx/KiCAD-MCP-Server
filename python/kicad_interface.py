@@ -325,9 +325,9 @@ try:
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
     from commands.schematic import SchematicManager
-    from commands.schematic_hierarchy import SchematicHierarchyCommands
-    from commands.schematic_field_layout import SchematicFieldLayoutCommands
     from commands.schematic_batch import SchematicBatchCommands
+    from commands.schematic_field_layout import SchematicFieldLayoutCommands
+    from commands.schematic_hierarchy import SchematicHierarchyCommands
     from commands.symbol_creator import SymbolCreator
     from commands.symbol_pins import SymbolPinCommands
 
@@ -504,6 +504,7 @@ class KiCADInterface:
             "align_components": self.component_commands.align_components,
             "check_courtyard_overlaps": self.component_commands.check_courtyard_overlaps,
             "duplicate_component": self.component_commands.duplicate_component,
+            "set_footprint_type": self.component_commands.set_footprint_type,
             # Routing commands
             "add_net": self.routing_commands.add_net,
             "route_trace": self.routing_commands.route_trace,
@@ -678,6 +679,7 @@ class KiCADInterface:
         "delete_component": "_ipc_delete_component",
         "get_component_list": "_ipc_get_component_list",
         "get_component_properties": "_ipc_get_component_properties",
+        "set_footprint_type": "_ipc_set_footprint_type",
         # Save command
         "save_project": "_ipc_save_project",
     }
@@ -930,6 +932,7 @@ class KiCADInterface:
         "sync_schematic_to_board",
         "connect_passthrough",
         "connect_to_net",
+        "set_footprint_type",
     }
 
     @staticmethod
@@ -6265,6 +6268,97 @@ print("ok")
             return {"success": True, "component": target}
         except Exception as e:
             logger.error(f"IPC get_component_properties error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_set_footprint_type(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """IPC handler for set_footprint_type.
+
+        Sets the placement type (through_hole / smd / unspecified) and optional
+        exclusion flags on a footprint via the kipy proto API, so the change is
+        visible in the KiCAD UI without a manual reload.
+
+        Falls back to the SWIG path if the IPC footprint lookup fails, because
+        kipy's Footprint wrapper does not always expose a ``not_in_schematic``
+        setter depending on the installed kipy version.
+        """
+        try:
+            reference = params.get("reference", params.get("componentId", ""))
+            fp_type = params.get("type")
+
+            if fp_type not in ("smd", "through_hole", "unspecified"):
+                return {
+                    "success": False,
+                    "message": "Invalid type",
+                    "errorDetails": "type must be one of: smd, through_hole, unspecified",
+                }
+
+            board = self.ipc_board_api._get_board()
+            footprints = board.get_footprints()
+
+            target_fp = None
+            for fp in footprints:
+                if fp.reference_field and fp.reference_field.text.value == reference:
+                    target_fp = fp
+                    break
+
+            if not target_fp:
+                return {"success": False, "message": f"Component {reference} not found"}
+
+            try:
+                from kipy.proto.board.board_types_pb2 import FootprintMountingStyle
+
+                style_map = {
+                    "through_hole": FootprintMountingStyle.FMS_THROUGH_HOLE,
+                    "smd": FootprintMountingStyle.FMS_SMD,
+                    "unspecified": FootprintMountingStyle.FMS_UNSPECIFIED,
+                }
+                target_fp.proto.attributes.mounting_style = style_map[fp_type]
+
+                if "exclude_from_pos_files" in params:
+                    target_fp.proto.attributes.exclude_from_position_files = bool(
+                        params["exclude_from_pos_files"]
+                    )
+                if "exclude_from_bom" in params:
+                    target_fp.proto.attributes.exclude_from_bill_of_materials = bool(
+                        params["exclude_from_bom"]
+                    )
+                if "not_in_schematic" in params:
+                    target_fp.proto.attributes.not_in_schematic = bool(params["not_in_schematic"])
+
+                commit = board.begin_commit()
+                board.update_items([target_fp])
+                board.push_commit(commit, f"Set footprint type for {reference}")
+
+                return {
+                    "success": True,
+                    "message": f"Updated footprint type for {reference} (visible in KiCAD UI)",
+                    "component": {
+                        "reference": reference,
+                        "type": fp_type,
+                        "exclude_from_pos_files": target_fp.proto.attributes.exclude_from_position_files,  # noqa: E501
+                        "exclude_from_bom": target_fp.proto.attributes.exclude_from_bill_of_materials,
+                        "not_in_schematic": target_fp.proto.attributes.not_in_schematic,
+                    },
+                    "_backend": "ipc",
+                    "_realtime": True,
+                }
+
+            except Exception as ipc_err:
+                # IPC proto manipulation failed; fall back to SWIG for the write.
+                logger.warning(
+                    f"_ipc_set_footprint_type: IPC proto update failed ({ipc_err}), "
+                    "falling back to SWIG"
+                )
+                if self.board:
+                    result = self.component_commands.set_footprint_type(params)
+                    if isinstance(result, dict):
+                        result["_backend"] = "swig"
+                        result["_realtime"] = False
+                    return result
+                raise
+
+        except Exception as e:
+            logger.error(f"IPC set_footprint_type error: {e}")
             return {"success": False, "message": str(e)}
 
     # =========================================================================
