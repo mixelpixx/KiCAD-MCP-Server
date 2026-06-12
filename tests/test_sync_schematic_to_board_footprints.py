@@ -74,7 +74,7 @@ class TestAddMissingFootprintsFromSchematic:
                     }
                 ],
             ),
-            patch("kicad_interface.pcbnew") as mock_pcbnew,
+            patch("commands.schematic_handlers.pcbnew") as mock_pcbnew,
             patch("commands.library.LibraryManager") as mock_lm_cls,
         ):
             mock_pcbnew.FootprintLoad.return_value = loaded_module
@@ -113,7 +113,7 @@ class TestAddMissingFootprintsFromSchematic:
                     }
                 ],
             ),
-            patch("kicad_interface.pcbnew"),
+            patch("commands.schematic_handlers.pcbnew"),
             patch("commands.library.LibraryManager") as mock_lm_cls,
         ):
             lm = MagicMock()
@@ -144,7 +144,7 @@ class TestAddMissingFootprintsFromSchematic:
                     {"reference": "#FLG0001", "value": "PWR_FLAG", "footprint": ""},
                 ],
             ),
-            patch("kicad_interface.pcbnew"),
+            patch("commands.schematic_handlers.pcbnew"),
             patch("commands.library.LibraryManager") as mock_lm_cls,
         ):
             mock_lm_cls.return_value = MagicMock(libraries={})
@@ -172,7 +172,7 @@ class TestAddMissingFootprintsFromSchematic:
                 "_extract_components_from_schematic",
                 return_value=[{"reference": "R1", "value": "10k", "footprint": ""}],
             ),
-            patch("kicad_interface.pcbnew"),
+            patch("commands.schematic_handlers.pcbnew"),
             patch("commands.library.LibraryManager") as mock_lm_cls,
         ):
             mock_lm_cls.return_value = MagicMock(libraries={})
@@ -205,7 +205,7 @@ class TestAddMissingFootprintsFromSchematic:
                     }
                 ],
             ),
-            patch("kicad_interface.pcbnew"),
+            patch("commands.schematic_handlers.pcbnew"),
             patch("commands.library.LibraryManager") as mock_lm_cls,
         ):
             mock_lm_cls.return_value = MagicMock(libraries={})  # MyVendor not present
