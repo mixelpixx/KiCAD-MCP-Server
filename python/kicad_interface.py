@@ -595,6 +595,7 @@ class KiCADInterface:
             "export_gencad": self._handle_export_gencad,
             "export_pos": self._handle_export_pos,
             "export_pcb_pdf": self._handle_export_pcb_pdf,
+            "export_pcb_svg": self._handle_export_pcb_svg,
             "generate_netlist": self._handle_generate_netlist,
             "sync_schematic_to_board": self._handle_sync_schematic_to_board,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
@@ -5143,6 +5144,110 @@ class KiCADInterface:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
             logger.error(f"Error exporting PCB PDF: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_pcb_svg(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Plot the PCB to SVG via kicad-cli (`pcb export svg`).
+
+        Exposes the full layer-plot option set: layer lists, mirror, soldermask
+        subtraction, negative/B&W, theme, DNP fab-layer modes, page-size mode,
+        fit-page, drill-shape, and single/multi output modes. Reads the saved
+        .kicad_pcb.
+        """
+        import subprocess
+
+        logger.info("Exporting PCB SVG via kicad-cli")
+        try:
+            board_path = params.get("boardPath") or self._current_board_path()
+            output_path = params.get("outputPath")
+
+            if not board_path:
+                return {
+                    "success": False,
+                    "message": "boardPath is required (no current board could be resolved)",
+                }
+            if not os.path.exists(board_path):
+                return {"success": False, "message": f"Board not found: {board_path}"}
+            if not output_path:
+                return {"success": False, "message": "outputPath is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_path = os.path.abspath(os.path.expanduser(output_path))
+            parent = os.path.dirname(output_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+
+            cmd = [kicad_cli, "pcb", "export", "svg", "--output", output_path]
+
+            layers = params.get("layers")
+            if layers:
+                cmd += ["--layers", ",".join(layers) if isinstance(layers, list) else str(layers)]
+            common_layers = params.get("commonLayers")
+            if common_layers:
+                cmd += [
+                    "--common-layers",
+                    (
+                        ",".join(common_layers)
+                        if isinstance(common_layers, list)
+                        else str(common_layers)
+                    ),
+                ]
+
+            if params.get("drawingSheet"):
+                cmd += ["--drawing-sheet", params["drawingSheet"]]
+            for kv in params.get("defineVar", []) or []:
+                cmd += ["--define-var", kv]
+
+            value_map = {
+                "theme": "--theme",
+                "pageSizeMode": "--page-size-mode",
+                "drillShapeOpt": "--drill-shape-opt",
+            }
+            for key, flag in value_map.items():
+                val = params.get(key)
+                if val is not None and val != "":
+                    cmd += [flag, str(val)]
+
+            flag_map = {
+                "subtractSoldermask": "--subtract-soldermask",
+                "mirror": "--mirror",
+                "negative": "--negative",
+                "blackAndWhite": "--black-and-white",
+                "sketchPadsOnFabLayers": "--sketch-pads-on-fab-layers",
+                "hideDnpFootprintsOnFabLayers": "--hide-DNP-footprints-on-fab-layers",
+                "sketchDnpFootprintsOnFabLayers": "--sketch-DNP-footprints-on-fab-layers",
+                "crossoutDnpFootprintsOnFabLayers": "--crossout-DNP-footprints-on-fab-layers",
+                "fitPageToBoard": "--fit-page-to-board",
+                "excludeDrawingSheet": "--exclude-drawing-sheet",
+                "modeSingle": "--mode-single",
+                "modeMulti": "--mode-multi",
+            }
+            for key, flag in flag_map.items():
+                if params.get(key):
+                    cmd.append(flag)
+
+            cmd.append(board_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+            return {"success": True, "outputPath": output_path}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting PCB SVG: {e}")
             return {"success": False, "message": str(e)}
 
     def _handle_generate_netlist(self, params: Dict[str, Any]) -> Dict[str, Any]:

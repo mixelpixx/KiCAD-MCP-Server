@@ -719,5 +719,81 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
   );
 
+  // ------------------------------------------------------
+  // Export PCB SVG Tool (kicad-cli, full layer-plot option set)
+  // ------------------------------------------------------
+  server.tool(
+    "export_pcb_svg",
+    "Plot the PCB layout to SVG via kicad-cli, exposing the full layer-plot option set (layer + common-layer lists, mirror, soldermask subtraction, negative, black-and-white, theme, DNP fab-layer modes, page-size mode, fit-page-to-board, exclude-drawing-sheet, drill shape, single/multi output modes). Rich CLI sibling of export_svg. Reads the last SAVED state of the .kicad_pcb.",
+    {
+      outputPath: z.string().describe("Output SVG file path (or directory in multi mode)"),
+      boardPath: z.string().optional().describe("Path to the .kicad_pcb (default: current board)"),
+      layers: z
+        .array(z.string())
+        .optional()
+        .describe("Layers to plot, untranslated names e.g. ['F.Cu','B.Cu','Edge.Cuts']"),
+      commonLayers: z
+        .array(z.string())
+        .optional()
+        .describe("Layers to include on every plot (e.g. ['Edge.Cuts'])"),
+      drawingSheet: z.string().optional().describe("Path to a drawing sheet override"),
+      defineVar: z
+        .array(z.string())
+        .optional()
+        .describe("Project variable overrides as 'KEY=VALUE' strings"),
+      subtractSoldermask: z.boolean().optional().describe("Subtract soldermask from silkscreen"),
+      mirror: z.boolean().optional().describe("Mirror the board (to show bottom layers)"),
+      negative: z.boolean().optional().describe("Plot as negative"),
+      blackAndWhite: z.boolean().optional().describe("Black and white only"),
+      theme: z.string().optional().describe("Color theme to use (default: PCB editor settings)"),
+      sketchPadsOnFabLayers: z
+        .boolean()
+        .optional()
+        .describe("Draw pad outlines and numbers on fab layers"),
+      hideDnpFootprintsOnFabLayers: z
+        .boolean()
+        .optional()
+        .describe("Don't plot DNP footprint text/graphics on fab layers"),
+      sketchDnpFootprintsOnFabLayers: z
+        .boolean()
+        .optional()
+        .describe("Plot DNP footprints in sketch mode on fab layers"),
+      crossoutDnpFootprintsOnFabLayers: z
+        .boolean()
+        .optional()
+        .describe("Plot an 'X' over DNP footprint courtyards and strike out their refdes"),
+      pageSizeMode: z
+        .number()
+        .optional()
+        .describe("Page sizing mode (0 frame+title block, 1 current page size, 2 board area only)"),
+      fitPageToBoard: z.boolean().optional().describe("Fit the page to the board"),
+      excludeDrawingSheet: z.boolean().optional().describe("No drawing sheet"),
+      drillShapeOpt: z
+        .number()
+        .optional()
+        .describe("Pad/via drill shape option (0 none, 1 small, 2 actual; default 2)"),
+      modeSingle: z
+        .boolean()
+        .optional()
+        .describe("Single file; output path is full path; LAYER_LIST controls all layers"),
+      modeMulti: z
+        .boolean()
+        .optional()
+        .describe("Multi output; output path is a directory (GUI-like plotting)"),
+    },
+    async (args) => {
+      logger.debug(`Exporting PCB SVG to: ${args.outputPath}`);
+      const result = await callKicadScript("export_pcb_svg", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
   logger.info("Export tools registered");
 }

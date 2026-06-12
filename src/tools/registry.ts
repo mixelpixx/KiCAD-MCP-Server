@@ -66,6 +66,7 @@ export const toolCategories: ToolCategory[] = [
       "export_gencad",
       "export_pos",
       "export_pcb_pdf",
+      "export_pcb_svg",
       "export_pdf",
       "export_svg",
       "export_3d",
