@@ -33,6 +33,7 @@ module = [
     "cairosvg",
     "sexpdata",
     "skip",
+    "fitz",
     "kipy",
     "kipy.*",
     "schematic",

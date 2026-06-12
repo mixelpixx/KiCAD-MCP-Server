@@ -203,6 +203,59 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   );
 
   // ------------------------------------------------------
+  // Set Footprint Type Tool
+  // ------------------------------------------------------
+  server.tool(
+    "set_footprint_type",
+    "Set the placement type (through_hole / smd / unspecified) and optional exclusion flags on a placed PCB footprint. The placement type controls whether the footprint is included in pick-and-place (.pos) output files. Use exclude_from_pos_files to suppress a footprint from .pos exports without changing its type.",
+    {
+      reference: z.string().describe("Reference designator of the footprint (e.g. 'R1', 'U3')"),
+      type: z
+        .enum(["smd", "through_hole", "unspecified"])
+        .describe(
+          "Placement type: 'smd' for surface-mount, 'through_hole' for PTH components, 'unspecified' to clear both bits (e.g. for board-only or mechanically-placed items)",
+        ),
+      exclude_from_pos_files: z
+        .boolean()
+        .optional()
+        .describe(
+          "When true, suppress this footprint from pick-and-place (.pos) exports. Omit to leave the current setting unchanged.",
+        ),
+      exclude_from_bom: z
+        .boolean()
+        .optional()
+        .describe(
+          "When true, suppress this footprint from BoM exports. Omit to leave the current setting unchanged.",
+        ),
+      not_in_schematic: z
+        .boolean()
+        .optional()
+        .describe(
+          "When true, marks the footprint as board-only (no corresponding schematic symbol). Omit to leave the current setting unchanged.",
+        ),
+    },
+    async ({ reference, type, exclude_from_pos_files, exclude_from_bom, not_in_schematic }) => {
+      logger.debug(`Setting footprint type for: ${reference} -> ${type}`);
+      const result = await callKicadScript("set_footprint_type", {
+        reference,
+        type,
+        exclude_from_pos_files,
+        exclude_from_bom,
+        not_in_schematic,
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
+  // ------------------------------------------------------
   // Find Component Tool
   // ------------------------------------------------------
   server.tool(
