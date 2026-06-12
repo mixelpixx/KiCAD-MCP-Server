@@ -72,6 +72,7 @@ export const toolCategories: ToolCategory[] = [
       "export_3d_cli",
       "export_sch_bom",
       "export_sch_pdf",
+      "export_sch_svg",
       "export_pdf",
       "export_svg",
       "export_3d",
