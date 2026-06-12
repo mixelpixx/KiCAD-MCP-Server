@@ -4,6 +4,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Tooling
+
+- **TypeScript test scaffolding (Vitest)**: `npm run test:ts` now runs a real
+  Vitest suite instead of the placeholder echo. Starter coverage lives in
+  `tests-ts/` and exercises the pure-function modules `src/tools/registry.ts`
+  (categories, direct vs. routed classification, search, and stats invariants)
+  and `src/tools/tool-response.ts` (`formatKicadResult` success/error shaping).
+  Use `npm run test:ts:watch` for the watch-mode REPL. The CI `typescript-tests`
+  job now invokes the suite directly instead of swallowing failures.
+
+- **Version sync**: `package.json` now reports `2.2.3`, matching the released
+  version documented in this changelog and in `docs/ROADMAP.md`. Previously it
+  was stuck at `2.1.0-alpha`.
+
 ### Bug Fixes
 
 - **`rotate_component` now treats `angle` as an absolute target rotation**,
@@ -65,7 +79,6 @@ All notable changes to the KiCAD MCP Server project are documented here.
   copper — this implementation explicitly walks all layers.
 
   Combines three placement strategies, freely composable:
-
   - `grid` — regular grid across the board interior.
   - `around_refs` — densify around named footprints (good for tucking
     extra ground under MCUs, switching regulators, or RF parts).
@@ -77,12 +90,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   `clearance`, `edgeMargin`), an `maxVias` cap for incremental work,
   auto-detection of the GND net (tries `GND` / `GROUND` / `VSS` /
   `/GND`), and a `dryRun` mode that returns the placements that
-  *would* be made without modifying the board — useful for previewing
+  _would_ be made without modifying the board — useful for previewing
   before committing.
 
   Returns `{ placed: [{x, y, unit}, ...], summary: {placed_count,
-  candidates_evaluated, skipped_by_zone_membership,
-  skipped_by_collision, ...} }`.
+candidates_evaluated, skipped_by_zone_membership,
+skipped_by_collision, ...} }`.
 
   Approach ported from
   [morningfire-pcb-automation](https://github.com/NiNjA-CodE/morningfire-pcb-automation)

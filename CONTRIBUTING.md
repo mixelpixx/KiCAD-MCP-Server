@@ -250,8 +250,20 @@ Then create a Pull Request on GitHub.
 
 ### Running Tests
 
+The project has two test suites:
+
+- **TypeScript** (Vitest) — lives in `tests-ts/`, covers the MCP protocol/router layer in `src/`.
+- **Python** (pytest) — lives in `tests/`, covers the KiCAD interface in `python/`.
+
 ```bash
-# All tests
+# TypeScript tests (Vitest)
+npm run test:ts            # one-shot run
+npm run test:ts:watch      # watch mode
+
+# Run both TS and Python suites
+npm test
+
+# Python tests only
 pytest
 
 # Unit tests only

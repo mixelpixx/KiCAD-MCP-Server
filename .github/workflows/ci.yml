@@ -35,8 +35,8 @@ jobs:
       - name: Run linter
         run: npm run lint || echo "Linter not configured yet"
 
-      - name: Run tests
-        run: npm test || echo "Tests not configured yet"
+      - name: Run TypeScript tests
+        run: npm run test:ts
 
   # Python tests
   python-tests:
