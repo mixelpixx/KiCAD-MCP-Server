@@ -318,6 +318,10 @@ class WireManager:
             # Orientation-aware justify: KiCAD flips horizontal alignment for 180°/270°
             justify_h = Symbol("right") if orientation in (180, 270) else Symbol("left")
 
+            justify_expr = [Symbol("justify"), justify_h]
+            if label_type == "label":
+                justify_expr.append(Symbol("bottom"))
+
             label_sexp = [
                 Symbol(label_type),
                 text,
@@ -325,7 +329,7 @@ class WireManager:
                 [
                     Symbol("effects"),
                     [Symbol("font"), [Symbol("size"), 1.27, 1.27]],
-                    [Symbol("justify"), justify_h, Symbol("bottom")],
+                    justify_expr,
                 ],
                 [Symbol("uuid"), str(uuid.uuid4())],
             ]
