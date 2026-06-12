@@ -558,5 +558,41 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
   );
 
+  // ------------------------------------------------------
+  // Export GenCAD Tool (kicad-cli)
+  // ------------------------------------------------------
+  server.tool(
+    "export_gencad",
+    "Export the PCB in GenCAD format via kicad-cli. Assembly/test interchange format. Exposes padstack flip, unique pin/footprint shape generation, drill-file origin, and store-origin-coordinate options. Reads the last SAVED state of the .kicad_pcb.",
+    {
+      outputPath: z.string().describe("Output .cad file path"),
+      boardPath: z.string().optional().describe("Path to the .kicad_pcb (default: current board)"),
+      defineVar: z
+        .array(z.string())
+        .optional()
+        .describe("Project variable overrides as 'KEY=VALUE' strings"),
+      flipBottomPads: z.boolean().optional().describe("Flip bottom footprint padstacks"),
+      uniquePins: z.boolean().optional().describe("Generate unique pin names"),
+      uniqueFootprints: z
+        .boolean()
+        .optional()
+        .describe("Generate a new shape for each footprint instance (do not reuse shapes)"),
+      useDrillOrigin: z.boolean().optional().describe("Use drill/place file origin as origin"),
+      storeOriginCoord: z.boolean().optional().describe("Save the origin coordinates in the file"),
+    },
+    async (args) => {
+      logger.debug(`Exporting GenCAD to: ${args.outputPath}`);
+      const result = await callKicadScript("export_gencad", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
   logger.info("Export tools registered");
 }
