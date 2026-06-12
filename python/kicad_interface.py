@@ -588,6 +588,25 @@ class KiCADInterface:
             "get_net_at_point": self._handle_get_net_at_point,
             "run_erc": self._handle_run_erc,
             "export_netlist": self._handle_export_netlist,
+            "export_gerbers": self._handle_export_gerbers,
+            "export_drill": self._handle_export_drill,
+            "export_ipc2581": self._handle_export_ipc2581,
+            "export_odb": self._handle_export_odb,
+            "export_ipcd356": self._handle_export_ipcd356,
+            "export_gencad": self._handle_export_gencad,
+            "export_pos": self._handle_export_pos,
+            "export_pcb_pdf": self._handle_export_pcb_pdf,
+            "export_pcb_svg": self._handle_export_pcb_svg,
+            "export_pcb_dxf": self._handle_export_pcb_dxf,
+            "export_gerber_single": self._handle_export_gerber_single,
+            "export_3d_cli": self._handle_export_3d_cli,
+            "export_sch_bom": self._handle_export_sch_bom,
+            "export_sch_pdf": self._handle_export_sch_pdf,
+            "export_sch_svg": self._handle_export_sch_svg,
+            "export_sch_dxf": self._handle_export_sch_dxf,
+            "export_sch_hpgl": self._handle_export_sch_hpgl,
+            "export_sch_ps": self._handle_export_sch_ps,
+            "export_sch_python_bom": self._handle_export_sch_python_bom,
             "generate_netlist": self._handle_generate_netlist,
             "sync_schematic_to_board": self._handle_sync_schematic_to_board,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
@@ -4497,6 +4516,1596 @@ class KiCADInterface:
             return {"success": False, "message": "kicad-cli timed out after 60 seconds"}
         except Exception as e:
             logger.error(f"Error exporting netlist: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_gerbers(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Plot multiple Gerbers for a PCB via kicad-cli (`pcb export gerbers`).
+
+        Exposes the full Plot-dialog option set. Reads the board from disk, so it
+        reflects the last *saved* state of the .kicad_pcb. Pass ``boardPath`` to
+        target a specific file; otherwise the current board path is used.
+        """
+        import subprocess
+
+        logger.info("Exporting Gerbers via kicad-cli")
+        try:
+            board_path = params.get("boardPath") or self._current_board_path()
+            output_dir = params.get("outputDir")
+
+            if not board_path:
+                return {
+                    "success": False,
+                    "message": "boardPath is required (no current board could be resolved)",
+                }
+            if not Path(board_path).exists():
+                return {"success": False, "message": f"Board not found: {board_path}"}
+            if not output_dir:
+                return {"success": False, "message": "outputDir is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_dir = str(Path(output_dir).expanduser().resolve())
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "pcb", "export", "gerbers", "--output", output_dir]
+
+            # Layer selection (accept list or comma string)
+            layers = params.get("layers")
+            if layers:
+                cmd += ["--layers", ",".join(layers) if isinstance(layers, list) else str(layers)]
+            common_layers = params.get("commonLayers")
+            if common_layers:
+                cmd += [
+                    "--common-layers",
+                    (
+                        ",".join(common_layers)
+                        if isinstance(common_layers, list)
+                        else str(common_layers)
+                    ),
+                ]
+
+            if params.get("drawingSheet"):
+                cmd += ["--drawing-sheet", params["drawingSheet"]]
+            for kv in params.get("defineVar", []) or []:
+                cmd += ["--define-var", kv]
+
+            # Boolean flags (omit to leave at kicad-cli default)
+            flag_map = {
+                "excludeRefdes": "--exclude-refdes",
+                "excludeValue": "--exclude-value",
+                "includeBorderTitle": "--include-border-title",
+                "sketchPadsOnFabLayers": "--sketch-pads-on-fab-layers",
+                "hideDnpFootprintsOnFabLayers": "--hide-DNP-footprints-on-fab-layers",
+                "sketchDnpFootprintsOnFabLayers": "--sketch-DNP-footprints-on-fab-layers",
+                "crossoutDnpFootprintsOnFabLayers": "--crossout-DNP-footprints-on-fab-layers",
+                "noX2": "--no-x2",
+                "noNetlist": "--no-netlist",
+                "subtractSoldermask": "--subtract-soldermask",
+                "disableApertureMacros": "--disable-aperture-macros",
+                "useDrillFileOrigin": "--use-drill-file-origin",
+                "noProtelExt": "--no-protel-ext",
+                "boardPlotParams": "--board-plot-params",
+            }
+            for key, flag in flag_map.items():
+                if params.get(key):
+                    cmd.append(flag)
+
+            precision = params.get("precision")
+            if precision is not None:
+                cmd += ["--precision", str(precision)]
+
+            cmd.append(board_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+
+            files = sorted(p.name for p in Path(output_dir).iterdir() if p.is_file())
+            return {"success": True, "outputDir": output_dir, "files": files}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting Gerbers: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_drill(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate drill files via kicad-cli (`pcb export drill`).
+
+        Exposes the full Excellon/Gerber drill option set. Reads the saved
+        .kicad_pcb on disk.
+        """
+        import subprocess
+
+        logger.info("Exporting drill files via kicad-cli")
+        try:
+            board_path = params.get("boardPath") or self._current_board_path()
+            output_dir = params.get("outputDir")
+
+            if not board_path:
+                return {
+                    "success": False,
+                    "message": "boardPath is required (no current board could be resolved)",
+                }
+            if not Path(board_path).exists():
+                return {"success": False, "message": f"Board not found: {board_path}"}
+            if not output_dir:
+                return {"success": False, "message": "outputDir is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_dir = str(Path(output_dir).expanduser().resolve())
+            # kicad-cli drill requires the output dir path to end with a separator
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "pcb", "export", "drill", "--output", output_dir + os.sep]
+
+            # Valued options (omit to use kicad-cli defaults)
+            value_map = {
+                "format": "--format",
+                "drillOrigin": "--drill-origin",
+                "excellonZerosFormat": "--excellon-zeros-format",
+                "excellonOvalFormat": "--excellon-oval-format",
+                "excellonUnits": "--excellon-units",
+                "mapFormat": "--map-format",
+                "gerberPrecision": "--gerber-precision",
+            }
+            for key, flag in value_map.items():
+                val = params.get(key)
+                if val is not None:
+                    cmd += [flag, str(val)]
+
+            # Boolean flags
+            flag_map = {
+                "excellonMirrorY": "--excellon-mirror-y",
+                "excellonMinHeader": "--excellon-min-header",
+                "excellonSeparateTh": "--excellon-separate-th",
+                "generateMap": "--generate-map",
+            }
+            for key, flag in flag_map.items():
+                if params.get(key):
+                    cmd.append(flag)
+
+            cmd.append(board_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+
+            files = sorted(p.name for p in Path(output_dir).iterdir() if p.is_file())
+            return {"success": True, "outputDir": output_dir, "files": files}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 120 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting drill files: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_ipc2581(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export the PCB in IPC-2581 format via kicad-cli (`pcb export ipc2581`).
+
+        IPC-2581 is a single-file MES/CAD interchange format carrying placement,
+        nets, and BOM part data inline. The bom-col-* params map schematic fields
+        to the BOM columns embedded in the file. Reads the saved .kicad_pcb.
+        """
+        import subprocess
+
+        logger.info("Exporting IPC-2581 via kicad-cli")
+        try:
+            board_path = params.get("boardPath") or self._current_board_path()
+            output_path = params.get("outputPath")
+
+            if not board_path:
+                return {
+                    "success": False,
+                    "message": "boardPath is required (no current board could be resolved)",
+                }
+            if not Path(board_path).exists():
+                return {"success": False, "message": f"Board not found: {board_path}"}
+            if not output_path:
+                return {"success": False, "message": "outputPath is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_path = str(Path(output_path).expanduser().resolve())
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "pcb", "export", "ipc2581", "--output", output_path]
+
+            if params.get("drawingSheet"):
+                cmd += ["--drawing-sheet", params["drawingSheet"]]
+            for kv in params.get("defineVar", []) or []:
+                cmd += ["--define-var", kv]
+
+            value_map = {
+                "precision": "--precision",
+                "version": "--version",
+                "units": "--units",
+                "bomColIntId": "--bom-col-int-id",
+                "bomColMfgPn": "--bom-col-mfg-pn",
+                "bomColMfg": "--bom-col-mfg",
+                "bomColDistPn": "--bom-col-dist-pn",
+                "bomColDist": "--bom-col-dist",
+            }
+            for key, flag in value_map.items():
+                val = params.get(key)
+                if val is not None and val != "":
+                    cmd += [flag, str(val)]
+
+            if params.get("compress"):
+                cmd.append("--compress")
+
+            cmd.append(board_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+            return {"success": True, "outputPath": output_path}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting IPC-2581: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_odb(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export the PCB in ODB++ format via kicad-cli (`pcb export odb`).
+
+        ODB++ is a fab/assembly job archive. ``compression`` selects the output
+        container (zip / tgz / none). Reads the saved .kicad_pcb.
+        """
+        import subprocess
+
+        logger.info("Exporting ODB++ via kicad-cli")
+        try:
+            board_path = params.get("boardPath") or self._current_board_path()
+            output_path = params.get("outputPath")
+
+            if not board_path:
+                return {
+                    "success": False,
+                    "message": "boardPath is required (no current board could be resolved)",
+                }
+            if not Path(board_path).exists():
+                return {"success": False, "message": f"Board not found: {board_path}"}
+            if not output_path:
+                return {"success": False, "message": "outputPath is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
+            if parent:
+                Path(parent).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "pcb", "export", "odb", "--output", output_path]
+
+            if params.get("drawingSheet"):
+                cmd += ["--drawing-sheet", params["drawingSheet"]]
+            for kv in params.get("defineVar", []) or []:
+                cmd += ["--define-var", kv]
+            for key, flag in {
+                "precision": "--precision",
+                "compression": "--compression",
+                "units": "--units",
+            }.items():
+                val = params.get(key)
+                if val is not None and val != "":
+                    cmd += [flag, str(val)]
+
+            cmd.append(board_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+            return {"success": True, "outputPath": output_path}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting ODB++: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_ipcd356(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate an IPC-D-356 netlist file via kicad-cli (`pcb export ipcd356`).
+
+        IPC-D-356 is a bare-board electrical-test netlist consumed by flying-probe
+        and bed-of-nails testers. Minimal option set (output + input only). Reads
+        the saved .kicad_pcb.
+        """
+        import subprocess
+
+        logger.info("Exporting IPC-D-356 netlist via kicad-cli")
+        try:
+            board_path = params.get("boardPath") or self._current_board_path()
+            output_path = params.get("outputPath")
+
+            if not board_path:
+                return {
+                    "success": False,
+                    "message": "boardPath is required (no current board could be resolved)",
+                }
+            if not Path(board_path).exists():
+                return {"success": False, "message": f"Board not found: {board_path}"}
+            if not output_path:
+                return {"success": False, "message": "outputPath is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
+            if parent:
+                Path(parent).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "pcb", "export", "ipcd356", "--output", output_path]
+            cmd.append(board_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+            return {"success": True, "outputPath": output_path}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting IPC-D-356: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_gencad(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export the PCB in GenCAD format via kicad-cli (`pcb export gencad`).
+
+        GenCAD is an assembly/test interchange format. Exposes the padstack-flip,
+        unique-pin/footprint, drill-origin, and store-origin flags. Reads the
+        saved .kicad_pcb.
+        """
+        import subprocess
+
+        logger.info("Exporting GenCAD via kicad-cli")
+        try:
+            board_path = params.get("boardPath") or self._current_board_path()
+            output_path = params.get("outputPath")
+
+            if not board_path:
+                return {
+                    "success": False,
+                    "message": "boardPath is required (no current board could be resolved)",
+                }
+            if not Path(board_path).exists():
+                return {"success": False, "message": f"Board not found: {board_path}"}
+            if not output_path:
+                return {"success": False, "message": "outputPath is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
+            if parent:
+                Path(parent).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "pcb", "export", "gencad", "--output", output_path]
+
+            for kv in params.get("defineVar", []) or []:
+                cmd += ["--define-var", kv]
+
+            flag_map = {
+                "flipBottomPads": "--flip-bottom-pads",
+                "uniquePins": "--unique-pins",
+                "uniqueFootprints": "--unique-footprints",
+                "useDrillOrigin": "--use-drill-origin",
+                "storeOriginCoord": "--store-origin-coord",
+            }
+            for key, flag in flag_map.items():
+                if params.get(key):
+                    cmd.append(flag)
+
+            cmd.append(board_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+            return {"success": True, "outputPath": output_path}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting GenCAD: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_pos(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate a component placement (position) file via kicad-cli
+        (`pcb export pos`).
+
+        This is the rich CLI sibling of export_position_file: full option set
+        (side, format, units, bottom-negate-X, drill origin, SMD-only, TH/DNP
+        exclusion, gerber board edge). Reads the saved .kicad_pcb.
+        """
+        import subprocess
+
+        logger.info("Exporting position file via kicad-cli")
+        try:
+            board_path = params.get("boardPath") or self._current_board_path()
+            output_path = params.get("outputPath")
+
+            if not board_path:
+                return {
+                    "success": False,
+                    "message": "boardPath is required (no current board could be resolved)",
+                }
+            if not Path(board_path).exists():
+                return {"success": False, "message": f"Board not found: {board_path}"}
+            if not output_path:
+                return {"success": False, "message": "outputPath is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
+            if parent:
+                Path(parent).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "pcb", "export", "pos", "--output", output_path]
+
+            value_map = {
+                "side": "--side",
+                "format": "--format",
+                "units": "--units",
+            }
+            for key, flag in value_map.items():
+                val = params.get(key)
+                if val is not None and val != "":
+                    cmd += [flag, str(val)]
+
+            flag_map = {
+                "bottomNegateX": "--bottom-negate-x",
+                "useDrillFileOrigin": "--use-drill-file-origin",
+                "smdOnly": "--smd-only",
+                "excludeFpTh": "--exclude-fp-th",
+                "excludeDnp": "--exclude-dnp",
+                "gerberBoardEdge": "--gerber-board-edge",
+            }
+            for key, flag in flag_map.items():
+                if params.get(key):
+                    cmd.append(flag)
+
+            cmd.append(board_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+            return {"success": True, "outputPath": output_path}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting position file: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_pcb_pdf(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Plot the PCB to PDF via kicad-cli (`pcb export pdf`).
+
+        Exposes the full layer-plot option set: layer lists, mirror, refdes/value
+        exclusion, border+title, soldermask subtraction, DNP fab-layer modes,
+        negative/B&W, theme, drill-shape, and the single/separate/multipage
+        output modes. Reads the saved .kicad_pcb.
+        """
+        import subprocess
+
+        logger.info("Exporting PCB PDF via kicad-cli")
+        try:
+            board_path = params.get("boardPath") or self._current_board_path()
+            output_path = params.get("outputPath")
+
+            if not board_path:
+                return {
+                    "success": False,
+                    "message": "boardPath is required (no current board could be resolved)",
+                }
+            if not Path(board_path).exists():
+                return {"success": False, "message": f"Board not found: {board_path}"}
+            if not output_path:
+                return {"success": False, "message": "outputPath is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
+            if parent:
+                Path(parent).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "pcb", "export", "pdf", "--output", output_path]
+
+            layers = params.get("layers")
+            if layers:
+                cmd += ["--layers", ",".join(layers) if isinstance(layers, list) else str(layers)]
+            common_layers = params.get("commonLayers")
+            if common_layers:
+                cmd += [
+                    "--common-layers",
+                    (
+                        ",".join(common_layers)
+                        if isinstance(common_layers, list)
+                        else str(common_layers)
+                    ),
+                ]
+
+            if params.get("drawingSheet"):
+                cmd += ["--drawing-sheet", params["drawingSheet"]]
+            for kv in params.get("defineVar", []) or []:
+                cmd += ["--define-var", kv]
+
+            value_map = {
+                "theme": "--theme",
+                "drillShapeOpt": "--drill-shape-opt",
+            }
+            for key, flag in value_map.items():
+                val = params.get(key)
+                if val is not None and val != "":
+                    cmd += [flag, str(val)]
+
+            flag_map = {
+                "mirror": "--mirror",
+                "excludeRefdes": "--exclude-refdes",
+                "excludeValue": "--exclude-value",
+                "includeBorderTitle": "--include-border-title",
+                "subtractSoldermask": "--subtract-soldermask",
+                "sketchPadsOnFabLayers": "--sketch-pads-on-fab-layers",
+                "hideDnpFootprintsOnFabLayers": "--hide-DNP-footprints-on-fab-layers",
+                "sketchDnpFootprintsOnFabLayers": "--sketch-DNP-footprints-on-fab-layers",
+                "crossoutDnpFootprintsOnFabLayers": "--crossout-DNP-footprints-on-fab-layers",
+                "negative": "--negative",
+                "blackAndWhite": "--black-and-white",
+                "modeSingle": "--mode-single",
+                "modeSeparate": "--mode-separate",
+                "modeMultipage": "--mode-multipage",
+            }
+            for key, flag in flag_map.items():
+                if params.get(key):
+                    cmd.append(flag)
+
+            cmd.append(board_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+            return {"success": True, "outputPath": output_path}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting PCB PDF: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_pcb_svg(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Plot the PCB to SVG via kicad-cli (`pcb export svg`).
+
+        Exposes the full layer-plot option set: layer lists, mirror, soldermask
+        subtraction, negative/B&W, theme, DNP fab-layer modes, page-size mode,
+        fit-page, drill-shape, and single/multi output modes. Reads the saved
+        .kicad_pcb.
+        """
+        import subprocess
+
+        logger.info("Exporting PCB SVG via kicad-cli")
+        try:
+            board_path = params.get("boardPath") or self._current_board_path()
+            output_path = params.get("outputPath")
+
+            if not board_path:
+                return {
+                    "success": False,
+                    "message": "boardPath is required (no current board could be resolved)",
+                }
+            if not Path(board_path).exists():
+                return {"success": False, "message": f"Board not found: {board_path}"}
+            if not output_path:
+                return {"success": False, "message": "outputPath is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
+            if parent:
+                Path(parent).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "pcb", "export", "svg", "--output", output_path]
+
+            layers = params.get("layers")
+            if layers:
+                cmd += ["--layers", ",".join(layers) if isinstance(layers, list) else str(layers)]
+            common_layers = params.get("commonLayers")
+            if common_layers:
+                cmd += [
+                    "--common-layers",
+                    (
+                        ",".join(common_layers)
+                        if isinstance(common_layers, list)
+                        else str(common_layers)
+                    ),
+                ]
+
+            if params.get("drawingSheet"):
+                cmd += ["--drawing-sheet", params["drawingSheet"]]
+            for kv in params.get("defineVar", []) or []:
+                cmd += ["--define-var", kv]
+
+            value_map = {
+                "theme": "--theme",
+                "pageSizeMode": "--page-size-mode",
+                "drillShapeOpt": "--drill-shape-opt",
+            }
+            for key, flag in value_map.items():
+                val = params.get(key)
+                if val is not None and val != "":
+                    cmd += [flag, str(val)]
+
+            flag_map = {
+                "subtractSoldermask": "--subtract-soldermask",
+                "mirror": "--mirror",
+                "negative": "--negative",
+                "blackAndWhite": "--black-and-white",
+                "sketchPadsOnFabLayers": "--sketch-pads-on-fab-layers",
+                "hideDnpFootprintsOnFabLayers": "--hide-DNP-footprints-on-fab-layers",
+                "sketchDnpFootprintsOnFabLayers": "--sketch-DNP-footprints-on-fab-layers",
+                "crossoutDnpFootprintsOnFabLayers": "--crossout-DNP-footprints-on-fab-layers",
+                "fitPageToBoard": "--fit-page-to-board",
+                "excludeDrawingSheet": "--exclude-drawing-sheet",
+                "modeSingle": "--mode-single",
+                "modeMulti": "--mode-multi",
+            }
+            for key, flag in flag_map.items():
+                if params.get(key):
+                    cmd.append(flag)
+
+            cmd.append(board_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+            return {"success": True, "outputPath": output_path}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting PCB SVG: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_pcb_dxf(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Plot the PCB to DXF via kicad-cli (`pcb export dxf`).
+
+        Exposes the full layer-plot option set: layer lists, refdes/value
+        exclusion, soldermask subtraction, contours, drill origin, border+title,
+        output units, DNP fab-layer modes, drill-shape, and single/multi output
+        modes. Reads the saved .kicad_pcb.
+        """
+        import subprocess
+
+        logger.info("Exporting PCB DXF via kicad-cli")
+        try:
+            board_path = params.get("boardPath") or self._current_board_path()
+            output_path = params.get("outputPath")
+
+            if not board_path:
+                return {
+                    "success": False,
+                    "message": "boardPath is required (no current board could be resolved)",
+                }
+            if not Path(board_path).exists():
+                return {"success": False, "message": f"Board not found: {board_path}"}
+            if not output_path:
+                return {"success": False, "message": "outputPath is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
+            if parent:
+                Path(parent).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "pcb", "export", "dxf", "--output", output_path]
+
+            layers = params.get("layers")
+            if layers:
+                cmd += ["--layers", ",".join(layers) if isinstance(layers, list) else str(layers)]
+            common_layers = params.get("commonLayers")
+            if common_layers:
+                cmd += [
+                    "--common-layers",
+                    (
+                        ",".join(common_layers)
+                        if isinstance(common_layers, list)
+                        else str(common_layers)
+                    ),
+                ]
+
+            if params.get("drawingSheet"):
+                cmd += ["--drawing-sheet", params["drawingSheet"]]
+            for kv in params.get("defineVar", []) or []:
+                cmd += ["--define-var", kv]
+
+            value_map = {
+                "outputUnits": "--output-units",
+                "drillShapeOpt": "--drill-shape-opt",
+            }
+            for key, flag in value_map.items():
+                val = params.get(key)
+                if val is not None and val != "":
+                    cmd += [flag, str(val)]
+
+            flag_map = {
+                "excludeRefdes": "--exclude-refdes",
+                "excludeValue": "--exclude-value",
+                "sketchPadsOnFabLayers": "--sketch-pads-on-fab-layers",
+                "hideDnpFootprintsOnFabLayers": "--hide-DNP-footprints-on-fab-layers",
+                "sketchDnpFootprintsOnFabLayers": "--sketch-DNP-footprints-on-fab-layers",
+                "crossoutDnpFootprintsOnFabLayers": "--crossout-DNP-footprints-on-fab-layers",
+                "subtractSoldermask": "--subtract-soldermask",
+                "useContours": "--use-contours",
+                "useDrillOrigin": "--use-drill-origin",
+                "includeBorderTitle": "--include-border-title",
+                "modeSingle": "--mode-single",
+                "modeMulti": "--mode-multi",
+            }
+            for key, flag in flag_map.items():
+                if params.get(key):
+                    cmd.append(flag)
+
+            cmd.append(board_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+            return {"success": True, "outputPath": output_path}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting PCB DXF: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_gerber_single(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Plot the given layers to a single Gerber file via kicad-cli
+        (`pcb export gerber`).
+
+        Singular sibling of export_gerbers: emits ONE Gerber file containing the
+        selected layers. Exposes the full single-file Plot option set (X2,
+        netlist attributes, DNP fab-layer modes, soldermask subtraction, aperture
+        macros, drill-file origin, precision, Protel extension). Reads the saved
+        .kicad_pcb.
+        """
+        import subprocess
+
+        logger.info("Exporting single Gerber via kicad-cli")
+        try:
+            board_path = params.get("boardPath") or self._current_board_path()
+            output_path = params.get("outputPath")
+
+            if not board_path:
+                return {
+                    "success": False,
+                    "message": "boardPath is required (no current board could be resolved)",
+                }
+            if not Path(board_path).exists():
+                return {"success": False, "message": f"Board not found: {board_path}"}
+            if not output_path:
+                return {"success": False, "message": "outputPath is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
+            if parent:
+                Path(parent).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "pcb", "export", "gerber", "--output", output_path]
+
+            layers = params.get("layers")
+            if layers:
+                cmd += ["--layers", ",".join(layers) if isinstance(layers, list) else str(layers)]
+            common_layers = params.get("commonLayers")
+            if common_layers:
+                cmd += [
+                    "--common-layers",
+                    (
+                        ",".join(common_layers)
+                        if isinstance(common_layers, list)
+                        else str(common_layers)
+                    ),
+                ]
+
+            if params.get("drawingSheet"):
+                cmd += ["--drawing-sheet", params["drawingSheet"]]
+            for kv in params.get("defineVar", []) or []:
+                cmd += ["--define-var", kv]
+
+            flag_map = {
+                "excludeRefdes": "--exclude-refdes",
+                "excludeValue": "--exclude-value",
+                "includeBorderTitle": "--include-border-title",
+                "sketchPadsOnFabLayers": "--sketch-pads-on-fab-layers",
+                "hideDnpFootprintsOnFabLayers": "--hide-DNP-footprints-on-fab-layers",
+                "sketchDnpFootprintsOnFabLayers": "--sketch-DNP-footprints-on-fab-layers",
+                "crossoutDnpFootprintsOnFabLayers": "--crossout-DNP-footprints-on-fab-layers",
+                "noX2": "--no-x2",
+                "noNetlist": "--no-netlist",
+                "subtractSoldermask": "--subtract-soldermask",
+                "disableApertureMacros": "--disable-aperture-macros",
+                "useDrillFileOrigin": "--use-drill-file-origin",
+                "noProtelExt": "--no-protel-ext",
+            }
+            for key, flag in flag_map.items():
+                if params.get(key):
+                    cmd.append(flag)
+
+            precision = params.get("precision")
+            if precision is not None:
+                cmd += ["--precision", str(precision)]
+
+            cmd.append(board_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+            return {"success": True, "outputPath": output_path}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting single Gerber: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_3d_cli(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export a 3D model of the PCB via kicad-cli (`pcb export <fmt>`).
+
+        Rich CLI sibling of export_3d / export_vrml. The ``format`` param selects
+        the subcommand (step, glb, stl, ply, brep, xao, vrml) and only flags valid
+        for that subcommand are forwarded. STEP/glb/stl/ply/brep/xao share the
+        geometry/include flag set; vrml uses units + models-dir instead. Reads the
+        saved .kicad_pcb.
+        """
+        import subprocess
+
+        logger.info("Exporting 3D model via kicad-cli")
+        try:
+            board_path = params.get("boardPath") or self._current_board_path()
+            output_path = params.get("outputPath")
+            fmt = params.get("format")
+
+            if not board_path:
+                return {
+                    "success": False,
+                    "message": "boardPath is required (no current board could be resolved)",
+                }
+            if not Path(board_path).exists():
+                return {"success": False, "message": f"Board not found: {board_path}"}
+            if not output_path:
+                return {"success": False, "message": "outputPath is required"}
+            valid_formats = ("step", "glb", "stl", "ply", "brep", "xao", "vrml")
+            if fmt not in valid_formats:
+                return {
+                    "success": False,
+                    "message": f"format must be one of {valid_formats}",
+                }
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
+            if parent:
+                Path(parent).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "pcb", "export", fmt, "--output", output_path]
+
+            for kv in params.get("defineVar", []) or []:
+                cmd += ["--define-var", kv]
+
+            # Flags common to ALL 3D subcommands
+            common_flags = {
+                "force": "--force",
+                "noUnspecified": "--no-unspecified",
+                "noDnp": "--no-dnp",
+            }
+            # Flags shared by step/glb/stl/ply/brep/xao (NOT vrml)
+            mesh_flags = {
+                "gridOrigin": "--grid-origin",
+                "drillOrigin": "--drill-origin",
+                "substModels": "--subst-models",
+                "boardOnly": "--board-only",
+                "cutViasInBody": "--cut-vias-in-body",
+                "noBoardBody": "--no-board-body",
+                "noComponents": "--no-components",
+                "includeTracks": "--include-tracks",
+                "includePads": "--include-pads",
+                "includeZones": "--include-zones",
+                "includeInnerCopper": "--include-inner-copper",
+                "includeSilkscreen": "--include-silkscreen",
+                "includeSoldermask": "--include-soldermask",
+                "fuseShapes": "--fuse-shapes",
+                "fillAllVias": "--fill-all-vias",
+            }
+            # STEP-only flag
+            step_flags = {
+                "noOptimizeStep": "--no-optimize-step",
+            }
+
+            flag_map = dict(common_flags)
+            if fmt != "vrml":
+                flag_map.update(mesh_flags)
+            if fmt == "step":
+                flag_map.update(step_flags)
+            for key, flag in flag_map.items():
+                if params.get(key):
+                    cmd.append(flag)
+
+            # Valued flags common to all: user-origin
+            if params.get("userOrigin") is not None and params.get("userOrigin") != "":
+                cmd += ["--user-origin", str(params["userOrigin"])]
+            # Component filter + net filter + min distance: mesh subcommands only
+            if fmt != "vrml":
+                if params.get("componentFilter") is not None and params["componentFilter"] != "":
+                    cmd += ["--component-filter", str(params["componentFilter"])]
+                if params.get("netFilter") is not None and params["netFilter"] != "":
+                    cmd += ["--net-filter", str(params["netFilter"])]
+                if params.get("minDistance") is not None and params["minDistance"] != "":
+                    cmd += ["--min-distance", str(params["minDistance"])]
+            # VRML-only valued flags
+            if fmt == "vrml":
+                if params.get("units") is not None and params["units"] != "":
+                    cmd += ["--units", str(params["units"])]
+                if params.get("modelsDir") is not None and params["modelsDir"] != "":
+                    cmd += ["--models-dir", str(params["modelsDir"])]
+                if params.get("modelsRelative"):
+                    cmd.append("--models-relative")
+
+            cmd.append(board_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+            return {"success": True, "outputPath": output_path}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 300 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting 3D model: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_sch_bom(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate a Bill of Materials from a schematic via kicad-cli
+        (`sch export bom`).
+
+        Exposes the full BOM option set: presets, field/label lists, grouping,
+        sorting, filtering, DNP/excluded handling, and the field/string/ref
+        delimiters. schematicPath is required (no current-schematic resolver).
+        """
+        import subprocess
+
+        logger.info("Exporting schematic BOM via kicad-cli")
+        try:
+            schematic_path = params.get("schematicPath")
+            output_path = params.get("outputPath")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not Path(schematic_path).exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+            if not output_path:
+                return {"success": False, "message": "outputPath is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
+            if parent:
+                Path(parent).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "sch", "export", "bom", "--output", output_path]
+
+            value_map = {
+                "preset": "--preset",
+                "formatPreset": "--format-preset",
+                "fields": "--fields",
+                "labels": "--labels",
+                "groupBy": "--group-by",
+                "sortField": "--sort-field",
+                "sortAsc": "--sort-asc",
+                "filter": "--filter",
+                "fieldDelimiter": "--field-delimiter",
+                "stringDelimiter": "--string-delimiter",
+                "refDelimiter": "--ref-delimiter",
+                "refRangeDelimiter": "--ref-range-delimiter",
+            }
+            for key, flag in value_map.items():
+                val = params.get(key)
+                if val is not None and val != "":
+                    cmd += [flag, str(val)]
+
+            flag_map = {
+                "excludeDnp": "--exclude-dnp",
+                "includeExcludedFromBom": "--include-excluded-from-bom",
+                "keepTabs": "--keep-tabs",
+                "keepLineBreaks": "--keep-line-breaks",
+            }
+            for key, flag in flag_map.items():
+                if params.get(key):
+                    cmd.append(flag)
+
+            cmd.append(schematic_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+            return {"success": True, "outputPath": output_path}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting schematic BOM: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_sch_pdf(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export a schematic to PDF via kicad-cli (`sch export pdf`).
+
+        Exposes the full option set: drawing-sheet override, theme, B&W,
+        exclude-drawing-sheet, default-font, the PDF popup/link/metadata
+        excludes, no-background-color, and page selection. schematicPath is
+        required.
+        """
+        import subprocess
+
+        logger.info("Exporting schematic PDF via kicad-cli")
+        try:
+            schematic_path = params.get("schematicPath")
+            output_path = params.get("outputPath")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not Path(schematic_path).exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+            if not output_path:
+                return {"success": False, "message": "outputPath is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
+            if parent:
+                Path(parent).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "sch", "export", "pdf", "--output", output_path]
+
+            if params.get("drawingSheet"):
+                cmd += ["--drawing-sheet", params["drawingSheet"]]
+            for kv in params.get("defineVar", []) or []:
+                cmd += ["--define-var", kv]
+
+            value_map = {
+                "theme": "--theme",
+                "defaultFont": "--default-font",
+                "pages": "--pages",
+            }
+            for key, flag in value_map.items():
+                val = params.get(key)
+                if val is not None and val != "":
+                    cmd += [flag, str(val)]
+
+            flag_map = {
+                "blackAndWhite": "--black-and-white",
+                "excludeDrawingSheet": "--exclude-drawing-sheet",
+                "excludePdfPropertyPopups": "--exclude-pdf-property-popups",
+                "excludePdfHierarchicalLinks": "--exclude-pdf-hierarchical-links",
+                "excludePdfMetadata": "--exclude-pdf-metadata",
+                "noBackgroundColor": "--no-background-color",
+            }
+            for key, flag in flag_map.items():
+                if params.get(key):
+                    cmd.append(flag)
+
+            cmd.append(schematic_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+            return {"success": True, "outputPath": output_path}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting schematic PDF: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_sch_svg(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export a schematic to SVG via kicad-cli (`sch export svg`).
+
+        Output is a directory (one SVG per page). Exposes drawing-sheet override,
+        theme, B&W, exclude-drawing-sheet, default-font, no-background-color, and
+        page selection. schematicPath is required.
+        """
+        import subprocess
+
+        logger.info("Exporting schematic SVG via kicad-cli")
+        try:
+            schematic_path = params.get("schematicPath")
+            output_dir = params.get("outputDir")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not Path(schematic_path).exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+            if not output_dir:
+                return {"success": False, "message": "outputDir is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_dir = str(Path(output_dir).expanduser().resolve())
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "sch", "export", "svg", "--output", output_dir]
+
+            if params.get("drawingSheet"):
+                cmd += ["--drawing-sheet", params["drawingSheet"]]
+            for kv in params.get("defineVar", []) or []:
+                cmd += ["--define-var", kv]
+
+            value_map = {
+                "theme": "--theme",
+                "defaultFont": "--default-font",
+                "pages": "--pages",
+            }
+            for key, flag in value_map.items():
+                val = params.get(key)
+                if val is not None and val != "":
+                    cmd += [flag, str(val)]
+
+            flag_map = {
+                "blackAndWhite": "--black-and-white",
+                "excludeDrawingSheet": "--exclude-drawing-sheet",
+                "noBackgroundColor": "--no-background-color",
+            }
+            for key, flag in flag_map.items():
+                if params.get(key):
+                    cmd.append(flag)
+
+            cmd.append(schematic_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+
+            files = sorted(p.name for p in Path(output_dir).iterdir() if p.is_file())
+            return {"success": True, "outputDir": output_dir, "files": files}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting schematic SVG: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_sch_dxf(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export a schematic to DXF via kicad-cli (`sch export dxf`).
+
+        Output is a directory (one DXF per page). Exposes drawing-sheet override,
+        theme, B&W, exclude-drawing-sheet, default-font, and page selection.
+        schematicPath is required.
+        """
+        import subprocess
+
+        logger.info("Exporting schematic DXF via kicad-cli")
+        try:
+            schematic_path = params.get("schematicPath")
+            output_dir = params.get("outputDir")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not Path(schematic_path).exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+            if not output_dir:
+                return {"success": False, "message": "outputDir is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_dir = str(Path(output_dir).expanduser().resolve())
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "sch", "export", "dxf", "--output", output_dir]
+
+            if params.get("drawingSheet"):
+                cmd += ["--drawing-sheet", params["drawingSheet"]]
+            for kv in params.get("defineVar", []) or []:
+                cmd += ["--define-var", kv]
+
+            value_map = {
+                "theme": "--theme",
+                "defaultFont": "--default-font",
+                "pages": "--pages",
+            }
+            for key, flag in value_map.items():
+                val = params.get(key)
+                if val is not None and val != "":
+                    cmd += [flag, str(val)]
+
+            flag_map = {
+                "blackAndWhite": "--black-and-white",
+                "excludeDrawingSheet": "--exclude-drawing-sheet",
+            }
+            for key, flag in flag_map.items():
+                if params.get(key):
+                    cmd.append(flag)
+
+            cmd.append(schematic_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+
+            files = sorted(p.name for p in Path(output_dir).iterdir() if p.is_file())
+            return {"success": True, "outputDir": output_dir, "files": files}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting schematic DXF: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_sch_hpgl(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export a schematic to HPGL via kicad-cli (`sch export hpgl`).
+
+        Output is a directory (one plot per page). Exposes drawing-sheet
+        override, exclude-drawing-sheet, default-font, page selection, pen size,
+        and the origin/scale mode. schematicPath is required.
+        """
+        import subprocess
+
+        logger.info("Exporting schematic HPGL via kicad-cli")
+        try:
+            schematic_path = params.get("schematicPath")
+            output_dir = params.get("outputDir")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not Path(schematic_path).exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+            if not output_dir:
+                return {"success": False, "message": "outputDir is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_dir = str(Path(output_dir).expanduser().resolve())
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "sch", "export", "hpgl", "--output", output_dir]
+
+            if params.get("drawingSheet"):
+                cmd += ["--drawing-sheet", params["drawingSheet"]]
+            for kv in params.get("defineVar", []) or []:
+                cmd += ["--define-var", kv]
+
+            value_map = {
+                "defaultFont": "--default-font",
+                "pages": "--pages",
+                "penSize": "--pen-size",
+                "origin": "--origin",
+            }
+            for key, flag in value_map.items():
+                val = params.get(key)
+                if val is not None and val != "":
+                    cmd += [flag, str(val)]
+
+            if params.get("excludeDrawingSheet"):
+                cmd.append("--exclude-drawing-sheet")
+
+            cmd.append(schematic_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+
+            files = sorted(p.name for p in Path(output_dir).iterdir() if p.is_file())
+            return {"success": True, "outputDir": output_dir, "files": files}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting schematic HPGL: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_sch_ps(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export a schematic to PostScript via kicad-cli (`sch export ps`).
+
+        Output is a directory (one PS per page). Exposes drawing-sheet override,
+        theme, B&W, exclude-drawing-sheet, default-font, no-background-color, and
+        page selection. schematicPath is required.
+        """
+        import subprocess
+
+        logger.info("Exporting schematic PostScript via kicad-cli")
+        try:
+            schematic_path = params.get("schematicPath")
+            output_dir = params.get("outputDir")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not Path(schematic_path).exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+            if not output_dir:
+                return {"success": False, "message": "outputDir is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_dir = str(Path(output_dir).expanduser().resolve())
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "sch", "export", "ps", "--output", output_dir]
+
+            if params.get("drawingSheet"):
+                cmd += ["--drawing-sheet", params["drawingSheet"]]
+            for kv in params.get("defineVar", []) or []:
+                cmd += ["--define-var", kv]
+
+            value_map = {
+                "theme": "--theme",
+                "defaultFont": "--default-font",
+                "pages": "--pages",
+            }
+            for key, flag in value_map.items():
+                val = params.get(key)
+                if val is not None and val != "":
+                    cmd += [flag, str(val)]
+
+            flag_map = {
+                "blackAndWhite": "--black-and-white",
+                "excludeDrawingSheet": "--exclude-drawing-sheet",
+                "noBackgroundColor": "--no-background-color",
+            }
+            for key, flag in flag_map.items():
+                if params.get(key):
+                    cmd.append(flag)
+
+            cmd.append(schematic_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+
+            files = sorted(p.name for p in Path(output_dir).iterdir() if p.is_file())
+            return {"success": True, "outputDir": output_dir, "files": files}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting schematic PostScript: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_sch_python_bom(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export the legacy Python-BOM XML from a schematic via kicad-cli
+        (`sch export python-bom`).
+
+        Emits the legacy intermediate XML netlist consumed by the schematic
+        editor's Python BOM scripts. Minimal option set (output + input only).
+        schematicPath is required.
+        """
+        import subprocess
+
+        logger.info("Exporting schematic Python-BOM via kicad-cli")
+        try:
+            schematic_path = params.get("schematicPath")
+            output_path = params.get("outputPath")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not Path(schematic_path).exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+            if not output_path:
+                return {"success": False, "message": "outputPath is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
+            if parent:
+                Path(parent).mkdir(parents=True, exist_ok=True)
+
+            cmd = [kicad_cli, "sch", "export", "python-bom", "--output", output_path]
+            cmd.append(schematic_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+            return {"success": True, "outputPath": output_path}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting schematic Python-BOM: {e}")
             return {"success": False, "message": str(e)}
 
     def _handle_generate_netlist(self, params: Dict[str, Any]) -> Dict[str, Any]:
