@@ -1106,5 +1106,58 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
   );
 
+  // ------------------------------------------------------
+  // Export Schematic PDF Tool (kicad-cli, full option set)
+  // ------------------------------------------------------
+  server.tool(
+    "export_sch_pdf",
+    "Export a schematic to PDF via kicad-cli (`sch export pdf`), exposing the full option set (drawing-sheet override, theme, black-and-white, exclude-drawing-sheet, default-font, the PDF property-popup / hierarchical-link / metadata excludes, no-background-color, and page selection). schematicPath is REQUIRED.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch (required)"),
+      outputPath: z.string().describe("Output PDF file path"),
+      drawingSheet: z.string().optional().describe("Path to a drawing sheet override"),
+      defineVar: z
+        .array(z.string())
+        .optional()
+        .describe("Project variable overrides as 'KEY=VALUE' strings"),
+      theme: z.string().optional().describe("Color theme to use (default: schematic settings)"),
+      blackAndWhite: z.boolean().optional().describe("Black and white only"),
+      excludeDrawingSheet: z.boolean().optional().describe("No drawing sheet"),
+      defaultFont: z.string().optional().describe("Default font name"),
+      excludePdfPropertyPopups: z
+        .boolean()
+        .optional()
+        .describe("Do not generate property popups in PDF"),
+      excludePdfHierarchicalLinks: z
+        .boolean()
+        .optional()
+        .describe("Do not generate clickable links for hierarchical elements in PDF"),
+      excludePdfMetadata: z
+        .boolean()
+        .optional()
+        .describe("Do not generate PDF metadata from AUTHOR and SUBJECT variables"),
+      noBackgroundColor: z
+        .boolean()
+        .optional()
+        .describe("Avoid setting a background color (regardless of theme)"),
+      pages: z
+        .string()
+        .optional()
+        .describe("Comma list of page numbers to print (blank = all pages)"),
+    },
+    async (args) => {
+      logger.debug(`Exporting schematic PDF to: ${args.outputPath}`);
+      const result = await callKicadScript("export_sch_pdf", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
   logger.info("Export tools registered");
 }
