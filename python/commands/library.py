@@ -182,12 +182,15 @@ class LibraryManager:
         possible_paths = [
             "/usr/share/kicad/footprints",
             "/usr/local/share/kicad/footprints",
+            "C:/Program Files/KiCad/10.0/share/kicad/footprints",
             "C:/Program Files/KiCad/9.0/share/kicad/footprints",
             "C:/Program Files/KiCad/8.0/share/kicad/footprints",
             "/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints",
         ]
 
         # Also check environment variable
+        if "KICAD10_FOOTPRINT_DIR" in os.environ:
+            possible_paths.insert(0, os.environ["KICAD10_FOOTPRINT_DIR"])
         if "KICAD9_FOOTPRINT_DIR" in os.environ:
             possible_paths.insert(0, os.environ["KICAD9_FOOTPRINT_DIR"])
         if "KICAD8_FOOTPRINT_DIR" in os.environ:

@@ -38,6 +38,7 @@ class DynamicSymbolLoader:
         possible_paths = [
             Path("/usr/share/kicad/symbols"),
             Path("/usr/local/share/kicad/symbols"),
+            Path("C:/Program Files/KiCad/10.0/share/kicad/symbols"),
             Path("C:/Program Files/KiCad/9.0/share/kicad/symbols"),
             Path("C:/Program Files/KiCad/8.0/share/kicad/symbols"),
             Path("/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols"),
@@ -477,16 +478,18 @@ class DynamicSymbolLoader:
             # Iterate over every top-level (property ...) block in the symbol
             search_pos = 0
             while True:
-                m = re.search(r'\(property\s+"([^"]+)"\s+"[^"]*"\s+\(at\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)',
-                              sym_block[search_pos:])
+                m = re.search(
+                    r'\(property\s+"([^"]+)"\s+"[^"]*"\s+\(at\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)',
+                    sym_block[search_pos:],
+                )
                 if not m:
                     break
                 abs_start = search_pos + m.start()
                 prop_block = self._extract_paren_block(sym_block, abs_start)
 
-                name  = m.group(1)
-                dx    = float(m.group(2))
-                dy    = float(m.group(3))
+                name = m.group(1)
+                dx = float(m.group(2))
+                dy = float(m.group(3))
                 angle = float(m.group(4))
 
                 # Extract (effects ...) block from within this property
@@ -495,7 +498,7 @@ class DynamicSymbolLoader:
                     effects_str = self._extract_paren_block(prop_block, eff_pos)
                     # Strip (hide ...) sub-expressions — visibility will be set
                     # separately by the caller
-                    effects_str = re.sub(r'\s*\(hide\s+[^)]+\)', '', effects_str)
+                    effects_str = re.sub(r"\s*\(hide\s+[^)]+\)", "", effects_str)
                     effects_str = effects_str.strip()
                 else:
                     effects_str = "(effects (font (size 1.27 1.27)))"
@@ -556,14 +559,13 @@ class DynamicSymbolLoader:
         new_uuid = str(uuid.uuid4())
 
         # --- read property offsets from the already-injected lib_symbols block -----
-        lib_props = self._extract_lib_property_positions(
-            schematic_path, library_name, symbol_name
-        )
+        lib_props = self._extract_lib_property_positions(schematic_path, library_name, symbol_name)
 
         _DEFAULT_EFFECTS = "(effects (font (size 1.27 1.27)))"
 
-        def _prop_at(name: str, fallback_dx: float, fallback_dy: float,
-                     fallback_angle: float = 0) -> tuple:
+        def _prop_at(
+            name: str, fallback_dx: float, fallback_dy: float, fallback_angle: float = 0
+        ) -> tuple:
             """Return (abs_x, abs_y, text_angle, effects_str) for a property."""
             if name in lib_props:
                 dx, dy, text_ang, eff = lib_props[name]
@@ -572,10 +574,10 @@ class DynamicSymbolLoader:
             rdx, rdy = self._rotate_offset(dx, dy, angle)
             return round(x + rdx, 3), round(y + rdy, 3), text_ang, eff
 
-        ref_x, ref_y, ref_a, ref_eff = _prop_at("Reference", 2.032, 0,    0)
-        val_x, val_y, val_a, val_eff = _prop_at("Value",      0,     2.54, 0)
-        fp_x,  fp_y,  _,     _       = _prop_at("Footprint",  0,     0,    0)
-        ds_x,  ds_y,  _,     _       = _prop_at("Datasheet",  0,     0,    0)
+        ref_x, ref_y, ref_a, ref_eff = _prop_at("Reference", 2.032, 0, 0)
+        val_x, val_y, val_a, val_eff = _prop_at("Value", 0, 2.54, 0)
+        fp_x, fp_y, _, _ = _prop_at("Footprint", 0, 0, 0)
+        ds_x, ds_y, _, _ = _prop_at("Datasheet", 0, 0, 0)
 
         mirror_str = " (mirror y)" if mirror_y else ""
         instance_block = f"""  (symbol (lib_id "{full_lib_id}") (at {x} {y} {angle}){mirror_str} (unit {unit})

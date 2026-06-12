@@ -83,9 +83,7 @@ class SymbolLibraryManager:
                     logger.debug("Skipping unparseable library: %s", nickname)
             logger.info("Symbol cache warm-up complete (%d libraries)", len(self.libraries))
 
-        threading.Thread(
-            target=_warm, name="symbol-cache-warmup", daemon=True
-        ).start()
+        threading.Thread(target=_warm, name="symbol-cache-warmup", daemon=True).start()
 
     def _load_libraries(self) -> None:
         """Load libraries from sym-lib-table files"""
@@ -232,12 +230,15 @@ class SymbolLibraryManager:
         possible_paths = [
             "/usr/share/kicad/symbols",
             "/usr/local/share/kicad/symbols",
+            "C:/Program Files/KiCad/10.0/share/kicad/symbols",
             "C:/Program Files/KiCad/9.0/share/kicad/symbols",
             "C:/Program Files/KiCad/8.0/share/kicad/symbols",
             "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols",
         ]
 
         # Check environment variable
+        if "KICAD10_SYMBOL_DIR" in os.environ:
+            possible_paths.insert(0, os.environ["KICAD10_SYMBOL_DIR"])
         if "KICAD9_SYMBOL_DIR" in os.environ:
             possible_paths.insert(0, os.environ["KICAD9_SYMBOL_DIR"])
         if "KICAD8_SYMBOL_DIR" in os.environ:
@@ -610,8 +611,10 @@ class SymbolLibraryCommands:
         # Patch (SER2RJ45): keep cache when project_path matches AND libraries were
         # actually loaded. Original early-return skipped rebuild even when the cache
         # was empty (e.g. first call after create_project, before sym-lib-table existed).
-        if (self.library_manager.project_path == project_path
-                and len(self.library_manager.libraries) > 0):
+        if (
+            self.library_manager.project_path == project_path
+            and len(self.library_manager.libraries) > 0
+        ):
             return
         logger.info(f"Rebuilding SymbolLibraryManager for project: {project_path}")
         self.library_manager = SymbolLibraryManager(project_path=project_path)
