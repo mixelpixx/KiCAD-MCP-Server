@@ -594,5 +594,59 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
   );
 
+  // ------------------------------------------------------
+  // Export Position File Tool (kicad-cli, full option set)
+  // ------------------------------------------------------
+  server.tool(
+    "export_pos",
+    "Generate a component placement (position / pick-and-place) file via kicad-cli, exposing the full CLI option set (side, format, units, bottom-negate-X, drill-file origin, SMD-only, exclude through-hole / DNP, gerber board edge). Rich CLI sibling of export_position_file. Reads the last SAVED state of the .kicad_pcb.",
+    {
+      outputPath: z.string().describe("Output position file path"),
+      boardPath: z.string().optional().describe("Path to the .kicad_pcb (default: current board)"),
+      side: z
+        .enum(["front", "back", "both"])
+        .optional()
+        .describe("Board side (gerber format only supports front or back; default both)"),
+      format: z
+        .enum(["ascii", "csv", "gerber"])
+        .optional()
+        .describe("Output format (default ascii)"),
+      units: z
+        .enum(["in", "mm"])
+        .optional()
+        .describe("Output units; ascii or csv format only (default in)"),
+      bottomNegateX: z
+        .boolean()
+        .optional()
+        .describe("Use negative X coordinates for bottom-layer footprints (ascii/csv only)"),
+      useDrillFileOrigin: z
+        .boolean()
+        .optional()
+        .describe("Use drill/place file origin (ascii/csv only)"),
+      smdOnly: z.boolean().optional().describe("Include only SMD footprints (ascii/csv only)"),
+      excludeFpTh: z
+        .boolean()
+        .optional()
+        .describe("Exclude all footprints with through-hole pads (ascii/csv only)"),
+      excludeDnp: z
+        .boolean()
+        .optional()
+        .describe("Exclude all footprints with the Do Not Populate flag set"),
+      gerberBoardEdge: z.boolean().optional().describe("Include board edge layer (Gerber only)"),
+    },
+    async (args) => {
+      logger.debug(`Exporting position file to: ${args.outputPath}`);
+      const result = await callKicadScript("export_pos", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
   logger.info("Export tools registered");
 }
