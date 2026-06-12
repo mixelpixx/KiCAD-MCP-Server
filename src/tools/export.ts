@@ -1237,5 +1237,45 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
   );
 
+  // ------------------------------------------------------
+  // Export Schematic HPGL Tool (kicad-cli, full option set)
+  // ------------------------------------------------------
+  server.tool(
+    "export_sch_hpgl",
+    "Export a schematic to HPGL via kicad-cli (`sch export hpgl`), one plot per page into a directory. Exposes drawing-sheet override, exclude-drawing-sheet, default-font, page selection, pen size, and the origin/scale mode. schematicPath is REQUIRED.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch (required)"),
+      outputDir: z.string().describe("Output directory for the HPGL files"),
+      drawingSheet: z.string().optional().describe("Path to a drawing sheet override"),
+      defineVar: z
+        .array(z.string())
+        .optional()
+        .describe("Project variable overrides as 'KEY=VALUE' strings"),
+      excludeDrawingSheet: z.boolean().optional().describe("No drawing sheet"),
+      defaultFont: z.string().optional().describe("Default font name"),
+      pages: z
+        .string()
+        .optional()
+        .describe("Comma list of page numbers to print (blank = all pages)"),
+      penSize: z.number().optional().describe("Pen size in mm (default 0.5)"),
+      origin: z
+        .number()
+        .optional()
+        .describe("Origin and scale: 0 bottom left, 1 centered, 2 page fit, 3 content fit"),
+    },
+    async (args) => {
+      logger.debug(`Exporting schematic HPGL to: ${args.outputDir}`);
+      const result = await callKicadScript("export_sch_hpgl", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
   logger.info("Export tools registered");
 }

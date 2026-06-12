@@ -603,6 +603,7 @@ class KiCADInterface:
             "export_sch_pdf": self._handle_export_sch_pdf,
             "export_sch_svg": self._handle_export_sch_svg,
             "export_sch_dxf": self._handle_export_sch_dxf,
+            "export_sch_hpgl": self._handle_export_sch_hpgl,
             "generate_netlist": self._handle_generate_netlist,
             "sync_schematic_to_board": self._handle_sync_schematic_to_board,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
@@ -5906,6 +5907,80 @@ class KiCADInterface:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
             logger.error(f"Error exporting schematic DXF: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_sch_hpgl(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Export a schematic to HPGL via kicad-cli (`sch export hpgl`).
+
+        Output is a directory (one plot per page). Exposes drawing-sheet
+        override, exclude-drawing-sheet, default-font, page selection, pen size,
+        and the origin/scale mode. schematicPath is required.
+        """
+        import subprocess
+
+        logger.info("Exporting schematic HPGL via kicad-cli")
+        try:
+            schematic_path = params.get("schematicPath")
+            output_dir = params.get("outputDir")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not os.path.exists(schematic_path):
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+            if not output_dir:
+                return {"success": False, "message": "outputDir is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_dir = os.path.abspath(os.path.expanduser(output_dir))
+            os.makedirs(output_dir, exist_ok=True)
+
+            cmd = [kicad_cli, "sch", "export", "hpgl", "--output", output_dir]
+
+            if params.get("drawingSheet"):
+                cmd += ["--drawing-sheet", params["drawingSheet"]]
+            for kv in params.get("defineVar", []) or []:
+                cmd += ["--define-var", kv]
+
+            value_map = {
+                "defaultFont": "--default-font",
+                "pages": "--pages",
+                "penSize": "--pen-size",
+                "origin": "--origin",
+            }
+            for key, flag in value_map.items():
+                val = params.get(key)
+                if val is not None and val != "":
+                    cmd += [flag, str(val)]
+
+            if params.get("excludeDrawingSheet"):
+                cmd.append("--exclude-drawing-sheet")
+
+            cmd.append(schematic_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+
+            files = sorted(
+                f for f in os.listdir(output_dir) if os.path.isfile(os.path.join(output_dir, f))
+            )
+            return {"success": True, "outputDir": output_dir, "files": files}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting schematic HPGL: {e}")
             return {"success": False, "message": str(e)}
 
     def _handle_generate_netlist(self, params: Dict[str, Any]) -> Dict[str, Any]:
