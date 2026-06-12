@@ -224,6 +224,32 @@ class TestSessionTransitions:
         assert iface.session_backend == "swig"
         assert result["_backend"] == "swig"
         assert holder.get("swig_saves") == 1
+        # The board must be RELOADED from disk, not left as the stale
+        # pre-IPC copy.
+        assert isinstance(iface.board, _FakeBoard)
+        assert iface.board.GetFileName() == iface.session_board_path
+
+    def test_failed_reopen_clears_stale_pin(self, tmp_path, monkeypatch):
+        """An unrecoverable open after a pinned session must drop the old pin.
+
+        Otherwise a leftover "ipc" pin from the previous project could route
+        later commands to the old board's IPC context.
+        """
+        board_path = tmp_path / "proj" / "proj.kicad_pcb"
+        iface, backend, holder, _, _ = _loaded_iface(
+            tmp_path, gui_board_path=board_path, monkeypatch=monkeypatch
+        )
+        assert iface.session_backend == "ipc"
+
+        # Next open succeeds at the handler level but the board is
+        # SWIG-dehydrated and recovery fails.
+        iface._is_board_healthy = lambda *a, **k: False
+        iface._safe_load_board = lambda path: None
+
+        result = iface.handle_command("open_project", {"path": str(board_path)})
+        assert result["success"] is False
+        assert iface.session_backend is None
+        assert iface.session_board_path is None
 
     def test_reopen_repins(self, tmp_path, monkeypatch):
         iface, backend, holder, board_path, _ = _loaded_iface(
