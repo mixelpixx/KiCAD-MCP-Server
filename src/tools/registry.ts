@@ -69,6 +69,7 @@ export const toolCategories: ToolCategory[] = [
       "export_pcb_svg",
       "export_pcb_dxf",
       "export_gerber_single",
+      "export_3d_cli",
       "export_pdf",
       "export_svg",
       "export_3d",

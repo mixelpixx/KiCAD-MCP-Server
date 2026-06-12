@@ -933,5 +933,105 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
   );
 
+  // ------------------------------------------------------
+  // Export 3D Model Tool (kicad-cli, format dispatch + full flag union)
+  // ------------------------------------------------------
+  server.tool(
+    "export_3d_cli",
+    "Export a 3D model of the PCB via kicad-cli. The `format` param selects the subcommand (step, glb, stl, ply, brep, xao, vrml); only flags valid for that subcommand are forwarded. STEP/glb/stl/ply/brep/xao share the geometry/include flag set (no-board-body, include-tracks/pads/zones/inner-copper/silkscreen/soldermask, fuse-shapes, fill-all-vias, component/net filters, min-distance, etc.; no-optimize-step is STEP-only); vrml uses units + models-dir/models-relative instead. Rich CLI sibling of export_3d and export_vrml. Reads the last SAVED state of the .kicad_pcb.",
+    {
+      outputPath: z.string().describe("Output 3D model file path"),
+      format: z
+        .enum(["step", "glb", "stl", "ply", "brep", "xao", "vrml"])
+        .describe("3D output format (selects the kicad-cli subcommand)"),
+      boardPath: z.string().optional().describe("Path to the .kicad_pcb (default: current board)"),
+      defineVar: z
+        .array(z.string())
+        .optional()
+        .describe("Project variable overrides as 'KEY=VALUE' strings"),
+      // common to all formats
+      force: z.boolean().optional().describe("Overwrite output file"),
+      noUnspecified: z
+        .boolean()
+        .optional()
+        .describe("Exclude 3D models for components with 'Unspecified' footprint type"),
+      noDnp: z
+        .boolean()
+        .optional()
+        .describe("Exclude 3D models for components with 'Do not populate' attribute"),
+      userOrigin: z
+        .string()
+        .optional()
+        .describe("User-specified output origin e.g. '1x1in', '25.4x25.4mm' (default unit mm)"),
+      // mesh subcommands only (step/glb/stl/ply/brep/xao)
+      gridOrigin: z.boolean().optional().describe("Use Grid Origin for output origin"),
+      drillOrigin: z.boolean().optional().describe("Use Drill Origin for output origin"),
+      substModels: z
+        .boolean()
+        .optional()
+        .describe("Substitute STEP/IGS models in place of VRML models"),
+      boardOnly: z.boolean().optional().describe("Only generate a board with no components"),
+      cutViasInBody: z
+        .boolean()
+        .optional()
+        .describe("Cut via holes in board body even if conductor layers not exported"),
+      noBoardBody: z.boolean().optional().describe("Exclude board body"),
+      noComponents: z.boolean().optional().describe("Exclude 3D models for components"),
+      componentFilter: z
+        .string()
+        .optional()
+        .describe("Only include component models matching this refdes list (comma, wildcards)"),
+      includeTracks: z.boolean().optional().describe("Export tracks and vias"),
+      includePads: z.boolean().optional().describe("Export pads"),
+      includeZones: z.boolean().optional().describe("Export zones"),
+      includeInnerCopper: z.boolean().optional().describe("Export elements on inner copper layers"),
+      includeSilkscreen: z
+        .boolean()
+        .optional()
+        .describe("Export silkscreen graphics as flat faces"),
+      includeSoldermask: z.boolean().optional().describe("Export soldermask layers as flat faces"),
+      fuseShapes: z.boolean().optional().describe("Fuse overlapping geometry together"),
+      fillAllVias: z.boolean().optional().describe("Don't cut via holes in conductor layers"),
+      minDistance: z
+        .string()
+        .optional()
+        .describe("Min distance between points to treat as separate (default '0.01mm')"),
+      netFilter: z
+        .string()
+        .optional()
+        .describe("Only include copper items belonging to nets matching this wildcard"),
+      // STEP only
+      noOptimizeStep: z
+        .boolean()
+        .optional()
+        .describe("Do not optimize STEP file (enables writing parametric curves; STEP only)"),
+      // VRML only
+      units: z
+        .enum(["mm", "m", "in", "tenths"])
+        .optional()
+        .describe("Output units (VRML only; default in)"),
+      modelsDir: z
+        .string()
+        .optional()
+        .describe("Folder to store 3D models in (VRML only; empty = embed in main file)"),
+      modelsRelative: z
+        .boolean()
+        .optional()
+        .describe("Use relative model paths with modelsDir (VRML only)"),
+    },
+    async (args) => {
+      logger.debug(`Exporting 3D model (${args.format}) to: ${args.outputPath}`);
+      const result = await callKicadScript("export_3d_cli", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
   logger.info("Export tools registered");
 }
