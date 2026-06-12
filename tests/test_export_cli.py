@@ -64,10 +64,10 @@ def _call(iface, suffix, params, rc=0, stderr=""):
     fake = SimpleNamespace(returncode=rc, stdout="", stderr=stderr)
     with (
         patch("subprocess.run", return_value=fake) as run,
-        patch("os.path.exists", return_value=True),
-        patch("os.makedirs"),
-        patch("os.listdir", return_value=["a.out"]),
-        patch("os.path.isfile", return_value=True),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.mkdir"),
+        patch("pathlib.Path.iterdir", return_value=[]),
+        patch("pathlib.Path.is_file", return_value=True),
     ):
         result = method(dict(params))
     return result, run

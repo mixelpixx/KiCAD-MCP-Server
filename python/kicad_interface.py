@@ -4534,7 +4534,7 @@ class KiCADInterface:
                     "success": False,
                     "message": "boardPath is required (no current board could be resolved)",
                 }
-            if not os.path.exists(board_path):
+            if not Path(board_path).exists():
                 return {"success": False, "message": f"Board not found: {board_path}"}
             if not output_dir:
                 return {"success": False, "message": "outputDir is required"}
@@ -4543,8 +4543,8 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_dir = os.path.abspath(os.path.expanduser(output_dir))
-            os.makedirs(output_dir, exist_ok=True)
+            output_dir = str(Path(output_dir).expanduser().resolve())
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "pcb", "export", "gerbers", "--output", output_dir]
 
@@ -4605,9 +4605,7 @@ class KiCADInterface:
                     f"{result.stderr.strip()}",
                 }
 
-            files = sorted(
-                f for f in os.listdir(output_dir) if os.path.isfile(os.path.join(output_dir, f))
-            )
+            files = sorted(p.name for p in Path(output_dir).iterdir() if p.is_file())
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
@@ -4636,7 +4634,7 @@ class KiCADInterface:
                     "success": False,
                     "message": "boardPath is required (no current board could be resolved)",
                 }
-            if not os.path.exists(board_path):
+            if not Path(board_path).exists():
                 return {"success": False, "message": f"Board not found: {board_path}"}
             if not output_dir:
                 return {"success": False, "message": "outputDir is required"}
@@ -4645,9 +4643,9 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_dir = os.path.abspath(os.path.expanduser(output_dir))
+            output_dir = str(Path(output_dir).expanduser().resolve())
             # kicad-cli drill requires the output dir path to end with a separator
-            os.makedirs(output_dir, exist_ok=True)
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "pcb", "export", "drill", "--output", output_dir + os.sep]
 
@@ -4689,9 +4687,7 @@ class KiCADInterface:
                     f"{result.stderr.strip()}",
                 }
 
-            files = sorted(
-                f for f in os.listdir(output_dir) if os.path.isfile(os.path.join(output_dir, f))
-            )
+            files = sorted(p.name for p in Path(output_dir).iterdir() if p.is_file())
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
@@ -4721,7 +4717,7 @@ class KiCADInterface:
                     "success": False,
                     "message": "boardPath is required (no current board could be resolved)",
                 }
-            if not os.path.exists(board_path):
+            if not Path(board_path).exists():
                 return {"success": False, "message": f"Board not found: {board_path}"}
             if not output_path:
                 return {"success": False, "message": "outputPath is required"}
@@ -4730,8 +4726,8 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_path = os.path.abspath(os.path.expanduser(output_path))
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            output_path = str(Path(output_path).expanduser().resolve())
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "pcb", "export", "ipc2581", "--output", output_path]
 
@@ -4797,7 +4793,7 @@ class KiCADInterface:
                     "success": False,
                     "message": "boardPath is required (no current board could be resolved)",
                 }
-            if not os.path.exists(board_path):
+            if not Path(board_path).exists():
                 return {"success": False, "message": f"Board not found: {board_path}"}
             if not output_path:
                 return {"success": False, "message": "outputPath is required"}
@@ -4806,10 +4802,10 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_path = os.path.abspath(os.path.expanduser(output_path))
-            parent = os.path.dirname(output_path)
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
             if parent:
-                os.makedirs(parent, exist_ok=True)
+                Path(parent).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "pcb", "export", "odb", "--output", output_path]
 
@@ -4866,7 +4862,7 @@ class KiCADInterface:
                     "success": False,
                     "message": "boardPath is required (no current board could be resolved)",
                 }
-            if not os.path.exists(board_path):
+            if not Path(board_path).exists():
                 return {"success": False, "message": f"Board not found: {board_path}"}
             if not output_path:
                 return {"success": False, "message": "outputPath is required"}
@@ -4875,10 +4871,10 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_path = os.path.abspath(os.path.expanduser(output_path))
-            parent = os.path.dirname(output_path)
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
             if parent:
-                os.makedirs(parent, exist_ok=True)
+                Path(parent).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "pcb", "export", "ipcd356", "--output", output_path]
             cmd.append(board_path)
@@ -4921,7 +4917,7 @@ class KiCADInterface:
                     "success": False,
                     "message": "boardPath is required (no current board could be resolved)",
                 }
-            if not os.path.exists(board_path):
+            if not Path(board_path).exists():
                 return {"success": False, "message": f"Board not found: {board_path}"}
             if not output_path:
                 return {"success": False, "message": "outputPath is required"}
@@ -4930,10 +4926,10 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_path = os.path.abspath(os.path.expanduser(output_path))
-            parent = os.path.dirname(output_path)
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
             if parent:
-                os.makedirs(parent, exist_ok=True)
+                Path(parent).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "pcb", "export", "gencad", "--output", output_path]
 
@@ -4992,7 +4988,7 @@ class KiCADInterface:
                     "success": False,
                     "message": "boardPath is required (no current board could be resolved)",
                 }
-            if not os.path.exists(board_path):
+            if not Path(board_path).exists():
                 return {"success": False, "message": f"Board not found: {board_path}"}
             if not output_path:
                 return {"success": False, "message": "outputPath is required"}
@@ -5001,10 +4997,10 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_path = os.path.abspath(os.path.expanduser(output_path))
-            parent = os.path.dirname(output_path)
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
             if parent:
-                os.makedirs(parent, exist_ok=True)
+                Path(parent).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "pcb", "export", "pos", "--output", output_path]
 
@@ -5071,7 +5067,7 @@ class KiCADInterface:
                     "success": False,
                     "message": "boardPath is required (no current board could be resolved)",
                 }
-            if not os.path.exists(board_path):
+            if not Path(board_path).exists():
                 return {"success": False, "message": f"Board not found: {board_path}"}
             if not output_path:
                 return {"success": False, "message": "outputPath is required"}
@@ -5080,10 +5076,10 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_path = os.path.abspath(os.path.expanduser(output_path))
-            parent = os.path.dirname(output_path)
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
             if parent:
-                os.makedirs(parent, exist_ok=True)
+                Path(parent).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "pcb", "export", "pdf", "--output", output_path]
 
@@ -5176,7 +5172,7 @@ class KiCADInterface:
                     "success": False,
                     "message": "boardPath is required (no current board could be resolved)",
                 }
-            if not os.path.exists(board_path):
+            if not Path(board_path).exists():
                 return {"success": False, "message": f"Board not found: {board_path}"}
             if not output_path:
                 return {"success": False, "message": "outputPath is required"}
@@ -5185,10 +5181,10 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_path = os.path.abspath(os.path.expanduser(output_path))
-            parent = os.path.dirname(output_path)
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
             if parent:
-                os.makedirs(parent, exist_ok=True)
+                Path(parent).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "pcb", "export", "svg", "--output", output_path]
 
@@ -5280,7 +5276,7 @@ class KiCADInterface:
                     "success": False,
                     "message": "boardPath is required (no current board could be resolved)",
                 }
-            if not os.path.exists(board_path):
+            if not Path(board_path).exists():
                 return {"success": False, "message": f"Board not found: {board_path}"}
             if not output_path:
                 return {"success": False, "message": "outputPath is required"}
@@ -5289,10 +5285,10 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_path = os.path.abspath(os.path.expanduser(output_path))
-            parent = os.path.dirname(output_path)
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
             if parent:
-                os.makedirs(parent, exist_ok=True)
+                Path(parent).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "pcb", "export", "dxf", "--output", output_path]
 
@@ -5385,7 +5381,7 @@ class KiCADInterface:
                     "success": False,
                     "message": "boardPath is required (no current board could be resolved)",
                 }
-            if not os.path.exists(board_path):
+            if not Path(board_path).exists():
                 return {"success": False, "message": f"Board not found: {board_path}"}
             if not output_path:
                 return {"success": False, "message": "outputPath is required"}
@@ -5394,10 +5390,10 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_path = os.path.abspath(os.path.expanduser(output_path))
-            parent = os.path.dirname(output_path)
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
             if parent:
-                os.makedirs(parent, exist_ok=True)
+                Path(parent).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "pcb", "export", "gerber", "--output", output_path]
 
@@ -5486,7 +5482,7 @@ class KiCADInterface:
                     "success": False,
                     "message": "boardPath is required (no current board could be resolved)",
                 }
-            if not os.path.exists(board_path):
+            if not Path(board_path).exists():
                 return {"success": False, "message": f"Board not found: {board_path}"}
             if not output_path:
                 return {"success": False, "message": "outputPath is required"}
@@ -5501,10 +5497,10 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_path = os.path.abspath(os.path.expanduser(output_path))
-            parent = os.path.dirname(output_path)
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
             if parent:
-                os.makedirs(parent, exist_ok=True)
+                Path(parent).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "pcb", "export", fmt, "--output", output_path]
 
@@ -5607,7 +5603,7 @@ class KiCADInterface:
 
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
-            if not os.path.exists(schematic_path):
+            if not Path(schematic_path).exists():
                 return {"success": False, "message": f"Schematic not found: {schematic_path}"}
             if not output_path:
                 return {"success": False, "message": "outputPath is required"}
@@ -5616,10 +5612,10 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_path = os.path.abspath(os.path.expanduser(output_path))
-            parent = os.path.dirname(output_path)
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
             if parent:
-                os.makedirs(parent, exist_ok=True)
+                Path(parent).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "sch", "export", "bom", "--output", output_path]
 
@@ -5690,7 +5686,7 @@ class KiCADInterface:
 
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
-            if not os.path.exists(schematic_path):
+            if not Path(schematic_path).exists():
                 return {"success": False, "message": f"Schematic not found: {schematic_path}"}
             if not output_path:
                 return {"success": False, "message": "outputPath is required"}
@@ -5699,10 +5695,10 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_path = os.path.abspath(os.path.expanduser(output_path))
-            parent = os.path.dirname(output_path)
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
             if parent:
-                os.makedirs(parent, exist_ok=True)
+                Path(parent).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "sch", "export", "pdf", "--output", output_path]
 
@@ -5770,7 +5766,7 @@ class KiCADInterface:
 
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
-            if not os.path.exists(schematic_path):
+            if not Path(schematic_path).exists():
                 return {"success": False, "message": f"Schematic not found: {schematic_path}"}
             if not output_dir:
                 return {"success": False, "message": "outputDir is required"}
@@ -5779,8 +5775,8 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_dir = os.path.abspath(os.path.expanduser(output_dir))
-            os.makedirs(output_dir, exist_ok=True)
+            output_dir = str(Path(output_dir).expanduser().resolve())
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "sch", "export", "svg", "--output", output_dir]
 
@@ -5820,9 +5816,7 @@ class KiCADInterface:
                     f"{result.stderr.strip()}",
                 }
 
-            files = sorted(
-                f for f in os.listdir(output_dir) if os.path.isfile(os.path.join(output_dir, f))
-            )
+            files = sorted(p.name for p in Path(output_dir).iterdir() if p.is_file())
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
@@ -5849,7 +5843,7 @@ class KiCADInterface:
 
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
-            if not os.path.exists(schematic_path):
+            if not Path(schematic_path).exists():
                 return {"success": False, "message": f"Schematic not found: {schematic_path}"}
             if not output_dir:
                 return {"success": False, "message": "outputDir is required"}
@@ -5858,8 +5852,8 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_dir = os.path.abspath(os.path.expanduser(output_dir))
-            os.makedirs(output_dir, exist_ok=True)
+            output_dir = str(Path(output_dir).expanduser().resolve())
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "sch", "export", "dxf", "--output", output_dir]
 
@@ -5898,9 +5892,7 @@ class KiCADInterface:
                     f"{result.stderr.strip()}",
                 }
 
-            files = sorted(
-                f for f in os.listdir(output_dir) if os.path.isfile(os.path.join(output_dir, f))
-            )
+            files = sorted(p.name for p in Path(output_dir).iterdir() if p.is_file())
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
@@ -5927,7 +5919,7 @@ class KiCADInterface:
 
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
-            if not os.path.exists(schematic_path):
+            if not Path(schematic_path).exists():
                 return {"success": False, "message": f"Schematic not found: {schematic_path}"}
             if not output_dir:
                 return {"success": False, "message": "outputDir is required"}
@@ -5936,8 +5928,8 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_dir = os.path.abspath(os.path.expanduser(output_dir))
-            os.makedirs(output_dir, exist_ok=True)
+            output_dir = str(Path(output_dir).expanduser().resolve())
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "sch", "export", "hpgl", "--output", output_dir]
 
@@ -5972,9 +5964,7 @@ class KiCADInterface:
                     f"{result.stderr.strip()}",
                 }
 
-            files = sorted(
-                f for f in os.listdir(output_dir) if os.path.isfile(os.path.join(output_dir, f))
-            )
+            files = sorted(p.name for p in Path(output_dir).iterdir() if p.is_file())
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
@@ -6001,7 +5991,7 @@ class KiCADInterface:
 
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
-            if not os.path.exists(schematic_path):
+            if not Path(schematic_path).exists():
                 return {"success": False, "message": f"Schematic not found: {schematic_path}"}
             if not output_dir:
                 return {"success": False, "message": "outputDir is required"}
@@ -6010,8 +6000,8 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_dir = os.path.abspath(os.path.expanduser(output_dir))
-            os.makedirs(output_dir, exist_ok=True)
+            output_dir = str(Path(output_dir).expanduser().resolve())
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "sch", "export", "ps", "--output", output_dir]
 
@@ -6051,9 +6041,7 @@ class KiCADInterface:
                     f"{result.stderr.strip()}",
                 }
 
-            files = sorted(
-                f for f in os.listdir(output_dir) if os.path.isfile(os.path.join(output_dir, f))
-            )
+            files = sorted(p.name for p in Path(output_dir).iterdir() if p.is_file())
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
@@ -6081,7 +6069,7 @@ class KiCADInterface:
 
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
-            if not os.path.exists(schematic_path):
+            if not Path(schematic_path).exists():
                 return {"success": False, "message": f"Schematic not found: {schematic_path}"}
             if not output_path:
                 return {"success": False, "message": "outputPath is required"}
@@ -6090,10 +6078,10 @@ class KiCADInterface:
             if not kicad_cli:
                 return {"success": False, "message": "kicad-cli not found in PATH"}
 
-            output_path = os.path.abspath(os.path.expanduser(output_path))
-            parent = os.path.dirname(output_path)
+            output_path = str(Path(output_path).expanduser().resolve())
+            parent = Path(output_path).parent
             if parent:
-                os.makedirs(parent, exist_ok=True)
+                Path(parent).mkdir(parents=True, exist_ok=True)
 
             cmd = [kicad_cli, "sch", "export", "python-bom", "--output", output_path]
             cmd.append(schematic_path)
