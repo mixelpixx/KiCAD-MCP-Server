@@ -499,5 +499,40 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
   );
 
+  // ------------------------------------------------------
+  // Export ODB++ Tool (kicad-cli)
+  // ------------------------------------------------------
+  server.tool(
+    "export_odb",
+    "Export the PCB in ODB++ format via kicad-cli. Single job archive (copper, drill, placement, components, nets, outline) widely used by CAM/MES/assembly. Reads the last SAVED state of the .kicad_pcb.",
+    {
+      outputPath: z.string().describe("Output file path (archive or directory per compression)"),
+      boardPath: z.string().optional().describe("Path to the .kicad_pcb (default: current board)"),
+      drawingSheet: z.string().optional().describe("Path to a drawing sheet override"),
+      defineVar: z
+        .array(z.string())
+        .optional()
+        .describe("Project variable overrides as 'KEY=VALUE' strings"),
+      precision: z.number().optional().describe("Coordinate precision (default 2)"),
+      compression: z
+        .enum(["zip", "tgz", "none"])
+        .optional()
+        .describe("Output container/compression mode (default zip)"),
+      units: z.enum(["mm", "in"]).optional().describe("Units (default mm)"),
+    },
+    async (args) => {
+      logger.debug(`Exporting ODB++ to: ${args.outputPath}`);
+      const result = await callKicadScript("export_odb", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
   logger.info("Export tools registered");
 }

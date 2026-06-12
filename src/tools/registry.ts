@@ -61,6 +61,7 @@ export const toolCategories: ToolCategory[] = [
       "export_gerbers",
       "export_drill",
       "export_ipc2581",
+      "export_odb",
       "export_pdf",
       "export_svg",
       "export_3d",
