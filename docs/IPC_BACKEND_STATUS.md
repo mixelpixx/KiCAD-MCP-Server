@@ -152,6 +152,30 @@ Use `check_kicad_ui`, `launch_kicad_ui`, or `get_backend_info` to inspect the
 current live backend status. These responses include `backend`,
 `realtime_sync`, and `ipc_connected`.
 
+### Session Pinning (issue #223)
+
+Once a project is loaded, its entire lifecycle is **pinned to one backend**
+until it is reopened:
+
+- `open_project` pins the session to **ipc** only when the live KiCad GUI
+  provably has the *same* `.kicad_pcb` open (path comparison via the IPC
+  open-documents list). Otherwise — including every `create_project`, since
+  the GUI cannot have a brand-new board open — the session pins to **swig**.
+- A **swig-pinned session never silently upgrades to IPC**, even if KiCad
+  starts later and IPC connects. The GUI's in-memory board would be stale
+  relative to the MCP's edits, and routing `save_project` through IPC would
+  clobber them — the exact lost-edits bug in #223. Affected responses carry a
+  `_backend_note` explaining the pin; to adopt the live GUI, open the board in
+  KiCad and call `open_project` again.
+- An **ipc-pinned session falls back to swig** if the IPC connection drops
+  (e.g. the GUI is closed); the board is reloaded from its last on-disk state.
+- `get_backend_state` reports the pin as `sessionBackend` /
+  `sessionBoardPath`, and its `backend` field reflects the session pin (not
+  just connectivity) whenever a project is loaded.
+
+The runtime-reconnect workflow above still applies when **no project is
+loaded** — connectivity upgrades are only restricted once a board is open.
+
 ### Testing
 
 Run the test script to verify IPC functionality:
@@ -199,7 +223,10 @@ Run the test script to verify IPC functionality:
 4. **Delete trace**: Falls back to SWIG (IPC API doesn't support direct deletion)
 5. **Reconnect still requires IPC prerequisites**: Runtime reconnect only
    succeeds when KiCAD is running with IPC enabled and a board is available
-6. **Some operations may not work as expected**: This is experimental code
+6. **SWIG-pinned sessions stay SWIG**: after `create_project`/`open_project`
+   runs on SWIG, the session does not switch to IPC mid-project (see Session
+   Pinning above) — reopen the project while it is open in the GUI to use IPC
+7. **Some operations may not work as expected**: This is experimental code
 
 ## Troubleshooting
 

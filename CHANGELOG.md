@@ -20,6 +20,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Backend is now pinned per loaded project (SWIG vs IPC)** (#223): commands
+  on a single loaded project previously ran on whichever backend happened to
+  be reachable per call — `create_project`/`open_project`/`add_layer` on SWIG
+  while `save_project` silently upgraded to IPC, saving the live GUI's (stale)
+  board and losing the SWIG-side edits. Now `open_project` pins the session to
+  IPC only when the GUI provably has the same `.kicad_pcb` open; otherwise the
+  whole lifecycle (including `save_project`) stays on SWIG, with a
+  `_backend_note` on responses explaining why IPC wasn't used. IPC-pinned
+  sessions fall back to SWIG (reloading from disk) if the GUI connection
+  drops. `get_backend_state` gains `sessionBackend`/`sessionBoardPath`, and
+  its `backend` field reflects the session pin while a project is loaded.
+
 - **`rotate_component` now treats `angle` as an absolute target rotation**,
   matching its schema description. Previously the IPC backend added the
   supplied angle to the current rotation, so two consecutive
