@@ -393,5 +393,61 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
   );
 
+  // ------------------------------------------------------
+  // Export Drill Files Tool (kicad-cli)
+  // ------------------------------------------------------
+  server.tool(
+    "export_drill",
+    "Generate drill files for a PCB via kicad-cli, exposing the full Excellon/Gerber drill option set (format, drill origin, zero suppression, oval format, units, mirror-Y, minimal header, separate PTH/NPTH files, drill map + map format). Reads the last SAVED state of the .kicad_pcb.",
+    {
+      outputDir: z.string().describe("Output directory for the drill files"),
+      boardPath: z.string().optional().describe("Path to the .kicad_pcb (default: current board)"),
+      format: z
+        .enum(["excellon", "gerber"])
+        .optional()
+        .describe("Drill file format (default excellon)"),
+      drillOrigin: z
+        .enum(["absolute", "plot"])
+        .optional()
+        .describe("Drill coordinate origin (default absolute)"),
+      excellonZerosFormat: z
+        .enum(["decimal", "suppressleading", "suppresstrailing", "keep"])
+        .optional()
+        .describe("Excellon zero-suppression format (default decimal)"),
+      excellonOvalFormat: z
+        .enum(["route", "alternate"])
+        .optional()
+        .describe("Excellon oval hole format (default alternate)"),
+      excellonUnits: z.enum(["in", "mm"]).optional().describe("Excellon output units (default mm)"),
+      excellonMirrorY: z.boolean().optional().describe("Mirror the Y axis (Excellon)"),
+      excellonMinHeader: z.boolean().optional().describe("Use a minimal Excellon header"),
+      excellonSeparateTh: z
+        .boolean()
+        .optional()
+        .describe("Generate independent files for NPTH and PTH holes"),
+      generateMap: z.boolean().optional().describe("Generate a drill map / summary file"),
+      mapFormat: z
+        .enum(["pdf", "gerberx2", "ps", "dxf", "svg"])
+        .optional()
+        .describe("Drill map format when generateMap is set (default pdf)"),
+      gerberPrecision: z
+        .number()
+        .optional()
+        .describe("Gerber coordinate precision (5 or 6) when format=gerber"),
+    },
+    async (args) => {
+      logger.debug(`Exporting drill files to: ${args.outputDir}`);
+      const result = await callKicadScript("export_drill", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
   logger.info("Export tools registered");
 }

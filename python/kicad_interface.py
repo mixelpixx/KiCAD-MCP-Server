@@ -588,6 +588,7 @@ class KiCADInterface:
             "run_erc": self._handle_run_erc,
             "export_netlist": self._handle_export_netlist,
             "export_gerbers": self._handle_export_gerbers,
+            "export_drill": self._handle_export_drill,
             "generate_netlist": self._handle_generate_netlist,
             "sync_schematic_to_board": self._handle_sync_schematic_to_board,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
@@ -4598,6 +4599,90 @@ class KiCADInterface:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
             logger.error(f"Error exporting Gerbers: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_drill(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate drill files via kicad-cli (`pcb export drill`).
+
+        Exposes the full Excellon/Gerber drill option set. Reads the saved
+        .kicad_pcb on disk.
+        """
+        import subprocess
+
+        logger.info("Exporting drill files via kicad-cli")
+        try:
+            board_path = params.get("boardPath") or self._current_board_path()
+            output_dir = params.get("outputDir")
+
+            if not board_path:
+                return {
+                    "success": False,
+                    "message": "boardPath is required (no current board could be resolved)",
+                }
+            if not os.path.exists(board_path):
+                return {"success": False, "message": f"Board not found: {board_path}"}
+            if not output_dir:
+                return {"success": False, "message": "outputDir is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_dir = os.path.abspath(os.path.expanduser(output_dir))
+            # kicad-cli drill requires the output dir path to end with a separator
+            os.makedirs(output_dir, exist_ok=True)
+
+            cmd = [kicad_cli, "pcb", "export", "drill", "--output", output_dir + os.sep]
+
+            # Valued options (omit to use kicad-cli defaults)
+            value_map = {
+                "format": "--format",
+                "drillOrigin": "--drill-origin",
+                "excellonZerosFormat": "--excellon-zeros-format",
+                "excellonOvalFormat": "--excellon-oval-format",
+                "excellonUnits": "--excellon-units",
+                "mapFormat": "--map-format",
+                "gerberPrecision": "--gerber-precision",
+            }
+            for key, flag in value_map.items():
+                val = params.get(key)
+                if val is not None:
+                    cmd += [flag, str(val)]
+
+            # Boolean flags
+            flag_map = {
+                "excellonMirrorY": "--excellon-mirror-y",
+                "excellonMinHeader": "--excellon-min-header",
+                "excellonSeparateTh": "--excellon-separate-th",
+                "generateMap": "--generate-map",
+            }
+            for key, flag in flag_map.items():
+                if params.get(key):
+                    cmd.append(flag)
+
+            cmd.append(board_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+
+            files = sorted(
+                f for f in os.listdir(output_dir) if os.path.isfile(os.path.join(output_dir, f))
+            )
+            return {"success": True, "outputDir": output_dir, "files": files}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 120 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting drill files: {e}")
             return {"success": False, "message": str(e)}
 
     def _handle_generate_netlist(self, params: Dict[str, Any]) -> Dict[str, Any]:
