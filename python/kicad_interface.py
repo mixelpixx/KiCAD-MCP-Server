@@ -599,6 +599,7 @@ class KiCADInterface:
             "export_pcb_dxf": self._handle_export_pcb_dxf,
             "export_gerber_single": self._handle_export_gerber_single,
             "export_3d_cli": self._handle_export_3d_cli,
+            "export_sch_bom": self._handle_export_sch_bom,
             "generate_netlist": self._handle_generate_netlist,
             "sync_schematic_to_board": self._handle_sync_schematic_to_board,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
@@ -5581,6 +5582,89 @@ class KiCADInterface:
             return {"success": False, "message": "kicad-cli timed out after 300 seconds"}
         except Exception as e:
             logger.error(f"Error exporting 3D model: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _handle_export_sch_bom(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate a Bill of Materials from a schematic via kicad-cli
+        (`sch export bom`).
+
+        Exposes the full BOM option set: presets, field/label lists, grouping,
+        sorting, filtering, DNP/excluded handling, and the field/string/ref
+        delimiters. schematicPath is required (no current-schematic resolver).
+        """
+        import subprocess
+
+        logger.info("Exporting schematic BOM via kicad-cli")
+        try:
+            schematic_path = params.get("schematicPath")
+            output_path = params.get("outputPath")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not os.path.exists(schematic_path):
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+            if not output_path:
+                return {"success": False, "message": "outputPath is required"}
+
+            kicad_cli = self._find_kicad_cli_static()
+            if not kicad_cli:
+                return {"success": False, "message": "kicad-cli not found in PATH"}
+
+            output_path = os.path.abspath(os.path.expanduser(output_path))
+            parent = os.path.dirname(output_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+
+            cmd = [kicad_cli, "sch", "export", "bom", "--output", output_path]
+
+            value_map = {
+                "preset": "--preset",
+                "formatPreset": "--format-preset",
+                "fields": "--fields",
+                "labels": "--labels",
+                "groupBy": "--group-by",
+                "sortField": "--sort-field",
+                "sortAsc": "--sort-asc",
+                "filter": "--filter",
+                "fieldDelimiter": "--field-delimiter",
+                "stringDelimiter": "--string-delimiter",
+                "refDelimiter": "--ref-delimiter",
+                "refRangeDelimiter": "--ref-range-delimiter",
+            }
+            for key, flag in value_map.items():
+                val = params.get(key)
+                if val is not None and val != "":
+                    cmd += [flag, str(val)]
+
+            flag_map = {
+                "excludeDnp": "--exclude-dnp",
+                "includeExcludedFromBom": "--include-excluded-from-bom",
+                "keepTabs": "--keep-tabs",
+                "keepLineBreaks": "--keep-line-breaks",
+            }
+            for key, flag in flag_map.items():
+                if params.get(key):
+                    cmd.append(flag)
+
+            cmd.append(schematic_path)
+
+            logger.info(f"Running: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "message": f"kicad-cli failed (exit {result.returncode}): "
+                    f"{result.stderr.strip()}",
+                }
+            return {"success": True, "outputPath": output_path}
+
+        except FileNotFoundError:
+            return {"success": False, "message": "kicad-cli not found in PATH"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
+        except Exception as e:
+            logger.error(f"Error exporting schematic BOM: {e}")
             return {"success": False, "message": str(e)}
 
     def _handle_generate_netlist(self, params: Dict[str, Any]) -> Dict[str, Any]:

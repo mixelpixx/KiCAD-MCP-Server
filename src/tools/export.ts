@@ -1033,5 +1033,78 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
   );
 
+  // ------------------------------------------------------
+  // Export Schematic BOM Tool (kicad-cli, full option set)
+  // ------------------------------------------------------
+  server.tool(
+    "export_sch_bom",
+    "Generate a Bill of Materials from a schematic via kicad-cli (`sch export bom`), exposing the full option set (presets, field/label lists, grouping, sorting, filtering, DNP/excluded-from-BOM handling, and field/string/ref delimiters). schematicPath is REQUIRED.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch (required)"),
+      outputPath: z.string().describe("Output BOM file path"),
+      preset: z
+        .string()
+        .optional()
+        .describe("Named BOM preset from the schematic, e.g. 'Grouped By Value'"),
+      formatPreset: z
+        .string()
+        .optional()
+        .describe("Named BOM format preset from the schematic, e.g. 'CSV'"),
+      fields: z
+        .string()
+        .optional()
+        .describe("Ordered comma list of fields to export (supports special substitutions)"),
+      labels: z
+        .string()
+        .optional()
+        .describe("Ordered comma list of labels to apply to the exported fields"),
+      groupBy: z
+        .string()
+        .optional()
+        .describe("Fields to group references by when field values match"),
+      sortField: z.string().optional().describe("Field name to sort by (default Reference)"),
+      sortAsc: z.string().optional().describe("Sort ascending ('true') or descending ('false')"),
+      filter: z.string().optional().describe("Filter string to remove output lines"),
+      excludeDnp: z.boolean().optional().describe("Exclude symbols marked Do-Not-Populate"),
+      includeExcludedFromBom: z
+        .boolean()
+        .optional()
+        .describe("Include symbols marked 'Exclude from BOM'"),
+      fieldDelimiter: z
+        .string()
+        .optional()
+        .describe("Separator between output fields/columns (default ',')"),
+      stringDelimiter: z
+        .string()
+        .optional()
+        .describe("Character to surround fields with (default '\"')"),
+      refDelimiter: z
+        .string()
+        .optional()
+        .describe("Character between individual references (default ',')"),
+      refRangeDelimiter: z
+        .string()
+        .optional()
+        .describe("Character for reference ranges; blank disables ranges (default '-')"),
+      keepTabs: z.boolean().optional().describe("Keep tab characters from input fields"),
+      keepLineBreaks: z
+        .boolean()
+        .optional()
+        .describe("Keep line break characters from input fields"),
+    },
+    async (args) => {
+      logger.debug(`Exporting schematic BOM to: ${args.outputPath}`);
+      const result = await callKicadScript("export_sch_bom", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
   logger.info("Export tools registered");
 }
