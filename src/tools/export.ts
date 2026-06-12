@@ -1277,5 +1277,46 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
   );
 
+  // ------------------------------------------------------
+  // Export Schematic PostScript Tool (kicad-cli, full option set)
+  // ------------------------------------------------------
+  server.tool(
+    "export_sch_ps",
+    "Export a schematic to PostScript via kicad-cli (`sch export ps`), one PS per page into a directory. Exposes drawing-sheet override, theme, black-and-white, exclude-drawing-sheet, default-font, no-background-color, and page selection. schematicPath is REQUIRED.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch (required)"),
+      outputDir: z.string().describe("Output directory for the PostScript files"),
+      drawingSheet: z.string().optional().describe("Path to a drawing sheet override"),
+      defineVar: z
+        .array(z.string())
+        .optional()
+        .describe("Project variable overrides as 'KEY=VALUE' strings"),
+      theme: z.string().optional().describe("Color theme to use (default: schematic settings)"),
+      blackAndWhite: z.boolean().optional().describe("Black and white only"),
+      excludeDrawingSheet: z.boolean().optional().describe("No drawing sheet"),
+      defaultFont: z.string().optional().describe("Default font name"),
+      noBackgroundColor: z
+        .boolean()
+        .optional()
+        .describe("Avoid setting a background color (regardless of theme)"),
+      pages: z
+        .string()
+        .optional()
+        .describe("Comma list of page numbers to print (blank = all pages)"),
+    },
+    async (args) => {
+      logger.debug(`Exporting schematic PostScript to: ${args.outputDir}`);
+      const result = await callKicadScript("export_sch_ps", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
   logger.info("Export tools registered");
 }
