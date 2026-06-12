@@ -449,5 +449,55 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
   );
 
+  // ------------------------------------------------------
+  // Export IPC-2581 Tool (kicad-cli)
+  // ------------------------------------------------------
+  server.tool(
+    "export_ipc2581",
+    "Export the PCB in IPC-2581 format via kicad-cli. Single-file MES/CAD interchange carrying placement, nets and BOM part data inline. The bomCol* params map schematic fields to the embedded BOM columns (e.g. internal P/N, manufacturer P/N) — useful for assembly/MES imports. Reads the last SAVED state of the .kicad_pcb.",
+    {
+      outputPath: z.string().describe("Output .xml file path"),
+      boardPath: z.string().optional().describe("Path to the .kicad_pcb (default: current board)"),
+      drawingSheet: z.string().optional().describe("Path to a drawing sheet override"),
+      defineVar: z
+        .array(z.string())
+        .optional()
+        .describe("Project variable overrides as 'KEY=VALUE' strings"),
+      precision: z.number().optional().describe("Coordinate precision (default 6)"),
+      compress: z.boolean().optional().describe("Compress the output"),
+      version: z.string().optional().describe("IPC-2581 standard version (default 'C')"),
+      units: z.enum(["mm", "in"]).optional().describe("Units (default mm)"),
+      bomColIntId: z
+        .string()
+        .optional()
+        .describe("Schematic field to use for the BOM Internal Id column"),
+      bomColMfgPn: z
+        .string()
+        .optional()
+        .describe("Schematic field to use for the BOM Manufacturer Part Number column"),
+      bomColMfg: z
+        .string()
+        .optional()
+        .describe("Schematic field to use for the BOM Manufacturer column"),
+      bomColDistPn: z
+        .string()
+        .optional()
+        .describe("Schematic field to use for the BOM Distributor Part Number column"),
+      bomColDist: z.string().optional().describe("Value to insert into the BOM Distributor column"),
+    },
+    async (args) => {
+      logger.debug(`Exporting IPC-2581 to: ${args.outputPath}`);
+      const result = await callKicadScript("export_ipc2581", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
   logger.info("Export tools registered");
 }
