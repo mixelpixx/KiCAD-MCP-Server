@@ -1125,10 +1125,14 @@ class WireManager:
         Returns (modified_content, success).
         """
         lines = content.split("\n")
+        # KiCad 7-9 stores the property as "Sheetname"; KiCad 10 renamed it
+        # to "Sheet name" (with space). Match either to stay compatible.
         sheetname_pattern = re.compile(
-            r'\(property\s+"Sheetname"\s+"' + re.escape(sheet_name) + r'"'
+            r'\(property\s+"Sheet\s?name"\s+"' + re.escape(sheet_name) + r'"'
         )
-        sheet_block_pattern = re.compile(r"^\t\(sheet\b")
+        # KiCad 7-9 indents top-level blocks with a single tab; KiCad 10
+        # writes 2- or 4-space indentation. Accept any leading whitespace.
+        sheet_block_pattern = re.compile(r"^\s*\(sheet\b")
 
         # Find the sheet block that contains the target Sheetname property
         i = 0
