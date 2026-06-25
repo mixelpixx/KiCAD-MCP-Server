@@ -187,6 +187,65 @@ def test_diode_label_polarity_through_eeschema(rotation):
             )
 
 
+def _build_diode_rot_mirror_case(tmp: Path, rotation: int, mirror: str) -> tuple[Path, dict]:
+    """Place a Device:D, apply BOTH rotation and mirror, snap labels by PinLocator coords."""
+    import sexpdata
+
+    sch_path = tmp / f"diode_rot{rotation}_mir{mirror}.kicad_sch"
+    template = PYTHON_DIR / "templates" / "template_with_symbols.kicad_sch"
+    shutil.copy(template, sch_path)
+
+    sch = SchematicManager.load_schematic(str(sch_path))
+    ComponentManager.add_component(
+        sch,
+        {"type": "D", "reference": "D1", "value": "1N4148",
+         "x": 100.0, "y": 100.0, "rotation": 0},
+        sch_path,
+    )
+    SchematicManager.save_schematic(sch, str(sch_path))
+
+    # add_component drops a 'mirror' kwarg, so set rotation + mirror via the same
+    # low-level helper the rotate handler uses.
+    sch_data = sexpdata.loads(sch_path.read_text())
+    if not WireDragger.update_symbol_rotation_mirror(sch_data, "D1", rotation, mirror):
+        raise RuntimeError(f"Failed to set rotation={rotation} mirror={mirror} on D1")
+    sch_path.write_text(sexpdata.dumps(sch_data))
+    if f"(mirror {mirror})" not in sch_path.read_text():
+        raise RuntimeError(
+            f"Fixture failed to write (mirror {mirror}) — the oracle would "
+            f"silently match our coords for an unmirrored symbol."
+        )
+
+    locator = PinLocator()
+    p_k = locator.get_pin_location(sch_path, "D1", "1")
+    p_a = locator.get_pin_location(sch_path, "D1", "2")
+    assert p_k is not None and p_a is not None
+    _add_labels_to_file(sch_path, [("D1_K", p_k[0], p_k[1]), ("D1_A", p_a[0], p_a[1])])
+    return sch_path, {("D1", "1"): "D1_K", ("D1", "2"): "D1_A"}
+
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+@pytest.mark.parametrize("mirror", ["x", "y"])
+def test_diode_polarity_rotation_and_mirror_through_eeschema(rotation, mirror):
+    """Polarized symbol with rotation AND mirror together.
+
+    Regression for the pin_world_xy mirror/rotation ORDER bug: the mirror was
+    applied before the rotation, so rotation 90/270 combined with any mirror
+    swapped the pins. The snapped "_K" label must still bind to pin 1 (K) in
+    eeschema's own netlist. (rotation-only and mirror-only are covered above; the
+    combination is the case the previous tests missed.)
+    """
+    with tempfile.TemporaryDirectory() as td:
+        sch_path, expected = _build_diode_rot_mirror_case(Path(td), rotation, mirror)
+        actual = _run_netlist(sch_path)
+        for (ref, pin), net in expected.items():
+            assert actual.get((ref, pin)) == net, (
+                f"rotation={rotation}, mirror={mirror}: D1.{pin} label landed on "
+                f"the wrong pin. Expected net={net}, got {actual.get((ref, pin))}. "
+                f"Full mapping: {actual}"
+            )
+
+
 @pytest.mark.parametrize("axis", ["x", "y"])
 def test_mirrored_resistor_label_through_eeschema(axis):
     """Snap-labelled pin 1 must show up on pin 1 after (mirror x) / (mirror y)."""
