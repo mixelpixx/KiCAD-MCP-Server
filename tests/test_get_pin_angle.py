@@ -1,16 +1,31 @@
-"""
-Matrix tests for PinLocator.get_pin_angle on a Device:R symbol.
+"""Matrix tests for PinLocator.get_pin_angle across rotation x mirror.
 
-For each combination of (symbol_rotation, mirror, pin), we construct a real
-.kicad_sch fixture, then compare:
-  - actual:   PinLocator().get_pin_angle(...)
-  - expected: derived geometrically from WireDragger.pin_world_xy by extending
-              the pin one length unit along its library angle and measuring the
-              world-frame displacement direction.
+get_pin_angle returns the *outward* bearing of a pin endpoint — the direction a
+wire stub leaves the pin, away from the symbol body — in the convention the sole
+consumer (connection_schematic.connect_to_net) uses:
 
-This characterizes the post-PR-#88 angle reflection logic. Cases that disagree
-with the geometric expectation are marked xfail with a "PR #88 regression
-candidate" annotation.
+    stub_end = pin + L * (cos θ, −sin θ)        # screen Y is down
+
+so 0=right, 90=up, 180=left, 270=down.
+
+Two symbols are exercised:
+  * Device:R — vertical pins (library angles 90/270)
+  * Device:D — horizontal pins (library angles 0/180)
+
+Horizontal pins are the regression guard: the previous implementation negated
+the library angle (a Y-flip), which only yields the outward direction for
+vertical pins (270↔90).  Horizontal pins (0→0, 180→180) came out pointing *into*
+the body — 180° wrong — and the old test, which used only Device:R, never saw
+it.
+
+Oracles, strongest first:
+  * test_wire_stub_extends_outward — behavioural and implementation-independent:
+    the 2.54 mm stub the consumer would place must land farther from the symbol
+    origin than the pin itself.  The old code fails this for every Device:D case.
+  * test_get_pin_angle_known_values — hand-computed bearings for canonical
+    placements, including the real-world D10 freewheel diode (rot 90 + mirror x).
+  * test_get_pin_angle_matches_pin_world_xy — exhaustive agreement with the
+    netlist-verified WireDragger.pin_world_xy transform.
 """
 
 import importlib.util
@@ -22,7 +37,6 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-import sexpdata
 
 # ---------------------------------------------------------------------------
 # Module loading — bypass pcbnew, mirror the test_rotate_schematic_mirror style
@@ -31,7 +45,6 @@ _PYTHON_DIR = os.path.join(os.path.dirname(__file__), "..", "python")
 if _PYTHON_DIR not in sys.path:
     sys.path.insert(0, _PYTHON_DIR)
 
-# Stub pcbnew before importing pin_locator (skip is real and works fine)
 sys.modules.setdefault("pcbnew", MagicMock())
 
 _pl_spec = importlib.util.spec_from_file_location(
@@ -52,112 +65,171 @@ WireDragger = _wd_mod.WireDragger
 
 
 # ---------------------------------------------------------------------------
-# Device:R pin definitions (per python/templates/empty.kicad_sch)
-#   pin 1: (0, 3.81), library angle 270, length 1.27
-#   pin 2: (0, -3.81), library angle 90, length 1.27
+# Fixtures: a vertical-pin (Device:R) and a horizontal-pin (Device:D) symbol
 # ---------------------------------------------------------------------------
-PIN_DEFS = {
-    "1": {"x": 0.0, "y": 3.81, "angle": 270.0, "length": 1.27},
-    "2": {"x": 0.0, "y": -3.81, "angle": 90.0, "length": 1.27},
-}
-
 SYMBOL_X = 100.0
 SYMBOL_Y = 100.0
+STUB_LEN = 2.54  # matches connection_schematic.connect_to_net
 
-
-def _make_sch_text(rotation: float, mirror: str | None) -> str:
-    mirror_line = ""
-    if mirror == "x":
-        mirror_line = "(mirror x)"
-    elif mirror == "y":
-        mirror_line = "(mirror y)"
-
-    return textwrap.dedent(f"""\
-        (kicad_sch (version 20250114) (generator "test")
-          (lib_symbols
-            (symbol "Device:R" (pin_numbers hide) (pin_names (offset 0))
-              (symbol "R_1_1"
+SYMS = {
+    "R": {  # vertical pins
+        "lib_id": "Device:R",
+        # pin: (x, y, library angle)
+        "pins": {"1": (0.0, 3.81, 270.0), "2": (0.0, -3.81, 90.0)},
+        "body": textwrap.dedent(
+            """\
+            (symbol "R_1_1"
                 (pin passive line (at 0 3.81 270) (length 1.27)
                   (name "~" (effects (font (size 1.27 1.27))))
-                  (number "1" (effects (font (size 1.27 1.27))))
-                )
+                  (number "1" (effects (font (size 1.27 1.27)))))
                 (pin passive line (at 0 -3.81 90) (length 1.27)
                   (name "~" (effects (font (size 1.27 1.27))))
-                  (number "2" (effects (font (size 1.27 1.27))))
-                )
-              )
-            )
-          )
-          (symbol (lib_id "Device:R") (at {SYMBOL_X} {SYMBOL_Y} {rotation})
-            {mirror_line}
-            (property "Reference" "R1" (at {SYMBOL_X} {SYMBOL_Y} 0))
-            (property "Value" "10k" (at {SYMBOL_X} {SYMBOL_Y} 0))
-          )
-        )
-    """)
+                  (number "2" (effects (font (size 1.27 1.27)))))
+              )"""
+        ),
+    },
+    "D": {  # horizontal pins
+        "lib_id": "Device:D",
+        "pins": {"1": (-3.81, 0.0, 0.0), "2": (3.81, 0.0, 180.0)},
+        "body": textwrap.dedent(
+            """\
+            (symbol "D_1_1"
+                (pin passive line (at -3.81 0 0) (length 2.54)
+                  (name "K" (effects (font (size 1.27 1.27))))
+                  (number "1" (effects (font (size 1.27 1.27)))))
+                (pin passive line (at 3.81 0 180) (length 2.54)
+                  (name "A" (effects (font (size 1.27 1.27))))
+                  (number "2" (effects (font (size 1.27 1.27)))))
+              )"""
+        ),
+    },
+}
 
-
-def _write_sch(tmp_path: Path, rotation: float, mirror: str | None) -> Path:
-    p = tmp_path / f"r_rot{int(rotation)}_mirror{mirror or 'none'}.kicad_sch"
-    p.write_text(_make_sch_text(rotation, mirror))
-    return p
-
-
-def _expected_stub_angle(pin_num: str, rotation: float, mirror: str | None) -> float:
-    """Geometrically expected outward angle: extend in library coords by +length
-    along library angle, transform to world, take atan2 of displacement."""
-    pin = PIN_DEFS[pin_num]
-    px, py = pin["x"], pin["y"]
-    lib_angle_rad = math.radians(pin["angle"])
-    ox = px + pin["length"] * math.cos(lib_angle_rad)
-    oy = py + pin["length"] * math.sin(lib_angle_rad)
-
-    mirror_x = mirror == "x"
-    mirror_y = mirror == "y"
-
-    wx_pin, wy_pin = WireDragger.pin_world_xy(
-        px, py, SYMBOL_X, SYMBOL_Y, rotation, mirror_x, mirror_y
-    )
-    wx_out, wy_out = WireDragger.pin_world_xy(
-        ox, oy, SYMBOL_X, SYMBOL_Y, rotation, mirror_x, mirror_y
-    )
-
-    deg = math.degrees(math.atan2(wy_out - wy_pin, wx_out - wx_pin)) % 360.0
-    # Snap to 0/90/180/270 (axis-aligned pins; FP noise tolerance)
-    snapped = round(deg / 90.0) * 90.0 % 360.0
-    if abs(((deg - snapped) + 540) % 360 - 180) < 1e-6:
-        # within tolerance
-        return snapped
-    return snapped
-
-
-# ---------------------------------------------------------------------------
-# Parametrized matrix
-# ---------------------------------------------------------------------------
 ROTATIONS = [0, 90, 180, 270]
 MIRRORS = [None, "x", "y"]
 PINS = ["1", "2"]
 
 
+def _make_sch_text(sym: str, rotation: float, mirror) -> str:
+    spec = SYMS[sym]
+    mirror_line = {"x": "(mirror x)", "y": "(mirror y)"}.get(mirror, "")
+    return textwrap.dedent(
+        f"""\
+        (kicad_sch (version 20250114) (generator "test")
+          (lib_symbols
+            (symbol "{spec['lib_id']}" (pin_numbers hide) (pin_names (offset 0))
+              {spec['body']}
+            )
+          )
+          (symbol (lib_id "{spec['lib_id']}") (at {SYMBOL_X} {SYMBOL_Y} {rotation})
+            {mirror_line}
+            (property "Reference" "U1" (at {SYMBOL_X} {SYMBOL_Y} 0))
+            (property "Value" "v" (at {SYMBOL_X} {SYMBOL_Y} 0))
+          )
+        )
+    """
+    )
+
+
+def _write_sch(tmp_path: Path, sym: str, rotation: float, mirror) -> Path:
+    p = tmp_path / f"{sym}_rot{int(rotation)}_mir{mirror or 'none'}.kicad_sch"
+    p.write_text(_make_sch_text(sym, rotation, mirror))
+    return p
+
+
+def _pin_world(sym, pin_num, rotation, mirror):
+    px, py, _ = SYMS[sym]["pins"][pin_num]
+    return WireDragger.pin_world_xy(
+        px, py, SYMBOL_X, SYMBOL_Y, rotation, mirror == "x", mirror == "y"
+    )
+
+
+def _outward_from_pin_world_xy(sym, pin_num, rotation, mirror):
+    """Ground-truth outward bearing derived from the netlist-verified position
+    transform: the library pin angle points *into* the body, so endpoint minus a
+    bodyward point is the outward vector (screen Y down → negate the Y term)."""
+    px, py, lib_angle = SYMS[sym]["pins"][pin_num]
+    a = math.radians(lib_angle)
+    ex, ey = _pin_world(sym, pin_num, rotation, mirror)
+    bx, by = WireDragger.pin_world_xy(
+        px + math.cos(a),
+        py + math.sin(a),
+        SYMBOL_X,
+        SYMBOL_Y,
+        rotation,
+        mirror == "x",
+        mirror == "y",
+    )
+    deg = math.degrees(math.atan2(-(ey - by), ex - bx)) % 360.0
+    return round(deg / 90.0) * 90.0 % 360.0
+
+
+# ---------------------------------------------------------------------------
+# 1. Behavioural oracle (implementation-independent): the stub goes OUTWARD
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("sym", ["R", "D"])
 @pytest.mark.parametrize("rotation", ROTATIONS)
 @pytest.mark.parametrize("mirror", MIRRORS)
 @pytest.mark.parametrize("pin_num", PINS)
-def test_get_pin_angle_matches_geometric_expectation(tmp_path, rotation, mirror, pin_num):
-    sch_path = _write_sch(tmp_path, rotation, mirror)
-    expected = _expected_stub_angle(pin_num, rotation, mirror)
+def test_wire_stub_extends_outward(tmp_path, sym, rotation, mirror, pin_num):
+    """Replays what connect_to_net does and asserts the stub lands away from the
+    symbol body.  For R/D the pins are radial, so 'outward' == 'farther from the
+    placement origin'.  This is the assertion the old code violated for every
+    horizontal-pin (Device:D) case."""
+    sch = _write_sch(tmp_path, sym, rotation, mirror)
+    angle = PinLocator().get_pin_angle(sch, "U1", pin_num)
+    assert angle is not None
 
-    locator = PinLocator()
-    actual = locator.get_pin_angle(sch_path, "R1", pin_num)
+    pin_x, pin_y = _pin_world(sym, pin_num, rotation, mirror)
+    rad = math.radians(angle)
+    stub_x = pin_x + STUB_LEN * math.cos(rad)
+    stub_y = pin_y - STUB_LEN * math.sin(rad)  # connect_to_net's Y-down convention
 
+    def d2(x, y):
+        return (x - SYMBOL_X) ** 2 + (y - SYMBOL_Y) ** 2
+
+    assert d2(stub_x, stub_y) > d2(pin_x, pin_y) + 1e-6, (
+        f"{sym} pin{pin_num} rot={rotation} mir={mirror}: stub heads INTO the body "
+        f"(pin=({pin_x:.2f},{pin_y:.2f}) stub=({stub_x:.2f},{stub_y:.2f}) angle={angle})"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 2. Hand-computed canonical bearings (non-circular spot checks)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "sym, pin_num, rotation, mirror, expected",
+    [
+        ("R", "1", 0, None, 90.0),  # top pin, points up
+        ("R", "2", 0, None, 270.0),  # bottom pin, points down
+        ("D", "1", 0, None, 180.0),  # left pin (cathode), points left
+        ("D", "2", 0, None, 0.0),  # right pin (anode), points right
+        ("D", "1", 90, "x", 90.0),  # real-world: D10 freewheel diode → HS_HOT (up)
+    ],
+)
+def test_get_pin_angle_known_values(tmp_path, sym, pin_num, rotation, mirror, expected):
+    sch = _write_sch(tmp_path, sym, rotation, mirror)
+    angle = PinLocator().get_pin_angle(sch, "U1", pin_num)
+    assert angle is not None
     assert (
-        actual is not None
-    ), f"get_pin_angle returned None for rot={rotation} mirror={mirror} pin={pin_num}"
+        abs(((angle - expected) + 540) % 360 - 180) < 1e-3
+    ), f"{sym} pin{pin_num} rot={rotation} mir={mirror}: got {angle}, expected {expected}"
 
-    # Normalize both to [0, 360)
-    actual_n = actual % 360.0
-    expected_n = expected % 360.0
 
-    assert abs(((actual_n - expected_n) + 540) % 360 - 180) < 1e-3, (
-        f"actual={actual_n}, expected={expected_n} "
-        f"(rotation={rotation}, mirror={mirror}, pin={pin_num})"
+# ---------------------------------------------------------------------------
+# 3. Exhaustive agreement with the netlist-verified pin_world_xy transform
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("sym", ["R", "D"])
+@pytest.mark.parametrize("rotation", ROTATIONS)
+@pytest.mark.parametrize("mirror", MIRRORS)
+@pytest.mark.parametrize("pin_num", PINS)
+def test_get_pin_angle_matches_pin_world_xy(tmp_path, sym, rotation, mirror, pin_num):
+    sch = _write_sch(tmp_path, sym, rotation, mirror)
+    actual = PinLocator().get_pin_angle(sch, "U1", pin_num)
+    assert actual is not None
+
+    expected = _outward_from_pin_world_xy(sym, pin_num, rotation, mirror)
+    assert abs(((actual - expected) + 540) % 360 - 180) < 1e-3, (
+        f"{sym} pin{pin_num} rot={rotation} mir={mirror}: "
+        f"actual={actual % 360.0}, expected={expected}"
     )
