@@ -9,7 +9,7 @@ import os
 import sys
 import importlib.util
 import tempfile
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, mock_open
 
 # pcbnew and skip are only available inside KiCAD — stub them so the
 # schematic module can be imported in a plain Python environment.
@@ -110,3 +110,21 @@ def test_create_schematic_accepts_full_sch_path_in_path_arg():
                 f"Expected the full path {full_path!r} used as-is, got {used_path!r}"
             )
             assert "V4.kicad_sch/V4.kicad_sch" not in used_path.replace(os.sep, "/")
+
+
+def test_create_schematic_fallback_writes_kicad10_header():
+    """
+    Issue #221: when the template file is missing, the fallback writer must emit
+    the KiCad 10 schematic header, not the stale KiCad 9 (20250114) token.
+    """
+    m = mock_open()
+    with patch.object(_mod, "Schematic"), \
+         patch("shutil.copy"), \
+         patch("os.path.exists", return_value=False), \
+         patch("builtins.open", m):
+        SchematicManager.create_schematic("myschematic")
+
+    written = "".join(call.args[0] for call in m().write.call_args_list)
+    assert "(version 20260306)" in written, written
+    assert 'generator "eeschema"' in written
+    assert "20250114" not in written

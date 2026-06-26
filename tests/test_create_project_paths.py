@@ -54,3 +54,26 @@ def test_create_project_returns_paths_without_mixed_separators():
     assert project["path"].endswith("EspDinIoT.kicad_pro")
     assert project["boardPath"].endswith("EspDinIoT.kicad_pcb")
     assert project["schematicPath"].endswith("EspDinIoT.kicad_sch")
+
+
+def test_create_project_fallback_schematic_uses_kicad10_header():
+    """
+    Issue #221: when the schematic template is missing, the fallback writer in
+    create_project must emit the KiCad 10 header rather than the stale KiCad 9
+    (20250114) token.
+    """
+    cmds = ProjectCommands()
+    m = mock_open()
+    with patch.object(_mod, "pcbnew", MagicMock()), \
+         patch("os.makedirs"), \
+         patch("os.path.exists", return_value=False), \
+         patch("builtins.open", m):
+        result = cmds.create_project(
+            {"name": "EspDinIoT", "path": "C:/tmp/EspDinIoT"}
+        )
+
+    assert result["success"] is True, result
+    written = "".join(call.args[0] for call in m().write.call_args_list)
+    assert "(version 20260306)" in written, written
+    assert 'generator "eeschema"' in written
+    assert "20250114" not in written

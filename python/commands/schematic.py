@@ -65,7 +65,13 @@ class SchematicManager:
                 schematic_uuid = str(uuid.uuid4())
                 # Write with explicit UTF-8 encoding and Unix line endings for cross-platform compatibility
                 with open(output_path, "w", encoding="utf-8", newline="\n") as f:
-                    f.write('(kicad_sch (version 20250114) (generator "KiCAD-MCP-Server")\n\n')
+                    # KiCad 10 schematic header (matches what eeschema writes for a
+                    # new file). The older 20250114 token is the KiCad 9 format and
+                    # is stale under KiCad 10 (issue #221).
+                    f.write(
+                        '(kicad_sch (version 20260306) (generator "eeschema")'
+                        ' (generator_version "10.0")\n\n'
+                    )
                     f.write(f"  (uuid {schematic_uuid})\n\n")
                     f.write('  (paper "A4")\n\n')
                     f.write("  (lib_symbols\n  )\n\n")
