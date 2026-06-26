@@ -123,11 +123,21 @@ class SchematicHandlersMixin:
             schematic = SchematicManager.create_schematic(
                 project_name, path=sch_path, metadata=metadata
             )
-            base_name = (
-                project_name if project_name.endswith(".kicad_sch") else f"{project_name}.kicad_sch"
-            )
-            normalized_path = path or "."
-            file_path = os.path.join(normalized_path, base_name)
+            # Resolve the saved file path the same way create_schematic does: when
+            # `path` is already a full ".kicad_sch" file path, use it directly;
+            # otherwise treat it as a directory and append the file name. This keeps
+            # the save target in step with the created file and avoids doubling the
+            # name into ".../V4.kicad_sch/V4.kicad_sch" (issue #242).
+            if sch_path and sch_path.endswith(".kicad_sch"):
+                file_path = sch_path
+            else:
+                base_name = (
+                    project_name
+                    if project_name.endswith(".kicad_sch")
+                    else f"{project_name}.kicad_sch"
+                )
+                normalized_path = path or "."
+                file_path = os.path.join(normalized_path, base_name)
             success = SchematicManager.save_schematic(schematic, file_path)
 
             return {"success": success, "file_path": file_path}

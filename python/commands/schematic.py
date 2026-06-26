@@ -26,9 +26,17 @@ class SchematicManager:
                 "template_with_symbols.kicad_sch",
             )
 
-            # Determine output path
-            base_name = name if name.endswith(".kicad_sch") else f"{name}.kicad_sch"
-            output_path = os.path.join(path, base_name) if path else base_name
+            # Determine output path. A caller may pass `path` as either a
+            # directory or a full ".kicad_sch" file path. When it is already a
+            # full file path, use it directly; otherwise treat it as a directory
+            # and append the schematic file name. Without this, a full path like
+            # "/foo/bar/V4.kicad_sch" was joined again into
+            # "/foo/bar/V4.kicad_sch/V4.kicad_sch" (issue #242).
+            if path and path.endswith(".kicad_sch"):
+                output_path = path
+            else:
+                base_name = name if name.endswith(".kicad_sch") else f"{name}.kicad_sch"
+                output_path = os.path.join(path, base_name) if path else base_name
 
             if os.path.exists(template_path):
                 # Copy template to target location

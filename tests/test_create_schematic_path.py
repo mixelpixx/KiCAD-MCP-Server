@@ -87,3 +87,26 @@ def test_create_schematic_accepts_full_sch_filename():
             used_path = mock_sch_cls.call_args[0][0]
             assert used_path.endswith("myschematic.kicad_sch")
             assert "myschematic.kicad_sch.kicad_sch" not in used_path
+
+
+def test_create_schematic_accepts_full_sch_path_in_path_arg():
+    """
+    Issue #242: when `path` is itself a full ".kicad_sch" file path, it must be
+    used as-is and not treated as a directory (which doubled the file name into
+    ".../V4.kicad_sch/V4.kicad_sch" and then failed with "No such file").
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        full_path = os.path.join(tmpdir, "V4.kicad_sch")
+        with patch.object(_mod, "Schematic") as mock_sch_cls, \
+             patch("shutil.copy"), \
+             patch("os.path.exists", return_value=True), \
+             patch("builtins.open", _OPEN_MOCK):
+            mock_sch_cls.return_value = MagicMock()
+
+            SchematicManager.create_schematic("V4", path=full_path)
+
+            used_path = mock_sch_cls.call_args[0][0]
+            assert used_path == full_path, (
+                f"Expected the full path {full_path!r} used as-is, got {used_path!r}"
+            )
+            assert "V4.kicad_sch/V4.kicad_sch" not in used_path.replace(os.sep, "/")

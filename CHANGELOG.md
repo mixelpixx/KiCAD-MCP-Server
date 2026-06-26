@@ -20,6 +20,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`create_schematic` accepts a full `.kicad_sch` path in `path`** (#242):
+  passing a complete file path (e.g. `path="/foo/bar/V4.kicad_sch"`) previously
+  treated it as a directory and appended the name again, producing
+  `/foo/bar/V4.kicad_sch/V4.kicad_sch` and failing with "No such file or
+  directory". The path is now used as-is when it already ends in `.kicad_sch`,
+  in both `SchematicManager.create_schematic` and the `_handle_create_schematic`
+  save step; passing a directory still works as before.
+
 - **Backend is now pinned per loaded project (SWIG vs IPC)** (#223): commands
   on a single loaded project previously ran on whichever backend happened to
   be reachable per call — `create_project`/`open_project`/`add_layer` on SWIG
