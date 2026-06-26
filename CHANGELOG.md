@@ -20,6 +20,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`create_project` returns paths with a single separator** (#224): the
+  returned `path`/`boardPath`/`schematicPath` were built with `os.path.join`,
+  which on Windows mixed separators when the caller passed a forward-slash path
+  (e.g. `C:/.../EspDinIoT\EspDinIoT.kicad_pro`). The reported paths are now
+  normalized to forward slashes; the on-disk writes still use OS-native paths.
+
 - **`create_schematic` accepts a full `.kicad_sch` path in `path`** (#242):
   passing a complete file path (e.g. `path="/foo/bar/V4.kicad_sch"`) previously
   treated it as a directory and appended the name again, producing
