@@ -361,6 +361,12 @@ class KiCADInterface(SchematicHandlersMixin):
         self.use_ipc = USE_IPC_BACKEND
         self.ipc_backend = ipc_backend
         self.ipc_board_api = None
+        # Session backend pin (issue #223): once a project is loaded, every
+        # board command runs on the backend that owns that load ("swig" or
+        # "ipc") until the project is closed or reopened. None = no project
+        # loaded yet; commands then follow connectivity-based routing.
+        self.session_backend: Optional[str] = None
+        self.session_board_path: Optional[str] = None
 
         if self.use_ipc:
             logger.info("Initializing with IPC backend (real-time UI sync enabled)")
@@ -658,6 +664,95 @@ class KiCADInterface(SchematicHandlersMixin):
         "ipc_save_board",
     }
 
+    @staticmethod
+    def _normalize_board_path(path: Any) -> Optional[str]:
+        """Normalize a board file path for cross-backend comparison."""
+        if not path:
+            return None
+        return os.path.normcase(os.path.normpath(os.path.abspath(str(path))))
+
+    def _ipc_board_path_matches(self, path: Any) -> bool:
+        """True when the live KiCad GUI has the same .kicad_pcb open as `path`."""
+        target = self._normalize_board_path(path)
+        if not target:
+            return False
+        backend = getattr(self, "ipc_backend", None)
+        if not backend:
+            return False
+        try:
+            open_path = backend.get_open_board_path()
+        except Exception as e:
+            logger.debug(f"Could not compare IPC board path: {e}")
+            return False
+        return self._normalize_board_path(open_path) == target
+
+    def _pin_session_backend(self, board_path: Any) -> None:
+        """Pin the loaded project's lifecycle to one backend (issue #223).
+
+        Called after a successful create_project/open_project. Pins "ipc" only
+        when the live GUI provably has the SAME board open; otherwise "swig".
+        Once pinned to "swig", the session never silently upgrades to IPC —
+        the GUI's in-memory board may be stale relative to our edits, so an
+        IPC save could clobber them (the exact lost-edits bug in #223).
+        """
+        self.session_board_path = self._normalize_board_path(board_path)
+        # Give IPC a chance even if the startup probe ran before the GUI did.
+        self._try_enable_ipc_backend()
+        backend = getattr(self, "ipc_backend", None)
+        if (
+            self.use_ipc
+            and backend
+            and backend.is_connected()
+            and self._ipc_board_path_matches(self.session_board_path)
+        ):
+            self.session_backend = "ipc"
+            self._refresh_ipc_board_api()
+        else:
+            self.session_backend = "swig"
+        logger.info(
+            "Session backend pinned to %s for %s", self.session_backend, self.session_board_path
+        )
+
+    def _session_allows_ipc(self) -> bool:
+        """Whether the session pin permits routing board commands over IPC."""
+        return getattr(self, "session_backend", None) != "swig"
+
+    def _ipc_session_alive(self) -> bool:
+        backend = getattr(self, "ipc_backend", None)
+        return bool(backend and backend.is_connected())
+
+    def _downgrade_session_to_swig(self) -> None:
+        """Fall back to SWIG when an IPC-pinned session loses its connection.
+
+        Reloads the board from disk so SWIG operates on the last-saved state
+        rather than a stale pre-IPC copy.
+        """
+        logger.warning(
+            "IPC connection lost for the pinned session; falling back to SWIG " "for %s",
+            self.session_board_path,
+        )
+        path = self.session_board_path
+        if path and os.path.exists(path):
+            recovered = self._safe_load_board(path)
+            if recovered is not None:
+                self.board = recovered
+                project_commands = getattr(self, "project_commands", None)
+                if project_commands is not None:
+                    project_commands.board = recovered
+                self._update_command_handlers()
+                self._record_board_signature()
+            else:
+                logger.error(
+                    "Downgrade to SWIG could not reload the board from %s — "
+                    "subsequent SWIG commands operate on the pre-IPC in-memory "
+                    "state, which may be stale",
+                    path,
+                )
+        elif path:
+            logger.warning("Downgrade to SWIG: board file is no longer accessible at %s", path)
+        self.session_backend = "swig"
+        self.ipc_board_api = None
+
     def _refresh_ipc_board_api(self) -> bool:
         """Refresh the IPC board API after KiCAD or a board becomes available."""
         ipc_backend = getattr(self, "ipc_backend", None)
@@ -703,12 +798,20 @@ class KiCADInterface(SchematicHandlersMixin):
             return False
 
     def _backend_status(self) -> Dict[str, Any]:
-        """Return backend status fields for command responses."""
+        """Return backend status fields for command responses.
+
+        When a project is loaded, the session pin is the truth about which
+        backend serves board commands — reporting connectivity alone misled
+        users in #223 (get_backend_state said "ipc" while every project
+        command actually ran on SWIG).
+        """
         ipc_backend = getattr(self, "ipc_backend", None)
         ipc_connected = ipc_backend.is_connected() if ipc_backend else False
+        session = getattr(self, "session_backend", None)
+        backend = session or ("ipc" if self.use_ipc and ipc_connected else "swig")
         return {
-            "backend": "ipc" if self.use_ipc and ipc_connected else "swig",
-            "realtime_sync": self.use_ipc and ipc_connected,
+            "backend": backend,
+            "realtime_sync": backend == "ipc" and ipc_connected,
             "ipc_connected": ipc_connected,
         }
 
@@ -741,11 +844,26 @@ class KiCADInterface(SchematicHandlersMixin):
         logger.debug(f"Command parameters: {params}")
 
         try:
-            if command in self.IPC_CAPABLE_COMMANDS:
+            if command in self.IPC_CAPABLE_COMMANDS and self._session_allows_ipc():
                 self._try_enable_ipc_backend()
+                # An IPC-pinned session whose connection died (GUI closed)
+                # falls back to SWIG on the last-saved on-disk state.
+                if (
+                    getattr(self, "session_backend", None) == "ipc"
+                    and not self._ipc_session_alive()
+                ):
+                    self._downgrade_session_to_swig()
 
-            # Check if we can use IPC for this command (real-time UI sync)
-            if self.use_ipc and self.ipc_board_api and command in self.IPC_CAPABLE_COMMANDS:
+            # Check if we can use IPC for this command (real-time UI sync).
+            # A session pinned to SWIG never routes board commands over IPC,
+            # even when IPC is connected — the GUI may hold a stale copy of
+            # the board and an IPC save would clobber our edits (#223).
+            if (
+                self.use_ipc
+                and self.ipc_board_api
+                and command in self.IPC_CAPABLE_COMMANDS
+                and self._session_allows_ipc()
+            ):
                 ipc_handler_name = self.IPC_CAPABLE_COMMANDS[command]
                 ipc_handler = getattr(self, ipc_handler_name, None)
 
@@ -762,7 +880,7 @@ class KiCADInterface(SchematicHandlersMixin):
                     return result
 
             # Fall back to SWIG-based handler
-            if self.use_ipc and command in self.IPC_CAPABLE_COMMANDS:
+            if self.use_ipc and command in self.IPC_CAPABLE_COMMANDS and self._session_allows_ipc():
                 logger.warning(
                     f"IPC handler not available for {command}, falling back to SWIG (deprecated)"
                 )
@@ -782,6 +900,20 @@ class KiCADInterface(SchematicHandlersMixin):
                     result["_realtime"] = bool(
                         backend == "ipc" and result.get("realtime", self.use_ipc)
                     )
+                    # Explain why an IPC-capable command ran on SWIG while IPC
+                    # was connected: the session is pinned (#223).
+                    if (
+                        command in self.IPC_CAPABLE_COMMANDS
+                        and getattr(self, "session_backend", None) == "swig"
+                        and self.use_ipc
+                        and self._ipc_session_alive()
+                    ):
+                        result["_backend_note"] = (
+                            "session pinned to swig: the project was loaded via SWIG "
+                            "and the live KiCad GUI does not hold this board, so IPC "
+                            "is not used to avoid divergent board state (issue #223). "
+                            "Reopen the project while it is open in the GUI to pin IPC."
+                        )
 
                 # Update board reference if command was successful
                 if result.get("success", False):
@@ -812,6 +944,12 @@ class KiCADInterface(SchematicHandlersMixin):
                                     "recovered via pcbnew module reload"
                                 )
                             else:
+                                # The load failed for good — drop any pin left
+                                # over from a previously loaded project so a
+                                # stale "ipc" pin can't route later commands
+                                # to the old board's IPC context (#223).
+                                self.session_backend = None
+                                self.session_board_path = None
                                 # Surface the truth — never claim success when
                                 # the board is unusable.
                                 return {
@@ -836,6 +974,13 @@ class KiCADInterface(SchematicHandlersMixin):
                         # overwrite them.
                         self._record_board_signature()
                         self._last_auto_save_status = None
+                        # Pin the session to one backend for this project's
+                        # lifetime (#223). Reports the pin on the result so
+                        # callers can see which backend owns the session.
+                        self._pin_session_backend(self._current_board_path())
+                        result["_backend"] = self.session_backend
+                        result["_realtime"] = self.session_backend == "ipc"
+                        result["sessionBackend"] = self.session_backend
                     elif command == "save_project":
                         self._record_board_signature()
                         self._last_auto_save_status = None
@@ -4977,6 +5122,8 @@ print("ok")
             "loadedBoard": loaded_board,
             "projectPath": project_path,
             "boardPath": board_path,
+            "sessionBackend": getattr(self, "session_backend", None),
+            "sessionBoardPath": getattr(self, "session_board_path", None),
             "dirty": dirty_state["dirty"],
             "dirtyReason": dirty_state["dirtyReason"],
             "diskChangedExternally": dirty_state["diskChangedExternally"],
@@ -5097,16 +5244,36 @@ print("ok")
             return {"success": False, "message": str(e)}
 
     def _handle_ipc_save_board(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Save board using IPC backend"""
+        """Save board using IPC backend.
+
+        Explicit ipc_* commands deliberately bypass the session pin (#223) —
+        the caller is asking for IPC by name. In a SWIG-pinned session this
+        can overwrite SWIG-side edits with the GUI's board state, so warn.
+        """
         if not self.use_ipc or not self.ipc_board_api:
             return {"success": False, "message": "IPC backend not available"}
 
+        result_note = None
+        if getattr(self, "session_backend", None) == "swig":
+            logger.warning(
+                "ipc_save_board called in a SWIG-pinned session — this bypasses "
+                "the session pin and may overwrite SWIG edits with the GUI "
+                "board state (#223)"
+            )
+            result_note = (
+                "session is pinned to swig; ipc_save_board bypassed the pin and "
+                "saved the GUI's board state, which may not include SWIG-side edits"
+            )
+
         try:
             success = self.ipc_board_api.save()
-            return {
+            result = {
                 "success": success,
                 "message": "Board saved" if success else "Failed to save board",
             }
+            if result_note:
+                result.setdefault("warnings", []).append(result_note)
+            return result
         except Exception as e:
             logger.error(f"Error saving board via IPC: {e}")
             return {"success": False, "message": str(e)}
