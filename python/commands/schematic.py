@@ -26,9 +26,17 @@ class SchematicManager:
                 "template_with_symbols.kicad_sch",
             )
 
-            # Determine output path
-            base_name = name if name.endswith(".kicad_sch") else f"{name}.kicad_sch"
-            output_path = os.path.join(path, base_name) if path else base_name
+            # Determine output path. A caller may pass `path` as either a
+            # directory or a full ".kicad_sch" file path. When it is already a
+            # full file path, use it directly; otherwise treat it as a directory
+            # and append the schematic file name. Without this, a full path like
+            # "/foo/bar/V4.kicad_sch" was joined again into
+            # "/foo/bar/V4.kicad_sch/V4.kicad_sch" (issue #242).
+            if path and path.endswith(".kicad_sch"):
+                output_path = path
+            else:
+                base_name = name if name.endswith(".kicad_sch") else f"{name}.kicad_sch"
+                output_path = os.path.join(path, base_name) if path else base_name
 
             if os.path.exists(template_path):
                 # Copy template to target location
@@ -57,7 +65,13 @@ class SchematicManager:
                 schematic_uuid = str(uuid.uuid4())
                 # Write with explicit UTF-8 encoding and Unix line endings for cross-platform compatibility
                 with open(output_path, "w", encoding="utf-8", newline="\n") as f:
-                    f.write('(kicad_sch (version 20250114) (generator "KiCAD-MCP-Server")\n\n')
+                    # KiCad 10 schematic header (matches what eeschema writes for a
+                    # new file). The older 20250114 token is the KiCad 9 format and
+                    # is stale under KiCad 10 (issue #221).
+                    f.write(
+                        '(kicad_sch (version 20260306) (generator "eeschema")'
+                        ' (generator_version "10.0")\n\n'
+                    )
                     f.write(f"  (uuid {schematic_uuid})\n\n")
                     f.write('  (paper "A4")\n\n')
                     f.write("  (lib_symbols\n  )\n\n")

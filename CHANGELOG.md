@@ -20,6 +20,30 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Fallback schematic writer emits the KiCad 10 header** (#221, partial): the
+  template-missing fallback in `create_schematic` and `create_project` wrote the
+  stale KiCad 9 header `(version 20250114) (generator "KiCAD-MCP-Server")`. It
+  now writes `(version 20260306) (generator "eeschema") (generator_version
+  "10.0")`, matching what eeschema writes for a new file. This covers only the
+  fallback path; the main templates (which still carry the KiCad 9 version and
+  the `_TEMPLATE_*` clone-source instances used by `add_schematic_component`)
+  are tracked separately because rewriting them touches the component-cloning
+  system.
+
+- **`create_project` returns paths with a single separator** (#224): the
+  returned `path`/`boardPath`/`schematicPath` were built with `os.path.join`,
+  which on Windows mixed separators when the caller passed a forward-slash path
+  (e.g. `C:/.../EspDinIoT\EspDinIoT.kicad_pro`). The reported paths are now
+  normalized to forward slashes; the on-disk writes still use OS-native paths.
+
+- **`create_schematic` accepts a full `.kicad_sch` path in `path`** (#242):
+  passing a complete file path (e.g. `path="/foo/bar/V4.kicad_sch"`) previously
+  treated it as a directory and appended the name again, producing
+  `/foo/bar/V4.kicad_sch/V4.kicad_sch` and failing with "No such file or
+  directory". The path is now used as-is when it already ends in `.kicad_sch`,
+  in both `SchematicManager.create_schematic` and the `_handle_create_schematic`
+  save step; passing a directory still works as before.
+
 - **Backend is now pinned per loaded project (SWIG vs IPC)** (#223): commands
   on a single loaded project previously ran on whichever backend happened to
   be reachable per call — `create_project`/`open_project`/`add_layer` on SWIG
