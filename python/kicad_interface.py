@@ -327,6 +327,7 @@ try:
     from commands.routing import RoutingCommands
     from commands.schematic import SchematicManager
     from commands.schematic_batch import SchematicBatchCommands
+    from commands.schematic_declutter import SchematicDeclutterCommands
     from commands.schematic_field_layout import SchematicFieldLayoutCommands
     from commands.schematic_hierarchy import SchematicHierarchyCommands
     from commands.symbol_creator import SymbolCreator
@@ -397,6 +398,8 @@ class KiCADInterface(SchematicHandlersMixin):
         self.hierarchy_commands = SchematicHierarchyCommands(self)
         # Schematic field placement / layout-check commands
         self.field_layout_commands = SchematicFieldLayoutCommands()
+        # Schematic label declutter (re-orient overlapping labels)
+        self.declutter_commands = SchematicDeclutterCommands()
         # Batch schematic authoring commands (need an interface back-reference for the
         # single-item add/edit/get handlers, footprint library, and sub-sheet fixer)
         self.batch_commands = SchematicBatchCommands(self)
@@ -446,6 +449,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "place_component_array": self.component_commands.place_component_array,
             "align_components": self.component_commands.align_components,
             "check_courtyard_overlaps": self.component_commands.check_courtyard_overlaps,
+            "suggest_placement": self.component_commands.suggest_placement,
             "duplicate_component": self.component_commands.duplicate_component,
             "set_footprint_type": self.component_commands.set_footprint_type,
             # Routing commands
@@ -495,6 +499,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "set_schematic_property_position": self.field_layout_commands.set_schematic_property_position,
             "batch_set_schematic_property_positions": self.field_layout_commands.batch_set_schematic_property_positions,
             "autoplace_schematic_fields": self.field_layout_commands.autoplace_schematic_fields,
+            "suggest_schematic_declutter": self.declutter_commands.suggest_schematic_declutter,
             # Batch schematic authoring commands
             "batch_add_components": self.batch_commands.batch_add_components,
             "batch_edit_schematic_components": self.batch_commands.batch_edit_schematic_components,
