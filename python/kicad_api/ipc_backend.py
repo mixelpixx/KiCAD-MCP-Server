@@ -155,6 +155,22 @@ class IPCBackend(KiCADBackend):
         """Get KiCAD version."""
         return self._version or "unknown"
 
+    def get_open_board_path(self) -> Optional[str]:
+        """Path of the .kicad_pcb currently open in the live KiCad GUI, if any.
+
+        Used to decide whether the GUI session and the MCP's loaded board refer
+        to the same file before routing commands over IPC (issue #223).
+        """
+        if not self.is_connected():
+            return None
+        try:
+            for doc in self._kicad.get_open_documents():
+                if hasattr(doc, "path") and str(doc.path).endswith(".kicad_pcb"):
+                    return str(doc.path)
+        except Exception as e:
+            logger.debug(f"Could not read open documents via IPC: {e}")
+        return None
+
     def register_change_callback(self, callback: Callable) -> None:
         """Register a callback to be called when changes are made."""
         self._on_change_callbacks.append(callback)

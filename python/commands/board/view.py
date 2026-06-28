@@ -198,6 +198,14 @@ class BoardViewCommands:
                     output_svg,
                     "--mode-single",
                     "--black-and-white",
+                    # Render the board, not the drawing sheet. kicad-cli's
+                    # default (page-size-mode 0) plots only the area inside the
+                    # sheet, so board geometry past the page edge is left out.
+                    # Mode 2 sizes the output to the board's bounding box;
+                    # --exclude-drawing-sheet drops the title block.
+                    "--exclude-drawing-sheet",
+                    "--page-size-mode",
+                    "2",
                 ]
                 if layers:
                     cmd += ["--layers", ",".join(layers)]

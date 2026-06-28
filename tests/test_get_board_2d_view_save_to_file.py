@@ -80,6 +80,19 @@ def test_inline_png_returns_base64_image_data(tmp_path):
 
 
 @pytest.mark.unit
+def test_export_frames_to_board_area(tmp_path):
+    """The export drops the drawing sheet and crops to the board area, so a small
+    board isn't rendered on a mostly-empty A4 page (kicad-cli's default)."""
+    cmd, root, board_path = _make_view_cmd(tmp_path)
+    w1, w2, w3 = _patch_kicad_cli(root)
+    with w1, w2 as run, w3, patch("commands.board.view._svg_to_png", return_value=_FAKE_PNG):
+        cmd.get_board_2d_view({"pcbPath": str(board_path), "format": "png"})
+    argv = run.call_args[0][0]
+    assert "--exclude-drawing-sheet" in argv
+    assert argv[argv.index("--page-size-mode") + 1] == "2"
+
+
+@pytest.mark.unit
 def test_inline_svg_returns_base64_image_data(tmp_path):
     """responseMode='inline' with format='svg' returns base64-encoded SVG in imageData."""
     cmd, root, board_path = _make_view_cmd(tmp_path)

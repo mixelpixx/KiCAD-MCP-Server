@@ -2,14 +2,139 @@
 Routing-related command implementations for KiCAD interface
 """
 
+import json
 import logging
 import math
 import os
+import tempfile
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pcbnew
 
 logger = logging.getLogger("kicad_interface")
+
+
+# --- Net class project-file persistence (KiCad 7+) ------------------------
+#
+# Net class *definitions* live in the project file (``<project>.kicad_pro`` ->
+# ``net_settings``), not in the ``.kicad_pcb`` board file, since KiCad 7. The
+# SWIG board save only writes ``.kicad_pcb``, so a NETCLASS created on the
+# in-memory board never survives a reload on its own (issue #185). These
+# helpers write the class definition straight into the project JSON, which is
+# what KiCad reads on open. Values are millimetres (the
+# ``.kicad_pro`` unit). They are pure module functions so they can be unit
+# tested without a live KiCad / SWIG round-trip.
+
+# net_settings.classes numeric fields this tool can set (millimetres). The
+# caller passes values already keyed by these names, so the persisted class
+# cannot drift from differing request-key spellings (e.g. traceWidth).
+_NETCLASS_NUMERIC_FIELDS = (
+    "clearance",
+    "track_width",
+    "via_diameter",
+    "via_drill",
+    "microvia_diameter",
+    "microvia_drill",
+    "diff_pair_width",
+    "diff_pair_gap",
+)
+
+# Fallback field set (KiCad 10 defaults) used only when the project has no
+# "Default" class to clone the shape from.
+_DEFAULT_NETCLASS_TEMPLATE = {
+    "bus_width": 12,
+    "clearance": 0.2,
+    "diff_pair_gap": 0.25,
+    "diff_pair_via_gap": 0.25,
+    "diff_pair_width": 0.2,
+    "line_style": 0,
+    "microvia_diameter": 0.3,
+    "microvia_drill": 0.1,
+    "pcb_color": "rgba(0, 0, 0, 0.000)",
+    "priority": 0,
+    "schematic_color": "rgba(0, 0, 0, 0.000)",
+    "track_width": 0.2,
+    "tuning_profile": "",
+    "via_diameter": 0.6,
+    "via_drill": 0.3,
+    "wire_width": 6,
+}
+
+
+def apply_netclass_to_project_settings(
+    data: Dict[str, Any], name: str, props: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Insert or update a net class *definition* in a parsed ``.kicad_pro`` dict.
+    Pure: mutates and returns ``data``; performs no I/O.
+
+    Net class definitions live in the project file's ``net_settings.classes`` on
+    KiCad 7+. ``props`` is keyed by ``net_settings.classes`` field names
+    (``clearance``/``track_width``/...) in millimetres; the caller normalizes the
+    request keys so the persisted class never diverges from the live board. A
+    new class is cloned from the project's ``Default`` class (falling back to a
+    built-in template) so it carries KiCad's full field set.
+    """
+    net_settings = data.setdefault("net_settings", {})
+    classes = net_settings.setdefault("classes", [])
+
+    cls = next((c for c in classes if c.get("name") == name), None)
+    if cls is None:
+        template = next((c for c in classes if c.get("name") == "Default"), None)
+        cls = dict(template) if template else dict(_DEFAULT_NETCLASS_TEMPLATE)
+        cls["name"] = name
+        cls["priority"] = 0  # custom classes; the Default class keeps its own priority
+        classes.append(cls)
+
+    for key in _NETCLASS_NUMERIC_FIELDS:
+        value = props.get(key)
+        if value is not None:
+            cls[key] = float(value)
+
+    return data
+
+
+def persist_netclass_to_project(
+    pro_path: Optional[str], name: str, props: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Read/modify/write ``pro_path`` so the net class definition survives a
+    reload (KiCad 7+ keeps it in the project file, not the board).
+
+    Returns ``{"persisted": bool, "projectFile"?: str, "warning"?: str}``. Never
+    raises: a persistence failure is reported, not fatal, so the in-memory net
+    class still stands. The write is atomic (temp file + ``os.replace``) so a
+    crash mid-write cannot corrupt the project file.
+    """
+    if not pro_path or not os.path.exists(pro_path):
+        return {
+            "persisted": False,
+            "warning": "no .kicad_pro project file found; net class set in memory "
+            "only and will not persist across a reload",
+        }
+    try:
+        with open(pro_path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        apply_netclass_to_project_settings(data, name, props)
+
+        directory = os.path.dirname(pro_path) or "."
+        fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".netclass-", suffix=".kicad_pro")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, indent=2, sort_keys=True)
+                handle.write("\n")
+            os.replace(tmp_path, pro_path)
+        except Exception:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
+        return {"persisted": True, "projectFile": pro_path}
+    except Exception as exc:  # report, never fail the command on a persistence error
+        return {
+            "persisted": False,
+            "warning": f"could not persist net class to {pro_path}: {exc}",
+        }
 
 
 class RoutingCommands:
@@ -1262,76 +1387,88 @@ class RoutingCommands:
                     "errorDetails": "name parameter is required",
                 }
 
-            # Get net classes — KiCad 6/7 returns NETCLASSES with .Find/.Add;
-            # KiCad 9/10 returns a netclasses_map (SWIG-wrapped std::map) that is dict-like.
-            net_classes = self.board.GetNetClasses()
+            # Net class DEFINITIONS live in <project>.kicad_pro (net_settings) on
+            # KiCad 7+, not in the .kicad_pcb the SWIG board save writes. Resolve
+            # the project file up front so the durable write below runs even if a
+            # SWIG API (which shifted across KiCad 6->10) throws (issue #185).
+            pro_path = None
+            try:
+                board_path = self.board.GetFileName()
+                if board_path and board_path.endswith(".kicad_pcb"):
+                    pro_path = str(Path(board_path).with_suffix(".kicad_pro"))
+            except Exception:
+                pro_path = None
 
-            existing = None
-            if hasattr(net_classes, "Find"):
-                existing = net_classes.Find(name)
-            else:
-                try:
-                    if name in net_classes:
-                        existing = net_classes[name]
-                except Exception:
-                    existing = None
-
-            if existing is None:
-                netclass = pcbnew.NETCLASS(name)
-                if hasattr(net_classes, "Add"):
-                    net_classes.Add(netclass)
-                else:
-                    net_classes[name] = netclass
-            else:
-                netclass = existing
-
-            # Set properties
             scale = 1000000  # mm to nm
+            net_class_values: Dict[str, Any] = {}
+            in_memory_warning = None
 
-            # Defensive setters — KiCad 10's NETCLASS dropped some legacy mutators.
-            def _safe_set(method_name, value):
-                if value is None:
-                    return
-                method = getattr(netclass, method_name, None)
-                if method is None:
-                    return
-                try:
-                    method(int(value * scale))
-                except Exception:
-                    pass
+            # Best-effort in-memory NETCLASS for the live session. A SWIG failure
+            # here is logged but must NOT skip the .kicad_pro persistence below,
+            # which is the deterministic, SWIG-independent part (issue #185).
+            try:
+                # KiCad 6/7 returns NETCLASSES with .Find/.Add; KiCad 9/10 returns
+                # a netclasses_map (SWIG-wrapped std::map) that is dict-like.
+                net_classes = self.board.GetNetClasses()
 
-            _safe_set("SetClearance", clearance)
-            _safe_set("SetTrackWidth", track_width)
-            _safe_set("SetViaDiameter", via_diameter)
-            _safe_set("SetViaDrill", via_drill)
-            _safe_set("SetMicroViaDiameter", uvia_diameter)
-            _safe_set("SetMicroViaDrill", uvia_drill)
-            _safe_set("SetDiffPairWidth", diff_pair_width)
-            _safe_set("SetDiffPairGap", diff_pair_gap)
+                existing = None
+                if hasattr(net_classes, "Find"):
+                    existing = net_classes.Find(name)
+                else:
+                    try:
+                        if name in net_classes:
+                            existing = net_classes[name]
+                    except Exception:
+                        existing = None
 
-            # Add nets to net class
-            netinfo = self.board.GetNetInfo()
-            nets_map = netinfo.NetsByName()
-            for net_name in nets:
-                if nets_map.has_key(net_name):
-                    net = nets_map[net_name]
-                    net.SetClass(netclass)
+                if existing is None:
+                    netclass = pcbnew.NETCLASS(name)
+                    if hasattr(net_classes, "Add"):
+                        net_classes.Add(netclass)
+                    else:
+                        net_classes[name] = netclass
+                else:
+                    netclass = existing
 
-            # Defensive accessors — KiCad 10's NETCLASS dropped some legacy getters.
-            def _safe_get(method_name):
-                method = getattr(netclass, method_name, None)
-                if method is None:
-                    return None
-                try:
-                    return method() / scale
-                except Exception:
-                    return None
+                # Defensive setters — KiCad 10's NETCLASS dropped some legacy mutators.
+                def _safe_set(method_name, value):
+                    if value is None:
+                        return
+                    method = getattr(netclass, method_name, None)
+                    if method is None:
+                        return
+                    try:
+                        method(int(value * scale))
+                    except Exception:
+                        pass
 
-            return {
-                "success": True,
-                "message": f"Created net class: {name}",
-                "netClass": {
-                    "name": name,
+                _safe_set("SetClearance", clearance)
+                _safe_set("SetTrackWidth", track_width)
+                _safe_set("SetViaDiameter", via_diameter)
+                _safe_set("SetViaDrill", via_drill)
+                _safe_set("SetMicroViaDiameter", uvia_diameter)
+                _safe_set("SetMicroViaDrill", uvia_drill)
+                _safe_set("SetDiffPairWidth", diff_pair_width)
+                _safe_set("SetDiffPairGap", diff_pair_gap)
+
+                netinfo = self.board.GetNetInfo()
+                nets_map = netinfo.NetsByName()
+                for net_name in nets:
+                    if nets_map.has_key(net_name):
+                        net = nets_map[net_name]
+                        net.SetClass(netclass)
+
+                # Defensive accessors — KiCad 10's NETCLASS dropped some legacy getters.
+                def _safe_get(method_name):
+                    method = getattr(netclass, method_name, None)
+                    if method is None:
+                        return None
+                    try:
+                        return method() / scale
+                    except Exception:
+                        return None
+
+                net_class_values = {
                     "clearance": _safe_get("GetClearance"),
                     "trackWidth": _safe_get("GetTrackWidth"),
                     "viaDiameter": _safe_get("GetViaDiameter"),
@@ -1340,9 +1477,47 @@ class RoutingCommands:
                     "uviaDrill": _safe_get("GetMicroViaDrill"),
                     "diffPairWidth": _safe_get("GetDiffPairWidth"),
                     "diffPairGap": _safe_get("GetDiffPairGap"),
-                    "nets": nets,
-                },
+                }
+            except Exception as exc:
+                in_memory_warning = "in-memory NETCLASS update failed: %s" % exc
+                logger.warning("create_netclass: %s", in_memory_warning)
+
+            # Persist the class DEFINITION (net_settings.classes) using the same
+            # normalized values as the live path, so the persisted class can never
+            # diverge from the request. Membership lives in netclass_patterns and
+            # is out of scope here (create_netclass exposes no `nets` field).
+            project_props = {
+                "clearance": clearance,
+                "track_width": track_width,
+                "via_diameter": via_diameter,
+                "via_drill": via_drill,
+                "microvia_diameter": uvia_diameter,
+                "microvia_drill": uvia_drill,
+                "diff_pair_width": diff_pair_width,
+                "diff_pair_gap": diff_pair_gap,
             }
+            persist = persist_netclass_to_project(pro_path, name, project_props)
+
+            warnings = [w for w in (in_memory_warning, persist.get("warning")) if w]
+            if in_memory_warning and not persist.get("persisted"):
+                # Neither the live board nor the project file received the class.
+                return {
+                    "success": False,
+                    "message": "Failed to create net class",
+                    "errorDetails": "; ".join(warnings),
+                }
+
+            result = {
+                "success": True,
+                "message": f"Created net class: {name}",
+                "netClass": {"name": name, "nets": nets, **net_class_values},
+                "persisted": persist.get("persisted", False),
+            }
+            if persist.get("projectFile"):
+                result["projectFile"] = persist["projectFile"]
+            if warnings:
+                result["warning"] = "; ".join(warnings)
+            return result
 
         except Exception as e:
             logger.error(f"Error creating net class: {str(e)}")

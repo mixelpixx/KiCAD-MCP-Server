@@ -5,6 +5,7 @@ Project-related command implementations for KiCAD interface
 import logging
 import os
 import shutil
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import pcbnew  # type: ignore
@@ -100,7 +101,13 @@ class ProjectCommands:
 
                 schematic_uuid = str(uuid_module.uuid4())
                 with open(schematic_path, "w", encoding="utf-8", newline="\n") as f:
-                    f.write('(kicad_sch (version 20250114) (generator "KiCAD-MCP-Server")\n\n')
+                    # KiCad 10 schematic header (matches what eeschema writes for a
+                    # new file). The older 20250114 token is the KiCad 9 format and
+                    # is stale under KiCad 10 (issue #221).
+                    f.write(
+                        '(kicad_sch (version 20260306) (generator "eeschema")'
+                        ' (generator_version "10.0")\n\n'
+                    )
                     f.write(f"  (uuid {schematic_uuid})\n\n")
                     f.write('  (paper "A4")\n\n')
                     f.write("  (lib_symbols\n  )\n\n")
@@ -120,14 +127,20 @@ class ProjectCommands:
 
             self.board = board
 
+            # Normalize returned paths to a single separator (forward slashes).
+            # os.path.join mixes separators on Windows when the caller passes a
+            # path with forward slashes (issue #224): the joined filename used a
+            # backslash while the rest used forward slashes. The on-disk writes
+            # above keep the OS-native paths; only the reported paths are
+            # normalized so callers get consistent, predictable values.
             return {
                 "success": True,
                 "message": f"Created project: {project_name}",
                 "project": {
                     "name": project_name,
-                    "path": project_path,
-                    "boardPath": board_path,
-                    "schematicPath": schematic_path,
+                    "path": Path(project_path).as_posix(),
+                    "boardPath": Path(board_path).as_posix(),
+                    "schematicPath": Path(schematic_path).as_posix(),
                 },
             }
 
