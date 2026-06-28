@@ -603,6 +603,9 @@ class KiCADInterface(SchematicHandlersMixin):
             # Footprint commands
             "create_footprint": self._handle_create_footprint,
             "edit_footprint_pad": self._handle_edit_footprint_pad,
+            "add_footprint_3d_model": self._handle_add_footprint_3d_model,
+            "add_component_3d_model": self._handle_add_component_3d_model,
+            "import_3d_model": self._handle_import_3d_model,
             "list_footprint_libraries": self._handle_list_footprint_libraries,
             "register_footprint_library": self._handle_register_footprint_library,
             # Symbol creator commands
@@ -648,6 +651,7 @@ class KiCADInterface(SchematicHandlersMixin):
         "get_component_list": "_ipc_get_component_list",
         "get_component_properties": "_ipc_get_component_properties",
         "set_footprint_type": "_ipc_set_footprint_type",
+        "add_component_3d_model": "_ipc_add_component_3d_model",
         # Save command
         "save_project": "_ipc_save_project",
     }
@@ -1745,6 +1749,60 @@ class KiCADInterface(SchematicHandlersMixin):
         except Exception as e:
             logger.error(f"create_footprint error: {e}")
             return {"success": False, "error": str(e)}
+
+    def _handle_add_footprint_3d_model(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add or replace a 3D model (model ...) block in a .kicad_mod file."""
+        logger.info(
+            f"add_footprint_3d_model: {params.get('modelPath')} -> {params.get('footprintPath')}"
+        )
+        try:
+            creator = FootprintCreator()
+            return creator.add_3d_model(
+                footprint_path=params.get("footprintPath", ""),
+                model_path=params.get("modelPath", ""),
+                offset=params.get("offset"),
+                scale=params.get("scale"),
+                rotate=params.get("rotate"),
+                replace=params.get("replace", True),
+            )
+        except Exception as e:
+            logger.error(f"add_footprint_3d_model error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_import_3d_model(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Copy a 3D model into the project's *.3dshapes and return a ${KIPRJMOD} path."""
+        logger.info(
+            f"import_3d_model: {params.get('modelPath')} -> project {params.get('projectPath')}"
+        )
+        try:
+            creator = FootprintCreator()
+            return creator.import_3d_model(
+                model_path=params.get("modelPath", ""),
+                project_path=params.get("projectPath", ""),
+                library_dir=params.get("libraryDir"),
+                new_name=params.get("newName"),
+                overwrite=params.get("overwrite", False),
+            )
+        except Exception as e:
+            logger.error(f"import_3d_model error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_add_component_3d_model(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a 3D model to a placed footprint on the board.
+
+        Prefers the live IPC path; if IPC is unavailable this returns a clear
+        message (live board editing requires KiCAD running with the IPC API).
+        """
+        if self.use_ipc and getattr(self, "ipc_board_api", None):
+            return self._ipc_add_component_3d_model(params)
+        return {
+            "success": False,
+            "message": (
+                "add_component_3d_model requires the live IPC backend "
+                "(KiCAD running with Preferences > Plugins > Enable IPC API Server). "
+                "To edit a library footprint file instead, use add_footprint_3d_model."
+            ),
+        }
 
     def _handle_edit_footprint_pad(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Edit an existing pad in a .kicad_mod file."""
@@ -4665,6 +4723,24 @@ print("ok")
             return {"success": True, "components": components, "count": len(components)}
         except Exception as e:
             logger.error(f"IPC get_component_list error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_add_component_3d_model(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """IPC handler for add_component_3d_model — live edit of placed footprints."""
+        try:
+            references = params.get("reference", params.get("references"))
+            if references is None:
+                return {"success": False, "message": "reference (or references) is required"}
+            return self.ipc_board_api.add_3d_model(
+                references=references,
+                model_path=params.get("modelPath", ""),
+                offset=params.get("offset"),
+                scale=params.get("scale"),
+                rotate=params.get("rotate"),
+                replace=params.get("replace", True),
+            )
+        except Exception as e:
+            logger.error(f"IPC add_component_3d_model error: {e}")
             return {"success": False, "message": str(e)}
 
     def _ipc_save_project(self, params: Dict[str, Any]) -> Dict[str, Any]:

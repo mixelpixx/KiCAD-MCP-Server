@@ -853,6 +853,101 @@ class IPCBoardAPI(BoardAPI):
             logger.error(f"Failed to move component: {e}")
             return False
 
+    def add_3d_model(
+        self,
+        references: Any,
+        model_path: str,
+        offset: Optional[Dict[str, float]] = None,
+        scale: Optional[Dict[str, float]] = None,
+        rotate: Optional[Dict[str, float]] = None,
+        replace: bool = True,
+    ) -> Dict[str, Any]:
+        """Attach a 3D model to one or more placed footprints (live UI update).
+
+        ``references`` may be a single reference ("D1"), a list (["D1","D2"]),
+        or "*"/"all" to apply to every footprint on the board.
+        """
+        try:
+            import kipy.board_types as bt
+
+            board = self._get_board()
+            footprints = board.get_footprints()
+
+            if isinstance(references, str):
+                wanted = [references]
+            else:
+                wanted = list(references or [])
+            apply_all = any(w in ("*", "all") for w in wanted)
+
+            targets = []
+            for fp in footprints:
+                ref = fp.reference_field.text.value if fp.reference_field else ""
+                if apply_all or ref in wanted:
+                    targets.append((ref, fp))
+
+            if not targets:
+                return {"success": False, "error": f"No footprints matched: {references}"}
+
+            off = offset or {}
+            scl = scale or {}
+            rot = rotate or {}
+
+            changed = []
+            details = []
+            for ref, fp in targets:
+                defn = fp.definition
+                already = [m for m in defn.models if m.filename == model_path]
+                if already and not replace:
+                    details.append({"reference": ref, "added": False, "note": "already present"})
+                    continue
+                if already and replace:
+                    keep = [
+                        it
+                        for it in defn.items
+                        if not (
+                            isinstance(it, bt.Footprint3DModel) and it.filename == model_path
+                        )
+                    ]
+                    defn.items = keep
+
+                from kipy.geometry import Vector3D
+
+                model = bt.Footprint3DModel()
+                model.filename = model_path
+                model.visible = True
+                model.opacity = 1.0
+                # scale defaults to 0 on a fresh proto -> force 1 so the body renders
+                model.scale = Vector3D.from_xyz(
+                    float(scl.get("x", 1.0)), float(scl.get("y", 1.0)), float(scl.get("z", 1.0))
+                )
+                model.offset = Vector3D.from_xyz(
+                    float(off.get("x", 0.0)), float(off.get("y", 0.0)), float(off.get("z", 0.0))
+                )
+                model.rotation = Vector3D.from_xyz(
+                    float(rot.get("x", 0.0)), float(rot.get("y", 0.0)), float(rot.get("z", 0.0))
+                )
+
+                defn.add_item(model)
+                changed.append(fp)
+                details.append({"reference": ref, "added": True, "replaced": len(already)})
+
+            if changed:
+                commit = board.begin_commit()
+                board.update_items(changed)
+                board.push_commit(commit, f"Added 3D model to {len(changed)} footprint(s)")
+                self._notify("model_added", {"count": len(changed), "model": model_path})
+
+            return {
+                "success": True,
+                "model": model_path,
+                "updated": len(changed),
+                "details": details,
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to add 3D model: {e}")
+            return {"success": False, "error": str(e)}
+
     def delete_component(self, reference: str) -> bool:
         """Delete a component from the board."""
         try:
