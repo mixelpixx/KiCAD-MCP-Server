@@ -76,8 +76,7 @@ SYMS = {
         "lib_id": "Device:R",
         # pin: (x, y, library angle)
         "pins": {"1": (0.0, 3.81, 270.0), "2": (0.0, -3.81, 90.0)},
-        "body": textwrap.dedent(
-            """\
+        "body": textwrap.dedent("""\
             (symbol "R_1_1"
                 (pin passive line (at 0 3.81 270) (length 1.27)
                   (name "~" (effects (font (size 1.27 1.27))))
@@ -85,14 +84,12 @@ SYMS = {
                 (pin passive line (at 0 -3.81 90) (length 1.27)
                   (name "~" (effects (font (size 1.27 1.27))))
                   (number "2" (effects (font (size 1.27 1.27)))))
-              )"""
-        ),
+              )"""),
     },
     "D": {  # horizontal pins
         "lib_id": "Device:D",
         "pins": {"1": (-3.81, 0.0, 0.0), "2": (3.81, 0.0, 180.0)},
-        "body": textwrap.dedent(
-            """\
+        "body": textwrap.dedent("""\
             (symbol "D_1_1"
                 (pin passive line (at -3.81 0 0) (length 2.54)
                   (name "K" (effects (font (size 1.27 1.27))))
@@ -100,8 +97,7 @@ SYMS = {
                 (pin passive line (at 3.81 0 180) (length 2.54)
                   (name "A" (effects (font (size 1.27 1.27))))
                   (number "2" (effects (font (size 1.27 1.27)))))
-              )"""
-        ),
+              )"""),
     },
 }
 
@@ -113,8 +109,7 @@ PINS = ["1", "2"]
 def _make_sch_text(sym: str, rotation: float, mirror) -> str:
     spec = SYMS[sym]
     mirror_line = {"x": "(mirror x)", "y": "(mirror y)"}.get(mirror, "")
-    return textwrap.dedent(
-        f"""\
+    return textwrap.dedent(f"""\
         (kicad_sch (version 20250114) (generator "test")
           (lib_symbols
             (symbol "{spec['lib_id']}" (pin_numbers hide) (pin_names (offset 0))
@@ -127,8 +122,7 @@ def _make_sch_text(sym: str, rotation: float, mirror) -> str:
             (property "Value" "v" (at {SYMBOL_X} {SYMBOL_Y} 0))
           )
         )
-    """
-    )
+    """)
 
 
 def _write_sch(tmp_path: Path, sym: str, rotation: float, mirror) -> Path:

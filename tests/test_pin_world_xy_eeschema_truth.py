@@ -198,8 +198,7 @@ def _build_diode_rot_mirror_case(tmp: Path, rotation: int, mirror: str) -> tuple
     sch = SchematicManager.load_schematic(str(sch_path))
     ComponentManager.add_component(
         sch,
-        {"type": "D", "reference": "D1", "value": "1N4148",
-         "x": 100.0, "y": 100.0, "rotation": 0},
+        {"type": "D", "reference": "D1", "value": "1N4148", "x": 100.0, "y": 100.0, "rotation": 0},
         sch_path,
     )
     SchematicManager.save_schematic(sch, str(sch_path))
