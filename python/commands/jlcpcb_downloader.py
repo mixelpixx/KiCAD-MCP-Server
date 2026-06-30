@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from utils.platform_helper import PlatformHelper
+from utils.seven_zip import resolve_7z, seven_zip_not_found_message
 
 logger = logging.getLogger("kicad_interface")
 
@@ -420,10 +421,13 @@ def download_cdfer(
 
 
 def _find_7z() -> Optional[str]:
-    for cmd in ("7z", "7zz", "7za"):
-        if shutil.which(cmd):
-            return cmd
-    return None
+    """Resolve a 7-Zip CLI to an absolute path.
+
+    Delegates to the shared resolver (env override -> PATH -> known install dirs) so
+    7-Zip is found even when its install directory is not on PATH (the default on
+    Windows, where 7-Zip installs to C:\\Program Files\\7-Zip).
+    """
+    return resolve_7z()
 
 
 def download_yaqwsx(cache_dir: Path, progress: ProgressFn = None) -> Path:
@@ -432,7 +436,7 @@ def download_yaqwsx(cache_dir: Path, progress: ProgressFn = None) -> Path:
 
     seven_zip = _find_7z()
     if not seven_zip:
-        raise RuntimeError("yaqwsx fallback requires a 7z CLI (7z/7zz/7za) which was not found")
+        raise RuntimeError(seven_zip_not_found_message())
     if not shutil.which("curl"):
         raise RuntimeError("yaqwsx fallback requires curl which was not found")
 

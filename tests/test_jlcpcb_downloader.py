@@ -402,3 +402,66 @@ def test_yaqwsx_max_volumes_is_a_high_safety_guard():
     """The constant is a runaway-loop guard, not the expected count: it must comfortably
     exceed the current ~41-volume archive so it never truncates a real download."""
     assert jlcpcb_downloader.YAQWSX_MAX_VOLUMES >= 100
+
+
+# --------------------------------------------------------------------------- #
+# 7-Zip resolution (env override -> PATH -> known install dirs)
+# --------------------------------------------------------------------------- #
+
+
+def test_find_7z_delegates_to_resolver(monkeypatch):
+    """_find_7z must use the shared resolver (so a 7-Zip off PATH is still found)."""
+    monkeypatch.setattr(jlcpcb_downloader, "resolve_7z", lambda: r"C:\Program Files\7-Zip\7z.exe")
+    assert jlcpcb_downloader._find_7z() == r"C:\Program Files\7-Zip\7z.exe"
+
+
+def test_download_yaqwsx_raises_clear_error_when_no_7z(tmp_path, monkeypatch):
+    """With no 7-Zip resolvable, download_yaqwsx must raise the multi-location message,
+    not the bare 'not found'."""
+    monkeypatch.setattr(jlcpcb_downloader, "resolve_7z", lambda: None)
+
+    with pytest.raises(RuntimeError) as exc:
+        jlcpcb_downloader.download_yaqwsx(tmp_path / "cache")
+
+    msg = str(exc.value)
+    assert "Could not locate a 7-Zip CLI" in msg
+    assert "SEVEN_ZIP" in msg
+
+
+def test_download_yaqwsx_uses_resolved_absolute_7z_path(tmp_path, monkeypatch):
+    """download_yaqwsx must invoke the resolved (absolute) 7-Zip path for extraction."""
+    import subprocess
+
+    seven_zip = r"C:\Program Files\7-Zip\7z.exe"
+    monkeypatch.setattr(jlcpcb_downloader, "resolve_7z", lambda: seven_zip)
+    monkeypatch.setattr(jlcpcb_downloader.shutil, "which", lambda name: "/usr/bin/" + name)
+
+    extract_cmds: list = []
+
+    def _run(cmd, *args, **kwargs):
+        class _R:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        r = _R()
+        if cmd and cmd[0] == "curl":
+            out = Path(cmd[cmd.index("-o") + 1])
+            name = cmd[-1].rsplit("/", 1)[-1]
+            if name == "cache.zip" or name == "cache.z01":
+                out.write_bytes(b"x" * 2000)
+                return r
+            r.returncode = 22  # 404 past last volume
+            return r
+        # 7-Zip extraction call.
+        extract_cmds.append(cmd[0])
+        out_dir = next(c[2:] for c in cmd if isinstance(c, str) and c.startswith("-o"))
+        (Path(out_dir) / "cache.sqlite3").write_bytes(b"db")
+        return r
+
+    monkeypatch.setattr(subprocess, "run", _run)
+
+    out = jlcpcb_downloader.download_yaqwsx(tmp_path / "cache")
+
+    assert out.exists()
+    assert extract_cmds == [seven_zip]  # the absolute path was used, not a bare "7z"
