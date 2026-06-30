@@ -61,13 +61,16 @@ class ProjectCommands:
             board.SetFileName(board_path)
             pcbnew.SaveBoard(board_path, board)
 
-            # Create schematic from template (use expanded template with symbol definitions)
+            # Create schematic from the empty template (no pre-seeded symbols).
+            # A new project must start as a genuinely blank schematic; the
+            # symbol-seeded templates injected hidden _TEMPLATE_R/C/D instances
+            # that bled into every new project (see issue #221).
             schematic_path = project_path.replace(".kicad_pro", ".kicad_sch")
             template_sch_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
                 "..",
                 "templates",
-                "template_with_symbols_expanded.kicad_sch",
+                "empty.kicad_sch",
             )
 
             if os.path.exists(template_sch_path):
@@ -100,7 +103,7 @@ class ProjectCommands:
 
                 schematic_uuid = str(uuid_module.uuid4())
                 with open(schematic_path, "w", encoding="utf-8", newline="\n") as f:
-                    f.write('(kicad_sch (version 20250114) (generator "KiCAD-MCP-Server")\n\n')
+                    f.write('(kicad_sch (version 20260306) (generator "KiCAD-MCP-Server")\n\n')
                     f.write(f"  (uuid {schematic_uuid})\n\n")
                     f.write('  (paper "A4")\n\n')
                     f.write("  (lib_symbols\n  )\n\n")

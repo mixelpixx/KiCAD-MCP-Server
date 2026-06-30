@@ -20,6 +20,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`create_project` now writes a blank KiCad 10 schematic** (issue #221).
+  Previously it copied `template_with_symbols_expanded.kicad_sch`, which
+  contains placed `_TEMPLATE_R/C/D` symbol instances, so every "new" project
+  opened with three stray components on the canvas. It also hardcoded the
+  KiCad 9 era schematic format `(version 20250114)`. `create_project` now
+  copies `empty.kicad_sch` (no placed components) and the schematic format
+  version is bumped to `20260306` (KiCad 10.0.4) in both the template and the
+  inline fallback.
+
 - **`rotate_component` now treats `angle` as an absolute target rotation**,
   matching its schema description. Previously the IPC backend added the
   supplied angle to the current rotation, so two consecutive
