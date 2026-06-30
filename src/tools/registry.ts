@@ -60,6 +60,7 @@ export const toolCategories: ToolCategory[] = [
       "add_component_annotation",
       "group_components",
       "replace_component",
+      "hierarchical_place",
     ],
   },
   {

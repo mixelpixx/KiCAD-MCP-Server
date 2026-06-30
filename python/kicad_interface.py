@@ -340,6 +340,7 @@ try:
     from commands.library_management import LibraryManagementCommands
     from commands.library_schematic import LibraryManager as SchematicLibraryManager
     from commands.library_symbol import SymbolLibraryCommands, SymbolLibraryManager
+    from commands.hierarchical_place import HierarchicalPlaceCommands
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
     from commands.schematic import SchematicManager
@@ -414,6 +415,7 @@ class KiCADInterface(SchematicHandlersMixin):
         self.library_management_commands = LibraryManagementCommands()
         self.design_rule_commands = DesignRuleCommands(self.board)
         self.export_commands = ExportCommands(self.board)
+        self.hierarchical_place_commands = HierarchicalPlaceCommands()
         self.library_commands = LibraryCommands(self.footprint_library)
         self._current_project_path: Optional[Path] = None  # set when boardPath is known
 
@@ -472,6 +474,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "delete_graphic": self.board_commands.delete_graphic,
             "update_graphic": self.board_commands.update_graphic,
             "add_mounting_hole": self.board_commands.add_mounting_hole,
+            "hierarchical_place": self.hierarchical_place_commands.hierarchical_place,
             "add_text": self.board_commands.add_text,
             "add_board_text": self.board_commands.add_text,  # Alias for TypeScript tool
             # Component commands
