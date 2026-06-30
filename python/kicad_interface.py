@@ -36,8 +36,8 @@ if sys.platform == "win32":
 
 import sexpdata
 from annotations import AnnotationLoader
-from commands.wire_manager import WireManager
 from commands.schematic_handlers import SchematicHandlersMixin
+from commands.wire_manager import WireManager
 from resources.resource_definitions import RESOURCE_DEFINITIONS, handle_resource_read
 
 # Import tool schemas, resource definitions, and IPC API annotations
@@ -422,6 +422,7 @@ class KiCADInterface(SchematicHandlersMixin):
             # Project commands
             "create_project": self._handle_create_project,
             "open_project": self._handle_open_project,
+            "close_project": self._handle_close_project,
             "save_project": self.project_commands.save_project,
             "snapshot_project": self._handle_snapshot_project,
             "get_project_info": self.project_commands.get_project_info,
@@ -1426,6 +1427,106 @@ class KiCADInterface(SchematicHandlersMixin):
                 or params.get("filename")
             )
             self._refresh_symbol_library_for_project(project_path)
+        return result
+
+    def _clear_project_state(self) -> None:
+        """Drop the in-memory board (SWIG + IPC) and reset all per-project session
+        state, returning the interface to its just-initialized, no-project state.
+
+        Symmetric with the state that open_project / create_project establish, so
+        a subsequent open/create starts from a clean slate (issue #225).
+        """
+        self.board = None
+        # Propagate the None board to every command handler (project, board,
+        # component, routing, design-rule, export, freerouting).
+        self._update_command_handlers()
+        self.ipc_board_api = None
+        self.session_backend = None
+        self.session_board_path = None
+        self._board_disk_signature = None
+        self._last_auto_save_status = None
+        self.project_filename = None
+        self._current_project_path = None
+
+    def _handle_close_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Close the currently loaded project (issue #225).
+
+        Symmetric counterpart to open_project / create_project: optionally save,
+        then drop the in-memory board (SWIG + IPC) and clear all session state so
+        the agent can orchestrate file-based edits without the MCP holding a
+        board that a later save could clobber.
+
+        params:
+          save (bool, default True): save the board to disk before closing. If
+            the save fails, the close is refused so work is never silently lost.
+            When False and the board has unsaved changes, the close proceeds but
+            the response warns that in-memory changes were discarded.
+        """
+        save = params.get("save", True)
+        board_path = self._current_board_path()
+        loaded = board_path is not None or self.board is not None
+
+        if not loaded:
+            # Idempotent: nothing to close. Still scrub any lingering state.
+            self._clear_project_state()
+            return {
+                "success": True,
+                "message": "No project was loaded; nothing to close",
+                "closed": False,
+                "saved": False,
+            }
+
+        warnings = []
+        saved = False
+        saved_path = None
+
+        if save and self.board is not None:
+            try:
+                save_result = self.project_commands.save_project({})
+            except Exception as e:  # noqa: BLE001 - surfaced to caller below
+                logger.error("close_project: save failed: %s", e)
+                return {
+                    "success": False,
+                    "message": "Refusing to close: saving the project failed",
+                    "errorDetails": str(e),
+                    "closed": False,
+                    "saved": False,
+                }
+            if not save_result.get("success"):
+                return {
+                    "success": False,
+                    "message": "Refusing to close: saving the project failed",
+                    "errorDetails": save_result.get("errorDetails") or save_result.get("message"),
+                    "closed": False,
+                    "saved": False,
+                }
+            saved = True
+            saved_path = (save_result.get("project") or {}).get("path")
+        elif not save:
+            dirty = self._dirty_state(board_path)
+            if dirty.get("dirty"):
+                warnings.append(
+                    "Project closed without saving (save=False); in-memory changes "
+                    "since the last save were discarded."
+                )
+
+        closed_path = board_path or self.session_board_path
+        self._clear_project_state()
+
+        result: Dict[str, Any] = {
+            "success": True,
+            "message": (
+                f"Closed project: {os.path.basename(closed_path)}"
+                if closed_path
+                else "Closed project"
+            ),
+            "closed": True,
+            "saved": saved,
+        }
+        if saved_path:
+            result["savedPath"] = saved_path
+        if warnings:
+            result["warnings"] = warnings
         return result
 
     def _handle_place_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
