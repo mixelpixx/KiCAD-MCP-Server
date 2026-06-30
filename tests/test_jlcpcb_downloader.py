@@ -9,6 +9,7 @@ sources gracefully when none are usable.
 """
 
 import json
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -302,3 +303,102 @@ def test_download_cdfer_skips_when_file_already_complete(tmp_path, monkeypatch):
     assert path == dest
     assert path.stat().st_size == len(payload)  # untouched
     assert last_mod.startswith("Wed, 01 Apr 2026")
+
+
+# --------------------------------------------------------------------------- #
+# yaqwsx split-archive volume download — count auto-detection
+# --------------------------------------------------------------------------- #
+
+
+def _fake_run_factory(num_volumes, calls=None):
+    """Build a subprocess.run stand-in for download_yaqwsx.
+
+    Simulates curl fetching cache.zXX volumes (success for 1..num_volumes, a 404-style
+    non-zero for the part past the last volume) and cache.zip, plus 7-Zip extraction
+    that materialises cache.sqlite3. Optionally records every curl URL in ``calls``.
+    """
+
+    def _run(cmd, *args, **kwargs):
+        class _Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        res = _Result()
+        if cmd and cmd[0] == "curl":
+            url = cmd[-1]
+            if calls is not None:
+                calls.append(url)
+            out = Path(cmd[cmd.index("-o") + 1])
+            name = url.rsplit("/", 1)[-1]
+            if name == "cache.zip":
+                out.write_bytes(b"x" * 2000)
+                return res
+            m = re.fullmatch(r"cache\.z(\d+)", name)
+            if m and int(m.group(1)) <= num_volumes:
+                out.write_bytes(b"x" * 2000)
+                return res
+            res.returncode = 22  # curl -f exits 22 on HTTP 4xx (the 404 past last volume)
+            return res
+        # Otherwise it's the 7z extraction call: produce cache.sqlite3.
+        out_dir = next(c[2:] for c in cmd if isinstance(c, str) and c.startswith("-o"))
+        (Path(out_dir) / "cache.sqlite3").write_bytes(b"db")
+        return res
+
+    return _run
+
+
+def test_yaqwsx_autodetects_volume_count_past_old_caps(tmp_path, monkeypatch):
+    """The loop must fetch every real volume and stop at the first 404 — not a fixed cap.
+
+    Regression for the hardcoded 30-volume cap: with 40 live volumes it used to fetch
+    only z01..z30, leaving the split archive incomplete so 7-Zip extraction failed.
+    """
+    import subprocess
+
+    monkeypatch.setattr(jlcpcb_downloader, "_find_7z", lambda: "7z")
+    monkeypatch.setattr(jlcpcb_downloader.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(subprocess, "run", _fake_run_factory(40))
+
+    cache = tmp_path / "cache"
+    out = jlcpcb_downloader.download_yaqwsx(cache)
+
+    assert out == cache / "cache.sqlite3"
+    assert out.exists()
+    # All 40 volumes present (proves the loop went well past the old 30/80 caps).
+    for i in range(1, 41):
+        assert (cache / f"cache.z{i:02d}").exists(), f"missing volume {i}"
+    # The 404 probe past the last volume must not leave a partial file behind.
+    assert not (cache / "cache.z41").exists()
+    assert (cache / "cache.zip").exists()
+
+
+def test_yaqwsx_skips_existing_volumes_on_rerun(tmp_path, monkeypatch):
+    """Re-running with all volumes already present must not re-download them.
+
+    Only the single 404 probe for the volume past the last one should hit curl.
+    """
+    import subprocess
+
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    for i in range(1, 41):
+        (cache / f"cache.z{i:02d}").write_bytes(b"x" * 2000)
+    (cache / "cache.zip").write_bytes(b"x" * 2000)
+
+    monkeypatch.setattr(jlcpcb_downloader, "_find_7z", lambda: "7z")
+    monkeypatch.setattr(jlcpcb_downloader.shutil, "which", lambda name: "/usr/bin/" + name)
+    calls: list = []
+    monkeypatch.setattr(subprocess, "run", _fake_run_factory(40, calls=calls))
+
+    out = jlcpcb_downloader.download_yaqwsx(cache)
+
+    assert out.exists()
+    # No existing volume re-downloaded and cache.zip skipped — only the z41 404 probe.
+    assert calls == [f"{jlcpcb_downloader.YAQWSX_BASE_URL}/cache.z41"]
+
+
+def test_yaqwsx_max_volumes_is_a_high_safety_guard():
+    """The constant is a runaway-loop guard, not the expected count: it must comfortably
+    exceed the current ~41-volume archive so it never truncates a real download."""
+    assert jlcpcb_downloader.YAQWSX_MAX_VOLUMES >= 100

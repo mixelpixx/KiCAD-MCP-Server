@@ -22,6 +22,7 @@ Data is MIT-licensed via CDFER and yaqwsx/jlcparts; the underlying catalog facts
 originate from JLCPCB / LCSC and are subject to their terms.
 """
 
+import itertools
 import json
 import logging
 import os
@@ -37,7 +38,11 @@ logger = logging.getLogger("kicad_interface")
 
 CDFER_SQLITE_URL = "https://cdfer.github.io/jlcpcb-parts-database/jlcpcb-components.sqlite3"
 YAQWSX_BASE_URL = "https://yaqwsx.github.io/jlcparts/data"
-YAQWSX_MAX_VOLUMES = 30
+# Safety upper bound only — NOT the expected volume count. The yaqwsx split archive
+# (cache.z01 … cache.zNN) grows as the JLCPCB catalog expands, so the real last volume
+# is auto-detected by the 404 break in the download loop. This cap merely prevents an
+# unbounded loop if the 404 never arrives.
+YAQWSX_MAX_VOLUMES = 999
 
 ProgressFn = Optional[Callable[[str], None]]
 
@@ -458,7 +463,17 @@ def download_yaqwsx(cache_dir: Path, progress: ProgressFn = None) -> Path:
             == 0
         )
 
-    for i in range(1, YAQWSX_MAX_VOLUMES + 1):
+    # Volume count is auto-detected: keep fetching cache.z01, cache.z02, … until the
+    # first 404 (the part past the last real volume), which signals the end of the split
+    # archive. YAQWSX_MAX_VOLUMES is only a runaway-loop safety guard, not the real count.
+    for i in itertools.count(1):
+        if i > YAQWSX_MAX_VOLUMES:
+            logger.warning(
+                "yaqwsx volume download reached the safety cap of %d without hitting a "
+                "404; the split archive may be incomplete",
+                YAQWSX_MAX_VOLUMES,
+            )
+            break
         part = f"cache.z{i:02d}"
         dst = cache_dir / part
         if dst.exists() and dst.stat().st_size > 1000:
@@ -530,8 +545,8 @@ def _catalog_age_days(last_modified: Optional[str]) -> Optional[int]:
     if not last_modified:
         return None
     try:
-        from email.utils import parsedate_to_datetime
         from datetime import datetime, timezone
+        from email.utils import parsedate_to_datetime
 
         dt = parsedate_to_datetime(last_modified)
         if dt is None:
