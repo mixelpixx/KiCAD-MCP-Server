@@ -3,6 +3,7 @@ Schematic hierarchical-sheet commands.
 
 Tools:
   - add_hierarchical_sheet:       insert a hierarchical-sheet reference into a parent schematic
+  - remove_hierarchical_sheet:    remove a hierarchical-sheet reference (reverse of add)
   - create_hierarchical_subsheet: create a sub-sheet file and link it in one call
 
 The command class holds a back-reference to KiCADInterface so it can reuse the existing
@@ -115,6 +116,115 @@ class SchematicHierarchyCommands:
 
         except Exception as e:
             logger.error(f"Error adding hierarchical sheet: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    @staticmethod
+    def _find_sheet_blocks(content: str) -> List[tuple]:
+        """Return (start, end) spans of every top-level (sheet ...) block.
+
+        Matches '(sheet ' (with whitespace) so it never catches '(sheet_instances'.
+        """
+        spans: List[tuple] = []
+        for m in re.finditer(r"\(sheet\s", content):
+            start = m.start()
+            depth = 0
+            for i in range(start, len(content)):
+                if content[i] == "(":
+                    depth += 1
+                elif content[i] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        spans.append((start, i + 1))
+                        break
+        return spans
+
+    def remove_hierarchical_sheet(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove a hierarchical-sheet reference from a parent schematic.
+
+        Identify the sheet by sheetName (matches the 'Sheetname'/'Sheet name'
+        property) or by subsheetPath (matches the 'Sheetfile'/'Sheet file'
+        property basename). Removes the (sheet ...) block and any matching
+        (path .../<uuid>) entry in (sheet_instances). The reverse of
+        add_hierarchical_sheet. Does NOT delete the sub-sheet file on disk.
+        """
+        logger.info("Removing hierarchical sheet")
+        try:
+            schematic_path = params.get("schematicPath")
+            sheet_name = params.get("sheetName")
+            subsheet_path = params.get("subsheetPath")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not sheet_name and not subsheet_path:
+                return {
+                    "success": False,
+                    "message": "provide sheetName or subsheetPath to identify the sheet to remove",
+                }
+
+            parent_file = Path(schematic_path)
+            content = parent_file.read_text(encoding="utf-8")
+            target_base = Path(subsheet_path).name if subsheet_path else None
+
+            match = None
+            for start, end in self._find_sheet_blocks(content):
+                block = content[start:end]
+                if sheet_name and (
+                    f'"Sheetname" "{sheet_name}"' in block
+                    or f'"Sheet name" "{sheet_name}"' in block
+                ):
+                    match = (start, end, block)
+                    break
+                if (
+                    target_base
+                    and f'"{target_base}"' in block
+                    and ("Sheetfile" in block or "Sheet file" in block)
+                ):
+                    match = (start, end, block)
+                    break
+
+            if not match:
+                ident = sheet_name or target_base
+                return {
+                    "success": False,
+                    "message": f"no (sheet ...) block matching '{ident}' found in {parent_file.name}",
+                }
+
+            start, end, block = match
+            uuid_match = re.search(r'\(uuid\s+"?([0-9a-fA-F-]+)"?\)', block)
+            sheet_uuid = uuid_match.group(1) if uuid_match else None
+
+            # Drop the (sheet ...) block plus the blank line it leaves behind.
+            new_content = content[:start] + content[end:]
+            new_content = re.sub(r"\n[ \t]*\n[ \t]*\n", "\n\n", new_content)
+
+            removed_instance = False
+            if sheet_uuid:
+                new_content, n = re.subn(
+                    r'[ \t]*\(path\s+"[^"]*'
+                    + re.escape(sheet_uuid)
+                    + r'[^"]*"\s+\(page\s+"[^"]*"\)\)[ \t]*\n?',
+                    "",
+                    new_content,
+                )
+                removed_instance = n > 0
+
+            parent_file.write_text(new_content, encoding="utf-8")
+
+            return {
+                "success": True,
+                "removed_sheet": sheet_name or target_base,
+                "sheet_uuid": sheet_uuid,
+                "removed_instance_path": removed_instance,
+                "message": (
+                    f"Removed sheet '{sheet_name or target_base}' from {parent_file.name}"
+                ),
+            }
+
+        except Exception as e:
+            logger.error(f"Error removing hierarchical sheet: {e}")
             import traceback
 
             logger.error(traceback.format_exc())

@@ -37,6 +37,29 @@ export function registerSchematicHierarchyTools(server: McpServer, callKicadScri
     },
   );
 
+  // Remove a hierarchical sheet reference from a parent
+  server.tool(
+    "remove_hierarchical_sheet",
+    "Remove a hierarchical-sheet reference from a parent schematic (the reverse of add_hierarchical_sheet). Identify the sheet by sheetName (matches the sheet's name property) or by subsheetPath (matched by basename against the sheet's file property). Deletes the (sheet ...) block and any matching (sheet_instances) page entry. Does NOT delete the sub-sheet .kicad_sch file on disk.",
+    {
+      schematicPath: z.string().describe("Path to the parent .kicad_sch"),
+      sheetName: z
+        .string()
+        .optional()
+        .describe("Sheet display name to remove (matches the Sheetname/Sheet name property)"),
+      subsheetPath: z
+        .string()
+        .optional()
+        .describe("Sub-sheet file to remove (matched by basename against the Sheetfile property)"),
+    },
+    async (args: any) => {
+      const r = await callKicadScript("remove_hierarchical_sheet", args);
+      if (!r.success)
+        return { content: [{ type: "text", text: `Failed: ${r.message || "Unknown error"}` }] };
+      return { content: [{ type: "text", text: r.message }] };
+    },
+  );
+
   // Create a sub-sheet file AND link it in one call
   server.tool(
     "create_hierarchical_subsheet",

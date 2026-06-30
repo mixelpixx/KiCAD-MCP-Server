@@ -519,6 +519,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "batch_list_symbol_pins": self.symbol_pin_commands.batch_list_symbol_pins,
             # Schematic hierarchy commands (sheet insertion + subsheet scaffolding)
             "add_hierarchical_sheet": self.hierarchy_commands.add_hierarchical_sheet,
+            "remove_hierarchical_sheet": self.hierarchy_commands.remove_hierarchical_sheet,
             "create_hierarchical_subsheet": self.hierarchy_commands.create_hierarchical_subsheet,
             # Schematic field placement commands
             "set_schematic_property_position": self.field_layout_commands.set_schematic_property_position,

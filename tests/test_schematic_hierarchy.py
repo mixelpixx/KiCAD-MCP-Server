@@ -72,6 +72,92 @@ class TestCreateHierarchicalSubsheet:
         )
 
 
+class TestRemoveHierarchicalSheet:
+    # A two-sheet parent in the legacy (kiutils) format: 'Sheetname'/'Sheetfile'
+    # with a per-sheet (instances (project (path ...))) block; top-level
+    # sheet_instances carries only the root page.
+    LEGACY_PARENT = (
+        "(kicad_sch (uuid root-uuid)\n"
+        "  (sheet (at 38 114) (size 45 15)\n"
+        "    (uuid 11111111-1111-1111-1111-111111111111)\n"
+        '    (property "Sheetname" "Discovery Interface" (at 1 1 0))\n'
+        '    (property "Sheetfile" "interface.kicad_sch" (at 1 2 0))\n'
+        '    (instances (project "p" (path "/11111111-1111-1111-1111-111111111111" (page "2"))))\n'
+        "  )\n"
+        "  (sheet (at 101 114) (size 45 15)\n"
+        "    (uuid 22222222-2222-2222-2222-222222222222)\n"
+        '    (property "Sheetname" "Analog Mux" (at 1 1 0))\n'
+        '    (property "Sheetfile" "mux.kicad_sch" (at 1 2 0))\n'
+        '    (instances (project "p" (path "/22222222-2222-2222-2222-222222222222" (page "8"))))\n'
+        "  )\n"
+        '  (sheet_instances (path "/" (page "1")))\n'
+        ")\n"
+    )
+
+    def test_requires_identifier(self, tmp_path):
+        parent = tmp_path / "top.kicad_sch"
+        parent.write_text(self.LEGACY_PARENT)
+        r = _cmds().remove_hierarchical_sheet({"schematicPath": str(parent)})
+        assert r["success"] is False
+
+    def test_remove_by_name_legacy_keeps_siblings(self, tmp_path):
+        parent = tmp_path / "top.kicad_sch"
+        parent.write_text(self.LEGACY_PARENT)
+        r = _cmds().remove_hierarchical_sheet(
+            {"schematicPath": str(parent), "sheetName": "Analog Mux"}
+        )
+        assert r["success"] is True
+        assert r["sheet_uuid"] == "22222222-2222-2222-2222-222222222222"
+        content = parent.read_text()
+        assert "mux.kicad_sch" not in content  # removed
+        assert "Analog Mux" not in content
+        assert "interface.kicad_sch" in content  # sibling preserved
+        assert content.count("(sheet ") == 1
+
+    def test_remove_by_subsheet_path_basename(self, tmp_path):
+        parent = tmp_path / "top.kicad_sch"
+        parent.write_text(self.LEGACY_PARENT)
+        r = _cmds().remove_hierarchical_sheet(
+            {"schematicPath": str(parent), "subsheetPath": "/anywhere/mux.kicad_sch"}
+        )
+        assert r["success"] is True
+        assert "mux.kicad_sch" not in parent.read_text()
+
+    def test_no_match_fails(self, tmp_path):
+        parent = tmp_path / "top.kicad_sch"
+        parent.write_text(self.LEGACY_PARENT)
+        r = _cmds().remove_hierarchical_sheet(
+            {"schematicPath": str(parent), "sheetName": "Nonexistent"}
+        )
+        assert r["success"] is False
+
+    def test_roundtrip_add_then_remove_modern(self, tmp_path):
+        # add_hierarchical_sheet writes the modern format with a top-level
+        # sheet_instances path entry; remove must clean both the block and that entry.
+        parent = tmp_path / "top.kicad_sch"
+        parent.write_text(
+            '(kicad_sch (uuid abcd-1234)\n  (sheet_instances (path "/" (page "1")))\n)'
+        )
+        c = _cmds()
+        add = c.add_hierarchical_sheet(
+            {
+                "schematicPath": str(parent),
+                "subsheetPath": str(tmp_path / "power.kicad_sch"),
+                "sheetName": "Power",
+            }
+        )
+        assert add["success"] is True
+        assert add["sheet_uuid"] in parent.read_text()
+
+        rem = c.remove_hierarchical_sheet({"schematicPath": str(parent), "sheetName": "Power"})
+        assert rem["success"] is True
+        assert rem["removed_instance_path"] is True
+        content = parent.read_text()
+        assert "power.kicad_sch" not in content
+        assert add["sheet_uuid"] not in content  # sheet_instances path entry gone too
+        assert '(path "/" (page "1"))' in content  # root page entry preserved
+
+
 class TestFixSubsheetInstances:
     def test_adds_path_entry(self, tmp_path):
         sub = tmp_path / "sub.kicad_sch"
