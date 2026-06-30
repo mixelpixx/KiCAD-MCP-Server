@@ -177,6 +177,52 @@ class TestBatchConnect:
         assert len(r["placed"]) == 1
         assert labels == [("SDA", 180)]  # pin angle 0 -> label orientation 180
 
+    def test_places_global_label(self, monkeypatch, tmp_path):
+        f = tmp_path / "x.kicad_sch"
+        f.write_text("(kicad_sch)")
+        fake_loc = types.SimpleNamespace(
+            get_pin_location=lambda p, ref, pin: [10.0, 20.0],
+            get_pin_angle=lambda p, ref, pin: 0,
+            get_all_symbol_pins=lambda p, ref: {"1": [10.0, 20.0]},
+        )
+        kinds = []
+        fake_wm = types.SimpleNamespace(
+            add_label=lambda p, net, pos, label_type="label", orientation=0: kinds.append(
+                label_type
+            )
+            or True,
+            add_wire=lambda *a: True,
+            delete_label=lambda *a, **k: True,
+        )
+        # _find_facing_label must NOT be consulted for global labels; make it raise if called.
+        def _boom(*a, **k):
+            raise AssertionError("facing-label lookup should be skipped for global labels")
+
+        monkeypatch.setattr(sb, "PinLocator", lambda: fake_loc)
+        monkeypatch.setattr(sb, "WireManager", fake_wm)
+        monkeypatch.setattr(sb, "_find_facing_label", _boom)
+
+        c = SchematicBatchCommands(types.SimpleNamespace())
+        r = c.batch_connect(
+            {
+                "schematicPath": str(f),
+                "connections": {"U1": {"9": "GND"}},
+                "labelType": "global_label",
+            }
+        )
+        assert r["success"] is True
+        assert kinds == ["global_label"]
+
+    def test_rejects_invalid_label_type(self, tmp_path):
+        f = tmp_path / "x.kicad_sch"
+        f.write_text("(kicad_sch)")
+        c = SchematicBatchCommands(types.SimpleNamespace())
+        r = c.batch_connect(
+            {"schematicPath": str(f), "connections": {"R1": {"1": "X"}}, "labelType": "bogus"}
+        )
+        assert r["success"] is False
+        assert "labelType" in r["message"]
+
 
 class TestBatchAddAndConnect:
     def test_splits_nets_and_orchestrates(self):
@@ -204,6 +250,7 @@ class TestBatchAddAndConnect:
             {
                 "schematicPath": "/x.kicad_sch",
                 "components": [{"symbol": "Device:R", "reference": "R1", "nets": {"1": "VCC"}}],
+                "labelType": "global_label",
             }
         )
         assert r["success"] is True
@@ -213,3 +260,5 @@ class TestBatchAddAndConnect:
         assert "nets" not in add_args["components"][0]
         # nets routed to batch_connect keyed by reference
         assert conn_args["connections"] == {"R1": {"1": "VCC"}}
+        # labelType threaded through to batch_connect
+        assert conn_args["labelType"] == "global_label"
