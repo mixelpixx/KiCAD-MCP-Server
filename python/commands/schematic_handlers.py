@@ -18,11 +18,10 @@ import subprocess
 import tempfile
 import traceback
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import pcbnew
 import sexpdata
-
 from commands.library_schematic import LibraryManager as SchematicLibraryManager
 from commands.schematic import SchematicManager
 from commands.wire_manager import WireManager
@@ -90,6 +89,14 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
 
 class SchematicHandlersMixin:
     """Schematic-domain handlers mixed into KiCADInterface."""
+
+    # Attributes/methods supplied by the concrete KiCADInterface this mixin is
+    # mixed into. Declaring them here (type-check time only, no runtime effect)
+    # gives mypy a definite type for `self.board` at the reference sites below,
+    # breaking the attribute-resolution cycle that otherwise raises
+    # "Cannot determine type of 'board'" whenever kicad_interface.py is checked.
+    if TYPE_CHECKING:
+        board: Any
 
     def _handle_create_schematic(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new schematic"""
