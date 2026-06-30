@@ -20,11 +20,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`add_schematic_component` emits `(pin "N" (uuid ...))` entries** (#241):
+  `DynamicSymbolLoader.create_component_instance` built the placed `(symbol ...)`
+  block with `lib_id`, `at`, `uuid`, properties, and `instances`, but no per-pin
+  entries. KiCad needs one `(pin "N" (uuid ...))` per pin to bind wires to pins,
+  so ERC reported every pin as unconnected even when wires were drawn correctly.
+  Each placed instance now carries one entry per pin, with pin numbers read from
+  the embedded `lib_symbols` definition for the placed `(unit ...)` (sub-symbols
+  with unit 0 are common to all units) and a freshly generated UUID per pin.
+
 - **Fallback schematic writer emits the KiCad 10 header** (#221, partial): the
   template-missing fallback in `create_schematic` and `create_project` wrote the
   stale KiCad 9 header `(version 20250114) (generator "KiCAD-MCP-Server")`. It
   now writes `(version 20260306) (generator "eeschema") (generator_version
-  "10.0")`, matching what eeschema writes for a new file. This covers only the
+"10.0")`, matching what eeschema writes for a new file. This covers only the
   fallback path; the main templates (which still carry the KiCad 9 version and
   the `_TEMPLATE_*` clone-source instances used by `add_schematic_component`)
   are tracked separately because rewriting them touches the component-cloning
