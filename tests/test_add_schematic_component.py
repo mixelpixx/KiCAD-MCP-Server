@@ -294,6 +294,84 @@ class TestCreateComponentInstanceSubSheet:
 
 
 # ---------------------------------------------------------------------------
+# Pin entries — (pin "N" (uuid ...)) required for ERC (issue #241)
+# ---------------------------------------------------------------------------
+
+
+def _instance_block(content: str, reference: str) -> str:
+    """Return the placed (symbol (lib_id ...) ...) block carrying `reference`."""
+    from commands.dynamic_symbol_loader import DynamicSymbolLoader
+
+    search = 0
+    while True:
+        start = content.find("(symbol (lib_id ", search)
+        if start == -1:
+            raise AssertionError(f"No instance block found for {reference}")
+        block = DynamicSymbolLoader._extract_paren_block(content, start)
+        if f'(reference "{reference}")' in block:
+            return block
+        search = start + 1
+
+
+@pytest.mark.unit
+class TestCreateComponentInstancePinEntries:
+    """Each placed instance must carry one (pin "N" (uuid ...)) per lib pin.
+
+    Without these, KiCad cannot bind wires to pins and ERC reports every pin
+    as unconnected (issue #241).
+    """
+
+    def setup_method(self) -> None:
+        from commands.dynamic_symbol_loader import DynamicSymbolLoader
+
+        self.DynamicSymbolLoader = DynamicSymbolLoader
+
+    def _loader(self) -> Any:
+        return self.DynamicSymbolLoader()
+
+    def test_resistor_gets_two_pin_entries(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+        self._loader().create_component_instance(
+            sch, "Device", "R", reference="R1", value="10k", x=10, y=10
+        )
+        block = _instance_block(sch.read_text(), "R1")
+        pins = re.findall(r'\(pin "([^"]+)" \(uuid "[^"]+"\)\)', block)
+        assert sorted(pins) == ["1", "2"]
+
+    def test_pin_uuids_are_unique(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+        self._loader().create_component_instance(
+            sch, "Device", "R", reference="R1", value="10k", x=10, y=10
+        )
+        block = _instance_block(sch.read_text(), "R1")
+        uuids = re.findall(r'\(pin "[^"]+" \(uuid "([^"]+)"\)\)', block)
+        assert len(uuids) == len(set(uuids)), "Each pin must get a distinct UUID"
+
+    def test_led_gets_two_pin_entries(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+        self._loader().create_component_instance(
+            sch, "Device", "LED", reference="D1", value="LED", x=10, y=10
+        )
+        block = _instance_block(sch.read_text(), "D1")
+        pins = re.findall(r'\(pin "([^"]+)" \(uuid "[^"]+"\)\)', block)
+        assert sorted(pins) == ["1", "2"]
+
+    def test_instance_still_round_trips_via_sexpdata(self, tmp_path: Any) -> None:
+        import sexpdata
+
+        sch = tmp_path / "test.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+        self._loader().create_component_instance(
+            sch, "Device", "R", reference="R1", value="10k", x=10, y=10
+        )
+        parsed = sexpdata.loads(sch.read_text())
+        assert parsed[0] == sexpdata.Symbol("kicad_sch")
+
+
+# ---------------------------------------------------------------------------
 # Mirror parameter — known gap
 # ---------------------------------------------------------------------------
 

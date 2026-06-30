@@ -513,6 +513,58 @@ class DynamicSymbolLoader:
         except Exception:
             return {}
 
+    def _extract_lib_pin_numbers(
+        self,
+        schematic_path: Path,
+        library_name: str,
+        symbol_name: str,
+        unit: int = 1,
+    ) -> list:
+        """
+        Return the ordered, de-duplicated list of pin numbers for the requested
+        unit, read from the lib_symbols definition (which must already have the
+        symbol injected).
+
+        Pins live in per-unit sub-symbols named '<symbol>_<unit>_<bodystyle>'.
+        Sub-symbols with unit 0 are common to every unit, so pins for a placed
+        '(unit N)' are gathered from sub-symbols whose unit is N or 0. Duplicate
+        numbers (e.g. from an alternate DeMorgan body style) are dropped while
+        preserving first-seen order. Returns an empty list on failure.
+        """
+        try:
+            with open(schematic_path, encoding="utf-8") as f:
+                content = f.read()
+
+            lib_start = content.find("(lib_symbols")
+            if lib_start == -1:
+                return []
+
+            sym_start = content.find(f'(symbol "{library_name}:{symbol_name}"', lib_start)
+            if sym_start == -1:
+                return []
+
+            sym_block = self._extract_paren_block(content, sym_start)
+
+            import re
+
+            pin_numbers: list = []
+            seen = set()
+            # Walk each child sub-symbol; its name encodes the unit it belongs to.
+            for m in re.finditer(r'\(symbol\s+"([^"]+)_(\d+)_(\d+)"', sym_block):
+                sub_unit = int(m.group(2))
+                if sub_unit not in (unit, 0):
+                    continue
+                sub_block = self._extract_paren_block(sym_block, m.start())
+                for pm in re.finditer(r'\(number\s+"([^"]+)"', sub_block):
+                    number = pm.group(1)
+                    if number not in seen:
+                        seen.add(number)
+                        pin_numbers.append(number)
+
+            return pin_numbers
+        except Exception:
+            return []
+
     @staticmethod
     def _rotate_offset(dx: float, dy: float, angle_deg: float) -> tuple:
         """
@@ -579,6 +631,14 @@ class DynamicSymbolLoader:
         fp_x, fp_y, _, _ = _prop_at("Footprint", 0, 0, 0)
         ds_x, ds_y, _, _ = _prop_at("Datasheet", 0, 0, 0)
 
+        # Build one (pin "N" (uuid ...)) entry per pin in the lib definition.
+        # KiCad requires these to bind wires to pins; without them ERC reports
+        # every pin as unconnected (issue #241).
+        pin_numbers = self._extract_lib_pin_numbers(schematic_path, library_name, symbol_name, unit)
+        pins_str = "".join(
+            f'\n    (pin "{number}" (uuid "{uuid.uuid4()}"))' for number in pin_numbers
+        )
+
         mirror_str = " (mirror y)" if mirror_y else ""
         instance_block = f"""  (symbol (lib_id "{full_lib_id}") (at {x} {y} {angle}){mirror_str} (unit {unit})
     (in_bom yes) (on_board yes) (dnp no)
@@ -602,7 +662,7 @@ class DynamicSymbolLoader:
           (unit {unit})
         )
       )
-    )
+    ){pins_str}
   )"""
 
         with open(schematic_path, "r", encoding="utf-8") as f:
