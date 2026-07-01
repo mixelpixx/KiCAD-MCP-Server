@@ -15,16 +15,33 @@ logger = logging.getLogger("kicad_interface")
 
 
 def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
-    """Convert SVG to PNG. No cffi dependency.
+    """Convert SVG to PNG at the requested pixel dimensions.
 
     Priority:
-      1. pymupdf (fitz) — bundled MuPDF renderer, pure Python, no system deps
-      2. Inkscape CLI — accurate KiCAD SVG rendering
-      3. ImageMagick convert — broad availability fallback
+      1. cairosvg — the declared dependency (see requirements.txt); honors
+         output_width/output_height and reliably rasterizes KiCAD SVGs.
+      2. pymupdf (fitz) — bundled MuPDF renderer, if installed.
+      3. Inkscape CLI — accurate KiCAD SVG rendering, if installed.
+      4. ImageMagick convert — broad availability fallback.
     Returns PNG bytes or None if all converters fail.
+
+    Without a working converter, get_board_2d_view's inline PNG mode fails
+    (historically surfaced as a misleading "kicad-cli SVG export failed"),
+    even though the kicad-cli plot itself succeeded — file/SVG mode works.
     """
     import subprocess
     import tempfile
+
+    try:
+        import cairosvg
+
+        return cairosvg.svg2png(
+            url=svg_path,
+            output_width=int(width),
+            output_height=int(height),
+        )
+    except Exception:
+        pass
 
     try:
         import fitz
