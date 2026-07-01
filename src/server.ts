@@ -229,6 +229,10 @@ export class KiCADMcpServer {
     reject: Function;
   }> = [];
   private processingRequest = false;
+  /** Name of the command currently being processed by the Python bridge (for busy diagnostics). */
+  private inFlightCommand: string | null = null;
+  /** Epoch ms when the in-flight command started (for busy diagnostics). */
+  private inFlightStartedAt: number | null = null;
   private responseBuffer: string = "";
   private currentRequestHandler: {
     resolve: Function;
@@ -673,17 +677,23 @@ export class KiCADMcpServer {
         this.responseBuffer = "";
         this.processingRequest = false;
         this.currentRequestHandler = null;
+        this.inFlightCommand = null;
+        this.inFlightStartedAt = null;
         resolve();
       }, timeoutMs);
 
       // Use the existing request infrastructure to avoid race conditions
       // with the persistent stdout handler.
       this.processingRequest = true;
+      this.inFlightCommand = "startup warm-up (pcbnew/wxApp initialization)";
+      this.inFlightStartedAt = Date.now();
       this.currentRequestHandler = {
         resolve: (result: any) => {
           clearTimeout(timeoutHandle);
           this.processingRequest = false;
           this.currentRequestHandler = null;
+          this.inFlightCommand = null;
+          this.inFlightStartedAt = null;
           if (result?.success) {
             logger.info(
               `Warm-up succeeded: pcbnew ${result.version} (${result.elapsed_s}s)`
@@ -699,6 +709,8 @@ export class KiCADMcpServer {
           clearTimeout(timeoutHandle);
           this.processingRequest = false;
           this.currentRequestHandler = null;
+          this.inFlightCommand = null;
+          this.inFlightStartedAt = null;
           logger.warn(`Warm-up failed: ${err.message} — continuing`);
           resolve(); // don't fail the whole server
         },
@@ -722,6 +734,34 @@ export class KiCADMcpServer {
       if (!this.pythonProcess) {
         logger.error("Python process is not running");
         reject(new Error("Python process for KiCAD scripting is not running"));
+        return;
+      }
+
+      // Fail fast if an operation is already in progress. The KiCAD bridge is
+      // single-threaded: commands are serialized over one stdio connection and
+      // one IPC socket, so a concurrent call would otherwise sit silently in the
+      // queue — potentially for minutes behind a slow export/DRC — and look like
+      // a freeze to the caller. Surface it as an actionable error instead so the
+      // agent knows to wait for the current operation and retry sequentially.
+      if (this.processingRequest) {
+        const running = this.inFlightCommand ?? "another operation";
+        const elapsedS =
+          this.inFlightStartedAt !== null
+            ? Math.round((Date.now() - this.inFlightStartedAt) / 1000)
+            : null;
+        const elapsedStr = elapsedS !== null ? ` (running for ${elapsedS}s)` : "";
+        logger.warn(
+          `Rejecting "${command}" — busy with "${running}"${elapsedStr}`,
+        );
+        reject(
+          new Error(
+            `KiCAD MCP server is busy: still processing "${running}"${elapsedStr}. ` +
+              `This server handles ONE KiCAD operation at a time — commands are serialized ` +
+              `over a single connection to KiCAD. Do not issue KiCAD tool calls in parallel; ` +
+              `wait for the in-flight operation to finish, then retry "${command}". ` +
+              `Exports, DRC, and schematic sync can take a while on large designs.`,
+          ),
+        );
         return;
       }
 
@@ -870,6 +910,8 @@ export class KiCADMcpServer {
     this.responseBuffer = "";
     this.currentRequestHandler = null;
     this.processingRequest = false;
+    this.inFlightCommand = null;
+    this.inFlightStartedAt = null;
 
     // Resolve the promise with the result
     handler.resolve(result);
@@ -893,6 +935,10 @@ export class KiCADMcpServer {
     // Get the next request
     const { request, resolve, reject } = this.requestQueue.shift()!;
 
+    // Record in-flight command for busy diagnostics
+    this.inFlightCommand = request.command;
+    this.inFlightStartedAt = Date.now();
+
     try {
       logger.debug(`Processing KiCAD command: ${request.command}`);
 
@@ -912,6 +958,8 @@ export class KiCADMcpServer {
         this.responseBuffer = "";
         this.currentRequestHandler = null;
         this.processingRequest = false;
+        this.inFlightCommand = null;
+        this.inFlightStartedAt = null;
 
         // Reject the promise
         reject(new Error(`Command timeout after ${timeoutDuration / 1000}s: ${request.command}`));
@@ -932,6 +980,8 @@ export class KiCADMcpServer {
       // Reset processing flag
       this.processingRequest = false;
       this.currentRequestHandler = null;
+      this.inFlightCommand = null;
+      this.inFlightStartedAt = null;
 
       // Process next request
       setTimeout(() => this.processNextRequest(), 0);
