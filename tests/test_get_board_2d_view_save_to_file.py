@@ -227,3 +227,29 @@ def test_kicad10_export_cmd_uses_file_output_and_mode_single(tmp_path):
     out_idx = argv.index("--output")
     out_arg = argv[out_idx + 1]
     assert out_arg.endswith(".svg")  # a file path, not a directory
+
+
+# ---------------------------------------------------------------------------
+# --layers regression (KiCad 9+ requires at least one layer)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_board_svg_export_always_passes_layers(tmp_path):
+    """`pcb export svg` must receive --layers with a non-empty spec even when the
+    caller specifies no layers. KiCad 9+ fails with "At least one layer must be
+    specified" (and writes no file) otherwise."""
+    cmd, root, board_path = _make_view_cmd(tmp_path)
+    fake_result = MagicMock(returncode=0, stderr="", stdout="")
+
+    with (
+        patch("shutil.which", return_value="/usr/bin/kicad-cli"),
+        patch("subprocess.run", return_value=fake_result) as run,
+    ):
+        cmd.get_board_2d_view({"pcbPath": str(board_path), "format": "svg"})
+
+    export_calls = [c.args[0] for c in run.call_args_list if c.args and "export" in c.args[0]]
+    assert export_calls, "kicad-cli export was not invoked"
+    argv = export_calls[0]
+    assert "--layers" in argv, f"--layers missing from command: {argv}"
+    assert argv[argv.index("--layers") + 1], "--layers passed with an empty spec"

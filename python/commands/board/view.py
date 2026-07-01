@@ -170,7 +170,17 @@ class BoardViewCommands:
                     "message": f"Unsupported format '{fmt}'. Use 'png', 'jpg', or 'svg'.",
                     "errorDetails": f"Got: {fmt}",
                 }
-            layers: List[str] = params.get("layers", [])
+            # `pcb export svg` requires at least one layer on KiCad 9+ — omitting
+            # it fails with "At least one layer must be specified" and no output.
+            # Default to a readable 2D view (copper + silkscreen + board outline)
+            # when the caller doesn't specify layers.
+            layers: List[str] = params.get("layers") or [
+                "F.Cu",
+                "B.Cu",
+                "F.SilkS",
+                "B.SilkS",
+                "Edge.Cuts",
+            ]
             response_mode = params.get("responseMode", "inline")
 
             kicad_cli = shutil.which("kicad-cli") or shutil.which("kicad-cli.exe")
