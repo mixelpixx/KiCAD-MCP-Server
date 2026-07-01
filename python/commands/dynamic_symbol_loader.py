@@ -529,6 +529,35 @@ class DynamicSymbolLoader:
         ry = -dx * math.sin(rad) + dy * math.cos(rad)
         return round(rx, 3), round(ry, 3)
 
+    def _extract_lib_property_value(
+        self, schematic_path: Path, library_name: str, symbol_name: str, prop_name: str
+    ) -> str:
+        """Return a property's VALUE from the injected lib_symbols definition.
+
+        Used to inherit fields (e.g. Footprint) from the library symbol onto a
+        placed instance, matching KiCad's own placement behavior. Returns "" if
+        the symbol or property isn't found.
+        """
+        try:
+            import re
+
+            with open(schematic_path, encoding="utf-8") as f:
+                content = f.read()
+            lib_start = content.find("(lib_symbols")
+            if lib_start == -1:
+                return ""
+            sym_start = content.find(f'(symbol "{library_name}:{symbol_name}"', lib_start)
+            if sym_start == -1:
+                return ""
+            sym_block = self._extract_paren_block(content, sym_start)
+            m = re.search(
+                r'\(property\s+"' + re.escape(prop_name) + r'"\s+"([^"]*)"',
+                sym_block,
+            )
+            return m.group(1) if m else ""
+        except Exception:
+            return ""
+
     def create_component_instance(
         self,
         schematic_path: Path,
@@ -560,6 +589,15 @@ class DynamicSymbolLoader:
 
         # --- read property offsets from the already-injected lib_symbols block -----
         lib_props = self._extract_lib_property_positions(schematic_path, library_name, symbol_name)
+
+        # Inherit the library symbol's own Footprint when the caller didn't
+        # specify one, so a footprint set via create_symbol propagates to placed
+        # instances (KiCad does this on placement). Without it, instances stay
+        # unfootprinted until an explicit edit_schematic_component.
+        if not footprint:
+            footprint = self._extract_lib_property_value(
+                schematic_path, library_name, symbol_name, "Footprint"
+            )
 
         _DEFAULT_EFFECTS = "(effects (font (size 1.27 1.27)))"
 
