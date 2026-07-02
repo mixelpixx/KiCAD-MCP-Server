@@ -545,6 +545,191 @@ class DynamicSymbolLoader:
         ry = -dx * math.sin(rad) + dy * math.cos(rad)
         return round(rx, 3), round(ry, 3)
 
+    # ------------------------------------------------------------------ #
+    # Instance-block helpers (project name, hierarchical path, pin uuids) #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _read_root_uuid(content: str) -> str:
+        """Return a schematic's own top-level (uuid ...) value, or '' if absent."""
+        m = re.search(r'\(uuid\s+"?([0-9a-fA-F-]+)"?\)', content)
+        return m.group(1) if m else ""
+
+    def _resolve_project_name(self, schematic_path: Path) -> str:
+        """Return the KiCad project name recorded in (instances (project "<name>" ...)).
+
+        KiCad uses the project (``.kicad_pro``) stem, not the literal string
+        ``"project"``. Derive it from the nearest ``.kicad_pro`` (searching the
+        schematic's directory then a few parents), falling back to the schematic's
+        own stem when no project file is found.
+        """
+        try:
+            sch = Path(schematic_path).resolve()
+            search_dirs = [sch.parent] + list(sch.parent.parents)[:3]
+            for directory in search_dirs:
+                pros = sorted(directory.glob("*.kicad_pro"))
+                if pros:
+                    return pros[0].stem
+            return sch.stem
+        except Exception:
+            return Path(schematic_path).stem
+
+    def _iter_child_sheets(self, content: str) -> List[Tuple[str, str]]:
+        """Yield (sheet_block_uuid, sheet_file_rel) for each (sheet ...) in a schematic.
+
+        Skips (sheet_instances ...) — its token has no whitespace after ``sheet``.
+        """
+        results: List[Tuple[str, str]] = []
+        for m in re.finditer(r"\(sheet(?=\s)", content):
+            block = self._extract_paren_block(content, m.start())
+            um = re.search(r'\(uuid\s+"?([0-9a-fA-F-]+)"?\)', block)
+            fm = re.search(r'\(property\s+"Sheet file"\s+"([^"]+)"', block)
+            if um and fm:
+                results.append((um.group(1), fm.group(1).replace("\\", "/")))
+        return results
+
+    def _find_root_schematic(self, target: Path) -> Optional[Path]:
+        """Find the project's root .kicad_sch (the one carrying (sheet_instances ...))."""
+        try:
+            directory = target.parent
+            for pro in sorted(directory.glob("*.kicad_pro")):
+                cand = directory / f"{pro.stem}.kicad_sch"
+                if cand.exists():
+                    return cand.resolve()
+            for cand in sorted(directory.glob("*.kicad_sch")):
+                try:
+                    if "(sheet_instances" in cand.read_text(encoding="utf-8"):
+                        return cand.resolve()
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return None
+
+    def _sheet_chain_to(self, root: Path, target: Path) -> List[str]:
+        """Return the UUID chain [root_uuid, sheet_block_uuid, ...] from root to target.
+
+        Walks the root project's sheet tree breadth-first. Returns [] if target is not
+        reachable from root.
+        """
+        try:
+            root = root.resolve()
+            target = target.resolve()
+            root_content = root.read_text(encoding="utf-8")
+            root_uuid = self._read_root_uuid(root_content)
+            if not root_uuid:
+                return []
+            if root == target:
+                return [root_uuid]
+            visited = {root}
+            queue: List[Tuple[Path, str, List[str]]] = [(root, root_content, [root_uuid])]
+            while queue:
+                fpath, fcontent, chain = queue.pop(0)
+                for block_uuid, rel in self._iter_child_sheets(fcontent):
+                    child = (fpath.parent / rel).resolve()
+                    new_chain = chain + [block_uuid]
+                    if child == target:
+                        return new_chain
+                    if child.exists() and child not in visited:
+                        visited.add(child)
+                        try:
+                            queue.append((child, child.read_text(encoding="utf-8"), new_chain))
+                        except Exception:
+                            continue
+            return []
+        except Exception:
+            return []
+
+    def _build_instance_path(self, schematic_path: Path) -> str:
+        """Return the symbol instance path for symbols placed in ``schematic_path``.
+
+        - Root / flat schematic (carries (sheet_instances ...)): ``/<root-sheet-uuid>``
+          where the UUID is the schematic's own top-level (uuid ...).
+        - Child sheet in a hierarchy: the chain of sheet-instance UUIDs from the root,
+          ``/<root-uuid>/<sheet-block-uuid>[/...]``, reconstructed by walking the root
+          project's sheet tree.
+        - Unlinked child (no chain yet): one level using the sheet's own UUID;
+          add_hierarchical_sheet -> fix_subsheet_instances repairs it once linked.
+        """
+        try:
+            target = Path(schematic_path).resolve()
+            content = target.read_text(encoding="utf-8")
+            this_uuid = self._read_root_uuid(content)
+
+            if "(sheet_instances" in content and this_uuid:
+                return f"/{this_uuid}"
+
+            root = self._find_root_schematic(target)
+            if root is not None:
+                chain = self._sheet_chain_to(root, target)
+                if chain:
+                    return "/" + "/".join(chain)
+
+            return f"/{this_uuid}" if this_uuid else "/"
+        except Exception:
+            return "/"
+
+    def _extract_symbol_pins(
+        self, schematic_path: Path, library_name: str, symbol_name: str, unit: int
+    ) -> List[str]:
+        """Return string-sorted pin numbers for the placed unit (plus shared unit-0 pins).
+
+        KiCad writes a ``(pin "N" (uuid ...))`` entry inside every placed symbol for each
+        pin; omitting them yields a structurally-incomplete instance the editor can crash
+        on when dragged. Pins live inside lib sub-symbols named ``<sym>_<unit>_<style>``;
+        unit-0 sub-symbols are shared by every unit. Numbers are returned in KiCad's
+        ordering (ascending string sort).
+        """
+        try:
+            content = Path(schematic_path).read_text(encoding="utf-8")
+            lib_start = content.find("(lib_symbols")
+            if lib_start == -1:
+                return []
+            sym_start = content.find(f'(symbol "{library_name}:{symbol_name}"', lib_start)
+            if sym_start == -1:
+                return []
+            sym_block = self._extract_paren_block(content, sym_start)
+
+            numbers: List[str] = []
+            for m in re.finditer(r'\(symbol\s+"([^"]+)"', sym_block):
+                name = m.group(1)
+                if ":" in name:
+                    # Top-level lib wrapper (e.g. "Device:R"); units live in sub-symbols.
+                    continue
+                um = re.search(r"_(\d+)_(\d+)$", name)
+                sub_unit = int(um.group(1)) if um else None
+                if sub_unit not in (None, 0, unit):
+                    continue
+                sub_block = self._extract_paren_block(sym_block, m.start())
+                for pm in re.finditer(r'\(pin\b.*?\(number\s+"([^"]+)"', sub_block, re.DOTALL):
+                    numbers.append(pm.group(1))
+
+            return sorted(dict.fromkeys(numbers))
+        except Exception:
+            return []
+
+    def _extract_lib_property_value(
+        self, schematic_path: Path, library_name: str, symbol_name: str, prop_name: str
+    ) -> Optional[str]:
+        """Return a top-level property value from the injected lib symbol, or None.
+
+        Used to copy Datasheet/Description values into the placed instance so it matches
+        KiCad-authored output (KiCad carries these fields on every symbol).
+        """
+        try:
+            content = Path(schematic_path).read_text(encoding="utf-8")
+            lib_start = content.find("(lib_symbols")
+            if lib_start == -1:
+                return None
+            sym_start = content.find(f'(symbol "{library_name}:{symbol_name}"', lib_start)
+            if sym_start == -1:
+                return None
+            sym_block = self._extract_paren_block(content, sym_start)
+            m = re.search(r'\(property\s+"' + re.escape(prop_name) + r'"\s+"([^"]*)"', sym_block)
+            return m.group(1) if m else None
+        except Exception:
+            return None
+
     def create_component_instance(
         self,
         schematic_path: Path,
@@ -592,34 +777,104 @@ class DynamicSymbolLoader:
 
         ref_x, ref_y, ref_a, ref_eff = _prop_at("Reference", 2.032, 0, 0)
         val_x, val_y, val_a, val_eff = _prop_at("Value", 0, 2.54, 0)
-        fp_x, fp_y, _, _ = _prop_at("Footprint", 0, 0, 0)
-        ds_x, ds_y, _, _ = _prop_at("Datasheet", 0, 0, 0)
+        fp_x, fp_y, fp_a, fp_eff = _prop_at("Footprint", 0, 0, 0)
+        ds_x, ds_y, ds_a, ds_eff = _prop_at("Datasheet", 0, 0, 0)
+        desc_x, desc_y, desc_a, desc_eff = _prop_at("Description", 0, 0, 0)
+
+        def _fmt(n: float) -> str:
+            """Format a coordinate the way KiCad does: integral values without a
+            trailing ``.0`` (e.g. 100.0 -> '100', 90.0 -> '90')."""
+            try:
+                f = float(n)
+            except (TypeError, ValueError):
+                return str(n)
+            return str(int(f)) if f.is_integer() else str(n)
+
+        def _clean_effects(eff: str) -> str:
+            """Strip legacy hide markers from a lib (effects ...) string.
+
+            KiCad 10 records field visibility with a top-level (hide yes) on the
+            property, not inside (effects ...). Remove both the parenthesised
+            (hide ...) and the bare ``hide`` token so we don't emit a v9-style
+            effects block beside the v10 top-level (hide yes).
+            """
+            eff = re.sub(r"\s*\(hide\s+[^)]*\)", "", eff)
+            eff = re.sub(r"\s+hide(?=[\s)])", "", eff)
+            return eff.strip() or "(effects (font (size 1.27 1.27)))"
+
+        def _property(
+            name: str, value: str, px: float, py: float, pa: float, eff: str, hide: bool
+        ) -> str:
+            """Build a KiCad-10 (property ...) block.
+
+            Field order: at, [hide yes], show_name no, do_not_autoplace no, effects.
+            """
+            hide_line = "      (hide yes)\n" if hide else ""
+            return (
+                f'    (property "{name}" "{value}"\n'
+                f"      (at {_fmt(px)} {_fmt(py)} {_fmt(pa)})\n"
+                f"{hide_line}"
+                f"      (show_name no)\n"
+                f"      (do_not_autoplace no)\n"
+                f"      {_clean_effects(eff)}\n"
+                f"    )"
+            )
+
+        # Datasheet/Description values come from the injected lib symbol. KiCad normalises
+        # the placeholder "~" datasheet to an empty string, so mirror that to keep the
+        # generated instance byte-stable across a KiCad save (round-trip).
+        ds_val = self._extract_lib_property_value(
+            schematic_path, library_name, symbol_name, "Datasheet"
+        )
+        ds_val = "" if ds_val in (None, "~") else ds_val
+        desc_val = (
+            self._extract_lib_property_value(
+                schematic_path, library_name, symbol_name, "Description"
+            )
+            or ""
+        )
+
+        properties_str = "\n".join(
+            [
+                _property("Reference", reference, ref_x, ref_y, ref_a, ref_eff, False),
+                _property("Value", value or symbol_name, val_x, val_y, val_a, val_eff, False),
+                _property("Footprint", footprint, fp_x, fp_y, fp_a, fp_eff, True),
+                _property("Datasheet", ds_val, ds_x, ds_y, ds_a, ds_eff, True),
+                _property("Description", desc_val, desc_x, desc_y, desc_a, desc_eff, True),
+            ]
+        )
+
+        # Per-pin uuids — KiCad writes a (pin "N" (uuid ...)) for every pin of the placed
+        # unit; their absence is a primary cause of editor crashes when the symbol is dragged.
+        pin_numbers = self._extract_symbol_pins(schematic_path, library_name, symbol_name, unit)
+        pins_str = "\n".join(f'    (pin "{n}" (uuid "{uuid.uuid4()}"))' for n in pin_numbers)
+
+        # Real project name + hierarchical sheet path (not the "project" / "/" placeholders).
+        project_name = self._resolve_project_name(schematic_path)
+        instance_path = self._build_instance_path(schematic_path)
+        instances_str = (
+            "    (instances\n"
+            f'      (project "{project_name}"\n'
+            f'        (path "{instance_path}"\n'
+            f'          (reference "{reference}")\n'
+            f"          (unit {unit})\n"
+            "        )\n"
+            "      )\n"
+            "    )"
+        )
+
+        body = "\n".join(part for part in [properties_str, pins_str, instances_str] if part)
 
         mirror_str = " (mirror y)" if mirror_y else ""
-        instance_block = f"""  (symbol (lib_id "{full_lib_id}") (at {x} {y} {angle}){mirror_str} (unit {unit})
-    (in_bom yes) (on_board yes) (dnp no)
-    (uuid "{new_uuid}")
-    (property "Reference" "{reference}" (at {ref_x} {ref_y} {ref_a})
-      {ref_eff}
-    )
-    (property "Value" "{value or symbol_name}" (at {val_x} {val_y} {val_a})
-      {val_eff}
-    )
-    (property "Footprint" "{footprint}" (at {fp_x} {fp_y} 0)
-      (effects (font (size 1.27 1.27)) (hide yes))
-    )
-    (property "Datasheet" "~" (at {ds_x} {ds_y} 0)
-      (effects (font (size 1.27 1.27)) (hide yes))
-    )
-    (instances
-      (project "project"
-        (path "/"
-          (reference "{reference}")
-          (unit {unit})
+        instance_block = (
+            f'  (symbol (lib_id "{full_lib_id}") (at {_fmt(x)} {_fmt(y)} {_fmt(angle)})'
+            f"{mirror_str} (unit {unit})\n"
+            "    (body_style 1) (exclude_from_sim no) (in_bom yes) (on_board yes)"
+            " (in_pos_files yes) (dnp no)\n"
+            f'    (uuid "{new_uuid}")\n'
+            f"{body}\n"
+            "  )"
         )
-      )
-    )
-  )"""
 
         with open(schematic_path, "r", encoding="utf-8") as f:
             content = f.read()
