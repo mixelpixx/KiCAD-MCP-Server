@@ -314,6 +314,7 @@ try:
     from commands.design_rules import DesignRuleCommands
     from commands.export import ExportCommands
     from commands.footprint import FootprintCreator
+    from commands.eagle import EagleCommands
     from commands.freerouting import FreeroutingCommands
     from commands.jlcpcb import JLCPCBClient, test_jlcpcb_connection
     from commands.jlcpcb_parts import JLCPCBPartsManager
@@ -390,6 +391,7 @@ class KiCADInterface(SchematicHandlersMixin):
         self.component_commands = ComponentCommands(self.board, self.footprint_library)
         self.routing_commands = RoutingCommands(self.board)
         self.freerouting_commands = FreeroutingCommands(self.board)
+        self.eagle_commands = EagleCommands()
         self.design_rule_commands = DesignRuleCommands(self.board)
         self.export_commands = ExportCommands(self.board)
         self.library_commands = LibraryCommands(self.footprint_library)
@@ -620,6 +622,8 @@ class KiCADInterface(SchematicHandlersMixin):
             "export_dsn": self.freerouting_commands.export_dsn,
             "import_ses": self.freerouting_commands.import_ses,
             "check_freerouting": self.freerouting_commands.check_freerouting,
+            # Eagle import commands
+            "import_eagle_project": self.eagle_commands.import_eagle_project,
         }
 
         logger.info(f"KiCAD interface initialized (backend: {'IPC' if self.use_ipc else 'SWIG'})")
