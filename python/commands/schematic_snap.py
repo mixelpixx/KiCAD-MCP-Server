@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 
 import sexpdata
 from sexpdata import Symbol
+from utils.sexpr_format import dumps as kicad_dumps
 
 logger = logging.getLogger("kicad_interface")
 
@@ -202,7 +203,7 @@ def snap_to_grid(
             continue
 
     with open(schematic_path, "w", encoding="utf-8") as fh:
-        fh.write(sexpdata.dumps(sch_data))
+        fh.write(kicad_dumps(sch_data))
 
     return {
         "snapped": snapped,
