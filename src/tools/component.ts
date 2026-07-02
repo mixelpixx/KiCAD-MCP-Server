@@ -659,6 +659,120 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   );
 
   // ------------------------------------------------------
+  // Suggest Placement Tool
+  // ------------------------------------------------------
+  server.tool(
+    "suggest_placement",
+    "Propose an optimized PCB footprint placement that shortens net length, orients parts toward their partners, and removes courtyard overlaps. Force-directed clustering pulls connected parts together (a converter's feedback divider and decoupling caps end up hugging its IC), power/high-current nets are weighted short & direct, and each part is rotated (0/90/180/270) to face neighbours so airwires stop crossing. PCB ONLY — does not touch the schematic. DRY RUN by default: returns proposals {ref:[x,y,rot]} plus a score (HPWL before/after, overlap counts) without modifying the board. Validate via check_courtyard_overlaps(positions=proposals), then re-run with apply=true before autoroute.",
+    {
+      refs: z
+        .array(z.string())
+        .optional()
+        .describe("References to move (default: every non-locked footprint on the board)."),
+      locked: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "References to hold fixed as anchors (connectors, mounting-constrained, RF, edge parts). They still pull movable parts. KiCad-locked footprints are added automatically.",
+        ),
+      apply: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, move + rotate components to the proposed positions. Default false (dry run — board untouched).",
+        ),
+      iterations: z
+        .number()
+        .optional()
+        .describe("Force-directed relaxation passes (default 200)."),
+      grid_mm: z
+        .number()
+        .optional()
+        .describe("Snap proposed positions to this grid (default 0.5)."),
+      margin_mm: z
+        .number()
+        .optional()
+        .describe("Extra keepout enforced between courtyards (default 0.3)."),
+      rotate: z
+        .boolean()
+        .optional()
+        .describe("Enable pin-facing rotation (default true)."),
+      spread: z
+        .boolean()
+        .optional()
+        .describe(
+          "Enable density spreading (default true). Diffuses parts across free board area so a whole-board run stays legal (few/zero courtyard overlaps) instead of over-packing into a blob. Leave on for whole-board runs.",
+        ),
+      align: z
+        .boolean()
+        .optional()
+        .describe(
+          "Tidy the result into rows/columns (default true). Snaps near-collinear part centers onto shared row (Y) and column (X) lines so passives line up cleanly with centers aligned — like KiCad's Align Centers + Distribute. Disable for a pure shortest-wire layout.",
+        ),
+      align_tol_mm: z
+        .number()
+        .optional()
+        .describe(
+          "Max center spacing (mm) for parts to be pulled onto the same row/column line during align (default 1.5).",
+        ),
+      rotation_steps: z
+        .array(z.number())
+        .optional()
+        .describe("Candidate orientations in degrees (default [0, 90, 180, 270])."),
+      power_nets: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Net-name fragments treated as high-current and pulled short & direct (case-insensitive). Defaults to common rails (VBAT, VBUS, VCC, 3V3, 5V, ...). Pass [] to disable.",
+        ),
+      power_weight: z
+        .number()
+        .optional()
+        .describe("Pull multiplier for power nets (default 3.0)."),
+      decoupling_boost: z
+        .number()
+        .optional()
+        .describe(
+          "Extra pull for 2-pin-passive <-> multi-pin-IC links so caps/feedback parts hug their IC (default 2.0).",
+        ),
+      bounds: z
+        .object({
+          x1: z.number(),
+          y1: z.number(),
+          x2: z.number(),
+          y2: z.number(),
+          unit: z.enum(["mm", "mil", "inch"]).optional(),
+        })
+        .optional()
+        .describe(
+          "SCOPED REGROUP: confine movable parts to this box (mm) — e.g. the area beside one IC. Combine with `refs` (that IC's passives) to regroup one cluster at a time; unlisted parts stay as anchors. Far more reliable than a whole-board run on a dense board. Default: whole board.",
+        ),
+      board_outline: z
+        .object({
+          x1: z.number(),
+          y1: z.number(),
+          x2: z.number(),
+          y2: z.number(),
+          unit: z.enum(["mm", "mil", "inch"]).optional(),
+        })
+        .optional()
+        .describe("Optional board containment bbox override. Default: derived from Edge.Cuts."),
+    },
+    async (args) => {
+      logger.debug(`Suggesting placement (apply=${args.apply ? "true" : "false"})`);
+      const result = await callKicadScript("suggest_placement", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
+  // ------------------------------------------------------
   // Duplicate Component Tool
   // ------------------------------------------------------
   server.tool(

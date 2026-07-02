@@ -228,9 +228,9 @@ class SymbolLibraryManager:
     def _find_kicad_symbol_dir(self) -> Optional[str]:
         """Find KiCAD symbol directory"""
         possible_paths = [
+            "C:/Program Files/KiCad/10.0/share/kicad/symbols",
             "/usr/share/kicad/symbols",
             "/usr/local/share/kicad/symbols",
-            "C:/Program Files/KiCad/10.0/share/kicad/symbols",
             "C:/Program Files/KiCad/9.0/share/kicad/symbols",
             "C:/Program Files/KiCad/8.0/share/kicad/symbols",
             "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols",

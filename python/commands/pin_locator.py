@@ -274,7 +274,7 @@ class PinLocator:
             if transform is None:
                 return None
 
-            _, _, symbol_rotation, mirror_x, mirror_y, lib_id = transform
+            sym_x, sym_y, symbol_rotation, mirror_x, mirror_y, lib_id = transform
             if not lib_id:
                 return None
 
@@ -289,29 +289,45 @@ class PinLocator:
                 else:
                     return None
 
-            pin_def_angle = pins[pin_number].get("angle", 0)
+            pin = pins[pin_number]
+            px = float(pin.get("x", 0.0))
+            py = float(pin.get("y", 0.0))
+            lib_angle = math.radians(pin.get("angle", 0))
 
-            # Mirror this exactly the way WireDragger.pin_world_xy does, in the
-            # same order: Y-flip (lib Y-up → screen Y-down) → mirror → rotate.
+            # Derive the outward bearing straight from WireDragger.pin_world_xy
+            # rather than re-deriving the angle transform by hand.  pin_world_xy
+            # is the netlist-verified position transform (Y-flip → rotate →
+            # mirror); transforming two points along the pin axis and taking
+            # atan2 of their difference is rotation/mirror-correct *by
+            # construction*, for both horizontal and vertical pins.
             #
-            # Y-flip on an angle: negate it (reflects across X axis).
-            pin_def_angle = (-pin_def_angle) % 360
+            # The library pin `angle` points *into* the body, so a point one
+            # unit along it is bodyward; (endpoint − bodyward) is the outward
+            # vector.  Screen Y is down, so negate the Y component to land in the
+            # 0=right / 90=up / 180=left / 270=down convention the wire-stub
+            # consumer (connection_schematic.connect_to_net) expects:
+            #   stub_end = pin + L*(cos θ, −sin θ)
+            #
+            # The hand-rolled version this replaces negated the library angle (a
+            # Y-flip), which only happens to give the outward direction for
+            # *vertical* pins (270↔90); horizontal pins (0→0, 180→180) were left
+            # pointing into the body — 180° wrong.  The old unit test used only a
+            # vertical-pin Device:R, so it never surfaced.
+            from commands.wire_dragger import WireDragger
 
-            # eeschema (symbol.h:43-44):
-            #   (mirror x) = SYM_MIRROR_X = TRANSFORM(1,0,0,-1) → negates Y →
-            #     reflect angle across X axis → -angle.
-            #   (mirror y) = SYM_MIRROR_Y = TRANSFORM(-1,0,0,1) → negates X →
-            #     reflect angle across Y axis → 180 - angle.
-            if mirror_x:
-                pin_def_angle = (-pin_def_angle) % 360
-            if mirror_y:
-                pin_def_angle = (180 - pin_def_angle) % 360
-
-            # eeschema's rotation TRANSFORM is screen-CCW in Y-down, which is
-            # math-CW in standard atan2 convention — so subtract the rotation
-            # to match `pin_world_xy`'s `_rotate(..., -rotation)` call.
-            absolute_angle = (pin_def_angle - symbol_rotation) % 360
-            return absolute_angle
+            ex, ey = WireDragger.pin_world_xy(
+                px, py, sym_x, sym_y, symbol_rotation, mirror_x, mirror_y
+            )
+            bx, by = WireDragger.pin_world_xy(
+                px + math.cos(lib_angle),
+                py + math.sin(lib_angle),
+                sym_x,
+                sym_y,
+                symbol_rotation,
+                mirror_x,
+                mirror_y,
+            )
+            return math.degrees(math.atan2(-(ey - by), ex - bx)) % 360.0
 
         except Exception:
             return None
