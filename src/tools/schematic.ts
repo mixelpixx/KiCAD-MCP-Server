@@ -1099,6 +1099,7 @@ edit_schematic_component and set its value to an empty string.`,
       if (result.success) {
         const moved = result.wiresMoved ?? 0;
         const removed = result.wiresRemoved ?? 0;
+        const labels = result.labelsMoved ?? 0;
         return {
           content: [
             {
@@ -1107,7 +1108,8 @@ edit_schematic_component and set its value to an empty string.`,
                 `Moved ${args.reference} from (${result.oldPosition.x}, ${result.oldPosition.y}) ` +
                 `to (${result.newPosition.x}, ${result.newPosition.y})` +
                 (moved > 0 ? `, ${moved} wire endpoint(s) updated` : "") +
-                (removed > 0 ? `, ${removed} zero-length wire(s) removed` : ""),
+                (removed > 0 ? `, ${removed} zero-length wire(s) removed` : "") +
+                (labels > 0 ? `, ${labels} net label(s) moved to stay attached` : ""),
             },
           ],
         };
@@ -1131,7 +1133,13 @@ edit_schematic_component and set its value to an empty string.`,
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       reference: z.string().describe("Reference designator (e.g., R1, U1)"),
-      angle: z.number().describe("Rotation angle in degrees (0, 90, 180, 270)"),
+      angle: z
+        .number()
+        .describe(
+          "Absolute rotation in degrees (0, 90, 180, 270). This is the symbol's " +
+            "final orientation, not a relative increment — passing 90 sets the " +
+            "symbol to 90° regardless of its current angle (unlike KiCad's UI 'R' key).",
+        ),
       mirror: z.enum(["x", "y"]).optional().describe("Optional mirror axis"),
     },
     async (args: {
@@ -1142,11 +1150,16 @@ edit_schematic_component and set its value to an empty string.`,
     }) => {
       const result = await callKicadScript("rotate_schematic_component", args);
       if (result.success) {
+        const moved = result.wiresMoved ?? 0;
+        const labels = result.labelsMoved ?? 0;
         return {
           content: [
             {
               type: "text",
-              text: `Rotated ${args.reference} to ${args.angle}°${args.mirror ? ` (mirrored ${args.mirror})` : ""}`,
+              text:
+                `Rotated ${args.reference} to ${args.angle}°${args.mirror ? ` (mirrored ${args.mirror})` : ""}` +
+                (moved > 0 ? `, ${moved} wire endpoint(s) updated` : "") +
+                (labels > 0 ? `, ${labels} net label(s) moved to stay attached` : ""),
             },
           ],
         };
