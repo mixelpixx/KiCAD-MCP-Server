@@ -100,7 +100,9 @@ class DynamicSymbolLoader:
             if lib_symdir.exists() and lib_symdir.is_dir():
                 return lib_symdir
 
-        logger.warning(f"Library file not found: {library_name}.kicad_sym / {library_name}.kicad_symdir")
+        logger.warning(
+            f"Library file not found: {library_name}.kicad_sym / {library_name}.kicad_symdir"
+        )
         return None
 
     def _global_sym_lib_table_paths(self) -> list:
@@ -349,9 +351,7 @@ class DynamicSymbolLoader:
         if lib_path.is_dir():
             sym_file = lib_path / f"{symbol_name}.kicad_sym"
             if not sym_file.exists():
-                logger.warning(
-                    f"Symbol '{symbol_name}' not found in directory library {lib_path}"
-                )
+                logger.warning(f"Symbol '{symbol_name}' not found in directory library {lib_path}")
                 return None
             with open(sym_file, "r", encoding="utf-8") as f:
                 lib_content = f.read()

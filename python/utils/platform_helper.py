@@ -199,7 +199,15 @@ class PlatformHelper:
         # Add user library paths for all platforms
         patterns.append(str(Path.home() / "Documents" / "KiCad" / "*" / "symbols" / "*.kicad_sym"))
         patterns.append(
-            str(Path.home() / "Documents" / "KiCad" / "*" / "symbols" / "*.kicad_symdir" / "*.kicad_sym")
+            str(
+                Path.home()
+                / "Documents"
+                / "KiCad"
+                / "*"
+                / "symbols"
+                / "*.kicad_symdir"
+                / "*.kicad_sym"
+            )
         )
 
         return patterns
