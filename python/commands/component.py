@@ -10,11 +10,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pcbnew
 from commands.library import LibraryManager
+from commands.placement_optimizer import PlacementOptimizerCommands
 
 logger = logging.getLogger("kicad_interface")
 
 
-class ComponentCommands:
+class ComponentCommands(PlacementOptimizerCommands):
     """Handles component-related KiCAD operations"""
 
     def __init__(
