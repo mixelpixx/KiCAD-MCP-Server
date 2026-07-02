@@ -188,6 +188,17 @@
     (pin "2" (uuid 00000000-0000-0000-0000-000000000031))
   )
 
+  ;; No-connect flags on the _TEMPLATE_R/_C/_LED phantom-instance pins.
+  ;; KiCad 10's ERC ignores (dnp yes) for pin-not-connected checks, so the
+  ;; phantoms (placed off-page at -100,-100 etc. solely to seed the cloning
+  ;; flow) generate noise unless their pins are explicitly NC'd here.
+  (no_connect (at -100 -96.19) (uuid 00000000-0000-0000-0000-0000000000c1))
+  (no_connect (at -100 -103.81) (uuid 00000000-0000-0000-0000-0000000000c2))
+  (no_connect (at -100 -106.19) (uuid 00000000-0000-0000-0000-0000000000c3))
+  (no_connect (at -100 -113.81) (uuid 00000000-0000-0000-0000-0000000000c4))
+  (no_connect (at -96.19 -120) (uuid 00000000-0000-0000-0000-0000000000c5))
+  (no_connect (at -103.81 -120) (uuid 00000000-0000-0000-0000-0000000000c6))
+
   (sheet_instances
     (path "/" (page "1"))
   )
