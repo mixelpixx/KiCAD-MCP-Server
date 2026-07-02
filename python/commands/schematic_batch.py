@@ -658,6 +658,7 @@ class SchematicBatchCommands:
         try:
             import sexpdata
             from sexpdata import Symbol
+            from utils.sexpr_format import dumps as kicad_dumps
 
             data = sexpdata.loads(sch_path.read_text(encoding="utf-8"))
             changed = False
@@ -681,7 +682,7 @@ class SchematicBatchCommands:
                         continue
                 new_data.append(item)
             if changed:
-                sch_path.write_text(sexpdata.dumps(new_data), encoding="utf-8")
+                sch_path.write_text(kicad_dumps(new_data), encoding="utf-8")
         except Exception as e:
             logger.warning(f"replace cleanup failed: {e}")
 

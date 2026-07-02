@@ -22,10 +22,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pcbnew
 import sexpdata
-
 from commands.library_schematic import LibraryManager as SchematicLibraryManager
 from commands.schematic import SchematicManager
 from commands.wire_manager import WireManager
+from utils.sexpr_format import dumps as kicad_dumps
 
 logger = logging.getLogger("kicad_interface")
 
@@ -1675,7 +1675,7 @@ class SchematicHandlersMixin:
             WireManager.sync_junctions(sch_data)
 
             with open(schematic_path, "w", encoding="utf-8") as f:
-                f.write(sexpdata.dumps(sch_data))
+                f.write(kicad_dumps(sch_data))
 
             return {
                 "success": True,
@@ -1758,7 +1758,7 @@ class SchematicHandlersMixin:
             WireManager.sync_junctions(sch_data)
 
             with open(schematic_path, "w", encoding="utf-8") as f:
-                f.write(_sexpdata.dumps(sch_data))
+                f.write(kicad_dumps(sch_data))
 
             return {
                 "success": True,
@@ -1989,7 +1989,7 @@ class SchematicHandlersMixin:
                 item[at_idx] = [_SYM_AT, float(new_x), float(new_y), rotation]
 
                 with open(schematic_path, "w", encoding="utf-8") as f:
-                    f.write(_sexpdata.dumps(sch_data))
+                    f.write(kicad_dumps(sch_data))
 
                 return {
                     "success": True,
