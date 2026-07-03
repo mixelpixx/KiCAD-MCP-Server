@@ -442,7 +442,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "create_project": self._handle_create_project,
             "open_project": self._handle_open_project,
             "close_project": self._handle_close_project,
-            "save_project": self.project_commands.save_project,
+            "save_project": self._handle_save_project,
             "snapshot_project": self._handle_snapshot_project,
             "get_project_info": self.project_commands.get_project_info,
             # Board commands
@@ -1518,6 +1518,50 @@ class KiCADInterface(SchematicHandlersMixin):
         self.project_filename = None
         self._current_project_path = None
 
+    def _handle_save_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Save the project, refusing to clobber external file edits (issue #244).
+
+        The auto-save path has refused divergent overwrites since the disk
+        signature was introduced, but the explicit save_project tool wrote
+        unconditionally: an edit made directly to the .kicad_pcb after the MCP
+        loaded it (e.g. a manual net-name patch after a Freerouting import) was
+        silently destroyed, and the dispatcher then re-recorded the signature,
+        blessing the clobber. Now the same content check guards this path.
+
+        params:
+          filename (str, optional): save to a new location. Saving to a path
+            other than the loaded board file is an explicit destination choice
+            and is never blocked by the divergence guard.
+          force (bool, default False): overwrite the loaded board file even if
+            its on-disk contents changed externally since load.
+        """
+        board_path = self._current_board_path()
+        filename = params.get("filename")
+        saving_to_loaded_file = board_path is not None and (
+            not filename
+            or self._normalize_board_path(os.path.abspath(os.path.expanduser(filename)))
+            == self._normalize_board_path(board_path)
+        )
+
+        if saving_to_loaded_file and not params.get("force", False):
+            dirty = self._dirty_state(board_path)
+            if dirty.get("diskChangedExternally"):
+                return {
+                    "success": False,
+                    "message": (
+                        "Refusing to save: the on-disk board file's contents "
+                        "changed externally since this MCP session loaded it, and "
+                        "saving would overwrite those changes. Reload the project "
+                        "via open_project to pick up the external edits (then "
+                        "re-apply in-memory changes), or pass force=true to "
+                        "overwrite the file anyway."
+                    ),
+                    "boardPath": board_path,
+                    "diskChangedExternally": True,
+                }
+
+        return self.project_commands.save_project(params)
+
     def _handle_close_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Close the currently loaded project (issue #225).
 
@@ -1552,7 +1596,10 @@ class KiCADInterface(SchematicHandlersMixin):
 
         if save and self.board is not None:
             try:
-                save_result = self.project_commands.save_project({})
+                # Route through the divergence guard (#244) so a close cannot
+                # clobber external file edits either; force passes through for
+                # callers that explicitly want the overwrite.
+                save_result = self._handle_save_project({"force": params.get("force", False)})
             except Exception as e:  # noqa: BLE001 - surfaced to caller below
                 logger.error("close_project: save failed: %s", e)
                 return {

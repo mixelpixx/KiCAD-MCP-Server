@@ -20,6 +20,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`save_project` no longer silently clobbers external file edits** (#244):
+  the explicit save wrote `pcbnew.SaveBoard` unconditionally, so a direct edit
+  to the `.kicad_pcb` made after the MCP loaded the board (e.g. a manual
+  net-name patch after a Freerouting import) was destroyed without warning —
+  and the dispatcher then re-recorded the disk signature, blessing the
+  clobber. The explicit path now applies the same content-hash divergence
+  check the auto-save path already had: a diverged file refuses the save with
+  `diskChangedExternally: true` and instructions (reload via `open_project`,
+  or pass `force=true` to overwrite). Saving to a different `filename` is an
+  explicit destination choice and is never blocked. `close_project`'s
+  save-before-close routes through the same guard.
+
 - **Legacy `ComponentManager.add_component` no longer silently loses
   components via dynamic template injection** (#221, part B): when no placed
   `_TEMPLATE_*` donor existed, the legacy clone path used to call

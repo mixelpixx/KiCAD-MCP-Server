@@ -75,11 +75,18 @@ export function registerProjectTools(server: McpServer, callKicadScript: Functio
   // Save project tool
   server.tool(
     "save_project",
-    "Save the current KiCAD project",
+    "Save the current KiCAD project. Refuses to overwrite the board file if its " +
+      "contents changed on disk since load (external edit) unless force is true.",
     {
       path: z.string().optional().describe("Optional new path to save to"),
+      force: z
+        .boolean()
+        .optional()
+        .describe(
+          "Overwrite the loaded board file even if its on-disk contents changed externally",
+        ),
     },
-    async (args: { path?: string }) => {
+    async (args: { path?: string; force?: boolean }) => {
       const result = await callKicadScript("save_project", args);
       return {
         content: [
