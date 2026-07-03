@@ -815,6 +815,182 @@ COMPONENT_TOOLS = [
         },
     },
     {
+        "name": "suggest_placement",
+        "title": "Suggest Placement",
+        "description": (
+            "Propose an optimized PCB footprint placement that shortens net "
+            "length, orients parts toward their partners, and removes courtyard "
+            "overlaps — the heuristic an engineer does by eye against the "
+            "ratsnest. Force-directed clustering pulls connected parts together "
+            "(a converter's feedback divider and decoupling caps end up hugging "
+            "its IC), power/high-current nets are weighted to stay short & "
+            "direct, and each part is rotated (0/90/180/270) to face its "
+            "neighbours so airwires stop crossing. PCB ONLY — it does not touch "
+            "the schematic. DRY RUN by default: returns proposals "
+            "{ref:[x,y,rot]} plus a score (HPWL before/after, overlap counts) "
+            "WITHOUT modifying the board. Validate proposals via "
+            "check_courtyard_overlaps(positions=proposals), then re-run with "
+            "apply=true (or move_component per ref) before autoroute."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "refs": {
+                    "type": "array",
+                    "description": (
+                        "References to move (default: every non-locked " "footprint on the board)."
+                    ),
+                    "items": {"type": "string"},
+                },
+                "locked": {
+                    "type": "array",
+                    "description": (
+                        "References to hold fixed as anchors — connectors, "
+                        "mounting-constrained parts, RF, edge parts. They still "
+                        "pull movable parts. Footprints KiCad marks locked are "
+                        "added automatically."
+                    ),
+                    "items": {"type": "string"},
+                },
+                "apply": {
+                    "type": "boolean",
+                    "description": (
+                        "If true, move + rotate the components to the proposed "
+                        "positions. Default false (dry run — board untouched)."
+                    ),
+                    "default": False,
+                },
+                "iterations": {
+                    "type": "integer",
+                    "description": "Force-directed relaxation passes (default 200).",
+                    "default": 200,
+                },
+                "grid_mm": {
+                    "type": "number",
+                    "description": "Snap proposed positions to this grid (default 0.5).",
+                    "default": 0.5,
+                },
+                "margin_mm": {
+                    "type": "number",
+                    "description": ("Extra keepout enforced between courtyards (default 0.3)."),
+                    "default": 0.3,
+                },
+                "rotate": {
+                    "type": "boolean",
+                    "description": (
+                        "Enable pin-facing rotation (default true). Disable to "
+                        "keep every part's current orientation."
+                    ),
+                    "default": True,
+                },
+                "spread": {
+                    "type": "boolean",
+                    "description": (
+                        "Enable density spreading (default true). The springs "
+                        "pack parts into a blob denser than they physically fit; "
+                        "spreading diffuses them across free board area so the "
+                        "result is legal (few/zero courtyard overlaps) instead "
+                        "of over-packed. Leave on for whole-board runs."
+                    ),
+                    "default": True,
+                },
+                "align": {
+                    "type": "boolean",
+                    "description": (
+                        "Tidy the result into rows/columns (default true). Snaps "
+                        "near-collinear part centers onto shared row (Y) and "
+                        "column (X) lines so passives line up cleanly with their "
+                        "centers aligned — like KiCad's Align Centers + "
+                        "Distribute — instead of organic offsets. Disable for a "
+                        "pure shortest-wire layout."
+                    ),
+                    "default": True,
+                },
+                "align_tol_mm": {
+                    "type": "number",
+                    "description": (
+                        "Max center spacing (mm) for parts to be pulled onto the "
+                        "same row/column line during align (default 1.5)."
+                    ),
+                    "default": 1.5,
+                },
+                "rotation_steps": {
+                    "type": "array",
+                    "description": (
+                        "Candidate orientations in degrees " "(default [0, 90, 180, 270])."
+                    ),
+                    "items": {"type": "number"},
+                    "default": [0, 90, 180, 270],
+                },
+                "power_nets": {
+                    "type": "array",
+                    "description": (
+                        "Net-name fragments treated as high-current and pulled "
+                        "short & direct (case-insensitive substring match). "
+                        "Defaults to common power rails (VBAT, VBUS, VCC, 3V3, "
+                        "5V, ...). Pass [] to disable power weighting."
+                    ),
+                    "items": {"type": "string"},
+                },
+                "power_weight": {
+                    "type": "number",
+                    "description": "Pull multiplier for power nets (default 3.0).",
+                    "default": 3.0,
+                },
+                "decoupling_boost": {
+                    "type": "number",
+                    "description": (
+                        "Extra pull for 2-pin-passive <-> multi-pin-IC links so "
+                        "caps / feedback parts hug their IC (default 2.0)."
+                    ),
+                    "default": 2.0,
+                },
+                "bounds": {
+                    "type": "object",
+                    "description": (
+                        "SCOPED REGROUP: confine the MOVABLE parts to this box "
+                        "(mm) — e.g. the empty area beside one IC. Combine with "
+                        "`refs` (just that IC's passives) to regroup one cluster "
+                        "at a time; unlisted parts stay put as anchors. Far more "
+                        "reliable than a whole-board run on a dense board, which "
+                        "over-packs. Default: parts may use the whole board."
+                    ),
+                    "properties": {
+                        "x1": {"type": "number"},
+                        "y1": {"type": "number"},
+                        "x2": {"type": "number"},
+                        "y2": {"type": "number"},
+                        "unit": {
+                            "type": "string",
+                            "enum": ["mm", "mil", "inch"],
+                            "default": "mm",
+                        },
+                    },
+                    "required": ["x1", "y1", "x2", "y2"],
+                },
+                "board_outline": {
+                    "type": "object",
+                    "description": (
+                        "Optional override for the board containment bbox. "
+                        "Default: derived from Edge.Cuts."
+                    ),
+                    "properties": {
+                        "x1": {"type": "number"},
+                        "y1": {"type": "number"},
+                        "x2": {"type": "number"},
+                        "y2": {"type": "number"},
+                        "unit": {
+                            "type": "string",
+                            "enum": ["mm", "mil", "inch"],
+                            "default": "mm",
+                        },
+                    },
+                    "required": ["x1", "y1", "x2", "y2"],
+                },
+            },
+        },
+    },
+    {
         "name": "duplicate_component",
         "title": "Duplicate Component",
         "description": "Creates a copy of an existing component with new reference designator.",
@@ -2196,6 +2372,55 @@ SCHEMATIC_TOOLS = [
                         "type": "string",
                         "enum": ["wires", "junctions", "labels", "components"],
                     },
+                },
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
+        "name": "suggest_schematic_declutter",
+        "title": "Suggest Schematic Declutter",
+        "description": (
+            "Re-orient overlapping net/global labels so their text lands in free "
+            "space and becomes readable. Each label's (at x,y) anchor is its "
+            "electrical connection point, so it is held FIXED — only the "
+            "orientation (0/90/180/270) and justification change, throwing the "
+            "text away from component bodies and other labels. Connectivity is "
+            "never altered. DRY RUN by default: returns proposals "
+            "[{name, at, from_angle, to_angle}] plus an overlap score "
+            "(before/after) WITHOUT modifying the schematic. Set apply=true to "
+            "rewrite the label orientations. Phase 1: labels only; symbol "
+            "spreading + wire reroute is a separate future capability."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch file.",
+                },
+                "margin": {
+                    "type": "number",
+                    "description": (
+                        "Extra clearance in mm when testing label overlap " "(default 0.3)."
+                    ),
+                    "default": 0.3,
+                },
+                "references": {
+                    "type": "array",
+                    "description": (
+                        "Limit which component bodies count as obstacles "
+                        "(default: every component on the sheet)."
+                    ),
+                    "items": {"type": "string"},
+                },
+                "apply": {
+                    "type": "boolean",
+                    "description": (
+                        "If true, rewrite the label orientations. Default false "
+                        "(dry run — schematic untouched, proposals only)."
+                    ),
+                    "default": False,
                 },
             },
             "required": ["schematicPath"],

@@ -20,6 +20,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Pin locations respect the owning unit of multi-unit symbols** (#239):
+  `get_schematic_pin_locations` / `get_pin_location` located every pin against
+  whichever placed `(symbol)` instance appeared first in file order, so for a
+  multi-unit part (e.g. a dual op-amp placed as separate units at different
+  positions) all pins collapsed onto that one unit's coordinates. Pins are now
+  tagged with their owning unit while parsing `lib_symbols` (the
+  `<name>_<unit>_<body>` sub-symbol), and each pin is located against the placed
+  instance carrying the matching `(unit N)` — with rotation/mirror read from that
+  same instance. Single-unit parts are unaffected (they fall back to the first
+  instance as before).
+
 - **Fallback schematic writer emits the KiCad 10 header** (#221, partial): the
   template-missing fallback in `create_schematic` and `create_project` wrote the
   stale KiCad 9 header `(version 20250114) (generator "KiCAD-MCP-Server")`. It

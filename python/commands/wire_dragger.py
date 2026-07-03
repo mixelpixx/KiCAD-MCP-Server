@@ -156,7 +156,7 @@ class WireDragger:
         Compute the world coordinate of a pin given the symbol transform.
 
         Library pins are stored Y-up; the schematic is Y-down. Order matches
-        eeschema: Y-flip to screen → mirror → rotate (screen-CCW) → translate.
+        eeschema: Y-flip to screen → rotate (screen-CCW) → mirror → translate.
 
         eeschema's TRANSFORM matrix for rotation 90 is (0, 1, -1, 0) —
         i.e. screen-CCW in Y-down: (x, y) → (y, -x). Our `_rotate` helper is
@@ -167,11 +167,15 @@ class WireDragger:
           (mirror y) = SYM_MIRROR_Y = TRANSFORM(-1, 0, 0, 1) → negates X.
         """
         lx, ly = px, -py  # Y-flip: lib Y-up → screen Y-down
-        if mirror_x:
-            ly = -ly  # SYM_MIRROR_X negates screen-Y
-        if mirror_y:
-            lx = -lx  # SYM_MIRROR_Y negates screen-X
         rx, ry = _rotate(lx, ly, -rotation)  # negate angle: math-CCW → screen-CCW
+        # Mirror reflects the *placed* (already-rotated) symbol — i.e. in screen
+        # space, AFTER the rotation. Applying it before the rotation only agrees
+        # for 0°/180° turns; for 90°/270° it swaps the pins (verified against the
+        # kicad-cli netlist in test_pin_world_xy_eeschema_truth).
+        if mirror_x:
+            ry = -ry  # SYM_MIRROR_X negates screen-Y
+        if mirror_y:
+            rx = -rx  # SYM_MIRROR_Y negates screen-X
         return sym_x + rx, sym_y + ry
 
     @staticmethod
