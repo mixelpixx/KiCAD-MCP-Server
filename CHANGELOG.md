@@ -4,6 +4,22 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-07-03
+
+The first tagged release. Highlights: both KiCad 10 schematic-corruption
+mechanisms are fixed (incomplete instance blocks and minified single-line
+writes — #256), the SWIG/IPC backend is pinned per loaded project so edits
+can no longer be lost to silent backend switching (#223), saves refuse to
+clobber external file edits (#244), and the entire cli-tool family works on
+stock Windows installs where KiCad is not on PATH.
+
+Behavior changes to note when upgrading from 2.2.3: `rotate_component`
+treats `angle` as an absolute target (previously additive over IPC);
+`save_project` can now return `success: false` with
+`diskChangedExternally: true` instead of overwriting (pass `force: true`
+for the old behavior); and a session loaded on SWIG stays on SWIG even when
+the KiCad GUI connects later (reopen the project to adopt IPC).
+
 ### Tooling
 
 - **TypeScript test scaffolding (Vitest)**: `npm run test:ts` now runs a real
@@ -19,6 +35,85 @@ All notable changes to the KiCAD MCP Server project are documented here.
   was stuck at `2.1.0-alpha`.
 
 ### Bug Fixes
+
+- **Placed symbols get complete KiCad 10 instance blocks — no more crash on
+  drag/edit** (#256, first half): `create_component_instance` was rewritten
+  into a full KiCad 10 instance writer. Components placed via
+  `add_schematic_component` / `batch_add_components` now carry the real
+  project name (from the `.kicad_pro`), the real root-sheet uuid path instead
+  of `(path "/")`, per-pin `(pin "N" (uuid ...))` entries (also fixes #241 —
+  ERC can bind wires to pins), and the complete field set in canonical order.
+  Verified structurally identical to eeschema's own output by round-tripping
+  through `kicad-cli sch upgrade`. Previously the incomplete blocks made
+  KiCad crash when a placed symbol was dragged or edited.
+
+- **Schematic writes emit KiCad's canonical multi-line format, never a
+  minified single line** (#256, second half): every schematic write tool
+  serialized through `sexpdata.dumps()`, which emits the whole file as one
+  line — producing unreviewable diffs, whole-file churn against eeschema
+  saves, and in the worst reports unrecoverable projects. A faithful port of
+  KiCad's `Prettify()` (`python/utils/sexpr_format.py`) now formats all tool
+  writes byte-identically to eeschema's "Save"; every write re-parses its own
+  output and falls back to the exact compact form on any mismatch, so the
+  formatter can never corrupt data. `scripts/kicad_sch_reformat.py` repairs
+  files minified by older versions.
+
+- **Dragging/rotating a symbol now carries coincident net labels with the
+  moved pins**: labels sitting exactly on a moved pin were left behind and
+  could silently re-net onto a neighbouring signal (invisible until the
+  netlist diverged). `drag_wires` gains a third pass that relocates
+  `label`/`global_label`/`hierarchical_label` with the same tolerance used
+  for wire endpoints; move/rotate responses report `labelsMoved`.
+
+- **Pin positions and wire-stub angles are correct for rotated+mirrored
+  symbols**: `pin_world_xy` applied mirror before rotation, and the outward
+  pin angle was hand-derived in a way that was 180° wrong for horizontal
+  pins. Both are fixed and locked in by a netlist oracle that validates the
+  full rotation × mirror matrix against real eeschema output.
+
+- **KiCad 10 sheet-rename compatibility**: the sheet-rename path only matched
+  the KiCad 7–9 file format ("Sheetname" property, tab indentation), so it
+  was a silent no-op on KiCad 10 schematics; the matcher now accepts both
+  formats. NC template phantom pins are also cleaned up.
+
+- **KiCad 10 `.kicad_symdir` sharded symbol libraries are discovered**
+  (Windows/Linux/macOS): symbol search and schematic placement now resolve
+  libraries stored in KiCad 10's directory-sharded format, not just
+  monolithic `.kicad_sym` files.
+
+- **`kicad-cli` is resolved robustly instead of failing when not on PATH**:
+  KiCad's Windows installer does not add its `bin` to PATH, so every
+  cli-backed tool (exports, ERC/DRC, netlist, board views) failed with a bare
+  "kicad-cli not found in PATH". A centralized resolver
+  (`python/utils/kicad_cli.py`) now tries `$KICAD_CLI` (fails loudly if set
+  but invalid), the running interpreter's directory, PATH, and known per-OS
+  install locations — and failures list every location tried. The three
+  drifted `_find_kicad_cli` copies are unified onto it.
+
+- **7-Zip is resolved the same way, and the yaqwsx JLCPCB download works on a
+  stock install**: the split-archive volume count is auto-detected (the
+  hardcoded cap of 30 silently truncated newer archives), and the 7z CLI is
+  found via `$SEVEN_ZIP`/PATH/known install dirs instead of PATH-only.
+
+- **File-answerable reads fall back to SWIG when the live KiCad has no
+  document open**: `get_board_info`/`get_component_properties` routed to the
+  realtime IPC backend even when the GUI had nothing loaded, returning
+  misleading "not found" results or a false-success zeroed payload with an
+  embedded error. Such reads are now re-served from the on-disk board and
+  tagged `_backend: "swig"` with an explanatory note; genuine misses are
+  distinguished from the no-document case.
+
+- **SWIG pcbnew is imported even when IPC connects at startup**: an
+  IPC-connected session that later downgraded to SWIG (GUI closed or busy)
+  hit "name 'pcbnew' is not defined", surfaced as a bogus "dehydrated SWIG
+  proxy" error. pcbnew is now imported whenever it isn't explicitly disabled,
+  and a missing pcbnew is fatal only when there is no working IPC backend.
+
+- **IPC connect attempts are bounded** (default 5s, `KICAD_IPC_CONNECT_TIMEOUT`):
+  kipy dials with no timeout, so a busy KiCad GUI (modal dialog, library
+  reload) could hang connects for minutes; they now fail fast and fall back
+  to SWIG. The underlying IPC socket is also closed explicitly on disconnect,
+  stopping a file-descriptor leak in long-lived reconnecting sessions.
 
 - **`save_project` no longer silently clobbers external file edits** (#244):
   the explicit save wrote `pcbnew.SaveBoard` unconditionally, so a direct edit
@@ -144,6 +239,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
   the failure on a real-world user schematic.
 
 ### New MCP Tools
+
+- `suggest_placement` — Connectivity-driven footprint placement optimizer for
+  the PCB: clusters components by netlist affinity, legalizes overlaps, and
+  proposes (or with `apply: true`, applies) positions/rotations that shorten
+  the ratsnest. Dry-run by default — it never mutates the board unless asked;
+  deterministic, so the preview matches the applied result. Reports
+  half-perimeter wirelength before/after.
+
+- `suggest_schematic_declutter` — Re-orients overlapping net/global labels in
+  a schematic for readability, holding every label anchor fixed so
+  connectivity cannot change. Dry-run by default, like `suggest_placement`.
 
 - `close_project` (#225) — Symmetric counterpart to `open_project` /
   `create_project`. Optionally saves the board (`save`, default `true`), then

@@ -29,6 +29,49 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 https://github.com/mixelpixx/arduino-ide
 
+## What's New in v2.3.0
+
+### Schematic corruption on KiCad 10 — both mechanisms fixed
+
+- **Complete instance blocks**: placed components now carry the real project
+  name, root-sheet uuid path, per-pin uuid entries (ERC can bind wires to
+  pins), and the full KiCad 10 field set — verified byte-equivalent to what
+  eeschema itself writes. Previously, dragging or editing a placed symbol
+  could crash KiCad.
+- **Canonical multi-line writes**: schematic tools no longer minify the whole
+  file onto one line. Tool writes now match eeschema's "Save" byte-for-byte,
+  with a self-check on every write that can never corrupt data. Already-
+  minified files are repairable with `scripts/kicad_sch_reformat.py`.
+
+### Your edits are protected
+
+- **Backend session pinning**: a loaded project stays on one backend
+  (SWIG or IPC) for its whole lifecycle — saves can no longer silently route
+  to a stale GUI board and lose your edits.
+- **External-edit guard**: `save_project` refuses to overwrite a board file
+  whose contents changed on disk since load (pass `force: true` to override).
+- **`close_project`** (new tool): release the project so files can be edited
+  directly, then reopen — no more restart choreography.
+
+### Works on a stock Windows install
+
+- `kicad-cli` and 7-Zip are resolved from their install locations even when
+  not on PATH — un-breaking exports, ERC/DRC, netlists, board views, and the
+  JLCPCB database download, each with actionable errors when truly missing.
+
+### New layout tools
+
+- `suggest_placement`: connectivity-driven PCB placement optimizer (dry-run
+  by default, deterministic).
+- `suggest_schematic_declutter`: re-orients overlapping net labels without
+  touching connectivity.
+
+Plus KiCad 10 compatibility fixes (sheet renames, sharded `.kicad_symdir`
+libraries, IPC `Box2` board size), correct pin geometry for rotated+mirrored
+and multi-unit symbols, bounded IPC connects with SWIG fallback, and a real
+Vitest suite for the TypeScript layer. Full details in the
+[CHANGELOG](CHANGELOG.md).
+
 ## What's New in v2.2.3
 
 ### New Tools: FFC/Ribbon Cable Passthrough Workflow
@@ -1275,7 +1318,7 @@ npm run format
 
 ## Project Status
 
-**Current Version:** 2.2.3
+**Current Version:** 2.3.0
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
@@ -1379,6 +1422,6 @@ If you use this project in your research or publication, please cite:
   author = {mixelpixx},
   year = {2025},
   url = {https://github.com/mixelpixx/KiCAD-MCP-Server},
-  version = {2.2.3}
+  version = {2.3.0}
 }
 ```
