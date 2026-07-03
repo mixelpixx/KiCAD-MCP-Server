@@ -13,6 +13,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from utils.platform_helper import PlatformHelper
+
 logger = logging.getLogger("kicad_interface")
 
 
@@ -201,6 +203,9 @@ class SymbolLibraryManager:
             "KICAD_3RD_PARTY": self._find_3rd_party_dir(),
             "KISYSSYM": self._find_kicad_symbol_dir(),
         }
+
+        # Merge user-defined env vars from kicad_common.json
+        env_vars.update(PlatformHelper.load_kicad_env_vars())
 
         # Project directory
         if self.project_path:

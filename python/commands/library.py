@@ -12,6 +12,8 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from utils.platform_helper import PlatformHelper
+
 logger = logging.getLogger("kicad_interface")
 
 
@@ -152,6 +154,9 @@ class LibraryManager:
             "KICAD8_3RD_PARTY": self._find_kicad_3rdparty_dir(),
             "KICAD_3RD_PARTY": self._find_kicad_3rdparty_dir(),
         }
+
+        # Merge user-defined env vars from kicad_common.json
+        env_vars.update(PlatformHelper.load_kicad_env_vars())
 
         # Project directory
         if self.project_path:
