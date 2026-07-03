@@ -6,6 +6,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`get_wire_connections` no longer reports phantom cross-unit pins** (#293):
+  `_find_pins_on_net` transformed every unit's pins against every placed
+  instance of a multi-unit component, so a sibling unit's pin whose library
+  offset matched could land on this instance's wire and be reported as a
+  false member of the net (e.g. an LM358's pin 7 appearing on unit A's
+  output net alongside pin 1). `_parse_symbol_instances_sexp` now records
+  each instance's `(unit N)`, and `_find_pins_on_net` filters the pin
+  definitions to that unit (plus unit 0, common to all units) before
+  transforming them. Complements #272, which fixed the query-coordinate side
+  of the same multi-unit gap; the pin `unit` tags it added are what this fix
+  consumes. Single-unit parts are unaffected.
+
 - **`create_project` writes a conformant KiCad 10 `.kicad_pro`** (#220): the
   project file was a hand-rolled 122-byte stub containing only
   `board.filename` and a `sheets` entry with the literal id `"root"`, so
