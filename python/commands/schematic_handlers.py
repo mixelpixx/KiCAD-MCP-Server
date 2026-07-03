@@ -22,10 +22,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pcbnew
 import sexpdata
-
 from commands.library_schematic import LibraryManager as SchematicLibraryManager
 from commands.schematic import SchematicManager
 from commands.wire_manager import WireManager
+from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 
 logger = logging.getLogger("kicad_interface")
 
@@ -90,6 +90,11 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
 
 class SchematicHandlersMixin:
     """Schematic-domain handlers mixed into KiCADInterface."""
+
+    # Provided by the host KiCADInterface this mixin is composed into. Declared here so
+    # mypy can resolve ``self.board`` when type-checking this module in isolation (the
+    # module docstring notes the mixin relies on the host's ``self.board``).
+    board: Any
 
     def _handle_create_schematic(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new schematic"""
@@ -991,8 +996,11 @@ class SchematicHandlersMixin:
 
             import subprocess
 
+            kicad_cli = resolve_kicad_cli()
+            if not kicad_cli:
+                return {"success": False, "message": kicad_cli_not_found_message()}
             cmd = [
-                "kicad-cli",
+                kicad_cli,
                 "sch",
                 "export",
                 "pdf",
@@ -1015,7 +1023,7 @@ class SchematicHandlersMixin:
                 }
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except Exception as e:
             logger.error(f"Error exporting schematic to PDF: {str(e)}")
             return {"success": False, "message": str(e)}
@@ -1220,10 +1228,13 @@ class SchematicHandlersMixin:
             height = params.get("height", 900)
 
             # Step 1: Export schematic to SVG via kicad-cli
+            kicad_cli = resolve_kicad_cli()
+            if not kicad_cli:
+                return {"success": False, "message": kicad_cli_not_found_message()}
             with tempfile.TemporaryDirectory() as tmpdir:
                 svg_path = os.path.join(tmpdir, "schematic.svg")
                 cmd = [
-                    "kicad-cli",
+                    kicad_cli,
                     "sch",
                     "export",
                     "svg",
@@ -1277,7 +1288,7 @@ class SchematicHandlersMixin:
                 }
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except Exception as e:
             logger.error(f"Error getting schematic view: {e}")
             import traceback
@@ -2037,8 +2048,11 @@ class SchematicHandlersMixin:
 
             os.makedirs(output_dir, exist_ok=True)
 
+            kicad_cli = resolve_kicad_cli()
+            if not kicad_cli:
+                return {"success": False, "message": kicad_cli_not_found_message()}
             cmd = [
-                "kicad-cli",
+                kicad_cli,
                 "sch",
                 "export",
                 "svg",
@@ -2075,7 +2089,7 @@ class SchematicHandlersMixin:
             return {"success": True, "file": {"path": output_path}}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except Exception as e:
             logger.error(f"Error exporting schematic SVG: {e}")
             return {"success": False, "message": str(e)}

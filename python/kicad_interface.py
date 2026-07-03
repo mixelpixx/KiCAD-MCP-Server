@@ -182,9 +182,9 @@ utils_dir = os.path.join(os.path.dirname(__file__))
 if utils_dir not in sys.path:
     sys.path.insert(0, utils_dir)
 
-from utils.kicad_process import KiCADProcessManager, check_and_launch_kicad
-
 # Import platform helper and add KiCAD paths
+from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
+from utils.kicad_process import KiCADProcessManager, check_and_launch_kicad
 from utils.platform_helper import PlatformHelper
 
 logger.info(f"Detecting KiCAD Python paths for {PlatformHelper.get_platform_name()}...")
@@ -2212,36 +2212,13 @@ class KiCADInterface(SchematicHandlersMixin):
 
     @staticmethod
     def _find_kicad_cli_static() -> Optional[str]:
-        """Return path to kicad-cli executable, or None."""
-        import platform
-        import shutil
+        """Return path to kicad-cli executable, or None.
 
-        cli = shutil.which("kicad-cli")
-        if cli:
-            return cli
-
-        system = platform.system()
-        if system == "Windows":
-            candidates = [
-                r"C:\Program Files\KiCad\9.0\bin\kicad-cli.exe",
-                r"C:\Program Files\KiCad\8.0\bin\kicad-cli.exe",
-                r"C:\Program Files (x86)\KiCad\9.0\bin\kicad-cli.exe",
-                r"C:\Program Files (x86)\KiCad\8.0\bin\kicad-cli.exe",
-            ]
-        elif system == "Darwin":
-            candidates = [
-                "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
-                "/usr/local/bin/kicad-cli",
-            ]
-        else:
-            candidates = [
-                "/usr/bin/kicad-cli",
-                "/usr/local/bin/kicad-cli",
-            ]
-        for path in candidates:
-            if os.path.exists(path):
-                return path
-        return None
+        Delegates to the centralized resolver (env override -> interpreter-adjacent ->
+        PATH -> known install dirs) so kicad-cli is found even when KiCad's bin/ is not
+        on PATH (the default on Windows).
+        """
+        return resolve_kicad_cli()
 
     # ------------------------------------------------------------------
 
@@ -2264,7 +2241,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             fmt_map = {
                 "KiCad": "kicadxml",
@@ -2299,7 +2276,7 @@ class KiCADInterface(SchematicHandlersMixin):
                 }
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 60 seconds"}
         except Exception as e:
@@ -2332,7 +2309,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_dir = str(Path(output_dir).expanduser().resolve())
             Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -2400,7 +2377,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -2432,7 +2409,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_dir = str(Path(output_dir).expanduser().resolve())
             # kicad-cli drill requires the output dir path to end with a separator
@@ -2482,7 +2459,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 120 seconds"}
         except Exception as e:
@@ -2515,7 +2492,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -2559,7 +2536,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -2591,7 +2568,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -2627,7 +2604,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -2660,7 +2637,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -2682,7 +2659,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -2715,7 +2692,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -2752,7 +2729,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -2786,7 +2763,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -2831,7 +2808,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -2865,7 +2842,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -2936,7 +2913,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -2970,7 +2947,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -3040,7 +3017,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3074,7 +3051,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -3143,7 +3120,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3179,7 +3156,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -3244,7 +3221,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3286,7 +3263,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -3370,7 +3347,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 300 seconds"}
         except Exception as e:
@@ -3401,7 +3378,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -3453,7 +3430,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3484,7 +3461,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -3534,7 +3511,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3564,7 +3541,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_dir = str(Path(output_dir).expanduser().resolve())
             Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -3611,7 +3588,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3641,7 +3618,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_dir = str(Path(output_dir).expanduser().resolve())
             Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -3687,7 +3664,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3717,7 +3694,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_dir = str(Path(output_dir).expanduser().resolve())
             Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -3759,7 +3736,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3789,7 +3766,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_dir = str(Path(output_dir).expanduser().resolve())
             Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -3836,7 +3813,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3867,7 +3844,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -3889,7 +3866,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3916,7 +3893,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tmp:
                 tmp_path = tmp.name
@@ -3975,7 +3952,7 @@ class KiCADInterface(SchematicHandlersMixin):
                     pass
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 60 seconds"}
         except Exception as e:

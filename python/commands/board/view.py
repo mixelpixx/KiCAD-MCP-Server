@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pcbnew
 from PIL import Image
+from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 
 logger = logging.getLogger("kicad_interface")
 
@@ -138,7 +139,6 @@ class BoardViewCommands:
         - "file": image is written next to the .kicad_pcb file and ``filePath`` is returned.
         """
         import glob
-        import shutil
         import subprocess
         import tempfile
 
@@ -173,12 +173,11 @@ class BoardViewCommands:
             layers: List[str] = params.get("layers", [])
             response_mode = params.get("responseMode", "inline")
 
-            kicad_cli = shutil.which("kicad-cli") or shutil.which("kicad-cli.exe")
+            kicad_cli = resolve_kicad_cli()
             if not kicad_cli:
                 return {
                     "success": False,
-                    "message": "kicad-cli not found in PATH",
-                    "errorDetails": "Install KiCad and ensure kicad-cli is on PATH",
+                    "message": kicad_cli_not_found_message(),
                 }
 
             with tempfile.TemporaryDirectory() as tmpdir:
@@ -287,8 +286,7 @@ class BoardViewCommands:
         except FileNotFoundError:
             return {
                 "success": False,
-                "message": "kicad-cli not found in PATH",
-                "errorDetails": "Install KiCad and ensure kicad-cli is on PATH",
+                "message": kicad_cli_not_found_message(),
             }
         except Exception as e:
             logger.error(f"Error getting board 2D view: {e}")
