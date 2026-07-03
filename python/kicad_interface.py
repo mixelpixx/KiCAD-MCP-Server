@@ -36,8 +36,8 @@ if sys.platform == "win32":
 
 import sexpdata
 from annotations import AnnotationLoader
-from commands.wire_manager import WireManager
 from commands.schematic_handlers import SchematicHandlersMixin
+from commands.wire_manager import WireManager
 from resources.resource_definitions import RESOURCE_DEFINITIONS, handle_resource_read
 
 # Import tool schemas, resource definitions, and IPC API annotations
@@ -231,11 +231,19 @@ if KICAD_BACKEND in ("auto", "ipc"):
         logger.info(f"IPC backend connection failed: {e}")
         ipc_backend = None
 
-# Fall back to SWIG backend if IPC not available
-if not USE_IPC_BACKEND and KICAD_BACKEND != "ipc":
+# Import the SWIG pcbnew module whenever it isn't explicitly disabled.
+#
+# pcbnew is the *fallback* backend even when IPC is the primary one: an
+# IPC-pinned session that later downgrades to SWIG (GUI busy or closed, or the
+# #223 stale-board safety) still needs pcbnew to load/edit the board. The old
+# `not USE_IPC_BACKEND` guard skipped this import whenever IPC connected at
+# startup, so those later SWIG board ops hit "name 'pcbnew' is not defined" —
+# surfaced to callers as a bogus "dehydrated SWIG proxy that could not be
+# recovered" (schematic/file ops kept working because they never touch pcbnew).
+if KICAD_BACKEND != "ipc":
     # Import KiCAD's Python API (SWIG)
     try:
-        logger.info("Attempting to import pcbnew module (SWIG backend)...")
+        logger.info("Importing pcbnew module (SWIG backend / fallback)...")
         import pcbnew  # type: ignore
 
         logger.info(f"Successfully imported pcbnew module from: {pcbnew.__file__}")
@@ -275,13 +283,22 @@ Linux Troubleshooting:
 
         logger.error(help_message)
 
-        error_response = {
-            "success": False,
-            "message": "Failed to import pcbnew module - KiCAD Python API not found",
-            "errorDetails": f"Error: {str(e)}\n\n{help_message}\n\nPython sys.path:\n{chr(10).join(sys.path)}",
-        }
-        print(json.dumps(error_response))
-        sys.exit(1)
+        # A missing pcbnew is fatal only when there is no working IPC backend.
+        # If IPC connected, keep running IPC-only rather than killing the whole
+        # server — board SWIG fallback just won't be available.
+        if USE_IPC_BACKEND:
+            logger.warning(
+                "pcbnew (SWIG) could not be imported, but the IPC backend is "
+                "active — continuing IPC-only; SWIG board fallback is unavailable"
+            )
+        else:
+            error_response = {
+                "success": False,
+                "message": "Failed to import pcbnew module - KiCAD Python API not found",
+                "errorDetails": f"Error: {str(e)}\n\n{help_message}\n\nPython sys.path:\n{chr(10).join(sys.path)}",
+            }
+            print(json.dumps(error_response))
+            sys.exit(1)
     except Exception as e:
         logger.error(f"Unexpected error importing pcbnew: {e}")
         logger.error(traceback.format_exc())
