@@ -6,6 +6,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **KiCad install discovery is unified and finds relocated Windows installs**
+  (#286): `kicad-cli` resolution, symbol/python-path discovery, and footprint-dir
+  lookup each independently assumed KiCad lived under `C:\Program Files\KiCad`, so
+  a custom install root (the installer allows any; short roots like
+  `C:\KiCad\10.0` are common) got degraded discovery in three different ways. A
+  new shared helper `python/utils/kicad_roots.py` yields KiCad install roots
+  newest-version first from the Windows registry uninstall keys
+  (`InstallLocation`, authoritative for wherever the user installed), the
+  `C:\Program Files\KiCad\*` / `(x86)` globs, and common custom roots
+  (`C:\KiCad\*`), de-duplicated. `utils/kicad_cli.py`, `utils/platform_helper.py`,
+  and `commands/library.py` now build their Windows paths from it, so discovery
+  can no longer drift apart (the same unification #267 did for the three
+  `kicad-cli` resolvers). macOS/Linux behavior is unchanged.
+
 - **`create_project` writes a conformant KiCad 10 `.kicad_pro`** (#220): the
   project file was a hand-rolled 122-byte stub containing only
   `board.filename` and a `sheets` entry with the literal id `"root"`, so
@@ -145,7 +159,7 @@ the KiCad GUI connects later (reopen the project to adopt IPC).
   components via dynamic template injection** (#221, part B): when no placed
   `_TEMPLATE_*` donor existed, the legacy clone path used to call
   `DynamicSymbolLoader.load_symbol_dynamically`, which wrote a template
-  instance into the *file* mid-call and cloned onto a locally reloaded
+  instance into the _file_ mid-call and cloned onto a locally reloaded
   object — so callers following the normal add-then-save pattern saved
   their stale in-memory schematic, discarding the new component and
   leaving `_TEMPLATE_*` clutter behind. That branch is removed: template
