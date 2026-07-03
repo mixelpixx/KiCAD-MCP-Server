@@ -19,6 +19,8 @@ def test_reload_title_rejects_generic_or_destructive() -> None:
     assert not is_reload_confirmation_title("Confirmation")
     assert not is_reload_confirmation_title("Discard unsaved changes?")
     assert not is_reload_confirmation_title("Save changes before closing?")
+    assert not is_reload_confirmation_title("* FOG.kicad_sch - Schematic Editor")
+    assert not is_reload_confirmation_title("eeschema")
 
 
 def test_destructive_buttons_block_auto_confirm() -> None:

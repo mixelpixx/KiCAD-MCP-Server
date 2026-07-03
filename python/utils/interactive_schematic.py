@@ -75,10 +75,16 @@ _GENERIC_ONLY_TITLES = frozenset(
     }
 )
 
+# Main editor frames — not modal reload confirmations.
+_MAIN_WINDOW_TITLE_MARKERS = (
+    "Schematic Editor",
+    "eeschema",
+)
+
 # Title must match at least one reload-specific keyword (case-insensitive).
 _RELOAD_TITLE_KEYWORDS = re.compile(
-    r"(reload|revert|modified|changed|file change|schematic|"
-    r"neu laden|laden|geändert|verworfen|aktualis)",
+    r"(reload|revert|modified|changed|file change|"
+    r"neu laden|geändert|aktualis|reload schematic|schematic file|schematic modified)",
     re.IGNORECASE,
 )
 
@@ -94,6 +100,8 @@ def is_reload_confirmation_title(title: str) -> bool:
     if not title or not title.strip():
         return False
     if title.strip() in _GENERIC_ONLY_TITLES:
+        return False
+    if any(marker in title for marker in _MAIN_WINDOW_TITLE_MARKERS):
         return False
     if _DESTRUCTIVE_TITLE_KEYWORDS.search(title):
         return False
@@ -198,12 +206,12 @@ def reload_kicad_schematic() -> None:
             pass
         return buttons
 
-    def _scan_reload_dialogs() -> bool:
+    def _scan_reload_dialogs(skip_hwnd: Optional[int] = None) -> bool:
         confirmed = False
 
         def _check(hwnd: int, _: object) -> None:
             nonlocal confirmed
-            if confirmed:
+            if confirmed or hwnd == skip_hwnd:
                 return
             if not win32gui.IsWindowVisible(hwnd) or not _owned_by_kicad(hwnd):
                 return
@@ -234,7 +242,7 @@ def reload_kicad_schematic() -> None:
 
     for _ in range(8):
         time.sleep(0.15)
-        if _scan_reload_dialogs():
+        if _scan_reload_dialogs(skip_hwnd=schematic_hwnd):
             return
 
     logger.debug("reload_kicad_schematic: no reload confirmation dialog appeared after Revert")
