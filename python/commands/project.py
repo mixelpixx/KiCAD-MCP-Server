@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import pcbnew  # type: ignore
+from utils.kicad_project import write_kicad_pro
 
 logger = logging.getLogger("kicad_interface")
 
@@ -81,10 +82,10 @@ class ProjectCommands:
 
                 with open(schematic_path, "r", encoding="utf-8") as f:
                     content = f.read()
-                new_uuid = str(uuid_module.uuid4())
+                schematic_root_uuid = str(uuid_module.uuid4())
                 content = re.sub(
                     r"\(uuid [0-9a-fA-F-]+\)",
-                    f"(uuid {new_uuid})",
+                    f"(uuid {schematic_root_uuid})",
                     content,
                     count=1,  # Only replace first (schematic) UUID
                 )
@@ -99,7 +100,7 @@ class ProjectCommands:
                 )
                 import uuid as uuid_module
 
-                schematic_uuid = str(uuid_module.uuid4())
+                schematic_root_uuid = str(uuid_module.uuid4())
                 with open(schematic_path, "w", encoding="utf-8", newline="\n") as f:
                     # KiCad 10 schematic header (matches what eeschema writes for a
                     # new file). The older 20250114 token is the KiCad 9 format and
@@ -108,22 +109,19 @@ class ProjectCommands:
                         '(kicad_sch (version 20260306) (generator "eeschema")'
                         ' (generator_version "10.0")\n\n'
                     )
-                    f.write(f"  (uuid {schematic_uuid})\n\n")
+                    f.write(f"  (uuid {schematic_root_uuid})\n\n")
                     f.write('  (paper "A4")\n\n')
                     f.write("  (lib_symbols\n  )\n\n")
                     f.write('  (sheet_instances\n    (path "/" (page "1"))\n  )\n')
                     f.write(")\n")
 
-            # Create project file with schematic reference
-            with open(project_path, "w") as f:
-                f.write("{\n")
-                f.write('  "board": {\n')
-                f.write(f'    "filename": "{os.path.basename(board_path)}"\n')
-                f.write("  },\n")
-                f.write('  "sheets": [\n')
-                f.write(f'    ["root", "{os.path.basename(schematic_path)}"]\n')
-                f.write("  ]\n")
-                f.write("}\n")
+            # Write a conformant KiCad 10 .kicad_pro (issue #220). The old
+            # hand-rolled stub carried only board.filename plus a sheets entry
+            # with the literal id "root"; KiCad regenerated defaults on open and
+            # discarded any intended configuration. write_kicad_pro emits the
+            # full structure KiCad 10 itself writes for a new project, with the
+            # sheets entry pointing at the real schematic root-sheet UUID.
+            write_kicad_pro(project_path, sheet_uuid=schematic_root_uuid)
 
             self.board = board
 
