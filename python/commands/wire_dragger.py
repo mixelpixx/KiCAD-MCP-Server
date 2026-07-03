@@ -270,10 +270,13 @@ class WireDragger:
         at_k = _K["at"]
         mirror_k = _K["mirror"]
 
-        # Update rotation in (at x y rot)
+        # Update rotation in (at x y rot). KiCad writes symbol angles as
+        # integers (0/90/180/270), so normalize integral values to int to
+        # match eeschema's output exactly (avoids a spurious "90.0" token).
+        rot_val = int(new_rotation) if float(new_rotation).is_integer() else new_rotation
         for sub in item[1:]:
             if isinstance(sub, list) and sub and sub[0] == at_k and len(sub) >= 4:
-                sub[3] = new_rotation
+                sub[3] = rot_val
                 break
 
         # Remove existing (mirror ...) token(s)

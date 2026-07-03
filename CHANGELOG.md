@@ -20,11 +20,22 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Pin locations respect the owning unit of multi-unit symbols** (#239):
+  `get_schematic_pin_locations` / `get_pin_location` located every pin against
+  whichever placed `(symbol)` instance appeared first in file order, so for a
+  multi-unit part (e.g. a dual op-amp placed as separate units at different
+  positions) all pins collapsed onto that one unit's coordinates. Pins are now
+  tagged with their owning unit while parsing `lib_symbols` (the
+  `<name>_<unit>_<body>` sub-symbol), and each pin is located against the placed
+  instance carrying the matching `(unit N)` — with rotation/mirror read from that
+  same instance. Single-unit parts are unaffected (they fall back to the first
+  instance as before).
+
 - **Fallback schematic writer emits the KiCad 10 header** (#221, partial): the
   template-missing fallback in `create_schematic` and `create_project` wrote the
   stale KiCad 9 header `(version 20250114) (generator "KiCAD-MCP-Server")`. It
   now writes `(version 20260306) (generator "eeschema") (generator_version
-  "10.0")`, matching what eeschema writes for a new file. This covers only the
+"10.0")`, matching what eeschema writes for a new file. This covers only the
   fallback path; the main templates (which still carry the KiCad 9 version and
   the `_TEMPLATE_*` clone-source instances used by `add_schematic_component`)
   are tracked separately because rewriting them touches the component-cloning
@@ -107,6 +118,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
   the failure on a real-world user schematic.
 
 ### New MCP Tools
+
+- `close_project` (#225) — Symmetric counterpart to `open_project` /
+  `create_project`. Optionally saves the board (`save`, default `true`), then
+  drops the in-memory board (SWIG + IPC) and clears all per-project session
+  state (session-backend pin, disk signature, project paths). Lets an agent
+  hand control back so the user — or the agent itself — can edit project files
+  directly without a later MCP save clobbering those changes, which previously
+  required manual open/close choreography. If `save=true` and the save fails,
+  the close is refused so work is never silently lost; if `save=false` on a
+  board with unsaved changes, the close proceeds with a warning.
 
 - `add_gnd_stitching_vias` — Drop GND stitching vias across the board with
   collision checking against every non-GND segment, via, and pad on every

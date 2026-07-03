@@ -36,8 +36,8 @@ if sys.platform == "win32":
 
 import sexpdata
 from annotations import AnnotationLoader
-from commands.wire_manager import WireManager
 from commands.schematic_handlers import SchematicHandlersMixin
+from commands.wire_manager import WireManager
 from resources.resource_definitions import RESOURCE_DEFINITIONS, handle_resource_read
 
 # Import tool schemas, resource definitions, and IPC API annotations
@@ -182,9 +182,9 @@ utils_dir = os.path.join(os.path.dirname(__file__))
 if utils_dir not in sys.path:
     sys.path.insert(0, utils_dir)
 
-from utils.kicad_process import KiCADProcessManager, check_and_launch_kicad
-
 # Import platform helper and add KiCAD paths
+from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
+from utils.kicad_process import KiCADProcessManager, check_and_launch_kicad
 from utils.platform_helper import PlatformHelper
 
 logger.info(f"Detecting KiCAD Python paths for {PlatformHelper.get_platform_name()}...")
@@ -231,11 +231,19 @@ if KICAD_BACKEND in ("auto", "ipc"):
         logger.info(f"IPC backend connection failed: {e}")
         ipc_backend = None
 
-# Fall back to SWIG backend if IPC not available
-if not USE_IPC_BACKEND and KICAD_BACKEND != "ipc":
+# Import the SWIG pcbnew module whenever it isn't explicitly disabled.
+#
+# pcbnew is the *fallback* backend even when IPC is the primary one: an
+# IPC-pinned session that later downgrades to SWIG (GUI busy or closed, or the
+# #223 stale-board safety) still needs pcbnew to load/edit the board. The old
+# `not USE_IPC_BACKEND` guard skipped this import whenever IPC connected at
+# startup, so those later SWIG board ops hit "name 'pcbnew' is not defined" —
+# surfaced to callers as a bogus "dehydrated SWIG proxy that could not be
+# recovered" (schematic/file ops kept working because they never touch pcbnew).
+if KICAD_BACKEND != "ipc":
     # Import KiCAD's Python API (SWIG)
     try:
-        logger.info("Attempting to import pcbnew module (SWIG backend)...")
+        logger.info("Importing pcbnew module (SWIG backend / fallback)...")
         import pcbnew  # type: ignore
 
         logger.info(f"Successfully imported pcbnew module from: {pcbnew.__file__}")
@@ -275,13 +283,22 @@ Linux Troubleshooting:
 
         logger.error(help_message)
 
-        error_response = {
-            "success": False,
-            "message": "Failed to import pcbnew module - KiCAD Python API not found",
-            "errorDetails": f"Error: {str(e)}\n\n{help_message}\n\nPython sys.path:\n{chr(10).join(sys.path)}",
-        }
-        print(json.dumps(error_response))
-        sys.exit(1)
+        # A missing pcbnew is fatal only when there is no working IPC backend.
+        # If IPC connected, keep running IPC-only rather than killing the whole
+        # server — board SWIG fallback just won't be available.
+        if USE_IPC_BACKEND:
+            logger.warning(
+                "pcbnew (SWIG) could not be imported, but the IPC backend is "
+                "active — continuing IPC-only; SWIG board fallback is unavailable"
+            )
+        else:
+            error_response = {
+                "success": False,
+                "message": "Failed to import pcbnew module - KiCAD Python API not found",
+                "errorDetails": f"Error: {str(e)}\n\n{help_message}\n\nPython sys.path:\n{chr(10).join(sys.path)}",
+            }
+            print(json.dumps(error_response))
+            sys.exit(1)
     except Exception as e:
         logger.error(f"Unexpected error importing pcbnew: {e}")
         logger.error(traceback.format_exc())
@@ -425,6 +442,7 @@ class KiCADInterface(SchematicHandlersMixin):
             # Project commands
             "create_project": self._handle_create_project,
             "open_project": self._handle_open_project,
+            "close_project": self._handle_close_project,
             "save_project": self.project_commands.save_project,
             "snapshot_project": self._handle_snapshot_project,
             "get_project_info": self.project_commands.get_project_info,
@@ -669,6 +687,17 @@ class KiCADInterface(SchematicHandlersMixin):
         "ipc_save_board",
     }
 
+    # File-answerable READ commands eligible for SWIG/file fallback: when their IPC
+    # handler reports that the live KiCad has no document open (``_no_open_document``),
+    # the dispatcher re-serves them from the on-disk .kicad_pcb via SWIG instead of
+    # surfacing a misleading "not found" or a false-success zeroed payload. Extend this
+    # set by having the corresponding _ipc_* handler emit ``_no_open_document`` on the
+    # no-board condition.
+    FILE_ANSWERABLE_READS = {
+        "get_board_info",
+        "get_component_properties",
+    }
+
     @staticmethod
     def _normalize_board_path(path: Any) -> Optional[str]:
         """Normalize a board file path for cross-backend comparison."""
@@ -690,6 +719,23 @@ class KiCADInterface(SchematicHandlersMixin):
             logger.debug(f"Could not compare IPC board path: {e}")
             return False
         return self._normalize_board_path(open_path) == target
+
+    def _ipc_has_open_board(self) -> bool:
+        """True only when the live KiCad GUI confirms a .kicad_pcb is open.
+
+        Returns False when no document is open OR when the running KiCad cannot answer
+        GetOpenDocuments (older/limited kiapi — the "no handler available for
+        GetOpenDocuments" case). In both situations IPC cannot reliably serve a board
+        read, so file-answerable reads should be served from the SWIG/file backend.
+        """
+        backend = getattr(self, "ipc_backend", None)
+        if not backend:
+            return False
+        try:
+            return backend.get_open_board_path() is not None
+        except Exception as e:  # pragma: no cover - defensive
+            logger.debug(f"_ipc_has_open_board probe failed: {e}")
+            return False
 
     def _pin_session_backend(self, board_path: Any) -> None:
         """Pin the loaded project's lifecycle to one backend (issue #223).
@@ -863,12 +909,15 @@ class KiCADInterface(SchematicHandlersMixin):
             # A session pinned to SWIG never routes board commands over IPC,
             # even when IPC is connected — the GUI may hold a stale copy of
             # the board and an IPC save would clobber our edits (#223).
-            if (
+            swig_fallback_note: Optional[str] = None
+            ipc_can_serve = (
                 self.use_ipc
                 and self.ipc_board_api
                 and command in self.IPC_CAPABLE_COMMANDS
                 and self._session_allows_ipc()
-            ):
+            )
+
+            if ipc_can_serve:
                 ipc_handler_name = self.IPC_CAPABLE_COMMANDS[command]
                 ipc_handler = getattr(self, ipc_handler_name, None)
 
@@ -876,13 +925,27 @@ class KiCADInterface(SchematicHandlersMixin):
                     logger.info(f"Using IPC backend for {command} (real-time sync)")
                     result = ipc_handler(params)
 
-                    # Add indicator that IPC was used
-                    if isinstance(result, dict):
-                        result["_backend"] = "ipc"
-                        result["_realtime"] = True
+                    # Reactive fallback: if an IPC read could not answer because no
+                    # document is open, retry on the SWIG/file backend rather than
+                    # surfacing the misleading IPC failure to the caller.
+                    no_open_doc = (
+                        isinstance(result, dict)
+                        and not result.get("success")
+                        and result.get("_no_open_document")
+                    )
+                    if command in self.FILE_ANSWERABLE_READS and no_open_doc:
+                        swig_fallback_note = (
+                            "the live KiCad reported no open document; answered from "
+                            "the file (SWIG) backend instead of IPC"
+                        )
+                    else:
+                        # Add indicator that IPC was used
+                        if isinstance(result, dict):
+                            result["_backend"] = "ipc"
+                            result["_realtime"] = True
 
-                    logger.debug(f"IPC command result: {result}")
-                    return result
+                        logger.debug(f"IPC command result: {result}")
+                        return result
 
             # Fall back to SWIG-based handler
             if self.use_ipc and command in self.IPC_CAPABLE_COMMANDS and self._session_allows_ipc():
@@ -919,6 +982,10 @@ class KiCADInterface(SchematicHandlersMixin):
                             "is not used to avoid divergent board state (issue #223). "
                             "Reopen the project while it is open in the GUI to pin IPC."
                         )
+                    # A no-open-document fallback is the more specific explanation when
+                    # an IPC read was redirected to SWIG for this command.
+                    if swig_fallback_note:
+                        result["_backend_note"] = swig_fallback_note
 
                 # Update board reference if command was successful
                 if result.get("success", False):
@@ -1431,6 +1498,106 @@ class KiCADInterface(SchematicHandlersMixin):
                 or params.get("filename")
             )
             self._refresh_symbol_library_for_project(project_path)
+        return result
+
+    def _clear_project_state(self) -> None:
+        """Drop the in-memory board (SWIG + IPC) and reset all per-project session
+        state, returning the interface to its just-initialized, no-project state.
+
+        Symmetric with the state that open_project / create_project establish, so
+        a subsequent open/create starts from a clean slate (issue #225).
+        """
+        self.board = None
+        # Propagate the None board to every command handler (project, board,
+        # component, routing, design-rule, export, freerouting).
+        self._update_command_handlers()
+        self.ipc_board_api = None
+        self.session_backend = None
+        self.session_board_path = None
+        self._board_disk_signature = None
+        self._last_auto_save_status = None
+        self.project_filename = None
+        self._current_project_path = None
+
+    def _handle_close_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Close the currently loaded project (issue #225).
+
+        Symmetric counterpart to open_project / create_project: optionally save,
+        then drop the in-memory board (SWIG + IPC) and clear all session state so
+        the agent can orchestrate file-based edits without the MCP holding a
+        board that a later save could clobber.
+
+        params:
+          save (bool, default True): save the board to disk before closing. If
+            the save fails, the close is refused so work is never silently lost.
+            When False and the board has unsaved changes, the close proceeds but
+            the response warns that in-memory changes were discarded.
+        """
+        save = params.get("save", True)
+        board_path = self._current_board_path()
+        loaded = board_path is not None or self.board is not None
+
+        if not loaded:
+            # Idempotent: nothing to close. Still scrub any lingering state.
+            self._clear_project_state()
+            return {
+                "success": True,
+                "message": "No project was loaded; nothing to close",
+                "closed": False,
+                "saved": False,
+            }
+
+        warnings = []
+        saved = False
+        saved_path = None
+
+        if save and self.board is not None:
+            try:
+                save_result = self.project_commands.save_project({})
+            except Exception as e:  # noqa: BLE001 - surfaced to caller below
+                logger.error("close_project: save failed: %s", e)
+                return {
+                    "success": False,
+                    "message": "Refusing to close: saving the project failed",
+                    "errorDetails": str(e),
+                    "closed": False,
+                    "saved": False,
+                }
+            if not save_result.get("success"):
+                return {
+                    "success": False,
+                    "message": "Refusing to close: saving the project failed",
+                    "errorDetails": save_result.get("errorDetails") or save_result.get("message"),
+                    "closed": False,
+                    "saved": False,
+                }
+            saved = True
+            saved_path = (save_result.get("project") or {}).get("path")
+        elif not save:
+            dirty = self._dirty_state(board_path)
+            if dirty.get("dirty"):
+                warnings.append(
+                    "Project closed without saving (save=False); in-memory changes "
+                    "since the last save were discarded."
+                )
+
+        closed_path = board_path or self.session_board_path
+        self._clear_project_state()
+
+        result: Dict[str, Any] = {
+            "success": True,
+            "message": (
+                f"Closed project: {os.path.basename(closed_path)}"
+                if closed_path
+                else "Closed project"
+            ),
+            "closed": True,
+            "saved": saved,
+        }
+        if saved_path:
+            result["savedPath"] = saved_path
+        if warnings:
+            result["warnings"] = warnings
         return result
 
     def _handle_place_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -2146,36 +2313,13 @@ class KiCADInterface(SchematicHandlersMixin):
 
     @staticmethod
     def _find_kicad_cli_static() -> Optional[str]:
-        """Return path to kicad-cli executable, or None."""
-        import platform
-        import shutil
+        """Return path to kicad-cli executable, or None.
 
-        cli = shutil.which("kicad-cli")
-        if cli:
-            return cli
-
-        system = platform.system()
-        if system == "Windows":
-            candidates = [
-                r"C:\Program Files\KiCad\9.0\bin\kicad-cli.exe",
-                r"C:\Program Files\KiCad\8.0\bin\kicad-cli.exe",
-                r"C:\Program Files (x86)\KiCad\9.0\bin\kicad-cli.exe",
-                r"C:\Program Files (x86)\KiCad\8.0\bin\kicad-cli.exe",
-            ]
-        elif system == "Darwin":
-            candidates = [
-                "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
-                "/usr/local/bin/kicad-cli",
-            ]
-        else:
-            candidates = [
-                "/usr/bin/kicad-cli",
-                "/usr/local/bin/kicad-cli",
-            ]
-        for path in candidates:
-            if os.path.exists(path):
-                return path
-        return None
+        Delegates to the centralized resolver (env override -> interpreter-adjacent ->
+        PATH -> known install dirs) so kicad-cli is found even when KiCad's bin/ is not
+        on PATH (the default on Windows).
+        """
+        return resolve_kicad_cli()
 
     # ------------------------------------------------------------------
 
@@ -2198,7 +2342,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             fmt_map = {
                 "KiCad": "kicadxml",
@@ -2233,7 +2377,7 @@ class KiCADInterface(SchematicHandlersMixin):
                 }
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 60 seconds"}
         except Exception as e:
@@ -2266,7 +2410,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_dir = str(Path(output_dir).expanduser().resolve())
             Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -2334,7 +2478,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -2366,7 +2510,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_dir = str(Path(output_dir).expanduser().resolve())
             # kicad-cli drill requires the output dir path to end with a separator
@@ -2416,7 +2560,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 120 seconds"}
         except Exception as e:
@@ -2449,7 +2593,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -2493,7 +2637,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -2525,7 +2669,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -2561,7 +2705,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -2594,7 +2738,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -2616,7 +2760,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -2649,7 +2793,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -2686,7 +2830,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -2720,7 +2864,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -2765,7 +2909,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -2799,7 +2943,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -2870,7 +3014,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -2904,7 +3048,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -2974,7 +3118,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3008,7 +3152,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -3077,7 +3221,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3113,7 +3257,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -3178,7 +3322,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3220,7 +3364,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -3304,7 +3448,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 300 seconds"}
         except Exception as e:
@@ -3335,7 +3479,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -3387,7 +3531,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3418,7 +3562,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -3468,7 +3612,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3498,7 +3642,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_dir = str(Path(output_dir).expanduser().resolve())
             Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -3545,7 +3689,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3575,7 +3719,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_dir = str(Path(output_dir).expanduser().resolve())
             Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -3621,7 +3765,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3651,7 +3795,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_dir = str(Path(output_dir).expanduser().resolve())
             Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -3693,7 +3837,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3723,7 +3867,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_dir = str(Path(output_dir).expanduser().resolve())
             Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -3770,7 +3914,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputDir": output_dir, "files": files}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3801,7 +3945,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             output_path = str(Path(output_path).expanduser().resolve())
             parent = Path(output_path).parent
@@ -3823,7 +3967,7 @@ class KiCADInterface(SchematicHandlersMixin):
             return {"success": True, "outputPath": output_path}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 180 seconds"}
         except Exception as e:
@@ -3850,7 +3994,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             kicad_cli = self._find_kicad_cli_static()
             if not kicad_cli:
-                return {"success": False, "message": "kicad-cli not found in PATH"}
+                return {"success": False, "message": kicad_cli_not_found_message()}
 
             with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tmp:
                 tmp_path = tmp.name
@@ -3909,7 +4053,7 @@ class KiCADInterface(SchematicHandlersMixin):
                     pass
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "kicad-cli timed out after 60 seconds"}
         except Exception as e:
@@ -4525,6 +4669,19 @@ print("ok")
         """IPC handler for get_board_info"""
         try:
             size = self.ipc_board_api.get_size()
+
+            # A live KiCad with no open document returns a zeroed size carrying an
+            # error string. That is a failure, not success — never report
+            # success:true with zeroed counts + an embedded error (contract
+            # violation). Signal _no_open_document so the dispatcher can fall back
+            # to the SWIG/file backend.
+            if isinstance(size, dict) and size.get("error"):
+                return {
+                    "success": False,
+                    "message": f"No board open in the live KiCad: {size['error']}",
+                    "_no_open_document": True,
+                }
+
             components = self.ipc_board_api.list_components()
             tracks = self.ipc_board_api.get_tracks()
             vias = self.ipc_board_api.get_vias()
@@ -4544,7 +4701,7 @@ print("ok")
             }
         except Exception as e:
             logger.error(f"IPC get_board_info error: {e}")
-            return {"success": False, "message": str(e)}
+            return {"success": False, "message": str(e), "_no_open_document": True}
 
     def _ipc_place_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for place_component - places component with real-time UI update"""
@@ -4943,6 +5100,17 @@ print("ok")
                     break
 
             if not target:
+                # Distinguish "no board open in the live KiCad" from "this component
+                # is genuinely absent". An empty component list with no open document
+                # means IPC simply had nothing loaded — signal _no_open_document so the
+                # dispatcher falls back to the SWIG/file backend instead of reporting a
+                # misleading "not found".
+                if not components and not self._ipc_has_open_board():
+                    return {
+                        "success": False,
+                        "message": "No board open in the live KiCad",
+                        "_no_open_document": True,
+                    }
                 return {"success": False, "message": f"Component {reference} not found"}
 
             # If IPC didn't provide bounding box, try SWIG backend as fallback
@@ -4959,7 +5127,7 @@ print("ok")
             return {"success": True, "component": target}
         except Exception as e:
             logger.error(f"IPC get_component_properties error: {e}")
-            return {"success": False, "message": str(e)}
+            return {"success": False, "message": str(e), "_no_open_document": True}
 
     def _ipc_set_footprint_type(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for set_footprint_type.
