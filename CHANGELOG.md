@@ -6,6 +6,21 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **New projects and schematics start blank instead of seeding `_TEMPLATE_*`
+  symbols** (#221, #243): `create_project` and `create_schematic` copied
+  `template_with_symbols_expanded.kicad_sch` / `template_with_symbols.kicad_sch`,
+  which pre-seeded `Device:R/C/LED` `lib_symbols` and placed `_TEMPLATE_*`
+  instances into every new file. Those symbols existed only as clone sources for
+  the legacy `ComponentManager.add_component` path; the live
+  `add_schematic_component` tool synthesizes its own `lib_symbols` via the
+  dynamic loader (and the legacy fallback was removed in #288), so the seeds only
+  leaked into user files. Both tools now copy a new blank KiCad 10 template
+  (`python/templates/blank.kicad_sch`: `(version 20260306) (generator
+"eeschema")`, empty `lib_symbols`, no placed symbols).
+  `template_with_symbols.kicad_sch` is kept unchanged in-repo as a test fixture.
+  A regression test asserts a created schematic contains no `_TEMPLATE_`
+  references and no seeded `lib_symbols` entries.
+
 - **`create_project` writes a conformant KiCad 10 `.kicad_pro`** (#220): the
   project file was a hand-rolled 122-byte stub containing only
   `board.filename` and a `sheets` entry with the literal id `"root"`, so
@@ -145,7 +160,7 @@ the KiCad GUI connects later (reopen the project to adopt IPC).
   components via dynamic template injection** (#221, part B): when no placed
   `_TEMPLATE_*` donor existed, the legacy clone path used to call
   `DynamicSymbolLoader.load_symbol_dynamically`, which wrote a template
-  instance into the *file* mid-call and cloned onto a locally reloaded
+  instance into the _file_ mid-call and cloned onto a locally reloaded
   object — so callers following the normal add-then-save pattern saved
   their stale in-memory schematic, discarding the new component and
   leaving `_TEMPLATE_*` clutter behind. That branch is removed: template

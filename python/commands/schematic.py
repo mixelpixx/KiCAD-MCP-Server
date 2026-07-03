@@ -19,12 +19,17 @@ class SchematicManager:
     ) -> Any:
         """Create a new empty schematic from template"""
         try:
-            # Determine template path (use template_with_symbols for component cloning support)
+            # Determine template path. New schematics start from a blank KiCad 10
+            # file (empty lib_symbols, no placed symbols) rather than the seeded
+            # template_with_symbols.kicad_sch — the live add tool synthesizes its
+            # own lib_symbols via the dynamic loader, so the pre-seeded
+            # _TEMPLATE_* symbols are not needed and only leaked into user files
+            # (issue #221, also closes #243).
             template_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
                 "..",
                 "templates",
-                "template_with_symbols.kicad_sch",
+                "blank.kicad_sch",
             )
 
             # Determine output path. A caller may pass `path` as either a
