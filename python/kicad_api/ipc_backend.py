@@ -17,12 +17,22 @@ Key Benefits over SWIG:
 import logging
 import os
 import platform
+import threading
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from kicad_api.base import APINotAvailableError, BoardAPI, ConnectionError, KiCADBackend
 
 logger = logging.getLogger(__name__)
+
+# Hard wall-clock cap for a single IPC connection attempt. kipy dials with
+# pynng's block_on_dial=True, which has NO timeout (only send/recv are capped),
+# so if KiCad's GUI thread is busy (e.g. reloading a library we just wrote to,
+# or any modal/progress state) and not servicing its socket, a connect can hang
+# until the client's ~240s watchdog fires. Bounding it here turns that into a
+# fast fall-back to the SWIG/file backend instead of an apparent freeze.
+IPC_CONNECT_TIMEOUT_S = float(os.getenv("KICAD_IPC_CONNECT_TIMEOUT", "5"))
 
 # Unit conversion constant: KiCAD IPC uses nanometers internally
 MM_TO_NM = 1_000_000
@@ -85,20 +95,14 @@ class IPCBackend(KiCADBackend):
             last_error = None
             for path in socket_paths_to_try:
                 try:
-                    if path:
-                        logger.debug(f"Trying socket path: {path}")
-                        self._kicad = KiCad(socket_path=path)
-                    else:
-                        logger.debug("Trying auto-detection")
-                        self._kicad = KiCad()
-
-                    # Verify connection with ping (ping returns None on success)
-                    self._kicad.ping()
-                    logger.info(f"Connected via socket: {path or 'auto-detected'}")
+                    logger.debug(f"Trying socket path: {path or 'auto-detect'}")
+                    kicad, elapsed = self._open_with_timeout(KiCad, path, IPC_CONNECT_TIMEOUT_S)
+                    self._kicad = kicad
+                    logger.info(f"Connected via socket: {path or 'auto-detected'} ({elapsed:.2f}s)")
                     break
                 except Exception as e:
                     last_error = e
-                    logger.debug(f"Failed to connect via {path}: {e}")
+                    logger.debug(f"Failed to connect via {path or 'auto-detect'}: {e}")
                     continue
             else:
                 # None of the paths worked
@@ -122,6 +126,43 @@ class IPCBackend(KiCADBackend):
                 "Preferences > Plugins > Enable IPC API Server"
             )
             raise ConnectionError(f"IPC connection failed: {e}") from e
+
+    def _open_with_timeout(self, KiCad: Any, path: Optional[str], timeout_s: float):
+        """Open one kipy connection and ping it, bounded by a wall-clock timeout.
+
+        kipy's dial uses pynng block_on_dial=True (no timeout), so the open+ping
+        can hang if KiCad is busy and not servicing its socket. Run it in a
+        daemon thread and give up after ``timeout_s`` — a stuck thread is
+        orphaned (harmless: daemon, dies with the process) rather than blocking
+        the command loop until the client's ~240s watchdog fires.
+
+        Returns (kicad, elapsed_seconds). Raises TimeoutError on overrun, or the
+        underlying exception if the attempt failed fast.
+        """
+        result: Dict[str, Any] = {}
+        start = time.monotonic()
+
+        def worker() -> None:
+            try:
+                kicad = KiCad(socket_path=path) if path else KiCad()
+                kicad.ping()  # returns None on success, raises on failure
+                result["kicad"] = kicad
+            except Exception as e:  # noqa: BLE001 — surfaced to caller below
+                result["error"] = e
+
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+        t.join(timeout_s)
+        elapsed = time.monotonic() - start
+
+        if t.is_alive():
+            raise TimeoutError(
+                f"IPC connect exceeded {timeout_s:.1f}s (KiCad busy or not servicing "
+                f"its socket); falling back to SWIG"
+            )
+        if "error" in result:
+            raise result["error"]
+        return result["kicad"], elapsed
 
     def _get_kicad_version(self) -> str:
         """Get KiCAD version string."""
