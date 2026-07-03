@@ -119,6 +119,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New MCP Tools
 
+- `close_project` (#225) — Symmetric counterpart to `open_project` /
+  `create_project`. Optionally saves the board (`save`, default `true`), then
+  drops the in-memory board (SWIG + IPC) and clears all per-project session
+  state (session-backend pin, disk signature, project paths). Lets an agent
+  hand control back so the user — or the agent itself — can edit project files
+  directly without a later MCP save clobbering those changes, which previously
+  required manual open/close choreography. If `save=true` and the save fails,
+  the close is refused so work is never silently lost; if `save=false` on a
+  board with unsaved changes, the close proceeds with a warning.
+
 - `add_gnd_stitching_vias` — Drop GND stitching vias across the board with
   collision checking against every non-GND segment, via, and pad on every
   copper layer. PTH vias penetrate the full stackup, so an F.Cu-only check

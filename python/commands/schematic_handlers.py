@@ -18,7 +18,7 @@ import subprocess
 import tempfile
 import traceback
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import pcbnew
 import sexpdata
