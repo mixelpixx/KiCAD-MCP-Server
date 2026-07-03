@@ -309,7 +309,12 @@ class TestAddComponentMirrorParam:
     'mirror': 'x' and then asserts something against the resulting schematic
     cannot accidentally pass for the wrong reason (the symbol ends up
     unmirrored). If/when add_component grows real mirror support, update both
-    tests together — the second test then becomes the positive assertion."""
+    tests together — the second test then becomes the positive assertion.
+
+    The schematic is seeded from template_with_symbols.kicad_sch because the
+    legacy clone path requires a placed _TEMPLATE_* donor (issue #221 part B
+    removed the dynamic-injection fallback, which silently lost components
+    for add-then-save callers)."""
 
     def setup_method(self) -> None:
         from commands.component_schematic import ComponentManager
@@ -335,7 +340,7 @@ class TestAddComponentMirrorParam:
 
     def test_mirror_x_arg_is_silently_dropped(self, tmp_path: Any) -> None:
         sch = tmp_path / "mirror_x.kicad_sch"
-        shutil.copy(EMPTY_SCH, sch)
+        shutil.copy(TEMPLATES_DIR / "template_with_symbols.kicad_sch", sch)
         self._add(sch, "x")
         text = sch.read_text()
         assert "(mirror x)" not in text, (
@@ -346,7 +351,7 @@ class TestAddComponentMirrorParam:
 
     def test_mirror_y_arg_is_silently_dropped(self, tmp_path: Any) -> None:
         sch = tmp_path / "mirror_y.kicad_sch"
-        shutil.copy(EMPTY_SCH, sch)
+        shutil.copy(TEMPLATES_DIR / "template_with_symbols.kicad_sch", sch)
         self._add(sch, "y")
         text = sch.read_text()
         assert "(mirror y)" not in text, (

@@ -20,6 +20,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Legacy `ComponentManager.add_component` no longer silently loses
+  components via dynamic template injection** (#221, part B): when no placed
+  `_TEMPLATE_*` donor existed, the legacy clone path used to call
+  `DynamicSymbolLoader.load_symbol_dynamically`, which wrote a template
+  instance into the *file* mid-call and cloned onto a locally reloaded
+  object — so callers following the normal add-then-save pattern saved
+  their stale in-memory schematic, discarding the new component and
+  leaving `_TEMPLATE_*` clutter behind. That branch is removed: template
+  lookup is now read-only (`find_template`), a schematic without donors
+  gets a clear error pointing at the production `add_schematic_component`
+  path (which works on any file), and the fixture-based clone path is
+  unchanged. `add_component` is deprecated for general use; the
+  remove/update/get/search helpers are unaffected.
+
 - **Pin locations respect the owning unit of multi-unit symbols** (#239):
   `get_schematic_pin_locations` / `get_pin_location` located every pin against
   whichever placed `(symbol)` instance appeared first in file order, so for a
