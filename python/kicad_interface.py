@@ -686,6 +686,17 @@ class KiCADInterface(SchematicHandlersMixin):
         "ipc_save_board",
     }
 
+    # File-answerable READ commands eligible for SWIG/file fallback: when their IPC
+    # handler reports that the live KiCad has no document open (``_no_open_document``),
+    # the dispatcher re-serves them from the on-disk .kicad_pcb via SWIG instead of
+    # surfacing a misleading "not found" or a false-success zeroed payload. Extend this
+    # set by having the corresponding _ipc_* handler emit ``_no_open_document`` on the
+    # no-board condition.
+    FILE_ANSWERABLE_READS = {
+        "get_board_info",
+        "get_component_properties",
+    }
+
     @staticmethod
     def _normalize_board_path(path: Any) -> Optional[str]:
         """Normalize a board file path for cross-backend comparison."""
@@ -707,6 +718,23 @@ class KiCADInterface(SchematicHandlersMixin):
             logger.debug(f"Could not compare IPC board path: {e}")
             return False
         return self._normalize_board_path(open_path) == target
+
+    def _ipc_has_open_board(self) -> bool:
+        """True only when the live KiCad GUI confirms a .kicad_pcb is open.
+
+        Returns False when no document is open OR when the running KiCad cannot answer
+        GetOpenDocuments (older/limited kiapi — the "no handler available for
+        GetOpenDocuments" case). In both situations IPC cannot reliably serve a board
+        read, so file-answerable reads should be served from the SWIG/file backend.
+        """
+        backend = getattr(self, "ipc_backend", None)
+        if not backend:
+            return False
+        try:
+            return backend.get_open_board_path() is not None
+        except Exception as e:  # pragma: no cover - defensive
+            logger.debug(f"_ipc_has_open_board probe failed: {e}")
+            return False
 
     def _pin_session_backend(self, board_path: Any) -> None:
         """Pin the loaded project's lifecycle to one backend (issue #223).
@@ -880,12 +908,15 @@ class KiCADInterface(SchematicHandlersMixin):
             # A session pinned to SWIG never routes board commands over IPC,
             # even when IPC is connected — the GUI may hold a stale copy of
             # the board and an IPC save would clobber our edits (#223).
-            if (
+            swig_fallback_note: Optional[str] = None
+            ipc_can_serve = (
                 self.use_ipc
                 and self.ipc_board_api
                 and command in self.IPC_CAPABLE_COMMANDS
                 and self._session_allows_ipc()
-            ):
+            )
+
+            if ipc_can_serve:
                 ipc_handler_name = self.IPC_CAPABLE_COMMANDS[command]
                 ipc_handler = getattr(self, ipc_handler_name, None)
 
@@ -893,13 +924,27 @@ class KiCADInterface(SchematicHandlersMixin):
                     logger.info(f"Using IPC backend for {command} (real-time sync)")
                     result = ipc_handler(params)
 
-                    # Add indicator that IPC was used
-                    if isinstance(result, dict):
-                        result["_backend"] = "ipc"
-                        result["_realtime"] = True
+                    # Reactive fallback: if an IPC read could not answer because no
+                    # document is open, retry on the SWIG/file backend rather than
+                    # surfacing the misleading IPC failure to the caller.
+                    no_open_doc = (
+                        isinstance(result, dict)
+                        and not result.get("success")
+                        and result.get("_no_open_document")
+                    )
+                    if command in self.FILE_ANSWERABLE_READS and no_open_doc:
+                        swig_fallback_note = (
+                            "the live KiCad reported no open document; answered from "
+                            "the file (SWIG) backend instead of IPC"
+                        )
+                    else:
+                        # Add indicator that IPC was used
+                        if isinstance(result, dict):
+                            result["_backend"] = "ipc"
+                            result["_realtime"] = True
 
-                    logger.debug(f"IPC command result: {result}")
-                    return result
+                        logger.debug(f"IPC command result: {result}")
+                        return result
 
             # Fall back to SWIG-based handler
             if self.use_ipc and command in self.IPC_CAPABLE_COMMANDS and self._session_allows_ipc():
@@ -936,6 +981,10 @@ class KiCADInterface(SchematicHandlersMixin):
                             "is not used to avoid divergent board state (issue #223). "
                             "Reopen the project while it is open in the GUI to pin IPC."
                         )
+                    # A no-open-document fallback is the more specific explanation when
+                    # an IPC read was redirected to SWIG for this command.
+                    if swig_fallback_note:
+                        result["_backend_note"] = swig_fallback_note
 
                 # Update board reference if command was successful
                 if result.get("success", False):
@@ -4542,6 +4591,19 @@ print("ok")
         """IPC handler for get_board_info"""
         try:
             size = self.ipc_board_api.get_size()
+
+            # A live KiCad with no open document returns a zeroed size carrying an
+            # error string. That is a failure, not success — never report
+            # success:true with zeroed counts + an embedded error (contract
+            # violation). Signal _no_open_document so the dispatcher can fall back
+            # to the SWIG/file backend.
+            if isinstance(size, dict) and size.get("error"):
+                return {
+                    "success": False,
+                    "message": f"No board open in the live KiCad: {size['error']}",
+                    "_no_open_document": True,
+                }
+
             components = self.ipc_board_api.list_components()
             tracks = self.ipc_board_api.get_tracks()
             vias = self.ipc_board_api.get_vias()
@@ -4561,7 +4623,7 @@ print("ok")
             }
         except Exception as e:
             logger.error(f"IPC get_board_info error: {e}")
-            return {"success": False, "message": str(e)}
+            return {"success": False, "message": str(e), "_no_open_document": True}
 
     def _ipc_place_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for place_component - places component with real-time UI update"""
@@ -4960,6 +5022,17 @@ print("ok")
                     break
 
             if not target:
+                # Distinguish "no board open in the live KiCad" from "this component
+                # is genuinely absent". An empty component list with no open document
+                # means IPC simply had nothing loaded — signal _no_open_document so the
+                # dispatcher falls back to the SWIG/file backend instead of reporting a
+                # misleading "not found".
+                if not components and not self._ipc_has_open_board():
+                    return {
+                        "success": False,
+                        "message": "No board open in the live KiCad",
+                        "_no_open_document": True,
+                    }
                 return {"success": False, "message": f"Component {reference} not found"}
 
             # If IPC didn't provide bounding box, try SWIG backend as fallback
@@ -4976,7 +5049,7 @@ print("ok")
             return {"success": True, "component": target}
         except Exception as e:
             logger.error(f"IPC get_component_properties error: {e}")
-            return {"success": False, "message": str(e)}
+            return {"success": False, "message": str(e), "_no_open_document": True}
 
     def _ipc_set_footprint_type(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for set_footprint_type.

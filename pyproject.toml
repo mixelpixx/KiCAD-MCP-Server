@@ -41,3 +41,11 @@ module = [
     "PIL.*",
 ]
 ignore_missing_imports = true
+
+# SchematicHandlersMixin relies on attributes (e.g. self.board) provided by the host
+# KiCADInterface it is mixed into, so checking it standalone — or as a followed import
+# from another module — cannot determine their types. Suppress the resulting has-type
+# noise here so unrelated modules that merely import it are not blocked by it.
+[[tool.mypy.overrides]]
+module = ["commands.schematic_handlers"]
+disable_error_code = ["has-type"]
