@@ -4,6 +4,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- **`create_project` writes a conformant KiCad 10 `.kicad_pro`** (#220): the
+  project file was a hand-rolled 122-byte stub containing only
+  `board.filename` and a `sheets` entry with the literal id `"root"`, so
+  KiCad regenerated defaults on open and discarded any intended
+  configuration. A new writer (`python/utils/kicad_project.py`) emits the
+  full structure KiCad 10 itself produces for a new project — captured from
+  pcbnew's own `SETTINGS_MANAGER.SaveProject()` output (`meta.version 3`,
+  all twelve sections, the stock Default net class) — with `sheets` carrying
+  the real schematic root-sheet UUID. Verified against real KiCad 10:
+  `SETTINGS_MANAGER.LoadProject` opens the generated file, and project ERC
+  runs clean.
+
 ## [2.3.0] - 2026-07-03
 
 The first tagged release. Highlights: both KiCad 10 schematic-corruption
