@@ -7,6 +7,7 @@ Uses S-expression parsing to extract pin data from symbol definitions.
 
 import logging
 import math
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -186,6 +187,86 @@ class PinLocator:
             logger.error(traceback.format_exc())
             return {}
 
+    def get_pin_unit_map(self, schematic_path: Path, lib_id: str) -> Dict[str, int]:
+        """
+        Return {pin_number: unit} for a symbol, read from the schematic's
+        lib_symbols section.
+
+        KiCad stores pins inside per-unit sub-symbols named ``<name>_<unit>_<style>``
+        (e.g. ``NE5532_1_1`` holds unit 1's pins, ``NE5532_3_1`` unit 3's).
+        Sub-symbol unit ``0`` holds graphics/pins shared across every unit.
+
+        This lets get_pin_location pick the correct placed instance for a pin on a
+        multi-unit symbol, where each unit is a separate (symbol ...) placement with
+        the same reference but its own (unit N) and (at ...).
+
+        Returns an empty dict on failure — callers then fall back to unit-agnostic
+        (first-instance) behaviour.
+        """
+        cache_key = f"unitmap::{schematic_path}:{lib_id}"
+        if cache_key in self.pin_definition_cache:
+            return self.pin_definition_cache[cache_key]
+
+        result: Dict[str, int] = {}
+        try:
+            with open(schematic_path, "r", encoding="utf-8") as f:
+                sch_data = sexpdata.loads(f.read())
+
+            lib_symbols = None
+            for item in sch_data:
+                if isinstance(item, list) and item and item[0] == Symbol("lib_symbols"):
+                    lib_symbols = item
+                    break
+            if not lib_symbols:
+                return result
+
+            # Locate the symbol definition using the same exact-then-bare-name
+            # matching strategy as get_symbol_pins.
+            bare_name = lib_id.split(":")[-1] if ":" in lib_id else lib_id
+            best_match = None
+            for item in lib_symbols[1:]:
+                if not (isinstance(item, list) and len(item) > 1 and item[0] == Symbol("symbol")):
+                    continue
+                symbol_name = str(item[1]).strip('"')
+                if symbol_name == lib_id:
+                    best_match = item
+                    break
+                if best_match is None:
+                    sn_bare = symbol_name.split(":")[-1] if ":" in symbol_name else symbol_name
+                    if sn_bare == bare_name or (
+                        sn_bare.startswith(bare_name)
+                        and len(sn_bare) > len(bare_name)
+                        and sn_bare[len(bare_name)] == "_"
+                        and sn_bare[len(bare_name) + 1 :].isdigit()
+                    ):
+                        best_match = item
+            if best_match is None:
+                return result
+
+            # Walk sub-symbols "<name>_<unit>_<style>" and map each pin's number → unit.
+            sub_re = re.compile(r"_(\d+)_\d+$")
+            for sub in best_match[2:]:
+                if not (isinstance(sub, list) and sub and sub[0] == Symbol("symbol")):
+                    continue
+                sub_name = str(sub[1]).strip('"')
+                m = sub_re.search(sub_name)
+                if not m:
+                    continue
+                sub_unit = int(m.group(1))
+                for pin in sub:
+                    if not (isinstance(pin, list) and pin and pin[0] == Symbol("pin")):
+                        continue
+                    for attr in pin:
+                        if isinstance(attr, list) and attr and attr[0] == Symbol("number") and len(attr) >= 2:
+                            num = str(attr[1]).strip('"')
+                            # unit 0 = shared; don't let it overwrite a real unit
+                            if num not in result or sub_unit != 0:
+                                result[num] = sub_unit
+            self.pin_definition_cache[cache_key] = result
+            return result
+        except Exception:
+            return result
+
     @staticmethod
     def rotate_point(x: float, y: float, angle_degrees: float) -> Tuple[float, float]:
         """
@@ -230,12 +311,15 @@ class PinLocator:
         return None
 
     def _get_symbol_transform(
-        self, schematic_path: Path, symbol_reference: str
+        self, schematic_path: Path, symbol_reference: str, unit: int = None
     ) -> Optional[Tuple[float, float, float, bool, bool, str]]:
         """
         Read symbol position, rotation, mirror flags, and lib_id directly from the
         .kicad_sch file via sexpdata (authoritative — not kicad-skip cache, which
         does not reflect mirror/rotation changes made by rotate_schematic_component).
+
+        ``unit``: for multi-unit symbols, select the placed instance for this unit
+        (each unit is a separate placement with its own position). None = first match.
 
         Returns (x, y, rotation, mirror_x, mirror_y, lib_id) or None.
         """
@@ -251,7 +335,7 @@ class PinLocator:
             logger.error(f"_get_symbol_transform: failed to parse {schematic_path}: {e}")
             return None
 
-        found = WireDragger.find_symbol(self._sexp_cache[sch_key], symbol_reference)
+        found = WireDragger.find_symbol(self._sexp_cache[sch_key], symbol_reference, unit=unit)
         if found is None:
             return None
 
@@ -394,6 +478,23 @@ class PinLocator:
                     return None
 
             pin_data = pins[pin_number]
+
+            # Multi-unit fix (#239): each unit of a multi-unit symbol is placed as a
+            # separate instance with the same reference but its own (unit N) and
+            # position.  Re-read the transform for THIS pin's unit so the pin is
+            # located from its own unit's placement, not whichever instance happened
+            # to appear first in file order.  Falls back to the first-instance
+            # transform above when the unit map is empty (single-unit / unknown) or
+            # the unit has no distinct placement.
+            unit_map = self.get_pin_unit_map(schematic_path, lib_id)
+            pin_unit = unit_map.get(pin_number)
+            if pin_unit is not None:
+                unit_transform = self._get_symbol_transform(
+                    schematic_path, symbol_reference, unit=pin_unit
+                )
+                if unit_transform is not None:
+                    symbol_x, symbol_y, symbol_rotation, mirror_x, mirror_y, _ = unit_transform
+
             from commands.wire_dragger import WireDragger
 
             abs_x, abs_y = WireDragger.pin_world_xy(

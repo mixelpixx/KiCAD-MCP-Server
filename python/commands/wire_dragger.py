@@ -32,6 +32,7 @@ _K = {
         "width",
         "type",
         "uuid",
+        "unit",
     ]
 }
 
@@ -55,7 +56,7 @@ class WireDragger:
     """Pure-logic helpers for wire-endpoint dragging during component moves."""
 
     @staticmethod
-    def find_symbol(sch_data: list, reference: str) -> Any:
+    def find_symbol(sch_data: list, reference: str, unit: int = None) -> Any:
         """
         Find a placed symbol by reference designator.
 
@@ -64,12 +65,21 @@ class WireDragger:
 
         mirror_x=True means the symbol has (mirror x) — flips the X local axis.
         mirror_y=True means the symbol has (mirror y) — flips the Y local axis.
+
+        ``unit``: for multi-unit symbols each unit is placed as a SEPARATE
+        (symbol ...) instance sharing the same reference but carrying its own
+        (unit N) and (at ...).  When ``unit`` is given, only the instance whose
+        (unit N) matches is returned, so a pin belonging to unit 2 is located
+        from unit 2's placement rather than whichever instance appears first in
+        file order.  When ``unit`` is None the first matching instance is
+        returned (legacy behaviour).
         """
         sym_k = _K["symbol"]
         prop_k = _K["property"]
         at_k = _K["at"]
         lib_id_k = _K["lib_id"]
         mirror_k = _K["mirror"]
+        unit_k = _K["unit"]
 
         for item in sch_data:
             if not (isinstance(item, list) and item and item[0] == sym_k):
@@ -91,6 +101,7 @@ class WireDragger:
             old_x = old_y = rotation = 0.0
             lib_id = ""
             mirror_x = mirror_y = False
+            inst_unit = None
 
             for sub in item[1:]:
                 if not isinstance(sub, list) or not sub:
@@ -104,12 +115,22 @@ class WireDragger:
                         rotation = float(sub[3])
                 elif tag == lib_id_k and len(sub) >= 2:
                     lib_id = str(sub[1]).strip('"')
+                elif tag == unit_k and len(sub) >= 2:
+                    try:
+                        inst_unit = int(sub[1])
+                    except (TypeError, ValueError):
+                        inst_unit = None
                 elif tag == mirror_k and len(sub) >= 2:
                     mv = str(sub[1])
                     if mv == "x":
                         mirror_x = True
                     elif mv == "y":
                         mirror_y = True
+
+            # Skip instances of the wrong unit when a specific unit was requested.
+            # inst_unit is None only for malformed instances — don't filter those out.
+            if unit is not None and inst_unit is not None and inst_unit != unit:
+                continue
 
             return item, old_x, old_y, rotation, lib_id, mirror_x, mirror_y
 
