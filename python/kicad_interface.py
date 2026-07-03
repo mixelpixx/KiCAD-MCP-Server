@@ -325,7 +325,6 @@ try:
     logger.info("Importing command handlers...")
     from commands.board import BoardCommands
     from commands.component import ComponentCommands
-    from commands.component_schematic import ComponentManager
     from commands.connection_schematic import ConnectionManager
     from commands.datasheet_manager import DatasheetManager
     from commands.design_rules import DesignRuleCommands
