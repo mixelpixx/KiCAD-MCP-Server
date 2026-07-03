@@ -121,7 +121,7 @@ class SchematicHandlersMixin:
 
             sch_path = path if path and path != "." else None
             schematic = SchematicManager.create_schematic(
-                project_name, path=sch_path, metadata=metadata
+                project_name, path=sch_path, metadata=metadata, template=params.get("template")
             )
             base_name = (
                 project_name if project_name.endswith(".kicad_sch") else f"{project_name}.kicad_sch"

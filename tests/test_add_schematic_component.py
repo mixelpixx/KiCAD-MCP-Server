@@ -16,6 +16,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 TEMPLATES_DIR = Path(__file__).parent.parent / "python" / "templates"
 EMPTY_SCH = TEMPLATES_DIR / "empty.kicad_sch"
+# template_with_symbols ships baked Device:R/C/LED definitions in lib_symbols, so
+# pin-number extraction works without an external KiCad symbol library installed.
+WITH_SYMBOLS_SCH = TEMPLATES_DIR / "template_with_symbols.kicad_sch"
+
+
+def _instance_block(content: str, reference: str) -> str:
+    """Return the raw text of the placed symbol instance for ``reference``."""
+    ref_pos = content.find(f'(reference "{reference}")')
+    assert ref_pos != -1, f"instance {reference} not found"
+    start = content.rfind("(symbol (lib_id", 0, ref_pos)
+    return content[start:ref_pos]
 
 
 def _write_temp_sch(content: str) -> Path:
@@ -353,3 +364,57 @@ class TestAddComponentMirrorParam:
             "ComponentManager.add_component now appears to honor mirror='y'. "
             "See sibling test_mirror_x_arg_is_silently_dropped."
         )
+
+
+# ---------------------------------------------------------------------------
+# Pin-instance UUIDs + grid snap — prerequisites for wires/labels to bind
+# electrically (KiCad reports every pin unconnected without the (pin ...)
+# entries, and off-grid pins never attach to wire endpoints).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestPinUuidAndGridSnap:
+    def _loader(self) -> Any:
+        from commands.dynamic_symbol_loader import DynamicSymbolLoader
+
+        return DynamicSymbolLoader()
+
+    def test_pin_uuid_entries_are_injected(self, tmp_path: Any) -> None:
+        """A placed Device:R must carry one (pin "N" (uuid ...)) per pin."""
+        sch = tmp_path / "pins.kicad_sch"
+        shutil.copy(WITH_SYMBOLS_SCH, sch)
+        self._loader().create_component_instance(
+            sch, "Device", "R", reference="R1", value="1k", x=100, y=100
+        )
+        block = _instance_block(sch.read_text(), "R1")
+        pins = re.findall(r'\(pin "(\d+)" \(uuid ', block)
+        assert sorted(pins) == ["1", "2"], f"expected pins 1 & 2, got {pins}"
+
+    def test_origin_snapped_to_127_grid(self, tmp_path: Any) -> None:
+        """Off-grid placement coordinates are snapped to the 1.27 mm grid."""
+        sch = tmp_path / "grid.kicad_sch"
+        shutil.copy(WITH_SYMBOLS_SCH, sch)
+        # 100 is not a 1.27 multiple → expect round(100/1.27)*1.27 = 100.33
+        self._loader().create_component_instance(
+            sch, "Device", "R", reference="R1", value="1k", x=100, y=100
+        )
+        block = _instance_block(sch.read_text(), "R1")
+        at = re.search(r"\(symbol \(lib_id \"Device:R\"\) \(at ([\d.]+) ([\d.]+)", block)
+        assert at is not None
+        for coord in (float(at.group(1)), float(at.group(2))):
+            # on-grid ⇔ coord / 1.27 is (near) an integer
+            assert abs(round(coord / 1.27) * 1.27 - coord) < 1e-6, f"{coord} off grid"
+
+    def test_pins_absent_when_symbol_not_in_lib(self, tmp_path: Any) -> None:
+        """Graceful fallback: a lib_id absent from lib_symbols yields no pin entries,
+        and the instance is still written (no crash)."""
+        sch = tmp_path / "missing_pins.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+        # NoSuchLib:XYZ is not present in the template's lib_symbols block.
+        ok = self._loader().create_component_instance(
+            sch, "NoSuchLib", "XYZ", reference="R1", value="1k", x=10, y=10
+        )
+        assert ok is True
+        block = _instance_block(sch.read_text(), "R1")
+        assert re.search(r'\(pin "\d+" \(uuid ', block) is None

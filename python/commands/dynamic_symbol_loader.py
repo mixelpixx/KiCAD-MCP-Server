@@ -513,6 +513,58 @@ class DynamicSymbolLoader:
         except Exception:
             return {}
 
+    def _extract_lib_pin_numbers(
+        self,
+        schematic_path: Path,
+        library_name: str,
+        symbol_name: str,
+        unit: int = 1,
+    ) -> List[str]:
+        """
+        Return the pin numbers belonging to ``unit`` for a symbol, read from the
+        lib_symbols section of the schematic (which must already have the symbol
+        injected).  Used to emit ``(pin "N" (uuid ...))`` instance entries.
+
+        KiCad stores pins inside per-unit sub-symbols named ``<bare>_<unit>_<style>``
+        (e.g. ``R_1_1``).  Sub-symbol unit ``0`` holds pins shared across all units.
+        For the requested ``unit`` we collect pins from matching sub-symbols plus the
+        shared unit-0 ones, preserving order and de-duplicating.
+
+        Returns an empty list on any failure so the caller falls back to the previous
+        (pin-less) behaviour rather than crashing.
+        """
+        import re
+
+        try:
+            with open(schematic_path, encoding="utf-8") as f:
+                content = f.read()
+
+            sym_start = content.find(f'(symbol "{library_name}:{symbol_name}"')
+            if sym_start == -1:
+                return []
+            sym_block = self._extract_paren_block(content, sym_start)
+
+            bare = symbol_name.split(":")[-1]
+            numbers: List[str] = []
+            seen: set = set()
+
+            # Walk each sub-symbol block "<bare>_<unit>_<style>" and keep those whose
+            # unit matches the requested unit or is the shared unit 0.
+            for m in re.finditer(rf'\(symbol\s+"{re.escape(bare)}_(\d+)_\d+"', sym_block):
+                sub_unit = int(m.group(1))
+                if sub_unit not in (0, unit):
+                    continue
+                sub_block = self._extract_paren_block(sym_block, m.start())
+                for pm in re.finditer(r'\(number\s+"([^"]+)"', sub_block):
+                    n = pm.group(1)
+                    if n not in seen:
+                        seen.add(n)
+                        numbers.append(n)
+
+            return numbers
+        except Exception:
+            return []
+
     @staticmethod
     def _rotate_offset(dx: float, dy: float, angle_deg: float) -> tuple:
         """
@@ -558,8 +610,29 @@ class DynamicSymbolLoader:
         full_lib_id = f"{library_name}:{symbol_name}"
         new_uuid = str(uuid.uuid4())
 
+        # Snap the symbol origin to the 1.27 mm (50 mil) schematic connection grid.
+        # Library pins sit at integer multiples of 1.27 mm from the origin, so once the
+        # origin is on-grid every pin lands on-grid too — a prerequisite for wires and
+        # net labels to bind electrically (otherwise ERC reports endpoint_off_grid and
+        # the netlist comes up empty).
+        _GRID = 1.27
+        snapped_x = round(x / _GRID) * _GRID
+        snapped_y = round(y / _GRID) * _GRID
+        if (snapped_x, snapped_y) != (x, y):
+            logger.info(
+                f"Snapped {reference} origin ({x}, {y}) -> ({snapped_x}, {snapped_y}) onto 1.27mm grid"
+            )
+        x, y = snapped_x, snapped_y
+
         # --- read property offsets from the already-injected lib_symbols block -----
         lib_props = self._extract_lib_property_positions(schematic_path, library_name, symbol_name)
+
+        # --- pin instance entries: KiCad binds wires/labels to pins via these UUIDs ---
+        # Without them ERC reports every pin unconnected and the netlist is empty.
+        pin_numbers = self._extract_lib_pin_numbers(schematic_path, library_name, symbol_name, unit)
+        pin_lines = "".join(
+            f'\n    (pin "{n}" (uuid "{uuid.uuid4()}"))' for n in pin_numbers
+        )
 
         _DEFAULT_EFFECTS = "(effects (font (size 1.27 1.27)))"
 
@@ -594,7 +667,7 @@ class DynamicSymbolLoader:
     )
     (property "Datasheet" "~" (at {ds_x} {ds_y} 0)
       (effects (font (size 1.27 1.27)) (hide yes))
-    )
+    ){pin_lines}
     (instances
       (project "project"
         (path "/"

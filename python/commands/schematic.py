@@ -14,16 +14,40 @@ class SchematicManager:
 
     @staticmethod
     def create_schematic(
-        name: str, metadata: Optional[Any] = None, *, path: Optional[str] = None
+        name: str,
+        metadata: Optional[Any] = None,
+        *,
+        path: Optional[str] = None,
+        template: Optional[str] = None,
     ) -> Any:
-        """Create a new empty schematic from template"""
+        """Create a new empty schematic from template.
+
+        ``template`` selects the starter template:
+          - None / "default" / "with_symbols" → template_with_symbols.kicad_sch
+            (ships hidden _TEMPLATE_* clone-source symbols for the legacy
+            place_component path).
+          - "minimal" / "clean" / "empty" → a template with **no** _TEMPLATE_*
+            symbols. Recommended for the dynamic add_schematic_component workflow,
+            which injects symbols from the KiCad libraries and does not need the
+            clone sources; avoids _TEMPLATE_* noise in ERC/netlist output.
+        """
         try:
-            # Determine template path (use template_with_symbols for component cloning support)
+            # Map the requested template to a file. Default keeps the clone-source
+            # template so the legacy component-cloning path is unaffected.
+            _templates = {
+                None: "template_with_symbols.kicad_sch",
+                "default": "template_with_symbols.kicad_sch",
+                "with_symbols": "template_with_symbols.kicad_sch",
+                "minimal": "minimal.kicad_sch",
+                "clean": "minimal.kicad_sch",
+                "empty": "empty.kicad_sch",
+            }
+            template_file = _templates.get(template, "template_with_symbols.kicad_sch")
             template_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
                 "..",
                 "templates",
-                "template_with_symbols.kicad_sch",
+                template_file,
             )
 
             # Determine output path
