@@ -73,14 +73,27 @@ PROJECT_TOOLS = [
     {
         "name": "save_project",
         "title": "Save Current Project",
-        "description": "Saves the current board to disk. Can optionally save to a new location.",
+        "description": (
+            "Saves the current board to disk. Can optionally save to a new location. "
+            "If the board file's contents changed on disk since it was loaded (an "
+            "external edit), the save is refused to avoid clobbering those changes "
+            "unless force=true is passed."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "filename": {
                     "type": "string",
                     "description": "Optional new path to save the board (if not provided, saves to current location)",
-                }
+                },
+                "force": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": (
+                        "Overwrite the loaded board file even if its on-disk contents "
+                        "changed externally since this session loaded it"
+                    ),
+                },
             },
         },
     },
