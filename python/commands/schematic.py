@@ -5,6 +5,7 @@ import uuid
 from typing import Any, Optional
 
 from skip import Schematic
+from utils.sexpr_format import prettify
 
 logger = logging.getLogger("kicad_interface")
 
@@ -107,6 +108,13 @@ class SchematicManager:
         try:
             # kicad-skip uses write method, not save
             schematic.write(file_path)
+            # kicad-skip emits a semi-minified layout; reformat to KiCad's
+            # canonical pretty format so tool writes match eeschema's "Save"
+            # and produce minimal, reviewable diffs.
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(prettify(content))
             logger.info(f"Saved schematic to: {file_path}")
             return True
         except Exception as e:
