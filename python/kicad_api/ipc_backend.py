@@ -133,8 +133,22 @@ class IPCBackend(KiCADBackend):
             return "unknown"
 
     def disconnect(self) -> None:
-        """Disconnect from KiCAD."""
+        """Disconnect from KiCAD.
+
+        kipy does not expose a public close(), but it holds a persistent pynng
+        socket at ``KiCad._client._conn``. Simply dropping the reference orphans
+        that socket and leaks its OS file descriptors (they are not released
+        promptly by GC), so long-lived sessions that reconnect accumulate fds.
+        Close the underlying socket explicitly, tolerating any internal changes.
+        """
         if self._kicad:
+            try:
+                conn = getattr(getattr(self._kicad, "_client", None), "_conn", None)
+                if conn is not None and hasattr(conn, "close"):
+                    conn.close()
+                    logger.debug("Closed underlying KiCAD IPC socket")
+            except Exception as e:
+                logger.debug(f"Error closing IPC socket during disconnect: {e}")
             self._kicad = None
             self._connected = False
             logger.info("Disconnected from KiCAD IPC")
