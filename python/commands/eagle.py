@@ -25,7 +25,8 @@ import subprocess
 import sys
 import uuid
 import xml.etree.ElementTree as ET
-from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("kicad_interface")
 
@@ -41,29 +42,41 @@ _PASSIVE_PREFIXES = frozenset({"R", "L", "C"})
 _VERT_LABEL_PREFIXES = frozenset({"R", "L", "C", "D", "LED"})
 
 _PIN_TYPE: Dict[str, str] = {
-    "in":  "input",          "out": "output",
-    "io":  "bidirectional",  "oc":  "open_collector",
-    "pas": "passive",        "pwr": "power_in",
-    "sup": "power_out",      "nc":  "no_connect",
+    "in": "input",
+    "out": "output",
+    "io": "bidirectional",
+    "oc": "open_collector",
+    "pas": "passive",
+    "pwr": "power_in",
+    "sup": "power_out",
+    "nc": "no_connect",
     "hiz": "tri_state",
 }
 _PIN_LEN: Dict[str, float] = {
-    "point": 0.0, "short": 2.54, "middle": 5.08, "long": 7.62,
+    "point": 0.0,
+    "short": 2.54,
+    "middle": 5.08,
+    "long": 7.62,
 }
+
 
 # ── Utility helpers ────────────────────────────────────────────────────────────
 def _uid() -> str:
     return str(uuid.uuid4())
 
+
 def _fmt(v: float) -> str:
     return f"{v:.4f}".rstrip("0").rstrip(".")
+
 
 def _escape(s: str) -> str:
     return str(s).replace('"', '\\"')
 
+
 def _sanitize(s: str) -> str:
     """Make a string safe for use in KiCad symbol names (quoted)."""
     return re.sub(r'[<>"/\\|?*\s]+', "_", s).strip("_") or "X"
+
 
 def _parse_rot(rot: Optional[str]) -> Tuple[float, bool]:
     """Parse Eagle rotation string like 'R90', 'MR180', 'SMR0' → (degrees, mirror)."""
@@ -75,6 +88,7 @@ def _parse_rot(rot: Optional[str]) -> Tuple[float, bool]:
         return (float(s) if s else 0.0), mirror
     except ValueError:
         return 0.0, mirror
+
 
 def _krot(eagle_deg: float, mirror: bool = False) -> int:
     """
@@ -104,6 +118,7 @@ def _krot(eagle_deg: float, mirror: bool = False) -> int:
     """
     return int(eagle_deg % 360)
 
+
 def _render_local(lx: float, ly: float, krot: int, mirror: bool) -> Tuple[float, float]:
     """
     Transform a symbol-local point (Eagle-local, Y-up) to the KiCad sheet
@@ -120,20 +135,26 @@ def _render_local(lx: float, ly: float, krot: int, mirror: bool) -> Tuple[float,
 # KiCad effective library->sheet transform (includes the built-in Y flip),
 # calibrated from actual SVG output.  Key = (placement_angle, mirror_flag).
 _TEFF: Dict[Tuple[int, str], Tuple[int, int, int, int]] = {
-    (0,   "none"): (1, 0, 0, -1), (90,  "none"): (0, -1, -1, 0),
-    (180, "none"): (-1, 0, 0, 1), (270, "none"): (0, 1, 1, 0),
-    (0,   "y"): (-1, 0, 0, -1),   (90,  "y"): (0, 1, -1, 0),
-    (180, "y"): (1, 0, 0, 1),     (270, "y"): (0, -1, 1, 0),
+    (0, "none"): (1, 0, 0, -1),
+    (90, "none"): (0, -1, -1, 0),
+    (180, "none"): (-1, 0, 0, 1),
+    (270, "none"): (0, 1, 1, 0),
+    (0, "y"): (-1, 0, 0, -1),
+    (90, "y"): (0, 1, -1, 0),
+    (180, "y"): (1, 0, 0, 1),
+    (270, "y"): (0, -1, 1, 0),
 }
+
 
 def _symbol_local_points(sg: "_EagleSymGeom") -> List[Tuple[float, float]]:
     """All extreme local points of a symbol (body + pin ends) for bbox use."""
     pts: List[Tuple[float, float]] = []
     for (x1, y1, x2, y2, *_rest) in sg.wires:
-        pts.append((x1, y1)); pts.append((x2, y2))
-    for (cx, cy, r) in sg.circles:
+        pts.append((x1, y1))
+        pts.append((x2, y2))
+    for cx, cy, r in sg.circles:
         pts += [(cx - r, cy - r), (cx + r, cy + r)]
-    for (x1, y1, x2, y2) in sg.rectangles:
+    for x1, y1, x2, y2 in sg.rectangles:
         pts += [(x1, y1), (x2, y2)]
     for poly in sg.polygons:
         pts += list(poly)
@@ -165,29 +186,50 @@ def _pin_lead(pin: "_EaglePin", indent: str) -> str:
     # Lead starts at the grid-snapped connection point (see pin emission below).
     sx = round(pin.x / _GRID_MM) * _GRID_MM
     sy = round(pin.y / _GRID_MM) * _GRID_MM
-    return (f'{indent}(polyline (pts (xy {_fmt(sx)} {_fmt(sy)})'
-            f' (xy {_fmt(ex)} {_fmt(ey)}))'
-            f' (stroke (width 0) (type default)) (fill (type none)))\n')
+    return (
+        f"{indent}(polyline (pts (xy {_fmt(sx)} {_fmt(sy)})"
+        f" (xy {_fmt(ex)} {_fmt(ey)}))"
+        f" (stroke (width 0) (type default)) (fill (type none)))\n"
+    )
+
 
 # Standard KiCad paper sizes, landscape (name, width_mm, height_mm), small→large.
 _PAPER_SIZES = [
-    ("A4",  297.0, 210.0),
-    ("A3",  420.0, 297.0),
-    ("A2",  594.0, 420.0),
-    ("A1",  841.0, 594.0),
+    ("A4", 297.0, 210.0),
+    ("A3", 420.0, 297.0),
+    ("A2", 594.0, 420.0),
+    ("A1", 841.0, 594.0),
     ("A0", 1189.0, 841.0),
 ]
-_SHEET_MARGIN = 15.0   # mm clear border kept around the content
-_GRID_MM      = 1.27   # KiCad default schematic grid (50 mil)
+_SHEET_MARGIN = 15.0  # mm clear border kept around the content
+_GRID_MM = 1.27  # KiCad default schematic grid (50 mil)
 # Max distance (in grid steps) a net label may be moved onto its wire's free end
 # / nearest segment when snapping. Kept as a module global so it can be tuned.
-_LABEL_FE_STEPS  = 8.0
+_LABEL_FE_STEPS = 8.0
 _LABEL_SEG_STEPS = 10.0
 
 
 def _gridsnap(v: float) -> float:
     """Snap a single coordinate to the KiCad schematic grid."""
     return round(v / _GRID_MM) * _GRID_MM
+
+
+def _on_wire_segment(pt: Tuple[float, float], seg: Tuple[float, float, float, float]) -> bool:
+    """True if *pt* lies on wire segment *seg* (including endpoints)."""
+    x, y = pt
+    x1, y1, x2, y2 = seg
+    cross = (x - x1) * (y2 - y1) - (y - y1) * (x2 - x1)
+    if abs(cross) > 1e-3:
+        return False
+    l2 = (x2 - x1) ** 2 + (y2 - y1) ** 2
+    if l2 == 0:
+        return abs(x - x1) < 1e-3 and abs(y - y1) < 1e-3
+    t = ((x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)) / l2
+    return -1e-6 <= t <= 1 + 1e-6
+
+
+def _pt_key(x: float, y: float) -> Tuple[float, float]:
+    return (round(x, 3), round(y, 3))
 
 
 def _trim_wires(
@@ -207,22 +249,17 @@ def _trim_wires(
     never disconnects two connection points: anchors are exactly the points that
     matter, and only empty overshoot beyond them is removed.
     """
+
     def key(x: float, y: float) -> Tuple[float, float]:
-        return (round(x, 3), round(y, 3))
+        return _pt_key(x, y)
 
     def on_seg(pt: Tuple[float, float], seg: Tuple[float, float, float, float]) -> bool:
-        x, y = pt
-        x1, y1, x2, y2 = seg
-        cross = (x - x1) * (y2 - y1) - (y - y1) * (x2 - x1)
-        if abs(cross) > 1e-3:
-            return False
-        l2 = (x2 - x1) ** 2 + (y2 - y1) ** 2
-        if l2 == 0:
-            return abs(x - x1) < 1e-3 and abs(y - y1) < 1e-3
-        t = ((x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)) / l2
-        return -1e-6 <= t <= 1 + 1e-6
+        return _on_wire_segment(pt, seg)
 
-    wires = [tuple(round(v, 3) for v in w) for w in wires]
+    normalized: List[Tuple[float, float, float, float]] = [
+        (round(x1, 3), round(y1, 3), round(x2, 3), round(y2, 3)) for x1, y1, x2, y2 in wires
+    ]
+    wires = normalized
     changed = True
     while changed:
         changed = False
@@ -252,7 +289,7 @@ def _trim_wires(
                 anchors.add(key(x2, y2))
 
             if len(anchors) < 2:
-                changed = True          # pure stub / appendage → drop
+                changed = True  # pure stub / appendage → drop
                 continue
 
             dx, dy = x2 - x1, y2 - y1
@@ -262,7 +299,7 @@ def _trim_wires(
             nx1, ny1 = round(x1 + tmin * dx, 3), round(y1 + tmin * dy, 3)
             nx2, ny2 = round(x1 + tmax * dx, 3), round(y1 + tmax * dy, 3)
             if (nx1, ny1) == (nx2, ny2):
-                changed = True          # collapsed to a point → drop
+                changed = True  # collapsed to a point → drop
                 continue
             nw = (nx1, ny1, nx2, ny2)
             if nw != seg:
@@ -272,12 +309,103 @@ def _trim_wires(
     return wires
 
 
+def _snap_wire_endpoints(
+    wires: List[Tuple[float, float, float, float]],
+    conn_pts: "set",
+    max_dist: float = _GRID_MM * 0.6,
+) -> List[Tuple[float, float, float, float]]:
+    """Snap wire endpoints to the nearest connection point within *max_dist*."""
+    if not conn_pts:
+        return wires
+    conn_list = list(conn_pts)
+    max_d2 = max_dist * max_dist
+    snapped: List[Tuple[float, float, float, float]] = []
+    for x1, y1, x2, y2 in wires:
+        for idx, (x, y) in enumerate(((x1, y1), (x2, y2))):
+            best: Optional[Tuple[float, float, float]] = None
+            for cx, cy in conn_list:
+                d2 = (x - cx) ** 2 + (y - cy) ** 2
+                if d2 <= max_d2 and (best is None or d2 < best[0]):
+                    best = (d2, cx, cy)
+            if best is not None:
+                if idx == 0:
+                    x1, y1 = best[1], best[2]
+                else:
+                    x2, y2 = best[1], best[2]
+        snapped.append((x1, y1, x2, y2))
+    return snapped
+
+
+def _endpoint_connected(
+    x: float,
+    y: float,
+    wires: List[Tuple[float, float, float, float]],
+    conn_keys: set,
+) -> bool:
+    k = _pt_key(x, y)
+    if k in conn_keys:
+        return True
+    endpoint_hits = sum(
+        1
+        for wx1, wy1, wx2, wy2 in wires
+        for ex, ey in ((wx1, wy1), (wx2, wy2))
+        if _pt_key(ex, ey) == k
+    )
+    if endpoint_hits >= 2:
+        return True
+    for wx1, wy1, wx2, wy2 in wires:
+        if _on_wire_segment((x, y), (wx1, wy1, wx2, wy2)):
+            wk1, wk2 = _pt_key(wx1, wy1), _pt_key(wx2, wy2)
+            if k != wk1 and k != wk2:
+                return True
+    return False
+
+
+def _prune_dangling_wires(
+    wires: List[Tuple[float, float, float, float]],
+    conn_pts: "set",
+) -> List[Tuple[float, float, float, float]]:
+    """Drop wire segments with any endpoint not connected to a pin/label/junction/wire."""
+    conn_keys = {_pt_key(x, y) for x, y in conn_pts}
+    current = list(wires)
+    changed = True
+    while changed:
+        changed = False
+        kept: List[Tuple[float, float, float, float]] = []
+        for seg in current:
+            x1, y1, x2, y2 = seg
+            if _endpoint_connected(x1, y1, current, conn_keys) and _endpoint_connected(
+                x2, y2, current, conn_keys
+            ):
+                kept.append(seg)
+            else:
+                changed = True
+        current = kept
+    return current
+
+
+def _count_dangling_wires(
+    wires: List[Tuple[float, float, float, float]],
+    conn_pts: "set",
+) -> int:
+    """Count wire segments with at least one unconnected endpoint (KiCad wire_dangling)."""
+    conn_keys = {_pt_key(x, y) for x, y in conn_pts}
+    count = 0
+    for x1, y1, x2, y2 in wires:
+        if not _endpoint_connected(x1, y1, wires, conn_keys) or not _endpoint_connected(
+            x2, y2, wires, conn_keys
+        ):
+            count += 1
+    return count
+
+
 def _choose_paper(w: float, h: float) -> Tuple[str, float, float]:
     """Smallest standard landscape sheet that fits w×h plus margins (fallback A0)."""
     for name, pw, ph in _PAPER_SIZES:
         if w + 2 * _SHEET_MARGIN <= pw and h + 2 * _SHEET_MARGIN <= ph:
             return name, pw, ph
     return _PAPER_SIZES[-1]
+
 
 def _arc_segments(
     x1: float, y1: float, x2: float, y2: float, curve_deg: float
@@ -306,22 +434,27 @@ def _arc_segments(
     for i in range(steps):
         a1 = ts + alpha * i / steps
         a2 = ts + alpha * (i + 1) / steps
-        segs.append((
-            cx + r * math.cos(a1), cy + r * math.sin(a1),
-            cx + r * math.cos(a2), cy + r * math.sin(a2),
-        ))
+        segs.append(
+            (
+                cx + r * math.cos(a1),
+                cy + r * math.sin(a1),
+                cx + r * math.cos(a2),
+                cy + r * math.sin(a2),
+            )
+        )
     return segs
 
 
 # ── Eagle data containers ──────────────────────────────────────────────────────
 class _EaglePin:
     """One pin as read from an Eagle symbol definition."""
+
     __slots__ = ("name", "x", "y", "length_mm", "direction", "angle")
 
     def __init__(self, el: ET.Element) -> None:
-        self.name      = el.get("name", "?")
-        self.x         = float(el.get("x", 0))
-        self.y         = float(el.get("y", 0))
+        self.name = el.get("name", "?")
+        self.x = float(el.get("x", 0))
+        self.y = float(el.get("y", 0))
         self.length_mm = _PIN_LEN.get(el.get("length", "middle"), 5.08)
         self.direction = el.get("direction", "io")
         self.angle, _ = _parse_rot(el.get("rot", "R0"))
@@ -329,28 +462,33 @@ class _EaglePin:
 
 class _EagleSymGeom:
     """Complete geometry of one Eagle symbol (from a library)."""
+
     __slots__ = (
-        "name", "kicad_id", "lib_name", "is_power", "ref_prefix",
-        "wires",      # [(x1,y1,x2,y2, curve_deg|None), ...]
-        "circles",    # [(cx, cy, radius), ...]
-        "rectangles", # [(x1,y1,x2,y2), ...]
-        "polygons",   # [[(x,y), ...], ...]
-        "pins",       # [_EaglePin, ...]
-        "pin_pads",   # {pin_name: pad_number}  (from deviceset <connect>)
+        "name",
+        "kicad_id",
+        "lib_name",
+        "is_power",
+        "ref_prefix",
+        "wires",  # [(x1,y1,x2,y2, curve_deg|None), ...]
+        "circles",  # [(cx, cy, radius), ...]
+        "rectangles",  # [(x1,y1,x2,y2), ...]
+        "polygons",  # [[(x,y), ...], ...]
+        "pins",  # [_EaglePin, ...]
+        "pin_pads",  # {pin_name: pad_number}  (from deviceset <connect>)
     )
 
     def __init__(self, name: str, kicad_id: str, lib_name: str) -> None:
-        self.name       = name
-        self.kicad_id   = kicad_id
-        self.lib_name   = lib_name
-        self.is_power   = lib_name.lower() in _POWER_LIBS
+        self.name = name
+        self.kicad_id = kicad_id
+        self.lib_name = lib_name
+        self.is_power = lib_name.lower() in _POWER_LIBS
         self.ref_prefix = "P" if self.is_power else "U"
-        self.wires:      List[Tuple]            = []
-        self.circles:    List[Tuple]            = []
-        self.rectangles: List[Tuple]            = []
-        self.polygons:   List[List[Tuple]]      = []
-        self.pins:       List[_EaglePin]        = []
-        self.pin_pads:   Dict[str, str]         = {}
+        self.wires: List[Tuple] = []
+        self.circles: List[Tuple] = []
+        self.rectangles: List[Tuple] = []
+        self.polygons: List[List[Tuple]] = []
+        self.pins: List[_EaglePin] = []
+        self.pin_pads: Dict[str, str] = {}
 
     def pin_number(self, pin_name: str, index: int) -> str:
         """
@@ -370,41 +508,50 @@ class _EagleSymGeom:
         """
         v = _EagleSymGeom(self.name, kicad_id, self.lib_name)
         v.ref_prefix = self.ref_prefix
-        v.wires      = self.wires
-        v.circles    = self.circles
+        v.wires = self.wires
+        v.circles = self.circles
         v.rectangles = self.rectangles
-        v.polygons   = self.polygons
-        v.pins       = self.pins
-        v.pin_pads   = dict(pin_pads)
+        v.polygons = self.polygons
+        v.pins = self.pins
+        v.pin_pads = dict(pin_pads)
         return v
 
 
 class _EagleInst:
     """One gate placement on an Eagle schematic sheet (a part may have many)."""
-    __slots__ = ("part", "gate", "x", "y", "angle", "mirror",
-                 "sym_geom", "part_ref")
+
+    __slots__ = ("part", "gate", "x", "y", "angle", "mirror", "sym_geom", "part_ref")
 
     def __init__(self, el: ET.Element) -> None:
-        self.part  = el.get("part", "")
-        self.gate  = el.get("gate", "G$1")
-        self.x     = float(el.get("x", 0))
-        self.y     = float(el.get("y", 0))
+        self.part = el.get("part", "")
+        self.gate = el.get("gate", "G$1")
+        self.x = float(el.get("x", 0))
+        self.y = float(el.get("y", 0))
         self.angle, self.mirror = _parse_rot(el.get("rot", "R0"))
         self.sym_geom: Optional[_EagleSymGeom] = None
-        self.part_ref: Optional[_EaglePart]    = None
+        self.part_ref: Optional[_EaglePart] = None
 
 
 class _EaglePart:
     """Eagle part (logical component: library + deviceset + device + value)."""
-    __slots__ = ("name", "value", "lib_name", "ds_name", "device",
-                 "is_power", "is_frame", "sym_geom")
+
+    __slots__ = (
+        "name",
+        "value",
+        "lib_name",
+        "ds_name",
+        "device",
+        "is_power",
+        "is_frame",
+        "sym_geom",
+    )
 
     def __init__(self, el: ET.Element) -> None:
-        self.name     = el.get("name", "")
-        self.value    = el.get("value", "")
+        self.name = el.get("name", "")
+        self.value = el.get("value", "")
         self.lib_name = el.get("library", "")
-        self.ds_name  = el.get("deviceset", "")
-        self.device   = el.get("device", "")
+        self.ds_name = el.get("deviceset", "")
+        self.device = el.get("device", "")
         self.is_power = self.lib_name.lower() in _POWER_LIBS
         self.is_frame = self.ds_name.lower() in _FRAME_DEVICESETS
         self.sym_geom: Optional[_EagleSymGeom] = None
@@ -427,7 +574,7 @@ def parse_eagle_schematic(sch_path: str):
     junctions  : list  of (x, y)
     """
     root = ET.parse(sch_path).getroot()
-    sch  = root.find("drawing/schematic")
+    sch = root.find("drawing/schematic")
     if sch is None:
         raise ValueError("Not an Eagle schematic (missing <drawing/schematic>)")
 
@@ -440,7 +587,7 @@ def parse_eagle_schematic(sch_path: str):
     connects: Dict[Tuple[str, str, str, str], Dict[str, str]] = {}
 
     # Dedup: track which kicad_ids are already in use
-    used_kicad_ids: Dict[str, Tuple[str, str]] = {}   # kicad_id → (lib, sym)
+    used_kicad_ids: Dict[str, Tuple[str, str]] = {}  # kicad_id → (lib, sym)
 
     for lib in sch.findall("libraries/library"):
         lib_name = lib.get("name", "")
@@ -458,29 +605,40 @@ def parse_eagle_schematic(sch_path: str):
             for w in sym_el.findall("wire"):
                 try:
                     curve_s = w.get("curve")
-                    sg.wires.append((
-                        float(w.get("x1", 0)), float(w.get("y1", 0)),
-                        float(w.get("x2", 0)), float(w.get("y2", 0)),
-                        float(curve_s) if curve_s else None,
-                    ))
+                    sg.wires.append(
+                        (
+                            float(w.get("x1", 0)),
+                            float(w.get("y1", 0)),
+                            float(w.get("x2", 0)),
+                            float(w.get("y2", 0)),
+                            float(curve_s) if curve_s else None,
+                        )
+                    )
                 except (ValueError, TypeError):
                     pass
 
             for c in sym_el.findall("circle"):
                 try:
-                    sg.circles.append((
-                        float(c.get("x", 0)), float(c.get("y", 0)),
-                        float(c.get("radius", 0)),
-                    ))
+                    sg.circles.append(
+                        (
+                            float(c.get("x", 0)),
+                            float(c.get("y", 0)),
+                            float(c.get("radius", 0)),
+                        )
+                    )
                 except (ValueError, TypeError):
                     pass
 
             for r in sym_el.findall("rectangle"):
                 try:
-                    sg.rectangles.append((
-                        float(r.get("x1", 0)), float(r.get("y1", 0)),
-                        float(r.get("x2", 0)), float(r.get("y2", 0)),
-                    ))
+                    sg.rectangles.append(
+                        (
+                            float(r.get("x1", 0)),
+                            float(r.get("y1", 0)),
+                            float(r.get("x2", 0)),
+                            float(r.get("y2", 0)),
+                        )
+                    )
                 except (ValueError, TypeError):
                     pass
 
@@ -500,21 +658,21 @@ def parse_eagle_schematic(sch_path: str):
         # -- devicesets: gate→symbol map, ref prefix, and per-device pad maps --
         for ds in lib.findall("devicesets/deviceset"):
             ds_name = ds.get("name", "")
-            prefix  = ds.get("prefix", "U")
+            prefix = ds.get("prefix", "U")
 
             for gate in ds.findall("gates/gate"):
                 gate_name = gate.get("name", "")
-                sym_name  = gate.get("symbol", "")
+                sym_name = gate.get("symbol", "")
                 gate_to_sym[(lib_name, ds_name, gate_name)] = sym_name
                 sg = sym_geoms.get((lib_name, sym_name))
-                if sg:
-                    sg.ref_prefix = prefix
+                if sg is not None:
+                    sg.ref_prefix = prefix or "U"
 
             # Pad map per (device, gate): {(dev_name, gate): {pin: pad}}
             for dev in ds.findall("devices/device"):
                 dev_name = dev.get("name", "")
                 for con in dev.findall("connects/connect"):
-                    g   = con.get("gate", "")
+                    g = con.get("gate", "")
                     pin = con.get("pin", "")
                     pad = con.get("pad", "")
                     if g and pin and pad:
@@ -528,10 +686,10 @@ def parse_eagle_schematic(sch_path: str):
 
     # ── 3+4. Parse ALL sheets: instances (one per gate) + nets ─────────────
     # Each Eagle sheet is laid out side-by-side in X so nothing overlaps.
-    instances:  List[_EagleInst]                             = []
-    net_wires:  List[Tuple[str, float, float, float, float]] = []
-    net_labels: List[Tuple[str, float, float, float]]        = []
-    junctions:  List[Tuple[float, float]]                    = []
+    instances: List[_EagleInst] = []
+    net_wires: List[Tuple[str, float, float, float, float]] = []
+    net_labels: List[Tuple[str, float, float, float]] = []
+    junctions: List[Tuple[float, float]] = []
 
     # Variant cache: (lib, sym, pad_signature) → _EagleSymGeom (with pad map)
     variant_geoms: Dict[Tuple[str, str, Tuple], _EagleSymGeom] = {}
@@ -561,7 +719,7 @@ def parse_eagle_schematic(sch_path: str):
             return None
 
         pads = _resolve_pads(part, gate, sym_name)
-        sig  = tuple(sorted(pads.items()))
+        sig = tuple(sorted(pads.items()))
         vkey = (part.lib_name, sym_name, sig)
         if vkey in variant_geoms:
             return variant_geoms[vkey]
@@ -600,30 +758,38 @@ def parse_eagle_schematic(sch_path: str):
             for seg in net.findall("segment"):
                 for w in seg.findall("wire"):
                     try:
-                        net_wires.append((
-                            net_name,
-                            float(w.get("x1", 0)) + dx, float(w.get("y1", 0)),
-                            float(w.get("x2", 0)) + dx, float(w.get("y2", 0)),
-                        ))
+                        net_wires.append(
+                            (
+                                net_name,
+                                float(w.get("x1", 0)) + dx,
+                                float(w.get("y1", 0)),
+                                float(w.get("x2", 0)) + dx,
+                                float(w.get("y2", 0)),
+                            )
+                        )
                     except (ValueError, TypeError):
                         pass
                 for lbl in seg.findall("label"):
                     try:
                         angle, _ = _parse_rot(lbl.get("rot", "R0"))
-                        net_labels.append((
-                            net_name,
-                            float(lbl.get("x", 0)) + dx,
-                            float(lbl.get("y", 0)),
-                            angle,
-                        ))
+                        net_labels.append(
+                            (
+                                net_name,
+                                float(lbl.get("x", 0)) + dx,
+                                float(lbl.get("y", 0)),
+                                angle,
+                            )
+                        )
                     except (ValueError, TypeError):
                         pass
                 for junc in seg.findall("junction"):
                     try:
-                        junctions.append((
-                            float(junc.get("x", 0)) + dx,
-                            float(junc.get("y", 0)),
-                        ))
+                        junctions.append(
+                            (
+                                float(junc.get("x", 0)) + dx,
+                                float(junc.get("y", 0)),
+                            )
+                        )
                     except (ValueError, TypeError):
                         pass
 
@@ -634,6 +800,7 @@ def parse_eagle_schematic(sch_path: str):
 def _baked_kicad_id(sg: "_EagleSymGeom", krot: int) -> str:
     """lib_id for the rotation/mirror-baked variant of a symbol."""
     return f"{sg.kicad_id}__m{int(krot) % 360}"
+
 
 def _bake_xform(krot: int):
     """Return an (x, y) -> (x, y) transform that bakes a mirrored instance's
@@ -647,12 +814,19 @@ def _bake_xform(krot: int):
     wires to pins on mirrored symbols, so eliminating the mirror flag is what
     makes those nets connect.
     """
+
     def _x(lx: float, ly: float) -> Tuple[float, float]:
         dx, dy = _render_local(lx, ly, krot, True)
         return (dx, -dy)
+
     return _x
 
-def _gen_lib_symbol(sg: _EagleSymGeom, xform=None, name_id: str = None) -> str:
+
+def _gen_lib_symbol(
+    sg: _EagleSymGeom,
+    xform: Optional[Callable[[float, float], Tuple[float, float]]] = None,
+    name_id: Optional[str] = None,
+) -> str:
     """
     Generate the KiCad lib_symbol S-expression for an Eagle symbol.
 
@@ -668,36 +842,48 @@ def _gen_lib_symbol(sg: _EagleSymGeom, xform=None, name_id: str = None) -> str:
     # part after the ':' in the lib_id).  The dedup logic may prefix the
     # kicad_id with the library name, so derive the leaf from kicad_id — not
     # from sg.name — otherwise KiCad rejects the mismatched sub-symbol.
-    kid   = name_id or sg.kicad_id
-    leaf  = kid.split(":")[-1]
-    ref   = _escape(sg.ref_prefix or "U")
-    sym   = _escape(kid)
-    power = "\n      (power)" if sg.is_power else ""
-    hide  = (' (pin_numbers (hide yes)) (pin_names (hide yes))'
-             if (sg.is_power or (sg.ref_prefix or "").upper() in _PASSIVE_PREFIXES)
-             else '')
+    kid = name_id or sg.kicad_id
+    leaf = kid.split(":")[-1]
+    ref = _escape(sg.ref_prefix or "U")
+    sym = _escape(kid)
+    power_flag = " (power)" if sg.is_power else ""
+    hide = (
+        " (pin_numbers (hide yes)) (pin_names (hide yes))"
+        if (sg.is_power or (sg.ref_prefix or "").upper() in _PASSIVE_PREFIXES)
+        else ""
+    )
 
     def T(x: float, y: float) -> Tuple[float, float]:
         return xform(x, y) if xform else (x, y)
 
     L: List[str] = []
-    L.append(f'    (symbol "{sym}"{hide} (in_bom yes) (on_board yes){power}\n')
-    L.append(f'      (property "Reference" "{ref}" (at 0 0 0)'
-             f'\n        (effects (font (size 1.27 1.27))))\n')
-    L.append(f'      (property "Value" "{_escape(sg.name)}" (at 0 0 0)'
-             f'\n        (effects (font (size 1.27 1.27))))\n')
-    L.append(f'      (property "Footprint" "" (at 0 0 0)'
-             f'\n        (effects (font (size 1.27 1.27)) hide))\n')
-    L.append(f'      (property "Datasheet" "" (at 0 0 0)'
-             f'\n        (effects (font (size 1.27 1.27)) hide))\n')
+    L.append(f'    (symbol "{sym}"{hide} (in_bom yes) (on_board yes){power_flag}\n')
+    L.append(
+        f'      (property "Reference" "{ref}" (at 0 0 0)'
+        f"\n        (effects (font (size 1.27 1.27))))\n"
+    )
+    L.append(
+        f'      (property "Value" "{_escape(sg.name)}" (at 0 0 0)'
+        f"\n        (effects (font (size 1.27 1.27))))\n"
+    )
+    L.append(
+        f'      (property "Footprint" "" (at 0 0 0)'
+        f"\n        (effects (font (size 1.27 1.27)) hide))\n"
+    )
+    L.append(
+        f'      (property "Datasheet" "" (at 0 0 0)'
+        f"\n        (effects (font (size 1.27 1.27)) hide))\n"
+    )
 
     # ── Drawing body in sub-symbol _0_1 ─────────────────────────────────
     L.append(f'      (symbol "{_escape(leaf)}_0_1"\n')
 
     def _polyline(points: List[Tuple[float, float]], fill: str = "none") -> str:
         pts = " ".join(f"(xy {_fmt(x)} {_fmt(y)})" for x, y in points)
-        return (f'        (polyline (pts {pts})'
-                f' (stroke (width 0) (type default)) (fill (type {fill})))\n')
+        return (
+            f"        (polyline (pts {pts})"
+            f" (stroke (width 0) (type default)) (fill (type {fill})))\n"
+        )
 
     for x1, y1, x2, y2, curve in sg.wires:
         if curve is not None:
@@ -710,21 +896,20 @@ def _gen_lib_symbol(sg: _EagleSymGeom, xform=None, name_id: str = None) -> str:
     for cx, cy, r in sg.circles:
         tcx, tcy = T(cx, cy)
         L.append(
-            f'        (circle (center {_fmt(tcx)} {_fmt(tcy)}) (radius {_fmt(r)})'
-            f' (stroke (width 0) (type default)) (fill (type none)))\n'
+            f"        (circle (center {_fmt(tcx)} {_fmt(tcy)}) (radius {_fmt(r)})"
+            f" (stroke (width 0) (type default)) (fill (type none)))\n"
         )
 
     for x1, y1, x2, y2 in sg.rectangles:
         if xform is None:
             L.append(
-                f'        (rectangle (start {_fmt(x1)} {_fmt(y1)})'
-                f' (end {_fmt(x2)} {_fmt(y2)})'
-                f' (stroke (width 0) (type default)) (fill (type none)))\n'
+                f"        (rectangle (start {_fmt(x1)} {_fmt(y1)})"
+                f" (end {_fmt(x2)} {_fmt(y2)})"
+                f" (stroke (width 0) (type default)) (fill (type none)))\n"
             )
         else:
             # A rotated/mirrored rectangle is no longer axis-aligned → polyline.
-            L.append(_polyline(
-                [T(x1, y1), T(x2, y1), T(x2, y2), T(x1, y2), T(x1, y1)]))
+            L.append(_polyline([T(x1, y1), T(x2, y1), T(x2, y2), T(x1, y2), T(x1, y1)]))
 
     for verts in sg.polygons:
         tv = [T(x, y) for x, y in verts]
@@ -734,8 +919,7 @@ def _gen_lib_symbol(sg: _EagleSymGeom, xform=None, name_id: str = None) -> str:
     # The lead starts at the grid-snapped pin connection point so it stays
     # visually attached to the (snapped) pin marker.
     def _gsnap(pt: Tuple[float, float]) -> Tuple[float, float]:
-        return (round(pt[0] / _GRID_MM) * _GRID_MM,
-                round(pt[1] / _GRID_MM) * _GRID_MM)
+        return (round(pt[0] / _GRID_MM) * _GRID_MM, round(pt[1] / _GRID_MM) * _GRID_MM)
 
     for pin in sg.pins:
         L2 = pin.length_mm or 0.0
@@ -746,7 +930,7 @@ def _gen_lib_symbol(sg: _EagleSymGeom, xform=None, name_id: str = None) -> str:
         p1 = T(pin.x + L2 * math.cos(a), pin.y + L2 * math.sin(a))
         L.append(_polyline([p0, p1]))
 
-    L.append('      )\n')
+    L.append("      )\n")
 
     # ── Pins in sub-symbol _1_1 ──────────────────────────────────────────
     L.append(f'      (symbol "{_escape(leaf)}_1_1"\n')
@@ -771,15 +955,15 @@ def _gen_lib_symbol(sg: _EagleSymGeom, xform=None, name_id: str = None) -> str:
         # Pins are length 0 so KiCad's connection point is exactly the pin
         # position for all orientations; the drawn lead is added to the body.
         L.append(
-            f'        (pin {ptype} line'
-            f' (at {_fmt(pax)} {_fmt(pay)} {pang})'
-            f' (length 0)\n'
+            f"        (pin {ptype} line"
+            f" (at {_fmt(pax)} {_fmt(pay)} {pang})"
+            f" (length 0)\n"
             f'          (name "{_escape(pin.name)}" (effects (font (size 1.016 1.016))))\n'
             f'          (number "{_escape(number)}" (effects (font (size 1.016 1.016)))))\n'
         )
 
-    L.append('      )\n')
-    L.append('    )\n')
+    L.append("      )\n")
+    L.append("    )\n")
     return "".join(L)
 
 
@@ -795,31 +979,40 @@ def generate_sym_lib(sym_geoms: List["_EagleSymGeom"], lib_path: str) -> None:
     and from this library file.
     """
     out: List[str] = []
-    out.append('(kicad_symbol_lib (version 20250114)'
-               ' (generator "kicad_symbol_editor")\n')
+    out.append("(kicad_symbol_lib (version 20250114)" ' (generator "kicad_symbol_editor")\n')
 
     for sg in sym_geoms:
         # In a .kicad_sym file the symbol name has NO library prefix — the
         # prefix comes from the library nickname in sym-lib-table.  Use the
         # kicad_id leaf (after ':') so the name matches what the schematic
         # references (eagle_import:<leaf>) and stays unique across libraries.
-        leaf  = sg.kicad_id.split(":")[-1]
+        leaf = sg.kicad_id.split(":")[-1]
         power = "\n  (power)" if sg.is_power else ""
-        ref   = _escape(sg.ref_prefix or "U")
-        name  = _escape(leaf)
-        hide  = (' (pin_numbers (hide yes)) (pin_names (hide yes))'
-                 if (sg.is_power or (sg.ref_prefix or "").upper() in _PASSIVE_PREFIXES)
-                 else '')
+        ref = _escape(sg.ref_prefix or "U")
+        name = _escape(leaf)
+        hide = (
+            " (pin_numbers (hide yes)) (pin_names (hide yes))"
+            if (sg.is_power or (sg.ref_prefix or "").upper() in _PASSIVE_PREFIXES)
+            else ""
+        )
 
         out.append(f'  (symbol "{name}"{hide} (in_bom yes) (on_board yes){power}\n')
-        out.append(f'    (property "Reference" "{ref}" (at 0 0 0)'
-                   f'\n      (effects (font (size 1.27 1.27))))\n')
-        out.append(f'    (property "Value" "{name}" (at 0 0 0)'
-                   f'\n      (effects (font (size 1.27 1.27))))\n')
-        out.append(f'    (property "Footprint" "" (at 0 0 0)'
-                   f'\n      (effects (font (size 1.27 1.27)) hide))\n')
-        out.append(f'    (property "Datasheet" "" (at 0 0 0)'
-                   f'\n      (effects (font (size 1.27 1.27)) hide))\n')
+        out.append(
+            f'    (property "Reference" "{ref}" (at 0 0 0)'
+            f"\n      (effects (font (size 1.27 1.27))))\n"
+        )
+        out.append(
+            f'    (property "Value" "{name}" (at 0 0 0)'
+            f"\n      (effects (font (size 1.27 1.27))))\n"
+        )
+        out.append(
+            f'    (property "Footprint" "" (at 0 0 0)'
+            f"\n      (effects (font (size 1.27 1.27)) hide))\n"
+        )
+        out.append(
+            f'    (property "Datasheet" "" (at 0 0 0)'
+            f"\n      (effects (font (size 1.27 1.27)) hide))\n"
+        )
 
         # ── Drawing body ──────────────────────────────────────────────
         out.append(f'    (symbol "{_escape(leaf)}_0_1"\n')
@@ -828,43 +1021,43 @@ def generate_sym_lib(sym_geoms: List["_EagleSymGeom"], lib_path: str) -> None:
             if curve is not None:
                 for sx, sy, ex, ey in _arc_segments(x1, y1, x2, y2, curve):
                     out.append(
-                        f'      (polyline (pts (xy {_fmt(sx)} {_fmt(sy)})'
-                        f' (xy {_fmt(ex)} {_fmt(ey)}))'
-                        f' (stroke (width 0) (type default)) (fill (type none)))\n'
+                        f"      (polyline (pts (xy {_fmt(sx)} {_fmt(sy)})"
+                        f" (xy {_fmt(ex)} {_fmt(ey)}))"
+                        f" (stroke (width 0) (type default)) (fill (type none)))\n"
                     )
             else:
                 out.append(
-                    f'      (polyline (pts (xy {_fmt(x1)} {_fmt(y1)})'
-                    f' (xy {_fmt(x2)} {_fmt(y2)}))'
-                    f' (stroke (width 0) (type default)) (fill (type none)))\n'
+                    f"      (polyline (pts (xy {_fmt(x1)} {_fmt(y1)})"
+                    f" (xy {_fmt(x2)} {_fmt(y2)}))"
+                    f" (stroke (width 0) (type default)) (fill (type none)))\n"
                 )
 
         for cx, cy, r in sg.circles:
             out.append(
-                f'      (circle (center {_fmt(cx)} {_fmt(cy)}) (radius {_fmt(r)})'
-                f' (stroke (width 0) (type default)) (fill (type none)))\n'
+                f"      (circle (center {_fmt(cx)} {_fmt(cy)}) (radius {_fmt(r)})"
+                f" (stroke (width 0) (type default)) (fill (type none)))\n"
             )
 
         for x1, y1, x2, y2 in sg.rectangles:
             out.append(
-                f'      (rectangle (start {_fmt(x1)} {_fmt(y1)})'
-                f' (end {_fmt(x2)} {_fmt(y2)})'
-                f' (stroke (width 0) (type default)) (fill (type none)))\n'
+                f"      (rectangle (start {_fmt(x1)} {_fmt(y1)})"
+                f" (end {_fmt(x2)} {_fmt(y2)})"
+                f" (stroke (width 0) (type default)) (fill (type none)))\n"
             )
 
         for verts in sg.polygons:
             pts = " ".join(f"(xy {_fmt(x)} {_fmt(y)})" for x, y in verts)
             pts += f" (xy {_fmt(verts[0][0])} {_fmt(verts[0][1])})"
             out.append(
-                f'      (polyline (pts {pts})'
-                f' (stroke (width 0) (type default)) (fill (type outline)))\n'
+                f"      (polyline (pts {pts})"
+                f" (stroke (width 0) (type default)) (fill (type outline)))\n"
             )
 
         # Visible pin leads (pins themselves are emitted with length 0 below).
         for pin in sg.pins:
-            out.append(_pin_lead(pin, '      '))
+            out.append(_pin_lead(pin, "      "))
 
-        out.append('    )\n')
+        out.append("    )\n")
 
         # ── Pins ─────────────────────────────────────────────────────
         out.append(f'    (symbol "{_escape(leaf)}_1_1"\n')
@@ -876,18 +1069,18 @@ def generate_sym_lib(sym_geoms: List["_EagleSymGeom"], lib_path: str) -> None:
             spx = round(pin.x / _GRID_MM) * _GRID_MM
             spy = round(pin.y / _GRID_MM) * _GRID_MM
             out.append(
-                f'      (pin {ptype} line'
-                f' (at {_fmt(spx)} {_fmt(spy)} {int(pin.angle % 360)})'
-                f' (length 0)\n'
+                f"      (pin {ptype} line"
+                f" (at {_fmt(spx)} {_fmt(spy)} {int(pin.angle % 360)})"
+                f" (length 0)\n"
                 f'        (name "{_escape(pin.name)}"'
-                f' (effects (font (size 1.016 1.016))))\n'
+                f" (effects (font (size 1.016 1.016))))\n"
                 f'        (number "{_escape(number)}"'
-                f' (effects (font (size 1.016 1.016)))))\n'
+                f" (effects (font (size 1.016 1.016)))))\n"
             )
-        out.append('    )\n')
-        out.append('  )\n')
+        out.append("    )\n")
+        out.append("  )\n")
 
-    out.append(')\n')
+    out.append(")\n")
     os.makedirs(os.path.dirname(os.path.abspath(lib_path)), exist_ok=True)
     with open(lib_path, "w", encoding="utf-8", newline="\n") as fh:
         fh.writelines(out)
@@ -912,21 +1105,21 @@ def generate_sym_lib_table(project_dir: str, lib_filename: str) -> None:
 
 # ── KiCad schematic generator ──────────────────────────────────────────────────
 def generate_kicad_sch(
-    parts:      Dict[str, _EaglePart],
-    instances:  List[_EagleInst],
-    net_wires:  List[Tuple[str, float, float, float, float]],
+    parts: Dict[str, _EaglePart],
+    instances: List[_EagleInst],
+    net_wires: List[Tuple[str, float, float, float, float]],
     net_labels: List[Tuple[str, float, float, float]],
-    junctions:  List[Tuple[float, float]],
+    junctions: List[Tuple[float, float]],
     output_path: str,
-) -> str:
+) -> Tuple[str, int]:
     """
     Write a .kicad_sch from parsed Eagle data.
-    Returns the schematic UUID string.
+    Returns (schematic UUID, dangling wire segment count after trimming).
     """
     # Y offset: flip Eagle Y (Y-up) to KiCad Y (Y-down).  Snap the base to the
     # grid so that everything on-grid in Eagle also lands on KiCad's grid.
     all_ys = [inst.y for inst in instances]
-    y_off  = round(((max(all_ys) if all_ys else 200.0) + 20.0) / _GRID_MM) * _GRID_MM
+    y_off = round(((max(all_ys) if all_ys else 200.0) + 20.0) / _GRID_MM) * _GRID_MM
 
     def ky(y: float) -> float:
         """Eagle schematic Y → KiCad schematic Y."""
@@ -950,13 +1143,17 @@ def generate_kicad_sch(
         ox0, oy0 = inst.x, ky(inst.y)
         for lx, ly in _symbol_local_points(inst.sym_geom):
             dx, dy = _render_local(lx, ly, krot, inst.mirror)
-            bxs.append(ox0 + dx); bys.append(oy0 + dy)
+            bxs.append(ox0 + dx)
+            bys.append(oy0 + dy)
     for _n, x1, y1, x2, y2 in net_wires:
-        bxs += [x1, x2]; bys += [ky(y1), ky(y2)]
+        bxs += [x1, x2]
+        bys += [ky(y1), ky(y2)]
     for jx, jy in junctions:
-        bxs.append(jx); bys.append(ky(jy))
+        bxs.append(jx)
+        bys.append(ky(jy))
     for _n, lx, ly, _a in net_labels:
-        bxs.append(lx); bys.append(ky(ly))
+        bxs.append(lx)
+        bys.append(ky(ly))
 
     if bxs:
         min_x, max_x = min(bxs), max(bxs)
@@ -991,7 +1188,7 @@ def generate_kicad_sch(
     out: List[str] = []
 
     out.append(f'(kicad_sch (version 20250114) (generator "KiCAD Schematic Editor")\n\n')
-    out.append(f'  (uuid {sch_uuid})\n\n')
+    out.append(f"  (uuid {sch_uuid})\n\n")
     out.append(f'  (paper "{paper}")\n\n')
 
     # lib_symbols section
@@ -1014,7 +1211,7 @@ def generate_kicad_sch(
     out.append("  )\n\n")
 
     # Component placements — one KiCad symbol per Eagle gate instance
-    pin_world_pts: List[Tuple[float, float]] = []   # every pin's connection point
+    pin_world_pts: List[Tuple[float, float]] = []  # every pin's connection point
     pwr_counter = 0
     for inst in instances:
         part = inst.part_ref
@@ -1022,27 +1219,27 @@ def generate_kicad_sch(
             continue
         sg = inst.sym_geom
 
-        kx   = px(inst.x)
+        kx = px(inst.x)
         kycmp = py(ky(inst.y))
 
         krot = _krot(inst.angle, inst.mirror)
         # Mirrored instances reference a geometry-baked variant and are placed
         # with an identity transform so wires can connect to their pins.
         if inst.mirror:
-            lib_id_use  = _baked_kicad_id(sg, krot)
-            place_rot   = 0
+            lib_id_use = _baked_kicad_id(sg, krot)
+            place_rot = 0
         else:
-            lib_id_use  = sg.kicad_id
-            place_rot   = krot
+            lib_id_use = sg.kicad_id
+            place_rot = krot
         mirror_field = ""
 
         # Rendered bounding box of this instance (delta from its origin) so the
         # Reference/Value labels can be placed clear of the symbol body instead
         # of a fixed origin offset that lands inside large/rotated symbols.
-        _pts = [_render_local(lx, ly, krot, inst.mirror)
-                for lx, ly in _symbol_local_points(sg)]
+        _pts = [_render_local(lx, ly, krot, inst.mirror) for lx, ly in _symbol_local_points(sg)]
         if _pts:
-            _dxs = [p[0] for p in _pts]; _dys = [p[1] for p in _pts]
+            _dxs = [p[0] for p in _pts]
+            _dys = [p[1] for p in _pts]
             bb_min_x, bb_max_x = min(_dxs), max(_dxs)
             bb_top, bb_bot = min(_dys), max(_dys)
         else:
@@ -1066,7 +1263,8 @@ def generate_kicad_sch(
         # so we centre the rotated labels on it even for asymmetric symbols.
         _pin_r = [_render_local(pp.x, pp.y, krot, inst.mirror) for pp in sg.pins]
         if len(_pin_r) >= 2:
-            _pxs = [p[0] for p in _pin_r]; _pys = [p[1] for p in _pin_r]
+            _pxs = [p[0] for p in _pin_r]
+            _pys = [p[1] for p in _pin_r]
             vertical = (max(_pys) - min(_pys)) > (max(_pxs) - min(_pxs))
             pin_cx = (min(_pxs) + max(_pxs)) / 2.0
             pin_cy = (min(_pys) + max(_pys)) / 2.0
@@ -1075,8 +1273,8 @@ def generate_kicad_sch(
             pin_cx, pin_cy = bb_cx, bb_cy
         ref_just = ""
         val_just = ""
-        ref_rot  = 0
-        val_rot  = 0
+        ref_rot = 0
+        val_rot = 0
         if is_passive and vertical:
             # Vertical R/L/C: rotate the Reference/Value text 90° so it runs
             # alongside the body (KiCad's own convention), Reference on the left
@@ -1087,58 +1285,62 @@ def generate_kicad_sch(
             # angle must compensate for place_rot (e.g. an instance placed at 90°
             # needs a stored 0° to display vertically). Mirror-baked variants are
             # placed at place_rot 0, so they simply store 90°.
-            ref_px = px(inst.x + bb_min_x - 1.27); ref_py = py(ky(inst.y) + pin_cy)
-            val_px = px(inst.x + bb_max_x + 1.27); val_py = py(ky(inst.y) + pin_cy)
+            ref_px = px(inst.x + bb_min_x - 1.27)
+            ref_py = py(ky(inst.y) + pin_cy)
+            val_px = px(inst.x + bb_max_x + 1.27)
+            val_py = py(ky(inst.y) + pin_cy)
             ref_rot = (90 - place_rot) % 180
             val_rot = (90 - place_rot) % 180
         else:
-            ref_px = px(inst.x + bb_cx); ref_py = py(ky(inst.y) + bb_top - 1.27)
-            val_px = px(inst.x + bb_cx); val_py = py(ky(inst.y) + bb_bot + 1.27)
+            ref_px = px(inst.x + bb_cx)
+            ref_py = py(ky(inst.y) + bb_top - 1.27)
+            val_px = px(inst.x + bb_cx)
+            val_py = py(ky(inst.y) + bb_bot + 1.27)
 
         if part.is_power:
             pwr_counter += 1
-            ref_val          = f"#PWR{pwr_counter:04d}"
+            ref_val = f"#PWR{pwr_counter:04d}"
             in_bom, on_board = "no", "no"
         else:
-            ref_val          = part.name
+            ref_val = part.name
             in_bom, on_board = "yes", "yes"
 
         val_str = part.value or sg.name
 
         out.append(
             f'  (symbol (lib_id "{_escape(lib_id_use)}")'
-            f' (at {_fmt(kx)} {_fmt(kycmp)} {place_rot}){mirror_field} (unit 1)\n'
-            f'    (in_bom {in_bom}) (on_board {on_board}) (dnp no)'
-            f' (uuid {_uid()})\n'
+            f" (at {_fmt(kx)} {_fmt(kycmp)} {place_rot}){mirror_field} (unit 1)\n"
+            f"    (in_bom {in_bom}) (on_board {on_board}) (dnp no)"
+            f" (uuid {_uid()})\n"
         )
         # Power-symbol references (#PWR…) are auto-generated and carry no useful
         # information, so keep them hidden like KiCad's own power symbols do.
         ref_hide = " hide" if part.is_power else ""
         out.append(
             f'    (property "Reference" "{_escape(ref_val)}"'
-            f' (at {_fmt(ref_px)} {_fmt(ref_py)} {ref_rot})\n'
-            f'      (effects (font (size 1.27 1.27)){ref_just}{ref_hide}))\n'
+            f" (at {_fmt(ref_px)} {_fmt(ref_py)} {ref_rot})\n"
+            f"      (effects (font (size 1.27 1.27)){ref_just}{ref_hide}))\n"
         )
         out.append(
             f'    (property "Value" "{_escape(val_str)}"'
-            f' (at {_fmt(val_px)} {_fmt(val_py)} {val_rot})\n'
-            f'      (effects (font (size 1.27 1.27)){val_just}))\n'
+            f" (at {_fmt(val_px)} {_fmt(val_py)} {val_rot})\n"
+            f"      (effects (font (size 1.27 1.27)){val_just}))\n"
         )
         out.append(
             f'    (property "Footprint" ""'
-            f' (at {_fmt(kx)} {_fmt(kycmp)} 0)\n'
-            f'      (effects (font (size 1.27 1.27)) hide))\n'
+            f" (at {_fmt(kx)} {_fmt(kycmp)} 0)\n"
+            f"      (effects (font (size 1.27 1.27)) hide))\n"
         )
         out.append(
             f'    (property "Datasheet" "~"'
-            f' (at {_fmt(kx)} {_fmt(kycmp)} 0)\n'
-            f'      (effects (font (size 1.27 1.27)) hide))\n'
+            f" (at {_fmt(kx)} {_fmt(kycmp)} 0)\n"
+            f"      (effects (font (size 1.27 1.27)) hide))\n"
         )
         # Pin UUID entries (KiCad references pins here by NUMBER, not name)
         for idx, pin in enumerate(sg.pins):
             number = sg.pin_number(pin.name, idx)
             out.append(f'    (pin "{_escape(number)}" (uuid {_uid()}))\n')
-        out.append('  )\n\n')
+        out.append("  )\n\n")
 
         # Record each pin's electrical connection point in KiCad space (matches
         # the length-0 pin emitted in the lib symbol), used to trim dangling wire
@@ -1147,7 +1349,7 @@ def generate_kicad_sch(
         _pa = math.radians(place_rot)
         _ca, _sa = math.cos(_pa), math.sin(_pa)
         for pin in sg.pins:
-            _lx, _ly = (_bx(pin.x, pin.y) if _bx else (pin.x, pin.y))
+            _lx, _ly = _bx(pin.x, pin.y) if _bx else (pin.x, pin.y)
             _lx, _ly = _gridsnap(_lx), _gridsnap(_ly)
             _wx = kx + (_lx * _ca - _ly * _sa)
             _wy = kycmp - (_lx * _sa + _ly * _ca)
@@ -1171,9 +1373,12 @@ def generate_kicad_sch(
         _deg: Dict[Tuple[float, float], int] = {}
         _nbr: Dict[Tuple[float, float], Tuple[float, float]] = {}
         for _x1, _y1, _x2, _y2 in _segs:
-            _a = (round(_x1, 4), round(_y1, 4)); _b = (round(_x2, 4), round(_y2, 4))
-            _deg[_a] = _deg.get(_a, 0) + 1; _deg[_b] = _deg.get(_b, 0) + 1
-            _nbr[_a] = _b; _nbr[_b] = _a
+            _a = (float(round(_x1, 4)), float(round(_y1, 4)))
+            _b = (float(round(_x2, 4)), float(round(_y2, 4)))
+            _deg[_a] = _deg.get(_a, 0) + 1
+            _deg[_b] = _deg.get(_b, 0) + 1
+            _nbr[_a] = _b
+            _nbr[_b] = _a
         _free_ends_by_net[_nn] = [(p, _nbr[p]) for p, d in _deg.items() if d == 1]
 
     def _snap_to_net(name: str, lx: float, ly: float):
@@ -1217,16 +1422,16 @@ def generate_kicad_sch(
     snapped_labels: List[Tuple[str, float, float, int, str]] = []
     for net_name, lx, ly, angle in net_labels:
         slx, sly, dxe, dye = _snap_to_net(net_name, lx, ly)
-        kdx, kdy = dxe, -dye                      # wire direction in KiCad space
+        kdx, kdy = dxe, -dye  # wire direction in KiCad space
         # A label has two justify axes. The vertical axis is always "bottom"; the
         # horizontal axis follows the wire so the text always reads *outward* from
         # it (anchored at the end nearest the wire).
         if kdx == 0 and kdy == 0:
             rot, hjust = _krot(angle), "left"
-        elif abs(kdx) >= abs(kdy):                # horizontal wire → label rot 0
+        elif abs(kdx) >= abs(kdy):  # horizontal wire → label rot 0
             rot = 0
             hjust = "right" if kdx > 0 else "left"
-        else:                                     # vertical wire → label rot 90
+        else:  # vertical wire → label rot 90
             rot = 90
             hjust = "right" if kdy < 0 else "left"
         just = f"{hjust} bottom"
@@ -1246,42 +1451,44 @@ def generate_kicad_sch(
         conn_pts.add((round(_jx, 3), round(_jy, 3)))
 
     kicad_wires = [
-        (px(x1), py(ky(y1)), px(x2), py(ky(y2)))
-        for _net_name, x1, y1, x2, y2 in net_wires
+        (px(x1), py(ky(y1)), px(x2), py(ky(y2))) for _net_name, x1, y1, x2, y2 in net_wires
     ]
+    kicad_wires = _snap_wire_endpoints(kicad_wires, conn_pts)
     kicad_wires = _trim_wires(kicad_wires, conn_pts)
+    kicad_wires = _prune_dangling_wires(kicad_wires, conn_pts)
+    dangling_wires = _count_dangling_wires(kicad_wires, conn_pts)
 
     # Net wires (trimmed)
     for x1, y1, x2, y2 in kicad_wires:
         out.append(
-            f'  (wire (pts (xy {_fmt(x1)} {_fmt(y1)})'
-            f' (xy {_fmt(x2)} {_fmt(y2)}))\n'
-            f'    (stroke (width 0) (type default)) (uuid {_uid()}))\n'
+            f"  (wire (pts (xy {_fmt(x1)} {_fmt(y1)})"
+            f" (xy {_fmt(x2)} {_fmt(y2)}))\n"
+            f"    (stroke (width 0) (type default)) (uuid {_uid()}))\n"
         )
 
     # Junctions
     for jx, jy in junction_pts:
         out.append(
-            f'  (junction (at {_fmt(jx)} {_fmt(jy)})'
-            f' (diameter 0) (color 0 0 0 0) (uuid {_uid()}))\n'
+            f"  (junction (at {_fmt(jx)} {_fmt(jy)})"
+            f" (diameter 0) (color 0 0 0 0) (uuid {_uid()}))\n"
         )
 
     # Net labels (moved onto the wire, justified so the text runs off it)
     for net_name, lxk, lyk, lrot, ljust in snapped_labels:
-        just_s = f' (justify {ljust})' if ljust else ""
+        just_s = f" (justify {ljust})" if ljust else ""
         out.append(
             f'  (label "{_escape(net_name)}" (at {_fmt(lxk)} {_fmt(lyk)} {lrot})\n'
-            f'    (effects (font (size 1.016 1.016)){just_s}) (uuid {_uid()}))\n'
+            f"    (effects (font (size 1.016 1.016)){just_s}) (uuid {_uid()}))\n"
         )
 
-    out.append("  (sheet_instances\n    (path \"/\" (page \"1\"))\n  )\n")
+    out.append('  (sheet_instances\n    (path "/" (page "1"))\n  )\n')
     out.append(")\n")
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with open(output_path, "w", encoding="utf-8", newline="\n") as fh:
         fh.writelines(out)
 
-    return sch_uuid
+    return sch_uuid, dangling_wires
 
 
 # ── EagleCommands (MCP handler) ────────────────────────────────────────────────
@@ -1289,20 +1496,9 @@ class EagleCommands:
     """Handles Eagle-related MCP commands."""
 
     def __init__(self) -> None:
-        self._kicad_cli = self._find_kicad_cli()
+        from utils.kicad_cli import resolve_kicad_cli
 
-    @staticmethod
-    def _find_kicad_cli() -> Optional[str]:
-        candidates: List[str] = []
-        if sys.platform == "win32":
-            for v in ("10.0", "9.0", "8.0"):
-                candidates.append(rf"C:\Program Files\KiCad\{v}\bin\kicad-cli.exe")
-        else:
-            candidates += ["kicad-cli", "/usr/bin/kicad-cli", "/usr/local/bin/kicad-cli"]
-        for c in candidates:
-            if os.path.exists(c):
-                return c
-        return "kicad-cli"
+        self._kicad_cli = resolve_kicad_cli()
 
     # ── Public command ─────────────────────────────────────────────────────────
     def import_eagle_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -1316,10 +1512,9 @@ class EagleCommands:
         output_dir     : destination directory   (optional; defaults beside .brd)
         project_name   : project name            (optional; defaults to .brd stem)
         """
-        board_file:   Optional[str] = params.get("board_file")
-        sch_file:     Optional[str] = (params.get("schematic_file")
-                                       or params.get("sch_file"))
-        output_dir:   Optional[str] = params.get("output_dir")
+        board_file: Optional[str] = params.get("board_file")
+        sch_file: Optional[str] = params.get("schematic_file") or params.get("sch_file")
+        output_dir: Optional[str] = params.get("output_dir")
         project_name: Optional[str] = params.get("project_name")
 
         if not board_file:
@@ -1327,9 +1522,9 @@ class EagleCommands:
         if not os.path.exists(board_file):
             return {"success": False, "error": f"board_file not found: {board_file}"}
 
-        brd_base     = os.path.splitext(os.path.basename(board_file))[0]
+        brd_base = os.path.splitext(os.path.basename(board_file))[0]
         project_name = project_name or brd_base
-        safe_name    = re.sub(r'[<>:"/\\|?* ]', "_", project_name)
+        safe_name = re.sub(r'[<>:"/\\|?* ]', "_", project_name)
 
         if not sch_file:
             candidate = os.path.splitext(board_file)[0] + ".sch"
@@ -1337,9 +1532,7 @@ class EagleCommands:
                 sch_file = candidate
 
         if not output_dir:
-            output_dir = os.path.join(
-                os.path.dirname(os.path.abspath(board_file)), safe_name
-            )
+            output_dir = os.path.join(os.path.dirname(os.path.abspath(board_file)), safe_name)
         os.makedirs(output_dir, exist_ok=True)
 
         results: Dict[str, Any] = {
@@ -1351,42 +1544,52 @@ class EagleCommands:
         # 1. Import PCB
         pcb_out = os.path.join(output_dir, safe_name + ".kicad_pcb")
         pcb_ok, pcb_msg = self._import_pcb(board_file, pcb_out)
-        results["pcb_path"]    = pcb_out if pcb_ok else None
+        results["pcb_path"] = pcb_out if pcb_ok else None
         results["pcb_message"] = pcb_msg
 
         # 2. Import schematic
-        sch_out  = os.path.join(output_dir, safe_name + ".kicad_sch")
-        sch_ok   = False
-        sch_msg  = "No .sch file found"
+        sch_out = os.path.join(output_dir, safe_name + ".kicad_sch")
+        sch_ok = False
+        sch_msg = "No .sch file found"
         sch_uuid = None
+        sch_dangling = 0
         if sch_file and os.path.exists(sch_file):
-            sch_ok, sch_msg, sch_uuid = self._import_schematic(sch_file, sch_out)
-        results["sch_path"]    = sch_out if sch_ok else None
+            sch_ok, sch_msg, sch_uuid, sch_dangling = self._import_schematic(sch_file, sch_out)
+        results["sch_path"] = sch_out if sch_ok else None
         results["sch_message"] = sch_msg
+        results["dangling_wires"] = sch_dangling
+        if sch_dangling:
+            results.setdefault("warnings", []).append(
+                f"{sch_dangling} dangling wire segment(s) remain after trim — review ERC"
+            )
 
         # 3. Create .kicad_pro (with correct UUID so KiCad links it to the .kicad_sch)
         pro_path = os.path.join(output_dir, safe_name + ".kicad_pro")
         self._create_project_file(pro_path, safe_name, sch_uuid)
         results["project_path"] = pro_path
 
-        results["success"] = pcb_ok
-        results["message"]  = (
+        results["success"] = pcb_ok or sch_ok
+        results["message"] = (
             f"PCB: {'OK' if pcb_ok else 'FAILED'}; "
             f"Schematic: {'OK' if sch_ok else 'FAILED/SKIPPED'}"
+            + (f"; dangling wires: {sch_dangling}" if sch_dangling else "")
         )
         logger.info("Eagle import done: %s", results["message"])
         return results
 
     # ── Private helpers ────────────────────────────────────────────────────────
     def _import_pcb(self, brd_file: str, pcb_out: str) -> Tuple[bool, str]:
+        from utils.kicad_cli import kicad_cli_not_found_message
+
         cli = self._kicad_cli
         if not cli:
-            return False, "kicad-cli not found"
+            return False, kicad_cli_not_found_message()
         try:
             result = subprocess.run(
-                [cli, "pcb", "import", "--format", "eagle",
-                 "--output", pcb_out, brd_file],
-                capture_output=True, text=True, timeout=60,
+                [cli, "pcb", "import", "--format", "eagle", "--output", pcb_out, brd_file],
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
             if result.returncode == 0 and os.path.exists(pcb_out):
                 return True, "PCB imported successfully"
@@ -1396,23 +1599,22 @@ class EagleCommands:
 
     def _import_schematic(
         self, sch_file: str, sch_out: str
-    ) -> Tuple[bool, str, Optional[str]]:
+    ) -> Tuple[bool, str, Optional[str], int]:
         try:
-            parts, instances, net_wires, net_labels, junctions = \
-                parse_eagle_schematic(sch_file)
+            parts, instances, net_wires, net_labels, junctions = parse_eagle_schematic(sch_file)
 
-            sch_uuid = generate_kicad_sch(
+            sch_uuid, dangling_wires = generate_kicad_sch(
                 parts, instances, net_wires, net_labels, junctions, sch_out
             )
 
             if not (os.path.exists(sch_out) and os.path.getsize(sch_out) > 50):
-                return False, "Output file too small", None
+                return False, "Output file too small", None, 0
 
             # ── Generate .kicad_sym library ──────────────────────────────────
-            proj_dir     = os.path.dirname(sch_out)
-            proj_stem    = os.path.splitext(os.path.basename(sch_out))[0]
+            proj_dir = os.path.dirname(sch_out)
+            proj_stem = os.path.splitext(os.path.basename(sch_out))[0]
             lib_filename = f"{proj_stem}_eagle.kicad_sym"
-            lib_path     = os.path.join(proj_dir, lib_filename)
+            lib_path = os.path.join(proj_dir, lib_filename)
 
             # Collect unique symbol geometries used by any gate instance
             unique_syms: Dict[str, "_EagleSymGeom"] = {}
@@ -1425,43 +1627,36 @@ class EagleCommands:
             generate_sym_lib_table(proj_dir, lib_filename)
             logger.info("Symbol library written: %s", lib_path)
 
-            # ── Normalise through kicad-skip ─────────────────────────────────
+            # ── Canonical KiCad schematic formatting ─────────────────────────
             try:
-                from skip import Schematic as _Schematic
-                _s = _Schematic(sch_out)
-                _s.write(sch_out)
-                logger.info("Normalised via kicad-skip: %s", sch_out)
+                from utils.sexpr_format import prettify
+
+                text = Path(sch_out).read_text(encoding="utf-8")
+                Path(sch_out).write_text(prettify(text), encoding="utf-8", newline="\n")
+                logger.info("Prettified schematic: %s", sch_out)
             except Exception as e:
-                logger.warning("kicad-skip normalisation skipped: %s", e)
+                logger.warning("Schematic prettify skipped: %s", e)
 
             n_comp = sum(
-                1 for inst in instances
+                1
+                for inst in instances
                 if inst.part_ref and not inst.part_ref.is_frame and inst.sym_geom
             )
             n_nets = len({w[0] for w in net_wires})
-            msg = (f"Schematic converted ({n_comp} placements, "
-                   f"{n_nets} nets, {len(junctions)} junctions,"
-                   f" {len(unique_syms)} unique symbols)")
-            return True, msg, sch_uuid
+            msg = (
+                f"Schematic converted ({n_comp} placements, "
+                f"{n_nets} nets, {len(junctions)} junctions,"
+                f" {len(unique_syms)} unique symbols"
+                f"{f', {dangling_wires} dangling wires' if dangling_wires else ''})"
+            )
+            return True, msg, sch_uuid, dangling_wires
 
         except Exception:
             logger.exception("Eagle schematic import failed")
-            return False, "Conversion error (see log)", None
+            return False, "Conversion error (see log)", None, 0
 
     @staticmethod
-    def _create_project_file(
-        pro_path: str, name: str, sch_uuid: Optional[str] = None
-    ) -> None:
-        import json as _json
-        sheet_uuid = sch_uuid or str(uuid.uuid4())
-        pro = {
-            "board": {"design_settings": {}, "layer_presets": [], "viewports": []},
-            "boards": [],
-            "cvpcb": {"equivalence_files": []},
-            "libraries": {"pinned_footprint_libs": [], "pinned_symbol_libs": []},
-            "meta": {"filename": f"{name}.kicad_pro", "version": 1},
-            "sheets": [[sheet_uuid, ""]],
-            "text_variables": {},
-        }
-        with open(pro_path, "w", encoding="utf-8") as fh:
-            _json.dump(pro, fh, indent=2)
+    def _create_project_file(pro_path: str, name: str, sch_uuid: Optional[str] = None) -> None:
+        from utils.kicad_project import write_kicad_pro
+
+        write_kicad_pro(pro_path, sch_uuid)
