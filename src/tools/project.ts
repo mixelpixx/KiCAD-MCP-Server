@@ -47,14 +47,46 @@ export function registerProjectTools(server: McpServer, callKicadScript: Functio
     },
   );
 
+  // Close project tool
+  server.tool(
+    "close_project",
+    "Close the currently loaded KiCAD project: optionally save, then drop the in-memory board and clear session state. Use this to hand control back so the user (or the agent) can edit project files directly without the MCP later clobbering those changes on save.",
+    {
+      save: z
+        .boolean()
+        .optional()
+        .describe(
+          "Save the board to disk before closing (default true). If false and there are unsaved changes, the close proceeds but the response warns they were discarded.",
+        ),
+    },
+    async (args: { save?: boolean }) => {
+      const result = await callKicadScript("close_project", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
   // Save project tool
   server.tool(
     "save_project",
-    "Save the current KiCAD project",
+    "Save the current KiCAD project. Refuses to overwrite the board file if its " +
+      "contents changed on disk since load (external edit) unless force is true.",
     {
       path: z.string().optional().describe("Optional new path to save to"),
+      force: z
+        .boolean()
+        .optional()
+        .describe(
+          "Overwrite the loaded board file even if its on-disk contents changed externally",
+        ),
     },
-    async (args: { path?: string }) => {
+    async (args: { path?: string; force?: boolean }) => {
       const result = await callKicadScript("save_project", args);
       return {
         content: [

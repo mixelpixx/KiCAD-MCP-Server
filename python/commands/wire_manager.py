@@ -16,6 +16,7 @@ from typing import Any, List, Optional, Tuple
 
 import sexpdata
 from sexpdata import Symbol
+from utils.sexpr_format import dumps as kicad_dumps
 
 logger = logging.getLogger("kicad_interface")
 
@@ -195,7 +196,7 @@ class WireManager:
 
             # Write back
             with open(schematic_path, "w", encoding="utf-8") as f:
-                output = sexpdata.dumps(sch_data)
+                output = kicad_dumps(sch_data)
                 f.write(output)
 
             logger.info(f"Successfully added wire to {schematic_path.name}")
@@ -275,7 +276,7 @@ class WireManager:
 
             # Write back
             with open(schematic_path, "w", encoding="utf-8") as f:
-                output = sexpdata.dumps(sch_data)
+                output = kicad_dumps(sch_data)
                 f.write(output)
 
             logger.info(f"Successfully added polyline wire to {schematic_path.name}")
@@ -347,7 +348,7 @@ class WireManager:
             sch_data.insert(sheet_instances_index, label_sexp)
 
             with open(schematic_path, "w", encoding="utf-8") as f:
-                f.write(sexpdata.dumps(sch_data))
+                f.write(kicad_dumps(sch_data))
 
             logger.info(f"Successfully added label '{text}' to {schematic_path.name}")
             return True
@@ -762,7 +763,7 @@ class WireManager:
 
             # Write back
             with open(schematic_path, "w", encoding="utf-8") as f:
-                output = sexpdata.dumps(sch_data)
+                output = kicad_dumps(sch_data)
                 f.write(output)
 
             logger.info(f"Successfully added no-connect to {schematic_path.name}")
@@ -845,7 +846,7 @@ class WireManager:
                     del sch_data[i]
                     WireManager.sync_junctions(sch_data)
                     with open(schematic_path, "w", encoding="utf-8") as f:
-                        f.write(sexpdata.dumps(sch_data))
+                        f.write(kicad_dumps(sch_data))
                     logger.info(f"Deleted wire from {start_point} to {end_point}")
                     return True
 
@@ -913,7 +914,7 @@ class WireManager:
 
                 del sch_data[i]
                 with open(schematic_path, "w", encoding="utf-8") as f:
-                    f.write(sexpdata.dumps(sch_data))
+                    f.write(kicad_dumps(sch_data))
                 logger.info(f"Deleted label '{net_name}'")
                 return True
 

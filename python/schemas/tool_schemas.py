@@ -57,16 +57,43 @@ PROJECT_TOOLS = [
         },
     },
     {
+        "name": "close_project",
+        "title": "Close Current Project",
+        "description": "Closes the currently loaded project: optionally saves the board, then drops the in-memory board (SWIG and IPC) and clears all session state. Symmetric counterpart to open_project/create_project. Use this to release the project so the user or agent can edit project files directly without a later MCP save clobbering those changes.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "save": {
+                    "type": "boolean",
+                    "description": "Save the board to disk before closing (default true). If false and there are unsaved changes, the close proceeds but the response warns they were discarded.",
+                }
+            },
+        },
+    },
+    {
         "name": "save_project",
         "title": "Save Current Project",
-        "description": "Saves the current board to disk. Can optionally save to a new location.",
+        "description": (
+            "Saves the current board to disk. Can optionally save to a new location. "
+            "If the board file's contents changed on disk since it was loaded (an "
+            "external edit), the save is refused to avoid clobbering those changes "
+            "unless force=true is passed."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "filename": {
                     "type": "string",
                     "description": "Optional new path to save the board (if not provided, saves to current location)",
-                }
+                },
+                "force": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": (
+                        "Overwrite the loaded board file even if its on-disk contents "
+                        "changed externally since this session loaded it"
+                    ),
+                },
             },
         },
     },

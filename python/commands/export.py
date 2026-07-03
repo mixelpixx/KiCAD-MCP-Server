@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import pcbnew
+from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 
 logger = logging.getLogger("kicad_interface")
 
@@ -366,8 +367,7 @@ class ExportCommands:
             if not kicad_cli:
                 return {
                     "success": False,
-                    "message": "kicad-cli not found",
-                    "errorDetails": "KiCAD CLI tool not found. Install KiCAD 8.0+ or set PATH.",
+                    "message": kicad_cli_not_found_message(),
                 }
 
             # Build command based on format
@@ -604,45 +604,15 @@ class ExportCommands:
             json.dump({"components": components}, f, indent=2)
 
     def _find_kicad_cli(self) -> Optional[str]:
-        """Find kicad-cli executable in system PATH or common locations
+        """Find kicad-cli executable via the centralized resolver.
+
+        Resolution order: $KICAD_CLI override -> next to the running interpreter
+        (KiCad's bundled python bin/) -> PATH -> known per-OS install locations.
 
         Returns:
             Path to kicad-cli executable, or None if not found
         """
-        import platform
-        import shutil
-
-        # Try system PATH first
-        cli_path = shutil.which("kicad-cli")
-        if cli_path:
-            return cli_path
-
-        # Try platform-specific default locations
-        system = platform.system()
-
-        if system == "Windows":
-            possible_paths = [
-                r"C:\Program Files\KiCad\9.0\bin\kicad-cli.exe",
-                r"C:\Program Files\KiCad\8.0\bin\kicad-cli.exe",
-                r"C:\Program Files (x86)\KiCad\9.0\bin\kicad-cli.exe",
-                r"C:\Program Files (x86)\KiCad\8.0\bin\kicad-cli.exe",
-            ]
-        elif system == "Darwin":  # macOS
-            possible_paths = [
-                "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
-                "/usr/local/bin/kicad-cli",
-            ]
-        else:  # Linux
-            possible_paths = [
-                "/usr/bin/kicad-cli",
-                "/usr/local/bin/kicad-cli",
-            ]
-
-        for path in possible_paths:
-            if os.path.exists(path):
-                return path
-
-        return None
+        return resolve_kicad_cli()
 
     def _dev_copy_mcp_log(self, output_dir: str) -> None:
         """DEV MODE: Copy the MCP server log for the current session into the project folder.

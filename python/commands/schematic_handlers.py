@@ -18,14 +18,15 @@ import subprocess
 import tempfile
 import traceback
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import pcbnew
 import sexpdata
-
 from commands.library_schematic import LibraryManager as SchematicLibraryManager
 from commands.schematic import SchematicManager
 from commands.wire_manager import WireManager
+from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
+from utils.sexpr_format import dumps as kicad_dumps
 
 logger = logging.getLogger("kicad_interface")
 
@@ -90,6 +91,11 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
 
 class SchematicHandlersMixin:
     """Schematic-domain handlers mixed into KiCADInterface."""
+
+    # Provided by the host KiCADInterface this mixin is composed into. Declared here so
+    # mypy can resolve ``self.board`` when type-checking this module in isolation (the
+    # module docstring notes the mixin relies on the host's ``self.board``).
+    board: Any
 
     def _handle_create_schematic(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new schematic"""
@@ -991,8 +997,11 @@ class SchematicHandlersMixin:
 
             import subprocess
 
+            kicad_cli = resolve_kicad_cli()
+            if not kicad_cli:
+                return {"success": False, "message": kicad_cli_not_found_message()}
             cmd = [
-                "kicad-cli",
+                kicad_cli,
                 "sch",
                 "export",
                 "pdf",
@@ -1015,7 +1024,7 @@ class SchematicHandlersMixin:
                 }
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except Exception as e:
             logger.error(f"Error exporting schematic to PDF: {str(e)}")
             return {"success": False, "message": str(e)}
@@ -1220,10 +1229,13 @@ class SchematicHandlersMixin:
             height = params.get("height", 900)
 
             # Step 1: Export schematic to SVG via kicad-cli
+            kicad_cli = resolve_kicad_cli()
+            if not kicad_cli:
+                return {"success": False, "message": kicad_cli_not_found_message()}
             with tempfile.TemporaryDirectory() as tmpdir:
                 svg_path = os.path.join(tmpdir, "schematic.svg")
                 cmd = [
-                    "kicad-cli",
+                    kicad_cli,
                     "sch",
                     "export",
                     "svg",
@@ -1277,7 +1289,7 @@ class SchematicHandlersMixin:
                 }
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except Exception as e:
             logger.error(f"Error getting schematic view: {e}")
             import traceback
@@ -1675,7 +1687,7 @@ class SchematicHandlersMixin:
             WireManager.sync_junctions(sch_data)
 
             with open(schematic_path, "w", encoding="utf-8") as f:
-                f.write(sexpdata.dumps(sch_data))
+                f.write(kicad_dumps(sch_data))
 
             return {
                 "success": True,
@@ -1684,6 +1696,7 @@ class SchematicHandlersMixin:
                 "wiresMoved": drag_summary.get("endpoints_moved", 0),
                 "wiresRemoved": drag_summary.get("wires_removed", 0),
                 "wiresSynthesized": drag_summary.get("wires_synthesized", 0),
+                "labelsMoved": drag_summary.get("labels_moved", 0),
             }
 
         except Exception as e:
@@ -1758,7 +1771,7 @@ class SchematicHandlersMixin:
             WireManager.sync_junctions(sch_data)
 
             with open(schematic_path, "w", encoding="utf-8") as f:
-                f.write(_sexpdata.dumps(sch_data))
+                f.write(kicad_dumps(sch_data))
 
             return {
                 "success": True,
@@ -1767,6 +1780,7 @@ class SchematicHandlersMixin:
                 "mirror": effective_mirror,
                 "wiresMoved": drag_summary.get("endpoints_moved", 0),
                 "wiresRemoved": drag_summary.get("wires_removed", 0),
+                "labelsMoved": drag_summary.get("labels_moved", 0),
             }
 
         except Exception as e:
@@ -1989,7 +2003,7 @@ class SchematicHandlersMixin:
                 item[at_idx] = [_SYM_AT, float(new_x), float(new_y), rotation]
 
                 with open(schematic_path, "w", encoding="utf-8") as f:
-                    f.write(_sexpdata.dumps(sch_data))
+                    f.write(kicad_dumps(sch_data))
 
                 return {
                     "success": True,
@@ -2037,8 +2051,11 @@ class SchematicHandlersMixin:
 
             os.makedirs(output_dir, exist_ok=True)
 
+            kicad_cli = resolve_kicad_cli()
+            if not kicad_cli:
+                return {"success": False, "message": kicad_cli_not_found_message()}
             cmd = [
-                "kicad-cli",
+                kicad_cli,
                 "sch",
                 "export",
                 "svg",
@@ -2075,7 +2092,7 @@ class SchematicHandlersMixin:
             return {"success": True, "file": {"path": output_path}}
 
         except FileNotFoundError:
-            return {"success": False, "message": "kicad-cli not found in PATH"}
+            return {"success": False, "message": kicad_cli_not_found_message()}
         except Exception as e:
             logger.error(f"Error exporting schematic SVG: {e}")
             return {"success": False, "message": str(e)}

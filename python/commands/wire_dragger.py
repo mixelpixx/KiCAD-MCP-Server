@@ -27,6 +27,9 @@ _K = {
         "xy",
         "wire",
         "junction",
+        "label",
+        "global_label",
+        "hierarchical_label",
         "property",
         "stroke",
         "width",
@@ -267,10 +270,13 @@ class WireDragger:
         at_k = _K["at"]
         mirror_k = _K["mirror"]
 
-        # Update rotation in (at x y rot)
+        # Update rotation in (at x y rot). KiCad writes symbol angles as
+        # integers (0/90/180/270), so normalize integral values to int to
+        # match eeschema's output exactly (avoids a spurious "90.0" token).
+        rot_val = int(new_rotation) if float(new_rotation).is_integer() else new_rotation
         for sub in item[1:]:
             if isinstance(sub, list) and sub and sub[0] == at_k and len(sub) >= 4:
-                sub[3] = new_rotation
+                sub[3] = rot_val
                 break
 
         # Remove existing (mirror ...) token(s)
@@ -299,13 +305,14 @@ class WireDragger:
 
         old_to_new: {(old_x, old_y): (new_x, new_y)}
 
-        Returns {'endpoints_moved': N, 'wires_removed': M}.
+        Returns {'endpoints_moved': N, 'wires_removed': M, 'labels_moved': L}.
         """
         wire_k = _K["wire"]
         pts_k = _K["pts"]
         xy_k = _K["xy"]
         junction_k = _K["junction"]
         at_k = _K["at"]
+        label_ks = (_K["label"], _K["global_label"], _K["hierarchical_label"])
 
         def find_new(x: float, y: float) -> Optional[Tuple[float, float]]:
             for (ox, oy), (nx, ny) in old_to_new.items():
@@ -314,6 +321,7 @@ class WireDragger:
             return None
 
         endpoints_moved = 0
+        labels_moved = 0
         zero_length_indices = []
 
         # First pass: update wire endpoints
@@ -362,9 +370,26 @@ class WireDragger:
                         sub[2] = nc[1]
                     break
 
+        # Third pass: drag net labels that sit exactly on a moved pin so they
+        # stay attached to it. Without this, a label coincident with a rotated
+        # pin is left behind while the pin's wiring moves away — silently
+        # re-netting it (e.g. a test-point label merging onto an adjacent rail).
+        for item in sch_data:
+            if not (isinstance(item, list) and item and item[0] in label_ks):
+                continue
+            for sub in item[1:]:
+                if isinstance(sub, list) and sub and sub[0] == at_k and len(sub) >= 3:
+                    nc = find_new(float(sub[1]), float(sub[2]))
+                    if nc is not None:
+                        sub[1] = nc[0]
+                        sub[2] = nc[1]
+                        labels_moved += 1
+                    break
+
         return {
             "endpoints_moved": endpoints_moved,
             "wires_removed": len(zero_length_indices),
+            "labels_moved": labels_moved,
         }
 
     @staticmethod
