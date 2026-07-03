@@ -1696,6 +1696,7 @@ class SchematicHandlersMixin:
                 "wiresMoved": drag_summary.get("endpoints_moved", 0),
                 "wiresRemoved": drag_summary.get("wires_removed", 0),
                 "wiresSynthesized": drag_summary.get("wires_synthesized", 0),
+                "labelsMoved": drag_summary.get("labels_moved", 0),
             }
 
         except Exception as e:
@@ -1779,6 +1780,7 @@ class SchematicHandlersMixin:
                 "mirror": effective_mirror,
                 "wiresMoved": drag_summary.get("endpoints_moved", 0),
                 "wiresRemoved": drag_summary.get("wires_removed", 0),
+                "labelsMoved": drag_summary.get("labels_moved", 0),
             }
 
         except Exception as e:
