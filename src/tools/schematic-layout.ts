@@ -101,4 +101,39 @@ export function registerSchematicLayoutTools(server: McpServer, callKicadScript:
       };
     },
   );
+
+  server.tool(
+    "suggest_schematic_declutter",
+    "Re-orient overlapping net/global labels so their text lands in free space and becomes readable. Each label's (at x,y) anchor is its electrical connection point, so it is held FIXED — only the orientation (0/90/180/270) and justification change, throwing the text away from component bodies and other labels. Connectivity is never altered. DRY RUN by default: returns proposals [{name, at, from_angle, to_angle}] plus an overlap score (before/after) WITHOUT modifying the schematic. Set apply=true to rewrite the label orientations. (Phase 1: labels only; symbol spreading + wire reroute is a separate future capability.)",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      margin: z
+        .number()
+        .optional()
+        .describe("Extra clearance in mm when testing label overlap (default 0.3)."),
+      references: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Limit which component bodies count as obstacles (default: every component on the sheet).",
+        ),
+      apply: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, rewrite the label orientations. Default false (dry run — schematic untouched, proposals only).",
+        ),
+    },
+    async (args: any) => {
+      const result = await callKicadScript("suggest_schematic_declutter", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
 }

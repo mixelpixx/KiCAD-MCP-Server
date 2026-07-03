@@ -583,9 +583,11 @@ class WireManager:
     def _collect_pin_positions(sch_data: list) -> List[Tuple[float, float]]:
         """Return world (x, y) positions for every placed component pin in sch_data.
 
-        Parses lib_symbols for pin local coordinates (unit-aware), then applies the KiCad
-        transform chain (y-negate → mirror → rotate → translate) to each pin.
+        Parses lib_symbols for pin local coordinates (unit-aware), then applies the
+        shared, eeschema-verified transform (WireDragger.pin_world_xy) to each pin.
         """
+        from commands.wire_dragger import WireDragger
+
         # Build {lib_id: sym_def} from the embedded lib_symbols section.
         # We defer pin extraction until we know which unit each placed instance uses.
         lib_sym_defs: dict = {}
@@ -648,17 +650,13 @@ class WireManager:
             local_pins = WireManager._parse_lib_pins(sym_def, unit=unit_num)
 
             for lx, ly in local_pins:
-                # KiCad lib uses y-up; schematic uses y-down — negate before transform
-                ly = -ly
-                if mirror_x:
-                    ly = -ly
-                if mirror_y:
-                    lx = -lx
-                if rotation != 0.0:
-                    rad = math.radians(rotation)
-                    c, s = math.cos(rad), math.sin(rad)
-                    lx, ly = lx * c - ly * s, lx * s + ly * c
-                world_positions.append((sym_x + lx, sym_y + ly))
+                # Use the shared transform. Previously this loop duplicated it
+                # with the mirror applied *before* the rotation and an inverted
+                # rotation sign, which mislocated pins of rotated+mirrored symbols
+                # (e.g. a diode at rotation 90 + mirror x).
+                world_positions.append(
+                    WireDragger.pin_world_xy(lx, ly, sym_x, sym_y, rotation, mirror_x, mirror_y)
+                )
 
         return world_positions
 
@@ -1125,10 +1123,14 @@ class WireManager:
         Returns (modified_content, success).
         """
         lines = content.split("\n")
+        # KiCad 7-9 stores the property as "Sheetname"; KiCad 10 renamed it
+        # to "Sheet name" (with space). Match either to stay compatible.
         sheetname_pattern = re.compile(
-            r'\(property\s+"Sheetname"\s+"' + re.escape(sheet_name) + r'"'
+            r'\(property\s+"Sheet\s?name"\s+"' + re.escape(sheet_name) + r'"'
         )
-        sheet_block_pattern = re.compile(r"^\t\(sheet\b")
+        # KiCad 7-9 indents top-level blocks with a single tab; KiCad 10
+        # writes 2- or 4-space indentation. Accept any leading whitespace.
+        sheet_block_pattern = re.compile(r"^\s*\(sheet\b")
 
         # Find the sheet block that contains the target Sheetname property
         i = 0
