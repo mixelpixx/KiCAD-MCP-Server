@@ -192,7 +192,9 @@ def update_schematic_symbols(
 
 
 def update_symbol_from_library(params: dict[str, Any]) -> dict[str, Any]:
-    library_name = params.get("libraryName", "FOG_components")
+    library_name = params.get("libraryName")
+    if not library_name:
+        return {"success": False, "message": "libraryName is required (sym-lib-table nickname, e.g. Device)"}
     only_symbols = set(params["symbols"]) if params.get("symbols") else None
     backup_dir = Path(params["backupDir"]) if params.get("backupDir") else None
     repair_mirror = bool(params.get("repairMirrorFromBackup", False))

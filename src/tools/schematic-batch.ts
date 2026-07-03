@@ -77,9 +77,7 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
       schematicPaths: z.array(z.string()).optional().describe("Multiple .kicad_sch files"),
       libraryName: z
         .string()
-        .optional()
-        .default("FOG_components")
-        .describe("Symbol library name (default FOG_components)"),
+        .describe("Symbol library nickname from sym-lib-table (e.g. Device, project_lib)"),
       symbols: z
         .array(z.string())
         .optional()
