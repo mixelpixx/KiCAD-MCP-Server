@@ -47,6 +47,31 @@ export function registerProjectTools(server: McpServer, callKicadScript: Functio
     },
   );
 
+  // Close project tool
+  server.tool(
+    "close_project",
+    "Close the currently loaded KiCAD project: optionally save, then drop the in-memory board and clear session state. Use this to hand control back so the user (or the agent) can edit project files directly without the MCP later clobbering those changes on save.",
+    {
+      save: z
+        .boolean()
+        .optional()
+        .describe(
+          "Save the board to disk before closing (default true). If false and there are unsaved changes, the close proceeds but the response warns they were discarded.",
+        ),
+    },
+    async (args: { save?: boolean }) => {
+      const result = await callKicadScript("close_project", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
   // Save project tool
   server.tool(
     "save_project",

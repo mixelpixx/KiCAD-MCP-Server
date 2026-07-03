@@ -7,6 +7,7 @@ import os
 from typing import Any, Dict, List, Optional, Tuple
 
 import pcbnew
+from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 
 logger = logging.getLogger("kicad_interface")
 
@@ -209,8 +210,7 @@ class DesignRuleCommands:
             if not kicad_cli:
                 return {
                     "success": False,
-                    "message": "kicad-cli not found",
-                    "errorDetails": "KiCAD CLI tool not found in system. Install KiCAD 8.0+ or set PATH.",
+                    "message": kicad_cli_not_found_message(),
                 }
 
             # Create temporary JSON output file
@@ -364,48 +364,12 @@ class DesignRuleCommands:
             }
 
     def _find_kicad_cli(self) -> Optional[str]:
-        """Find kicad-cli executable"""
-        import platform
-        import shutil
+        """Find kicad-cli executable via the centralized resolver.
 
-        # Try system PATH first
-        cli_name = "kicad-cli.exe" if platform.system() == "Windows" else "kicad-cli"
-        cli_path = shutil.which(cli_name)
-        if cli_path:
-            return cli_path
-
-        # Try common installation paths (version-specific)
-        if platform.system() == "Windows":
-            common_paths = [
-                r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe",
-                r"C:\Program Files\KiCad\9.0\bin\kicad-cli.exe",
-                r"C:\Program Files\KiCad\8.0\bin\kicad-cli.exe",
-                r"C:\Program Files (x86)\KiCad\10.0\bin\kicad-cli.exe",
-                r"C:\Program Files (x86)\KiCad\9.0\bin\kicad-cli.exe",
-                r"C:\Program Files (x86)\KiCad\8.0\bin\kicad-cli.exe",
-                r"C:\Program Files\KiCad\bin\kicad-cli.exe",
-            ]
-            for path in common_paths:
-                if os.path.exists(path):
-                    return path
-        elif platform.system() == "Darwin":  # macOS
-            common_paths = [
-                "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli",
-                "/usr/local/bin/kicad-cli",
-            ]
-            for path in common_paths:
-                if os.path.exists(path):
-                    return path
-        else:  # Linux
-            common_paths = [
-                "/usr/bin/kicad-cli",
-                "/usr/local/bin/kicad-cli",
-            ]
-            for path in common_paths:
-                if os.path.exists(path):
-                    return path
-
-        return None
+        Resolution order: $KICAD_CLI override -> next to the running interpreter
+        (KiCad's bundled python bin/) -> PATH -> known per-OS install locations.
+        """
+        return resolve_kicad_cli()
 
     def get_drc_violations(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
