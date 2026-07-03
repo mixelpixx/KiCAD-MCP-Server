@@ -64,6 +64,52 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
     },
   );
 
+  // Refresh lib_symbols cache from library (Update Symbol from Library)
+  server.tool(
+    "update_symbol_from_library",
+    "Refresh embedded lib_symbols cache entries from a KiCad symbol library (equivalent to KiCad's Update Symbol from Library). Skips mirror-cache entries (__m0, __m90, …). Flattens (power) symbols for schematic format. Pass projectsDir to update all schematics in a folder, or schematicPath for one file.",
+    {
+      projectsDir: z
+        .string()
+        .optional()
+        .describe("Directory containing project subfolders with .kicad_sch files"),
+      schematicPath: z.string().optional().describe("Single .kicad_sch file to update"),
+      schematicPaths: z.array(z.string()).optional().describe("Multiple .kicad_sch files"),
+      libraryName: z
+        .string()
+        .optional()
+        .default("FOG_components")
+        .describe("Symbol library name (default FOG_components)"),
+      symbols: z
+        .array(z.string())
+        .optional()
+        .describe("Optional: update only these symbol names (without Library: prefix)"),
+      repairMirrorFromBackup: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Restore __m* mirror-cache lib_symbols blocks from backupDir first"),
+      backupDir: z
+        .string()
+        .optional()
+        .describe("Backup folder with matching .kicad_sch filenames (for repairMirrorFromBackup)"),
+    },
+    async (args: any) => {
+      const r = await callKicadScript("update_symbol_from_library", args);
+      if (r.success === false)
+        return { content: [{ type: "text", text: `Failed: ${r.message || "Unknown error"}` }] };
+      const lines = [r.message];
+      for (const item of r.results || []) {
+        const parts = [];
+        if (item.updated) parts.push(`${item.updated} updated`);
+        if (item.injected) parts.push(`${item.injected} injected`);
+        if (item.mirror_restored) parts.push(`${item.mirror_restored} mirror restored`);
+        lines.push(`  ${item.schematic}: ${parts.join(", ") || "unchanged"}`);
+      }
+      return { content: [{ type: "text", text: lines.join("\n") }] };
+    },
+  );
+
   // Swap a symbol, preserving position/fields
   server.tool(
     "replace_schematic_component",

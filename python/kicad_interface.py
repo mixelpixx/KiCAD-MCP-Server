@@ -532,6 +532,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "batch_add_no_connects": self.batch_commands.batch_add_no_connects,
             "batch_connect": self.batch_commands.batch_connect,
             "batch_add_and_connect": self.batch_commands.batch_add_and_connect,
+            "update_symbol_from_library": self.batch_commands.update_symbol_from_library,
             # JLCPCB API commands (complete parts catalog via API)
             "download_jlcpcb_database": self._handle_download_jlcpcb_database,
             "search_jlcpcb_parts": self._handle_search_jlcpcb_parts,
