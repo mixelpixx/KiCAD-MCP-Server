@@ -15,8 +15,10 @@ All notable changes to the KiCAD MCP Server project are documented here.
   newest-version first from the Windows registry uninstall keys
   (`InstallLocation`, authoritative for wherever the user installed), the
   `C:\Program Files\KiCad\*` / `(x86)` globs, and common custom roots
-  (`C:\KiCad\*`), de-duplicated. `utils/kicad_cli.py`, `utils/platform_helper.py`,
-  and `commands/library.py` now build their Windows paths from it, so discovery
+  (`C:\KiCad\*`), de-duplicated and cached per-process. `utils/kicad_cli.py`,
+  `utils/platform_helper.py`, `commands/library.py` (footprints), and
+  `commands/library_symbol.py` (symbols) now build their Windows paths from it, so
+  discovery
   can no longer drift apart (the same unification #267 did for the three
   `kicad-cli` resolvers). macOS/Linux behavior is unchanged.
 

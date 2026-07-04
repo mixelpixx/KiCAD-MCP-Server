@@ -19,6 +19,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 import utils.kicad_roots as kr  # noqa: E402
 
+
+@pytest.fixture(autouse=True)
+def _clear_roots_cache():
+    """Install roots are cached per-process; reset around each test so a fake
+    registry/glob in one test cannot leak into the next."""
+    kr.reset_cache()
+    yield
+    kr.reset_cache()
+
+
 # --------------------------------------------------------------------------- #
 # _version_key — pure parsing/ordering helper
 # --------------------------------------------------------------------------- #

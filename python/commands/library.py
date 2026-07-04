@@ -12,6 +12,8 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from utils.kicad_roots import kicad_install_roots
+
 logger = logging.getLogger("kicad_interface")
 
 
@@ -188,8 +190,6 @@ class LibraryManager:
         # Prepend Windows install roots from the shared discovery helper (registry
         # + Program Files + custom C:\KiCad roots, newest first) so a relocated
         # install's footprints are found, not just Program Files ones (#286).
-        from utils.kicad_roots import kicad_install_roots
-
         for root in reversed(kicad_install_roots()):
             possible_paths.insert(0, str(root / "share" / "kicad" / "footprints"))
 

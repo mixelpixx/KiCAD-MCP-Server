@@ -30,13 +30,18 @@ import os
 import platform
 import re
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 logger = logging.getLogger("kicad_interface")
 
 # A version tuple used only for newest-first ordering; missing parts sort as 0.
 _VersionKey = Tuple[int, int, int]
 _VERSION_RE = re.compile(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?")
+
+# Discovered roots are cached for the process: install locations do not change
+# while the server runs, and discovery walks the registry + globs the filesystem,
+# which is far too expensive to repeat on every library-path resolution.
+_cached_roots: Optional[List[Path]] = None
 
 
 def _version_key(text: str) -> _VersionKey:
@@ -128,13 +133,12 @@ def _glob_roots() -> List[Tuple[_VersionKey, Path]]:
     return results
 
 
-def windows_kicad_roots() -> List[Path]:
-    """KiCad install roots on Windows, newest-version first and de-duplicated.
+def _discover_windows_roots() -> List[Path]:
+    """Merge registry + glob roots, newest-version first and de-duplicated.
 
-    Registry entries and filesystem globs are merged; when the same root is found
-    by more than one source (the common case — a Program Files install is both in
-    the registry and under the glob) it appears once, keyed case-insensitively on
-    its normalised path.
+    When the same root is found by more than one source (the common case — a
+    Program Files install is both in the registry and under the glob) it appears
+    once, keyed case-insensitively on its normalised path.
     """
     combined = _registry_roots() + _glob_roots()
     # Stable sort by version descending so the newest KiCad wins ties on dedup.
@@ -151,6 +155,19 @@ def windows_kicad_roots() -> List[Path]:
     return roots
 
 
+def windows_kicad_roots() -> List[Path]:
+    """KiCad install roots on Windows, newest-version first and de-duplicated.
+
+    The result is cached for the process (see ``_cached_roots``); a fresh copy is
+    returned each call so callers can freely mutate it. Use ``reset_cache()`` in
+    tests that change the underlying registry/filesystem view.
+    """
+    global _cached_roots
+    if _cached_roots is None:
+        _cached_roots = _discover_windows_roots()
+    return list(_cached_roots)
+
+
 def kicad_install_roots() -> List[Path]:
     """KiCad install roots for the current platform, newest-version first.
 
@@ -161,3 +178,9 @@ def kicad_install_roots() -> List[Path]:
     if platform.system() == "Windows":
         return windows_kicad_roots()
     return []
+
+
+def reset_cache() -> None:
+    """Clear the cached install-root discovery (primarily for tests)."""
+    global _cached_roots
+    _cached_roots = None
