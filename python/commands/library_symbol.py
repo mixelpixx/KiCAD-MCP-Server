@@ -15,6 +15,17 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger("kicad_interface")
 
+# Parsed-symbol cache shared across SymbolLibraryManager instances, keyed by the
+# resolved .kicad_sym file path.  A fresh manager (and its warm-up thread) is
+# created for every KiCADInterface; with an instance-only cache, each
+# construction re-parsed all 200+ libraries on a new daemon thread, so N
+# interfaces (e.g. one per test) spawned N concurrent warm threads that
+# saturated the CPU and piled up SymbolInfo objects — construction time grew
+# super-linearly. Keying by file path makes the parse happen once per process.
+_SYMBOL_CACHE_BY_PATH: Dict[str, list] = {}
+_SYMBOL_CACHE_LOCK = threading.Lock()
+_WARM_STARTED = False
+
 
 @dataclass
 class SymbolInfo:
@@ -73,7 +84,22 @@ class SymbolLibraryManager:
         delayed (and on large libraries effectively prevented) that handshake,
         so the MCP server never finished starting. ``list_symbols`` is
         cache-locked, so on-demand parses race-free with this background warm.
+
+        Warming is started at most once per process (guarded by _WARM_STARTED):
+        the parsed results live in the process-wide _SYMBOL_CACHE_BY_PATH, so a
+        second manager would only re-warm data that is already cached.
         """
+        # Tests (and any caller that doesn't need pre-warmed symbol search) can
+        # skip the speculative full-library parse entirely; on-demand parses via
+        # list_symbols still populate the shared cache lazily.
+        if os.environ.get("KICAD_SKIP_SYMBOL_WARMUP") == "1":
+            return
+
+        global _WARM_STARTED
+        with _SYMBOL_CACHE_LOCK:
+            if _WARM_STARTED:
+                return
+            _WARM_STARTED = True
 
         def _warm() -> None:
             for nickname in list(self.libraries.keys()):
@@ -408,7 +434,7 @@ class SymbolLibraryManager:
         Returns:
             List of SymbolInfo objects
         """
-        # Check cache first
+        # Check per-instance cache first (fast path within one manager).
         cached = self.symbol_cache.get(library_nickname)
         if cached is not None:
             return cached
@@ -418,11 +444,19 @@ class SymbolLibraryManager:
             logger.warning(f"Library not found: {library_nickname}")
             return []
 
-        # Parse the library file
+        # Then the process-wide cache keyed by file path, so the same library is
+        # parsed once even across many manager instances / warm-up threads.
+        with _SYMBOL_CACHE_LOCK:
+            shared = _SYMBOL_CACHE_BY_PATH.get(library_path)
+        if shared is not None:
+            self.symbol_cache[library_nickname] = shared
+            return shared
+
+        # Parse the library file (cold — pay it once per process per file).
         symbols = self._parse_kicad_sym_file(library_path, library_nickname)
 
-        # Cache the results. Guarded so an on-demand parse and the background
-        # warm-up thread can't corrupt the dict mid-update.
+        with _SYMBOL_CACHE_LOCK:
+            _SYMBOL_CACHE_BY_PATH[library_path] = symbols
         with self._cache_lock:
             self.symbol_cache[library_nickname] = symbols
 

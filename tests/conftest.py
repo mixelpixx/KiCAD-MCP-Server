@@ -11,6 +11,12 @@ import sys
 import types
 from unittest.mock import MagicMock
 
+# Skip the speculative full-symbol-library warm-up in tests. Each KiCADInterface
+# would otherwise spawn a daemon thread parsing every installed .kicad_sym file;
+# constructing an interface per test then piles up concurrent warm threads that
+# saturate the CPU. On-demand parses still work (and are cached process-wide).
+os.environ.setdefault("KICAD_SKIP_SYMBOL_WARMUP", "1")
+
 # ---------------------------------------------------------------------------
 # pcbnew stub — kicad_interface.py accesses pcbnew.__file__ and
 # pcbnew.GetBuildVersion() at module level.  Use MagicMock so that any
