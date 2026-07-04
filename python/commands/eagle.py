@@ -822,6 +822,130 @@ def _bake_xform(krot: int):
     return _x
 
 
+def _gen_multi_unit_lib_symbol(
+    sym_name: str,
+    ref_prefix: str,
+    is_power: bool,
+    value: str,
+    units: List[Tuple[int, "_EagleSymGeom", "Optional[Callable]"]],
+) -> str:
+    """Generate a multi-unit KiCad lib_symbol combining several gate geometries.
+
+    Each gate becomes its own unit sub-symbol ``_N_1`` with body drawing and
+    pins.  Sub-symbol ``_0_1`` is an empty common body.  ``units`` is a list of
+    ``(unit_number, sg, xform_or_None)`` triples in ascending unit order.
+    """
+    leaf = sym_name.split(":")[-1]
+    ref = _escape(ref_prefix or "U")
+    sym = _escape(sym_name)
+    power_flag = " (power)" if is_power else ""
+    hide = (
+        " (pin_numbers (hide yes)) (pin_names (hide yes))"
+        if (is_power or (ref_prefix or "").upper() in _PASSIVE_PREFIXES)
+        else ""
+    )
+
+    L: List[str] = []
+    L.append(f'    (symbol "{sym}"{hide} (in_bom yes) (on_board yes){power_flag}\n')
+    L.append(
+        f'      (property "Reference" "{ref}" (at 0 0 0)'
+        f"\n        (effects (font (size 1.27 1.27))))\n"
+    )
+    L.append(
+        f'      (property "Value" "{_escape(value)}" (at 0 0 0)'
+        f"\n        (effects (font (size 1.27 1.27))))\n"
+    )
+    L.append(
+        f'      (property "Footprint" "" (at 0 0 0)'
+        f"\n        (effects (font (size 1.27 1.27)) hide))\n"
+    )
+    L.append(
+        f'      (property "Datasheet" "" (at 0 0 0)'
+        f"\n        (effects (font (size 1.27 1.27)) hide))\n"
+    )
+    # Common body — empty (each unit has its own geometry)
+    L.append(f'      (symbol "{_escape(leaf)}_0_1"\n')
+    L.append("      )\n")
+
+    def _polyline(points: List[Tuple[float, float]], fill: str = "none") -> str:
+        pts = " ".join(f"(xy {_fmt(x)} {_fmt(y)})" for x, y in points)
+        return (
+            f"        (polyline (pts {pts})"
+            f" (stroke (width 0) (type default)) (fill (type {fill})))\n"
+        )
+
+    def _gsnap(pt: Tuple[float, float]) -> Tuple[float, float]:
+        return (round(pt[0] / _GRID_MM) * _GRID_MM, round(pt[1] / _GRID_MM) * _GRID_MM)
+
+    for unit_num, sg, xform in sorted(units, key=lambda u: u[0]):
+        def T(x: float, y: float) -> Tuple[float, float]:
+            return xform(x, y) if xform else (x, y)
+
+        L.append(f'      (symbol "{_escape(leaf)}_{unit_num}_1"\n')
+
+        for x1, y1, x2, y2, curve in sg.wires:
+            if curve is not None:
+                for sx, sy, ex, ey in _arc_segments(x1, y1, x2, y2, curve):
+                    L.append(_polyline([T(sx, sy), T(ex, ey)]))
+            else:
+                L.append(_polyline([T(x1, y1), T(x2, y2)]))
+
+        for cx, cy, r in sg.circles:
+            tcx, tcy = T(cx, cy)
+            L.append(
+                f"        (circle (center {_fmt(tcx)} {_fmt(tcy)}) (radius {_fmt(r)})"
+                f" (stroke (width 0) (type default)) (fill (type none)))\n"
+            )
+
+        for x1, y1, x2, y2 in sg.rectangles:
+            if xform is None:
+                L.append(
+                    f"        (rectangle (start {_fmt(x1)} {_fmt(y1)})"
+                    f" (end {_fmt(x2)} {_fmt(y2)})"
+                    f" (stroke (width 0) (type default)) (fill (type none)))\n"
+                )
+            else:
+                L.append(_polyline([T(x1, y1), T(x2, y1), T(x2, y2), T(x1, y2), T(x1, y1)]))
+
+        for verts in sg.polygons:
+            tv = [T(x, y) for x, y in verts]
+            L.append(_polyline(tv + [tv[0]], fill="outline"))
+
+        # Pin leads
+        for pin in sg.pins:
+            L2 = pin.length_mm or 0.0
+            if L2 <= 0:
+                continue
+            a = math.radians(pin.angle or 0.0)
+            p0 = _gsnap(T(pin.x, pin.y))
+            p1 = T(pin.x + L2 * math.cos(a), pin.y + L2 * math.sin(a))
+            L.append(_polyline([p0, p1]))
+
+        # Pins
+        for idx, pin in enumerate(sg.pins):
+            ptype = _PIN_TYPE.get(pin.direction.lower(), "bidirectional")
+            number = sg.pin_number(pin.name, idx)
+            pax, pay = _gsnap(T(pin.x, pin.y))
+            pang = int(pin.angle % 360)
+            if xform is not None:
+                a = math.radians(pin.angle or 0.0)
+                bx, by = T(pin.x + math.cos(a), pin.y + math.sin(a))
+                pang = int(round(math.degrees(math.atan2(by - pay, bx - pax))) % 360)
+                pang = (pang // 90) * 90
+            L.append(
+                f"        (pin {ptype} line"
+                f" (at {_fmt(pax)} {_fmt(pay)} {pang})"
+                f" (length 0)\n"
+                f'          (name "{_escape(pin.name)}" (effects (font (size 1.016 1.016))))\n'
+                f'          (number "{_escape(number)}" (effects (font (size 1.016 1.016)))))\n'
+            )
+
+        L.append("      )\n")
+
+    L.append("    )\n")
+    return "".join(L)
+
+
 def _gen_lib_symbol(
     sg: _EagleSymGeom,
     xform: Optional[Callable[[float, float], Tuple[float, float]]] = None,
@@ -1132,6 +1256,62 @@ def generate_kicad_sch(
         if sg is not None and sg.kicad_id not in needed:
             needed[sg.kicad_id] = sg
 
+    # ── Detect multi-gate parts and build combined multi-unit symbols ──
+    from collections import defaultdict
+
+    part_gate_insts: Dict[str, List["_EagleInst"]] = defaultdict(list)
+    for inst in instances:
+        part = inst.part_ref
+        if part is not None and not part.is_frame and inst.sym_geom is not None:
+            part_gate_insts[part.name].append(inst)
+
+    inst_unit: Dict[int, int] = {}  # id(inst) → unit number (1-based)
+    # part_name → (combined_kicad_id, ref_prefix, is_power, value, [(unit, sg, xform)])
+    inst_combined: Dict[
+        str,
+        Tuple[
+            str,
+            str,
+            bool,
+            str,
+            List[Tuple[int, "_EagleSymGeom", "Optional[Callable[[float, float], Tuple[float, float]]]"]],
+        ],
+    ] = {}
+    multi_gate_sgs: "set[str]" = set()  # kicad_ids subsumed by a multi-unit symbol
+
+    for part_name, insts in part_gate_insts.items():
+        if len(insts) <= 1:
+            continue
+        first = insts[0]
+        sg0 = first.sym_geom
+
+        base_id = f"eagle_import:{_sanitize(part_name)}"
+        used_ids = set(needed.keys()) | {cid for cid, _, _, _, _ in inst_combined.values()}
+        combined_id = base_id
+        n = 0
+        while combined_id in used_ids:
+            n += 1
+            combined_id = f"{base_id}_{n}"
+
+        units: List[Tuple[int, "_EagleSymGeom", "Optional[Callable]"]] = []
+        for i, inst in enumerate(insts, 1):
+            inst_unit[id(inst)] = i
+            multi_gate_sgs.add(inst.sym_geom.kicad_id)
+            if inst.mirror:
+                krot = _krot(inst.angle, inst.mirror)
+                xform = _bake_xform(krot)
+            else:
+                xform = None
+            units.append((i, inst.sym_geom, xform))
+
+        inst_combined[part_name] = (
+            combined_id,
+            sg0.ref_prefix or "U",
+            bool(first.part_ref.is_power),
+            first.part_ref.value or sg0.name,
+            units,
+        )
+
     # ── Pre-pass: content bounding box (symbol geometry + wires/labels) ──
     bxs: List[float] = []
     bys: List[float] = []
@@ -1194,14 +1374,25 @@ def generate_kicad_sch(
     # lib_symbols section
     out.append("  (lib_symbols\n")
     for sg in needed.values():
-        out.append(_gen_lib_symbol(sg))
+        if sg.kicad_id not in multi_gate_sgs:
+            out.append(_gen_lib_symbol(sg))
+    # Combined multi-unit symbols for multi-gate parts
+    for _part_name, (combined_id, ref_prefix, is_power, value, units) in inst_combined.items():
+        out.append(
+            _gen_multi_unit_lib_symbol(combined_id, ref_prefix, is_power, value, units)
+        )
     # Baked (rotation+mirror) variants for mirrored instances.  KiCad cannot
     # electrically connect wires to pins on mirrored symbols, so mirrored
     # placements reference a geometry-baked variant placed with an identity
     # instance transform (at x y 0, no mirror) instead.
+    # Mirrored multi-gate parts already bake the transform into their unit
+    # sub-symbols — skip those individual geometries here.
     baked_needed: Dict[str, Tuple[_EagleSymGeom, int]] = {}
     for inst in instances:
         if inst.mirror and inst.sym_geom is not None:
+            # Multi-gate mirrored instances are baked into the combined symbol
+            if id(inst) in inst_unit:
+                continue
             krot = _krot(inst.angle, inst.mirror)
             bid = _baked_kicad_id(inst.sym_geom, krot)
             if bid not in baked_needed:
@@ -1223,9 +1414,20 @@ def generate_kicad_sch(
         kycmp = py(ky(inst.y))
 
         krot = _krot(inst.angle, inst.mirror)
-        # Mirrored instances reference a geometry-baked variant and are placed
-        # with an identity transform so wires can connect to their pins.
-        if inst.mirror:
+
+        # Multi-gate parts: reference the combined multi-unit symbol, with
+        # mirror transforms already baked into the unit sub-symbol geometry.
+        unit_num = inst_unit.get(id(inst), 1)
+        if id(inst) in inst_unit:
+            lib_id_use = inst_combined[part.name][0]
+            place_rot = krot
+            mirror_field = ""
+            if inst.mirror:
+                # Geometry is baked; place with identity rotation
+                place_rot = 0
+        elif inst.mirror:
+            # Single-gate mirrored instances reference a geometry-baked variant
+            # and are placed with an identity transform so wires can connect.
             lib_id_use = _baked_kicad_id(sg, krot)
             place_rot = 0
         else:
@@ -1309,7 +1511,7 @@ def generate_kicad_sch(
 
         out.append(
             f'  (symbol (lib_id "{_escape(lib_id_use)}")'
-            f" (at {_fmt(kx)} {_fmt(kycmp)} {place_rot}){mirror_field} (unit 1)\n"
+            f" (at {_fmt(kx)} {_fmt(kycmp)} {place_rot}){mirror_field} (unit {unit_num})\n"
             f"    (in_bom {in_bom}) (on_board {on_board}) (dnp no)"
             f" (uuid {_uid()})\n"
         )
