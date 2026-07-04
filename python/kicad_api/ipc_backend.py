@@ -904,9 +904,7 @@ class IPCBoardAPI(BoardAPI):
                     keep = [
                         it
                         for it in defn.items
-                        if not (
-                            isinstance(it, bt.Footprint3DModel) and it.filename == model_path
-                        )
+                        if not (isinstance(it, bt.Footprint3DModel) and it.filename == model_path)
                     ]
                     defn.items = keep
 

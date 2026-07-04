@@ -1748,7 +1748,7 @@ class KiCADInterface(SchematicHandlersMixin):
             )
         except Exception as e:
             logger.error(f"create_footprint error: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False, "message": str(e)}
 
     def _handle_add_footprint_3d_model(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add or replace a 3D model (model ...) block in a .kicad_mod file."""
@@ -1767,7 +1767,7 @@ class KiCADInterface(SchematicHandlersMixin):
             )
         except Exception as e:
             logger.error(f"add_footprint_3d_model error: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False, "message": str(e)}
 
     def _handle_import_3d_model(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Copy a 3D model into the project's *.3dshapes and return a ${KIPRJMOD} path."""
@@ -1785,7 +1785,7 @@ class KiCADInterface(SchematicHandlersMixin):
             )
         except Exception as e:
             logger.error(f"import_3d_model error: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False, "message": str(e)}
 
     def _handle_add_component_3d_model(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add a 3D model to a placed footprint on the board.
@@ -1793,7 +1793,7 @@ class KiCADInterface(SchematicHandlersMixin):
         Prefers the live IPC path; if IPC is unavailable this returns a clear
         message (live board editing requires KiCAD running with the IPC API).
         """
-        if self.use_ipc and getattr(self, "ipc_board_api", None):
+        if self.use_ipc and getattr(self, "ipc_board_api", None) and self._session_allows_ipc():
             return self._ipc_add_component_3d_model(params)
         return {
             "success": False,
