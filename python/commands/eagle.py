@@ -664,9 +664,9 @@ def parse_eagle_schematic(sch_path: str):
                 gate_name = gate.get("name", "")
                 sym_name = gate.get("symbol", "")
                 gate_to_sym[(lib_name, ds_name, gate_name)] = sym_name
-                sg = sym_geoms.get((lib_name, sym_name))
-                if sg is not None:
-                    sg.ref_prefix = prefix or "U"
+                gate_sg = sym_geoms.get((lib_name, sym_name))
+                if gate_sg is not None:
+                    gate_sg.ref_prefix = prefix or "U"
 
             # Pad map per (device, gate): {(dev_name, gate): {pin: pad}}
             for dev in ds.findall("devices/device"):
@@ -878,6 +878,7 @@ def _gen_multi_unit_lib_symbol(
         return (round(pt[0] / _GRID_MM) * _GRID_MM, round(pt[1] / _GRID_MM) * _GRID_MM)
 
     for unit_num, sg, xform in sorted(units, key=lambda u: u[0]):
+
         def T(x: float, y: float) -> Tuple[float, float]:
             return xform(x, y) if xform else (x, y)
 
@@ -1274,7 +1275,11 @@ def generate_kicad_sch(
             str,
             bool,
             str,
-            List[Tuple[int, "_EagleSymGeom", "Optional[Callable[[float, float], Tuple[float, float]]]"]],
+            List[
+                Tuple[
+                    int, "_EagleSymGeom", "Optional[Callable[[float, float], Tuple[float, float]]]"
+                ]
+            ],
         ],
     ] = {}
     multi_gate_sgs: "set[str]" = set()  # kicad_ids subsumed by a multi-unit symbol
@@ -1378,9 +1383,7 @@ def generate_kicad_sch(
             out.append(_gen_lib_symbol(sg))
     # Combined multi-unit symbols for multi-gate parts
     for _part_name, (combined_id, ref_prefix, is_power, value, units) in inst_combined.items():
-        out.append(
-            _gen_multi_unit_lib_symbol(combined_id, ref_prefix, is_power, value, units)
-        )
+        out.append(_gen_multi_unit_lib_symbol(combined_id, ref_prefix, is_power, value, units))
     # Baked (rotation+mirror) variants for mirrored instances.  KiCad cannot
     # electrically connect wires to pins on mirrored symbols, so mirrored
     # placements reference a geometry-baked variant placed with an identity
@@ -1575,12 +1578,12 @@ def generate_kicad_sch(
         _deg: Dict[Tuple[float, float], int] = {}
         _nbr: Dict[Tuple[float, float], Tuple[float, float]] = {}
         for _x1, _y1, _x2, _y2 in _segs:
-            _a = (float(round(_x1, 4)), float(round(_y1, 4)))
-            _b = (float(round(_x2, 4)), float(round(_y2, 4)))
-            _deg[_a] = _deg.get(_a, 0) + 1
-            _deg[_b] = _deg.get(_b, 0) + 1
-            _nbr[_a] = _b
-            _nbr[_b] = _a
+            _ea = (float(round(_x1, 4)), float(round(_y1, 4)))
+            _eb = (float(round(_x2, 4)), float(round(_y2, 4)))
+            _deg[_ea] = _deg.get(_ea, 0) + 1
+            _deg[_eb] = _deg.get(_eb, 0) + 1
+            _nbr[_ea] = _eb
+            _nbr[_eb] = _ea
         _free_ends_by_net[_nn] = [(p, _nbr[p]) for p, d in _deg.items() if d == 1]
 
     def _snap_to_net(name: str, lx: float, ly: float):
