@@ -208,7 +208,7 @@ class TestHandlerAddSchematicComponent:
 # instances before the closing paren of (kicad_sch ...) when the marker is
 # missing.
 SUB_SHEET_NO_SHEET_INSTANCES = """(kicad_sch
-\t(version 20260306)
+\t(version 20260101)
 \t(generator "eeschema")
 \t(generator_version "10.0")
 \t(uuid "bbbb2222-2222-2222-2222-bbbbbbbbbbbb")

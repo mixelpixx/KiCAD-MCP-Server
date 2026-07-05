@@ -130,7 +130,7 @@ def _write_schematic(tmp_path: Path, placed_block: str) -> Path:
     sch = tmp_path / "test.kicad_sch"
     sch.write_text(
         "(kicad_sch\n"
-        '  (version 20260306)\n'
+        '  (version 20260101)\n'
         '  (generator "eeschema")\n'
         '  (uuid "abcdef12-3456-7890-abcd-ef1234567890")\n'
         '  (paper "A4")\n'

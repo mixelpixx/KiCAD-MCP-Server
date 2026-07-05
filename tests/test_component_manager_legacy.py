@@ -27,7 +27,7 @@ _TEMPLATE_SCH = (
     Path(__file__).parent.parent / "python" / "templates" / "template_with_symbols.kicad_sch"
 )
 
-_BLANK_SCH = """(kicad_sch (version 20260306) (generator "eeschema") (generator_version "10.0")
+_BLANK_SCH = """(kicad_sch (version 20260101) (generator "eeschema") (generator_version "10.0")
   (uuid 3c9f2b6e-1a2b-4c3d-8e4f-5a6b7c8d9e0f)
   (paper "A4")
   (lib_symbols)

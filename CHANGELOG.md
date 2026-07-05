@@ -22,6 +22,44 @@ All notable changes to the KiCAD MCP Server project are documented here.
   can no longer drift apart (the same unification #267 did for the three
   `kicad-cli` resolvers). macOS/Linux behavior is unchanged.
 
+- **Derived symbols in KiCad 10 `.kicad_symdir` libraries now inline their parent**
+  (#282): in the sharded directory format each symbol is its own
+  `<Symbol>.kicad_sym` file, so a symbol using `(extends "Parent")` has its parent
+  in a _sibling_ shard. `extract_symbol_from_library` handed only the child's shard
+  to the inliner, so the parent was never found and the `(extends)` clause was
+  stripped — producing a symbol shell with no parent pins/graphics (e.g.
+  `Device:Filter_EMI_C`, which extends `C_Feedthrough`). A new
+  `_resolve_symdir_extends` reads the parent shard, resolves it recursively (a
+  parent may itself extend a grandparent in another shard), and merges it via the
+  existing single-level inliner; a missing parent shard still degrades gracefully
+  (strips + warns, keeping the file loadable). Single-file `.kicad_sym` libraries
+  are unaffected.
+
+- **New projects and schematics start blank instead of seeding `_TEMPLATE_*`
+  symbols** (#221, #243): `create_project` and `create_schematic` copied
+  `template_with_symbols_expanded.kicad_sch` / `template_with_symbols.kicad_sch`,
+  which pre-seeded `Device:R/C/LED` `lib_symbols` and placed `_TEMPLATE_*`
+  instances into every new file. Those symbols existed only as clone sources for
+  the legacy `ComponentManager.add_component` path; the live
+  `add_schematic_component` tool synthesizes its own `lib_symbols` via the
+  dynamic loader (and the legacy fallback was removed in #288), so the seeds only
+  leaked into user files. Both tools now copy a new blank KiCad 10 template
+  (`python/templates/blank.kicad_sch`: `(version 20260101) (generator
+  "eeschema")`, empty `lib_symbols`, no placed symbols).
+  `template_with_symbols.kicad_sch` is kept unchanged in-repo as a test fixture.
+  A regression test asserts a created schematic contains no `_TEMPLATE_`
+  references and no seeded `lib_symbols` entries.
+
+- **Generated schematics use format version `20260101`, not `20260306`, so
+  every KiCad 10.0.x can open them**: KiCad refuses to load files that claim
+  a format version newer than the running build, and `20260306` is a later
+  10.0.x token — KiCad 10.0.0 (whose `kicad-cli sch upgrade` writes
+  `20260101`) reported "Failed to load schematic" on our output. All
+  templates, fallback writers, and test fixtures now use `20260101`, which
+  loads on every 10.0.x (newer builds silently upgrade on save). This also
+  makes `tests/fixtures/canonical_schematic.kicad_sch` loadable by
+  `kicad-cli`, which it previously was not.
+
 - **`create_project` writes a conformant KiCad 10 `.kicad_pro`** (#220): the
   project file was a hand-rolled 122-byte stub containing only
   `board.filename` and a `sheets` entry with the literal id `"root"`, so
