@@ -133,12 +133,89 @@ class TestNoPhantomCrossUnitPins:
         # Unit 1 output wire runs from (107.62, 100).
         pins = _pins_on_net_at(multi_unit_sch, 107.62, 100.0)
         assert "U1/3" in pins  # unit 1's own output
-        assert "R1/2" in pins  # the passive wired to it
+        assert "R1/1" in pins  # the passive wired to it (rot90: pin 1 at wire end)
         assert "U1/7" not in pins  # phantom sibling-unit pin must be gone
 
     def test_unit2_net_excludes_unit1_pin(self, multi_unit_sch):
         # Unit 2 output wire runs from (107.62, 150).
         pins = _pins_on_net_at(multi_unit_sch, 107.62, 150.0)
         assert "U1/7" in pins  # unit 2's own output
-        assert "R2/2" in pins  # the passive wired to it
+        assert "R2/1" in pins  # the passive wired to it (rot90: pin 1 at wire end)
         assert "U1/3" not in pins  # phantom sibling-unit pin must be gone
+
+
+# Rotated single-unit symbol regression (#294 follow-up / inline-transform bug):
+#   A symbol placed at rotation 90 with an output pin at lib offset (7.62, 0).
+#   pin_world_xy (post-#259) puts that pin at (100, 92.38). The pre-fix inline
+#   transform in _find_pins_on_net applied mirror-before-rotate and diverged
+#   from pin_world_xy for 90/270 rotations, computing a wrong location so the
+#   pin failed to land on its own wire and was dropped from the net's pin list.
+ROTATED_SCH = """\
+(kicad_sch (version 20250114) (generator "test")
+  (uuid 00000000-0000-0000-0000-0000000000bb)
+  (paper "A4")
+  (lib_symbols
+    (symbol "TEST:Amp" (pin_names (offset 0)) (in_bom yes) (on_board yes)
+      (property "Reference" "U" (at 0 0 0))
+      (property "Value" "Amp" (at 0 0 0))
+      (symbol "Amp_1_1"
+        (pin output line (at 7.62 0 180) (length 2.54)
+          (name "~" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27))))
+        )
+      )
+    )
+    (symbol "Device:R" (pin_numbers (hide yes)) (pin_names (offset 0))
+      (property "Reference" "R" (at 0 0 0))
+      (property "Value" "R" (at 0 0 0))
+      (symbol "R_0_1")
+      (symbol "R_1_1"
+        (pin passive line (at 0 3.81 270) (length 1.27)
+          (name "~" (effects (font (size 1.27 1.27))))
+          (number "1" (effects (font (size 1.27 1.27))))
+        )
+        (pin passive line (at 0 -3.81 90) (length 1.27)
+          (name "~" (effects (font (size 1.27 1.27))))
+          (number "2" (effects (font (size 1.27 1.27))))
+        )
+      )
+    )
+  )
+  (symbol (lib_id "TEST:Amp") (at 100 100 90) (unit 1)
+    (uuid 00000000-0000-0000-0000-000000000010)
+    (property "Reference" "U1" (at 90 100 0))
+    (property "Value" "Amp" (at 110 100 0))
+  )
+  (symbol (lib_id "Device:R") (at 100 85 0) (unit 1)
+    (uuid 00000000-0000-0000-0000-000000000110)
+    (property "Reference" "R1" (at 105 85 0))
+    (property "Value" "1k" (at 105 88 0))
+  )
+  (wire (pts (xy 100 92.38) (xy 100 88.81))
+    (stroke (width 0) (type default)) (uuid 00000000-0000-0000-0000-000000000210))
+  (sheet_instances
+    (path "/" (page "1"))
+  )
+)
+"""
+
+
+@pytest.fixture()
+def rotated_sch():
+    with tempfile.TemporaryDirectory() as tmp:
+        sch_path = Path(tmp) / "rotated.kicad_sch"
+        sch_path.write_text(ROTATED_SCH, encoding="utf-8")
+        yield sch_path
+
+
+@pytest.mark.integration
+class TestRotatedSymbolPinLocation:
+    """A 90-rotated symbol's pin must land on its own net (#294 follow-up)."""
+
+    def test_rotated_output_pin_on_its_net(self, rotated_sch):
+        # U1 is rotated 90; its output pin 1 (lib 7.62,0) lands at (100, 92.38),
+        # wired down to R1 pin 1. Pre-fix, the inline transform mislocated pin 1
+        # so it was dropped from this net.
+        pins = _pins_on_net_at(rotated_sch, 100.0, 92.38)
+        assert "U1/1" in pins  # rotated symbol's own pin must be present
+        assert "R1/2" in pins  # the passive it is wired to
