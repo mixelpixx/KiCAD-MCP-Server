@@ -351,7 +351,6 @@ class PlatformHelper:
 
         return paths_added
 
-
     @staticmethod
     def load_kicad_env_vars() -> Dict[str, str]:
         """
