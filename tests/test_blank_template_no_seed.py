@@ -58,7 +58,7 @@ def _assert_blank(sch_text: str) -> None:
     assert "Device:R" not in sch_text
     assert '(symbol "' not in sch_text, "lib_symbols must be empty"
     # And it must carry the current KiCad 10 header.
-    assert "(version 20260306)" in sch_text
+    assert "(version 20260101)" in sch_text
     assert "20250114" not in sch_text
 
 

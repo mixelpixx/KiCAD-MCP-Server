@@ -110,7 +110,7 @@ class ProjectCommands:
                     # new file). The older 20250114 token is the KiCad 9 format and
                     # is stale under KiCad 10 (issue #221).
                     f.write(
-                        '(kicad_sch (version 20260306) (generator "eeschema")'
+                        '(kicad_sch (version 20260101) (generator "eeschema")'
                         ' (generator_version "10.0")\n\n'
                     )
                     f.write(f"  (uuid {schematic_root_uuid})\n\n")
