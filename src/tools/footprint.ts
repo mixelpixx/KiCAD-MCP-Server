@@ -122,6 +122,129 @@ export function registerFootprintTools(server: McpServer, callKicadScript: Funct
     },
   );
 
+  // ── add_footprint_3d_model ────────────────────────────────────────────── //
+  const Xyz = z.object({
+    x: z.number(),
+    y: z.number(),
+    z: z.number(),
+  });
+  server.tool(
+    "add_footprint_3d_model",
+    "Attach (or replace) a 3D model — .step/.stp/.wrl — to a .kicad_mod footprint file. " +
+      "KiCAD path variables like ${KIPRJMOD} or ${KICAD10_3DMODEL_DIR} are supported. " +
+      "Use this after create_footprint so the part shows up in the 3D viewer (Alt+3).",
+    {
+      footprintPath: z
+        .string()
+        .describe("Full path to the .kicad_mod file, e.g. C:/MyLib.pretty/MyPart.kicad_mod"),
+      modelPath: z
+        .string()
+        .describe(
+          "Path to the 3D model file. Prefer ${KIPRJMOD}/MyProj.3dshapes/MyPart.step for portability.",
+        ),
+      offset: Xyz.optional().describe("Model offset in mm (default 0,0,0)"),
+      scale: Xyz.optional().describe("Model scale factor (default 1,1,1)"),
+      rotate: Xyz.optional().describe("Model rotation in degrees (default 0,0,0)"),
+      replace: z
+        .boolean()
+        .optional()
+        .describe("Replace an existing model with the same filename (default true)"),
+    },
+    async (args: {
+      footprintPath: string;
+      modelPath: string;
+      offset?: { x: number; y: number; z: number };
+      scale?: { x: number; y: number; z: number };
+      rotate?: { x: number; y: number; z: number };
+      replace?: boolean;
+    }) => {
+      const result = await callKicadScript("add_footprint_3d_model", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
+  // ── import_3d_model ──────────────────────────────────────────────────── //
+  server.tool(
+    "import_3d_model",
+    "Copy a 3D model file (.step/.stp/.wrl/.x3d/.iges) into the project's *.3dshapes " +
+      "library folder and return a portable ${KIPRJMOD}/... path. Feed the returned " +
+      "'modelPath' straight into add_footprint_3d_model or add_component_3d_model.",
+    {
+      modelPath: z.string().describe("Path to the source 3D model file to import"),
+      projectPath: z
+        .string()
+        .describe(
+          "Path to the .kicad_pro file or the project directory (used to locate the " +
+            ".3dshapes folder and compute ${KIPRJMOD})",
+        ),
+      libraryDir: z
+        .string()
+        .optional()
+        .describe(
+          "Target *.3dshapes directory (absolute, or relative to the project). " +
+            "Default: <project>/<project>.3dshapes",
+        ),
+      newName: z
+        .string()
+        .optional()
+        .describe("Rename the copied file (source extension kept if omitted)"),
+      overwrite: z
+        .boolean()
+        .optional()
+        .describe("Overwrite an existing destination file (default false)"),
+    },
+    async (args: {
+      modelPath: string;
+      projectPath: string;
+      libraryDir?: string;
+      newName?: string;
+      overwrite?: boolean;
+    }) => {
+      const result = await callKicadScript("import_3d_model", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
+  // ── add_component_3d_model (LIVE / IPC) ──────────────────────────────── //
+  server.tool(
+    "add_component_3d_model",
+    "Attach a 3D model to one or more PLACED footprints on the open board, live via " +
+      "the KiCAD IPC API (changes appear instantly, no file conflicts). " +
+      "Use this for components already on the PCB; for a library .kicad_mod use add_footprint_3d_model.",
+    {
+      reference: z
+        .union([z.string(), z.array(z.string())])
+        .describe("Footprint reference(s), e.g. 'D1', ['D1','D2'], or '*' for all footprints"),
+      modelPath: z
+        .string()
+        .describe("Path to the 3D model, e.g. ${KIPRJMOD}/MyProj.3dshapes/MyPart.step"),
+      offset: Xyz.optional().describe("Model offset in mm (default 0,0,0)"),
+      scale: Xyz.optional().describe("Model scale factor (default 1,1,1)"),
+      rotate: Xyz.optional().describe("Model rotation in degrees (default 0,0,0)"),
+      replace: z
+        .boolean()
+        .optional()
+        .describe("Replace an existing model with the same filename (default true)"),
+    },
+    async (args: {
+      reference: string | string[];
+      modelPath: string;
+      offset?: { x: number; y: number; z: number };
+      scale?: { x: number; y: number; z: number };
+      rotate?: { x: number; y: number; z: number };
+      replace?: boolean;
+    }) => {
+      const result = await callKicadScript("add_component_3d_model", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
   // ── edit_footprint_pad ────────────────────────────────────────────────── //
   server.tool(
     "edit_footprint_pad",
