@@ -26,6 +26,7 @@ from commands.library_schematic import LibraryManager as SchematicLibraryManager
 from commands.schematic import SchematicManager
 from commands.wire_manager import WireManager
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
+from utils.interactive_schematic import reload_kicad_schematic
 from utils.sexpr_format import dumps as kicad_dumps
 
 logger = logging.getLogger("kicad_interface")
@@ -96,6 +97,10 @@ class SchematicHandlersMixin:
     # mypy can resolve ``self.board`` when type-checking this module in isolation (the
     # module docstring notes the mixin relies on the host's ``self.board``).
     board: Any
+
+    def _reload_kicad_schematic(self) -> None:
+        """Opt-in: reload open Schematic Editor after external file edits (Windows)."""
+        reload_kicad_schematic()
 
     def _handle_create_schematic(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new schematic"""
@@ -222,6 +227,8 @@ class SchematicHandlersMixin:
                 unit=unit,
                 project_path=derived_project_path,
             )
+
+            self._reload_kicad_schematic()
 
             return {
                 "success": True,
@@ -640,6 +647,7 @@ class SchematicHandlersMixin:
                 changes["propertiesRemoved"] = properties_removed
 
             logger.info(f"Edited schematic component {reference}: {changes}")
+            self._reload_kicad_schematic()
             return {"success": True, "reference": reference, "updated": changes}
 
         except Exception as e:
@@ -931,6 +939,7 @@ class SchematicHandlersMixin:
                 message = "Wire added successfully"
                 if snapped_info:
                     message += "; " + "; ".join(snapped_info)
+                self._reload_kicad_schematic()
                 return {"success": True, "message": message}
             else:
                 return {"success": False, "message": "Failed to add wire"}

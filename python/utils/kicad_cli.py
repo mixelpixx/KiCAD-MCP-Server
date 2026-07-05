@@ -57,17 +57,11 @@ def _candidate_paths() -> List[Path]:
     candidates: List[Path] = []
 
     if system == "Windows":
-        for base in (r"C:\Program Files\KiCad", r"C:\Program Files (x86)\KiCad"):
-            base_dir = Path(base)
-            if base_dir.is_dir():
-                versions = sorted(
-                    (p for p in base_dir.iterdir() if p.is_dir()),
-                    key=lambda p: p.name,
-                    reverse=True,
-                )
-                candidates.extend(v / "bin" / name for v in versions)
-            # Some installs drop straight into <base>\bin without a version dir.
-            candidates.append(base_dir / "bin" / name)
+        # Shared root discovery (registry + Program Files + custom C:\KiCad roots,
+        # newest first) so cli/symbol/footprint lookups can't drift apart (#286).
+        from utils.kicad_roots import windows_kicad_roots
+
+        candidates.extend(root / "bin" / name for root in windows_kicad_roots())
     elif system == "Darwin":
         candidates.extend(
             [

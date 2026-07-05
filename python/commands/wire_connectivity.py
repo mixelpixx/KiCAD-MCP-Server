@@ -365,6 +365,7 @@ def _parse_symbol_instances_sexp(
             "rotation": 0.0,
             "mirror_x": False,
             "mirror_y": False,
+            "unit": 0,
         }
 
         for sub in item[1:]:
@@ -385,6 +386,8 @@ def _parse_symbol_instances_sexp(
                         inst["mirror_x"] = True
                     elif mv == "y":
                         inst["mirror_y"] = True
+            elif tag == Symbol("unit") and len(sub) >= 2:
+                inst["unit"] = int(sub[1])
             elif tag == Symbol("property") and len(sub) >= 3:
                 prop_name = str(sub[1]).strip('"')
                 if prop_name == "Reference":
@@ -445,6 +448,22 @@ def _find_pins_on_net(
             if not pin_defs:
                 logger.debug(f"  {ref}: no pin definitions for lib_id={lib_id}")
                 continue
+
+            # For a multi-unit component, each placed instance carries a single
+            # (unit N) and only owns the pins defined in that unit's sub-symbol
+            # (plus unit 0, which is common to every unit). Without this filter,
+            # every unit's pins are transformed against every instance's
+            # position, so a sibling unit's pin can land on this instance's wire
+            # and be reported as a phantom member of the net (#293).
+            inst_unit = inst["unit"]
+            if inst_unit:
+                pin_defs = {
+                    num: pdata
+                    for num, pdata in pin_defs.items()
+                    if pdata.get("unit", 0) in (0, inst_unit)
+                }
+                if not pin_defs:
+                    continue
 
             sym_x = inst["x"]
             sym_y = inst["y"]

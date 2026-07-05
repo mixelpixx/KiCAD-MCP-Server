@@ -63,13 +63,17 @@ class ProjectCommands:
             board.SetFileName(board_path)
             pcbnew.SaveBoard(board_path, board)
 
-            # Create schematic from template (use expanded template with symbol definitions)
+            # Create schematic from a blank KiCad 10 template (empty lib_symbols,
+            # no placed symbols). The old template_with_symbols_expanded.kicad_sch
+            # pre-seeded _TEMPLATE_* symbols that leaked into every new project;
+            # the live add tool synthesizes its own lib_symbols via the dynamic
+            # loader, so a blank start is correct (issue #221, also closes #243).
             schematic_path = project_path.replace(".kicad_pro", ".kicad_sch")
             template_sch_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
                 "..",
                 "templates",
-                "template_with_symbols_expanded.kicad_sch",
+                "blank.kicad_sch",
             )
 
             if os.path.exists(template_sch_path):
@@ -106,7 +110,7 @@ class ProjectCommands:
                     # new file). The older 20250114 token is the KiCad 9 format and
                     # is stale under KiCad 10 (issue #221).
                     f.write(
-                        '(kicad_sch (version 20260306) (generator "eeschema")'
+                        '(kicad_sch (version 20260101) (generator "eeschema")'
                         ' (generator_version "10.0")\n\n'
                     )
                     f.write(f"  (uuid {schematic_root_uuid})\n\n")

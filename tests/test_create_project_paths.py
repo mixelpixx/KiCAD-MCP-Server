@@ -74,6 +74,6 @@ def test_create_project_fallback_schematic_uses_kicad10_header():
 
     assert result["success"] is True, result
     written = "".join(call.args[0] for call in m().write.call_args_list)
-    assert "(version 20260306)" in written, written
+    assert "(version 20260101)" in written, written
     assert 'generator "eeschema"' in written
     assert "20250114" not in written

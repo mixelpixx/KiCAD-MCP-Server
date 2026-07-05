@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 # Minimal sub-sheet content: same outer (kicad_sch ...) form as a root sheet
 # but WITHOUT (sheet_instances ...).
 SUB_SHEET_NO_SHEET_INSTANCES = """(kicad_sch
-\t(version 20260306)
+\t(version 20260101)
 \t(generator "eeschema")
 \t(generator_version "10.0")
 \t(uuid "bbbb2222-2222-2222-2222-bbbbbbbbbbbb")
