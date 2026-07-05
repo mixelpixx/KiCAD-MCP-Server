@@ -137,6 +137,43 @@ class TestCreateComponentInstanceUnit:
         assert 1 in units
         assert 2 in units
 
+    def test_instances_block_names_project_and_root_uuid(self, tmp_path: Any) -> None:
+        """The (instances ...) block must name the project (= schematic file stem)
+        and address the root sheet by its own UUID, matching KiCad-native format.
+        Otherwise KiCad 9 eeschema shows the component as unannotated (R?)."""
+        sch = tmp_path / "myboard.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+        # empty.kicad_sch ships this top-level (uuid ...)
+        root_uuid = "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e"
+        loader = self._loader()
+        loader.create_component_instance(
+            sch, "Device", "R", reference="R1", value="10k", x=10, y=10
+        )
+        content = sch.read_text()
+        assert '(project "myboard"' in content
+        assert f'(path "/{root_uuid}"' in content
+        # legacy placeholder must be gone
+        assert '(project "project"' not in content
+
+    def test_instances_block_falls_back_without_root_uuid(self) -> None:
+        """If no top-level UUID can be read, fall back to the legacy
+        (project "project" (path "/" ...)) form rather than crashing."""
+        content = (
+            '(kicad_sch (version 20250114) (generator "test")\n'
+            '  (paper "A4")\n'
+            "  (lib_symbols\n  )\n"
+            '  (sheet_instances\n    (path "/" (page "1"))\n  )\n'
+            ")\n"
+        )
+        sch = _write_temp_sch(content)
+        loader = self._loader()
+        loader.create_component_instance(
+            sch, "Device", "R", reference="R1", value="10k", x=10, y=10
+        )
+        out = sch.read_text()
+        assert '(project "project"' in out
+        assert '(path "/"' in out
+
 
 # ---------------------------------------------------------------------------
 # Handler-level tests – _handle_add_schematic_component

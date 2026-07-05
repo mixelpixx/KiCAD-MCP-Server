@@ -613,6 +613,28 @@ class DynamicSymbolLoader:
             return []
 
     @staticmethod
+    def _extract_schematic_uuid(schematic_path: Path) -> Optional[str]:
+        """
+        Return the root schematic's top-level UUID, used to build KiCad-native
+        ``(instances (project ... (path "/<root-uuid>" ...)))`` annotation blocks.
+
+        The top-level ``(uuid ...)`` sits in the header before ``(lib_symbols ...)``,
+        so the first UUID in the file is the schematic's own.  Handles both the
+        GUI-saved quoted form ``(uuid "…")`` and this project's template form
+        ``(uuid <hex>)`` (see schematic.py).  Returns None on any failure so callers
+        fall back to the previous ``path "/"`` behaviour rather than crashing.
+        """
+        import re
+
+        try:
+            with open(schematic_path, encoding="utf-8") as f:
+                content = f.read()
+            m = re.search(r'\(uuid\s+"?([0-9a-fA-F-]{36})"?', content)
+            return m.group(1) if m else None
+        except Exception:
+            return None
+
+    @staticmethod
     def _rotate_offset(dx: float, dy: float, angle_deg: float) -> tuple:
         """
         Rotate a 2-D offset by angle_deg degrees (KiCad CCW-in-screen, i.e. Y-axis
@@ -699,6 +721,17 @@ class DynamicSymbolLoader:
         fp_x, fp_y, _, _ = _prop_at("Footprint", 0, 0, 0)
         ds_x, ds_y, _, _ = _prop_at("Datasheet", 0, 0, 0)
 
+        # --- annotation (instances) block ---------------------------------------
+        # KiCad reads the RefDes shown in the GUI from this block, not from the
+        # (property "Reference" ...) above.  It must name the project (= schematic
+        # file stem) and address the root sheet by its own UUID, otherwise KiCad 9's
+        # eeschema shows the component as unannotated (R?).  Native format (see
+        # demos/interf_u): (project "<stem>" (path "/<root-uuid>" ...)).
+        project_name = schematic_path.stem
+        root_uuid = self._extract_schematic_uuid(schematic_path)
+        instance_path = f"/{root_uuid}" if root_uuid else "/"
+        instance_project = project_name if root_uuid else "project"
+
         mirror_str = " (mirror y)" if mirror_y else ""
         instance_block = f"""  (symbol (lib_id "{full_lib_id}") (at {x} {y} {angle}){mirror_str} (unit {unit})
     (in_bom yes) (on_board yes) (dnp no)
@@ -716,8 +749,8 @@ class DynamicSymbolLoader:
       (effects (font (size 1.27 1.27)) (hide yes))
     ){pin_lines}
     (instances
-      (project "project"
-        (path "/"
+      (project "{instance_project}"
+        (path "{instance_path}"
           (reference "{reference}")
           (unit {unit})
         )
