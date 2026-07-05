@@ -1768,6 +1768,21 @@ class EagleCommands:
                 f"{sch_dangling} dangling wire segment(s) remain after trim — review ERC"
             )
 
+        # 2b. Ground-truth ERC via kicad-cli. dangling_wires above counts against
+        # the importer's own connection model, which can accept endpoints (label
+        # anchors, synthesized pin points) that eeschema does not — so it can
+        # report 0 while KiCad's ERC still flags wire_dangling errors. Running
+        # real ERC on the output gives the caller the number KiCad will show,
+        # not the number the importer hopes for.
+        if sch_ok:
+            erc = self._erc_check(sch_out)
+            results["erc"] = erc if erc is not None else {"ran": False}
+            if erc and erc.get("wire_dangling"):
+                results.setdefault("warnings", []).append(
+                    f"KiCad ERC reports {erc['wire_dangling']} dangling wire(s) on the "
+                    "imported schematic — review before trusting connectivity"
+                )
+
         # 3. Create .kicad_pro (with correct UUID so KiCad links it to the .kicad_sch)
         pro_path = os.path.join(output_dir, safe_name + ".kicad_pro")
         self._create_project_file(pro_path, safe_name, sch_uuid)
@@ -1783,6 +1798,48 @@ class EagleCommands:
         return results
 
     # ── Private helpers ────────────────────────────────────────────────────────
+    def _erc_check(self, sch_path: str) -> Optional[Dict[str, Any]]:
+        """Run kicad-cli sch erc on the generated schematic and parse the report.
+
+        Returns {"ran": True, "errors": E, "warnings": W, "wire_dangling": D}
+        or None when kicad-cli is unavailable or the run/parse fails (the
+        import result then carries {"ran": False} so callers can tell the
+        difference between "clean" and "unverified").
+        """
+        cli = self._kicad_cli
+        if not cli:
+            return None
+        report_path = sch_path + ".erc.rpt"
+        try:
+            result = subprocess.run(
+                [cli, "sch", "erc", sch_path, "-o", report_path],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode != 0 or not os.path.exists(report_path):
+                return None
+            with open(report_path, "r", encoding="utf-8", errors="replace") as fh:
+                report = fh.read()
+            summary = re.search(r"ERC messages:\s*\d+\s+Errors\s+(\d+)\s+Warnings\s+(\d+)", report)
+            if not summary:
+                return None
+            return {
+                "ran": True,
+                "errors": int(summary.group(1)),
+                "warnings": int(summary.group(2)),
+                "wire_dangling": report.count("[wire_dangling]"),
+            }
+        except Exception as e:  # noqa: BLE001 - ERC is advisory, never fail the import
+            logger.warning("Post-import ERC check skipped: %s", e)
+            return None
+        finally:
+            try:
+                if os.path.exists(report_path):
+                    os.remove(report_path)
+            except OSError:
+                pass
+
     def _import_pcb(self, brd_file: str, pcb_out: str) -> Tuple[bool, str]:
         from utils.kicad_cli import kicad_cli_not_found_message
 

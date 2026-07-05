@@ -10,14 +10,21 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 from commands.eagle import (  # noqa: E402
+    EagleCommands,
     _count_dangling_wires,
     _prune_dangling_wires,
     _trim_wires,
     generate_kicad_sch,
     parse_eagle_schematic,
 )
+from utils.kicad_cli import resolve_kicad_cli  # noqa: E402
 
 FIXTURE = Path(__file__).parent / "fixtures" / "eagle" / "minimal.sch"
+
+# Gate cli-dependent tests on the same resolver the importer uses, so they run
+# on any discoverable install (registry / Program Files / custom roots), not
+# only the hardcoded Program Files path.
+_KICAD_CLI = resolve_kicad_cli()
 
 
 def test_parse_minimal_eagle_fixture() -> None:
@@ -54,10 +61,7 @@ def test_trim_and_prune_remove_isolated_stub() -> None:
     assert len(pruned) == 1
 
 
-@pytest.mark.skipif(
-    not Path(r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe").exists(),
-    reason="KiCad CLI not installed",
-)
+@pytest.mark.skipif(_KICAD_CLI is None, reason="KiCad CLI not installed")
 def test_minimal_fixture_exports_pdf(tmp_path: Path) -> None:
     parts, instances, net_wires, net_labels, junctions = parse_eagle_schematic(str(FIXTURE))
     sch = tmp_path / "minimal.kicad_sch"
@@ -68,11 +72,37 @@ def test_minimal_fixture_exports_pdf(tmp_path: Path) -> None:
     pdf = tmp_path / "out.pdf"
     import subprocess
 
-    cli = Path(r"C:\Program Files\KiCad\10.0\bin\kicad-cli.exe")
     result = subprocess.run(
-        [str(cli), "sch", "export", "pdf", "--output", str(pdf), str(sch)],
+        [str(_KICAD_CLI), "sch", "export", "pdf", "--output", str(pdf), str(sch)],
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, result.stderr
     assert pdf.exists()
+
+
+@pytest.mark.skipif(_KICAD_CLI is None, reason="KiCad CLI not installed")
+def test_import_result_reports_ground_truth_erc(tmp_path: Path) -> None:
+    """The result's erc block must reflect what kicad-cli actually measures.
+
+    The internal dangling_wires count runs against the importer's own
+    connection model, which can accept endpoints eeschema does not — it once
+    reported 0 while real ERC flagged wire_dangling errors. The erc block
+    exists so callers get KiCad's numbers, not the model's.
+    """
+    ec = EagleCommands()
+    parts, instances, net_wires, net_labels, junctions = parse_eagle_schematic(str(FIXTURE))
+    sch = tmp_path / "minimal.kicad_sch"
+    generate_kicad_sch(parts, instances, net_wires, net_labels, junctions, str(sch))
+    from utils.sexpr_format import prettify
+
+    sch.write_text(prettify(sch.read_text(encoding="utf-8")), encoding="utf-8")
+
+    report = ec._erc_check(str(sch))
+    assert report is not None, "ERC must run when kicad-cli is resolvable"
+    assert report["ran"] is True
+    assert set(report) == {"ran", "errors", "warnings", "wire_dangling"}
+    assert isinstance(report["errors"], int)
+    assert isinstance(report["wire_dangling"], int)
+    # The report file is cleaned up after parsing.
+    assert not Path(str(sch) + ".erc.rpt").exists()
