@@ -24,7 +24,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 # tab indentation, and the trailing newline.
 CANONICAL_GOLDEN = (
     "(kicad_sch\n"
-    "\t(version 20260306)\n"
+    "\t(version 20260101)\n"
     '\t(generator "eeschema")\n'
     '\t(generator_version "10.0")\n'
     '\t(uuid "11111111-1111-4111-8111-111111111111")\n'
