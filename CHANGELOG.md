@@ -6,6 +6,19 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Derived symbols in KiCad 10 `.kicad_symdir` libraries now inline their parent**
+  (#282): in the sharded directory format each symbol is its own
+  `<Symbol>.kicad_sym` file, so a symbol using `(extends "Parent")` has its parent
+  in a _sibling_ shard. `extract_symbol_from_library` handed only the child's shard
+  to the inliner, so the parent was never found and the `(extends)` clause was
+  stripped — producing a symbol shell with no parent pins/graphics (e.g.
+  `Device:Filter_EMI_C`, which extends `C_Feedthrough`). A new
+  `_resolve_symdir_extends` reads the parent shard, resolves it recursively (a
+  parent may itself extend a grandparent in another shard), and merges it via the
+  existing single-level inliner; a missing parent shard still degrades gracefully
+  (strips + warns, keeping the file loadable). Single-file `.kicad_sym` libraries
+  are unaffected.
+
 - **`create_project` writes a conformant KiCad 10 `.kicad_pro`** (#220): the
   project file was a hand-rolled 122-byte stub containing only
   `board.filename` and a `sheets` entry with the literal id `"root"`, so
@@ -145,7 +158,7 @@ the KiCad GUI connects later (reopen the project to adopt IPC).
   components via dynamic template injection** (#221, part B): when no placed
   `_TEMPLATE_*` donor existed, the legacy clone path used to call
   `DynamicSymbolLoader.load_symbol_dynamically`, which wrote a template
-  instance into the *file* mid-call and cloned onto a locally reloaded
+  instance into the _file_ mid-call and cloned onto a locally reloaded
   object — so callers following the normal add-then-save pattern saved
   their stale in-memory schematic, discarding the new component and
   leaving `_TEMPLATE_*` clutter behind. That branch is removed: template

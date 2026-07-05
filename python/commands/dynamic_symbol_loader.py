@@ -330,6 +330,53 @@ class DynamicSymbolLoader:
 
         return first_line + "\n" + "\n".join(body_lines) + "\n" + last_line
 
+    def _read_symdir_shard(self, lib_dir: Path, symbol_name: str) -> Optional[str]:
+        """Read the per-symbol shard ``<symbol>.kicad_sym`` from a ``.kicad_symdir``."""
+        shard = lib_dir / f"{symbol_name}.kicad_sym"
+        if not shard.exists():
+            return None
+        try:
+            with open(shard, "r", encoding="utf-8") as f:
+                return f.read()
+        except OSError as e:
+            logger.warning(f"Could not read symdir shard {shard}: {e}")
+            return None
+
+    def _resolve_symdir_extends(
+        self, lib_dir: Path, symbol_name: str, block: str, _seen: Optional[set] = None
+    ) -> str:
+        """Inline ``(extends "Parent")`` for a sharded (``.kicad_symdir``) library.
+
+        Unlike a single-file library, a derived symbol's parent lives in its own
+        sibling shard ``<Parent>.kicad_sym`` and is therefore absent from this
+        symbol's file (issue #282). Read the parent shard, resolve it recursively
+        (a parent may itself extend a grandparent in yet another shard), then merge
+        the fully-resolved parent into the child with the shared single-level
+        inliner. When the parent shard is missing or the chain is cyclic, hand the
+        inliner an empty library so it falls back to its graceful strip-and-warn.
+        """
+        extends_match = re.search(r'\(extends "([^"]+)"\)', block)
+        if not extends_match:
+            return block
+
+        parent_name = extends_match.group(1)
+        seen = set() if _seen is None else _seen
+
+        parent_content = ""
+        if parent_name not in seen:
+            seen.add(parent_name)
+            shard = self._read_symdir_shard(lib_dir, parent_name)
+            if shard is not None:
+                parent_block = self._extract_symbol_block(shard, parent_name)
+                if parent_block is not None:
+                    # Fully resolve the parent (extends-free) before merging so
+                    # multi-level chains inline completely.
+                    parent_content = self._resolve_symdir_extends(
+                        lib_dir, parent_name, parent_block, seen
+                    )
+
+        return self._inline_extends_symbol(parent_content, symbol_name, block)
+
     def extract_symbol_from_library(self, library_name: str, symbol_name: str) -> Optional[str]:
         """
         Extract a symbol definition from a KiCad .kicad_sym library file.
@@ -371,7 +418,12 @@ class DynamicSymbolLoader:
         if re.search(r'\(extends "([^"]+)"\)', block):
             parent_name = re.search(r'\(extends "([^"]+)"\)', block).group(1)
             logger.info(f"Symbol {symbol_name} extends {parent_name}, inlining parent content")
-            block = self._inline_extends_symbol(lib_content, symbol_name, block)
+            if lib_path.is_dir():
+                # Sharded (.kicad_symdir) library: the parent is in a sibling
+                # shard, not in this symbol's file, so resolve across shards (#282).
+                block = self._resolve_symdir_extends(lib_path, symbol_name, block)
+            else:
+                block = self._inline_extends_symbol(lib_content, symbol_name, block)
 
         # Prefix top-level symbol name with library
         full_name = f"{library_name}:{symbol_name}"
