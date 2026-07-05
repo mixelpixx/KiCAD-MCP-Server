@@ -1,6 +1,11 @@
 """Tests for opt-in interactive schematic reload helpers."""
 
-from utils.interactive_schematic import (
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
+
+from utils.interactive_schematic import (  # noqa: E402
     choose_affirmative_button,
     has_destructive_button,
     is_reload_confirmation_title,
