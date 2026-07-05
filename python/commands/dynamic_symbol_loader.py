@@ -35,7 +35,19 @@ class DynamicSymbolLoader:
 
     def find_kicad_symbol_libraries(self) -> List[Path]:
         """Find all KiCad symbol library directories"""
-        possible_paths = [
+        # Discovered install roots first (registry + Program Files globs +
+        # custom roots like C:\KiCad, newest version first) — the same shared
+        # helper the cli/footprint/symbol-search paths use (#286), so the
+        # production component-placement path cannot drift from the rest of
+        # discovery again. Env-var overrides below still take precedence.
+        try:
+            from utils.kicad_roots import kicad_install_roots
+
+            root_symbol_dirs = [r / "share" / "kicad" / "symbols" for r in kicad_install_roots()]
+        except Exception:  # pragma: no cover - defensive; helper is stdlib-only
+            root_symbol_dirs = []
+
+        possible_paths = root_symbol_dirs + [
             Path("C:/Program Files/KiCad/10.0/share/kicad/symbols"),
             Path("/usr/share/kicad/symbols"),
             Path("/usr/local/share/kicad/symbols"),
