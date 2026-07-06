@@ -163,6 +163,7 @@ export const toolCategories: ToolCategory[] = [
       "set_schematic_property_position",
       "batch_set_schematic_property_positions",
       "autoplace_schematic_fields",
+      "lint_schematic_cosmetic",
     ],
   },
   {
