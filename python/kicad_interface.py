@@ -325,6 +325,7 @@ elif KICAD_BACKEND == "ipc" and not USE_IPC_BACKEND:
 try:
     logger.info("Importing command handlers...")
     from commands.board import BoardCommands
+    from commands.board.origin import BoardOriginCommands
     from commands.component import ComponentCommands
     from commands.connection_schematic import ConnectionManager
     from commands.datasheet_manager import DatasheetManager
@@ -407,6 +408,7 @@ class KiCADInterface(SchematicHandlersMixin):
         # Initialize command handlers
         self.project_commands = ProjectCommands(self.board)
         self.board_commands = BoardCommands(self.board)
+        self.board_origin_commands = BoardOriginCommands()
         self.component_commands = ComponentCommands(self.board, self.footprint_library)
         self.routing_commands = RoutingCommands(self.board)
         self.freerouting_commands = FreeroutingCommands(self.board)
@@ -454,6 +456,8 @@ class KiCADInterface(SchematicHandlersMixin):
             "get_project_info": self.project_commands.get_project_info,
             # Board commands
             "set_board_size": self.board_commands.set_board_size,
+            "set_board_origin": self.board_origin_commands.set_board_origin,
+            "get_board_origin": self.board_origin_commands.get_board_origin,
             "add_layer": self.board_commands.add_layer,
             "set_active_layer": self.board_commands.set_active_layer,
             "get_board_info": self.board_commands.get_board_info,

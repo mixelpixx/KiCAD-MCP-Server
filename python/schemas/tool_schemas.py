@@ -154,6 +154,58 @@ BOARD_TOOLS = [
         },
     },
     {
+        "name": "set_board_origin",
+        "title": "Set Board Aux/Grid Origin",
+        "description": (
+            "Set the auxiliary (drill/place) origin and/or grid origin of a "
+            ".kicad_pcb. The aux origin is the datum used by export_drill's "
+            "drillOrigin:'plot' option and by pick-and-place / plot exports "
+            "with useAuxOrigin."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "boardPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_pcb file",
+                },
+                "type": {
+                    "type": "string",
+                    "enum": ["aux", "grid", "both"],
+                    "description": "Which origin to set (default: aux)",
+                    "default": "aux",
+                },
+                "x": {"type": "number", "description": "Origin X coordinate"},
+                "y": {"type": "number", "description": "Origin Y coordinate"},
+                "unit": {
+                    "type": "string",
+                    "enum": ["mm", "mil", "inch"],
+                    "description": "Coordinate unit (default: mm)",
+                    "default": "mm",
+                },
+            },
+            "required": ["boardPath", "x", "y"],
+        },
+    },
+    {
+        "name": "get_board_origin",
+        "title": "Get Board Aux/Grid Origin",
+        "description": (
+            "Read back the auxiliary (drill/place) origin and grid origin of a "
+            ".kicad_pcb in mm."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "boardPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_pcb file",
+                },
+            },
+            "required": ["boardPath"],
+        },
+    },
+    {
         "name": "add_board_outline",
         "title": "Add Board Outline",
         "description": "Adds a board outline shape (rectangle, rounded_rectangle, circle, or polygon) on the Edge.Cuts layer. By default the board top-left corner is placed at (0, 0) so all coordinates are positive. Use x/y to set a different top-left corner position.",

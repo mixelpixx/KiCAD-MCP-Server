@@ -36,6 +36,8 @@ export const toolCategories: ToolCategory[] = [
       "add_zone",
       "get_board_extents",
       "get_board_2d_view",
+      "set_board_origin",
+      "get_board_origin",
       "launch_kicad_ui",
     ],
   },
