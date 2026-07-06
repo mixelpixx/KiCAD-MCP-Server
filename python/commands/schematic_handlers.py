@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 import pcbnew
 import sexpdata
 from commands.library_schematic import LibraryManager as SchematicLibraryManager
-from commands.schematic import SchematicManager
+from commands.schematic import SchematicLoadError, SchematicManager
 from commands.wire_manager import WireManager
 from utils.interactive_schematic import reload_kicad_schematic
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
@@ -188,14 +188,13 @@ class SchematicHandlersMixin:
             if not filename:
                 return {"success": False, "message": "Filename is required"}
 
-            schematic = SchematicManager.load_schematic(filename)
-            success = schematic is not None
+            try:
+                schematic = SchematicManager.load_schematic(filename)
+            except SchematicLoadError as e:
+                return e.to_response()
 
-            if success:
-                metadata = SchematicManager.get_schematic_metadata(schematic)
-                return {"success": success, "metadata": metadata}
-            else:
-                return {"success": False, "message": "Failed to load schematic"}
+            metadata = SchematicManager.get_schematic_metadata(schematic)
+            return {"success": True, "metadata": metadata}
         except Exception as e:
             logger.error(f"Error loading schematic: {str(e)}")
             return {"success": False, "message": str(e)}
@@ -899,10 +898,9 @@ class SchematicHandlersMixin:
                 locator = PinLocator()
                 sch_path = Path(schematic_path)
 
-                # Load schematic to iterate all symbols
-                from skip import Schematic as SkipSchematic
-
-                sch = SkipSchematic(str(sch_path))
+                # Load schematic via the guarded loader so a parse failure
+                # surfaces a diagnosed SchematicLoadError instead of a crash.
+                sch = SchematicManager.load_schematic(str(sch_path))
 
                 # Collect all pin locations: list of (ref, pin_num, [x, y])
                 all_pins = []
@@ -980,6 +978,8 @@ class SchematicHandlersMixin:
                 return {"success": True, "message": message}
             else:
                 return {"success": False, "message": "Failed to add wire"}
+        except SchematicLoadError as e:
+            return e.to_response()
         except Exception as e:
             logger.error(f"Error adding wire to schematic: {str(e)}")
             import traceback
@@ -1360,9 +1360,10 @@ class SchematicHandlersMixin:
                     "message": f"Schematic not found: {schematic_path}",
                 }
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             # Optional filters
             filter_params = params.get("filter", {})
@@ -1453,9 +1454,10 @@ class SchematicHandlersMixin:
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             # Collect net names from the top-level sheet using sexpdata.
             # Falls back to kicad-skip's label collections when the file
@@ -1537,9 +1539,10 @@ class SchematicHandlersMixin:
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             wires = []
             if hasattr(schematic, "wire"):
@@ -1587,9 +1590,10 @@ class SchematicHandlersMixin:
             if label_type is not None and label_type not in _valid_label_types:
                 return {"success": False, "message": "labelType must be one of: net, global, power"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             labels = []
 
@@ -1844,9 +1848,10 @@ class SchematicHandlersMixin:
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             # Collect existing references by prefix
             existing_refs = {}  # prefix -> set of numbers
@@ -2192,9 +2197,10 @@ class SchematicHandlersMixin:
                 except (TypeError, ValueError):
                     return {"success": False, "message": "Parameters x and y must be numeric"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             if not hasattr(schematic, "wire"):
                 return {"success": False, "message": "Schematic has no wires"}
@@ -2577,11 +2583,10 @@ class SchematicHandlersMixin:
         logger.info(f"_build_hierarchical_pad_net_map: scanning {len(sch_files)} schematic files")
 
         for sch_path in sch_files:
-            try:
-                sch = Schematic(str(sch_path))
-            except Exception as e:
-                logger.warning(f"Could not load {sch_path}: {e}")
-                continue
+            # A broken sheet must fail the sync loudly: silently skipping it
+            # would produce an incomplete pad->net map and wrong-looking
+            # success. SchematicLoadError carries the flat-symbol diagnosis.
+            sch = SchematicManager.load_schematic(str(sch_path))
 
             # ── 1. Collect explicit label positions → net name ──────────────
             point_net: dict = {}  # snap(x,y) -> net_name
@@ -2795,6 +2800,8 @@ class SchematicHandlersMixin:
                 "footprints_skipped": skipped_footprints,
             }
 
+        except SchematicLoadError as e:
+            return e.to_response()
         except Exception as e:
             logger.error(f"Error in sync_schematic_to_board: {e}")
             import traceback
@@ -3161,6 +3168,8 @@ class SchematicHandlersMixin:
                 **result,
                 "message": f"Found {result['count']} orphaned wire(s)",
             }
+        except SchematicLoadError as e:
+            return e.to_response()
         except Exception as e:
             logger.error(f"Error finding orphaned wires: {e}")
             import traceback
@@ -3178,9 +3187,10 @@ class SchematicHandlersMixin:
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             labels = list_floating_labels(schematic, schematic_path)
             return {

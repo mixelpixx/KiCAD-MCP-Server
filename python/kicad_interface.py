@@ -342,7 +342,7 @@ try:
     from commands.library_symbol import SymbolLibraryCommands, SymbolLibraryManager
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
-    from commands.schematic import SchematicManager
+    from commands.schematic import SchematicLoadError, SchematicManager
     from commands.schematic_batch import SchematicBatchCommands
     from commands.schematic_declutter import SchematicDeclutterCommands
     from commands.schematic_field_layout import SchematicFieldLayoutCommands
@@ -1129,6 +1129,12 @@ class KiCADInterface(SchematicHandlersMixin):
                     "errorDetails": "The specified command is not supported",
                 }
 
+        except SchematicLoadError as e:
+            # Backstop: any load site missed by the per-handler conversion
+            # still yields the structured, diagnosed error rather than the
+            # generic "Error handling command" below.
+            logger.error(f"Schematic load failed handling {command}: {e}")
+            return e.to_response()
         except Exception as e:
             # Get the full traceback
             traceback_str = traceback.format_exc()
@@ -2733,9 +2739,10 @@ class KiCADInterface(SchematicHandlersMixin):
             if not all([schematic_path, net_name]):
                 return {"success": False, "message": "Missing required parameters"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             connections = get_connections_for_net(schematic, schematic_path, net_name)
             return {"success": True, "connections": connections}
@@ -2763,9 +2770,10 @@ class KiCADInterface(SchematicHandlersMixin):
             except (TypeError, ValueError):
                 return {"success": False, "message": "Parameters x and y must be numeric"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             result = get_net_at_point(schematic, schematic_path, x, y)
             return {"success": True, **result}
