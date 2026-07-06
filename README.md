@@ -247,7 +247,7 @@ connections = ConnectionManager.get_net_connections(sch, "VCC", sch_path)
 - Net connectivity: 100% accurate (VCC: 2 connections, GND: 4 connections)
 - Netlist generation: Working with accurate pin-level connections
 
-See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for the complete schematic tool documentation.
+See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for the complete schematic tool documentation, and the [Headless Authoring Guide](docs/HEADLESS_AUTHORING.md) for field-tested practice driving these tools without the KiCad GUI.
 
 ### IPC Backend (Experimental)
 
