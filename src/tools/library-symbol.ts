@@ -108,6 +108,10 @@ Returns symbol references that can be used directly in schematics.`,
         .optional()
         .describe("Optional: filter to specific library name pattern (e.g., 'JLCPCB')"),
       limit: z.number().optional().default(20).describe("Maximum number of results to return"),
+      rebuildIndex: z
+        .boolean()
+        .optional()
+        .describe("Force re-parse of symbol libraries, ignoring the persistent index"),
       projectPath: z
         .string()
         .optional()
@@ -115,7 +119,13 @@ Returns symbol references that can be used directly in schematics.`,
           "Optional: project directory or .kicad_pro/.kicad_pcb/.kicad_sch path so project-scope sym-lib-table libraries are searched too.",
         ),
     },
-    async (args: { query: string; library?: string; limit?: number; projectPath?: string }) => {
+    async (args: {
+      query: string;
+      library?: string;
+      limit?: number;
+      projectPath?: string;
+      rebuildIndex?: boolean;
+    }) => {
       const result = await callKicadScript("search_symbols", args);
       if (result.success && result.symbols) {
         if (result.symbols.length === 0) {

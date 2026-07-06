@@ -739,6 +739,7 @@ export class KiCADMcpServer {
         "list_schematic_nets",
         "list_schematic_labels",
         "get_schematic_view",
+        "search_symbols",
       ];
       if (longRunningCommands.includes(command)) {
         commandTimeout = 600000; // 10 minutes for long operations

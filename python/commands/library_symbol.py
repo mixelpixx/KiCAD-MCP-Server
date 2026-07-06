@@ -11,7 +11,7 @@ import re
 import threading
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from utils.kicad_roots import kicad_install_roots
 from utils.platform_helper import PlatformHelper
@@ -48,19 +48,47 @@ class SymbolLibraryManager:
     indexes available symbols, and provides search functionality.
     """
 
-    def __init__(self, project_path: Optional[Path] = None):
+    def __init__(
+        self, project_path: Optional[Path] = None, index_store: Optional[Any] = None
+    ):
         """
         Initialize symbol library manager
 
         Args:
             project_path: Optional path to project directory for project-specific libraries
+            index_store: Optional SymbolIndexStore; defaults to the shared
+                process-wide store so parsed libraries survive manager
+                rebuilds (use_project) and backend restarts.
         """
+        from commands.symbol_index import get_default_store
+
         self.project_path = project_path
         self.libraries: Dict[str, str] = {}  # nickname -> path mapping
         self.symbol_cache: Dict[str, List[SymbolInfo]] = {}  # library -> [SymbolInfo]
         self._cache_lock = threading.Lock()
+        self.index_store = index_store if index_store is not None else get_default_store()
         self._load_libraries()
         self._warm_cache()
+
+    def _get_cache_lock(self) -> Any:
+        """Cache-lock accessor tolerant of instances built via __new__
+        (several tests construct bare managers without running __init__)."""
+        lock = getattr(self, "_cache_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self._cache_lock = lock
+        return lock
+
+    def _get_index_store(self) -> Any:
+        """Index store accessor tolerant of instances built via __new__
+        (several tests construct bare managers without running __init__)."""
+        store = getattr(self, "index_store", None)
+        if store is None:
+            from commands.symbol_index import get_default_store
+
+            store = get_default_store()
+            self.index_store = store
+        return store
 
     def _warm_cache(self) -> None:
         """Pre-parse all symbol libraries in the background so the first search
@@ -84,6 +112,9 @@ class SymbolLibraryManager:
                     self.list_symbols(nickname)
                 except Exception:
                     logger.debug("Skipping unparseable library: %s", nickname)
+            # Belt-and-braces batch flush: per-parse flushes already ran, but
+            # make sure the completed warm state hits the persistent index.
+            self._get_index_store().flush(force=True)
             logger.info("Symbol cache warm-up complete (%d libraries)", len(self.libraries))
 
         threading.Thread(target=_warm, name="symbol-cache-warmup", daemon=True).start()
@@ -428,13 +459,24 @@ class SymbolLibraryManager:
             logger.warning(f"Library not found: {library_nickname}")
             return []
 
+        # Persistent index next: an (mtime, size)-fresh entry skips the parse
+        # entirely, which is what makes search_symbols usable across backend
+        # restarts and project switches.
+        indexed = self._get_index_store().get(library_path)
+        if indexed is not None:
+            with self._get_cache_lock():
+                self.symbol_cache[library_nickname] = indexed
+            return indexed
+
         # Parse the library file
         symbols = self._parse_kicad_sym_file(library_path, library_nickname)
 
         # Cache the results. Guarded so an on-demand parse and the background
         # warm-up thread can't corrupt the dict mid-update.
-        with self._cache_lock:
+        with self._get_cache_lock():
             self.symbol_cache[library_nickname] = symbols
+        self._get_index_store().put(library_path, symbols)
+        self._get_index_store().flush()
 
         return symbols
 
@@ -658,6 +700,16 @@ class SymbolLibraryCommands:
 
             limit = params.get("limit", 20)
             library_filter = params.get("library")
+
+            if params.get("rebuildIndex"):
+                manager = self.library_manager
+                filter_lower = (library_filter or "").lower()
+                for nickname, library_path in manager.libraries.items():
+                    if filter_lower and filter_lower not in nickname.lower():
+                        continue
+                    manager._get_index_store().invalidate(library_path)
+                    with manager._cache_lock:
+                        manager.symbol_cache.pop(nickname, None)
 
             results = self.library_manager.search_symbols(query, limit, library_filter)
 
