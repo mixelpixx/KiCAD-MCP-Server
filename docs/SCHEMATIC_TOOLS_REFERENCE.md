@@ -26,10 +26,13 @@ Add a component to the schematic. Symbol format is 'Library:SymbolName' (e.g., '
 
 Remove a placed symbol from a KiCAD schematic (.kicad_sch). This removes the symbol instance (the placed component) from the schematic. It does NOT remove the symbol definition from lib_symbols. Note: This tool operates on schematic files (.kicad_sch). To remove a footprint from a PCB, use delete_component instead.
 
-| Parameter     | Type   | Required | Description                                                   |
-| ------------- | ------ | -------- | ------------------------------------------------------------- |
-| schematicPath | string | Yes      | Path to the .kicad_sch file                                   |
-| reference     | string | Yes      | Reference designator of the component to remove (e.g. R1, U3) |
+| Parameter            | Type    | Required | Description                                                                                                    |
+| -------------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------- |
+| schematicPath        | string  | Yes      | Path to the .kicad_sch file                                                                                     |
+| reference            | string  | Yes      | Reference designator of the component to remove (e.g. R1, U3)                                                   |
+| deleteAttachedLabels | boolean | No       | Also delete net labels sitting on the deleted component's pin positions (default false; see usage notes below) |
+
+**Usage Notes:** `deleteAttachedLabels` removes the labels that `batch_add_and_connect` placed on the component's pins, which otherwise remain as `label_dangling` ERC errors. A label is kept whenever it is still attached to something else: coincident with a remaining component's pin, coincident with a wire endpoint, or lying on a wire segment (0.5 mm tolerance). Deleted labels are reported in the response (`deleted_labels`, `deleted_label_count`). Labels joined to a pin only through a short wire are not chased — that is wire-graph cleanup, out of scope. Recommended when permanently removing a wired part; leave off (default) for delete-then-re-add-in-place workflows.
 
 ### edit_schematic_component
 

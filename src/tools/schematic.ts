@@ -128,6 +128,13 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
 This removes the symbol instance (the placed component) from the schematic.
 It does NOT remove the symbol definition from lib_symbols.
 
+With deleteAttachedLabels, net labels sitting exactly on the deleted
+component's pin positions are removed too — unless a label is still attached
+to a wire or another component's pin. Recommended when permanently removing
+a wired part, since orphaned labels otherwise produce label_dangling ERC
+errors. Default false for backward compatibility (delete-then-re-add
+workflows rely on labels surviving).
+
 Note: This tool operates on schematic files (.kicad_sch).
 To remove a footprint from a PCB, use delete_component instead.`,
     {
@@ -135,15 +142,30 @@ To remove a footprint from a PCB, use delete_component instead.`,
       reference: z
         .string()
         .describe("Reference designator of the component to remove (e.g. R1, U3)"),
+      deleteAttachedLabels: z
+        .boolean()
+        .optional()
+        .describe(
+          "Also delete net labels sitting on the deleted component's pin positions, " +
+            "unless still attached to a wire or another component's pin (default false)",
+        ),
     },
-    async (args: { schematicPath: string; reference: string }) => {
+    async (args: {
+      schematicPath: string;
+      reference: string;
+      deleteAttachedLabels?: boolean;
+    }) => {
       const result = await callKicadScript("delete_schematic_component", args);
       if (result.success) {
+        const labelNote =
+          Array.isArray(result.deleted_labels) && result.deleted_labels.length > 0
+            ? ` (also removed ${result.deleted_labels.length} attached label(s))`
+            : "";
         return {
           content: [
             {
               type: "text",
-              text: `Successfully removed ${args.reference} from schematic`,
+              text: `Successfully removed ${args.reference} from schematic${labelNote}`,
             },
           ],
         };

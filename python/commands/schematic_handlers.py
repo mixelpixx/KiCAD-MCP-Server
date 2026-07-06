@@ -270,6 +270,7 @@ class SchematicHandlersMixin:
 
             schematic_path = params.get("schematicPath")
             reference = params.get("reference")
+            delete_attached_labels = bool(params.get("deleteAttachedLabels", False))
 
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
@@ -338,6 +339,28 @@ class SchematicHandlersMixin:
                     "message": f"Component '{reference}' not found in schematic (note: this tool removes schematic symbols, use delete_component for PCB footprints)",
                 }
 
+            # Compute the doomed symbol's pin world positions BEFORE removal so
+            # the optional label cleanup knows where its labels sat.
+            target_pin_positions: List[Tuple[float, float]] = []
+            label_cleanup_warning: Optional[str] = None
+            if delete_attached_labels:
+                try:
+                    target_pin_positions = self._pin_positions_for_reference(
+                        content, reference
+                    )
+                    if not target_pin_positions:
+                        logger.warning(
+                            "deleteAttachedLabels: no pin positions resolvable "
+                            "for %s (missing lib_symbols entry?); skipping "
+                            "label cleanup",
+                            reference,
+                        )
+                except Exception as e:
+                    label_cleanup_warning = f"could not compute pin positions: {e}"
+                    logger.warning(
+                        "deleteAttachedLabels: %s", label_cleanup_warning
+                    )
+
             # Delete from back to front to preserve character offsets
             for b_start, b_end in sorted(blocks_to_delete, reverse=True):
                 # Include any leading newline/whitespace before the block
@@ -353,12 +376,26 @@ class SchematicHandlersMixin:
 
             deleted_count = len(blocks_to_delete)
             logger.info(f"Deleted {deleted_count} instance(s) of {reference} from {sch_file.name}")
-            return {
+            result = {
                 "success": True,
                 "reference": reference,
                 "deleted_count": deleted_count,
                 "schematic": str(sch_file),
             }
+
+            if delete_attached_labels:
+                if label_cleanup_warning is not None:
+                    result["deleted_labels"] = []
+                    result["deleted_label_count"] = 0
+                    result["labelCleanupWarning"] = label_cleanup_warning
+                else:
+                    result.update(
+                        self._delete_dangling_labels_at(
+                            sch_file, target_pin_positions
+                        )
+                    )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error deleting schematic component: {e}")
@@ -366,6 +403,147 @@ class SchematicHandlersMixin:
 
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
+
+    @staticmethod
+    def _pin_positions_for_reference(
+        content: str, reference: str
+    ) -> List[Tuple[float, float]]:
+        """World (x, y) positions of every pin of every placed instance whose
+        Reference property equals ``reference``.
+
+        Builds a mini document of [lib_symbols] + [matching placed symbols]
+        and reuses WireManager._collect_pin_positions, which applies the
+        authoritative unit-aware y-negate/mirror/rotate/translate transform.
+        Returns [] when the symbol has no lib_symbols entry.
+        """
+        sym = sexpdata.Symbol("symbol")
+        lib_symbols = sexpdata.Symbol("lib_symbols")
+        prop = sexpdata.Symbol("property")
+
+        data = sexpdata.loads(content)
+        mini_doc: list = []
+        for item in data:
+            if not (isinstance(item, list) and item):
+                continue
+            if item[0] == lib_symbols:
+                mini_doc.append(item)
+                continue
+            if item[0] != sym:
+                continue
+            # Placed instance whose (property "Reference" "<ref>") matches
+            for part in item[1:]:
+                if (
+                    isinstance(part, list)
+                    and len(part) >= 3
+                    and part[0] == prop
+                    and str(part[1]) == "Reference"
+                    and str(part[2]) == reference
+                ):
+                    mini_doc.append(item)
+                    break
+        return WireManager._collect_pin_positions(mini_doc)
+
+    @staticmethod
+    def _delete_dangling_labels_at(
+        sch_file: Path,
+        target_positions: List[Tuple[float, float]],
+        tolerance: float = 0.5,
+    ) -> Dict[str, Any]:
+        """Delete net labels left dangling at a removed symbol's pin positions.
+
+        Re-reads ``sch_file`` (the symbol is already gone) and removes every
+        label/global_label/hierarchical_label whose anchor lies within
+        ``tolerance`` mm of one of ``target_positions`` — unless the label is
+        still attached to something else: coincident with a remaining
+        component pin, coincident with a wire endpoint, or lying strictly on
+        a wire segment. Never raises; cleanup failure is reported via
+        ``labelCleanupWarning``.
+        """
+        try:
+            if not target_positions:
+                return {"deleted_labels": [], "deleted_label_count": 0}
+
+            with open(sch_file, "r", encoding="utf-8") as f:
+                sch_content = f.read()
+            sch_data = sexpdata.loads(sch_content)
+
+            remaining_pins = WireManager._collect_pin_positions(sch_data)
+            wire_endpoints = WireManager._collect_wire_endpoints(sch_data)
+            wire_segments = [
+                parsed
+                for parsed in (WireManager._parse_wire(item) for item in sch_data)
+                if parsed is not None
+            ]
+
+            def _near(x: float, y: float, points: List[Tuple[float, float]]) -> bool:
+                return any(
+                    abs(x - px) <= tolerance and abs(y - py) <= tolerance
+                    for px, py in points
+                )
+
+            label_types = {
+                sexpdata.Symbol("label"),
+                sexpdata.Symbol("global_label"),
+                sexpdata.Symbol("hierarchical_label"),
+            }
+            at_sym = sexpdata.Symbol("at")
+
+            deleted: List[Dict[str, Any]] = []
+            doomed_indices: List[int] = []
+            for i, item in enumerate(sch_data):
+                if not (isinstance(item, list) and item and item[0] in label_types):
+                    continue
+                at_entry = next(
+                    (
+                        p
+                        for p in item[1:]
+                        if isinstance(p, list) and len(p) >= 3 and p[0] == at_sym
+                    ),
+                    None,
+                )
+                if at_entry is None:
+                    continue
+                x, y = float(at_entry[1]), float(at_entry[2])
+                if not _near(x, y, target_positions):
+                    continue
+                # Attachment guards: keep the label if it still serves live
+                # connectivity.
+                if _near(x, y, remaining_pins):
+                    continue
+                if _near(x, y, wire_endpoints):
+                    continue
+                if any(
+                    WireManager._point_strictly_on_wire(x, y, x1, y1, x2, y2)
+                    for (x1, y1), (x2, y2), _w, _t in wire_segments
+                ):
+                    continue
+                doomed_indices.append(i)
+                deleted.append(
+                    {
+                        "text": str(item[1]) if len(item) > 1 else "",
+                        "type": str(item[0]),
+                        "position": {"x": x, "y": y},
+                    }
+                )
+
+            if doomed_indices:
+                for i in reversed(doomed_indices):
+                    del sch_data[i]
+                with open(sch_file, "w", encoding="utf-8") as f:
+                    f.write(kicad_dumps(sch_data))
+                logger.info(
+                    "Deleted %d dangling label(s) at removed pin positions",
+                    len(deleted),
+                )
+
+            return {"deleted_labels": deleted, "deleted_label_count": len(deleted)}
+        except Exception as e:
+            logger.warning(f"Label cleanup after component delete failed: {e}")
+            return {
+                "deleted_labels": [],
+                "deleted_label_count": 0,
+                "labelCleanupWarning": str(e),
+            }
 
     @staticmethod
     def _escape_sexpr_string(value: str) -> str:
