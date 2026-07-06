@@ -180,3 +180,209 @@ class TestFixSubsheetInstances:
         sub_after = sub.read_text()
         assert "/abcd-1234/sheet-blk-1" in sub_after
         assert '(reference "R1")' in sub_after
+
+
+class TestSheetProperties:
+    """set_sheet_property / get_sheet_properties — custom metadata on
+    (sheet ...) blocks (e.g. generator cell identity/params)."""
+
+    def _parent_with_sheet(self, tmp_path, name="Power"):
+        parent = tmp_path / "top.kicad_sch"
+        parent.write_text(
+            '(kicad_sch (uuid abcd-1234)\n  (sheet_instances (path "/" (page "1")))\n)'
+        )
+        r = _cmds().add_hierarchical_sheet(
+            {
+                "schematicPath": str(parent),
+                "subsheetPath": str(tmp_path / "sub.kicad_sch"),
+                "sheetName": name,
+            }
+        )
+        assert r["success"] is True
+        return parent
+
+    def test_requires_params(self, tmp_path):
+        c = _cmds()
+        assert c.set_sheet_property({})["success"] is False
+        assert c.set_sheet_property({"schematicPath": "/x"})["success"] is False
+        assert (
+            c.set_sheet_property({"schematicPath": "/x", "sheetName": "A"})["success"]
+            is False
+        )
+        assert (
+            c.set_sheet_property(
+                {"schematicPath": "/x", "sheetName": "A", "key": "K"}
+            )["success"]
+            is False
+        )
+        assert c.get_sheet_properties({})["success"] is False
+
+    def test_builtin_keys_rejected(self, tmp_path):
+        parent = self._parent_with_sheet(tmp_path)
+        for key in ("Sheet name", "Sheet file", "Sheetname", "Sheetfile"):
+            r = _cmds().set_sheet_property(
+                {
+                    "schematicPath": str(parent),
+                    "sheetName": "Power",
+                    "key": key,
+                    "value": "x",
+                }
+            )
+            assert r["success"] is False
+            assert "built-in" in r["message"]
+
+    def test_create_update_round_trip(self, tmp_path):
+        parent = self._parent_with_sheet(tmp_path)
+        before = parent.read_text()
+        c = _cmds()
+
+        r = c.set_sheet_property(
+            {
+                "schematicPath": str(parent),
+                "sheetName": "Power",
+                "key": "IS.Cell",
+                "value": "vca_2164",
+            }
+        )
+        assert r["success"] is True
+        assert r["created"] is True
+
+        # Formatting preserved: every original line still present verbatim
+        after = parent.read_text()
+        for line in before.splitlines():
+            assert line in after, f"original line lost: {line!r}"
+
+        g = c.get_sheet_properties({"schematicPath": str(parent), "sheetName": "Power"})
+        assert g["success"] is True
+        assert g["count"] == 1
+        sheet = g["sheets"][0]
+        assert sheet["name"] == "Power"
+        assert sheet["properties"]["IS.Cell"] == "vca_2164"
+
+        # Update in place: no duplicate property block
+        r = c.set_sheet_property(
+            {
+                "schematicPath": str(parent),
+                "sheetName": "Power",
+                "key": "IS.Cell",
+                "value": "svf_2164",
+            }
+        )
+        assert r["success"] is True
+        assert r["created"] is False
+        content = parent.read_text()
+        assert content.count('"IS.Cell"') == 1
+        assert "svf_2164" in content and "vca_2164" not in content
+
+    def test_identify_by_sheet_path(self, tmp_path):
+        parent = self._parent_with_sheet(tmp_path)
+        c = _cmds()
+        r = c.set_sheet_property(
+            {
+                "schematicPath": str(parent),
+                "sheetPath": "sub.kicad_sch",
+                "key": "IS.Param.freq",
+                "value": "440",
+            }
+        )
+        assert r["success"] is True
+        g = c.get_sheet_properties(
+            {"schematicPath": str(parent), "sheetPath": "sub.kicad_sch"}
+        )
+        assert g["sheets"][0]["properties"]["IS.Param.freq"] == "440"
+
+    def test_unknown_sheet_fails(self, tmp_path):
+        parent = self._parent_with_sheet(tmp_path)
+        r = _cmds().set_sheet_property(
+            {
+                "schematicPath": str(parent),
+                "sheetName": "Nope",
+                "key": "K",
+                "value": "V",
+            }
+        )
+        assert r["success"] is False
+        assert "no (sheet" in r["message"]
+
+    def test_get_all_sheets(self, tmp_path):
+        parent = self._parent_with_sheet(tmp_path, name="Power")
+        r = _cmds().add_hierarchical_sheet(
+            {
+                "schematicPath": str(parent),
+                "subsheetPath": str(tmp_path / "io.kicad_sch"),
+                "sheetName": "IO",
+            }
+        )
+        assert r["success"] is True
+        g = _cmds().get_sheet_properties({"schematicPath": str(parent)})
+        assert g["success"] is True
+        assert g["count"] == 2
+        assert {s["name"] for s in g["sheets"]} == {"Power", "IO"}
+        assert all(s["uuid"] for s in g["sheets"])
+        assert all(s["position"]["x"] is not None for s in g["sheets"])
+
+    def test_value_escaping(self, tmp_path):
+        parent = self._parent_with_sheet(tmp_path)
+        c = _cmds()
+        tricky = 'quote " backslash \\ done'
+        r = c.set_sheet_property(
+            {
+                "schematicPath": str(parent),
+                "sheetName": "Power",
+                "key": "IS.Note",
+                "value": tricky,
+            }
+        )
+        assert r["success"] is True
+        g = c.get_sheet_properties({"schematicPath": str(parent), "sheetName": "Power"})
+        assert g["sheets"][0]["properties"]["IS.Note"] == tricky
+        # still parseable as an s-expression
+        import sexpdata
+
+        sexpdata.loads(parent.read_text())
+
+    def test_kicad_cli_still_parses(self, tmp_path):
+        """Render/parse check: kicad-cli must accept the modified parent."""
+        import shutil as _shutil
+        import subprocess
+
+        import pytest as _pytest
+
+        if _shutil.which("kicad-cli") is None:
+            _pytest.skip("kicad-cli not available")
+
+        template = (
+            Path(__file__).parent.parent / "python" / "templates" / "blank.kicad_sch"
+        )
+        parent = tmp_path / "top.kicad_sch"
+        parent.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
+        sub = tmp_path / "sub.kicad_sch"
+        sub.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
+
+        c = _cmds()
+        assert c.add_hierarchical_sheet(
+            {
+                "schematicPath": str(parent),
+                "subsheetPath": str(sub),
+                "sheetName": "Cell",
+            }
+        )["success"]
+        assert c.set_sheet_property(
+            {
+                "schematicPath": str(parent),
+                "sheetName": "Cell",
+                "key": "IS.Cell",
+                "value": "vca_2164",
+            }
+        )["success"]
+
+        out_dir = tmp_path / "svg"
+        out_dir.mkdir()
+        result = subprocess.run(
+            ["kicad-cli", "sch", "export", "svg", str(parent), "-o", str(out_dir)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, result.stderr
+        assert list(out_dir.glob("*.svg"))

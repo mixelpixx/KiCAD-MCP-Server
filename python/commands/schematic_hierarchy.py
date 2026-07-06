@@ -291,6 +291,208 @@ class SchematicHierarchyCommands:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
+    _BUILTIN_SHEET_PROPERTIES = ("Sheet name", "Sheetname", "Sheet file", "Sheetfile")
+
+    @staticmethod
+    def _escape_sexpr_string(value: str) -> str:
+        """Escape a string for a double-quoted s-expression token."""
+        return value.replace("\\", "\\\\").replace('"', '\\"')
+
+    def _match_sheet_block(self, content, sheet_name, subsheet_path):
+        """Find the (sheet ...) block identified by sheetName or subsheetPath.
+
+        Matching mirrors remove_hierarchical_sheet: sheetName against the
+        modern 'Sheet name' or legacy 'Sheetname' property, subsheetPath by
+        'Sheet file'/'Sheetfile' basename. Returns (start, end) or None.
+        """
+        target_base = Path(subsheet_path).name if subsheet_path else None
+        for start, end in self._find_sheet_blocks(content):
+            block = content[start:end]
+            if sheet_name and (
+                f'"Sheetname" "{sheet_name}"' in block
+                or f'"Sheet name" "{sheet_name}"' in block
+            ):
+                return start, end
+            if (
+                target_base
+                and f'"{target_base}"' in block
+                and ("Sheetfile" in block or "Sheet file" in block)
+            ):
+                return start, end
+        return None
+
+    def set_sheet_property(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add or update a custom property on a hierarchical sheet.
+
+        Text-surgery insertion into the (sheet ...) block, preserving the
+        file's formatting. The property is created (hidden by default) if it
+        does not exist, otherwise its value is updated in place. The built-in
+        "Sheet name"/"Sheet file" properties cannot be set here — use
+        add/remove_hierarchical_sheet to manage the sheet link itself.
+        """
+        logger.info("Setting hierarchical sheet property")
+        try:
+            schematic_path = params.get("schematicPath")
+            sheet_name = params.get("sheetName")
+            subsheet_path = params.get("sheetPath") or params.get("subsheetPath")
+            key = params.get("key")
+            value = params.get("value")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not sheet_name and not subsheet_path:
+                return {
+                    "success": False,
+                    "message": "provide sheetName or sheetPath to identify the sheet",
+                }
+            if not isinstance(key, str) or not key:
+                return {"success": False, "message": "key is required"}
+            if value is None:
+                return {"success": False, "message": "value is required"}
+            if key in self._BUILTIN_SHEET_PROPERTIES:
+                return {
+                    "success": False,
+                    "message": (
+                        f"'{key}' is a built-in sheet property; use "
+                        "add_hierarchical_sheet / remove_hierarchical_sheet to "
+                        "manage the sheet link"
+                    ),
+                }
+
+            parent_file = Path(schematic_path)
+            if not parent_file.exists():
+                return {
+                    "success": False,
+                    "message": f"Schematic not found: {schematic_path}",
+                }
+            content = parent_file.read_text(encoding="utf-8")
+
+            match = self._match_sheet_block(content, sheet_name, subsheet_path)
+            if match is None:
+                ident = sheet_name or Path(subsheet_path).name
+                return {
+                    "success": False,
+                    "message": f"no (sheet ...) block matching '{ident}' found in {parent_file.name}",
+                }
+            start, end = match
+            block = content[start:end]
+
+            value_str = str(value)
+            escaped_key = re.escape(key)
+            escaped_value = self._escape_sexpr_string(value_str)
+            existing = re.search(
+                r'(\(property\s+"' + escaped_key + r'"\s+")((?:[^"\\]|\\.)*)(")',
+                block,
+            )
+            if existing:
+                new_block = (
+                    block[: existing.start(2)] + escaped_value + block[existing.end(2) :]
+                )
+                created = False
+            else:
+                # Anchor the new property at the sheet origin; created hidden
+                # (it is metadata, not display text).
+                at_match = re.search(
+                    r"\(at\s+(-?[\d.]+)\s+(-?[\d.]+)", block
+                )
+                x = float(at_match.group(1)) if at_match else 0.0
+                y = float(at_match.group(2)) if at_match else 0.0
+                property_block = (
+                    f'    (property "{self._escape_sexpr_string(key)}" "{escaped_value}" '
+                    f"(at {x} {y} 0)\n"
+                    f"      (effects (font (size 1.27 1.27)) (hide yes))\n"
+                    f"    )\n  "
+                )
+                # Insert before the block's closing paren, after any trailing
+                # whitespace, keeping the original bytes otherwise intact.
+                insert_at = len(block) - 1
+                while insert_at > 0 and block[insert_at - 1] in (" ", "\t", "\n"):
+                    insert_at -= 1
+                new_block = block[:insert_at] + "\n" + property_block + block[insert_at:].lstrip(" \t")
+                created = True
+
+            parent_file.write_text(
+                content[:start] + new_block + content[end:], encoding="utf-8"
+            )
+            return {
+                "success": True,
+                "key": key,
+                "value": value_str,
+                "created": created,
+                "message": (
+                    f"{'Created' if created else 'Updated'} sheet property "
+                    f"'{key}' on sheet "
+                    f"'{sheet_name or Path(subsheet_path).name}'"
+                ),
+            }
+        except Exception as e:
+            logger.error(f"Error setting sheet property: {e}")
+            return {"success": False, "message": str(e)}
+
+    def get_sheet_properties(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List hierarchical sheets and their properties.
+
+        With sheetName/sheetPath, returns that sheet only; otherwise every
+        sheet in the schematic. Each entry carries name, file, uuid,
+        position, and the full property map (built-ins included).
+        """
+        logger.info("Getting hierarchical sheet properties")
+        try:
+            schematic_path = params.get("schematicPath")
+            sheet_name = params.get("sheetName")
+            subsheet_path = params.get("sheetPath") or params.get("subsheetPath")
+
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            parent_file = Path(schematic_path)
+            if not parent_file.exists():
+                return {
+                    "success": False,
+                    "message": f"Schematic not found: {schematic_path}",
+                }
+            content = parent_file.read_text(encoding="utf-8")
+
+            spans = self._find_sheet_blocks(content)
+            if sheet_name or subsheet_path:
+                match = self._match_sheet_block(content, sheet_name, subsheet_path)
+                if match is None:
+                    ident = sheet_name or Path(subsheet_path).name
+                    return {
+                        "success": False,
+                        "message": f"no (sheet ...) block matching '{ident}' found in {parent_file.name}",
+                    }
+                spans = [match]
+
+            sheets = []
+            for start, end in spans:
+                block = content[start:end]
+                properties: Dict[str, str] = {}
+                for m in re.finditer(
+                    r'\(property\s+"((?:[^"\\]|\\.)*)"\s+"((?:[^"\\]|\\.)*)"', block
+                ):
+                    unescape = lambda s: s.replace('\\"', '"').replace("\\\\", "\\")
+                    properties[unescape(m.group(1))] = unescape(m.group(2))
+                uuid_match = re.search(r'\(uuid\s+"?([0-9a-fA-F-]+)"?\)', block)
+                at_match = re.search(r"\(at\s+(-?[\d.]+)\s+(-?[\d.]+)", block)
+                sheets.append(
+                    {
+                        "name": properties.get("Sheet name")
+                        or properties.get("Sheetname"),
+                        "file": properties.get("Sheet file")
+                        or properties.get("Sheetfile"),
+                        "uuid": uuid_match.group(1) if uuid_match else None,
+                        "position": {
+                            "x": float(at_match.group(1)) if at_match else None,
+                            "y": float(at_match.group(2)) if at_match else None,
+                        },
+                        "properties": properties,
+                    }
+                )
+            return {"success": True, "sheets": sheets, "count": len(sheets)}
+        except Exception as e:
+            logger.error(f"Error getting sheet properties: {e}")
+            return {"success": False, "message": str(e)}
+
     def fix_subsheet_instances(self, parent_path: str, parent_content: str) -> List[str]:
         """Ensure every component in each referenced sub-sheet has an instances entry for the
         sheet-block UUID, so ERC resolves references correctly. Returns modified sub-sheet paths.

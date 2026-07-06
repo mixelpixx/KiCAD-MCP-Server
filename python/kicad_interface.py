@@ -535,6 +535,8 @@ class KiCADInterface(SchematicHandlersMixin):
             # Schematic hierarchy commands (sheet insertion + subsheet scaffolding)
             "add_hierarchical_sheet": self.hierarchy_commands.add_hierarchical_sheet,
             "remove_hierarchical_sheet": self.hierarchy_commands.remove_hierarchical_sheet,
+            "set_sheet_property": self.hierarchy_commands.set_sheet_property,
+            "get_sheet_properties": self.hierarchy_commands.get_sheet_properties,
             "create_hierarchical_subsheet": self.hierarchy_commands.create_hierarchical_subsheet,
             # Schematic field placement commands
             "set_schematic_property_position": self.field_layout_commands.set_schematic_property_position,

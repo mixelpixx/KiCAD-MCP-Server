@@ -60,6 +60,53 @@ export function registerSchematicHierarchyTools(server: McpServer, callKicadScri
     },
   );
 
+  // Set a custom property on a hierarchical sheet
+  server.tool(
+    "set_sheet_property",
+    "Add or update a custom property on a hierarchical sheet's (sheet ...) block — e.g. cell identity or generator parameters carried as sheet metadata. Identify the sheet by sheetName or sheetPath (basename match against the sheet's file property). The property is created hidden if absent, otherwise its value is updated in place; the file's formatting is preserved. The built-in 'Sheet name'/'Sheet file' properties cannot be set here — use add/remove_hierarchical_sheet to manage the sheet link.",
+    {
+      schematicPath: z.string().describe("Path to the parent .kicad_sch"),
+      sheetName: z
+        .string()
+        .optional()
+        .describe("Sheet display name (matches the Sheetname/Sheet name property)"),
+      sheetPath: z
+        .string()
+        .optional()
+        .describe("Sub-sheet file (matched by basename against the Sheetfile property)"),
+      key: z.string().describe("Property name (e.g. 'IS.Cell')"),
+      value: z.string().describe("Property value"),
+    },
+    async (args: any) => {
+      const r = await callKicadScript("set_sheet_property", args);
+      if (!r.success)
+        return { content: [{ type: "text", text: `Failed: ${r.message || "Unknown error"}` }] };
+      return { content: [{ type: "text", text: r.message }] };
+    },
+  );
+
+  // List hierarchical sheets and their properties
+  server.tool(
+    "get_sheet_properties",
+    "List hierarchical sheets in a schematic with their name, file, uuid, position, and full property map (built-ins plus custom properties set via set_sheet_property). With sheetName or sheetPath, returns just that sheet.",
+    {
+      schematicPath: z.string().describe("Path to the parent .kicad_sch"),
+      sheetName: z.string().optional().describe("Only this sheet (by display name)"),
+      sheetPath: z
+        .string()
+        .optional()
+        .describe("Only this sheet (by file basename)"),
+    },
+    async (args: any) => {
+      const r = await callKicadScript("get_sheet_properties", args);
+      if (!r.success)
+        return { content: [{ type: "text", text: `Failed: ${r.message || "Unknown error"}` }] };
+      return {
+        content: [{ type: "text", text: JSON.stringify(r.sheets, null, 2) }],
+      };
+    },
+  );
+
   // Create a sub-sheet file AND link it in one call
   server.tool(
     "create_hierarchical_subsheet",
