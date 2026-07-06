@@ -6,6 +6,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **Symbol property tools** (#308): `add_symbol_property` adds or updates a
+  custom property (Manufacturer, MPN, LCSC, ...) on a symbol in a
+  `.kicad_sym` library file — the durable, library-wide path for BOM fields.
+  `add_library_symbol_property` does the same on a symbol definition in a
+  schematic's `lib_symbols` cache; note those cache edits are overwritten by
+  a later `update_symbol_from_library` refresh, so the tool descriptions
+  steer callers to the library-file tool first.
+
 - **`update_symbol_from_library` tool** (#291): refresh the cached
   `lib_symbols` definitions in one schematic, a list of schematics, or every
   project under a directory from the current `.kicad_sym` library — the

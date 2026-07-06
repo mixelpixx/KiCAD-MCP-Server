@@ -108,6 +108,30 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
     },
   );
 
+  // Add/update a custom property on a lib_symbols definition
+  server.tool(
+    "add_library_symbol_property",
+    "Add or update a custom property (Manufacturer, MPN, LCSC, etc.) on a symbol definition in the lib_symbols section. This makes the property available to all instances of that symbol in the schematic.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      libraryName: z.string().describe("Symbol library nickname (e.g. Device, power)"),
+      symbolName: z.string().describe("Symbol name (e.g. R, C, GND)"),
+      propertyName: z.string().describe("Property name (e.g. Manufacturer, MPN)"),
+      propertyValue: z.string().describe("Property value"),
+      position: z
+        .object({ x: z.number(), y: z.number() })
+        .optional()
+        .describe("Position {x, y} in mm (default: 0, 0)"),
+      hide: z.boolean().optional().describe("Hide the property (default false)"),
+    },
+    async (args: any) => {
+      const r = await callKicadScript("add_library_symbol_property", args);
+      if (r.success === false)
+        return { content: [{ type: "text", text: `Failed: ${r.message || "Unknown error"}` }] };
+      return { content: [{ type: "text", text: r.message }] };
+    },
+  );
+
   // Swap a symbol, preserving position/fields
   server.tool(
     "replace_schematic_component",
