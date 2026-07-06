@@ -8,8 +8,10 @@ No behavior change — pure relocation.
 """
 
 import base64
+import glob
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -51,6 +53,24 @@ def _find_placed_symbol_position(content: str, reference: str) -> Optional[Tuple
         block_end = headers[i + 1].start() if i + 1 < len(headers) else len(content)
         if ref_needle in content[header.start() : block_end]:
             return float(header.group(1)), float(header.group(2))
+    return None
+
+
+def _pick_root_svg(svg_dir: str, schematic_path: str) -> Optional[str]:
+    """Return the root-page SVG produced by ``kicad-cli sch export svg``.
+
+    kicad-cli names the root page ``<schematic-stem>.svg`` and hierarchical
+    sub-sheet pages ``<stem>-<SheetName>.svg``. Returns the absolute path of
+    the stem-matched root SVG when present, the sole SVG when exactly one was
+    produced, or None when the root page cannot be identified.
+    """
+    stem = Path(schematic_path).stem
+    candidate = os.path.join(svg_dir, stem + ".svg")
+    if os.path.isfile(candidate):
+        return candidate
+    svg_files = sorted(glob.glob(os.path.join(svg_dir, "*.svg")))
+    if len(svg_files) == 1:
+        return svg_files[0]
     return None
 
 
@@ -1298,14 +1318,23 @@ class SchematicHandlersMixin:
                         "message": f"kicad-cli SVG export failed: {result.stderr}",
                     }
 
-                # kicad-cli may name the file after the schematic, find it
-                svg_files = list(Path(tmpdir).glob("*.svg"))
+                # kicad-cli names one file per page after the schematic/sheet
+                # names — pick the root page deterministically.
+                svg_files = glob.glob(os.path.join(tmpdir, "*.svg"))
                 if not svg_files:
                     return {
                         "success": False,
                         "message": "No SVG file produced by kicad-cli",
                     }
-                svg_path = str(svg_files[0])
+                svg_path = _pick_root_svg(tmpdir, schematic_path)
+                if svg_path is None:
+                    svg_path = sorted(svg_files)[0]
+                    logger.warning(
+                        "Could not identify root SVG page for %s; "
+                        "falling back to %s",
+                        schematic_path,
+                        svg_path,
+                    )
 
                 if fmt == "svg":
                     with open(svg_path, "r", encoding="utf-8") as f:
@@ -2091,53 +2120,63 @@ class SchematicHandlersMixin:
                     "message": f"Schematic not found: {schematic_path}",
                 }
 
-            # kicad-cli's --output flag for SVG export expects a directory, not a file path.
-            # The output file is auto-named based on the schematic name.
-            output_dir_p = Path(output_path).parent
-            if str(output_dir_p) == "":
-                output_dir_p = Path(".")
-            output_dir_p.mkdir(parents=True, exist_ok=True)
-            output_dir = str(output_dir_p)
-
             kicad_cli = resolve_kicad_cli()
             if not kicad_cli:
                 return {"success": False, "message": kicad_cli_not_found_message()}
-            cmd = [
-                kicad_cli,
-                "sch",
-                "export",
-                "svg",
-                schematic_path,
-                "-o",
-                output_dir,
-            ]
 
-            if params.get("blackAndWhite"):
-                cmd.append("--black-and-white")
+            # kicad-cli's --output flag for SVG export expects a directory, and
+            # auto-names one SVG per page after the schematic/sheet names.
+            # Export into a private temp directory so stale SVGs from earlier
+            # exports (or extra hierarchical pages) can never be picked up,
+            # then move only the root page to the requested outputPath.
+            with tempfile.TemporaryDirectory() as tmpdir:
+                cmd = [
+                    kicad_cli,
+                    "sch",
+                    "export",
+                    "svg",
+                    schematic_path,
+                    "-o",
+                    tmpdir,
+                ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                if params.get("blackAndWhite"):
+                    cmd.append("--black-and-white")
 
-            if result.returncode != 0:
-                return {
-                    "success": False,
-                    "message": f"kicad-cli failed: {result.stderr}",
-                }
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=60
+                )
 
-            # kicad-cli names the file after the schematic, so find the generated SVG
-            svg_files = list(output_dir_p.glob("*.svg"))
-            if not svg_files:
-                return {
-                    "success": False,
-                    "message": "No SVG file produced by kicad-cli",
-                }
+                if result.returncode != 0:
+                    return {
+                        "success": False,
+                        "message": f"kicad-cli failed: {result.stderr}",
+                    }
 
-            generated_svg = str(svg_files[0])
+                pages = sorted(
+                    os.path.basename(f)
+                    for f in glob.glob(os.path.join(tmpdir, "*.svg"))
+                )
+                if not pages:
+                    return {
+                        "success": False,
+                        "message": "No SVG file produced by kicad-cli",
+                    }
 
-            # Move/rename to the user-specified output path if it differs
-            if Path(generated_svg).resolve() != Path(output_path).resolve():
-                shutil.move(generated_svg, output_path)
+                root_svg = _pick_root_svg(tmpdir, schematic_path)
+                if root_svg is None:
+                    return {
+                        "success": False,
+                        "message": "Could not identify root SVG page",
+                        "files": pages,
+                    }
 
-            return {"success": True, "file": {"path": output_path}}
+                output_dir = os.path.dirname(output_path)
+                if output_dir:
+                    os.makedirs(output_dir, exist_ok=True)
+                shutil.move(root_svg, output_path)
+
+            return {"success": True, "file": {"path": output_path}, "pages": pages}
 
         except FileNotFoundError:
             return {"success": False, "message": kicad_cli_not_found_message()}
@@ -3060,15 +3099,23 @@ class SchematicHandlersMixin:
                         "message": f"SVG export failed: {result.stderr}",
                     }
 
-                # kicad-cli names the file after the schematic
-                tmp_dir_p = Path(tmp_dir)
-                svg_files = [p for p in tmp_dir_p.iterdir() if p.suffix == ".svg"]
+                # kicad-cli names one file per page after the schematic/sheet
+                # names — pick the root page deterministically.
+                svg_files = [f for f in os.listdir(tmp_dir) if f.endswith(".svg")]
                 if not svg_files:
                     return {
                         "success": False,
                         "message": "kicad-cli produced no SVG output",
                     }
-                svg_output = str(svg_files[0])
+                svg_output = _pick_root_svg(tmp_dir, schematic_path)
+                if svg_output is None:
+                    svg_output = os.path.join(tmp_dir, sorted(svg_files)[0])
+                    logger.warning(
+                        "Could not identify root SVG page for %s; "
+                        "falling back to %s",
+                        schematic_path,
+                        svg_output,
+                    )
 
                 import xml.etree.ElementTree as ET
 
