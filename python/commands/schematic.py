@@ -23,26 +23,30 @@ class SchematicManager:
         """Create a new empty schematic from template.
 
         ``template`` selects the starter template:
-          - None / "default" / "with_symbols" → template_with_symbols.kicad_sch
-            (ships hidden _TEMPLATE_* clone-source symbols for the legacy
-            place_component path).
-          - "minimal" / "clean" / "empty" → a template with **no** _TEMPLATE_*
-            symbols. Recommended for the dynamic add_schematic_component workflow,
-            which injects symbols from the KiCad libraries and does not need the
-            clone sources; avoids _TEMPLATE_* noise in ERC/netlist output.
+          - None / "default" / "minimal" / "clean" → minimal.kicad_sch, a template
+            with **no** _TEMPLATE_* symbols. This is the default: the dynamic
+            add_schematic_component workflow injects symbols straight from the KiCad
+            libraries, so no clone sources are needed. Avoids the _TEMPLATE_* clone
+            instances (which showed up as phantom parts / unannotated R? in the GUI)
+            and the stale baked-symbol lib_symbol_mismatch warnings in ERC/netlist.
+          - "with_symbols" → template_with_symbols.kicad_sch, which ships hidden
+            _TEMPLATE_* clone-source symbols (baked Device:R/C/LED). Opt in to this
+            only for the legacy place_component clone path or to add components with
+            no external KiCad symbol library installed.
+          - "empty" → empty.kicad_sch.
         """
         try:
-            # Map the requested template to a file. Default keeps the clone-source
-            # template so the legacy component-cloning path is unaffected.
+            # Map the requested template to a file. Default is the clean minimal
+            # template; the clone-source template is now explicit opt-in only.
             _templates = {
-                None: "template_with_symbols.kicad_sch",
-                "default": "template_with_symbols.kicad_sch",
-                "with_symbols": "template_with_symbols.kicad_sch",
+                None: "minimal.kicad_sch",
+                "default": "minimal.kicad_sch",
                 "minimal": "minimal.kicad_sch",
                 "clean": "minimal.kicad_sch",
+                "with_symbols": "template_with_symbols.kicad_sch",
                 "empty": "empty.kicad_sch",
             }
-            template_file = _templates.get(template, "template_with_symbols.kicad_sch")
+            template_file = _templates.get(template, "minimal.kicad_sch")
             template_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
                 "..",
