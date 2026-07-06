@@ -25,8 +25,8 @@ import sexpdata
 from commands.library_schematic import LibraryManager as SchematicLibraryManager
 from commands.schematic import SchematicManager
 from commands.wire_manager import WireManager
-from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.interactive_schematic import reload_kicad_schematic
+from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.sexpr_format import dumps as kicad_dumps
 
 logger = logging.getLogger("kicad_interface")
@@ -2827,6 +2827,26 @@ class SchematicHandlersMixin:
             except OSError:
                 pass
 
+    def _get_project_library_manager(self, project_dir: "Path") -> Any:
+        """Return a footprint ``LibraryManager`` for ``project_dir``, cached on ``self``.
+
+        Building one re-parses the global fp-lib-table plus the project's
+        fp-lib-table (recursively following any ``Table`` references). Doing
+        that on every ``sync_schematic_to_board`` call is pure waste when the
+        tool is invoked repeatedly against the same project, e.g. an
+        iterative rebuild flow (#248). Mirrors the cache-on-project-change
+        pattern already used for ``place_component`` above.
+        """
+        from commands.library import LibraryManager
+
+        cached = getattr(self, "_sync_library_manager", None)
+        cached_dir = getattr(self, "_sync_library_manager_project", None)
+        if cached is None or cached_dir != project_dir:
+            cached = LibraryManager(project_path=project_dir)
+            self._sync_library_manager = cached
+            self._sync_library_manager_project = project_dir
+        return cached
+
     def _add_missing_footprints_from_schematic(
         self, board: Any, schematic_path: str
     ) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
@@ -2841,8 +2861,6 @@ class SchematicHandlersMixin:
         """
         from pathlib import Path
 
-        from commands.library import LibraryManager
-
         added: List[Dict[str, str]] = []
         skipped: List[Dict[str, str]] = []
 
@@ -2852,7 +2870,7 @@ class SchematicHandlersMixin:
 
         existing_refs = {fp.GetReference() for fp in board.GetFootprints()}
         project_dir = Path(schematic_path).parent
-        library_manager = LibraryManager(project_path=project_dir)
+        library_manager = self._get_project_library_manager(project_dir)
 
         for comp in components:
             ref = comp["reference"]

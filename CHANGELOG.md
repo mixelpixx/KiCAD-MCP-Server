@@ -18,6 +18,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`sync_schematic_to_board` no longer re-parses the fp-lib-table on every
+  call** (#248): `_add_missing_footprints_from_schematic` built a fresh
+  `LibraryManager` — re-parsing the global and project `fp-lib-table` files,
+  recursively following any `Table` references — on every single invocation.
+  In an iterative rebuild flow (call `sync_schematic_to_board`, tweak the
+  schematic, call it again), that overhead was paid again each time even
+  though the project hadn't changed. The interface now caches the
+  `LibraryManager` via `_get_project_library_manager`, keyed on the resolved
+  project directory, and only rebuilds it when that directory changes —
+  mirroring the caching pattern `place_component` already uses.
+
 - **`import_ses` no longer creates phantom slashless nets — routed tracks bind
   to the real board nets** (#246): KiCad global-label nets are named with a
   leading `/` (e.g. `/GND`), but a Specctra DSN round-trip through Freerouting
@@ -155,7 +166,7 @@ load on every KiCad 10.0.x build.
   dynamic loader (and the legacy fallback was removed in #288), so the seeds only
   leaked into user files. Both tools now copy a new blank KiCad 10 template
   (`python/templates/blank.kicad_sch`: `(version 20260101) (generator
-  "eeschema")`, empty `lib_symbols`, no placed symbols).
+"eeschema")`, empty `lib_symbols`, no placed symbols).
   `template_with_symbols.kicad_sch` is kept unchanged in-repo as a test fixture.
   A regression test asserts a created schematic contains no `_TEMPLATE_`
   references and no seeded `lib_symbols` entries.
