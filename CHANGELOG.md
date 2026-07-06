@@ -24,6 +24,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
   optional `repairMirrorFromBackup` to restore them from a pre-update
   backup. Writes go through the canonical formatter.
 
+### Tooling
+
+- **Interface construction smoke test**: a new test constructs
+  `KiCADInterface` with the stubbed pcbnew and asserts every
+  `command_routes` entry is callable, every schema-listed tool has a route,
+  and recently-added tools are present. A route entry referencing a renamed
+  or un-imported handler function passes every module-level test but
+  crashes the server at startup with `NameError` (#308 shipped exactly
+  that); this makes the class unshippable.
+
 ### Bug Fixes
 
 - **`import_ses` no longer creates phantom slashless nets — routed tracks bind
