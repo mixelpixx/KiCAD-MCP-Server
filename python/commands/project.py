@@ -10,6 +10,11 @@ from typing import Any, Dict, Optional
 
 import pcbnew  # type: ignore
 from utils.kicad_project import write_kicad_pro
+from utils.project_settings_guard import (
+    preserve_project_settings,
+    restore_project_file_if_changed,
+    snapshot_project_file,
+)
 
 logger = logging.getLogger("kicad_interface")
 
@@ -195,8 +200,13 @@ class ProjectCommands:
             else:
                 board_path = filename
 
-            # Load the board
+            # Load the board. Opening is a read operation: some KiCad builds
+            # rewrite the sibling .kicad_pro during/after LoadBoard from a
+            # stale in-memory project model, dropping hand-edited
+            # net_settings — snapshot and restore it verbatim if it changed.
+            pro_snapshot = snapshot_project_file(board_path)
             board = pcbnew.LoadBoard(board_path)
+            restore_project_file_if_changed(board_path, pro_snapshot)
             self.board = board
 
             return {
@@ -251,8 +261,11 @@ class ProjectCommands:
 
             # Save first, then switch the in-memory identity. A failed Save As
             # must not leave the BOARD claiming to own a destination that was
-            # never written successfully.
-            saved = pcbnew.SaveBoard(save_filename, self.board)
+            # never written successfully. Guarded: SaveBoard serializes project
+            # settings from a possibly stale model — preserve .kicad_pro
+            # net_settings around the write.
+            with preserve_project_settings(save_filename):
+                saved = pcbnew.SaveBoard(save_filename, self.board)
             if saved is False:
                 return {
                     "success": False,

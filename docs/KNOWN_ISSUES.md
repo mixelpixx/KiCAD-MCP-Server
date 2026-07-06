@@ -87,6 +87,24 @@ AttributeError: 'BOARD' object has no attribute 'LT_USER'
 
 ---
 
+### 6. `.kicad_pro` net_settings Must Be Edited via JSON Merge
+
+**Status:** BY DESIGN (guard added)
+
+Backend board saves are wrapped in `preserve_project_settings()`
+(`python/utils/project_settings_guard.py`): pcbnew serializes a possibly
+stale in-memory project model over `.kicad_pro` on every
+`SaveBoard`/`BOARD.Save`, so the guard restores the on-disk
+`net_settings` (and any dropped top-level keys) after each save.
+
+**Implication:** commands must persist net class / netclass_patterns
+changes via direct JSON read-modify-write of the `.kicad_pro` (the
+`persist_netclass_to_project` pattern in `python/commands/routing.py`),
+never through the pcbnew project model — model-side changes to
+`net_settings` are intentionally reverted by the guard.
+
+---
+
 ## Recently Fixed (v2.2.0 - v2.2.3)
 
 ### B.Cu Footprint Routing (Fixed v2.2.3)
