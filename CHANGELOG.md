@@ -2,7 +2,38 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
-## [Unreleased]
+## [2.3.1] - 2026-07-05
+
+Eight merges since v2.3.0: the entire June scaffolding cluster (#220/#221/
+#242/#243) is closed, KiCad install discovery is unified across all Windows
+code paths, derived symbols in `.kicad_symdir` libraries resolve correctly,
+and three new feature areas land (Eagle import, 3D model tools, interactive
+schematic reload). A critical compatibility fix ensures generated schematics
+load on every KiCad 10.0.x build.
+
+### New Features
+
+- **Eagle schematic import** (#285): `import_eagle_schematic` converts Eagle
+  `.sch` XML designs to KiCad `.kicad_sch` format — symbol mapping, net
+  wires, labels, junctions, multi-gate parts (combined into multi-unit KiCad
+  symbols). Dangling-wire pruning trims isolated stubs; a ground-truth ERC
+  check via `kicad-cli` reports the real error/warning counts so callers see
+  KiCad's numbers, not the importer's internal model.
+
+- **3D model tools** (#263): `add_component_3d_model` and
+  `remove_component_3d_model` attach/detach STEP/WRL 3D models to footprints
+  with offset, rotation, and scale. Respects backend session pinning.
+
+- **Opt-in interactive schematic reload on Windows** (#208): set
+  `KICAD_INTERACTIVE_SCHEMATIC=1` and schematic-writing tools will
+  auto-confirm KiCad's "file changed — reload?" dialog so the editor stays
+  in sync. PID-scoped, title-keyword-matched (not generic "Confirmation"
+  dialogs), and never clicks Discard/Unsaved buttons.
+
+- **User environment variables from `kicad_common.json`** (#292): the
+  `${VARIABLE}` placeholders KiCad users define in Preferences are now
+  resolved when expanding library paths, so custom env-var-based library
+  setups work out of the box.
 
 ### Bug Fixes
 

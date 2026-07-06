@@ -40,6 +40,39 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 https://github.com/mixelpixx/arduino-ide
 
+## What's New in v2.3.1
+
+### Eagle schematic import
+
+- `import_eagle_schematic` converts Eagle `.sch` XML designs to KiCad format
+  with symbol mapping, net wires, multi-gate parts, dangling-wire pruning,
+  and ground-truth ERC reporting via `kicad-cli`.
+
+### 3D model tools and interactive reload
+
+- `add_component_3d_model` / `remove_component_3d_model` for attaching
+  STEP/WRL models to footprints.
+- Opt-in `KICAD_INTERACTIVE_SCHEMATIC=1` auto-confirms KiCad's reload dialog
+  on Windows after schematic writes.
+
+### Scaffolding cluster complete
+
+- New projects start blank (no `_TEMPLATE_*` symbols leaked into user files).
+- `.kicad_pro` files match what KiCad itself writes.
+- Format version `20260101` ensures all KiCad 10.0.x builds can open
+  generated schematics.
+
+### KiCad 10 compatibility
+
+- Derived symbols in `.kicad_symdir` libraries resolve their parent from
+  sibling shards.
+- Unified install discovery finds relocated Windows installs via registry.
+- User env-var placeholders from `kicad_common.json` are resolved in library
+  paths.
+- Phantom cross-unit pin reports in `get_wire_connections` are eliminated.
+
+Full details in the [CHANGELOG](CHANGELOG.md).
+
 ## What's New in v2.3.0
 
 ### Schematic corruption on KiCad 10 — both mechanisms fixed
@@ -1329,7 +1362,7 @@ npm run format
 
 ## Project Status
 
-**Current Version:** 2.3.0
+**Current Version:** 2.3.1
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
