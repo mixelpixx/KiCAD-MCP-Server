@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import sexpdata
 from commands.pin_locator import PinLocator
+from commands.wire_dragger import WireDragger
 from sexpdata import Symbol
 
 logger = logging.getLogger("kicad_interface")
@@ -472,17 +473,20 @@ def _find_pins_on_net(
             mirror_y = inst["mirror_y"]
 
             for pin_num, pdata in pin_defs.items():
-                px, py = pdata["x"], pdata["y"]
-                # y-negate: lib_symbols y-up → schematic y-down
-                py = -py
-                if mirror_x:
-                    py = -py
-                if mirror_y:
-                    px = -px
-                if sym_rot != 0:
-                    px, py = locator.rotate_point(px, py, sym_rot)
-                abs_x = sym_x + px
-                abs_y = sym_y + py
+                # Use the shared symbol->world transform so pin geometry matches
+                # eeschema (Y-flip -> rotate -> mirror -> translate). A local copy
+                # of this math applied mirror before rotation, which disagrees with
+                # pin_world_xy for 90/270 rotations and mislocated pins on rotated
+                # symbols, dropping them from their own net's pin list.
+                abs_x, abs_y = WireDragger.pin_world_xy(
+                    pdata["x"],
+                    pdata["y"],
+                    sym_x,
+                    sym_y,
+                    sym_rot,
+                    mirror_x,
+                    mirror_y,
+                )
                 if _on_net(abs_x, abs_y):
                     key = (ref, pin_num)
                     if key not in seen:

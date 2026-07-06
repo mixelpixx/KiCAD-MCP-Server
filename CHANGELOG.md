@@ -37,6 +37,16 @@ load on every KiCad 10.0.x build.
 
 ### Bug Fixes
 
+- **`get_wire_connections` locates pins correctly on rotated symbols**:
+  `_find_pins_on_net` computed pin world coordinates with a local transform
+  that applied mirror before rotation, diverging from `WireDragger.pin_world_xy`
+  (the shared transform corrected in #259) for 90 and 270 degree rotations. Pins
+  on rotated symbols were placed at the wrong coordinate and dropped from their
+  own net's pin list (observed on an LM324 whose gates are placed rotated 90:
+  eight of its pins went missing from their nets). `_find_pins_on_net` now calls
+  `pin_world_xy` so pin geometry matches eeschema everywhere. Single-unit and
+  unrotated parts are unaffected.
+
 - **`get_wire_connections` no longer reports phantom cross-unit pins** (#293):
   `_find_pins_on_net` transformed every unit's pins against every placed
   instance of a multi-unit component, so a sibling unit's pin whose library
