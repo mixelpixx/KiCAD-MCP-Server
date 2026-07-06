@@ -94,7 +94,10 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
   // ------------------------------------------------------
   server.tool(
     "add_net_class",
-    "Create a named net class with specific design rules (clearance, track width, via size) and assign nets to it.",
+    "DEPRECATED alias of create_netclass — use create_netclass for the full parameter set " +
+      "(uvia/diff-pair values, netclassPatterns). Creates a named net class with specific " +
+      "design rules (clearance, track width, via size) and assigns nets to it; persisted " +
+      "into the project's .kicad_pro net_settings.",
     {
       name: z.string().describe("Name of the net class"),
       description: z.string().optional().describe("Optional description of the net class"),

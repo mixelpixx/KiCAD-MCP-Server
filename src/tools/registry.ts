@@ -98,6 +98,7 @@ export const toolCategories: ToolCategory[] = [
       "run_drc",
       "add_net_class",
       "assign_net_to_class",
+      "create_netclass",
       "set_layer_constraints",
       "check_clearance",
       "get_drc_violations",

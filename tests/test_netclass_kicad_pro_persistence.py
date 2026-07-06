@@ -199,3 +199,155 @@ def test_create_netclass_fails_when_neither_memory_nor_disk_succeeds(tmp_path):
     )
     assert result["success"] is False
     assert "swig boom" in result["errorDetails"]
+
+
+# --- netclass_patterns membership (complete netclass API) -------------------
+
+
+def test_apply_patterns_adds_and_dedupes():
+    from commands.routing import apply_netclass_patterns_to_project_settings
+
+    data = _project_with_default()
+    apply_netclass_patterns_to_project_settings(data, "CAN_DIFF", ["/CAN_*", "CAN_H"])
+    apply_netclass_patterns_to_project_settings(data, "CAN_DIFF", ["/CAN_*"])  # repeat
+    patterns = data["net_settings"]["netclass_patterns"]
+    assert patterns == [
+        {"netclass": "CAN_DIFF", "pattern": "/CAN_*"},
+        {"netclass": "CAN_DIFF", "pattern": "CAN_H"},
+    ]
+
+
+def test_apply_patterns_creates_key_and_preserves_siblings():
+    from commands.routing import apply_netclass_patterns_to_project_settings
+
+    data = {
+        "net_settings": {
+            "classes": [],
+            "netclass_assignments": {"NETX": "Default"},
+            "net_colors": None,
+            "meta": {"version": 4},
+        }
+    }
+    apply_netclass_patterns_to_project_settings(data, "HV", ["HV_RAIL"])
+    assert data["net_settings"]["netclass_patterns"] == [
+        {"netclass": "HV", "pattern": "HV_RAIL"}
+    ]
+    assert data["net_settings"]["netclass_assignments"] == {"NETX": "Default"}
+    assert data["net_settings"]["meta"] == {"version": 4}
+
+
+def test_diff_pair_via_gap_round_trips(tmp_path):
+    pro = tmp_path / "p.kicad_pro"
+    pro.write_text(json.dumps(_project_with_default()))
+    persist_netclass_to_project(str(pro), "DP", {"diff_pair_via_gap": 0.33})
+    dp = next(
+        c for c in json.loads(pro.read_text())["net_settings"]["classes"] if c["name"] == "DP"
+    )
+    assert dp["diff_pair_via_gap"] == 0.33
+
+
+def test_create_netclass_persists_patterns_and_nets(tmp_path):
+    pro = tmp_path / "p.kicad_pro"
+    seeded = _project_with_default()
+    seeded["net_settings"]["net_colors"] = None
+    seeded["net_settings"]["netclass_assignments"] = None
+    pro.write_text(json.dumps(seeded))
+    board = MagicMock()
+    board.GetFileName.return_value = str(tmp_path / "p.kicad_pcb")
+    result = RoutingCommands(board).create_netclass(
+        {
+            "name": "CAN_DIFF",
+            "traceWidth": 0.3,
+            "clearance": 0.2,
+            "diffPairWidth": 0.3,
+            "diffPairGap": 0.2,
+            "diffPairViaGap": 0.25,
+            "nets": ["CAN_H", "CAN_L"],
+            "netclassPatterns": ["/CAN_*"],
+        }
+    )
+    assert result["success"] is True
+    assert result["persisted"] is True
+    data = json.loads(pro.read_text())
+    cls = next(c for c in data["net_settings"]["classes"] if c["name"] == "CAN_DIFF")
+    assert cls["track_width"] == 0.3
+    assert cls["diff_pair_width"] == 0.3
+    assert cls["diff_pair_gap"] == 0.2
+    assert cls["diff_pair_via_gap"] == 0.25
+    patterns = data["net_settings"]["netclass_patterns"]
+    assert {"netclass": "CAN_DIFF", "pattern": "/CAN_*"} in patterns
+    assert {"netclass": "CAN_DIFF", "pattern": "CAN_H"} in patterns
+    assert {"netclass": "CAN_DIFF", "pattern": "CAN_L"} in patterns
+    # sibling net_settings keys preserved
+    assert "net_colors" in data["net_settings"]
+    assert "netclass_assignments" in data["net_settings"]
+
+
+def test_assign_net_to_class_appends_exact_pattern(tmp_path):
+    pro = tmp_path / "p.kicad_pro"
+    data = _project_with_default()
+    data["net_settings"]["classes"].append({"name": "HV", "clearance": 0.5})
+    pro.write_text(json.dumps(data))
+    board = MagicMock()
+    board.GetFileName.return_value = str(tmp_path / "p.kicad_pcb")
+    commands = RoutingCommands(board)
+
+    result = commands.assign_net_to_class({"net": "HV_RAIL", "netClass": "HV"})
+    assert result["success"] is True
+    assert result["persisted"] is True
+    # repeat call does not duplicate
+    result = commands.assign_net_to_class({"net": "HV_RAIL", "netClass": "HV"})
+    assert result["success"] is True
+    patterns = json.loads(pro.read_text())["net_settings"]["netclass_patterns"]
+    assert patterns.count({"netclass": "HV", "pattern": "HV_RAIL"}) == 1
+
+
+def test_assign_net_to_unknown_class_fails(tmp_path):
+    pro = tmp_path / "p.kicad_pro"
+    pro.write_text(json.dumps(_project_with_default()))
+    board = MagicMock()
+    board.GetFileName.return_value = str(tmp_path / "p.kicad_pcb")
+    result = RoutingCommands(board).assign_net_to_class(
+        {"net": "X", "netClass": "NOPE"}
+    )
+    assert result["success"] is False
+    assert "does not exist" in result["message"]
+
+
+def test_add_net_class_alias_normalizes_spellings(tmp_path):
+    pro = tmp_path / "p.kicad_pro"
+    pro.write_text(json.dumps(_project_with_default()))
+    board = MagicMock()
+    board.GetFileName.return_value = str(tmp_path / "p.kicad_pcb")
+    result = RoutingCommands(board).add_net_class(
+        {
+            "name": "LEGACY",
+            "trackWidth": 0.4,
+            "clearance": 0.25,
+            "uvia_diameter": 0.3,
+            "uvia_drill": 0.1,
+            "diff_pair_width": 0.2,
+            "diff_pair_gap": 0.15,
+            "nets": ["OLD_NET"],
+            "description": "ignored",
+        }
+    )
+    assert result["success"] is True
+    data = json.loads(pro.read_text())
+    cls = next(c for c in data["net_settings"]["classes"] if c["name"] == "LEGACY")
+    assert cls["track_width"] == 0.4
+    assert cls["microvia_diameter"] == 0.3
+    assert cls["microvia_drill"] == 0.1
+    assert cls["diff_pair_width"] == 0.2
+    assert cls["diff_pair_gap"] == 0.15
+    assert {"netclass": "LEGACY", "pattern": "OLD_NET"} in data["net_settings"][
+        "netclass_patterns"
+    ]
+
+
+def test_routes_registered():
+    import kicad_interface as ki_module
+
+    source = open(ki_module.__file__).read()
+    assert '"add_net_class": self.routing_commands.add_net_class' in source
+    assert '"assign_net_to_class": self.routing_commands.assign_net_to_class' in source

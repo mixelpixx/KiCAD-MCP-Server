@@ -1496,8 +1496,64 @@ ROUTING_TOOLS = [
                     "type": "number",
                     "description": "Via drill diameter in millimeters",
                 },
+                "uviaDiameter": {
+                    "type": "number",
+                    "description": "Micro via diameter in millimeters",
+                },
+                "uviaDrill": {
+                    "type": "number",
+                    "description": "Micro via drill diameter in millimeters",
+                },
+                "diffPairWidth": {
+                    "type": "number",
+                    "description": "Differential pair track width in millimeters",
+                },
+                "diffPairGap": {
+                    "type": "number",
+                    "description": "Differential pair gap in millimeters",
+                },
+                "diffPairViaGap": {
+                    "type": "number",
+                    "description": "Differential pair via gap in millimeters",
+                },
+                "nets": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Exact net names to assign to this class (persisted as "
+                        "literal netclass_patterns entries)"
+                    ),
+                },
+                "netclassPatterns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "KiCad wildcard patterns assigning nets to this class "
+                        "(e.g. '/CAN_*')"
+                    ),
+                },
             },
             "required": ["name", "traceWidth", "clearance"],
+        },
+    },
+    {
+        "name": "assign_net_to_class",
+        "title": "Assign Net to Net Class",
+        "description": (
+            "Assign a net to an existing net class; persisted into the "
+            "project's .kicad_pro net_settings as an exact-net "
+            "netclass_patterns entry."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {"type": "string", "description": "Net name"},
+                "netClass": {
+                    "type": "string",
+                    "description": "Existing net class name",
+                },
+            },
+            "required": ["net", "netClass"],
         },
     },
     {
