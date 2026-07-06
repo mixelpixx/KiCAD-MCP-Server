@@ -105,6 +105,36 @@ never through the pcbnew project model — model-side changes to
 
 ---
 
+### 7. Flat Vendor Symbols Break kicad-skip-Based Tools (now diagnosed)
+
+**Status:** MITIGATED — loud structured errors
+
+SnapEDA/SamacSys `.kicad_sym` captures put pins/graphics directly under the
+top-level `(symbol "NAME" ...)` with no `_1_1` sub-unit. KiCad and kicad-cli
+tolerate this, but kicad-skip's parser crashes on it, taking down every
+skip-based tool for the whole sheet (including sheets that merely embed a
+snapshot of such a symbol in their own `lib_symbols`).
+
+Schematic load failures now raise `SchematicLoadError` and all schematic
+tools return a structured error naming the offending symbols:
+
+```json
+{
+  "success": false,
+  "error": "schematic_load_failed",
+  "flatSymbols": ["LIB:PART"],
+  "message": "Schematic load failed for ...: embedded flat lib symbols [...]"
+}
+```
+
+**Workaround:** run the `repair_flat_symbols` tool (if available) or wrap
+each flat symbol's pins/graphics in a `(symbol "NAME_1_1" ...)` sub-unit.
+Note that tools which previously returned partial/empty results on
+unparseable schematics (e.g. `find_orphaned_wires`, hierarchical net
+traversal, `sync_schematic_to_board`) now return errors instead.
+
+---
+
 ## Recently Fixed (v2.2.0 - v2.2.3)
 
 ### B.Cu Footprint Routing (Fixed v2.2.3)

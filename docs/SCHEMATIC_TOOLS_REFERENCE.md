@@ -5,6 +5,8 @@ Contributors: @Mehanik (PRs #60, #66), @Kletternaut (PR #57)
 
 This document provides a complete reference for the 29 schematic tools in the KiCAD MCP Server. These tools enable a complete schematic design workflow, from creating projects and adding components to wiring, validation, BOM/sourcing metadata, and synchronization with PCB boards. The dynamic symbol loading feature provides access to approximately 10,000 standard KiCad symbols.
 
+**Shared error shape — `schematic_load_failed`:** every kicad-skip-based schematic tool returns a structured error when the schematic cannot be parsed (instead of empty/partial results): `{"success": false, "error": "schematic_load_failed", "flatSymbols": ["LIB:PART", ...], "message": "...", "errorDetails": "..."}`. `flatSymbols` names embedded vendor symbols with no sub-units (the SnapEDA/SamacSys pattern that crashes the parser); see KNOWN_ISSUES.md for the repair procedure.
+
 ## Component Operations (10 tools)
 
 ### add_schematic_component

@@ -1,13 +1,110 @@
 import logging
 import os
 import shutil
+import traceback
 import uuid
-from typing import Any, Optional
+from typing import Any, List, Optional
 
+import sexpdata
 from skip import Schematic
 from utils.sexpr_format import prettify
 
 logger = logging.getLogger("kicad_interface")
+
+
+class SchematicLoadError(Exception):
+    """A schematic could not be loaded by the kicad-skip parser.
+
+    Carries a structured diagnosis so every schematic tool can fail loudly
+    and actionably instead of returning plausible-looking empty results.
+    ``kind`` is ``"not_found"`` or ``"parse_error"``; ``flat_symbols`` names
+    embedded lib symbols with no sub-units (the SnapEDA/SamacSys pattern
+    that crashes kicad-skip's LibSymbol parser).
+    """
+
+    def __init__(
+        self,
+        path: str,
+        kind: str = "parse_error",
+        flat_symbols: Optional[List[str]] = None,
+        details: Optional[str] = None,
+    ):
+        self.path = path
+        self.kind = kind
+        self.flat_symbols = flat_symbols or []
+        self.details = details
+        super().__init__(self._message())
+
+    def _message(self) -> str:
+        if self.kind == "not_found":
+            return f"Schematic file not found: {self.path}"
+        if self.flat_symbols:
+            names = ", ".join(self.flat_symbols)
+            return (
+                f"Schematic load failed for {self.path}: embedded flat lib "
+                f"symbols [{names}] have no sub-units and break the "
+                f"kicad-skip parser; run the repair_flat_symbols tool (if "
+                f'available) or wrap each flat symbol\'s pins/graphics in a '
+                f'(symbol "NAME_1_1" ...) sub-unit'
+            )
+        cause = (self.details or "").strip().splitlines()
+        return f"Schematic load failed for {self.path}: {cause[-1] if cause else 'unknown parse error'}"
+
+    def to_response(self) -> dict:
+        """Standard structured failure dict for handlers."""
+        response = {
+            "success": False,
+            "error": "schematic_load_failed",
+            "message": str(self),
+            "flatSymbols": list(self.flat_symbols),
+        }
+        if self.details:
+            response["errorDetails"] = self.details
+        return response
+
+
+def find_flat_lib_symbols(file_path: str) -> List[str]:
+    """Names of embedded lib symbols that have no ``(symbol "NAME_x_y")``
+    sub-unit children — the flat SnapEDA/SamacSys capture pattern that makes
+    kicad-skip's LibSymbol raise (``pv.symbol`` -> AttributeError).
+
+    Best-effort: returns [] when the file cannot be read/parsed (a diagnosis
+    failure must never mask the original load error).
+    """
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = sexpdata.loads(f.read())
+        sym = sexpdata.Symbol("symbol")
+        lib_symbols = sexpdata.Symbol("lib_symbols")
+        extends = sexpdata.Symbol("extends")
+
+        flat: List[str] = []
+        for item in data:
+            if not (isinstance(item, list) and item and item[0] == lib_symbols):
+                continue
+            for sym_def in item[1:]:
+                if not (
+                    isinstance(sym_def, list)
+                    and len(sym_def) > 1
+                    and sym_def[0] == sym
+                ):
+                    continue
+                name = str(sym_def[1])
+                has_subunit = any(
+                    isinstance(child, list) and child and child[0] == sym
+                    for child in sym_def[2:]
+                )
+                is_derived = any(
+                    isinstance(child, list) and child and child[0] == extends
+                    for child in sym_def[2:]
+                )
+                if not has_subunit and not is_derived:
+                    flat.append(name)
+            break
+        return flat
+    except Exception as e:
+        logger.warning(f"flat-symbol diagnosis failed for {file_path}: {e}")
+        return []
 
 
 class SchematicManager:
@@ -94,18 +191,28 @@ class SchematicManager:
             raise
 
     @staticmethod
-    def load_schematic(file_path: str) -> Optional[Any]:
-        """Load an existing schematic"""
+    def load_schematic(file_path: str) -> Any:
+        """Load an existing schematic.
+
+        Raises SchematicLoadError (never returns None) when the file is
+        missing or kicad-skip cannot parse it, with flat vendor symbols
+        diagnosed by name so callers can surface an actionable error.
+        """
         if not os.path.exists(file_path):
             logger.error(f"Schematic file not found at {file_path}")
-            return None
+            raise SchematicLoadError(file_path, kind="not_found")
         try:
             sch = Schematic(file_path)
             logger.info(f"Loaded schematic from: {file_path}")
             return sch
         except Exception as e:
             logger.error(f"Error loading schematic from {file_path}: {e}")
-            return None
+            raise SchematicLoadError(
+                file_path,
+                kind="parse_error",
+                flat_symbols=find_flat_lib_symbols(file_path),
+                details=traceback.format_exc(),
+            ) from e
 
     @staticmethod
     def save_schematic(schematic: Any, file_path: str) -> bool:

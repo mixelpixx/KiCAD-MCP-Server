@@ -534,17 +534,13 @@ class SchematicBatchCommands:
             sch_path = Path(schematic_path)
 
             try:
-                from skip import Schematic
+                from commands.schematic import SchematicLoadError, SchematicManager
 
-                Schematic(str(sch_path))
-            except Exception as parse_err:
-                return {
-                    "success": False,
-                    "message": (
-                        f"ERROR: Failed to load schematic at {schematic_path}: {parse_err}. "
-                        "All pin operations aborted. Run run_erc to check the schematic."
-                    ),
-                }
+                SchematicManager.load_schematic(str(sch_path))
+            except SchematicLoadError as parse_err:
+                response = parse_err.to_response()
+                response["message"] += " All pin operations aborted."
+                return response
 
             placed: List[Dict[str, Any]] = []
             failed: List[Dict[str, Any]] = []
