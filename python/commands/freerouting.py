@@ -14,9 +14,10 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from utils.project_netclasses import apply_net_classes_to_board, load_project_net_classes
 
@@ -209,6 +210,41 @@ def _score_ses(ses_text: str, target_nets: Iterable[str]) -> Dict[str, Any]:
         "targets_found": found,
         "targets_missing": missing,
     }
+
+
+# SES net-name tokens are written as ``(net "NAME" ...`` (quoted), the same form
+# the DSN carries; capture the three parts so only the quoted name is rewritten
+# and surrounding whitespace is preserved.
+_SES_NET_TOKEN_RE = re.compile(r'(\(net\s+")([^"]*)(")')
+
+
+def _reconcile_ses_net_names(
+    ses_text: str, board_net_names: Iterable[str]
+) -> Tuple[str, List[str]]:
+    """Re-add a leading ``/`` to SES net names that lost it on the DSN round-trip.
+
+    KiCad's global-label nets are named with a leading ``/`` (e.g. ``/GND``). A
+    Specctra DSN round-trip through Freerouting can drop that prefix, so
+    ``ImportSpecctraSES`` fails the exact-string net lookup and creates a *new*
+    slashless net, leaving the original unconnected (issue #246).
+
+    For each ``(net "NAME" ...`` token, if ``NAME`` is not itself a board net but
+    ``/NAME`` is, rewrite it to ``/NAME``. Names that already match a board net
+    (slashed or not) are left untouched, so this is idempotent and only touches
+    genuinely-orphaned names. Returns ``(rewritten_text, remapped_names)``.
+    """
+    board = set(board_net_names)
+
+    remapped: List[str] = []
+
+    def _repl(match: "re.Match[str]") -> str:
+        name = match.group(2)
+        if name and name not in board and ("/" + name) in board:
+            remapped.append(name)
+            return f"{match.group(1)}/{name}{match.group(3)}"
+        return match.group(0)
+
+    return _SES_NET_TOKEN_RE.sub(_repl, ses_text), remapped
 
 
 class FreeroutingCommands:
@@ -703,6 +739,22 @@ class FreeroutingCommands:
             "netClasses": netclass_report,
         }
 
+    def _board_net_names(self) -> List[str]:
+        """All net names currently on the loaded board (same enumeration as
+        ``get_nets_list``). Returns ``[]`` if no board or on any read error."""
+        names: List[str] = []
+        if not self.board:
+            return names
+        try:
+            netinfo = self.board.GetNetInfo()
+            for code in range(netinfo.GetNetCount()):
+                net = netinfo.GetNetItem(code)
+                if net:
+                    names.append(net.GetNetname())
+        except Exception as e:
+            logger.warning(f"Could not enumerate board net names: {e}")
+        return names
+
     def import_ses(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Import a Specctra SES file into the board."""
         try:
@@ -736,8 +788,36 @@ class FreeroutingCommands:
                 "errorDetails": f"File not found: {ses_path}",
             }
 
+        # Reconcile net names that lost their leading '/' on the DSN round-trip
+        # so pcbnew's exact-string lookup binds routed tracks to the real board
+        # nets instead of creating phantom slashless duplicates (#246). Any
+        # failure here falls back to importing the original file unchanged.
+        import_path = ses_path
+        reconciled_temp: Optional[str] = None
+        remapped: List[str] = []
         try:
-            result = pcbnew.ImportSpecctraSES(self.board, ses_path)
+            board_net_names = self._board_net_names()
+            with open(ses_path, "r", encoding="utf-8") as f:
+                ses_text = f.read()
+            fixed_text, remapped = _reconcile_ses_net_names(ses_text, board_net_names)
+            if remapped:
+                fd, reconciled_temp = tempfile.mkstemp(
+                    suffix=".ses", prefix="reconciled-", dir=os.path.dirname(ses_path) or None
+                )
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(fixed_text)
+                import_path = reconciled_temp
+                logger.info(
+                    "Reconciled %d SES net name(s) to their '/'-prefixed board nets: %s",
+                    len(remapped),
+                    sorted(set(remapped)),
+                )
+        except Exception as e:
+            logger.warning(f"SES net-name reconciliation skipped ({e}); importing original file")
+            import_path = ses_path
+
+        try:
+            result = pcbnew.ImportSpecctraSES(self.board, import_path)
             if result is not True and result != 0:
                 return {
                     "success": False,
@@ -750,6 +830,12 @@ class FreeroutingCommands:
                 "message": "SES import failed",
                 "errorDetails": str(e),
             }
+        finally:
+            if reconciled_temp and os.path.isfile(reconciled_temp):
+                try:
+                    os.remove(reconciled_temp)
+                except OSError:
+                    pass
 
         board_path = params.get("boardPath") or self.board.GetFileName()
         if board_path:
@@ -762,7 +848,7 @@ class FreeroutingCommands:
         track_count = sum(1 for t in tracks if t.GetClass() != "PCB_VIA")
         via_count = sum(1 for t in tracks if t.GetClass() == "PCB_VIA")
 
-        return {
+        response: Dict[str, Any] = {
             "success": True,
             "message": f"Imported SES from {ses_path}",
             "board_stats": {
@@ -770,6 +856,10 @@ class FreeroutingCommands:
                 "vias": via_count,
             },
         }
+        if remapped:
+            # Report the net-name repairs so callers can see the '/'-prefix fix ran.
+            response["netsRemapped"] = sorted(set(remapped))
+        return response
 
     def check_freerouting(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Check if Freerouting and Java/Docker are available."""

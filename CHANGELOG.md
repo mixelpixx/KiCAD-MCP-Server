@@ -6,6 +6,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`import_ses` no longer creates phantom slashless nets — routed tracks bind
+  to the real board nets** (#246): KiCad global-label nets are named with a
+  leading `/` (e.g. `/GND`), but a Specctra DSN round-trip through Freerouting
+  can drop that prefix. `ImportSpecctraSES` then fails its exact-string net
+  lookup and creates a _new_ slashless net (`GND`), leaving `/GND` unconnected
+  and every routed track flagged by DRC. `import_ses` now reconciles the SES
+  before import: a pure `_reconcile_ses_net_names` re-adds the `/` to any
+  `(net "NAME" …)` token that matches a board net only when prefixed (idempotent;
+  names that genuinely have no slash on the board are left untouched), and the
+  repaired copy is imported. Any reconciliation error falls back to importing the
+  original file unchanged; the response reports `netsRemapped`.
+
 - **`export_dsn`/`autoroute` no longer drop `.kicad_pro` net classes — power
   nets keep their width** (#302): net-class definitions live in the project
   file on KiCad 7+, which the headless `pcbnew.LoadBoard()` path never reads,
@@ -118,7 +130,7 @@ load on every KiCad 10.0.x build.
   dynamic loader (and the legacy fallback was removed in #288), so the seeds only
   leaked into user files. Both tools now copy a new blank KiCad 10 template
   (`python/templates/blank.kicad_sch`: `(version 20260101) (generator
-  "eeschema")`, empty `lib_symbols`, no placed symbols).
+"eeschema")`, empty `lib_symbols`, no placed symbols).
   `template_with_symbols.kicad_sch` is kept unchanged in-repo as a test fixture.
   A regression test asserts a created schematic contains no `_TEMPLATE_`
   references and no seeded `lib_symbols` entries.
