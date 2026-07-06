@@ -6,6 +6,19 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`add_sheet_pin` finds sheets regardless of line formatting; sheet/text
+  insertion no longer splices mid-line** (#298): `add_hierarchical_sheet`
+  and the wire/label/text insert helper located their insertion point with
+  `content.rfind(...)` — a raw character offset — so on files where the
+  marker does not start its own line (sexpdata-written schematics keep
+  several forms on one line) the new block landed mid-line. `add_sheet_pin`
+  then scanned line-by-line for `(sheet` at the start of a line and could
+  never find such a sheet, failing with "sheet not found" on a sheet that
+  plainly existed. Insertions now snap to a line boundary (breaking the
+  line when the marker shares it), and `add_sheet_pin` scans by character
+  with paren matching, so it also works on files already written with
+  mid-line sheets and on fully minified single-line schematics.
+
 - **`export_dsn`/`autoroute` no longer drop `.kicad_pro` net classes — power
   nets keep their width** (#302): net-class definitions live in the project
   file on KiCad 7+, which the headless `pcbnew.LoadBoard()` path never reads,

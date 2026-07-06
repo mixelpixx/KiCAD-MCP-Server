@@ -65,6 +65,16 @@ def _text_insert(file_path: Path, sexp_text: str) -> bool:
         content = f.read()
 
     insert_at = _find_insertion_point(content)
+    # _find_insertion_point returns a raw character offset; on files where
+    # the marker does not start its own line (sexpdata-written schematics
+    # keep several forms on one line) splicing there lands the new element
+    # mid-line, where line-based consumers can never find it (#298). Snap to
+    # a line boundary, or break the line when the marker shares it.
+    line_start = content.rfind("\n", 0, insert_at) + 1
+    if content[line_start:insert_at].strip():
+        sexp_text = "\n" + sexp_text
+    else:
+        insert_at = line_start
     content = content[:insert_at] + sexp_text + content[insert_at:]
 
     with open(file_path, "w", encoding="utf-8") as f:
@@ -1121,47 +1131,49 @@ class WireManager:
     ) -> Tuple[str, bool]:
         """Insert a sheet pin into the named sheet block in the parent schematic.
 
+        Scans by character, not by line: a (sheet block does not always start
+        a line — sexpdata-written schematics keep several forms on one line,
+        and files written by the pre-#298 sheet inserter have (sheet spliced
+        mid-line — so a line-anchored search misses real sheets.
+
         Returns (modified_content, success).
         """
-        lines = content.split("\n")
         # KiCad 7-9 stores the property as "Sheetname"; KiCad 10 renamed it
         # to "Sheet name" (with space). Match either to stay compatible.
         sheetname_pattern = re.compile(
             r'\(property\s+"Sheet\s?name"\s+"' + re.escape(sheet_name) + r'"'
         )
-        # KiCad 7-9 indents top-level blocks with a single tab; KiCad 10
-        # writes 2- or 4-space indentation. Accept any leading whitespace.
-        sheet_block_pattern = re.compile(r"^\s*\(sheet\b")
 
-        # Find the sheet block that contains the target Sheetname property
-        i = 0
-        while i < len(lines):
-            if sheet_block_pattern.match(lines[i]):
-                # Walk forward to find closing paren of this block
-                depth = sum(1 for c in lines[i] if c == "(") - sum(1 for c in lines[i] if c == ")")
-                j = i + 1
-                found_name = False
-                while j < len(lines) and depth > 0:
-                    if sheetname_pattern.search(lines[j]):
-                        found_name = True
-                    depth += sum(1 for c in lines[j] if c == "(") - sum(
-                        1 for c in lines[j] if c == ")"
-                    )
-                    j += 1
-                b_end = j - 1  # index of closing ")" line of the sheet block
-
-                if found_name:
-                    # Insert pin text before the closing paren of the sheet block
-                    pin_text = _make_sheet_pin_text(pin_name, pin_type, position, orientation)
-                    pin_lines = pin_text.rstrip("\n").split("\n")
-                    for offset, line in enumerate(pin_lines):
-                        lines.insert(b_end + offset, line)
-                    logger.info(f"Added sheet pin '{pin_name}' to sheet '{sheet_name}'")
-                    return "\n".join(lines), True
-
-                i = b_end + 1
+        # \b keeps (sheet_instances from matching ("_" is a word character).
+        for match in re.finditer(r"\(sheet\b", content):
+            start = match.start()
+            depth = 0
+            end = -1
+            for i in range(start, len(content)):
+                if content[i] == "(":
+                    depth += 1
+                elif content[i] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        end = i  # index of the block's closing ")"
+                        break
+            if end == -1:
+                break  # unbalanced parens; nothing sane to do
+            if not sheetname_pattern.search(content, start, end):
                 continue
-            i += 1
+
+            pin_text = _make_sheet_pin_text(pin_name, pin_type, position, orientation)
+            # Insert before the block's closing paren so the pin gets lines
+            # of its own even when that paren does not start a line.
+            line_start = content.rfind("\n", 0, end) + 1
+            if content[line_start:end].strip():
+                insertion = "\n" + pin_text.rstrip("\n") + "\n\t"
+                at = end
+            else:
+                insertion = pin_text
+                at = line_start
+            logger.info(f"Added sheet pin '{pin_name}' to sheet '{sheet_name}'")
+            return content[:at] + insertion + content[at:], True
 
         return content, False
 
