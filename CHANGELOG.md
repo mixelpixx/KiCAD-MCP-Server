@@ -2,6 +2,26 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
+## [Unreleased]
+
+### Bug Fixes
+
+- **`export_dsn`/`autoroute` no longer drop `.kicad_pro` net classes — power
+  nets keep their width** (#302): net-class definitions live in the project
+  file on KiCad 7+, which the headless `pcbnew.LoadBoard()` path never reads,
+  so `ExportSpecctraDSN` exported every net under a single `kicad_default`
+  class at Default width/clearance. The one-call `autoroute` tool re-exports
+  internally, so a 2.0 mm power net was silently handed to Freerouting at
+  0.2 mm signal width. Both tools now rebuild the board's `NET_SETTINGS` from
+  `.kicad_pro` (`net_settings.classes`, `netclass_patterns`, and
+  `netclass_assignments`, via a new `python/utils/project_netclasses.py`)
+  before exporting, so KiCad's own exporter natively emits per-class
+  `(class ...)` blocks, rules, and via padstacks — verified against real
+  KiCad 10 to match a project-loaded GUI export. The tool result now carries
+  a `netClasses` report (`applied` classes, or a `warning` when no project
+  file is found or the classes cannot be applied), so a dropped class is
+  loud instead of silent.
+
 ## [2.3.1] - 2026-07-05
 
 Eight merges since v2.3.0: the entire June scaffolding cluster (#220/#221/
