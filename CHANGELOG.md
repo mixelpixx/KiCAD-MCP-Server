@@ -4,6 +4,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Features
+
+- **`update_symbol_from_library` tool** (#291): refresh the cached
+  `lib_symbols` definitions in one schematic, a list of schematics, or every
+  project under a directory from the current `.kicad_sym` library — the
+  programmatic equivalent of KiCad's Update Symbol from Library. Placed
+  instances are preserved (per-pin uuids, references, `instances` blocks);
+  power symbols have their `(power)` wrapper flattened to the schematic
+  layout; mirror-cache symbols (`__m0`, `__m90`, ...) are skipped, with an
+  optional `repairMirrorFromBackup` to restore them from a pre-update
+  backup. Writes go through the canonical formatter.
+
 ### Bug Fixes
 
 - **`import_ses` no longer creates phantom slashless nets — routed tracks bind
