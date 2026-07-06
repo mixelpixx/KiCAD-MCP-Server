@@ -2439,6 +2439,57 @@ SCHEMATIC_TOOLS = [
             "required": ["schematicPath"],
         },
     },
+    {
+        "name": "add_library_symbol_property",
+        "title": "Add Property to Schematic Lib Symbol",
+        "description": (
+            "Add or update a custom property (Manufacturer, MPN, LCSC, etc.) on a "
+            "symbol definition in the schematic's lib_symbols section (.kicad_sch). "
+            "Note: changes live in the schematic cache only — they are overwritten by "
+            "update_symbol_from_library. For permanent library-wide changes, use "
+            "add_symbol_property on the .kicad_sym file first, then refresh."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {"type": "string", "description": "Path to .kicad_sch file"},
+                "libraryName": {"type": "string", "description": "Symbol library nickname"},
+                "symbolName": {"type": "string", "description": "Symbol name"},
+                "propertyName": {"type": "string", "description": "Property name"},
+                "propertyValue": {"type": "string", "description": "Property value"},
+                "position": {
+                    "type": "object",
+                    "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
+                },
+                "hide": {"type": "boolean", "default": False},
+            },
+            "required": ["schematicPath", "libraryName", "symbolName", "propertyName", "propertyValue"],
+        },
+    },
+    {
+        "name": "add_symbol_property",
+        "title": "Add Property to Library Symbol",
+        "description": (
+            "Add or update a custom property on a symbol in a .kicad_sym library file. "
+            "This makes permanent library-wide changes. After adding properties, use "
+            "update_symbol_from_library to refresh schematics that reference the updated symbol."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "libraryPath": {"type": "string", "description": "Path to .kicad_sym file"},
+                "symbolName": {"type": "string", "description": "Symbol name"},
+                "propertyName": {"type": "string", "description": "Property name"},
+                "propertyValue": {"type": "string", "description": "Property value"},
+                "position": {
+                    "type": "object",
+                    "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
+                },
+                "hide": {"type": "boolean", "default": False},
+            },
+            "required": ["libraryPath", "symbolName", "propertyName", "propertyValue"],
+        },
+    },
 ]
 
 # =============================================================================
