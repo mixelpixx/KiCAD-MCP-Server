@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from commands.dynamic_symbol_loader import DynamicSymbolLoader
+from utils.sexpr_format import prettify
 
 _MIRROR_SUFFIX = re.compile(r"__m\d+(?:_\d+)?$")
 
@@ -135,7 +136,7 @@ def repair_mirror_lib_symbols(
     for start, end, new in sorted(replacements, key=lambda r: r[0], reverse=True):
         content = content[:start] + new + content[end:]
     if restored:
-        schematic_path.write_text(content, encoding="utf-8")
+        schematic_path.write_text(prettify(content), encoding="utf-8")
     return restored
 
 
@@ -186,7 +187,7 @@ def update_schematic_symbols(
     if replacements:
         for start, end, _old, new in sorted(replacements, key=lambda r: r[0], reverse=True):
             content = content[:start] + new + content[end:]
-        schematic_path.write_text(content, encoding="utf-8")
+        schematic_path.write_text(prettify(content), encoding="utf-8")
 
     return {"updated": updated, "injected": injected, "skipped": skipped}
 

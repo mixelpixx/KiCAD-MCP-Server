@@ -2439,6 +2439,54 @@ SCHEMATIC_TOOLS = [
             "required": ["schematicPath"],
         },
     },
+    {
+        "name": "update_symbol_from_library",
+        "title": "Update Symbol from Library",
+        "description": (
+            "Refresh embedded lib_symbols cache entries from a KiCad symbol library "
+            "(equivalent to KiCad's Update Symbol from Library). Skips mirror-cache "
+            "entries (__m0, __m90, …). Flattens (power) symbols for schematic format. "
+            "Pass projectsDir to update all schematics in a folder, or schematicPath "
+            "for one file."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "projectsDir": {
+                    "type": "string",
+                    "description": "Directory containing project subfolders with .kicad_sch files",
+                },
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Single .kicad_sch file to update",
+                },
+                "schematicPaths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Multiple .kicad_sch files",
+                },
+                "libraryName": {
+                    "type": "string",
+                    "description": "Symbol library nickname from sym-lib-table (e.g. Device, project_lib)",
+                },
+                "symbols": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional: update only these symbol names (without Library: prefix)",
+                },
+                "repairMirrorFromBackup": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Restore __m* mirror-cache lib_symbols blocks from backupDir first",
+                },
+                "backupDir": {
+                    "type": "string",
+                    "description": "Backup folder with matching .kicad_sch filenames (for repairMirrorFromBackup)",
+                },
+            },
+            "required": ["libraryName"],
+        },
+    },
 ]
 
 # =============================================================================
