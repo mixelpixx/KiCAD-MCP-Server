@@ -2391,6 +2391,44 @@ SCHEMATIC_TOOLS = [
         },
     },
     {
+        "name": "lint_offgrid",
+        "title": "Lint Off-Grid Schematic Geometry",
+        "description": (
+            "Report every off-grid connection-relevant coordinate in a schematic — "
+            "wire/bus endpoints, symbol origins, label/junction/no_connect anchors — "
+            "and optionally snap them to the nearest grid point (fix=true). "
+            "KiCad's connection grid is fixed at 50 mil (1.27 mm) and junction "
+            "placement uses exact matching, so a single off-grid endpoint can poison "
+            "junction placement for a whole sheet. Fixes are byte-exact text splices "
+            "that preserve file formatting; (lib_symbols) content and property field "
+            "positions are never touched. Offenders more than 0.5 mm off-grid are "
+            "reported as needsHuman and never auto-snapped."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                },
+                "fix": {
+                    "type": "boolean",
+                    "description": "Snap offenders in place (default false: report only)",
+                    "default": False,
+                },
+                "gridSize": {
+                    "type": "number",
+                    "description": (
+                        "Grid spacing in mm (default: 1.27 = 50 mil, the KiCad "
+                        "connection grid)"
+                    ),
+                    "default": 1.27,
+                },
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
         "name": "suggest_schematic_declutter",
         "title": "Suggest Schematic Declutter",
         "description": (

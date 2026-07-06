@@ -3374,3 +3374,57 @@ class SchematicHandlersMixin:
 
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
+
+    def _handle_lint_offgrid(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Report (and optionally fix) off-grid connection geometry"""
+        logger.info("Linting schematic for off-grid geometry")
+        try:
+            from commands.schematic_lint_grid import lint_offgrid
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not os.path.isfile(schematic_path):
+                return {
+                    "success": False,
+                    "message": f"Schematic not found: {schematic_path}",
+                }
+
+            fix = bool(params.get("fix", False))
+            grid_size = float(params.get("gridSize", 1.27))
+            if grid_size <= 0:
+                return {"success": False, "message": "gridSize must be > 0"}
+
+            result = lint_offgrid(schematic_path, grid_mm=grid_size, fix=fix)
+            offender_count = len(result["offenders"])
+            if offender_count == 0:
+                message = f"No off-grid geometry (grid {grid_size} mm)"
+            elif fix:
+                message = (
+                    f"Snapped {result['fixed']} of {offender_count} off-grid "
+                    f"item(s) to the {grid_size} mm grid"
+                    + (
+                        f"; {result['needsHuman']} offender(s) >0.5mm off-grid "
+                        f"left untouched (needsHuman)"
+                        if result["needsHuman"]
+                        else ""
+                    )
+                )
+            else:
+                message = (
+                    f"Found {offender_count} off-grid item(s) on the "
+                    f"{grid_size} mm grid ({result['needsHuman']} needing "
+                    f"human review); run with fix=true to snap them"
+                )
+            return {
+                "success": True,
+                "gridSize": grid_size,
+                **result,
+                "message": message,
+            }
+        except Exception as e:
+            logger.error(f"Error linting off-grid geometry: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}

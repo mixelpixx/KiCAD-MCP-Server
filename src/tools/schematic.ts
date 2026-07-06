@@ -1839,7 +1839,11 @@ edit_schematic_component and set its value to an empty string.`,
       gridSize: z
         .number()
         .optional()
-        .describe("Grid spacing in mm (default: 2.54 — standard KiCAD schematic grid)"),
+        .describe(
+          "Grid spacing in mm (default: 1.27 mm = 50 mil, the KiCad connection grid; " +
+            "do NOT use 2.54 — snapping to a 100 mil grid moves pins off their 50 mil " +
+            "positions and breaks connectivity)",
+        ),
       elements: z
         .array(z.enum(["wires", "junctions", "labels", "components"]))
         .optional()
@@ -1852,6 +1856,55 @@ edit_schematic_component and set its value to an empty string.`,
       const result = await callKicadScript("snap_to_grid", args);
       if (result.success) {
         return { content: [{ type: "text", text: result.message }] };
+      }
+      return {
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
+      };
+    },
+  );
+
+  // Off-grid geometry lint (report + safe surgical snap)
+  server.tool(
+    "lint_offgrid",
+    "Report every off-grid connection-relevant coordinate in a schematic — wire/bus " +
+      "endpoints, symbol origins, label/junction/no_connect anchors — and optionally snap " +
+      "them to the nearest grid point (fix: true). KiCad's connection grid is fixed at " +
+      "50 mil (1.27 mm) and junction placement uses exact matching, so a single off-grid " +
+      "endpoint can poison junction placement for a whole sheet. Unlike snap_to_grid " +
+      "(whole-file rewrite), fixes here are byte-exact text splices that preserve file " +
+      "formatting; (lib_symbols) content and property field positions are never touched. " +
+      "Offenders more than 0.5 mm off-grid are reported as NEEDS HUMAN and never auto-snapped.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+      fix: z
+        .boolean()
+        .optional()
+        .describe("Snap offenders in place (default false: report only)"),
+      gridSize: z
+        .number()
+        .optional()
+        .describe("Grid spacing in mm (default: 1.27 mm = 50 mil, the KiCad connection grid)"),
+    },
+    async (args: { schematicPath: string; fix?: boolean; gridSize?: number }) => {
+      const result = await callKicadScript("lint_offgrid", args);
+      if (result.success) {
+        const lines: string[] = [result.message];
+        const offenders = result.offenders ?? [];
+        const auto = offenders.filter((o: any) => !o.needsHuman);
+        const human = offenders.filter((o: any) => o.needsHuman);
+        auto.slice(0, 50).forEach((o: any) => {
+          lines.push(
+            `  (${o.x}, ${o.y}) -> (${o.snappedX}, ${o.snappedY}) offset ${o.offsetMm}mm [${o.type}] line ${o.line}`,
+          );
+        });
+        if (auto.length > 50) lines.push(`  ... and ${auto.length - 50} more`);
+        if (human.length > 0) {
+          lines.push("NEEDS HUMAN (>0.5mm off-grid, never auto-snapped):");
+          human.forEach((o: any) => {
+            lines.push(`  (${o.x}, ${o.y}) offset ${o.offsetMm}mm [${o.type}] line ${o.line}`);
+          });
+        }
+        return { content: [{ type: "text", text: lines.join("\n") }] };
       }
       return {
         content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],

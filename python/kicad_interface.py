@@ -612,6 +612,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "find_orphaned_wires": self._handle_find_orphaned_wires,
             "list_floating_labels": self._handle_list_floating_labels,
             "snap_to_grid": self._handle_snap_to_grid,
+            "lint_offgrid": self._handle_lint_offgrid,
             "add_schematic_hierarchical_label": self._handle_add_schematic_hierarchical_label,
             "add_schematic_text": self._handle_add_schematic_text,
             "list_schematic_texts": self._handle_list_schematic_texts,
