@@ -494,7 +494,7 @@ Snap schematic element coordinates to the nearest grid point. KiCAD uses exact i
 | Parameter     | Type            | Required | Description                                                                                                                                                                                                          |
 | ------------- | --------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | schematicPath | string          | Yes      | Path to the .kicad_sch schematic file                                                                                                                                                                                |
-| gridSize      | number          | No       | Grid spacing in mm (default: 2.54 — standard KiCAD schematic grid; use 1.27 for high-density)                                                                                                                        |
+| gridSize      | number          | No       | Grid spacing in mm (default: 1.27 = 50 mil, the KiCad connection grid; do NOT use 2.54 — it moves pins off their 50 mil positions)                                                                                                                        |
 | elements      | array\<string\> | No       | Types to snap: `"wires"`, `"junctions"`, `"labels"`, `"components"`. Default: `["wires", "junctions", "labels"]`. `"components"` is opt-in — moving a component without re-routing its wires creates new mismatches. |
 
 **Response fields:**
@@ -504,6 +504,20 @@ Snap schematic element coordinates to the nearest grid point. KiCAD uses exact i
 | snapped         | Number of elements that had at least one coordinate moved |
 | already_on_grid | Number of elements already on the grid                    |
 | grid_size       | Grid spacing used (mm)                                    |
+
+### lint_offgrid
+
+Report every off-grid connection-relevant coordinate in a schematic — wire/bus endpoints, symbol origins, label/junction/no_connect anchors — and optionally snap them (`fix: true`). KiCad's connection grid is fixed at 50 mil (1.27 mm) and junction placement uses exact matching, so one off-grid endpoint can poison junction placement for a whole sheet. Fixes are byte-exact text splices that preserve file formatting (unlike `snap_to_grid`'s whole-file rewrite). `(lib_symbols)` content (local pin definitions) and property field positions (cosmetic) are never flagged or touched. Offenders more than 0.5 mm off-grid are reported as `needsHuman` and never auto-snapped — sub-half-grid offsets round coincident points to the same grid node, preserving connectivity, while larger ones need a human decision.
+
+| Parameter     | Type    | Required | Description                                                       |
+| ------------- | ------- | -------- | ----------------------------------------------------------------- |
+| schematicPath | string  | Yes      | Path to the .kicad_sch schematic file                             |
+| fix           | boolean | No       | Snap offenders in place (default false: report only)              |
+| gridSize      | number  | No       | Grid spacing in mm (default: 1.27 = 50 mil, the connection grid) |
+
+**Response fields:** `offenders` (type, x/y, snappedX/Y, offsetMm, needsHuman, line), `counts` per type, `fixed`, `needsHuman`.
+
+**When to use which:** `lint_offgrid` is the safe default (report first, surgical fix, guardrails); `snap_to_grid` is the legacy bulk tool that rewrites the whole file.
 
 ### run_erc
 
