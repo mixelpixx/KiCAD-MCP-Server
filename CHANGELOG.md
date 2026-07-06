@@ -6,6 +6,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`import_ses` no longer creates phantom slashless nets — routed tracks bind
+  to the real board nets** (#246): KiCad global-label nets are named with a
+  leading `/` (e.g. `/GND`), but a Specctra DSN round-trip through Freerouting
+  can drop that prefix. `ImportSpecctraSES` then fails its exact-string net
+  lookup and creates a _new_ slashless net (`GND`), leaving `/GND` unconnected
+  and every routed track flagged by DRC. `import_ses` now reconciles the SES
+  before import: a pure `_reconcile_ses_net_names` re-adds the `/` to any
+  `(net "NAME" …)` token that matches a board net only when prefixed (idempotent;
+  names that genuinely have no slash on the board are left untouched), and the
+  repaired copy is imported. Any reconciliation error falls back to importing the
+  original file unchanged; the response reports `netsRemapped`.
+
 - **`add_sheet_pin` finds sheets regardless of line formatting; sheet/text
   insertion no longer splices mid-line** (#298): `add_hierarchical_sheet`
   and the wire/label/text insert helper located their insertion point with
