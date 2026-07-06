@@ -186,6 +186,7 @@ if utils_dir not in sys.path:
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.kicad_process import KiCADProcessManager, check_and_launch_kicad
 from utils.platform_helper import PlatformHelper
+from utils.project_settings_guard import preserve_project_settings
 
 logger.info(f"Detecting KiCAD Python paths for {PlatformHelper.get_platform_name()}...")
 paths_added = PlatformHelper.add_kicad_to_python_path()
@@ -1354,7 +1355,8 @@ class KiCADInterface(SchematicHandlersMixin):
 
         # Write the board.
         try:
-            pcbnew.SaveBoard(board_path, self.board)
+            with preserve_project_settings(board_path):
+                pcbnew.SaveBoard(board_path, self.board)
             logger.debug(f"Auto-saved board to: {board_path}")
             self._board_disk_signature = self._disk_signature(board_path)
         except Exception as e:
@@ -4443,7 +4445,8 @@ class KiCADInterface(SchematicHandlersMixin):
                     "success": False,
                     "message": "Board has no file path — save first",
                 }
-            self.board.Save(board_path)
+            with preserve_project_settings(board_path):
+                self.board.Save(board_path)
 
             zone_count = self.board.GetAreaCount() if hasattr(self.board, "GetAreaCount") else 0
 

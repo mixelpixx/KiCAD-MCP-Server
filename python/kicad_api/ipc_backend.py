@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from kicad_api.base import APINotAvailableError, BoardAPI, ConnectionError, KiCADBackend
+from utils.project_settings_guard import preserve_project_settings
 
 logger = logging.getLogger(__name__)
 
@@ -769,7 +770,8 @@ class IPCBoardAPI(BoardAPI):
             pcb_board.Add(loaded_fp)
 
             # Save the board so IPC can see the changes
-            pcbnew.SaveBoard(board_path, pcb_board)
+            with preserve_project_settings(board_path):
+                pcbnew.SaveBoard(board_path, pcb_board)
 
             # Refresh IPC view
             try:

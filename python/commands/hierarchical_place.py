@@ -10,6 +10,8 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
+from utils.project_settings_guard import preserve_project_settings
+
 logger = logging.getLogger("kicad_interface")
 
 
@@ -52,7 +54,8 @@ class HierarchicalPlaceCommands:
                 }
 
             placed = hier_place(brd)
-            pcbnew.SaveBoard(str(path), brd)
+            with preserve_project_settings(str(path)):
+                pcbnew.SaveBoard(str(path), brd)
 
             return {
                 "success": True,

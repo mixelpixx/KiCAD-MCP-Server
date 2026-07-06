@@ -28,6 +28,7 @@ from commands.wire_manager import WireManager
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.interactive_schematic import reload_kicad_schematic
 from utils.sexpr_format import dumps as kicad_dumps
+from utils.project_settings_guard import preserve_project_settings
 
 logger = logging.getLogger("kicad_interface")
 
@@ -2773,7 +2774,8 @@ class SchematicHandlersMixin:
                     else:
                         unmatched.append(f"{ref}/{pad_num}")
 
-            board.Save(board_path)
+            with preserve_project_settings(board_path):
+                board.Save(board_path)
 
             # If board was loaded fresh, update internal reference
             if params.get("boardPath"):

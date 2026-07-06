@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from utils.project_netclasses import apply_net_classes_to_board, load_project_net_classes
+from utils.project_settings_guard import preserve_project_settings
 
 logger = logging.getLogger("kicad_interface")
 
@@ -607,7 +608,8 @@ class FreeroutingCommands:
 
         # Step 4: Save board
         try:
-            self.board.Save(board_path)
+            with preserve_project_settings(board_path):
+                self.board.Save(board_path)
         except Exception as e:
             logger.warning(f"Board save after autoroute failed: {e}")
 
@@ -754,7 +756,8 @@ class FreeroutingCommands:
         board_path = params.get("boardPath") or self.board.GetFileName()
         if board_path:
             try:
-                self.board.Save(board_path)
+                with preserve_project_settings(board_path):
+                    self.board.Save(board_path)
             except Exception as e:
                 logger.warning(f"Board save after SES import failed: {e}")
 
