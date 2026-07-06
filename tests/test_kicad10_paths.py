@@ -27,6 +27,7 @@ class TestKicad10FootprintDir:
 
     def test_k10_env_override_wins(self, monkeypatch):
         lm = LibraryManager.__new__(LibraryManager)
+        monkeypatch.delenv("KICAD9_FOOTPRINT_DIR", raising=False)
         monkeypatch.setenv("KICAD10_FOOTPRINT_DIR", "/custom/k10/footprints")
         with patch("commands.library.os.path.isdir", return_value=True):
             assert lm._find_kicad_footprint_dir() == "/custom/k10/footprints"
@@ -41,6 +42,7 @@ class TestKicad10SymbolDir:
 
     def test_k10_env_override_wins(self, monkeypatch):
         sm = SymbolLibraryManager.__new__(SymbolLibraryManager)
+        monkeypatch.delenv("KICAD9_SYMBOL_DIR", raising=False)
         monkeypatch.setenv("KICAD10_SYMBOL_DIR", "/custom/k10/symbols")
         with patch("commands.library_symbol.os.path.isdir", return_value=True):
             assert sm._find_kicad_symbol_dir() == "/custom/k10/symbols"

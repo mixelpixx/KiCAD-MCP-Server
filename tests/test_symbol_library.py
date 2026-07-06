@@ -97,6 +97,7 @@ class TestGetSymbolInfoHandler:
         manager.project_path = None
         manager.libraries = {"Simulation_SPICE": str(SPICE_LIB)}
         manager.symbol_cache = {}
+        manager._cache_lock = threading.Lock()
         commands = SymbolLibraryCommands(library_manager=manager)
         result = commands.get_symbol_info({"symbol": "Simulation_SPICE:OPAMP"})
         assert result["success"] is True
@@ -113,6 +114,7 @@ class TestGetSymbolInfoHandler:
         manager.project_path = None
         manager.libraries = {"Simulation_SPICE": str(SPICE_LIB)}
         manager.symbol_cache = {}
+        manager._cache_lock = threading.Lock()
         commands = SymbolLibraryCommands(library_manager=manager)
         result = commands.get_symbol_info({"symbol": "Simulation_SPICE:PJFET"})
         assert result["success"] is True
