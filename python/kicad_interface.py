@@ -349,6 +349,7 @@ try:
     from commands.schematic_batch import SchematicBatchCommands
     from commands.schematic_declutter import SchematicDeclutterCommands
     from commands.schematic_field_layout import SchematicFieldLayoutCommands
+    from commands.schematic_lint import SchematicLintCommands
     from commands.schematic_hierarchy import SchematicHierarchyCommands
     from commands.symbol_creator import SymbolCreator
     from commands.symbol_pins import SymbolPinCommands
@@ -429,6 +430,7 @@ class KiCADInterface(SchematicHandlersMixin):
         self.hierarchy_commands = SchematicHierarchyCommands(self)
         # Schematic field placement / layout-check commands
         self.field_layout_commands = SchematicFieldLayoutCommands()
+        self.schematic_lint_commands = SchematicLintCommands()
         # Schematic label declutter (re-orient overlapping labels)
         self.declutter_commands = SchematicDeclutterCommands()
         # Batch schematic authoring commands (need an interface back-reference for the
@@ -538,6 +540,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "set_schematic_property_position": self.field_layout_commands.set_schematic_property_position,
             "batch_set_schematic_property_positions": self.field_layout_commands.batch_set_schematic_property_positions,
             "autoplace_schematic_fields": self.field_layout_commands.autoplace_schematic_fields,
+            "lint_schematic_cosmetic": self.schematic_lint_commands.lint_schematic_cosmetic,
             "suggest_schematic_declutter": self.declutter_commands.suggest_schematic_declutter,
             # Batch schematic authoring commands
             "batch_add_components": self.batch_commands.batch_add_components,

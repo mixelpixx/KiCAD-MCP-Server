@@ -505,6 +505,18 @@ Snap schematic element coordinates to the nearest grid point. KiCAD uses exact i
 | already_on_grid | Number of elements already on the grid                    |
 | grid_size       | Grid spacing used (mm)                                    |
 
+### lint_schematic_cosmetic
+
+Netlist-safe cosmetic cleanup of a schematic, applied as raw-text edits that never move a symbol, pin, wire, junction, or label anchor — only display attributes change. Two passes: `hide_pin_names` gives every top-level embedded lib_symbol definition a `(pin_names ... (hide yes))` directive (in label-driven schematics the internal pin names duplicate the net label on the same pin); `orient_labels` sets each net/global/hierarchical label's text angle and justify from the sheet-space outward side of the pin it sits on (rotation/mirror aware via PinLocator), so text reads away from the symbol body — labels not sitting on a pin are counted and left untouched. Complements `autoplace_schematic_fields`, which handles Reference/Value field placement.
+
+| Parameter     | Type            | Required | Description                                                          |
+| ------------- | --------------- | -------- | -------------------------------------------------------------------- |
+| schematicPath | string          | Yes      | Path to the .kicad_sch file                                          |
+| passes        | array\<string\> | No       | Passes to run in order: `"hide_pin_names"`, `"orient_labels"` (default both) |
+| dryRun        | boolean         | No       | Report change counts without writing (default false)                |
+
+**Response fields:** `changed`, `counts` per pass, `skippedLabels` (labels not on a pin), `message`.
+
 ### lint_offgrid
 
 Report every off-grid connection-relevant coordinate in a schematic — wire/bus endpoints, symbol origins, label/junction/no_connect anchors — and optionally snap them (`fix: true`). KiCad's connection grid is fixed at 50 mil (1.27 mm) and junction placement uses exact matching, so one off-grid endpoint can poison junction placement for a whole sheet. Fixes are byte-exact text splices that preserve file formatting (unlike `snap_to_grid`'s whole-file rewrite). `(lib_symbols)` content (local pin definitions) and property field positions (cosmetic) are never flagged or touched. Offenders more than 0.5 mm off-grid are reported as `needsHuman` and never auto-snapped — sub-half-grid offsets round coincident points to the same grid node, preserving connectivity, while larger ones need a human decision.
