@@ -351,6 +351,7 @@ try:
     from commands.symbol_pins import SymbolPinCommands
     from commands.symbol_schematic import SymbolSchematicCommands
     from commands.update_symbol_from_library import update_symbol_from_library
+    from commands.symbol_repair import SymbolRepairCommands
 
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
@@ -422,6 +423,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
         # Symbol pin discovery commands (read-only pin lookup from symbol libraries)
         self.symbol_pin_commands = SymbolPinCommands()
+        self.symbol_repair_commands = SymbolRepairCommands()
         # Schematic hierarchy commands (insert sheets, scaffold sub-sheets)
         self.hierarchy_commands = SchematicHierarchyCommands(self)
         # Schematic field placement / layout-check commands
@@ -543,6 +545,7 @@ class KiCADInterface(SchematicHandlersMixin):
             # Symbol pin discovery commands (read pins straight from symbol libraries)
             "list_symbol_pins": self.symbol_pin_commands.list_symbol_pins,
             "batch_list_symbol_pins": self.symbol_pin_commands.batch_list_symbol_pins,
+            "repair_flat_symbols": self.symbol_repair_commands.repair_flat_symbols,
             # Schematic hierarchy commands (sheet insertion + subsheet scaffolding)
             "add_hierarchical_sheet": self.hierarchy_commands.add_hierarchical_sheet,
             "create_hierarchical_subsheet": self.hierarchy_commands.create_hierarchical_subsheet,
