@@ -25,6 +25,18 @@ async function main() {
     // Load configuration
     const config = await loadConfig(options.configPath);
 
+    // Apply path settings before constructing the server. Historically these
+    // fields were accepted by the schema but silently ignored.
+    if (config.pythonPath) {
+      process.env.KICAD_PYTHON = config.pythonPath;
+    }
+    if (config.kicadPath) {
+      process.env.PATH = `${config.kicadPath}${process.platform === "win32" ? ";" : ":"}${process.env.PATH || ""}`;
+    }
+    if (config.logDir) {
+      logger.setLogDir(config.logDir);
+    }
+
     // Path to the Python script that interfaces with KiCAD
     const kicadScriptPath = join(dirname(__dirname), "python", "kicad_interface.py");
 

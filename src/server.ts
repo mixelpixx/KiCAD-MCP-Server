@@ -528,6 +528,16 @@ export class KiCADMcpServer {
       this.pythonProcess.on("exit", (code, signal) => {
         logger.warn(`Python process exited with code ${code} and signal ${signal}`);
         this.pythonProcess = null;
+        const error = new Error(`Python process exited with code ${code} and signal ${signal}`);
+        if (this.currentRequestHandler) {
+          clearTimeout(this.currentRequestHandler.timeoutHandle);
+          this.currentRequestHandler.reject(error);
+          this.currentRequestHandler = null;
+        }
+        this.processingRequest = false;
+        for (const pending of this.requestQueue.splice(0)) {
+          pending.reject(error);
+        }
       });
 
       // Listen for process errors
@@ -578,13 +588,10 @@ export class KiCADMcpServer {
         });
       }
 
-      // ——— Phase 2: wait for Python READY ———
-      logger.info("Waiting for Python process to be ready...");
-      await this.waitForReady(120_000);
-      logger.info("Python process is ready.");
-      // ——— Phase 3: connect MCP transport immediately ———
-      // The transport must be live before any client timeout fires,
-      // regardless of how long warm-up takes.
+      // ——— Phase 2: connect MCP transport immediately ———
+      // The client can complete its MCP handshake while the Python worker
+      // initializes. Tool calls are queued by the pipe/request queue until
+      // the worker starts consuming stdin.
       logger.info("Connecting MCP server to STDIO transport...");
       try {
         await this.server.connect(this.stdioTransport);
@@ -593,7 +600,13 @@ export class KiCADMcpServer {
         logger.error(`Failed to connect to STDIO transport: ${error}`);
         throw error;
       }
-      // ——— Phase 4: background warm-up (does not block MCP) ———
+
+      // ——— Phase 3: wait for Python READY ———
+      logger.info("Waiting for Python process to be ready...");
+      await this.waitForReady(120_000);
+      logger.info("Python process is ready.");
+
+      // ——— Phase 4: background warm-up (does not block the MCP handshake) ———
       // Warm-up can take 55-125 s (wxApp + symbol library parse), but
       // the MCP transport is already live so the client timeout does not
       // apply.  Tools invoked during warm-up will work; the first
@@ -601,7 +614,6 @@ export class KiCADMcpServer {
       logger.info("Sending warm-up command (background)...");
       await this.runWarmup(120_000);
       logger.info("Warm-up complete — pcbnew/wxApp initialised");
-
 
       // Write a ready message to stderr (for debugging)
       process.stderr.write("KiCAD MCP SERVER READY\n");
@@ -636,14 +648,14 @@ export class KiCADMcpServer {
   private async waitForReady(timeoutMs: number): Promise<void> {
     return new Promise((_resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error(
-          `Python process did not send READY within ${timeoutMs / 1000} s`
-        ));
+        reject(new Error(`Python process did not send READY within ${timeoutMs / 1000} s`));
       }, timeoutMs);
-      this.readyPromise.then(() => {
-        clearTimeout(timeout);
-        _resolve();
-      }).catch(reject);
+      this.readyPromise
+        .then(() => {
+          clearTimeout(timeout);
+          _resolve();
+        })
+        .catch(reject);
     });
   }
 
@@ -657,58 +669,16 @@ export class KiCADMcpServer {
    * stdout handler (already active post-READY) processes the response.
    */
   private async runWarmup(timeoutMs: number): Promise<void> {
-    return new Promise<void>((resolve) => {
-      if (!this.pythonProcess || !this.pythonProcess.stdin) {
-        logger.warn("Python process not running — skipping warm-up");
-        resolve();
-        return;
+    try {
+      const result = await this.callKicadScript("_warmup", { timeoutMs });
+      if (result?.success) {
+        logger.info(`Warm-up succeeded: pcbnew ${result.version} (${result.elapsed_s}s)`);
+      } else {
+        logger.warn(`Warm-up returned failure: ${result?.message || "unknown"} — continuing`);
       }
-
-      const requestStr = JSON.stringify({ command: "_warmup", params: {} });
-      this.responseBuffer = "";
-
-      const timeoutHandle = setTimeout(() => {
-        logger.warn(
-          `Warm-up timed out after ${timeoutMs / 1000} s — ` +
-          "continuing without full initialisation"
-        );
-        this.responseBuffer = "";
-        this.processingRequest = false;
-        this.currentRequestHandler = null;
-        resolve();
-      }, timeoutMs);
-
-      // Use the existing request infrastructure to avoid race conditions
-      // with the persistent stdout handler.
-      this.processingRequest = true;
-      this.currentRequestHandler = {
-        resolve: (result: any) => {
-          clearTimeout(timeoutHandle);
-          this.processingRequest = false;
-          this.currentRequestHandler = null;
-          if (result?.success) {
-            logger.info(
-              `Warm-up succeeded: pcbnew ${result.version} (${result.elapsed_s}s)`
-            );
-          } else {
-            logger.warn(
-              `Warm-up returned failure: ${result?.message || "unknown"} — continuing`
-            );
-          }
-          resolve();
-        },
-        reject: (err: Error) => {
-          clearTimeout(timeoutHandle);
-          this.processingRequest = false;
-          this.currentRequestHandler = null;
-          logger.warn(`Warm-up failed: ${err.message} — continuing`);
-          resolve(); // don't fail the whole server
-        },
-        timeoutHandle,
-      };
-
-      this.pythonProcess.stdin.write(requestStr + "\n");
-    });
+    } catch (error) {
+      logger.warn(`Warm-up failed: ${error} — continuing`);
+    }
   }
 
   /**
@@ -730,6 +700,9 @@ export class KiCADMcpServer {
       // Determine timeout based on command type
       // DRC and export operations need longer timeouts for large boards
       let commandTimeout = 30000; // Default 30 seconds
+      if (command === "_warmup") {
+        commandTimeout = Number(params?.timeoutMs) || 120000;
+      }
       const longRunningCommands = [
         "run_drc",
         "export_gerber",
@@ -910,16 +883,10 @@ export class KiCADMcpServer {
         logger.error(`Command timeout after ${timeoutDuration / 1000}s: ${request.command}`);
         logger.error(`Buffer contents: ${this.responseBuffer.substring(0, 200)}...`);
 
-        // Clear state
-        this.responseBuffer = "";
-        this.currentRequestHandler = null;
-        this.processingRequest = false;
-
-        // Reject the promise
+        // Reject the caller, but retain the active handler and keep the queue
+        // blocked until Python's late response is consumed. Advancing now
+        // would allow that response to resolve an unrelated next request.
         reject(new Error(`Command timeout after ${timeoutDuration / 1000}s: ${request.command}`));
-
-        // Process next request
-        setTimeout(() => this.processNextRequest(), 0);
       }, timeoutDuration);
 
       // Store the current request handler

@@ -16,8 +16,10 @@ and the hierarchical-instance fixer when present.
 
 import logging
 import re
+import shutil
+import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from commands.dynamic_symbol_loader import DynamicSymbolLoader
 from commands.pin_locator import PinLocator
@@ -294,6 +296,9 @@ class SchematicBatchCommands:
     def replace_schematic_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Replace a placed symbol with a different symbol, preserving position and fields."""
         logger.info("Replacing schematic component")
+        sch_file: Optional[Path] = None
+        original_content: Optional[str] = None
+        backup_path: Optional[Path] = None
         try:
             schematic_path = params.get("schematicPath")
             reference = params.get("reference")
@@ -334,12 +339,28 @@ class SchematicBatchCommands:
             use_rotation = new_rotation if new_rotation is not None else old_rotation
 
             content = sch_file.read_text(encoding="utf-8")
+            original_content = content
             block_text, block_start, block_end = _find_placed_symbol_block(content, reference)
             if block_text is None:
                 return {
                     "success": False,
                     "message": f"Component '{reference}' not found in schematic file",
                 }
+
+            # Create a durable recovery point before the first destructive
+            # write. Keep a small history so repeated agent edits do not grow
+            # the project indefinitely.
+            backup_dir = sch_file.parent / ".mcp-backups"
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            backup_path = backup_dir / f"{sch_file.name}.{time.time_ns()}.bak"
+            shutil.copy2(sch_file, backup_path)
+            backups = sorted(
+                backup_dir.glob(f"{sch_file.name}.*.bak"),
+                key=lambda path: path.stat().st_mtime_ns,
+                reverse=True,
+            )
+            for stale_backup in backups[10:]:
+                stale_backup.unlink(missing_ok=True)
 
             trim_start = block_start
             while trim_start > 0 and content[trim_start - 1] in (" ", "\t"):
@@ -415,10 +436,30 @@ class SchematicBatchCommands:
                 "newSymbol": new_symbol,
                 "position": {"x": old_x, "y": old_y, "rotation": use_rotation},
                 "pins": pins,
+                "backup": str(backup_path),
                 "message": f"Replaced {reference} with {new_symbol} at ({old_x}, {old_y})",
             }
 
         except Exception as e:
+            if sch_file is not None and original_content is not None:
+                try:
+                    if (
+                        not sch_file.exists()
+                        or sch_file.read_text(encoding="utf-8") != original_content
+                    ):
+                        sch_file.write_text(original_content, encoding="utf-8")
+                        logger.warning(
+                            "Restored %s after component replacement failed; backup: %s",
+                            sch_file,
+                            backup_path,
+                        )
+                except Exception as restore_error:
+                    logger.critical(
+                        "Could not restore %s after failed replacement: %s (backup: %s)",
+                        sch_file,
+                        restore_error,
+                        backup_path,
+                    )
             logger.error(f"Error replacing schematic component: {e}")
             import traceback
 
