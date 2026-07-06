@@ -24,6 +24,18 @@
 </div>
 <!-- prettier-ignore-end -->
 
+> ##  Meet Konnect — the next generation
+>
+> **[Konnect](https://github.com/mixelpixx/Konnect)** is this project rebuilt from
+> scratch in Rust as a native KiCAD 10 plugin: a single binary with no runtime
+> dependencies, built on KiCAD's official IPC API instead of SWIG, with 171 tools,
+> bundled Claude skills and agents, design-review audits, and a manufacturing
+> pipeline. It's where new development happens — licensed AGPL-3.0 (free for
+> individuals and open source; commercial licenses available for businesses).
+>
+> This Python/TypeScript server remains fully open (MIT) and maintained.
+
+
 #
 
 **KiCAD MCP Server** is a Model Context Protocol (MCP) server that enables AI assistants like Claude to interact with KiCAD for PCB design automation. Built on the MCP 2025-06-18 specification, this server provides comprehensive tool schemas and real-time project state access for intelligent PCB design workflows.

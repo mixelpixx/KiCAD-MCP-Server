@@ -18,6 +18,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+from utils.project_netclasses import apply_net_classes_to_board, load_project_net_classes
+
 logger = logging.getLogger("kicad_interface")
 
 # Default Freerouting JAR location
@@ -169,7 +171,7 @@ def _build_freerouting_cmd(
 # SES across attempts.
 # ---------------------------------------------------------------------------
 
-_SES_NET_RE = re.compile(r'\(net\s+(\S+)\s*\n\s*\(wire')
+_SES_NET_RE = re.compile(r"\(net\s+(\S+)\s*\n\s*\(wire")
 
 
 def _score_ses(ses_text: str, target_nets: Iterable[str]) -> Dict[str, Any]:
@@ -188,8 +190,8 @@ def _score_ses(ses_text: str, target_nets: Iterable[str]) -> Dict[str, Any]:
     nets = set(_SES_NET_RE.findall(ses_text))
     # Strip wrapping quotes if Freerouting emits them.
     clean_nets = {n.strip('"') for n in nets}
-    segments = len(re.findall(r'\(wire', ses_text))
-    vias = len(re.findall(r'\(via ', ses_text))
+    segments = len(re.findall(r"\(wire", ses_text))
+    vias = len(re.findall(r"\(via ", ses_text))
 
     targets = set(target_nets) if target_nets else set()
     found = sorted(targets & clean_nets)
@@ -214,6 +216,52 @@ class FreeroutingCommands:
 
     def __init__(self, board: Any = None) -> None:
         self.board = board
+
+    def _apply_project_net_classes(self, board_path: Optional[str]) -> Dict[str, Any]:
+        """Push the project's net classes into the loaded board before DSN
+        export (#302).
+
+        Net-class definitions live in ``.kicad_pro``, which the headless
+        ``LoadBoard()`` path never reads, so without this every net is
+        exported under ``kicad_default`` at Default width — a power net
+        reaches Freerouting at signal width with no warning. Applying the
+        classes to the board's NET_SETTINGS makes ``ExportSpecctraDSN``
+        natively emit per-class rules and via padstacks.
+
+        Best-effort: never raises. The returned report goes into the tool
+        response so a dropped class is loud, not silent.
+        """
+        pro_path = os.path.splitext(board_path)[0] + ".kicad_pro" if board_path else ""
+        try:
+            settings = load_project_net_classes(pro_path)
+        except ValueError as exc:
+            return {
+                "applied": [],
+                "warning": f"{exc}; DSN exported with Default-class rules only",
+            }
+        if settings is None:
+            return {
+                "applied": [],
+                "warning": (
+                    "no .kicad_pro found next to the board; net-class rules are "
+                    "unknown, so every net is exported at Default width/clearance"
+                ),
+            }
+        custom = [c["name"] for c in settings["classes"] if c.get("name") != "Default"]
+        try:
+            report = apply_net_classes_to_board(self.board, settings)
+        except Exception as exc:
+            detail = (
+                f"project defines net classes {custom} but they could not be "
+                f"applied ({exc}); DSN exported with Default-class rules only"
+                if custom
+                else f"could not apply project net settings ({exc})"
+            )
+            return {"applied": [], "warning": detail}
+        report["projectFile"] = pro_path
+        if report["applied"]:
+            logger.info(f"Applied project net classes to board: {report['applied']}")
+        return report
 
     def _resolve_execution_mode(self, jar_path: str) -> Dict[str, Any]:
         """Determine how to run Freerouting: direct or docker.
@@ -353,6 +401,12 @@ class FreeroutingCommands:
         ses_path = os.path.join(board_dir, f"{board_stem}.ses")
         best_ses_path = os.path.join(board_dir, f"{board_stem}_best.ses")
 
+        # Apply the project's net classes so the DSN carries per-class
+        # width/clearance rules instead of routing everything at Default (#302)
+        netclass_report = self._apply_project_net_classes(board_path)
+        if netclass_report.get("warning"):
+            logger.warning(f"Net-class application: {netclass_report['warning']}")
+
         # Step 1: Export DSN (once, regardless of attempt count)
         logger.info(f"Exporting DSN to {dsn_path}")
         try:
@@ -402,7 +456,11 @@ class FreeroutingCommands:
                 single_thread = True
 
             cmd = _build_freerouting_cmd(
-                jar_path, dsn_path, ses_path, attempt_passes, use_docker,
+                jar_path,
+                dsn_path,
+                ses_path,
+                attempt_passes,
+                use_docker,
                 single_thread=single_thread,
             )
             logger.info(
@@ -438,14 +496,16 @@ class FreeroutingCommands:
             if proc.returncode != 0:
                 # Don't abort the whole best-of-N just because one attempt
                 # exits nonzero — record it and move on.
-                attempt_results.append({
-                    "attempt": idx + 1,
-                    "max_passes": attempt_passes,
-                    "elapsed_seconds": attempt_elapsed,
-                    "ok": False,
-                    "exit_code": proc.returncode,
-                    "stderr": (proc.stderr or "")[:200],
-                })
+                attempt_results.append(
+                    {
+                        "attempt": idx + 1,
+                        "max_passes": attempt_passes,
+                        "elapsed_seconds": attempt_elapsed,
+                        "ok": False,
+                        "exit_code": proc.returncode,
+                        "stderr": (proc.stderr or "")[:200],
+                    }
+                )
                 if attempts == 1:
                     return {
                         "success": False,
@@ -457,20 +517,20 @@ class FreeroutingCommands:
                 continue
 
             if not os.path.isfile(ses_path):
-                attempt_results.append({
-                    "attempt": idx + 1,
-                    "max_passes": attempt_passes,
-                    "elapsed_seconds": attempt_elapsed,
-                    "ok": False,
-                    "error": "no SES produced",
-                })
+                attempt_results.append(
+                    {
+                        "attempt": idx + 1,
+                        "max_passes": attempt_passes,
+                        "elapsed_seconds": attempt_elapsed,
+                        "ok": False,
+                        "error": "no SES produced",
+                    }
+                )
                 if attempts == 1:
                     return {
                         "success": False,
                         "message": "Freerouting did not produce SES output",
-                        "errorDetails": (
-                            f"Expected at: {ses_path}. Stdout: {proc.stdout[:500]}"
-                        ),
+                        "errorDetails": (f"Expected at: {ses_path}. Stdout: {proc.stdout[:500]}"),
                         "elapsed_seconds": attempt_elapsed,
                     }
                 continue
@@ -480,13 +540,15 @@ class FreeroutingCommands:
                 ses_text = fh.read()
             score_info = _score_ses(ses_text, target_nets)
             score = score_info["score"]
-            attempt_results.append({
-                "attempt": idx + 1,
-                "max_passes": attempt_passes,
-                "elapsed_seconds": attempt_elapsed,
-                "ok": True,
-                **score_info,
-            })
+            attempt_results.append(
+                {
+                    "attempt": idx + 1,
+                    "max_passes": attempt_passes,
+                    "elapsed_seconds": attempt_elapsed,
+                    "ok": True,
+                    **score_info,
+                }
+            )
             logger.info(
                 f"  attempt {idx + 1}: score={score} "
                 f"({score_info['nets']} nets, {score_info['segments']} segs, "
@@ -570,6 +632,7 @@ class FreeroutingCommands:
                 "tracks": track_count,
                 "vias": via_count,
             },
+            "netClasses": netclass_report,
             "freerouting_stdout": best_proc_stdout[:1000],
         }
         if attempts > 1:
@@ -610,6 +673,12 @@ class FreeroutingCommands:
                     "errorDetails": ("Provide outputPath or have a board open"),
                 }
 
+        # Apply the project's net classes so the DSN carries per-class
+        # width/clearance rules instead of routing everything at Default (#302)
+        netclass_report = self._apply_project_net_classes(board_path)
+        if netclass_report.get("warning"):
+            logger.warning(f"Net-class application: {netclass_report['warning']}")
+
         try:
             result = pcbnew.ExportSpecctraDSN(self.board, output_path)
             if result is not True and result != 0:
@@ -631,6 +700,7 @@ class FreeroutingCommands:
             "message": f"Exported DSN to {output_path}",
             "path": output_path,
             "size_bytes": file_size,
+            "netClasses": netclass_report,
         }
 
     def import_ses(self, params: Dict[str, Any]) -> Dict[str, Any]:

@@ -11,6 +11,7 @@ KiCAD 9 .kicad_mod format reference:
 import logging
 import os
 import re
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -289,6 +290,214 @@ class FootprintCreator:
             "footprint_path": str(path),
             "pad_number": pad_number,
             "updated": updated,
+        }
+
+    @staticmethod
+    def _find_model_blocks(text: str) -> List[Dict[str, Any]]:
+        """Return brace-balanced ``(model ...)`` blocks as {start,end,text,filename}."""
+        blocks: List[Dict[str, Any]] = []
+        idx = 0
+        while True:
+            start = text.find("(model", idx)
+            if start == -1:
+                break
+            depth = 0
+            i = start
+            end = -1
+            while i < len(text):
+                c = text[i]
+                if c == "(":
+                    depth += 1
+                elif c == ")":
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+                i += 1
+            if end == -1:
+                break
+            blk = text[start:end]
+            fm = re.search(r'\(model\s+"?([^")\s]+)"?', blk)
+            blocks.append(
+                {"start": start, "end": end, "text": blk, "filename": fm.group(1) if fm else ""}
+            )
+            idx = end
+        return blocks
+
+    def add_3d_model(
+        self,
+        footprint_path: str,
+        model_path: str,
+        offset: Optional[Dict[str, float]] = None,
+        scale: Optional[Dict[str, float]] = None,
+        rotate: Optional[Dict[str, float]] = None,
+        replace: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Add or replace a 3D model ``(model ...)`` block in a .kicad_mod file.
+
+        Parameters
+        ----------
+        footprint_path : str
+            Full path to the .kicad_mod file.
+        model_path : str
+            Path to the 3D model (.step/.stp/.wrl). KiCad env vars such as
+            ``${KIPRJMOD}`` or ``${KICAD10_3DMODEL_DIR}`` are allowed.
+        offset, scale, rotate : dict or None – ``{"x":..,"y":..,"z":..}``.
+            Defaults: offset 0/0/0, scale 1/1/1, rotate 0/0/0 (units: mm / deg).
+        replace : bool
+            If True (default), an existing model with the same filename is replaced
+            (avoids duplicates). If False and the same model already exists, nothing
+            is changed.
+        """
+        path = Path(footprint_path)
+        if not path.exists():
+            return {"success": False, "error": f"File not found: {footprint_path}"}
+
+        off = offset or {}
+        scl = scale or {}
+        rot = rotate or {}
+
+        model_block = (
+            f'\t(model "{model_path}"\n'
+            f'\t\t(offset (xyz {_fmt(off.get("x", 0))} {_fmt(off.get("y", 0))} {_fmt(off.get("z", 0))}))\n'
+            f'\t\t(scale (xyz {_fmt(scl.get("x", 1))} {_fmt(scl.get("y", 1))} {_fmt(scl.get("z", 1))}))\n'
+            f'\t\t(rotate (xyz {_fmt(rot.get("x", 0))} {_fmt(rot.get("y", 0))} {_fmt(rot.get("z", 0))}))\n'
+            f"\t)"
+        )
+
+        content = path.read_text(encoding="utf-8")
+        if "(footprint" not in content:
+            return {"success": False, "error": f"Not a footprint file: {footprint_path}"}
+
+        removed = 0
+        blocks = self._find_model_blocks(content)
+        same = [b for b in blocks if b["filename"] == model_path]
+        if same and not replace:
+            return {
+                "success": True,
+                "footprint_path": str(path),
+                "added": False,
+                "note": "Model with this filename already present (replace=false)",
+            }
+        # Remove matching blocks (back-to-front so offsets stay valid)
+        for b in sorted(same, key=lambda x: x["start"], reverse=True):
+            content = content[: b["start"]] + content[b["end"] :]
+            removed += 1
+
+        rstripped = content.rstrip()
+        insert_pos = rstripped.rfind(")")
+        if insert_pos == -1:
+            return {"success": False, "error": "Malformed footprint (no closing paren)"}
+
+        new_content = rstripped[:insert_pos] + model_block + "\n" + rstripped[insert_pos:] + "\n"
+        path.write_text(new_content, encoding="utf-8")
+        logger.info(f"add_3d_model: {model_path} -> {path.name} (replaced {removed})")
+
+        return {
+            "success": True,
+            "footprint_path": str(path),
+            "model": model_path,
+            "added": True,
+            "replaced": removed,
+        }
+
+    def import_3d_model(
+        self,
+        model_path: str,
+        project_path: str,
+        library_dir: Optional[str] = None,
+        new_name: Optional[str] = None,
+        overwrite: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Copy a 3D model file into the project's ``*.3dshapes`` library and return
+        a portable ``${KIPRJMOD}/...`` path ready for use in a footprint.
+
+        Parameters
+        ----------
+        model_path : str
+            Path to the source 3D model (.step/.stp/.wrl/.wings).
+        project_path : str
+            Path to the .kicad_pro file or the project directory. Used both to
+            locate the default 3dshapes folder and to compute ${KIPRJMOD}.
+        library_dir : str or None
+            Target ``*.3dshapes`` directory. If relative, it is resolved against
+            the project directory. Default: ``<project_dir>/<project>.3dshapes``.
+        new_name : str or None
+            Rename the copied file (extension kept from source if omitted).
+        overwrite : bool
+            Overwrite an existing destination file (default False).
+        """
+        src = Path(model_path)
+        if not src.exists() or not src.is_file():
+            return {"success": False, "error": f"Source model not found: {model_path}"}
+
+        valid_ext = {".step", ".stp", ".wrl", ".wings", ".x3d", ".igs", ".iges"}
+        if src.suffix.lower() not in valid_ext:
+            return {
+                "success": False,
+                "error": f"Unsupported 3D model extension '{src.suffix}'. "
+                f"Expected one of: {', '.join(sorted(valid_ext))}",
+            }
+
+        # Resolve project directory and name
+        pp = Path(project_path)
+        if pp.suffix == ".kicad_pro":
+            project_dir = pp.parent
+            project_name = pp.stem
+        elif pp.is_dir():
+            project_dir = pp
+            pro = next(iter(sorted(pp.glob("*.kicad_pro"))), None)
+            project_name = pro.stem if pro else pp.name
+        else:
+            return {
+                "success": False,
+                "error": f"projectPath must be a .kicad_pro file or a directory: {project_path}",
+            }
+        project_dir = project_dir.resolve()
+
+        # Resolve target 3dshapes directory
+        if library_dir:
+            ld = Path(library_dir)
+            target_dir = ld if ld.is_absolute() else (project_dir / ld)
+        else:
+            target_dir = project_dir / f"{project_name}.3dshapes"
+        target_dir = target_dir.resolve()
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        # Destination file
+        if new_name:
+            dest_name = new_name if Path(new_name).suffix else new_name + src.suffix
+        else:
+            dest_name = src.name
+        dest = target_dir / dest_name
+
+        if dest.exists() and not overwrite and dest.resolve() != src.resolve():
+            return {
+                "success": False,
+                "error": f"Destination already exists (use overwrite=true): {dest}",
+            }
+
+        if dest.resolve() != src.resolve():
+            shutil.copy2(src, dest)
+
+        # Compute portable ${KIPRJMOD} path
+        try:
+            rel = dest.resolve().relative_to(project_dir).as_posix()
+            kiprjmod_path = "${KIPRJMOD}/" + rel
+        except ValueError:
+            # Destination is outside the project tree – fall back to absolute
+            kiprjmod_path = dest.resolve().as_posix()
+
+        logger.info(f"import_3d_model: {src} -> {dest}")
+        return {
+            "success": True,
+            "source": str(src),
+            "destination": str(dest),
+            "library_dir": str(target_dir),
+            "modelPath": kiprjmod_path,
+            "note": "Use 'modelPath' with add_footprint_3d_model or add_component_3d_model.",
         }
 
     def list_footprint_libraries(self, search_paths: Optional[List[str]] = None) -> Dict[str, Any]:

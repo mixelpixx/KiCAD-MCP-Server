@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import sexpdata
 from commands.pin_locator import PinLocator
+from commands.wire_dragger import WireDragger
 from sexpdata import Symbol
 
 logger = logging.getLogger("kicad_interface")
@@ -365,6 +366,7 @@ def _parse_symbol_instances_sexp(
             "rotation": 0.0,
             "mirror_x": False,
             "mirror_y": False,
+            "unit": 0,
         }
 
         for sub in item[1:]:
@@ -385,6 +387,8 @@ def _parse_symbol_instances_sexp(
                         inst["mirror_x"] = True
                     elif mv == "y":
                         inst["mirror_y"] = True
+            elif tag == Symbol("unit") and len(sub) >= 2:
+                inst["unit"] = int(sub[1])
             elif tag == Symbol("property") and len(sub) >= 3:
                 prop_name = str(sub[1]).strip('"')
                 if prop_name == "Reference":
@@ -446,6 +450,22 @@ def _find_pins_on_net(
                 logger.debug(f"  {ref}: no pin definitions for lib_id={lib_id}")
                 continue
 
+            # For a multi-unit component, each placed instance carries a single
+            # (unit N) and only owns the pins defined in that unit's sub-symbol
+            # (plus unit 0, which is common to every unit). Without this filter,
+            # every unit's pins are transformed against every instance's
+            # position, so a sibling unit's pin can land on this instance's wire
+            # and be reported as a phantom member of the net (#293).
+            inst_unit = inst["unit"]
+            if inst_unit:
+                pin_defs = {
+                    num: pdata
+                    for num, pdata in pin_defs.items()
+                    if pdata.get("unit", 0) in (0, inst_unit)
+                }
+                if not pin_defs:
+                    continue
+
             sym_x = inst["x"]
             sym_y = inst["y"]
             sym_rot = inst["rotation"]
@@ -453,17 +473,20 @@ def _find_pins_on_net(
             mirror_y = inst["mirror_y"]
 
             for pin_num, pdata in pin_defs.items():
-                px, py = pdata["x"], pdata["y"]
-                # y-negate: lib_symbols y-up → schematic y-down
-                py = -py
-                if mirror_x:
-                    py = -py
-                if mirror_y:
-                    px = -px
-                if sym_rot != 0:
-                    px, py = locator.rotate_point(px, py, sym_rot)
-                abs_x = sym_x + px
-                abs_y = sym_y + py
+                # Use the shared symbol->world transform so pin geometry matches
+                # eeschema (Y-flip -> rotate -> mirror -> translate). A local copy
+                # of this math applied mirror before rotation, which disagrees with
+                # pin_world_xy for 90/270 rotations and mislocated pins on rotated
+                # symbols, dropping them from their own net's pin list.
+                abs_x, abs_y = WireDragger.pin_world_xy(
+                    pdata["x"],
+                    pdata["y"],
+                    sym_x,
+                    sym_y,
+                    sym_rot,
+                    mirror_x,
+                    mirror_y,
+                )
                 if _on_net(abs_x, abs_y):
                     key = (ref, pin_num)
                     if key not in seen:

@@ -6,6 +6,133 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`export_dsn`/`autoroute` no longer drop `.kicad_pro` net classes — power
+  nets keep their width** (#302): net-class definitions live in the project
+  file on KiCad 7+, which the headless `pcbnew.LoadBoard()` path never reads,
+  so `ExportSpecctraDSN` exported every net under a single `kicad_default`
+  class at Default width/clearance. The one-call `autoroute` tool re-exports
+  internally, so a 2.0 mm power net was silently handed to Freerouting at
+  0.2 mm signal width. Both tools now rebuild the board's `NET_SETTINGS` from
+  `.kicad_pro` (`net_settings.classes`, `netclass_patterns`, and
+  `netclass_assignments`, via a new `python/utils/project_netclasses.py`)
+  before exporting, so KiCad's own exporter natively emits per-class
+  `(class ...)` blocks, rules, and via padstacks — verified against real
+  KiCad 10 to match a project-loaded GUI export. The tool result now carries
+  a `netClasses` report (`applied` classes, or a `warning` when no project
+  file is found or the classes cannot be applied), so a dropped class is
+  loud instead of silent.
+
+## [2.3.1] - 2026-07-05
+
+Eight merges since v2.3.0: the entire June scaffolding cluster (#220/#221/
+#242/#243) is closed, KiCad install discovery is unified across all Windows
+code paths, derived symbols in `.kicad_symdir` libraries resolve correctly,
+and three new feature areas land (Eagle import, 3D model tools, interactive
+schematic reload). A critical compatibility fix ensures generated schematics
+load on every KiCad 10.0.x build.
+
+### New Features
+
+- **Eagle schematic import** (#285): `import_eagle_schematic` converts Eagle
+  `.sch` XML designs to KiCad `.kicad_sch` format — symbol mapping, net
+  wires, labels, junctions, multi-gate parts (combined into multi-unit KiCad
+  symbols). Dangling-wire pruning trims isolated stubs; a ground-truth ERC
+  check via `kicad-cli` reports the real error/warning counts so callers see
+  KiCad's numbers, not the importer's internal model.
+
+- **3D model tools** (#263): `add_component_3d_model` and
+  `remove_component_3d_model` attach/detach STEP/WRL 3D models to footprints
+  with offset, rotation, and scale. Respects backend session pinning.
+
+- **Opt-in interactive schematic reload on Windows** (#208): set
+  `KICAD_INTERACTIVE_SCHEMATIC=1` and schematic-writing tools will
+  auto-confirm KiCad's "file changed — reload?" dialog so the editor stays
+  in sync. PID-scoped, title-keyword-matched (not generic "Confirmation"
+  dialogs), and never clicks Discard/Unsaved buttons.
+
+- **User environment variables from `kicad_common.json`** (#292): the
+  `${VARIABLE}` placeholders KiCad users define in Preferences are now
+  resolved when expanding library paths, so custom env-var-based library
+  setups work out of the box.
+
+### Bug Fixes
+
+- **`get_wire_connections` locates pins correctly on rotated symbols**:
+  `_find_pins_on_net` computed pin world coordinates with a local transform
+  that applied mirror before rotation, diverging from `WireDragger.pin_world_xy`
+  (the shared transform corrected in #259) for 90 and 270 degree rotations. Pins
+  on rotated symbols were placed at the wrong coordinate and dropped from their
+  own net's pin list (observed on an LM324 whose gates are placed rotated 90:
+  eight of its pins went missing from their nets). `_find_pins_on_net` now calls
+  `pin_world_xy` so pin geometry matches eeschema everywhere. Single-unit and
+  unrotated parts are unaffected.
+
+- **`get_wire_connections` no longer reports phantom cross-unit pins** (#293):
+  `_find_pins_on_net` transformed every unit's pins against every placed
+  instance of a multi-unit component, so a sibling unit's pin whose library
+  offset matched could land on this instance's wire and be reported as a
+  false member of the net (e.g. an LM358's pin 7 appearing on unit A's
+  output net alongside pin 1). `_parse_symbol_instances_sexp` now records
+  each instance's `(unit N)`, and `_find_pins_on_net` filters the pin
+  definitions to that unit (plus unit 0, common to all units) before
+  transforming them. Complements #272, which fixed the query-coordinate side
+  of the same multi-unit gap; the pin `unit` tags it added are what this fix
+  consumes. Single-unit parts are unaffected.
+
+- **KiCad install discovery is unified and finds relocated Windows installs**
+  (#286): `kicad-cli` resolution, symbol/python-path discovery, and footprint-dir
+  lookup each independently assumed KiCad lived under `C:\Program Files\KiCad`, so
+  a custom install root (the installer allows any; short roots like
+  `C:\KiCad\10.0` are common) got degraded discovery in three different ways. A
+  new shared helper `python/utils/kicad_roots.py` yields KiCad install roots
+  newest-version first from the Windows registry uninstall keys
+  (`InstallLocation`, authoritative for wherever the user installed), the
+  `C:\Program Files\KiCad\*` / `(x86)` globs, and common custom roots
+  (`C:\KiCad\*`), de-duplicated and cached per-process. `utils/kicad_cli.py`,
+  `utils/platform_helper.py`, `commands/library.py` (footprints), and
+  `commands/library_symbol.py` (symbols) now build their Windows paths from it, so
+  discovery
+  can no longer drift apart (the same unification #267 did for the three
+  `kicad-cli` resolvers). macOS/Linux behavior is unchanged.
+
+- **Derived symbols in KiCad 10 `.kicad_symdir` libraries now inline their parent**
+  (#282): in the sharded directory format each symbol is its own
+  `<Symbol>.kicad_sym` file, so a symbol using `(extends "Parent")` has its parent
+  in a _sibling_ shard. `extract_symbol_from_library` handed only the child's shard
+  to the inliner, so the parent was never found and the `(extends)` clause was
+  stripped — producing a symbol shell with no parent pins/graphics (e.g.
+  `Device:Filter_EMI_C`, which extends `C_Feedthrough`). A new
+  `_resolve_symdir_extends` reads the parent shard, resolves it recursively (a
+  parent may itself extend a grandparent in another shard), and merges it via the
+  existing single-level inliner; a missing parent shard still degrades gracefully
+  (strips + warns, keeping the file loadable). Single-file `.kicad_sym` libraries
+  are unaffected.
+
+- **New projects and schematics start blank instead of seeding `_TEMPLATE_*`
+  symbols** (#221, #243): `create_project` and `create_schematic` copied
+  `template_with_symbols_expanded.kicad_sch` / `template_with_symbols.kicad_sch`,
+  which pre-seeded `Device:R/C/LED` `lib_symbols` and placed `_TEMPLATE_*`
+  instances into every new file. Those symbols existed only as clone sources for
+  the legacy `ComponentManager.add_component` path; the live
+  `add_schematic_component` tool synthesizes its own `lib_symbols` via the
+  dynamic loader (and the legacy fallback was removed in #288), so the seeds only
+  leaked into user files. Both tools now copy a new blank KiCad 10 template
+  (`python/templates/blank.kicad_sch`: `(version 20260101) (generator
+  "eeschema")`, empty `lib_symbols`, no placed symbols).
+  `template_with_symbols.kicad_sch` is kept unchanged in-repo as a test fixture.
+  A regression test asserts a created schematic contains no `_TEMPLATE_`
+  references and no seeded `lib_symbols` entries.
+
+- **Generated schematics use format version `20260101`, not `20260306`, so
+  every KiCad 10.0.x can open them**: KiCad refuses to load files that claim
+  a format version newer than the running build, and `20260306` is a later
+  10.0.x token — KiCad 10.0.0 (whose `kicad-cli sch upgrade` writes
+  `20260101`) reported "Failed to load schematic" on our output. All
+  templates, fallback writers, and test fixtures now use `20260101`, which
+  loads on every 10.0.x (newer builds silently upgrade on save). This also
+  makes `tests/fixtures/canonical_schematic.kicad_sch` loadable by
+  `kicad-cli`, which it previously was not.
+
 - **`create_project` writes a conformant KiCad 10 `.kicad_pro`** (#220): the
   project file was a hand-rolled 122-byte stub containing only
   `board.filename` and a `sheets` entry with the literal id `"root"`, so
@@ -145,7 +272,7 @@ the KiCad GUI connects later (reopen the project to adopt IPC).
   components via dynamic template injection** (#221, part B): when no placed
   `_TEMPLATE_*` donor existed, the legacy clone path used to call
   `DynamicSymbolLoader.load_symbol_dynamically`, which wrote a template
-  instance into the *file* mid-call and cloned onto a locally reloaded
+  instance into the _file_ mid-call and cloned onto a locally reloaded
   object — so callers following the normal add-then-save pattern saved
   their stale in-memory schematic, discarding the new component and
   leaving `_TEMPLATE_*` clutter behind. That branch is removed: template

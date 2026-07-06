@@ -2,6 +2,17 @@
 
 https://github.com/mixelpixx/KiCAD-MCP-Server/discussions/73
 
+> ## 🚀 Meet Konnect — the next generation
+>
+> **[Konnect](https://github.com/mixelpixx/Konnect)** is this project rebuilt from
+> scratch in Rust as a native KiCAD 10 plugin: a single binary with no runtime
+> dependencies, built on KiCAD's official IPC API instead of SWIG, with 171 tools,
+> bundled Claude skills and agents, design-review audits, and a manufacturing
+> pipeline. It's where new development happens — licensed AGPL-3.0 (free for
+> individuals and open source; commercial licenses available for businesses).
+>
+> This Python/TypeScript server remains fully open (MIT) and maintained.
+
 # KiCAD MCP Server
 
 A Model Context Protocol (MCP) server that enables AI assistants like Claude to interact with KiCAD for PCB design automation. Built on the MCP 2025-06-18 specification, this server provides comprehensive tool schemas and real-time project state access for intelligent PCB design workflows.
@@ -28,6 +39,39 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 ## Try out Arduino MCP - now you can get Claude to help in the IDE, real time!:
 
 https://github.com/mixelpixx/arduino-ide
+
+## What's New in v2.3.1
+
+### Eagle schematic import
+
+- `import_eagle_schematic` converts Eagle `.sch` XML designs to KiCad format
+  with symbol mapping, net wires, multi-gate parts, dangling-wire pruning,
+  and ground-truth ERC reporting via `kicad-cli`.
+
+### 3D model tools and interactive reload
+
+- `add_component_3d_model` / `remove_component_3d_model` for attaching
+  STEP/WRL models to footprints.
+- Opt-in `KICAD_INTERACTIVE_SCHEMATIC=1` auto-confirms KiCad's reload dialog
+  on Windows after schematic writes.
+
+### Scaffolding cluster complete
+
+- New projects start blank (no `_TEMPLATE_*` symbols leaked into user files).
+- `.kicad_pro` files match what KiCad itself writes.
+- Format version `20260101` ensures all KiCad 10.0.x builds can open
+  generated schematics.
+
+### KiCad 10 compatibility
+
+- Derived symbols in `.kicad_symdir` libraries resolve their parent from
+  sibling shards.
+- Unified install discovery finds relocated Windows installs via registry.
+- User env-var placeholders from `kicad_common.json` are resolved in library
+  paths.
+- Phantom cross-unit pin reports in `get_wire_connections` are eliminated.
+
+Full details in the [CHANGELOG](CHANGELOG.md).
 
 ## What's New in v2.3.0
 
@@ -1318,7 +1362,7 @@ npm run format
 
 ## Project Status
 
-**Current Version:** 2.3.0
+**Current Version:** 2.3.1
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 

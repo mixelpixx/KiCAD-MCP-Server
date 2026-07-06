@@ -12,6 +12,9 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from utils.kicad_roots import kicad_install_roots
+from utils.platform_helper import PlatformHelper
+
 logger = logging.getLogger("kicad_interface")
 
 
@@ -153,6 +156,9 @@ class LibraryManager:
             "KICAD_3RD_PARTY": self._find_kicad_3rdparty_dir(),
         }
 
+        # Merge user-defined env vars from kicad_common.json
+        env_vars.update(PlatformHelper.load_kicad_env_vars())
+
         # Project directory
         if self.project_path:
             env_vars["KIPRJMOD"] = str(self.project_path)
@@ -182,11 +188,14 @@ class LibraryManager:
         possible_paths = [
             "/usr/share/kicad/footprints",
             "/usr/local/share/kicad/footprints",
-            "C:/Program Files/KiCad/10.0/share/kicad/footprints",
-            "C:/Program Files/KiCad/9.0/share/kicad/footprints",
-            "C:/Program Files/KiCad/8.0/share/kicad/footprints",
             "/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints",
         ]
+
+        # Prepend Windows install roots from the shared discovery helper (registry
+        # + Program Files + custom C:\KiCad roots, newest first) so a relocated
+        # install's footprints are found, not just Program Files ones (#286).
+        for root in reversed(kicad_install_roots()):
+            possible_paths.insert(0, str(root / "share" / "kicad" / "footprints"))
 
         # Also check environment variable
         if "KICAD10_FOOTPRINT_DIR" in os.environ:

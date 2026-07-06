@@ -13,6 +13,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from utils.kicad_roots import kicad_install_roots
+from utils.platform_helper import PlatformHelper
+
 logger = logging.getLogger("kicad_interface")
 
 
@@ -202,6 +205,9 @@ class SymbolLibraryManager:
             "KISYSSYM": self._find_kicad_symbol_dir(),
         }
 
+        # Merge user-defined env vars from kicad_common.json
+        env_vars.update(PlatformHelper.load_kicad_env_vars())
+
         # Project directory
         if self.project_path:
             env_vars["KIPRJMOD"] = str(self.project_path)
@@ -228,13 +234,17 @@ class SymbolLibraryManager:
     def _find_kicad_symbol_dir(self) -> Optional[str]:
         """Find KiCAD symbol directory"""
         possible_paths = [
-            "C:/Program Files/KiCad/10.0/share/kicad/symbols",
             "/usr/share/kicad/symbols",
             "/usr/local/share/kicad/symbols",
-            "C:/Program Files/KiCad/9.0/share/kicad/symbols",
-            "C:/Program Files/KiCad/8.0/share/kicad/symbols",
             "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols",
         ]
+
+        # Prepend Windows install roots from the shared discovery helper (registry
+        # + Program Files + custom C:\KiCad roots, newest first) so a relocated
+        # install's symbols are found the same as its footprints (#286) — this
+        # closes the gap where symbols stayed hardcoded to Program Files.
+        for root in reversed(kicad_install_roots()):
+            possible_paths.insert(0, str(root / "share" / "kicad" / "symbols"))
 
         # Check environment variable
         if "KICAD10_SYMBOL_DIR" in os.environ:
