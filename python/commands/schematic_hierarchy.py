@@ -85,7 +85,21 @@ class SchematicHierarchyCommands:
             insert_at = content.rfind("(sheet_instances")
             if insert_at == -1:
                 return {"success": False, "message": "Could not find (sheet_instances in schematic"}
-            content = content[:insert_at] + sheet_block + "  " + content[insert_at:]
+            # rfind returns a raw character offset; on files where
+            # (sheet_instances does not start its own line (sexpdata-written
+            # schematics keep several forms on one line) splicing there lands
+            # the sheet block mid-line, where line-based consumers like
+            # add_sheet_pin can never find it (#298). Snap to a line boundary.
+            line_start = content.rfind("\n", 0, insert_at) + 1
+            if content[line_start:insert_at].strip():
+                # (sheet_instances shares its line with earlier content:
+                # break the line so the sheet block and (sheet_instances each
+                # start a line of their own.
+                content = content[:insert_at] + "\n" + sheet_block + "  " + content[insert_at:]
+            else:
+                # (sheet_instances starts its line: insert the block at the
+                # line start so (sheet_instances keeps its own indentation.
+                content = content[:line_start] + sheet_block + content[line_start:]
 
             si_start = content.rfind("(sheet_instances")
             depth = 0

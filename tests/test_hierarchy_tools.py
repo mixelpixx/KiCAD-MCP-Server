@@ -347,3 +347,106 @@ class TestAddSheetPin:
         content = sch.read_text()
         assert "(at 100 60 180)" in content
         assert "(justify right)" in content
+
+    def test_finds_sheet_that_does_not_start_a_line(self, iface, tmp_path):
+        """#298: files written by the pre-fix sheet inserter have (sheet
+        spliced mid-line; the line-anchored scan never found them."""
+        import sexpdata
+
+        sch = tmp_path / "parent.kicad_sch"
+        sch.write_text(
+            "(kicad_sch\n"
+            '\t(uuid "abcd-1234") (sheet (at 100 50) (size 40 30)\n'
+            '\t\t(property "Sheetname" "Storage" (at 100 49 0))\n'
+            '\t\t(property "Sheetfile" "sheets/storage.kicad_sch" (at 100 82 0))\n'
+            "\t)\n"
+            '\t(sheet_instances (path "/" (page "1")))\n'
+            ")\n"
+        )
+
+        result = iface._handle_add_sheet_pin(
+            {
+                "schematicPath": str(sch),
+                "sheetName": "Storage",
+                "pinName": "SD_CLK",
+                "pinType": "output",
+                "position": [140, 60],
+            }
+        )
+
+        assert result["success"] is True, result
+        content = sch.read_text()
+        assert '(pin "SD_CLK" output' in content
+        sexpdata.loads(content)
+
+    def test_finds_sheet_in_minified_single_line_file(self, iface, tmp_path):
+        """A sexpdata-minified schematic has no line structure at all; the
+        pin must still land inside the right sheet block."""
+        import sexpdata
+
+        sch = tmp_path / "parent.kicad_sch"
+        sch.write_text(
+            "(kicad_sch (uuid abcd-1234)"
+            " (sheet (at 100 50) (size 40 30)"
+            ' (property "Sheetname" "Storage" (at 100 49 0))'
+            ' (property "Sheetfile" "sheets/storage.kicad_sch" (at 100 82 0)))'
+            ' (sheet_instances (path "/" (page "1"))))'
+        )
+
+        result = iface._handle_add_sheet_pin(
+            {
+                "schematicPath": str(sch),
+                "sheetName": "Storage",
+                "pinName": "SD_D0",
+                "pinType": "bidirectional",
+                "position": [140, 60],
+            }
+        )
+
+        assert result["success"] is True, result
+        content = sch.read_text()
+        parsed = sexpdata.loads(content)
+        # The pin must be inside the (sheet ...) block, not appended at top level.
+        from sexpdata import Symbol
+
+        sheet = next(
+            item
+            for item in parsed
+            if isinstance(item, list) and item and item[0] == Symbol("sheet")
+        )
+        assert any(
+            isinstance(sub, list) and sub and sub[0] == Symbol("pin") and sub[1] == "SD_D0"
+            for sub in sheet
+        ), f"pin not inside the sheet block:\n{content}"
+
+    def test_add_sheet_then_pin_on_single_line_parent(self, iface, tmp_path):
+        """End-to-end #298 repro: link a sheet into a sexpdata-style parent
+        (no newline before (sheet_instances), then add a pin to it."""
+        import sexpdata
+
+        from commands.schematic_hierarchy import SchematicHierarchyCommands
+
+        parent = tmp_path / "top.kicad_sch"
+        parent.write_text('(kicad_sch (uuid abcd-1234) (sheet_instances (path "/" (page "1"))))')
+        link = SchematicHierarchyCommands(iface).add_hierarchical_sheet(
+            {
+                "schematicPath": str(parent),
+                "subsheetPath": str(tmp_path / "power.kicad_sch"),
+                "sheetName": "Power",
+            }
+        )
+        assert link["success"] is True
+
+        result = iface._handle_add_sheet_pin(
+            {
+                "schematicPath": str(parent),
+                "sheetName": "Power",
+                "pinName": "VIN",
+                "pinType": "input",
+                "position": [52, 55],
+            }
+        )
+        assert result["success"] is True, result
+        content = parent.read_text()
+        assert '(pin "VIN" input' in content
+        sexpdata.loads(content)
