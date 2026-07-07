@@ -448,6 +448,12 @@ class KiCADInterface(SchematicHandlersMixin):
             "open_project": self._handle_open_project,
             "close_project": self._handle_close_project,
             "save_project": self._handle_save_project,
+            "open_board": self._handle_open_board,
+            "reload_board": self._handle_reload_board,
+            "save_board": self._handle_save_board,
+            "save_as": self._handle_save_as,
+            "is_dirty": self._handle_is_dirty,
+            "discard_or_reload": self._handle_discard_or_reload,
             "snapshot_project": self._handle_snapshot_project,
             "get_project_info": self.project_commands.get_project_info,
             # Board commands
@@ -459,6 +465,11 @@ class KiCADInterface(SchematicHandlersMixin):
             "get_board_2d_view": self.board_commands.get_board_2d_view,
             "get_board_extents": self.board_commands.get_board_extents,
             "add_board_outline": self.board_commands.add_board_outline,
+            "clear_board_outline": self.board_commands.clear_board_outline,
+            "replace_board_outline": self.board_commands.replace_board_outline,
+            "list_graphics": self.board_commands.list_graphics,
+            "delete_graphic": self.board_commands.delete_graphic,
+            "update_graphic": self.board_commands.update_graphic,
             "add_mounting_hole": self.board_commands.add_mounting_hole,
             "add_text": self.board_commands.add_text,
             "add_board_text": self.board_commands.add_text,  # Alias for TypeScript tool
@@ -466,14 +477,22 @@ class KiCADInterface(SchematicHandlersMixin):
             "route_pad_to_pad": self.routing_commands.route_pad_to_pad,
             "place_component": self._handle_place_component,
             "move_component": self.component_commands.move_component,
+            "batch_move_components": self._handle_batch_move_components,
             "rotate_component": self.component_commands.rotate_component,
             "delete_component": self.component_commands.delete_component,
             "edit_component": self.component_commands.edit_component,
             "get_component_properties": self.component_commands.get_component_properties,
             "get_component_list": self.component_commands.get_component_list,
+            "get_component_geometry": self.component_commands.get_component_geometry,
             "find_component": self.component_commands.find_component,
             "get_component_pads": self.component_commands.get_component_pads,
+            "get_pads": self.component_commands.get_pads,
+            "get_net_pads": self.component_commands.get_net_pads,
             "get_pad_position": self.component_commands.get_pad_position,
+            "get_ratsnest": self.component_commands.get_ratsnest,
+            "estimate_airwire_lengths": self.component_commands.estimate_airwire_lengths,
+            "check_placement_clearance": self.component_commands.check_placement_clearance,
+            "move_footprint_text": self.component_commands.move_footprint_text,
             "place_component_array": self.component_commands.place_component_array,
             "align_components": self.component_commands.align_components,
             "check_courtyard_overlaps": self.component_commands.check_courtyard_overlaps,
@@ -587,6 +606,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "export_sch_python_bom": self._handle_export_sch_python_bom,
             "generate_netlist": self._handle_generate_netlist,
             "sync_schematic_to_board": self._handle_sync_schematic_to_board,
+            "create_board_from_schematic": self._handle_create_board_from_schematic,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
             "get_schematic_view": self._handle_get_schematic_view,
             "list_schematic_components": self._handle_list_schematic_components,
@@ -1115,13 +1135,19 @@ class KiCADInterface(SchematicHandlersMixin):
         "delete_trace",
         "add_net",
         "add_board_outline",
+        "clear_board_outline",
+        "replace_board_outline",
+        "delete_graphic",
+        "update_graphic",
         "add_mounting_hole",
         "add_text",
         "add_board_text",
+        "move_footprint_text",
         "add_copper_pour",
         "refill_zones",
         "import_svg_logo",
         "sync_schematic_to_board",
+        "create_board_from_schematic",
         "connect_passthrough",
         "connect_to_net",
         "set_footprint_type",
@@ -1512,6 +1538,151 @@ class KiCADInterface(SchematicHandlersMixin):
             )
             self._refresh_symbol_library_for_project(project_path)
         return result
+
+    def _handle_open_board(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Open a .kicad_pcb directly and refresh all in-memory state."""
+        board_path = params.get("boardPath") or params.get("path") or params.get("filename")
+        if not board_path:
+            return {"success": False, "message": "boardPath is required"}
+        board_path = str(Path(board_path).expanduser().resolve())
+        if not os.path.exists(board_path):
+            return {"success": False, "message": f"Board file not found: {board_path}"}
+        board = self._safe_load_board(board_path)
+        if board is None:
+            return {
+                "success": False,
+                "message": f"Could not load board: {board_path}",
+                "errorDetails": "pcbnew.LoadBoard failed or returned an unusable board proxy",
+            }
+        self.board = board
+        self._update_command_handlers()
+        self._record_board_signature()
+        self._last_auto_save_status = None
+        project_path = self._project_path_from_filename(board_path)
+        self._refresh_symbol_library_for_project(project_path)
+        self._pin_session_backend(self._current_board_path())
+        return {
+            "success": True,
+            "message": f"Opened board: {os.path.basename(board_path)}",
+            "boardPath": board_path,
+            "sessionBackend": self.session_backend,
+            "_backend": self.session_backend,
+        }
+
+    def _handle_reload_board(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Reload a board from disk, discarding the current in-memory board."""
+        board_path = params.get("boardPath") or params.get("path") or self._current_board_path()
+        if not board_path:
+            return {"success": False, "message": "No board loaded and no boardPath provided"}
+        return self._handle_open_board({"boardPath": board_path})
+
+    def _handle_discard_or_reload(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Discard in-memory state and reload from disk."""
+        return self._handle_reload_board(params)
+
+    def _handle_save_board(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Save the loaded board, with the same external-change guard as save_project."""
+        save_params: Dict[str, Any] = {"force": params.get("force", False)}
+        board_path = params.get("boardPath") or params.get("path")
+        if board_path:
+            save_params["filename"] = board_path
+        result = self._handle_save_project(save_params)
+        if result.get("success"):
+            self._record_board_signature()
+            self._last_auto_save_status = None
+            result["boardPath"] = self._current_board_path()
+        return result
+
+    def _handle_save_as(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Save the loaded board to a new .kicad_pcb path."""
+        board_path = params.get("boardPath") or params.get("path") or params.get("filename")
+        if not board_path:
+            return {"success": False, "message": "boardPath is required"}
+        return self._handle_save_board({"boardPath": board_path, "force": True})
+
+    def _handle_is_dirty(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Report MCP's known disk/memory save state."""
+        board_path = params.get("boardPath") or self._current_board_path()
+        state = self._dirty_state(board_path)
+        return {"success": True, "boardPath": board_path, **state}
+
+    def _handle_batch_move_components(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Batch move wrapper that preserves the external-edit save guard."""
+        save = bool(params.get("save", True)) and not bool(params.get("dryRun", False))
+        board_path = self._current_board_path()
+        if save:
+            dirty = self._dirty_state(board_path)
+            if dirty.get("diskChangedExternally"):
+                return {
+                    "success": False,
+                    "message": (
+                        "Refusing batch move: the on-disk board changed externally. "
+                        "Reload the board before applying new placement."
+                    ),
+                    "boardPath": board_path,
+                    "diskChangedExternally": True,
+                }
+        call_params = dict(params)
+        call_params["_deferSave"] = True
+        result = self.component_commands.batch_move_components(call_params)
+        if result.get("success") and save:
+            save_status = self._auto_save_board()
+            self._last_auto_save_status = save_status
+            result["autoSave"] = save_status
+            result["saved"] = bool(save_status.get("saved"))
+            if not save_status.get("saved"):
+                result.setdefault("warnings", []).append(
+                    save_status.get("warning") or save_status.get("error") or "Batch move not saved"
+                )
+        return result
+
+    def _handle_create_board_from_schematic(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a fresh board file, then sync schematic footprints/nets into it."""
+        schematic_path = params.get("schematicPath")
+        board_path = params.get("boardPath")
+        if not schematic_path:
+            return {"success": False, "message": "schematicPath is required"}
+        schematic_path = str(Path(schematic_path).expanduser().resolve())
+        if not os.path.exists(schematic_path):
+            return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+        if not board_path:
+            board_path = str(Path(schematic_path).with_suffix(".kicad_pcb"))
+        board_path = str(Path(board_path).expanduser().resolve())
+        if os.path.exists(board_path) and not params.get("overwrite", False):
+            return {
+                "success": False,
+                "message": f"Board already exists: {board_path}",
+                "errorDetails": "Pass overwrite=true to replace it",
+            }
+        try:
+            Path(board_path).parent.mkdir(parents=True, exist_ok=True)
+            board = pcbnew.BOARD()
+            board.SetFileName(board_path)
+            board.GetTitleBlock().SetTitle(Path(board_path).stem)
+            pcbnew.SaveBoard(board_path, board)
+            self.board = board
+            self._update_command_handlers()
+            self._record_board_signature()
+            sync = self._handle_sync_schematic_to_board(
+                {"schematicPath": schematic_path, "boardPath": board_path}
+            )
+            if not sync.get("success"):
+                return sync
+            self._record_board_signature()
+            return {
+                "success": True,
+                "message": "Created board from schematic",
+                "schematicPath": schematic_path,
+                "boardPath": board_path,
+                "sync": sync,
+            }
+        except Exception as e:
+            logger.error(f"Error creating board from schematic: {e}")
+            return {
+                "success": False,
+                "message": "Failed to create board from schematic",
+                "errorDetails": str(e),
+            }
 
     def _clear_project_state(self) -> None:
         """Drop the in-memory board (SWIG + IPC) and reset all per-project session

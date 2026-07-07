@@ -33,6 +33,9 @@ export const toolCategories: ToolCategory[] = [
       "get_layer_list",
       "add_mounting_hole",
       "add_board_text",
+      "list_graphics",
+      "delete_graphic",
+      "update_graphic",
       "add_zone",
       "get_board_extents",
       "get_board_2d_view",
@@ -48,6 +51,12 @@ export const toolCategories: ToolCategory[] = [
       "edit_component",
       "find_component",
       "get_component_properties",
+      "get_pads",
+      "get_net_pads",
+      "get_ratsnest",
+      "estimate_airwire_lengths",
+      "check_placement_clearance",
+      "move_footprint_text",
       "add_component_annotation",
       "group_components",
       "replace_component",
@@ -190,14 +199,20 @@ export const directToolNames = [
   // Project lifecycle
   "create_project",
   "open_project",
+  "open_board",
+  "reload_board",
   "close_project",
   "save_project",
+  "save_board",
+  "is_dirty",
+  "discard_or_reload",
   "snapshot_project",
   "get_project_info",
 
   // Core PCB operations
   "place_component",
   "move_component",
+  "batch_move_components",
   "add_net",
   "route_trace",
   "get_board_info",
@@ -205,6 +220,9 @@ export const directToolNames = [
 
   // Board setup
   "add_board_outline",
+  "replace_board_outline",
+  "clear_board_outline",
+  "get_component_geometry",
 
   // Schematic essentials (always visible so AI uses them correctly)
   "add_schematic_component",
@@ -216,6 +234,7 @@ export const directToolNames = [
 
   // Schematic <-> PCB sync (F8 equivalent)
   "sync_schematic_to_board",
+  "create_board_from_schematic",
 
   // UI management
   "get_backend_state",
