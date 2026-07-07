@@ -18,6 +18,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Fixed a test-suite state leak that caused spurious pin-position failures
+  when test files ran in combination** (#287): `tests/test_rotate_schematic_mirror.py`
+  installed a throwaway `MagicMock` at `sys.modules["commands.pin_locator"]`
+  via `sys.modules.setdefault(...)` at module-collection time, with no
+  teardown. Any later-collected file relying on the real
+  `commands.pin_locator` (e.g. `WireDragger.get_pin_defs`, via
+  `commands.wire_dragger`) silently got empty pin data instead of an error —
+  iterating a bare `MagicMock()` is a no-op by default. A `teardown_module`
+  now undoes the stub, and `test_rotate_handler_no_crash`'s stubbed
+  `kicad_interface.py` exec additionally evicts any `commands.*` submodule it
+  imported for the first time while `pcbnew`/`skip` were mocked, so later
+  tests get a clean re-import instead of a module bound to a discarded mock.
+  Test-only change; no production code touched.
+
 - **`import_ses` no longer creates phantom slashless nets — routed tracks bind
   to the real board nets** (#246): KiCad global-label nets are named with a
   leading `/` (e.g. `/GND`), but a Specctra DSN round-trip through Freerouting
@@ -155,7 +169,7 @@ load on every KiCad 10.0.x build.
   dynamic loader (and the legacy fallback was removed in #288), so the seeds only
   leaked into user files. Both tools now copy a new blank KiCad 10 template
   (`python/templates/blank.kicad_sch`: `(version 20260101) (generator
-  "eeschema")`, empty `lib_symbols`, no placed symbols).
+"eeschema")`, empty `lib_symbols`, no placed symbols).
   `template_with_symbols.kicad_sch` is kept unchanged in-repo as a test fixture.
   A regression test asserts a created schematic contains no `_TEMPLATE_`
   references and no seeded `lib_symbols` entries.
