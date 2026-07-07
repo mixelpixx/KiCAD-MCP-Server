@@ -4,6 +4,19 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Features
+
+- **`import_pcb`**: wraps KiCad 10's native `kicad-cli pcb import` so any MCP
+  consumer can convert a vendor PCB file (PADS, Altium, Eagle, CADSTAR,
+  Fabmaster, P-CAD, SolidWorks PCB, or a binary Cadence Allegro `.brd`) into
+  a `.kicad_pcb` file, with an optional structured import report
+  (`reportFormat: "json"|"text"`). Verified against a real 10 MB binary
+  Cadence Allegro `.brd` (581 footprints, thousands of net occurrences).
+  Binary Allegro `.brd` files must use `format: "auto"` — the CLI's
+  `--format` enum has no `"allegro"` literal, auto-detection by magic is the
+  only supported path. This tool imports PCB/layout data only; kicad-cli has
+  no Concept HDL / OrCAD schematic importer.
+
 ### Bug Fixes
 
 - **`export_dsn`/`autoroute` no longer drop `.kicad_pro` net classes — power
