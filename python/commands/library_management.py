@@ -26,24 +26,32 @@ def _extract_paren_block(text: str, start: int) -> str:
     return ""
 
 
-def _find_symbol_block(content: str, name: str) -> Optional[tuple[int, int, str]]:
-    """Find a top-level (symbol "name" ...) block.
+def _find_symbol_block(
+    content: str, name: str, require_top_level: bool = True
+) -> Optional[tuple[int, int, str]]:
+    """Find a (symbol \"name\" ...) block inside kicad_symbol_lib.
 
     Returns (start, end, block_text) or None.
-    Only matches top-level symbols (nesting level 1 inside kicad_symbol_lib),
-    not subsymbols like name_0_1 or name_1_1.
+    Only matches the main symbol (name), not subsymbols (name_0_1).
+    
+    When *require_top_level* is True (default), only matches symbols at
+    nesting level 1 directly inside ``(kicad_symbol_lib ...)``.
+    When False, matches at any nesting level >= 1 inside the library.
     """
     pattern = re.compile(r'\(symbol "' + re.escape(name) + r'"')
     for m in pattern.finditer(content):
         pos = m.start()
-        # Check nesting level — must be 1 (inside kicad_symbol_lib)
+        # Calculate nesting level at this position
         depth = 0
         for i in range(pos):
             if content[i] == "(":
                 depth += 1
             elif content[i] == ")":
                 depth -= 1
-        if depth != 1:
+        # Must be inside kicad_symbol_lib (depth >= 1), not outside
+        if depth < 1:
+            continue
+        if require_top_level and depth != 1:
             continue
         # Make sure it's not a subsymbol (name_0_1, name_1_1, etc.)
         after_quote = pos + len(m.group(0))
@@ -57,15 +65,21 @@ def _find_symbol_block(content: str, name: str) -> Optional[tuple[int, int, str]
 
 
 def _find_lib_close(content: str) -> int:
-    """Find the closing ) of (kicad_symbol_lib ...)."""
-    depth = 0
-    for i in range(len(content)):
-        if content[i] == "(":
-            depth += 1
-        elif content[i] == ")":
-            depth -= 1
-            if depth == 0:
-                return i
+    """Find insertion point before the library's closing paren.
+    
+    Scans backwards line-by-line.  The last line whose only non-whitespace
+    character is ``)`` is treated as the library close — symbols are
+    inserted just above it.
+    """
+    lines = content.split("\n")
+    for lineno in range(len(lines) - 1, -1, -1):
+        stripped = lines[lineno].strip()
+        if stripped == ")":
+            # Insert before this line
+            pos = 0
+            for i in range(lineno):
+                pos += len(lines[i]) + 1  # +1 for \n
+            return pos  # index of \n before the closing ) line
     return len(content) - 1
 
 
@@ -106,7 +120,7 @@ class LibraryManagementCommands:
             return {"success": False, "error": f"Source library not found: {src_path}"}
 
         src_content = src.read_text(encoding="utf-8")
-        found = _find_symbol_block(src_content, symbol_name)
+        found = _find_symbol_block(src_content, symbol_name, require_top_level=False)
         if not found:
             return {"success": False, "error": f"Symbol '{symbol_name}' not found in {src_path}"}
 
@@ -130,7 +144,7 @@ class LibraryManagementCommands:
             )
 
         # Check for duplicate
-        if _find_symbol_block(tgt_content, new_name):
+        if _find_symbol_block(tgt_content, new_name, require_top_level=False):
             if not overwrite:
                 return {
                     "success": False,
@@ -183,7 +197,7 @@ class LibraryManagementCommands:
             return {"success": False, "error": f"Library not found: {lib_path}"}
 
         content = lib.read_text(encoding="utf-8")
-        found = _find_symbol_block(content, symbol_name)
+        found = _find_symbol_block(content, symbol_name, require_top_level=False)
         if not found:
             return {"success": False, "error": f"Symbol '{symbol_name}' not found in {lib_path}"}
 
@@ -240,11 +254,11 @@ class LibraryManagementCommands:
             return {"success": False, "error": f"Library not found: {lib_path}"}
 
         content = lib.read_text(encoding="utf-8")
-        found = _find_symbol_block(content, old_name)
+        found = _find_symbol_block(content, old_name, require_top_level=False)
         if not found:
             return {"success": False, "error": f"Symbol '{old_name}' not found in {lib_path}"}
 
-        if _find_symbol_block(content, new_name):
+        if _find_symbol_block(content, new_name, require_top_level=False):
             return {"success": False, "error": f"Symbol '{new_name}' already exists in {lib_path}"}
 
         start, end, block = found
@@ -316,7 +330,7 @@ class LibraryManagementCommands:
 
     def _remove_symbol_from_content(self, content: str, name: str) -> str:
         """Remove a symbol block from library content."""
-        found = _find_symbol_block(content, name)
+        found = _find_symbol_block(content, name, require_top_level=False)
         if not found:
             return content
         start, end, _ = found
