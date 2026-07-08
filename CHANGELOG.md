@@ -36,6 +36,29 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`assign_net_to_class` and `check_clearance` now actually work — both were
+  registered MCP tools with no backend**: found while auditing DRC/design-rule
+  documentation coverage. Both had a full Zod schema in `design-rules.ts` and
+  were listed in the router's `drc` category, but neither had an entry in
+  `kicad_interface.py`'s command dispatch table, so every call silently
+  returned `{"success": false, "message": "Unknown command: ..."}`.
+  `assign_net_to_class` now assigns an existing net to an existing net class,
+  mirroring `create_netclass`'s dual-write shape (best-effort in-memory
+  `NETINFO_ITEM.SetClass` plus a durable write to the project's
+  `net_settings.netclass_assignments`, since KiCad 7+ keeps net-class
+  membership in `.kicad_pro`, not the board — same reasoning as #302).
+  `check_clearance` resolves two items by UUID (or reference, for
+  components) and measures the gap between their bounding boxes against the
+  board's minimum clearance — the same AABB approximation
+  `check_courtyard_overlaps` already uses, not a substitute for a full
+  `run_drc`. Also removed the dead duplicate `add_net_class` tool (it
+  overlapped with the already-working `create_netclass`, which had more
+  capability than its own TS schema exposed — `create_netclass` now also
+  accepts `uviaDiameter`, `uviaDrill`, `diffPairWidth`, `diffPairGap`, and
+  `nets`). `set_layer_constraints` remains registered but unimplemented —
+  real per-layer constraints need KiCad's `.kicad_dru` custom-rules text
+  format, a differently-shaped fix left for a follow-up.
+
 - **`import_ses` no longer creates phantom slashless nets — routed tracks bind
   to the real board nets** (#246): KiCad global-label nets are named with a
   leading `/` (e.g. `/GND`), but a Specctra DSN round-trip through Freerouting
@@ -173,7 +196,7 @@ load on every KiCad 10.0.x build.
   dynamic loader (and the legacy fallback was removed in #288), so the seeds only
   leaked into user files. Both tools now copy a new blank KiCad 10 template
   (`python/templates/blank.kicad_sch`: `(version 20260101) (generator
-  "eeschema")`, empty `lib_symbols`, no placed symbols).
+"eeschema")`, empty `lib_symbols`, no placed symbols).
   `template_with_symbols.kicad_sch` is kept unchanged in-repo as a test fixture.
   A regression test asserts a created schematic contains no `_TEMPLATE_`
   references and no seeded `lib_symbols` entries.

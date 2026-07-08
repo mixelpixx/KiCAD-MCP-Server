@@ -93,7 +93,6 @@ export const toolCategories: ToolCategory[] = [
       "set_design_rules",
       "get_design_rules",
       "run_drc",
-      "add_net_class",
       "assign_net_to_class",
       "set_layer_constraints",
       "check_clearance",

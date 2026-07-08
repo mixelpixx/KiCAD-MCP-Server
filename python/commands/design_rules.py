@@ -3,10 +3,13 @@ Design rules command implementations for KiCAD interface
 """
 
 import logging
+import math
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pcbnew
+from commands.routing import persist_net_assignment_to_project
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 
 logger = logging.getLogger("kicad_interface")
@@ -170,6 +173,244 @@ class DesignRuleCommands:
                 "message": "Failed to get design rules",
                 "errorDetails": str(e),
             }
+
+    def assign_net_to_class(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Assign an existing net to an existing net class.
+
+        Mirrors ``RoutingCommands.create_netclass``'s dual-write shape: a
+        best-effort in-memory ``NETINFO_ITEM.SetClass`` for the live SWIG
+        session, plus a durable write to the project's
+        ``net_settings.netclass_assignments`` (KiCad 7+ net-class membership
+        lives in ``.kicad_pro``, not the ``.kicad_pcb`` the SWIG board save
+        writes — same reasoning as issue #302).
+        """
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first",
+                }
+
+            net_name = params.get("net")
+            class_name = params.get("netClass")
+
+            if not net_name or not class_name:
+                return {
+                    "success": False,
+                    "message": "Missing parameters",
+                    "errorDetails": "net and netClass are both required",
+                }
+
+            netinfo = self.board.GetNetInfo()
+            nets_map = netinfo.NetsByName()
+            if not nets_map.has_key(net_name):
+                return {
+                    "success": False,
+                    "message": f"Net not found: {net_name}",
+                    "errorDetails": f"'{net_name}' does not exist on the board",
+                }
+            net = nets_map[net_name]
+
+            # KiCad 6/7 returns NETCLASSES with .Find; KiCad 9/10 returns a
+            # dict-like netclasses_map. Same defensive lookup as create_netclass.
+            net_classes = self.board.GetNetClasses()
+            resolved = None
+            if hasattr(net_classes, "Find"):
+                resolved = net_classes.Find(class_name)
+            else:
+                try:
+                    if class_name in net_classes:
+                        resolved = net_classes[class_name]
+                except Exception:
+                    resolved = None
+
+            if resolved is None:
+                return {
+                    "success": False,
+                    "message": f"Net class not found: {class_name}",
+                    "errorDetails": f"Create it first with create_netclass (got '{class_name}')",
+                }
+
+            in_memory_warning = None
+            try:
+                net.SetClass(resolved)
+            except Exception as exc:
+                in_memory_warning = f"in-memory net class assignment failed: {exc}"
+                logger.warning("assign_net_to_class: %s", in_memory_warning)
+
+            pro_path = None
+            try:
+                board_path = self.board.GetFileName()
+                if board_path and board_path.endswith(".kicad_pcb"):
+                    pro_path = str(Path(board_path).with_suffix(".kicad_pro"))
+            except Exception:
+                pro_path = None
+
+            persist = persist_net_assignment_to_project(pro_path, net_name, class_name)
+
+            warnings = [w for w in (in_memory_warning, persist.get("warning")) if w]
+            if in_memory_warning and not persist.get("persisted"):
+                # Neither the live board nor the project file received the assignment.
+                return {
+                    "success": False,
+                    "message": "Failed to assign net to class",
+                    "errorDetails": "; ".join(warnings),
+                }
+
+            result = {
+                "success": True,
+                "message": f"Assigned net {net_name} to class {class_name}",
+                "net": net_name,
+                "netClass": class_name,
+                "persisted": persist.get("persisted", False),
+            }
+            if persist.get("projectFile"):
+                result["projectFile"] = persist["projectFile"]
+            if warnings:
+                result["warning"] = "; ".join(warnings)
+            return result
+
+        except Exception as e:
+            logger.error(f"Error assigning net to class: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to assign net to class",
+                "errorDetails": str(e),
+            }
+
+    def check_clearance(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Check the measured clearance between two PCB items against the board's
+        minimum clearance design rule.
+
+        Items resolve to an axis-aligned bounding box (``GetBoundingBox()``) —
+        the same AABB approximation ``check_courtyard_overlaps`` already uses
+        for footprint-to-footprint checks. This is approximate for
+        non-rectangular/angled items (e.g. a circular pad's bbox is its
+        bounding square, an angled track's bbox is larger than the track
+        itself), so it can read closer than the true clearance never further.
+        It is a fast ad-hoc check, not a substitute for a full DRC run
+        (``run_drc`` / ``get_drc_violations``), which uses KiCad's exact
+        polygon-based clearance resolver.
+
+        Item resolution supports ``id`` (item UUID) for any type, and
+        ``reference`` for ``type: "component"``. Position-based lookup is not
+        supported in this version — callers should query the item's UUID
+        first (e.g. via ``query_traces`` / ``get_component_pads``).
+        """
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first",
+                }
+
+            item1_spec = params.get("item1")
+            item2_spec = params.get("item2")
+            if not item1_spec or not item2_spec:
+                return {
+                    "success": False,
+                    "message": "Missing parameters",
+                    "errorDetails": "item1 and item2 are both required",
+                }
+
+            item1, err1 = self._resolve_clearance_item(item1_spec)
+            if err1:
+                return {
+                    "success": False,
+                    "message": "Could not resolve item1",
+                    "errorDetails": err1,
+                }
+            item2, err2 = self._resolve_clearance_item(item2_spec)
+            if err2:
+                return {
+                    "success": False,
+                    "message": "Could not resolve item2",
+                    "errorDetails": err2,
+                }
+
+            scale = 1000000  # nm to mm
+            distance_mm = self._bbox_gap_nm(item1.GetBoundingBox(), item2.GetBoundingBox()) / scale
+
+            required_mm = self.board.GetDesignSettings().m_MinClearance / scale
+
+            return {
+                "success": True,
+                "actualClearance": round(distance_mm, 6),
+                "requiredClearance": round(required_mm, 6),
+                "meetsRequirement": distance_mm >= required_mm,
+                "unit": "mm",
+            }
+
+        except Exception as e:
+            logger.error(f"Error checking clearance: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to check clearance",
+                "errorDetails": str(e),
+            }
+
+    def _resolve_clearance_item(self, spec: Dict[str, Any]) -> Tuple[Optional[Any], Optional[str]]:
+        """Resolve a ``check_clearance`` item spec to a board item.
+
+        Returns ``(item, None)`` on success or ``(None, error_message)`` on
+        failure. Supports ``id`` (UUID, any type) and ``reference``
+        (``type: "component"`` only).
+        """
+        item_type = spec.get("type")
+        item_id = spec.get("id")
+        reference = spec.get("reference")
+
+        if item_type == "component":
+            if reference:
+                fp = self.board.FindFootprintByReference(reference)
+                if fp:
+                    return fp, None
+                return None, f"component '{reference}' not found"
+            if item_id:
+                for fp in self.board.GetFootprints():
+                    if fp.m_Uuid.AsString() == item_id:
+                        return fp, None
+                return None, f"component with id '{item_id}' not found"
+            return None, "component requires 'reference' or 'id'"
+
+        if item_type in ("track", "via"):
+            if not item_id:
+                return None, f"{item_type} requires 'id' (position lookup is not supported)"
+            for track in self.board.GetTracks():
+                if track.m_Uuid.AsString() == item_id:
+                    return track, None
+            return None, f"{item_type} with id '{item_id}' not found"
+
+        if item_type == "pad":
+            if not item_id:
+                return None, "pad requires 'id' (position lookup is not supported)"
+            for fp in self.board.GetFootprints():
+                for pad in fp.Pads():
+                    if pad.m_Uuid.AsString() == item_id:
+                        return pad, None
+            return None, f"pad with id '{item_id}' not found"
+
+        if item_type == "zone":
+            if not item_id:
+                return None, "zone requires 'id' (position lookup is not supported)"
+            for zone in self.board.Zones():
+                if zone.m_Uuid.AsString() == item_id:
+                    return zone, None
+            return None, f"zone with id '{item_id}' not found"
+
+        return None, f"unknown item type: {item_type!r}"
+
+    @staticmethod
+    def _bbox_gap_nm(box1: Any, box2: Any) -> float:
+        """Edge-to-edge gap (nm) between two pcbnew ``BOX2I`` bounding boxes.
+
+        Returns 0 when the boxes overlap or touch.
+        """
+        dx = max(0, max(box1.GetLeft() - box2.GetRight(), box2.GetLeft() - box1.GetRight()))
+        dy = max(0, max(box1.GetTop() - box2.GetBottom(), box2.GetTop() - box1.GetBottom()))
+        return math.hypot(dx, dy)
 
     def run_drc(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Run Design Rule Check using kicad-cli"""

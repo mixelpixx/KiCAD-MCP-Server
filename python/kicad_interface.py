@@ -323,14 +323,16 @@ elif KICAD_BACKEND == "ipc" and not USE_IPC_BACKEND:
 # Import command handlers
 try:
     logger.info("Importing command handlers...")
+    from commands.add_library_symbol_property import add_library_symbol_property
+    from commands.add_symbol_property import add_symbol_property
     from commands.board import BoardCommands
     from commands.component import ComponentCommands
     from commands.connection_schematic import ConnectionManager
     from commands.datasheet_manager import DatasheetManager
     from commands.design_rules import DesignRuleCommands
+    from commands.eagle import EagleCommands
     from commands.export import ExportCommands
     from commands.footprint import FootprintCreator
-    from commands.eagle import EagleCommands
     from commands.freerouting import FreeroutingCommands
     from commands.jlcpcb import JLCPCBClient, test_jlcpcb_connection
     from commands.jlcpcb_parts import JLCPCBPartsManager
@@ -350,8 +352,6 @@ try:
     from commands.symbol_creator import SymbolCreator
     from commands.symbol_pins import SymbolPinCommands
     from commands.update_symbol_from_library import update_symbol_from_library
-    from commands.add_library_symbol_property import add_library_symbol_property
-    from commands.add_symbol_property import add_symbol_property
 
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
@@ -501,6 +501,8 @@ class KiCADInterface(SchematicHandlersMixin):
             "get_design_rules": self.design_rule_commands.get_design_rules,
             "run_drc": self.design_rule_commands.run_drc,
             "get_drc_violations": self.design_rule_commands.get_drc_violations,
+            "assign_net_to_class": self.design_rule_commands.assign_net_to_class,
+            "check_clearance": self.design_rule_commands.check_clearance,
             # Export commands
             "export_gerber": self.export_commands.export_gerber,
             "export_pdf": self.export_commands.export_pdf,
