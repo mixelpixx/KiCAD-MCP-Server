@@ -302,7 +302,7 @@ class LibraryManagementCommands:
             return {"success": False, "error": f"Library not found: {lib_path}"}
 
         content = lib.read_text(encoding="utf-8")
-        found = _find_symbol_block(content, symbol_name)
+        found = _find_symbol_block(content, symbol_name, require_top_level=False)
         if not found:
             return {"success": False, "error": f"Symbol '{symbol_name}' not found in {lib_path}"}
 
