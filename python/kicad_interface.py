@@ -349,6 +349,8 @@ try:
     from commands.schematic_hierarchy import SchematicHierarchyCommands
     from commands.symbol_creator import SymbolCreator
     from commands.symbol_pins import SymbolPinCommands
+    from commands.symbol_schematic import SymbolSchematicCommands
+    from commands.library_management import LibraryManagementCommands
     from commands.update_symbol_from_library import update_symbol_from_library
     from commands.add_library_symbol_property import add_library_symbol_property
     from commands.add_symbol_property import add_symbol_property
@@ -411,6 +413,8 @@ class KiCADInterface(SchematicHandlersMixin):
         self.routing_commands = RoutingCommands(self.board)
         self.freerouting_commands = FreeroutingCommands(self.board)
         self.eagle_commands = EagleCommands()
+        self.symbol_schematic_commands = SymbolSchematicCommands()
+        self.library_management_commands = LibraryManagementCommands()
         self.design_rule_commands = DesignRuleCommands(self.board)
         self.export_commands = ExportCommands(self.board)
         self.library_commands = LibraryCommands(self.footprint_library)
@@ -650,6 +654,13 @@ class KiCADInterface(SchematicHandlersMixin):
             "check_freerouting": self.freerouting_commands.check_freerouting,
             # Eagle import commands
             "import_eagle_project": self.eagle_commands.import_eagle_project,
+            # Schematic migration
+            "replace_instance_lib_ids": self.symbol_schematic_commands.replace_instance_lib_ids,
+            # Library management
+            "import_symbol": self.library_management_commands.import_symbol,
+            "export_symbol": self.library_management_commands.export_symbol,
+            "rename_symbol": self.library_management_commands.rename_symbol,
+            "delete_library_symbol": self.library_management_commands.delete_symbol,
         }
 
         logger.info(f"KiCAD interface initialized (backend: {'IPC' if self.use_ipc else 'SWIG'})")
