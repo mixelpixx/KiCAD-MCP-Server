@@ -360,7 +360,7 @@ def test_ipc_capable_command_reconnects_when_kicad_is_running(monkeypatch):
     monkeypatch.setattr(kicad_interface.KiCADProcessManager, "is_running", lambda: True)
     monkeypatch.setitem(
         sys.modules,
-        "kicad_api.ipc_backend",
+        "kicad_mcp.backends.ipc_backend",
         types.SimpleNamespace(IPCBackend=_FakeIPCBackend),
     )
 
@@ -380,7 +380,7 @@ def test_ipc_capable_command_does_not_reconnect_in_strict_swig_mode(monkeypatch)
     monkeypatch.setattr(kicad_interface.KiCADProcessManager, "is_running", lambda: True)
     monkeypatch.setitem(
         sys.modules,
-        "kicad_api.ipc_backend",
+        "kicad_mcp.backends.ipc_backend",
         types.SimpleNamespace(IPCBackend=_ConnectShouldNotBeCalledIPCBackend),
     )
 
@@ -409,7 +409,7 @@ def test_ipc_reconnect_failure_falls_back_to_swig(monkeypatch):
     monkeypatch.setattr(kicad_interface.KiCADProcessManager, "is_running", lambda: True)
     monkeypatch.setitem(
         sys.modules,
-        "kicad_api.ipc_backend",
+        "kicad_mcp.backends.ipc_backend",
         types.SimpleNamespace(IPCBackend=_FailingConnectIPCBackend),
     )
 
@@ -439,7 +439,7 @@ def test_connected_ipc_without_board_api_reports_status_but_board_tools_fallback
     monkeypatch.setattr(kicad_interface.KiCADProcessManager, "is_running", lambda: True)
     monkeypatch.setitem(
         sys.modules,
-        "kicad_api.ipc_backend",
+        "kicad_mcp.backends.ipc_backend",
         types.SimpleNamespace(IPCBackend=_NoBoardIPCBackend),
     )
 
@@ -482,7 +482,7 @@ def test_ui_status_tools_report_live_ipc_backend_status(monkeypatch):
     )
     monkeypatch.setitem(
         sys.modules,
-        "kicad_api.ipc_backend",
+        "kicad_mcp.backends.ipc_backend",
         types.SimpleNamespace(IPCBackend=_FakeIPCBackend),
     )
 

@@ -16,7 +16,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-TEMPLATE_SCH = Path(__file__).parent.parent / "python" / "templates" / "empty.kicad_sch"
+TEMPLATE_SCH = Path(__file__).parent.parent / "src" / "kicad_mcp" / "templates" / "empty.kicad_sch"
 
 # Inline format (single line) – matches what tests previously used
 PLACED_RESISTOR_INLINE = """\

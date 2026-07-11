@@ -22,7 +22,7 @@ from sexpdata import Symbol
 # ---------------------------------------------------------------------------
 _wd_spec = importlib.util.spec_from_file_location(
     "wire_dragger",
-    os.path.join(os.path.dirname(__file__), "..", "python", "commands", "wire_dragger.py"),
+    os.path.join(os.path.dirname(__file__), "..", "src", "kicad_mcp", "commands", "wire_dragger.py"),
 )
 _wd_mod = importlib.util.module_from_spec(_wd_spec)
 
@@ -30,7 +30,7 @@ _wd_mod = importlib.util.module_from_spec(_wd_spec)
 # We stub only the submodule, not the parent package, so that
 # kicad_interface can still import commands.board etc. from disk.
 _pin_locator_mock = MagicMock()
-sys.modules.setdefault("commands.pin_locator", _pin_locator_mock)
+sys.modules.setdefault("kicad_mcp.commands.pin_locator", _pin_locator_mock)
 
 _wd_spec.loader.exec_module(_wd_mod)
 WireDragger = _wd_mod.WireDragger
@@ -201,17 +201,17 @@ def test_rotate_handler_no_crash(tmp_path):
         "skip",
         "resources",
         "schemas",
-        "resources.resource_definitions",
-        "schemas.tool_schemas",
+        "kicad_mcp.resources.resource_definitions",
+        "kicad_mcp.schemas.tool_schemas",
         "annotations",
     )
     _saved_modules = {n: sys.modules.get(n) for n in _stub_modnames}
     try:
         for modname in _stub_modnames:
             sys.modules[modname] = MagicMock()
-        sys.modules["resources.resource_definitions"].RESOURCE_DEFINITIONS = {}
-        sys.modules["resources.resource_definitions"].handle_resource_read = MagicMock()
-        sys.modules["schemas.tool_schemas"].TOOL_SCHEMAS = []
+        sys.modules["kicad_mcp.resources.resource_definitions"].RESOURCE_DEFINITIONS = {}
+        sys.modules["kicad_mcp.resources.resource_definitions"].handle_resource_read = MagicMock()
+        sys.modules["kicad_mcp.schemas.tool_schemas"].TOOL_SCHEMAS = []
 
         _pcbnew = sys.modules["pcbnew"]
         _pcbnew.__file__ = "/fake/pcbnew.so"

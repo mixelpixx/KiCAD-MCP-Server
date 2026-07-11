@@ -108,8 +108,8 @@ class TestHandleAddSchematicNetLabelSnapping:
 
     # -- happy-path: snap to pin -----------------------------------------
 
-    @patch("commands.wire_manager.WireManager.add_label", return_value=True)
-    @patch("commands.pin_locator.PinLocator.get_pin_location", return_value=[42.0, 13.5])
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_label", return_value=True)
+    @patch("kicad_mcp.commands.pin_locator.PinLocator.get_pin_location", return_value=[42.0, 13.5])
     def test_snap_uses_pin_coords(self, mock_pin_loc: Any, mock_add_label: Any) -> None:
         result = self.iface._handle_add_schematic_net_label(
             {
@@ -127,8 +127,8 @@ class TestHandleAddSchematicNetLabelSnapping:
         call_args = mock_add_label.call_args
         assert call_args[0][2] == [42.0, 13.5]  # position positional arg
 
-    @patch("commands.wire_manager.WireManager.add_label", return_value=True)
-    @patch("commands.pin_locator.PinLocator.get_pin_location", return_value=[10.0, 20.0])
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_label", return_value=True)
+    @patch("kicad_mcp.commands.pin_locator.PinLocator.get_pin_location", return_value=[10.0, 20.0])
     def test_snap_ignores_provided_position(self, mock_pin_loc: Any, mock_add_label: Any) -> None:
         """If both position and componentRef/pinNumber are given, pin coords win."""
         result = self.iface._handle_add_schematic_net_label(
@@ -145,7 +145,7 @@ class TestHandleAddSchematicNetLabelSnapping:
 
     # -- error: pin not found --------------------------------------------
 
-    @patch("commands.pin_locator.PinLocator.get_pin_location", return_value=None)
+    @patch("kicad_mcp.commands.pin_locator.PinLocator.get_pin_location", return_value=None)
     def test_snap_unknown_pin_returns_error(self, mock_pin_loc: Any) -> None:
         result = self.iface._handle_add_schematic_net_label(
             {
@@ -172,7 +172,7 @@ class TestHandleAddSchematicNetLabelSnapping:
 
     # -- happy-path: explicit position ------------------------------------
 
-    @patch("commands.wire_manager.WireManager.add_label", return_value=True)
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_label", return_value=True)
     def test_explicit_position_used_when_no_ref(self, mock_add_label: Any) -> None:
         result = self.iface._handle_add_schematic_net_label(
             {
@@ -206,10 +206,10 @@ class TestHandleAddSchematicNetLabelSnapping:
 class TestConnectToNetRicherResponse:
     """connect_to_net now returns coordinates instead of a bare bool."""
 
-    @patch("commands.wire_manager.WireManager.add_label", return_value=True)
-    @patch("commands.wire_manager.WireManager.add_wire", return_value=True)
-    @patch("commands.pin_locator.PinLocator.get_pin_angle", return_value=0.0)
-    @patch("commands.pin_locator.PinLocator.get_pin_location", return_value=[100.0, 50.0])
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_label", return_value=True)
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_wire", return_value=True)
+    @patch("kicad_mcp.commands.pin_locator.PinLocator.get_pin_angle", return_value=0.0)
+    @patch("kicad_mcp.commands.pin_locator.PinLocator.get_pin_location", return_value=[100.0, 50.0])
     def test_success_returns_coordinates(
         self,
         mock_pin_loc: Any,
@@ -228,7 +228,7 @@ class TestConnectToNetRicherResponse:
         assert result["wire_stub"][0] == [100.0, 50.0]
         assert result["wire_stub"][1] == result["label_location"]
 
-    @patch("commands.pin_locator.PinLocator.get_pin_location", return_value=None)
+    @patch("kicad_mcp.commands.pin_locator.PinLocator.get_pin_location", return_value=None)
     def test_unknown_pin_returns_failure_dict(self, mock_pin_loc: Any) -> None:
         from kicad_mcp.commands.connection_schematic import ConnectionManager
 
@@ -236,9 +236,9 @@ class TestConnectToNetRicherResponse:
         assert result["success"] is False
         assert "message" in result
 
-    @patch("commands.wire_manager.WireManager.add_wire", return_value=False)
-    @patch("commands.pin_locator.PinLocator.get_pin_angle", return_value=0.0)
-    @patch("commands.pin_locator.PinLocator.get_pin_location", return_value=[10.0, 20.0])
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_wire", return_value=False)
+    @patch("kicad_mcp.commands.pin_locator.PinLocator.get_pin_angle", return_value=0.0)
+    @patch("kicad_mcp.commands.pin_locator.PinLocator.get_pin_location", return_value=[10.0, 20.0])
     def test_wire_failure_returns_failure_dict(
         self, mock_pin_loc: Any, mock_pin_angle: Any, mock_add_wire: Any
     ) -> None:
@@ -259,7 +259,7 @@ class TestConnectPassthroughUsesDict:
     """connect_passthrough must handle the dict returned by connect_to_net."""
 
     @patch(
-        "commands.connection_schematic.ConnectionManager.connect_to_net",
+        "kicad_mcp.commands.connection_schematic.ConnectionManager.connect_to_net",
         return_value={
             "success": True,
             "pin_location": [0, 0],
@@ -269,7 +269,7 @@ class TestConnectPassthroughUsesDict:
         },
     )
     @patch(
-        "commands.pin_locator.PinLocator.get_all_symbol_pins",
+        "kicad_mcp.commands.pin_locator.PinLocator.get_all_symbol_pins",
         side_effect=[{"1": [0.0, 0.0]}, {"1": [10.0, 10.0]}],
     )
     def test_passthrough_succeeds_with_dict_return(self, mock_pins: Any, mock_connect: Any) -> None:
@@ -282,11 +282,11 @@ class TestConnectPassthroughUsesDict:
         assert len(result["failed"]) == 0
 
     @patch(
-        "commands.connection_schematic.ConnectionManager.connect_to_net",
+        "kicad_mcp.commands.connection_schematic.ConnectionManager.connect_to_net",
         return_value={"success": False, "message": "pin not found"},
     )
     @patch(
-        "commands.pin_locator.PinLocator.get_all_symbol_pins",
+        "kicad_mcp.commands.pin_locator.PinLocator.get_all_symbol_pins",
         side_effect=[{"1": [0.0, 0.0]}, {"1": [10.0, 10.0]}],
     )
     def test_passthrough_records_failure_with_dict_return(

@@ -18,7 +18,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-TEMPLATE_SCH = Path(__file__).parent.parent / "python" / "templates" / "empty.kicad_sch"
+TEMPLATE_SCH = Path(__file__).parent.parent / "src" / "kicad_mcp" / "templates" / "empty.kicad_sch"
 
 # Minimal placed-symbol block used across integration tests
 PLACED_RESISTOR_BLOCK = """\

@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
 
 from kicad_mcp.commands.wire_dragger import EPS, WireDragger, _coords_match, _rotate
 
-TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "python" / "templates" / "empty.kicad_sch"
+TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "src" / "kicad_mcp" / "templates" / "empty.kicad_sch"
 
 
 # ---------------------------------------------------------------------------

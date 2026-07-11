@@ -66,7 +66,7 @@ def test_inline_png_returns_base64_image_data(tmp_path):
     cmd, root, board_path = _make_view_cmd(tmp_path)
     w1, w2, w3 = _patch_kicad_cli(root)
 
-    with w1, w2, w3, patch("commands.board.view._svg_to_png", return_value=_FAKE_PNG):
+    with w1, w2, w3, patch("kicad_mcp.commands.board.view._svg_to_png", return_value=_FAKE_PNG):
         result = cmd.get_board_2d_view(
             {"pcbPath": str(board_path), "format": "png", "responseMode": "inline"}
         )
@@ -85,7 +85,7 @@ def test_export_frames_to_board_area(tmp_path):
     board isn't rendered on a mostly-empty A4 page (kicad-cli's default)."""
     cmd, root, board_path = _make_view_cmd(tmp_path)
     w1, w2, w3 = _patch_kicad_cli(root)
-    with w1, w2 as run, w3, patch("commands.board.view._svg_to_png", return_value=_FAKE_PNG):
+    with w1, w2 as run, w3, patch("kicad_mcp.commands.board.view._svg_to_png", return_value=_FAKE_PNG):
         cmd.get_board_2d_view({"pcbPath": str(board_path), "format": "png"})
     argv = run.call_args[0][0]
     assert "--exclude-drawing-sheet" in argv
@@ -116,7 +116,7 @@ def test_default_response_mode_is_inline(tmp_path):
     cmd, root, board_path = _make_view_cmd(tmp_path)
     w1, w2, w3 = _patch_kicad_cli(root)
 
-    with w1, w2, w3, patch("commands.board.view._svg_to_png", return_value=_FAKE_PNG):
+    with w1, w2, w3, patch("kicad_mcp.commands.board.view._svg_to_png", return_value=_FAKE_PNG):
         result = cmd.get_board_2d_view({"pcbPath": str(board_path), "format": "png"})
 
     assert result["success"] is True
@@ -155,7 +155,7 @@ def test_file_mode_png_writes_file_and_returns_path(tmp_path):
     cmd, root, board_path = _make_view_cmd(tmp_path)
     w1, w2, w3 = _patch_kicad_cli(root)
 
-    with w1, w2, w3, patch("commands.board.view._svg_to_png", return_value=_FAKE_PNG):
+    with w1, w2, w3, patch("kicad_mcp.commands.board.view._svg_to_png", return_value=_FAKE_PNG):
         result = cmd.get_board_2d_view(
             {"pcbPath": str(board_path), "format": "png", "responseMode": "file"}
         )

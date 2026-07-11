@@ -94,7 +94,7 @@ class TestCreateProjectIntegration:
 
         spec = importlib.util.spec_from_file_location(
             "project_module",
-            str(Path(__file__).parent.parent / "python" / "commands" / "project.py"),
+            str(Path(__file__).parent.parent / "src" / "kicad_mcp" / "commands" / "project.py"),
         )
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)

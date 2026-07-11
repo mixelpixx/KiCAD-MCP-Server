@@ -34,7 +34,7 @@ from kicad_mcp.commands.wire_connectivity import (
 # Shared mock helpers
 # ---------------------------------------------------------------------------
 
-TEMPLATE_SCH = Path(__file__).parent.parent / "python" / "templates" / "empty.kicad_sch"
+TEMPLATE_SCH = Path(__file__).parent.parent / "src" / "kicad_mcp" / "templates" / "empty.kicad_sch"
 
 
 def _make_point(x: float, y: float) -> MagicMock:
@@ -196,7 +196,7 @@ class TestListFloatingLabelsCoreLogic:
         sch.symbol = [symbol]
 
         with patch(
-            "commands.pin_locator.PinLocator.get_all_symbol_pins",
+            "kicad_mcp.commands.pin_locator.PinLocator.get_all_symbol_pins",
             return_value={"1": (2.0, 0.0)},
         ):
             result = list_floating_labels(sch, "/tmp/test.kicad_sch")
@@ -220,7 +220,7 @@ class TestListFloatingLabelsCoreLogic:
         sch.symbol = [symbol]
 
         with patch(
-            "commands.pin_locator.PinLocator.get_all_symbol_pins",
+            "kicad_mcp.commands.pin_locator.PinLocator.get_all_symbol_pins",
             return_value={"1": (99.0, 99.0)},
         ):
             result = list_floating_labels(sch, "/tmp/test.kicad_sch")
@@ -244,7 +244,7 @@ class TestListFloatingLabelsCoreLogic:
 
         # Pin is exactly at the label position
         with patch(
-            "commands.pin_locator.PinLocator.get_all_symbol_pins",
+            "kicad_mcp.commands.pin_locator.PinLocator.get_all_symbol_pins",
             return_value={"1": (5.0, 3.0)},
         ):
             result = list_floating_labels(sch, "/tmp/test.kicad_sch")
@@ -268,7 +268,7 @@ class TestListFloatingLabelsCoreLogic:
         sch.symbol = [symbol]
 
         with patch(
-            "commands.pin_locator.PinLocator.get_all_symbol_pins",
+            "kicad_mcp.commands.pin_locator.PinLocator.get_all_symbol_pins",
             return_value={"1": (2.0, 0.0)},
         ):
             result = list_floating_labels(sch, "/tmp/test.kicad_sch")
@@ -291,7 +291,7 @@ class TestListFloatingLabelsCoreLogic:
         sch.symbol = [template_sym]
 
         with patch(
-            "commands.pin_locator.PinLocator.get_all_symbol_pins",
+            "kicad_mcp.commands.pin_locator.PinLocator.get_all_symbol_pins",
             return_value={"1": (0.0, 0.0)},
         ) as mock_pins:
             result = list_floating_labels(sch, "/tmp/test.kicad_sch")
@@ -354,7 +354,7 @@ class TestCountPinsOnNet:
         sch.symbol = [symbol]
         all_wires, iu_to_wires, adj, p2l, l2p = self._build_graph(sch, "/tmp/t.kicad_sch")
         with patch(
-            "commands.pin_locator.PinLocator.get_all_symbol_pins",
+            "kicad_mcp.commands.pin_locator.PinLocator.get_all_symbol_pins",
             return_value={"3": (2.0, 0.0)},
         ):
             count = count_pins_on_net(

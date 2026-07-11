@@ -23,11 +23,40 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import logging
 
+import pytest
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+# Live-KiCAD integration: under pytest, skip the whole module unless a running
+# KiCAD with the IPC API is reachable. (Still runnable directly as a script.)
+pytestmark = pytest.mark.integration
+
+
+def _connect_live_backend() -> Optional[Any]:
+    try:
+        from kicad_mcp.backends.ipc_backend import IPCBackend
+
+        candidate = IPCBackend()
+        return candidate if candidate.connect() else None
+    except Exception:
+        return None
+
+
+_LIVE_BACKEND = _connect_live_backend()
+if _LIVE_BACKEND is None and "pytest" in sys.modules:
+    pytest.skip(
+        "KiCAD with IPC API not running (Preferences > Plugins > Enable IPC API Server)",
+        allow_module_level=True,
+    )
+
+
+@pytest.fixture(scope="module")
+def backend() -> Any:
+    return _LIVE_BACKEND
 
 
 def test_connection() -> Optional[Any]:

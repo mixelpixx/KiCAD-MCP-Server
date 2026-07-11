@@ -30,7 +30,7 @@ sys.modules.setdefault("skip", MagicMock())
 _PYTHON_DIR = Path(__file__).parent.parent / "python"
 sys.path.insert(0, str(_PYTHON_DIR))
 
-_COMMANDS_DIR = _PYTHON_DIR / "commands"
+_COMMANDS_DIR = Path(__file__).parent.parent / "src" / "kicad_mcp" / "commands"
 
 
 def _load(module_name: str, filename: str):
@@ -64,7 +64,7 @@ def _assert_blank(sch_text: str) -> None:
 
 def test_blank_template_file_is_blank():
     """The bundled blank.kicad_sch template itself is empty and KiCad 10."""
-    blank = Path(__file__).parent.parent / "python" / "templates" / "blank.kicad_sch"
+    blank = Path(__file__).parent.parent / "src" / "kicad_mcp" / "templates" / "blank.kicad_sch"
     _assert_blank(blank.read_text(encoding="utf-8"))
 
 

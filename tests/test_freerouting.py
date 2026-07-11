@@ -100,9 +100,9 @@ def _patch_no_runtime() -> Any:
 class TestCheckFreerouting:
     def test_no_java_no_docker(self, cmds: Any) -> None:
         with (
-            patch("commands.freerouting._find_java", return_value=None),
+            patch("kicad_mcp.commands.freerouting._find_java", return_value=None),
             patch(
-                "commands.freerouting._docker_available",
+                "kicad_mcp.commands.freerouting._docker_available",
                 return_value=False,
             ),
         ):
@@ -118,18 +118,18 @@ class TestCheckFreerouting:
         jar.touch()
         with (
             patch(
-                "commands.freerouting._find_java",
+                "kicad_mcp.commands.freerouting._find_java",
                 return_value="/usr/bin/java",
             ),
             patch(
-                "commands.freerouting._java_version_ok",
+                "kicad_mcp.commands.freerouting._java_version_ok",
                 return_value=False,
             ),
             patch(
-                "commands.freerouting._docker_available",
+                "kicad_mcp.commands.freerouting._docker_available",
                 return_value=True,
             ),
-            patch("commands.freerouting.subprocess.run") as mock_run,
+            patch("kicad_mcp.commands.freerouting.subprocess.run") as mock_run,
         ):
             mock_run.return_value = MagicMock(stderr='openjdk version "17.0.1"', stdout="")
             result = cmds.check_freerouting({"freeroutingJar": str(jar)})
@@ -141,18 +141,18 @@ class TestCheckFreerouting:
         jar.touch()
         with (
             patch(
-                "commands.freerouting._find_java",
+                "kicad_mcp.commands.freerouting._find_java",
                 return_value="/usr/bin/java",
             ),
             patch(
-                "commands.freerouting._java_version_ok",
+                "kicad_mcp.commands.freerouting._java_version_ok",
                 return_value=True,
             ),
             patch(
-                "commands.freerouting._docker_available",
+                "kicad_mcp.commands.freerouting._docker_available",
                 return_value=False,
             ),
-            patch("commands.freerouting.subprocess.run") as mock_run,
+            patch("kicad_mcp.commands.freerouting.subprocess.run") as mock_run,
         ):
             mock_run.return_value = MagicMock(stderr='openjdk version "21.0.1"', stdout="")
             result = cmds.check_freerouting({"freeroutingJar": str(jar)})
@@ -264,7 +264,7 @@ class TestAutoroute:
         assert result["success"] is False
         assert "JAR not found" in result["message"]
 
-    @patch("commands.freerouting.subprocess.run")
+    @patch("kicad_mcp.commands.freerouting.subprocess.run")
     def test_dsn_export_fails(self, mock_run: Any, cmds: Any, tmp_path: Any) -> None:
         jar = tmp_path / "freerouting.jar"
         jar.touch()
@@ -276,7 +276,7 @@ class TestAutoroute:
         assert result["success"] is False
         assert "DSN export failed" in result["message"]
 
-    @patch("commands.freerouting.subprocess.run")
+    @patch("kicad_mcp.commands.freerouting.subprocess.run")
     def test_freerouting_timeout(self, mock_run: Any, cmds: Any, tmp_path: Any) -> None:
         import subprocess
 
@@ -300,7 +300,7 @@ class TestAutoroute:
         assert result["success"] is False
         assert "timed out" in result["message"]
 
-    @patch("commands.freerouting.subprocess.run")
+    @patch("kicad_mcp.commands.freerouting.subprocess.run")
     def test_full_success_direct(self, mock_run: Any, cmds: Any, tmp_path: Any) -> None:
         jar = tmp_path / "freerouting.jar"
         jar.touch()
@@ -336,7 +336,7 @@ class TestAutoroute:
         assert result["board_stats"]["vias"] == 1
         assert "elapsed_seconds" in result
 
-    @patch("commands.freerouting.subprocess.run")
+    @patch("kicad_mcp.commands.freerouting.subprocess.run")
     def test_full_success_docker(self, mock_run: Any, cmds: Any, tmp_path: Any) -> None:
         jar = tmp_path / "freerouting.jar"
         jar.touch()
@@ -362,7 +362,7 @@ class TestAutoroute:
         with (
             _patch_docker_mode(),
             patch(
-                "commands.freerouting._find_docker",
+                "kicad_mcp.commands.freerouting._find_docker",
                 return_value="/usr/bin/docker",
             ),
         ):
@@ -375,7 +375,7 @@ class TestAutoroute:
         assert "run" in call_args
         assert "--rm" in call_args
 
-    @patch("commands.freerouting.subprocess.run")
+    @patch("kicad_mcp.commands.freerouting.subprocess.run")
     def test_freerouting_nonzero_exit(self, mock_run: Any, cmds: Any, tmp_path: Any) -> None:
         jar = tmp_path / "freerouting.jar"
         jar.touch()
@@ -407,7 +407,7 @@ class TestAutoroute:
 class TestFindJava:
     def test_finds_via_which(self) -> None:
         with patch(
-            "commands.freerouting.shutil.which",
+            "kicad_mcp.commands.freerouting.shutil.which",
             return_value="/usr/bin/java",
         ):
             assert _find_java() == "/usr/bin/java"
@@ -415,7 +415,7 @@ class TestFindJava:
     def test_none_when_not_found(self) -> None:
         with (
             patch(
-                "commands.freerouting.shutil.which",
+                "kicad_mcp.commands.freerouting.shutil.which",
                 return_value=None,
             ),
             patch("os.path.isfile", return_value=False),
@@ -426,21 +426,21 @@ class TestFindJava:
 class TestFindDocker:
     def test_finds_docker(self) -> None:
         with patch(
-            "commands.freerouting.shutil.which",
+            "kicad_mcp.commands.freerouting.shutil.which",
             side_effect=lambda x: "/usr/bin/docker" if x == "docker" else None,
         ):
             assert _find_docker() == "/usr/bin/docker"
 
     def test_finds_podman(self) -> None:
         with patch(
-            "commands.freerouting.shutil.which",
+            "kicad_mcp.commands.freerouting.shutil.which",
             side_effect=lambda x: "/usr/bin/podman" if x == "podman" else None,
         ):
             assert _find_docker() == "/usr/bin/podman"
 
     def test_none_when_not_found(self) -> None:
         with patch(
-            "commands.freerouting.shutil.which",
+            "kicad_mcp.commands.freerouting.shutil.which",
             return_value=None,
         ):
             assert _find_docker() is None
@@ -450,17 +450,17 @@ class TestDockerAvailable:
     def test_docker_found(self) -> None:
         with (
             patch(
-                "commands.freerouting._find_docker",
+                "kicad_mcp.commands.freerouting._find_docker",
                 return_value="/usr/bin/docker",
             ),
-            patch("commands.freerouting.subprocess.run") as mock_run,
+            patch("kicad_mcp.commands.freerouting.subprocess.run") as mock_run,
         ):
             mock_run.return_value = MagicMock(returncode=0)
             assert _docker_available() is True
 
     def test_docker_not_installed(self) -> None:
         with patch(
-            "commands.freerouting._find_docker",
+            "kicad_mcp.commands.freerouting._find_docker",
             return_value=None,
         ):
             assert _docker_available() is False
@@ -468,10 +468,10 @@ class TestDockerAvailable:
     def test_docker_not_running(self) -> None:
         with (
             patch(
-                "commands.freerouting._find_docker",
+                "kicad_mcp.commands.freerouting._find_docker",
                 return_value="/usr/bin/docker",
             ),
-            patch("commands.freerouting.subprocess.run") as mock_run,
+            patch("kicad_mcp.commands.freerouting.subprocess.run") as mock_run,
         ):
             mock_run.return_value = MagicMock(returncode=1)
             assert _docker_available() is False
@@ -479,18 +479,18 @@ class TestDockerAvailable:
 
 class TestJavaVersionOk:
     def test_java_21(self) -> None:
-        with patch("commands.freerouting.subprocess.run") as mock_run:
+        with patch("kicad_mcp.commands.freerouting.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stderr='openjdk version "21.0.1"', stdout="")
             assert _java_version_ok("/usr/bin/java") is True
 
     def test_java_17(self) -> None:
-        with patch("commands.freerouting.subprocess.run") as mock_run:
+        with patch("kicad_mcp.commands.freerouting.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stderr='openjdk version "17.0.18"', stdout="")
             assert _java_version_ok("/usr/bin/java") is False
 
     def test_java_error(self) -> None:
         with patch(
-            "commands.freerouting.subprocess.run",
+            "kicad_mcp.commands.freerouting.subprocess.run",
             side_effect=Exception("not found"),
         ):
             assert _java_version_ok("/usr/bin/java") is False

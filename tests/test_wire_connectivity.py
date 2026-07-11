@@ -433,10 +433,10 @@ class TestGetWireConnectionsHandlerRefPinMode:
         }
         with (
             patch(
-                "commands.pin_locator.PinLocator.get_pin_location",
+                "kicad_mcp.commands.pin_locator.PinLocator.get_pin_location",
                 return_value=(10.0, 20.0),
             ),
-            patch("commands.wire_connectivity.get_wire_connections", return_value=mock_result),
+            patch("kicad_mcp.commands.wire_connectivity.get_wire_connections", return_value=mock_result),
             patch(
                 "kicad_interface.SchematicManager.load_schematic",
                 return_value=MagicMock(wire=[MagicMock()]),
@@ -450,7 +450,7 @@ class TestGetWireConnectionsHandlerRefPinMode:
     def test_ref_pin_not_found_returns_error(self) -> None:
         handler = self._make_handler()
         with patch(
-            "commands.pin_locator.PinLocator.get_pin_location",
+            "kicad_mcp.commands.pin_locator.PinLocator.get_pin_location",
             return_value=None,
         ):
             result = handler(

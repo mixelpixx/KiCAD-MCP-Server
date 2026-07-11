@@ -24,7 +24,7 @@ from kicad_mcp.commands.schematic_snap import _is_on_grid, _snap_mm, snap_to_gri
 # Shared fixture helpers
 # ---------------------------------------------------------------------------
 
-TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "python" / "templates" / "empty.kicad_sch"
+TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "src" / "kicad_mcp" / "templates" / "empty.kicad_sch"
 
 
 def _make_temp_schematic(extra_sexp: str = "") -> Path:

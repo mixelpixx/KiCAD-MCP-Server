@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 from kicad_mcp.commands.dynamic_symbol_loader import DynamicSymbolLoader  # noqa: E402
 
-TEMPLATES_DIR = Path(__file__).parent.parent / "python" / "templates"
+TEMPLATES_DIR = Path(__file__).parent.parent / "src" / "kicad_mcp" / "templates"
 EMPTY_SCH = TEMPLATES_DIR / "empty.kicad_sch"
 
 

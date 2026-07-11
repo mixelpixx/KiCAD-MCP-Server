@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 pytestmark = pytest.mark.integration  # needs kicad-skip (real 'skip' package)
 
 _TEMPLATE_SCH = (
-    Path(__file__).parent.parent / "python" / "templates" / "template_with_symbols.kicad_sch"
+    Path(__file__).parent.parent / "src" / "kicad_mcp" / "templates" / "template_with_symbols.kicad_sch"
 )
 
 _BLANK_SCH = """(kicad_sch (version 20260101) (generator "eeschema") (generator_version "10.0")

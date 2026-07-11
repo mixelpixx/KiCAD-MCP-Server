@@ -30,8 +30,8 @@ class TestKicad10FootprintDir:
     def test_k10_windows_path_is_discovered(self):
         lm = LibraryManager.__new__(LibraryManager)
         with (
-            patch("commands.library.kicad_install_roots", return_value=[K10_ROOT]),
-            patch("commands.library.os.path.isdir", side_effect=lambda p: p == K10_FOOTPRINTS),
+            patch("kicad_mcp.commands.library.kicad_install_roots", return_value=[K10_ROOT]),
+            patch("kicad_mcp.commands.library.os.path.isdir", side_effect=lambda p: p == K10_FOOTPRINTS),
         ):
             assert lm._find_kicad_footprint_dir() == K10_FOOTPRINTS
 
@@ -39,8 +39,8 @@ class TestKicad10FootprintDir:
         lm = LibraryManager.__new__(LibraryManager)
         monkeypatch.setenv("KICAD10_FOOTPRINT_DIR", "/custom/k10/footprints")
         with (
-            patch("commands.library.kicad_install_roots", return_value=[]),
-            patch("commands.library.os.path.isdir", return_value=True),
+            patch("kicad_mcp.commands.library.kicad_install_roots", return_value=[]),
+            patch("kicad_mcp.commands.library.os.path.isdir", return_value=True),
         ):
             assert lm._find_kicad_footprint_dir() == "/custom/k10/footprints"
 
@@ -50,8 +50,8 @@ class TestKicad10SymbolDir:
     def test_k10_windows_path_is_discovered(self):
         sm = SymbolLibraryManager.__new__(SymbolLibraryManager)
         with (
-            patch("commands.library_symbol.kicad_install_roots", return_value=[K10_ROOT]),
-            patch("commands.library_symbol.os.path.isdir", side_effect=lambda p: p == K10_SYMBOLS),
+            patch("kicad_mcp.commands.library_symbol.kicad_install_roots", return_value=[K10_ROOT]),
+            patch("kicad_mcp.commands.library_symbol.os.path.isdir", side_effect=lambda p: p == K10_SYMBOLS),
         ):
             assert sm._find_kicad_symbol_dir() == K10_SYMBOLS
 
@@ -59,7 +59,7 @@ class TestKicad10SymbolDir:
         sm = SymbolLibraryManager.__new__(SymbolLibraryManager)
         monkeypatch.setenv("KICAD10_SYMBOL_DIR", "/custom/k10/symbols")
         with (
-            patch("commands.library_symbol.kicad_install_roots", return_value=[]),
-            patch("commands.library_symbol.os.path.isdir", return_value=True),
+            patch("kicad_mcp.commands.library_symbol.kicad_install_roots", return_value=[]),
+            patch("kicad_mcp.commands.library_symbol.os.path.isdir", return_value=True),
         ):
             assert sm._find_kicad_symbol_dir() == "/custom/k10/symbols"

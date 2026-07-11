@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-import kicad_mcp.utils as utils.kicad_roots as kr  # noqa: E402
+import kicad_mcp.utils.kicad_roots as kr  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

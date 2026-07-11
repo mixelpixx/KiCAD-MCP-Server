@@ -74,8 +74,8 @@ class TestAddMissingFootprintsFromSchematic:
                     }
                 ],
             ),
-            patch("commands.schematic_handlers.pcbnew") as mock_pcbnew,
-            patch("commands.library.LibraryManager") as mock_lm_cls,
+            patch("kicad_mcp.commands.schematic_handlers.pcbnew") as mock_pcbnew,
+            patch("kicad_mcp.commands.library.LibraryManager") as mock_lm_cls,
         ):
             mock_pcbnew.FootprintLoad.return_value = loaded_module
             lm = MagicMock()
@@ -113,8 +113,8 @@ class TestAddMissingFootprintsFromSchematic:
                     }
                 ],
             ),
-            patch("commands.schematic_handlers.pcbnew"),
-            patch("commands.library.LibraryManager") as mock_lm_cls,
+            patch("kicad_mcp.commands.schematic_handlers.pcbnew"),
+            patch("kicad_mcp.commands.library.LibraryManager") as mock_lm_cls,
         ):
             lm = MagicMock()
             lm.libraries = {"Resistor_SMD": "/fake/Resistor_SMD.pretty"}
@@ -144,8 +144,8 @@ class TestAddMissingFootprintsFromSchematic:
                     {"reference": "#FLG0001", "value": "PWR_FLAG", "footprint": ""},
                 ],
             ),
-            patch("commands.schematic_handlers.pcbnew"),
-            patch("commands.library.LibraryManager") as mock_lm_cls,
+            patch("kicad_mcp.commands.schematic_handlers.pcbnew"),
+            patch("kicad_mcp.commands.library.LibraryManager") as mock_lm_cls,
         ):
             mock_lm_cls.return_value = MagicMock(libraries={})
 
@@ -172,8 +172,8 @@ class TestAddMissingFootprintsFromSchematic:
                 "_extract_components_from_schematic",
                 return_value=[{"reference": "R1", "value": "10k", "footprint": ""}],
             ),
-            patch("commands.schematic_handlers.pcbnew"),
-            patch("commands.library.LibraryManager") as mock_lm_cls,
+            patch("kicad_mcp.commands.schematic_handlers.pcbnew"),
+            patch("kicad_mcp.commands.library.LibraryManager") as mock_lm_cls,
         ):
             mock_lm_cls.return_value = MagicMock(libraries={})
 
@@ -205,8 +205,8 @@ class TestAddMissingFootprintsFromSchematic:
                     }
                 ],
             ),
-            patch("commands.schematic_handlers.pcbnew"),
-            patch("commands.library.LibraryManager") as mock_lm_cls,
+            patch("kicad_mcp.commands.schematic_handlers.pcbnew"),
+            patch("kicad_mcp.commands.library.LibraryManager") as mock_lm_cls,
         ):
             mock_lm_cls.return_value = MagicMock(libraries={})  # MyVendor not present
 

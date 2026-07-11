@@ -115,11 +115,11 @@ class TestLabelAtPinNoWire:
 
         with (
             patch(
-                "commands.pin_locator.PinLocator.get_symbol_pins",
+                "kicad_mcp.commands.pin_locator.PinLocator.get_symbol_pins",
                 return_value={"1": {}},
             ),
             patch(
-                "commands.pin_locator.PinLocator.get_pin_location",
+                "kicad_mcp.commands.pin_locator.PinLocator.get_pin_location",
                 return_value=[5.0, 3.0],  # pin exactly at label position
             ),
         ):
@@ -150,8 +150,8 @@ class TestLabelAtPinNoWire:
             return [0.0, 0.0]
 
         with (
-            patch("commands.pin_locator.PinLocator.get_symbol_pins", side_effect=fake_get_pins),
-            patch("commands.pin_locator.PinLocator.get_pin_location", side_effect=fake_get_pin_loc),
+            patch("kicad_mcp.commands.pin_locator.PinLocator.get_symbol_pins", side_effect=fake_get_pins),
+            patch("kicad_mcp.commands.pin_locator.PinLocator.get_pin_location", side_effect=fake_get_pin_loc),
         ):
             result = ConnectionManager.get_net_connections(
                 sch,
@@ -173,11 +173,11 @@ class TestLabelAtPinNoWire:
 
         with (
             patch(
-                "commands.pin_locator.PinLocator.get_symbol_pins",
+                "kicad_mcp.commands.pin_locator.PinLocator.get_symbol_pins",
                 return_value={"A": {}},
             ),
             patch(
-                "commands.pin_locator.PinLocator.get_pin_location",
+                "kicad_mcp.commands.pin_locator.PinLocator.get_pin_location",
                 return_value=[5.3, 3.0],  # within 0.5 mm
             ),
         ):
@@ -199,11 +199,11 @@ class TestLabelAtPinNoWire:
 
         with (
             patch(
-                "commands.pin_locator.PinLocator.get_symbol_pins",
+                "kicad_mcp.commands.pin_locator.PinLocator.get_symbol_pins",
                 return_value={"B": {}},
             ),
             patch(
-                "commands.pin_locator.PinLocator.get_pin_location",
+                "kicad_mcp.commands.pin_locator.PinLocator.get_pin_location",
                 return_value=[6.0, 3.0],  # 1 mm away — outside 0.5 mm tolerance
             ),
         ):
@@ -236,11 +236,11 @@ class TestLabelViaWire:
 
         with (
             patch(
-                "commands.pin_locator.PinLocator.get_symbol_pins",
+                "kicad_mcp.commands.pin_locator.PinLocator.get_symbol_pins",
                 return_value={"3": {}},
             ),
             patch(
-                "commands.pin_locator.PinLocator.get_pin_location",
+                "kicad_mcp.commands.pin_locator.PinLocator.get_pin_location",
                 return_value=[5.0, 0.0],
             ),
         ):
@@ -265,11 +265,11 @@ class TestLabelViaWire:
 
         with (
             patch(
-                "commands.pin_locator.PinLocator.get_symbol_pins",
+                "kicad_mcp.commands.pin_locator.PinLocator.get_symbol_pins",
                 return_value={"4": {}},
             ),
             patch(
-                "commands.pin_locator.PinLocator.get_pin_location",
+                "kicad_mcp.commands.pin_locator.PinLocator.get_pin_location",
                 return_value=[99.0, 99.0],
             ),
         ):
@@ -322,8 +322,8 @@ class TestMixedStyles:
             return [10.0, 3.0]
 
         with (
-            patch("commands.pin_locator.PinLocator.get_symbol_pins", side_effect=fake_get_pins),
-            patch("commands.pin_locator.PinLocator.get_pin_location", side_effect=fake_get_pin_loc),
+            patch("kicad_mcp.commands.pin_locator.PinLocator.get_symbol_pins", side_effect=fake_get_pins),
+            patch("kicad_mcp.commands.pin_locator.PinLocator.get_pin_location", side_effect=fake_get_pin_loc),
         ):
             result = ConnectionManager.get_net_connections(
                 sch,
@@ -379,11 +379,11 @@ class TestEdgeCases:
 
         with (
             patch(
-                "commands.pin_locator.PinLocator.get_symbol_pins",
+                "kicad_mcp.commands.pin_locator.PinLocator.get_symbol_pins",
                 return_value={"RST": {}},
             ),
             patch(
-                "commands.pin_locator.PinLocator.get_pin_location",
+                "kicad_mcp.commands.pin_locator.PinLocator.get_pin_location",
                 return_value=[7.0, 2.0],
             ),
         ):
@@ -413,8 +413,8 @@ class TestEdgeCases:
             return [0.0, 0.0]
 
         with (
-            patch("commands.pin_locator.PinLocator.get_symbol_pins", side_effect=fake_get_pins),
-            patch("commands.pin_locator.PinLocator.get_pin_location", side_effect=fake_get_pin_loc),
+            patch("kicad_mcp.commands.pin_locator.PinLocator.get_symbol_pins", side_effect=fake_get_pins),
+            patch("kicad_mcp.commands.pin_locator.PinLocator.get_pin_location", side_effect=fake_get_pin_loc),
         ):
             result = ConnectionManager.get_net_connections(
                 sch,

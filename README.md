@@ -13,6 +13,53 @@ https://github.com/mixelpixx/KiCAD-MCP-Server/discussions/73
 >
 > This Python/TypeScript server remains fully open (MIT) and maintained.
 
+---
+
+## v3 preview: pure-Python server (this branch — testers wanted)
+
+This branch (`v2-test`) replaces the TypeScript layer entirely. The server is now a
+single Python process built on the official [MCP Python SDK v2](https://github.com/modelcontextprotocol/python-sdk):
+a tool call is a function call — no Node.js, no npm, no spawned subprocess, no
+JSON-over-stdio plumbing between two runtimes. Same 185 tools, same behavior.
+
+What changed:
+
+- **Install is one step.** No Node 20, no `npm install`, no `npm run build`, no
+  PYTHONPATH setup. Python 3.10+ and `pip install .` is the whole procedure.
+- **stdio and Streamable HTTP transports** (`--transport streamable-http --port 8331`).
+- **Runs without pcbnew.** Schematic, kicad-cli and IPC tools work on any Python.
+  Tools that need the SWIG API return a structured error telling you what to do
+  instead of refusing to start. (Full SWIG support still needs a Python that can
+  import KiCAD's pcbnew, exactly as before.)
+- The old TypeScript path still works unchanged in this branch while testing.
+
+Try it:
+
+```bash
+git clone -b v2-test https://github.com/mixelpixx/KiCAD-MCP-Server.git
+cd KiCAD-MCP-Server
+pip install .
+kicad-mcp-server            # stdio, for Claude Desktop / Claude Code configs
+```
+
+Claude Desktop / Claude Code config:
+
+```json
+{
+  "mcpServers": {
+    "kicad": {
+      "command": "kicad-mcp-server"
+    }
+  }
+}
+```
+
+Please report anything that broke — tool behavior differences, install problems,
+schema oddities — in [Discussions](https://github.com/mixelpixx/KiCAD-MCP-Server/discussions)
+or an issue tagged `v3-beta`.
+
+---
+
 # KiCAD MCP Server
 
 A Model Context Protocol (MCP) server that enables AI assistants like Claude to interact with KiCAD for PCB design automation. Built on the MCP 2025-06-18 specification, this server provides comprehensive tool schemas and real-time project state access for intelligent PCB design workflows.
@@ -23,7 +70,7 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 122 tools across 16 categories with JSON Schema validation
+- 185 tools across 20 categories with JSON Schema validation
 - Smart tool discovery with router pattern (reduces AI context by 70%)
 - 8 dynamic resources exposing project state
 - Complete schematic workflow with 27 tools and dynamic symbol loading (~10,000 symbols)

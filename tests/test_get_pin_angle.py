@@ -49,7 +49,7 @@ sys.modules.setdefault("pcbnew", MagicMock())
 
 _pl_spec = importlib.util.spec_from_file_location(
     "pin_locator_under_test",
-    os.path.join(_PYTHON_DIR, "commands", "pin_locator.py"),
+    os.path.join(_PYTHON_DIR, "..", "src", "kicad_mcp", "commands", "pin_locator.py"),
 )
 _pl_mod = importlib.util.module_from_spec(_pl_spec)
 _pl_spec.loader.exec_module(_pl_mod)
@@ -57,7 +57,7 @@ PinLocator = _pl_mod.PinLocator
 
 _wd_spec = importlib.util.spec_from_file_location(
     "wire_dragger_under_test",
-    os.path.join(_PYTHON_DIR, "commands", "wire_dragger.py"),
+    os.path.join(_PYTHON_DIR, "..", "src", "kicad_mcp", "commands", "wire_dragger.py"),
 )
 _wd_mod = importlib.util.module_from_spec(_wd_spec)
 _wd_spec.loader.exec_module(_wd_mod)

@@ -21,7 +21,7 @@ from sexpdata import Symbol
 PYTHON_DIR = Path(__file__).parent.parent / "python"
 sys.path.insert(0, str(PYTHON_DIR))
 
-TEMPLATES_DIR = PYTHON_DIR / "templates"
+TEMPLATES_DIR = PYTHON_DIR.parent / "src" / "kicad_mcp" / "templates"
 EMPTY_SCH = TEMPLATES_DIR / "empty.kicad_sch"
 
 
@@ -211,7 +211,7 @@ class TestHandleAddSchematicWireRouting:
         # cleanup
         shutil.rmtree(self.sch_path.parent, ignore_errors=True)
 
-    @patch("commands.wire_manager.WireManager.add_wire", return_value=True)
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_wire", return_value=True)
     def test_two_waypoints_calls_add_wire(self, mock_add_wire: Any) -> None:
         result = self.iface._handle_add_schematic_wire(
             {
@@ -226,7 +226,7 @@ class TestHandleAddSchematicWireRouting:
         assert args[1] == [10.0, 20.0]
         assert args[2] == [30.0, 20.0]
 
-    @patch("commands.wire_manager.WireManager.add_polyline_wire", return_value=True)
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_polyline_wire", return_value=True)
     def test_four_waypoints_calls_add_polyline_wire(self, mock_poly: Any) -> None:
         result = self.iface._handle_add_schematic_wire(
             {
@@ -250,7 +250,7 @@ class TestHandleAddSchematicWireRouting:
         assert result["success"] is False
         assert "waypoint" in result["message"].lower()
 
-    @patch("commands.wire_manager.WireManager.add_wire", return_value=False)
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_wire", return_value=False)
     def test_failure_response(self, _: Any) -> None:
         result = self.iface._handle_add_schematic_wire(
             {
@@ -298,8 +298,8 @@ class TestPinSnapping:
         yield
         shutil.rmtree(self.sch_path.parent, ignore_errors=True)
 
-    @patch("commands.wire_manager.WireManager.add_wire", return_value=True)
-    @patch("commands.pin_locator.PinLocator.get_all_symbol_pins")
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_wire", return_value=True)
+    @patch("kicad_mcp.commands.pin_locator.PinLocator.get_all_symbol_pins")
     def test_start_point_snapped_within_tolerance(self, mock_pins: Any, mock_wire: Any) -> None:
         """First waypoint within tolerance of a pin should be snapped to pin coords."""
         # get_all_symbol_pins won't be called because symbol list is empty in fixture.
@@ -332,7 +332,7 @@ class TestPinSnapping:
         with patch.object(KiCADInterface, "__init__", lambda self, *a, **kw: None):
             iface = KiCADInterface.__new__(KiCADInterface)
 
-        with patch("commands.wire_manager.WireManager.add_wire", return_value=True) as mw:
+        with patch("kicad_mcp.commands.wire_manager.WireManager.add_wire", return_value=True) as mw:
             result = iface._handle_add_schematic_wire(
                 {
                     "schematicPath": str(self.sch_path),
@@ -352,8 +352,8 @@ class TestPinSnapping:
     def test_snap_disabled_passes_original_coords(self) -> None:
         """With snapToPins=False the handler should not load PinLocator at all."""
         with (
-            patch("commands.wire_manager.WireManager.add_wire", return_value=True) as mw,
-            patch("commands.pin_locator.PinLocator") as mock_locator_cls,
+            patch("kicad_mcp.commands.wire_manager.WireManager.add_wire", return_value=True) as mw,
+            patch("kicad_mcp.commands.pin_locator.PinLocator") as mock_locator_cls,
         ):
             result = self.iface._handle_add_schematic_wire(
                 {
@@ -367,10 +367,10 @@ class TestPinSnapping:
             called_start = mw.call_args[0][1]
             assert called_start == [1.0, 2.0]
 
-    @patch("commands.wire_manager.WireManager.add_wire", return_value=True)
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_wire", return_value=True)
     def test_snap_miss_leaves_coords_unchanged(self, mock_wire: Any) -> None:
         """Point beyond tolerance should not be snapped."""
-        with patch("commands.wire_manager.WireManager.add_wire", return_value=True) as mw:
+        with patch("kicad_mcp.commands.wire_manager.WireManager.add_wire", return_value=True) as mw:
             result = self.iface._handle_add_schematic_wire(
                 {
                     "schematicPath": str(self.sch_path),
@@ -384,11 +384,11 @@ class TestPinSnapping:
             # No snapping info in message
             assert "snapped" not in result.get("message", "")
 
-    @patch("commands.wire_manager.WireManager.add_polyline_wire", return_value=True)
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_polyline_wire", return_value=True)
     def test_intermediate_waypoints_not_snapped(self, mock_poly: Any) -> None:
         """Middle waypoints must remain unchanged even with snapToPins=True."""
         mid = [50.0, 50.0]
-        with patch("commands.wire_manager.WireManager.add_polyline_wire", return_value=True) as mp:
+        with patch("kicad_mcp.commands.wire_manager.WireManager.add_polyline_wire", return_value=True) as mp:
             result = self.iface._handle_add_schematic_wire(
                 {
                     "schematicPath": str(self.sch_path),

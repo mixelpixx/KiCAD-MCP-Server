@@ -184,11 +184,6 @@ if sys.platform == "win32":
 
     logger.info("========================================")
 
-# Add utils directory to path for imports
-utils_dir = os.path.join(os.path.dirname(__file__))
-if utils_dir not in sys.path:
-    sys.path.insert(0, utils_dir)
-
 # Import platform helper and add KiCAD paths
 from kicad_mcp.utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from kicad_mcp.utils.kicad_process import KiCADProcessManager, check_and_launch_kicad
@@ -5743,3 +5738,22 @@ print("ok")
                 "message": f"Failed to get datasheet URL: {str(e)}",
             }
 
+
+
+# ---------------------------------------------------------------------------
+# Process-wide dispatcher singleton for the MCP server toolsets.
+# ---------------------------------------------------------------------------
+_interface_singleton: Optional["KiCADInterface"] = None
+
+
+def get_interface() -> "KiCADInterface":
+    """Return the shared KiCADInterface, creating it on first use.
+
+    The generated toolset wrappers all dispatch through this one instance so
+    session state (loaded board, backend pinning) is shared across tools,
+    exactly as it was for the single Python subprocess the TS host spawned.
+    """
+    global _interface_singleton
+    if _interface_singleton is None:
+        _interface_singleton = KiCADInterface()
+    return _interface_singleton

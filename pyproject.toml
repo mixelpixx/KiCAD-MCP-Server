@@ -1,24 +1,63 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "kicad-mcp-server"
-version = "2.1.0"
-requires-python = ">=3.9"
+version = "3.0.0b1"
+description = "Pure-Python MCP server for KiCAD PCB and schematic design"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "mixelpixx" }]
+keywords = ["kicad", "mcp", "pcb", "eda", "model-context-protocol"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+]
+dependencies = [
+    # Exact pin while the MCP SDK v2 is in beta; relax to >=2,<3 at stable.
+    "mcp==2.0.0b1",
+    "kicad-python>=0.5.0",
+    "sexpdata>=1.0.2",
+    "kicad-skip>=0.1.0",
+    "requests>=2.32.5",
+    "Pillow>=9.0.0",
+    "pydantic>=2.5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/mixelpixx/KiCAD-MCP-Server"
+Issues = "https://github.com/mixelpixx/KiCAD-MCP-Server/issues"
+
+[project.scripts]
+kicad-mcp-server = "kicad_mcp.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"kicad_mcp.annotations" = ["*.json"]
+kicad_mcp = ["templates/*.kicad_sch", "templates/*.kicad_pro"]
 
 [tool.black]
 line-length = 100
-target-version = ["py39"]
+target-version = ["py310"]
 
 [tool.isort]
 profile = "black"
 line_length = 100
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 warn_return_any = false
 warn_unused_configs = true
 check_untyped_defs = false
 disallow_untyped_defs = false
 explicit_package_bases = true
-mypy_path = ".:python"
+mypy_path = "src"
 disable_error_code = [
     "arg-type",
     "attr-defined",
@@ -51,5 +90,5 @@ ignore_missing_imports = true
 # from another module — cannot determine their types. Suppress the resulting has-type
 # noise here so unrelated modules that merely import it are not blocked by it.
 [[tool.mypy.overrides]]
-module = ["commands.schematic_handlers"]
+module = ["kicad_mcp.commands.schematic_handlers"]
 disable_error_code = ["has-type"]

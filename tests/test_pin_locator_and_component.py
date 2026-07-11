@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 PYTHON_DIR = Path(__file__).parent.parent / "python"
-TEMPLATES_DIR = PYTHON_DIR / "templates"
+TEMPLATES_DIR = PYTHON_DIR.parent / "src" / "kicad_mcp" / "templates"
 sys.path.insert(0, str(PYTHON_DIR))
 
 # ---------------------------------------------------------------------------

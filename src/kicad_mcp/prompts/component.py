@@ -1,0 +1,237 @@
+"""Component prompts for KiCAD MCP server.
+
+These prompts guide the LLM in providing assistance with component-related tasks
+in KiCAD PCB design. Ported from src/prompts/component.ts.
+"""
+
+from typing import Annotated, Any
+
+from pydantic import Field
+
+
+def component_selection(
+    requirements: Annotated[
+        str, Field(description="Description of the circuit requirements and constraints")
+    ],
+) -> str:
+    """Suggest appropriate components for a circuit design based on requirements."""
+    return f"""You're helping to select components for a circuit design. Given the following requirements:
+
+{requirements}
+
+Suggest appropriate components with their values, ratings, and footprints. Consider factors like:
+- Power and voltage ratings
+- Current handling capabilities
+- Tolerance requirements
+- Physical size constraints and package types
+- Availability and cost considerations
+- Thermal characteristics
+- Performance specifications
+
+For each component type, recommend specific values and provide a brief explanation of your recommendation. If appropriate, suggest alternatives with different trade-offs."""
+
+
+def component_placement_strategy(
+    components: Annotated[
+        str, Field(description="List of components to be placed on the PCB")
+    ],
+) -> str:
+    """Develop a strategy for optimal component placement on a PCB layout."""
+    return f"""You're helping with component placement for a PCB layout. Here are the components to place:
+
+{components}
+
+Provide a strategy for optimal placement considering:
+
+1. Signal Integrity:
+   - Group related components to minimize signal path length
+   - Keep sensitive signals away from noisy components
+   - Consider appropriate placement for bypass/decoupling capacitors
+
+2. Thermal Management:
+   - Distribute heat-generating components
+   - Ensure adequate spacing for cooling
+   - Placement near heat sinks or vias for thermal dissipation
+
+3. EMI/EMC Concerns:
+   - Separate digital and analog sections
+   - Consider ground plane partitioning
+   - Shield sensitive components
+
+4. Manufacturing and Assembly:
+   - Component orientation for automated assembly
+   - Adequate spacing for rework
+   - Consider component height distribution
+
+Group components functionally and suggest a logical arrangement. If possible, provide a rough sketch or description of component zones."""
+
+
+def component_replacement_analysis(
+    component_info: Annotated[
+        str, Field(description="Information about the component that needs to be replaced")
+    ],
+) -> str:
+    """Find and analyse replacement options for an unavailable or outdated component."""
+    return f"""You're helping to find a replacement for a component that is unavailable or needs to be updated. Here's the original component information:
+
+{component_info}
+
+Consider these factors when suggesting replacements:
+
+1. Electrical Compatibility:
+   - Match or exceed key electrical specifications
+   - Ensure voltage/current/power ratings are compatible
+   - Consider parametric equivalents
+
+2. Physical Compatibility:
+   - Footprint compatibility or adaptation requirements
+   - Package differences and mounting considerations
+   - Size and clearance requirements
+
+3. Performance Impact:
+   - How the replacement might affect circuit performance
+   - Potential need for circuit adjustments
+
+4. Availability and Cost:
+   - Current market availability
+   - Cost comparison with original part
+   - Lead time considerations
+
+Suggest suitable replacement options and explain the advantages and disadvantages of each. Include any circuit modifications that might be necessary."""
+
+
+def component_troubleshooting(
+    issue_description: Annotated[
+        str,
+        Field(description="Description of the component or circuit issue being troubleshooted"),
+    ],
+) -> str:
+    """Systematically troubleshoot an issue with a component or circuit section."""
+    return f"""You're helping to troubleshoot an issue with a component or circuit section in a PCB design. Here's the issue description:
+
+{issue_description}
+
+Use the following systematic approach to diagnose the problem:
+
+1. Component Verification:
+   - Check component values, footprints, and orientation
+   - Verify correct part numbers and specifications
+   - Examine for potential manufacturing defects
+
+2. Circuit Analysis:
+   - Review the schematic for design errors
+   - Check for proper connections and signal paths
+   - Verify power and ground connections
+
+3. Layout Review:
+   - Examine component placement and orientation
+   - Check for adequate clearances
+   - Review trace routing and potential interference
+
+4. Environmental Factors:
+   - Consider temperature, humidity, and other environmental impacts
+   - Check for potential EMI/RFI issues
+   - Review mechanical stress or vibration effects
+
+Based on the available information, suggest likely causes of the issue and recommend specific steps to diagnose and resolve the problem."""
+
+
+def component_sourcing_properties(
+    component_info: Annotated[
+        str,
+        Field(
+            description=(
+                "Description of the component(s) being sourced and which BOM fields need to be "
+                "attached (MPN, distributor part numbers, manufacturer, etc.)."
+            )
+        ),
+    ],
+) -> str:
+    """Attach sourcing and BOM metadata (MPN, distributor part numbers, etc.) to components."""
+    return f"""You are attaching sourcing and BOM metadata to schematic components. Here is the situation:
+
+{component_info}
+
+KiCad symbols carry arbitrary key/value properties on top of the four built-in fields
+(Reference, Value, Footprint, Datasheet). These custom properties are written into
+the .kicad_sch file, are exported by export_bom, and are picked up by JLCPCB / Digi-Key
+sourcing tooling.
+
+Conventional property names (use these so downstream BOM tools recognise them):
+
+  • MPN                — Manufacturer Part Number (canonical)
+  • Manufacturer       — Manufacturer name (e.g. "Yageo", "Murata")
+  • Manufacturer_PN    — Alias some BOM templates expect; mirror MPN if unsure
+  • DigiKey, DigiKey_PN — Digi-Key catalogue number
+  • Mouser_PN          — Mouser catalogue number
+  • LCSC, JLCPCB_PN    — JLCPCB / LCSC part number (used by JLCPCB assembly)
+  • Distributor, Distributor_PN — Generic fallback fields
+  • Voltage            — Working voltage rating (e.g. "50V")
+  • Tolerance          — Tolerance (e.g. "1%", "±5%")
+  • Power              — Power rating (e.g. "0.1W", "1/4W")
+  • Dielectric         — Capacitor dielectric (e.g. "X7R", "C0G", "Y5V")
+  • Temperature_Coefficient — Resistor TC (e.g. "100ppm/°C")
+  • Description        — Free-form human-readable description
+
+Tools to use, in this order:
+
+  1. `list_schematic_components` — confirm which components need updating.
+  2. `get_schematic_component` — inspect what properties are already present
+     (returns ALL property fields, including custom ones).
+  3. `set_schematic_component_property` — attach or update one property at a time
+     when working on a single component.
+  4. `edit_schematic_component` with the `properties` parameter — batch-update
+     many properties on the same component in a single call:
+       properties: {{ MPN: "RC0603FR-0710KL", Manufacturer: "Yageo", Tolerance: "1%" }}
+  5. `remove_schematic_component_property` — delete an obsolete custom field.
+
+Hidden vs visible:
+  • Newly-created custom properties default to hidden — they appear in BOM exports
+    but do NOT clutter the schematic canvas. This is the normal convention for
+    sourcing metadata.
+  • If a value should be displayed (e.g. you want the MPN visible next to the
+    symbol), pass `hide: false` and a sensible `x`/`y` position.
+
+Recommend the right set of properties for the components in the brief, generate
+the actual tool calls (with concrete values), and explain any sourcing trade-offs
+or substitutions you propose."""
+
+
+def component_value_calculation(
+    circuit_requirements: Annotated[
+        str,
+        Field(description="Description of the circuit function and performance requirements"),
+    ],
+) -> str:
+    """Calculate appropriate component values for a specific circuit function."""
+    return f"""You're helping to calculate appropriate component values for a specific circuit function. Here's the circuit description and requirements:
+
+{circuit_requirements}
+
+Follow these steps to determine the optimal component values:
+
+1. Identify the relevant circuit equations and design formulas
+2. Consider the design constraints and performance requirements
+3. Calculate initial component values based on ideal behavior
+4. Adjust for real-world factors:
+   - Component tolerances
+   - Temperature coefficients
+   - Parasitic effects
+   - Available standard values
+
+Present your calculations step-by-step, showing your work and explaining your reasoning. Recommend specific component values, explaining why they're appropriate for this application. If there are multiple valid approaches, discuss the trade-offs between them."""
+
+
+_PROMPTS = [
+    component_selection,
+    component_placement_strategy,
+    component_replacement_analysis,
+    component_troubleshooting,
+    component_sourcing_properties,
+    component_value_calculation,
+]
+
+
+def register(mcp: Any) -> None:
+    for fn in _PROMPTS:
+        mcp.prompt()(fn)

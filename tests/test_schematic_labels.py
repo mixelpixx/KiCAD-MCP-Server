@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
 
-TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "python" / "templates" / "empty.kicad_sch"
+TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "src" / "kicad_mcp" / "templates" / "empty.kicad_sch"
 
 
 def _make_temp_schematic(extra_sexp: str = "") -> Path:

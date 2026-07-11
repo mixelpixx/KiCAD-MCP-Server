@@ -110,7 +110,7 @@ class TestParseVirtualConnectionsPwrFlagHandling:
         }
 
         with patch(
-            "commands.pin_locator.PinLocator.get_all_symbol_pins",
+            "kicad_mcp.commands.pin_locator.PinLocator.get_all_symbol_pins",
             side_effect=lambda path, ref: pin_positions.get(ref, {}),
         ):
             # Pass an empty sexp so the label-parsing branch is a no-op and
@@ -150,7 +150,7 @@ class TestParseVirtualConnectionsPwrFlagHandling:
         }
 
         with patch(
-            "commands.pin_locator.PinLocator.get_all_symbol_pins",
+            "kicad_mcp.commands.pin_locator.PinLocator.get_all_symbol_pins",
             side_effect=lambda path, ref: pin_positions.get(ref, {}),
         ):
             point_to_label, label_to_points = _parse_virtual_connections(sch, "/fake/path", sexp=[])
@@ -189,7 +189,7 @@ class TestParseVirtualConnectionsPwrFlagHandling:
         }
 
         with patch(
-            "commands.pin_locator.PinLocator.get_all_symbol_pins",
+            "kicad_mcp.commands.pin_locator.PinLocator.get_all_symbol_pins",
             side_effect=lambda path, ref: pin_positions.get(ref, {}),
         ):
             point_to_label, label_to_points = _parse_virtual_connections(sch, "/fake/path", sexp=[])

@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 # Helpers shared across tests
 # ---------------------------------------------------------------------------
 
-TEMPLATE_SCH = Path(__file__).parent.parent / "python" / "templates" / "empty.kicad_sch"
+TEMPLATE_SCH = Path(__file__).parent.parent / "src" / "kicad_mcp" / "templates" / "empty.kicad_sch"
 
 # Minimal placed-symbol block we can embed into a schematic for testing
 PLACED_RESISTOR_BLOCK = """\

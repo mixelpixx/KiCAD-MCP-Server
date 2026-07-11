@@ -26,7 +26,7 @@ import pytest
 PYTHON_DIR = Path(__file__).resolve().parent.parent / "python"
 sys.path.insert(0, str(PYTHON_DIR))
 
-TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "python" / "templates" / "empty.kicad_sch"
+TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "src" / "kicad_mcp" / "templates" / "empty.kicad_sch"
 
 
 # ---------------------------------------------------------------------------
@@ -89,8 +89,8 @@ class TestCaseWarningPopulated:
         sch.global_label = []
         return sch
 
-    @patch("commands.wire_manager.WireManager.add_label", return_value=True)
-    @patch("commands.schematic.SchematicManager.load_schematic")
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_label", return_value=True)
+    @patch("kicad_mcp.commands.schematic.SchematicManager.load_schematic")
     def test_case_warning_when_uppercase_exists(self, mock_load: Any, mock_add_label: Any) -> None:
         """Adding 'outp' when 'OUTP' already exists produces a case_warning."""
         mock_load.return_value = self._make_mock_schematic(["OUTP"])
@@ -109,8 +109,8 @@ class TestCaseWarningPopulated:
         assert "OUTP" in result["case_warnings"][0]
         assert "outp" in result["case_warnings"][0]
 
-    @patch("commands.wire_manager.WireManager.add_label", return_value=True)
-    @patch("commands.schematic.SchematicManager.load_schematic")
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_label", return_value=True)
+    @patch("kicad_mcp.commands.schematic.SchematicManager.load_schematic")
     def test_case_warning_when_lowercase_exists(self, mock_load: Any, mock_add_label: Any) -> None:
         """Adding 'OUTP' when 'outp' already exists produces a case_warning."""
         mock_load.return_value = self._make_mock_schematic(["outp"])
@@ -127,8 +127,8 @@ class TestCaseWarningPopulated:
         assert "case_warnings" in result
         assert len(result["case_warnings"]) == 1
 
-    @patch("commands.wire_manager.WireManager.add_label", return_value=True)
-    @patch("commands.schematic.SchematicManager.load_schematic")
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_label", return_value=True)
+    @patch("kicad_mcp.commands.schematic.SchematicManager.load_schematic")
     def test_multiple_case_collisions_all_reported(
         self, mock_load: Any, mock_add_label: Any
     ) -> None:
@@ -147,8 +147,8 @@ class TestCaseWarningPopulated:
         assert "case_warnings" in result
         assert len(result["case_warnings"]) == 3
 
-    @patch("commands.wire_manager.WireManager.add_label", return_value=True)
-    @patch("commands.schematic.SchematicManager.load_schematic")
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_label", return_value=True)
+    @patch("kicad_mcp.commands.schematic.SchematicManager.load_schematic")
     def test_global_label_case_collision_reported(
         self, mock_load: Any, mock_add_label: Any
     ) -> None:
@@ -191,8 +191,8 @@ class TestCaseWarningAbsent:
         sch.global_label = []
         return sch
 
-    @patch("commands.wire_manager.WireManager.add_label", return_value=True)
-    @patch("commands.schematic.SchematicManager.load_schematic")
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_label", return_value=True)
+    @patch("kicad_mcp.commands.schematic.SchematicManager.load_schematic")
     def test_exact_match_no_warning(self, mock_load: Any, mock_add_label: Any) -> None:
         """Adding 'VCC' when 'VCC' already exists is not a case mismatch."""
         mock_load.return_value = self._make_mock_schematic(["VCC"])
@@ -208,8 +208,8 @@ class TestCaseWarningAbsent:
         assert result["success"] is True
         assert "case_warnings" not in result or result.get("case_warnings") == []
 
-    @patch("commands.wire_manager.WireManager.add_label", return_value=True)
-    @patch("commands.schematic.SchematicManager.load_schematic")
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_label", return_value=True)
+    @patch("kicad_mcp.commands.schematic.SchematicManager.load_schematic")
     def test_unrelated_nets_no_warning(self, mock_load: Any, mock_add_label: Any) -> None:
         """Adding a label whose name has no case-insensitive match produces no warning."""
         mock_load.return_value = self._make_mock_schematic(["GND", "VCC", "CLK"])
@@ -225,8 +225,8 @@ class TestCaseWarningAbsent:
         assert result["success"] is True
         assert "case_warnings" not in result or result.get("case_warnings") == []
 
-    @patch("commands.wire_manager.WireManager.add_label", return_value=True)
-    @patch("commands.schematic.SchematicManager.load_schematic")
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_label", return_value=True)
+    @patch("kicad_mcp.commands.schematic.SchematicManager.load_schematic")
     def test_empty_schematic_no_warning(self, mock_load: Any, mock_add_label: Any) -> None:
         """Adding a label to an empty schematic produces no warning."""
         mock_load.return_value = self._make_mock_schematic([])
@@ -242,8 +242,8 @@ class TestCaseWarningAbsent:
         assert result["success"] is True
         assert "case_warnings" not in result or result.get("case_warnings") == []
 
-    @patch("commands.wire_manager.WireManager.add_label", return_value=True)
-    @patch("commands.schematic.SchematicManager.load_schematic")
+    @patch("kicad_mcp.commands.wire_manager.WireManager.add_label", return_value=True)
+    @patch("kicad_mcp.commands.schematic.SchematicManager.load_schematic")
     def test_load_failure_no_warning_but_still_succeeds(
         self, mock_load: Any, mock_add_label: Any
     ) -> None:

@@ -26,7 +26,7 @@ from kicad_mcp.commands.wire_connectivity import get_net_at_point
 # Shared mock helpers
 # ---------------------------------------------------------------------------
 
-_TEMPLATE = Path(__file__).parent.parent / "python" / "templates" / "empty.kicad_sch"
+_TEMPLATE = Path(__file__).parent.parent / "src" / "kicad_mcp" / "templates" / "empty.kicad_sch"
 
 
 def _make_point(x: float, y: float) -> MagicMock:
@@ -294,7 +294,7 @@ class TestGetNetAtPointHandlerSuccess:
         mock_result = {"net_name": "GND", "position": {"x": 10.0, "y": 5.0}, "source": "net_label"}
         with (
             patch("kicad_interface.SchematicManager.load_schematic") as mock_load,
-            patch("commands.wire_connectivity.get_net_at_point", return_value=mock_result),
+            patch("kicad_mcp.commands.wire_connectivity.get_net_at_point", return_value=mock_result),
         ):
             mock_load.return_value = MagicMock()
             result = handler({"schematicPath": "/tmp/test.kicad_sch", "x": 10.0, "y": 5.0})
@@ -308,7 +308,7 @@ class TestGetNetAtPointHandlerSuccess:
         mock_result = {"net_name": None, "position": {"x": 0.0, "y": 0.0}, "source": None}
         with (
             patch("kicad_interface.SchematicManager.load_schematic") as mock_load,
-            patch("commands.wire_connectivity.get_net_at_point", return_value=mock_result),
+            patch("kicad_mcp.commands.wire_connectivity.get_net_at_point", return_value=mock_result),
         ):
             mock_load.return_value = MagicMock()
             result = handler({"schematicPath": "/tmp/test.kicad_sch", "x": 0.0, "y": 0.0})
@@ -322,7 +322,7 @@ class TestGetNetAtPointHandlerSuccess:
         with (
             patch("kicad_interface.SchematicManager.load_schematic") as mock_load,
             patch(
-                "commands.wire_connectivity.get_net_at_point", return_value=mock_result
+                "kicad_mcp.commands.wire_connectivity.get_net_at_point", return_value=mock_result
             ) as mock_fn,
         ):
             mock_load.return_value = MagicMock()

@@ -380,7 +380,7 @@ class TestUpdateSchematicSymbols:
         sch.write_text(_MINIMAL_SCHEMATIC, encoding="utf-8")
 
         with patch(
-            "commands.update_symbol_from_library.DynamicSymbolLoader",
+            "kicad_mcp.commands.update_symbol_from_library.DynamicSymbolLoader",
             return_value=_mock_loader(_R_LIB_BLOCK_V2),
         ):
             result = update_schematic_symbols(sch, "Device")
@@ -402,7 +402,7 @@ class TestUpdateSchematicSymbols:
         sch.write_text(_PWR_SCHEMATIC, encoding="utf-8")
 
         with patch(
-            "commands.update_symbol_from_library.DynamicSymbolLoader",
+            "kicad_mcp.commands.update_symbol_from_library.DynamicSymbolLoader",
             return_value=_mock_loader(_PWR_LIB_BLOCK_V2),
         ):
             result = update_schematic_symbols(sch, "power")
@@ -425,7 +425,7 @@ class TestUpdateSchematicSymbols:
         sch.write_text(_MINIMAL_SCHEMATIC, encoding="utf-8")
 
         with patch(
-            "commands.update_symbol_from_library.DynamicSymbolLoader",
+            "kicad_mcp.commands.update_symbol_from_library.DynamicSymbolLoader",
             return_value=_mock_loader(_R_LIB_BLOCK_V2),
         ):
             update_schematic_symbols(sch, "Device")
@@ -452,7 +452,7 @@ class TestUpdateSchematicSymbols:
         sch.write_text(mirror_sch, encoding="utf-8")
 
         with patch(
-            "commands.update_symbol_from_library.DynamicSymbolLoader",
+            "kicad_mcp.commands.update_symbol_from_library.DynamicSymbolLoader",
             return_value=_mock_loader(_R_LIB_BLOCK_V2),
         ):
             result = update_schematic_symbols(sch, "Device")
@@ -466,7 +466,7 @@ class TestUpdateSchematicSymbols:
         sch.write_text(_MINIMAL_SCHEMATIC, encoding="utf-8")
 
         with patch(
-            "commands.update_symbol_from_library.DynamicSymbolLoader",
+            "kicad_mcp.commands.update_symbol_from_library.DynamicSymbolLoader",
             return_value=_mock_loader(_R_LIB_BLOCK_V2),
         ):
             # Filter to a symbol NOT in the schematic
@@ -487,7 +487,7 @@ class TestUpdateSchematicSymbols:
         sch.write_text(no_lib, encoding="utf-8")
 
         with patch(
-            "commands.update_symbol_from_library.DynamicSymbolLoader",
+            "kicad_mcp.commands.update_symbol_from_library.DynamicSymbolLoader",
             return_value=_mock_loader(_R_LIB_BLOCK),
         ):
             result = update_schematic_symbols(sch, "Device")

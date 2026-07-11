@@ -22,7 +22,7 @@ import sexpdata
 # Helpers
 # ---------------------------------------------------------------------------
 
-TEMPLATES_DIR = Path(__file__).parent.parent / "python" / "templates"
+TEMPLATES_DIR = Path(__file__).parent.parent / "src" / "kicad_mcp" / "templates"
 EMPTY_SCH = TEMPLATES_DIR / "empty.kicad_sch"
 
 # Minimal schematic content used by integration tests
@@ -274,13 +274,13 @@ def _make_handler_under_test(handler_name: str) -> None:
 
     # We monkey-patch sys.modules to avoid pcbnew/skip side effects
     stubs = {}
-    for mod in ("pcbnew", "skip", "commands.schematic"):
+    for mod in ("pcbnew", "skip", "kicad_mcp.commands.schematic"):
         stubs[mod] = types.ModuleType(mod)
 
     # Provide a minimal SchematicManager stub so attribute lookups don't fail
-    schema_stub = types.ModuleType("commands.schematic")
+    schema_stub = types.ModuleType("kicad_mcp.commands.schematic")
     schema_stub.SchematicManager = MagicMock()
-    stubs["commands.schematic"] = schema_stub
+    stubs["kicad_mcp.commands.schematic"] = schema_stub
 
     with patch.dict("sys.modules", stubs):
         # Import just the handlers module in isolation isn't feasible for

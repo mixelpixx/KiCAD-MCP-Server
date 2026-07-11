@@ -20,7 +20,7 @@ sys.modules.setdefault("skip", MagicMock())
 # would otherwise pull in board/component commands that also need pcbnew).
 _spec = importlib.util.spec_from_file_location(
     "schematic_module",
-    os.path.join(os.path.dirname(__file__), "..", "python", "commands", "schematic.py"),
+    os.path.join(os.path.dirname(__file__), "..", "src", "kicad_mcp", "commands", "schematic.py"),
 )
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)

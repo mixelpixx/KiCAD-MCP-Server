@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-TEMPLATES_DIR = Path(__file__).parent.parent / "python" / "templates"
+TEMPLATES_DIR = Path(__file__).parent.parent / "src" / "kicad_mcp" / "templates"
 EMPTY_SCH = TEMPLATES_DIR / "empty.kicad_sch"
 
 

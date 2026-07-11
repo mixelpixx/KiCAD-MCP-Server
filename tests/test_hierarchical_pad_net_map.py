@@ -162,7 +162,7 @@ def iface() -> Any:
 def _call(iface: Any, sch_file: Path, mock_sch: MagicMock):
     with (
         patch("skip.Schematic", return_value=mock_sch),
-        patch("commands.pin_locator.Schematic", return_value=mock_sch),
+        patch("kicad_mcp.commands.pin_locator.Schematic", return_value=mock_sch),
     ):
         return iface._build_hierarchical_pad_net_map(str(sch_file))
 
@@ -372,7 +372,7 @@ class TestMultipleSubsheets:
 
         with (
             patch("skip.Schematic", side_effect=_factory),
-            patch("commands.pin_locator.Schematic", side_effect=_factory),
+            patch("kicad_mcp.commands.pin_locator.Schematic", side_effect=_factory),
         ):
             pad_net_map, net_names = iface._build_hierarchical_pad_net_map(str(top))
 
@@ -404,7 +404,7 @@ class TestMultipleSubsheets:
 
         with (
             patch("skip.Schematic", side_effect=_factory),
-            patch("commands.pin_locator.Schematic", side_effect=_factory),
+            patch("kicad_mcp.commands.pin_locator.Schematic", side_effect=_factory),
         ):
             pad_net_map, _ = iface._build_hierarchical_pad_net_map(str(top))
 

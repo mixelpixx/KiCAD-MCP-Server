@@ -78,7 +78,7 @@ def _extract_pin_to_net(netlist_xml: Path) -> dict:
 def _build_diode_case(tmp: Path, rotation: int) -> tuple[Path, dict]:
     """Place a Device:D, rotate, snap labels, save. Returns (sch_path, expected_map)."""
     sch_path = tmp / f"diode_rot{rotation}.kicad_sch"
-    template = PYTHON_DIR / "templates" / "template_with_symbols.kicad_sch"
+    template = PYTHON_DIR.parent / "src" / "kicad_mcp" / "templates" / "template_with_symbols.kicad_sch"
     shutil.copy(template, sch_path)
 
     sch = SchematicManager.load_schematic(str(sch_path))
@@ -122,7 +122,7 @@ def _apply_mirror_to_file(sch_path: Path, reference: str, axis: str) -> None:
 
 def _build_mirror_case(tmp: Path, axis: str) -> tuple[Path, dict]:
     sch_path = tmp / f"resistor_mirror_{axis}.kicad_sch"
-    template = PYTHON_DIR / "templates" / "template_with_symbols.kicad_sch"
+    template = PYTHON_DIR.parent / "src" / "kicad_mcp" / "templates" / "template_with_symbols.kicad_sch"
     shutil.copy(template, sch_path)
 
     sch = SchematicManager.load_schematic(str(sch_path))
@@ -192,7 +192,7 @@ def _build_diode_rot_mirror_case(tmp: Path, rotation: int, mirror: str) -> tuple
     import sexpdata
 
     sch_path = tmp / f"diode_rot{rotation}_mir{mirror}.kicad_sch"
-    template = PYTHON_DIR / "templates" / "template_with_symbols.kicad_sch"
+    template = PYTHON_DIR.parent / "src" / "kicad_mcp" / "templates" / "template_with_symbols.kicad_sch"
     shutil.copy(template, sch_path)
 
     sch = SchematicManager.load_schematic(str(sch_path))
