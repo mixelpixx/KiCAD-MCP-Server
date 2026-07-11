@@ -853,3 +853,16 @@ class SchematicBatchCommands:
 
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
+
+    def update_symbol_from_library(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Refresh lib_symbols cache entries from the symbol library."""
+        from commands.update_symbol_from_library import update_symbol_from_library
+
+        try:
+            return update_symbol_from_library(params)
+        except Exception as e:
+            logger.error(f"Error in update_symbol_from_library: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}

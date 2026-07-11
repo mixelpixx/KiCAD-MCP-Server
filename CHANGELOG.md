@@ -2,6 +2,81 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
+## [Unreleased]
+
+### New Features
+
+- **Symbol property tools** (#308): `add_symbol_property` adds or updates a
+  custom property (Manufacturer, MPN, LCSC, ...) on a symbol in a
+  `.kicad_sym` library file — the durable, library-wide path for BOM fields.
+  `add_library_symbol_property` does the same on a symbol definition in a
+  schematic's `lib_symbols` cache; note those cache edits are overwritten by
+  a later `update_symbol_from_library` refresh, so the tool descriptions
+  steer callers to the library-file tool first.
+
+- **`update_symbol_from_library` tool** (#291): refresh the cached
+  `lib_symbols` definitions in one schematic, a list of schematics, or every
+  project under a directory from the current `.kicad_sym` library — the
+  programmatic equivalent of KiCad's Update Symbol from Library. Placed
+  instances are preserved (per-pin uuids, references, `instances` blocks);
+  power symbols have their `(power)` wrapper flattened to the schematic
+  layout; mirror-cache symbols (`__m0`, `__m90`, ...) are skipped, with an
+  optional `repairMirrorFromBackup` to restore them from a pre-update
+  backup. Writes go through the canonical formatter.
+
+### Tooling
+
+- **Interface construction smoke test**: a new test constructs
+  `KiCADInterface` with the stubbed pcbnew and asserts every
+  `command_routes` entry is callable, every schema-listed tool has a route,
+  and recently-added tools are present. A route entry referencing a renamed
+  or un-imported handler function passes every module-level test but
+  crashes the server at startup with `NameError` (#308 shipped exactly
+  that); this makes the class unshippable.
+
+### Bug Fixes
+
+- **`import_ses` no longer creates phantom slashless nets — routed tracks bind
+  to the real board nets** (#246): KiCad global-label nets are named with a
+  leading `/` (e.g. `/GND`), but a Specctra DSN round-trip through Freerouting
+  can drop that prefix. `ImportSpecctraSES` then fails its exact-string net
+  lookup and creates a _new_ slashless net (`GND`), leaving `/GND` unconnected
+  and every routed track flagged by DRC. `import_ses` now reconciles the SES
+  before import: a pure `_reconcile_ses_net_names` re-adds the `/` to any
+  `(net "NAME" …)` token that matches a board net only when prefixed (idempotent;
+  names that genuinely have no slash on the board are left untouched), and the
+  repaired copy is imported. Any reconciliation error falls back to importing the
+  original file unchanged; the response reports `netsRemapped`.
+
+- **`add_sheet_pin` finds sheets regardless of line formatting; sheet/text
+  insertion no longer splices mid-line** (#298): `add_hierarchical_sheet`
+  and the wire/label/text insert helper located their insertion point with
+  `content.rfind(...)` — a raw character offset — so on files where the
+  marker does not start its own line (sexpdata-written schematics keep
+  several forms on one line) the new block landed mid-line. `add_sheet_pin`
+  then scanned line-by-line for `(sheet` at the start of a line and could
+  never find such a sheet, failing with "sheet not found" on a sheet that
+  plainly existed. Insertions now snap to a line boundary (breaking the
+  line when the marker shares it), and `add_sheet_pin` scans by character
+  with paren matching, so it also works on files already written with
+  mid-line sheets and on fully minified single-line schematics.
+
+- **`export_dsn`/`autoroute` no longer drop `.kicad_pro` net classes — power
+  nets keep their width** (#302): net-class definitions live in the project
+  file on KiCad 7+, which the headless `pcbnew.LoadBoard()` path never reads,
+  so `ExportSpecctraDSN` exported every net under a single `kicad_default`
+  class at Default width/clearance. The one-call `autoroute` tool re-exports
+  internally, so a 2.0 mm power net was silently handed to Freerouting at
+  0.2 mm signal width. Both tools now rebuild the board's `NET_SETTINGS` from
+  `.kicad_pro` (`net_settings.classes`, `netclass_patterns`, and
+  `netclass_assignments`, via a new `python/utils/project_netclasses.py`)
+  before exporting, so KiCad's own exporter natively emits per-class
+  `(class ...)` blocks, rules, and via padstacks — verified against real
+  KiCad 10 to match a project-loaded GUI export. The tool result now carries
+  a `netClasses` report (`applied` classes, or a `warning` when no project
+  file is found or the classes cannot be applied), so a dropped class is
+  loud instead of silent.
+
 ## [2.3.1] - 2026-07-05
 
 Eight merges since v2.3.0: the entire June scaffolding cluster (#220/#221/
