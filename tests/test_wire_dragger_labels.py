@@ -16,7 +16,7 @@ from sexpdata import Symbol as S
 PYTHON_DIR = Path(__file__).parent.parent / "python"
 sys.path.insert(0, str(PYTHON_DIR))
 
-from commands.wire_dragger import WireDragger  # noqa: E402
+from kicad_mcp.commands.wire_dragger import WireDragger  # noqa: E402
 
 
 def _sch_with_label_on_pin(label_token="label"):

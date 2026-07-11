@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-import utils.seven_zip as sz  # noqa: E402
+import kicad_mcp.utils as utils.seven_zip as sz  # noqa: E402
 
 
 def _make_fake_7z(directory: Path, name: str = None) -> Path:

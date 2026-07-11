@@ -23,7 +23,7 @@ def require_real_pcbnew() -> None:
 def test_project_commands_create_and_load_board_with_real_pcbnew(tmp_path: Path) -> None:
     import pcbnew
 
-    from commands.project import ProjectCommands
+    from kicad_mcp.commands.project import ProjectCommands
 
     version = pcbnew.GetBuildVersion()
     assert version

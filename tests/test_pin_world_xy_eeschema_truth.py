@@ -29,10 +29,10 @@ import pytest
 PYTHON_DIR = Path(__file__).parent.parent / "python"
 sys.path.insert(0, str(PYTHON_DIR))
 
-from commands.component_schematic import ComponentManager  # noqa: E402
-from commands.pin_locator import PinLocator  # noqa: E402
-from commands.schematic import SchematicManager  # noqa: E402
-from commands.wire_dragger import WireDragger  # noqa: E402
+from kicad_mcp.commands.component_schematic import ComponentManager  # noqa: E402
+from kicad_mcp.commands.pin_locator import PinLocator  # noqa: E402
+from kicad_mcp.commands.schematic import SchematicManager  # noqa: E402
+from kicad_mcp.commands.wire_dragger import WireDragger  # noqa: E402
 
 _KICAD_CLI = shutil.which("kicad-cli")
 _DEVICE_LIB = Path("/usr/share/kicad/symbols/Device.kicad_sym")

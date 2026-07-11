@@ -55,7 +55,7 @@ _MINIMAL_SCH = textwrap.dedent("""\
 @pytest.mark.unit
 class TestWireManagerAddText:
     def test_inserts_text_element(self, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -68,7 +68,7 @@ class TestWireManagerAddText:
         assert "(at 50.0 40.0 0)" in content
 
     def test_inserts_before_sheet_instances(self, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -81,7 +81,7 @@ class TestWireManagerAddText:
         assert text_pos < instances_pos
 
     def test_rotation_angle(self, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -92,7 +92,7 @@ class TestWireManagerAddText:
         assert "(at 20.0 20.0 90)" in content
 
     def test_bold_and_italic_flags(self, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -104,7 +104,7 @@ class TestWireManagerAddText:
         assert "(italic yes)" in content
 
     def test_center_justification(self, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -115,7 +115,7 @@ class TestWireManagerAddText:
         assert "(justify center bottom)" in content
 
     def test_custom_font_size(self, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -126,7 +126,7 @@ class TestWireManagerAddText:
         assert "(size 2.54 2.54)" in content
 
     def test_escapes_double_quotes_in_text(self, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -140,7 +140,7 @@ class TestWireManagerAddText:
         """Raw newlines in quoted string literals break kicad-cli's parser
         (silently in eeschema, but kicad-cli sch reports 'Failed to load
         schematic'). They must be escaped to the two-character \\n sequence."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -170,7 +170,7 @@ class TestWireManagerAddText:
         sexpdata.loads(content)
 
     def test_result_is_valid_sexp(self, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -181,7 +181,7 @@ class TestWireManagerAddText:
         sexpdata.loads(sch.read_text(encoding="utf-8"))
 
     def test_no_bold_italic_by_default(self, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -295,7 +295,7 @@ class TestHandleAddSchematicText:
 @pytest.mark.unit
 class TestWireManagerListTexts:
     def test_empty_schematic_returns_empty_list(self, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -305,7 +305,7 @@ class TestWireManagerListTexts:
         assert result == []
 
     def test_lists_added_text(self, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -318,7 +318,7 @@ class TestWireManagerListTexts:
         assert result[0]["position"] == {"x": 10.0, "y": 20.0}
 
     def test_lists_multiple_texts(self, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -331,7 +331,7 @@ class TestWireManagerListTexts:
         assert texts == {"Alpha", "Beta"}
 
     def test_angle_is_preserved(self, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -342,7 +342,7 @@ class TestWireManagerListTexts:
         assert result[0]["angle"] == 90.0
 
     def test_bold_italic_are_preserved(self, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -354,7 +354,7 @@ class TestWireManagerListTexts:
         assert result[0]["italic"] is True
 
     def test_font_size_is_preserved(self, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -365,7 +365,7 @@ class TestWireManagerListTexts:
         assert result[0]["font_size"] == 2.54
 
     def test_nonexistent_file_returns_none(self, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         result = WireManager.list_texts(tmp_path / "nope.kicad_sch")
 
@@ -400,7 +400,7 @@ class TestHandleListSchematicTexts:
         assert result["count"] == 0
 
     def test_returns_all_texts(self, iface, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -413,7 +413,7 @@ class TestHandleListSchematicTexts:
         assert result["count"] == 2
 
     def test_text_filter_substring_match(self, iface, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")
@@ -427,7 +427,7 @@ class TestHandleListSchematicTexts:
         assert result["texts"][0]["text"] == "Power Supply"
 
     def test_text_filter_case_insensitive(self, iface, tmp_path):
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sch = tmp_path / "test.kicad_sch"
         sch.write_text(_MINIMAL_SCH, encoding="utf-8")

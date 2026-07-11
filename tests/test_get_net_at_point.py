@@ -20,7 +20,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands.wire_connectivity import get_net_at_point
+from kicad_mcp.commands.wire_connectivity import get_net_at_point
 
 # ---------------------------------------------------------------------------
 # Shared mock helpers
@@ -73,25 +73,25 @@ class TestGetNetAtPointSchema:
     """Verify the get_net_at_point tool schema is present and well-formed."""
 
     def test_schema_registered(self) -> None:
-        from schemas.tool_schemas import TOOL_SCHEMAS
+        from kicad_mcp.schemas.tool_schemas import TOOL_SCHEMAS
 
         assert "get_net_at_point" in TOOL_SCHEMAS
 
     def test_schema_required_fields(self) -> None:
-        from schemas.tool_schemas import TOOL_SCHEMAS
+        from kicad_mcp.schemas.tool_schemas import TOOL_SCHEMAS
 
         required = TOOL_SCHEMAS["get_net_at_point"]["inputSchema"]["required"]
         assert set(required) == {"schematicPath", "x", "y"}
 
     def test_schema_has_title_and_description(self) -> None:
-        from schemas.tool_schemas import TOOL_SCHEMAS
+        from kicad_mcp.schemas.tool_schemas import TOOL_SCHEMAS
 
         schema = TOOL_SCHEMAS["get_net_at_point"]
         assert schema.get("title")
         assert schema.get("description")
 
     def test_schema_properties(self) -> None:
-        from schemas.tool_schemas import TOOL_SCHEMAS
+        from kicad_mcp.schemas.tool_schemas import TOOL_SCHEMAS
 
         props = TOOL_SCHEMAS["get_net_at_point"]["inputSchema"]["properties"]
         for field in ("schematicPath", "x", "y"):
@@ -354,7 +354,7 @@ class TestGetNetAtPointIntegration:
         shutil.copy(_TEMPLATE, tmp_path / "empty.kicad_sch")
         sch_path = str(tmp_path / "empty.kicad_sch")
 
-        from commands.schematic import SchematicManager
+        from kicad_mcp.commands.schematic import SchematicManager
 
         sch = SchematicManager.load_schematic(sch_path)
         result = get_net_at_point(sch, sch_path, 10.0, 10.0)
@@ -380,7 +380,7 @@ class TestGetNetAtPointIntegration:
 """
         sch_path = self._write_schematic(sch_content, tmp_path)
 
-        from commands.schematic import SchematicManager
+        from kicad_mcp.commands.schematic import SchematicManager
 
         sch = SchematicManager.load_schematic(str(sch_path))
         # Query the label position
@@ -401,7 +401,7 @@ class TestGetNetAtPointIntegration:
 """
         sch_path = self._write_schematic(sch_content, tmp_path)
 
-        from commands.schematic import SchematicManager
+        from kicad_mcp.commands.schematic import SchematicManager
 
         sch = SchematicManager.load_schematic(str(sch_path))
         result = get_net_at_point(sch, str(sch_path), 5.0, 5.0)

@@ -42,7 +42,7 @@ class TestAddWireSubSheet:
     """WireManager.add_wire must succeed on hierarchical sub-sheets."""
 
     def setup_method(self) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         self.WireManager = WireManager
 
@@ -97,7 +97,7 @@ class TestAddPolylineWireSubSheet:
     """WireManager.add_polyline_wire must succeed on hierarchical sub-sheets."""
 
     def setup_method(self) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         self.WireManager = WireManager
 

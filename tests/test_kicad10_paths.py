@@ -17,8 +17,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands.library import LibraryManager  # noqa: E402
-from commands.library_symbol import SymbolLibraryManager  # noqa: E402
+from kicad_mcp.commands.library import LibraryManager  # noqa: E402
+from kicad_mcp.commands.library_symbol import SymbolLibraryManager  # noqa: E402
 
 K10_ROOT = Path("C:/Program Files/KiCad/10.0")
 K10_FOOTPRINTS = str(K10_ROOT / "share" / "kicad" / "footprints")

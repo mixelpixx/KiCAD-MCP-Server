@@ -329,7 +329,7 @@ def test_run_drc_honors_timeout_sec_param():
     """timeoutSec param must be passed to the subprocess.run timeout argument."""
     import subprocess as _sp
 
-    from commands.design_rules import DesignRuleCommands
+    from kicad_mcp.commands.design_rules import DesignRuleCommands
 
     cmds = DesignRuleCommands(board=_make_healthy_board())
     cmds.board.GetFileName = MagicMock(return_value="/tmp/exists.kicad_pcb")
@@ -357,7 +357,7 @@ def test_run_drc_clamps_extreme_timeout_values():
     """Bad timeoutSec values must be clamped, not crash."""
     import subprocess as _sp
 
-    from commands.design_rules import DesignRuleCommands
+    from kicad_mcp.commands.design_rules import DesignRuleCommands
 
     cmds = DesignRuleCommands(board=_make_healthy_board())
     cmds.board.GetFileName = MagicMock(return_value="/tmp/exists.kicad_pcb")

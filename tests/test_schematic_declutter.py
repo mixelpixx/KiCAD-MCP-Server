@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands.schematic_declutter import (  # noqa: E402
+from kicad_mcp.commands.schematic_declutter import (  # noqa: E402
     _bbox_overlaps,
     _inject_justify_into_effects,
     _justify_for_angle,

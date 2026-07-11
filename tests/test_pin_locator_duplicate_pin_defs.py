@@ -37,7 +37,7 @@ from sexpdata import Symbol
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands.pin_locator import PinLocator  # noqa: E402
+from kicad_mcp.commands.pin_locator import PinLocator  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helper: build a (symbol …) sexp matching the structure KiCad writes

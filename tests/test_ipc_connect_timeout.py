@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 pytestmark = pytest.mark.unit
 
-from kicad_api.ipc_backend import IPCBackend  # noqa: E402
+from kicad_mcp.backends.ipc_backend import IPCBackend  # noqa: E402
 
 
 def test_bounds_a_stuck_dial():

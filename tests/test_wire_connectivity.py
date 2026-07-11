@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 # ---------------------------------------------------------------------------
 # Module under test
 # ---------------------------------------------------------------------------
-from commands.wire_connectivity import (
+from kicad_mcp.commands.wire_connectivity import (
     _build_adjacency,
     _find_connected_wires,
     _parse_wires,
@@ -69,12 +69,12 @@ class TestSchema:
     """Verify the get_wire_connections tool schema is present and well-formed."""
 
     def test_schema_registered(self) -> None:
-        from schemas.tool_schemas import TOOL_SCHEMAS
+        from kicad_mcp.schemas.tool_schemas import TOOL_SCHEMAS
 
         assert "get_wire_connections" in TOOL_SCHEMAS
 
     def test_schema_required_fields(self) -> None:
-        from schemas.tool_schemas import TOOL_SCHEMAS
+        from kicad_mcp.schemas.tool_schemas import TOOL_SCHEMAS
 
         schema = TOOL_SCHEMAS["get_wire_connections"]
         required = schema["inputSchema"]["required"]
@@ -84,7 +84,7 @@ class TestSchema:
         assert "y" not in required
 
     def test_schema_optional_fields(self) -> None:
-        from schemas.tool_schemas import TOOL_SCHEMAS
+        from kicad_mcp.schemas.tool_schemas import TOOL_SCHEMAS
 
         props = TOOL_SCHEMAS["get_wire_connections"]["inputSchema"]["properties"]
         assert "reference" in props
@@ -93,12 +93,12 @@ class TestSchema:
         assert "y" in props
 
     def test_get_pin_net_not_registered(self) -> None:
-        from schemas.tool_schemas import TOOL_SCHEMAS
+        from kicad_mcp.schemas.tool_schemas import TOOL_SCHEMAS
 
         assert "get_pin_net" not in TOOL_SCHEMAS
 
     def test_schema_has_title_and_description(self) -> None:
-        from schemas.tool_schemas import TOOL_SCHEMAS
+        from kicad_mcp.schemas.tool_schemas import TOOL_SCHEMAS
 
         schema = TOOL_SCHEMAS["get_wire_connections"]
         assert schema.get("title")

@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands.routing import (  # noqa: E402
+from kicad_mcp.commands.routing import (  # noqa: E402
     RoutingCommands,
     apply_netclass_to_project_settings,
     persist_netclass_to_project,

@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands.schematic_hierarchy import SchematicHierarchyCommands  # noqa: E402
+from kicad_mcp.commands.schematic_hierarchy import SchematicHierarchyCommands  # noqa: E402
 
 
 def _cmds(iface=None):

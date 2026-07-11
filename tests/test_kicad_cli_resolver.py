@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-import utils.kicad_cli as kc  # noqa: E402
+import kicad_mcp.utils as utils.kicad_cli as kc  # noqa: E402
 
 TEMPLATES_DIR = Path(__file__).parent.parent / "python" / "templates"
 EMPTY_SCH = TEMPLATES_DIR / "empty.kicad_sch"

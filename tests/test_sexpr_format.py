@@ -14,8 +14,8 @@ from sexpdata import Symbol as S
 PYTHON_DIR = Path(__file__).parent.parent / "python"
 sys.path.insert(0, str(PYTHON_DIR))
 
-from commands.wire_dragger import WireDragger  # noqa: E402
-from utils.sexpr_format import dumps, prettify  # noqa: E402
+from kicad_mcp.commands.wire_dragger import WireDragger  # noqa: E402
+from kicad_mcp.utils.sexpr_format import dumps, prettify  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -164,7 +164,7 @@ class TestWriteToolIntegration:
     )
 
     def test_add_wire_writes_canonical_format(self, tmp_path):
-        from commands.wire_manager import WireManager  # noqa: E402
+        from kicad_mcp.commands.wire_manager import WireManager  # noqa: E402
 
         p = tmp_path / "t.kicad_sch"
         p.write_text(self.MINIMAL, encoding="utf-8")

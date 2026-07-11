@@ -424,7 +424,7 @@ class TestAddSheetPin:
         (no newline before (sheet_instances), then add a pin to it."""
         import sexpdata
 
-        from commands.schematic_hierarchy import SchematicHierarchyCommands
+        from kicad_mcp.commands.schematic_hierarchy import SchematicHierarchyCommands
 
         parent = tmp_path / "top.kicad_sch"
         parent.write_text('(kicad_sch (uuid abcd-1234) (sheet_instances (path "/" (page "1"))))')

@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands.add_library_symbol_property import (  # noqa: E402
+from kicad_mcp.commands.add_library_symbol_property import (  # noqa: E402
     add_library_symbol_property,
     _find_symbol_in_lib_symbols,
     _has_property,

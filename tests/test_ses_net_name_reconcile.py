@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands.freerouting import _reconcile_ses_net_names  # noqa: E402
+from kicad_mcp.commands.freerouting import _reconcile_ses_net_names  # noqa: E402
 
 BOARD_NETS = ["", "/GND", "/3V3", "/VIN_FUSED", "SIGNAL_NO_SLASH"]
 

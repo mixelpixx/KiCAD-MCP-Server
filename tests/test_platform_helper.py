@@ -14,7 +14,7 @@ import pytest
 # Add parent directory to path to import utils
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from utils.platform_helper import PlatformHelper, detect_platform
+from kicad_mcp.utils.platform_helper import PlatformHelper, detect_platform
 
 
 class TestPlatformDetection:

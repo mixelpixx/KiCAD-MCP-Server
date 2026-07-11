@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands.eagle import (  # noqa: E402
+from kicad_mcp.commands.eagle import (  # noqa: E402
     EagleCommands,
     _count_dangling_wires,
     _prune_dangling_wires,
@@ -17,7 +17,7 @@ from commands.eagle import (  # noqa: E402
     generate_kicad_sch,
     parse_eagle_schematic,
 )
-from utils.kicad_cli import resolve_kicad_cli  # noqa: E402
+from kicad_mcp.utils.kicad_cli import resolve_kicad_cli  # noqa: E402
 
 FIXTURE = Path(__file__).parent / "fixtures" / "eagle" / "minimal.sch"
 
@@ -66,7 +66,7 @@ def test_minimal_fixture_exports_pdf(tmp_path: Path) -> None:
     parts, instances, net_wires, net_labels, junctions = parse_eagle_schematic(str(FIXTURE))
     sch = tmp_path / "minimal.kicad_sch"
     generate_kicad_sch(parts, instances, net_wires, net_labels, junctions, str(sch))
-    from utils.sexpr_format import prettify
+    from kicad_mcp.utils.sexpr_format import prettify
 
     sch.write_text(prettify(sch.read_text(encoding="utf-8")), encoding="utf-8")
     pdf = tmp_path / "out.pdf"
@@ -94,7 +94,7 @@ def test_import_result_reports_ground_truth_erc(tmp_path: Path) -> None:
     parts, instances, net_wires, net_labels, junctions = parse_eagle_schematic(str(FIXTURE))
     sch = tmp_path / "minimal.kicad_sch"
     generate_kicad_sch(parts, instances, net_wires, net_labels, junctions, str(sch))
-    from utils.sexpr_format import prettify
+    from kicad_mcp.utils.sexpr_format import prettify
 
     sch.write_text(prettify(sch.read_text(encoding="utf-8")), encoding="utf-8")
 

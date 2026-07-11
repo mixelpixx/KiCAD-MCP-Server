@@ -25,7 +25,7 @@ class _V2I:
 
 pcbnew.VECTOR2I = _V2I
 
-from commands.placement_optimizer import PlacementOptimizerCommands as PO  # noqa: E402
+from kicad_mcp.commands.placement_optimizer import PlacementOptimizerCommands as PO  # noqa: E402
 
 
 # ── Fakes ────────────────────────────────────────────────────────────────

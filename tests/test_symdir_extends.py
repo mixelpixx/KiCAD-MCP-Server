@@ -21,7 +21,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands.dynamic_symbol_loader import DynamicSymbolLoader
+from kicad_mcp.commands.dynamic_symbol_loader import DynamicSymbolLoader
 
 
 def _parent_shard(name: str) -> str:

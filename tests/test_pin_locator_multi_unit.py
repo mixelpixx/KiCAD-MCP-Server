@@ -97,7 +97,7 @@ class TestParseSymbolDefinitionUnits:
 
     def test_pins_carry_their_unit(self):
         import sexpdata
-        from commands.pin_locator import PinLocator
+        from kicad_mcp.commands.pin_locator import PinLocator
         from sexpdata import Symbol
 
         sch_data = sexpdata.loads(MULTI_UNIT_SCH)
@@ -127,7 +127,7 @@ class TestMultiUnitPinLocations:
     """Each pin resolves against the placed instance for its own unit (#239)."""
 
     def test_unit1_pin_uses_unit1_position(self, multi_unit_sch):
-        from commands.pin_locator import PinLocator
+        from kicad_mcp.commands.pin_locator import PinLocator
 
         loc = PinLocator().get_pin_location(multi_unit_sch, "U1", "1")
 
@@ -137,7 +137,7 @@ class TestMultiUnitPinLocations:
         assert loc[1] == pytest.approx(94.92)
 
     def test_unit2_pin_uses_unit2_position_not_first_instance(self, multi_unit_sch):
-        from commands.pin_locator import PinLocator
+        from kicad_mcp.commands.pin_locator import PinLocator
 
         loc = PinLocator().get_pin_location(multi_unit_sch, "U1", "5")
 
@@ -148,7 +148,7 @@ class TestMultiUnitPinLocations:
         assert loc[1] != pytest.approx(94.92)
 
     def test_all_pins_split_across_the_two_units(self, multi_unit_sch):
-        from commands.pin_locator import PinLocator
+        from kicad_mcp.commands.pin_locator import PinLocator
 
         pins = PinLocator().get_all_symbol_pins(multi_unit_sch, "U1")
 

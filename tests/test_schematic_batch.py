@@ -12,8 +12,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands import schematic_batch as sb  # noqa: E402
-from commands.schematic_batch import (  # noqa: E402
+from kicad_mcp.commands import schematic_batch as sb  # noqa: E402
+from kicad_mcp.commands.schematic_batch import (  # noqa: E402
     SchematicBatchCommands,
     _bbox_from_pins,
     _field_positions_for_pins,

@@ -45,7 +45,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands.wire_connectivity import (  # noqa: E402
+from kicad_mcp.commands.wire_connectivity import (  # noqa: E402
     _parse_virtual_connections,
     _to_iu,
 )

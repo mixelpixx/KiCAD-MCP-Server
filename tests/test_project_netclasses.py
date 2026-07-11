@@ -18,7 +18,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from utils.project_netclasses import (  # noqa: E402
+from kicad_mcp.utils.project_netclasses import (  # noqa: E402
     apply_net_classes_to_board,
     load_project_net_classes,
 )
@@ -248,7 +248,7 @@ def test_apply_skips_non_numeric_values() -> None:
 # ---------------------------------------------------------------------------
 
 
-from commands.freerouting import FreeroutingCommands  # noqa: E402
+from kicad_mcp.commands.freerouting import FreeroutingCommands  # noqa: E402
 
 
 def test_report_warns_when_project_file_missing(tmp_path: Path) -> None:

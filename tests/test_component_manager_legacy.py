@@ -37,14 +37,14 @@ _BLANK_SCH = """(kicad_sch (version 20260101) (generator "eeschema") (generator_
 
 
 def _load(sch_path: Path):
-    from commands.schematic import SchematicManager
+    from kicad_mcp.commands.schematic import SchematicManager
 
     return SchematicManager.load_schematic(str(sch_path))
 
 
 class TestTemplateClonePathStillWorks:
     def test_add_component_clones_from_placed_template(self):
-        from commands.component_schematic import ComponentManager
+        from kicad_mcp.commands.component_schematic import ComponentManager
 
         with tempfile.TemporaryDirectory() as tmp:
             sch_path = Path(tmp) / "seeded.kicad_sch"
@@ -63,7 +63,7 @@ class TestTemplateClonePathStillWorks:
 
 class TestBlankSchematicFailsClearly:
     def test_error_names_the_production_path(self):
-        from commands.component_schematic import ComponentManager
+        from kicad_mcp.commands.component_schematic import ComponentManager
 
         with tempfile.TemporaryDirectory() as tmp:
             sch_path = Path(tmp) / "blank.kicad_sch"
@@ -85,7 +85,7 @@ class TestBlankSchematicFailsClearly:
     def test_add_component_never_mutates_the_file(self):
         """The removed dynamic branch wrote _TEMPLATE_* symbols into the file
         mid-call. The legacy path must now be read-only with respect to disk."""
-        from commands.component_schematic import ComponentManager
+        from kicad_mcp.commands.component_schematic import ComponentManager
 
         with tempfile.TemporaryDirectory() as tmp:
             sch_path = Path(tmp) / "blank.kicad_sch"

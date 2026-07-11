@@ -19,7 +19,7 @@ import pytest
 sys.modules.setdefault("pcbnew", MagicMock())
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from utils.kicad_project import new_project_settings, write_kicad_pro  # noqa: E402
+from kicad_mcp.utils.kicad_project import new_project_settings, write_kicad_pro  # noqa: E402
 
 pytestmark = pytest.mark.unit
 

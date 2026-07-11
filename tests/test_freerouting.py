@@ -16,7 +16,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from commands.freerouting import (
+from kicad_mcp.commands.freerouting import (
     FreeroutingCommands,
     _docker_available,
     _find_docker,

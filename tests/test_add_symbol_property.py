@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
-from commands.add_symbol_property import add_symbol_property, _has_property, _find_symbol_in_lib
+from kicad_mcp.commands.add_symbol_property import add_symbol_property, _has_property, _find_symbol_in_lib
 
 LIB = """(kicad_symbol_lib (version 20231120) (generator "test")
   (symbol "R" (pin_names hide) (in_bom yes) (on_board yes)

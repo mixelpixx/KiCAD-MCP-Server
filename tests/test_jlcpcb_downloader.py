@@ -21,7 +21,7 @@ PYTHON_DIR = Path(__file__).resolve().parent.parent / "python"
 if str(PYTHON_DIR) not in sys.path:
     sys.path.insert(0, str(PYTHON_DIR))
 
-from commands import jlcpcb_downloader  # noqa: E402
+from kicad_mcp.commands import jlcpcb_downloader  # noqa: E402
 
 
 def _make_cdfer_like_source(path: Path) -> None:

@@ -14,8 +14,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands import symbol_pins  # noqa: E402
-from commands.symbol_pins import SymbolPinCommands, _body_bbox, _parse_symbol_pins  # noqa: E402
+from kicad_mcp.commands import symbol_pins  # noqa: E402
+from kicad_mcp.commands.symbol_pins import SymbolPinCommands, _body_bbox, _parse_symbol_pins  # noqa: E402
 
 # A minimal symbol definition block with two pins, in KiCad lib S-expression form.
 _R_BLOCK = """

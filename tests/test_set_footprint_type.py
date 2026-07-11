@@ -51,7 +51,7 @@ def _make_footprint_mock(attrs=0, excluded_pos=False, excluded_bom=False, board_
 
 def _make_component_commands(fp_mock):
     """Return a ComponentCommands wired to a board holding *fp_mock*."""
-    from commands.component import ComponentCommands
+    from kicad_mcp.commands.component import ComponentCommands
 
     board = MagicMock()
     board.FindFootprintByReference.return_value = fp_mock

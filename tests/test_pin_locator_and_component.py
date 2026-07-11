@@ -46,7 +46,7 @@ class TestAddComponentNoTrailingUnderscore:
             sch_path = Path(tmp) / "test.kicad_sch"
             shutil.copy(_TEMPLATE_SCH, sch_path)
 
-            from commands.component_schematic import ComponentManager
+            from kicad_mcp.commands.component_schematic import ComponentManager
 
             schematic = Schematic(str(sch_path))
             component_def = {
@@ -81,8 +81,8 @@ class TestPinLocatorReferenceRstrip:
 
     def _write_sch_with_underscored_ref(self, sch_path: Path) -> None:
         """Add R1, then mangle the on-disk reference to 'R1_' to simulate the kicad-skip artifact."""
-        from commands.component_schematic import ComponentManager
-        from commands.schematic import SchematicManager
+        from kicad_mcp.commands.component_schematic import ComponentManager
+        from kicad_mcp.commands.schematic import SchematicManager
 
         shutil.copy(_TEMPLATE_SCH, sch_path)
         sch = SchematicManager.load_schematic(str(sch_path))
@@ -99,7 +99,7 @@ class TestPinLocatorReferenceRstrip:
         sch_path.write_text(text, encoding="utf-8")
 
     def test_get_pin_location_finds_symbol_with_trailing_underscore(self):
-        from commands.pin_locator import PinLocator
+        from kicad_mcp.commands.pin_locator import PinLocator
 
         with tempfile.TemporaryDirectory() as tmp:
             sch_path = Path(tmp) / "sch.kicad_sch"
@@ -115,9 +115,9 @@ class TestPinLocatorReferenceRstrip:
         ), "get_pin_location returned None for reference 'R1' when schematic stores 'R1_'"
 
     def test_get_pin_location_returns_none_for_genuinely_missing_symbol(self):
-        from commands.component_schematic import ComponentManager
-        from commands.pin_locator import PinLocator
-        from commands.schematic import SchematicManager
+        from kicad_mcp.commands.component_schematic import ComponentManager
+        from kicad_mcp.commands.pin_locator import PinLocator
+        from kicad_mcp.commands.schematic import SchematicManager
 
         with tempfile.TemporaryDirectory() as tmp:
             sch_path = Path(tmp) / "sch.kicad_sch"

@@ -46,7 +46,7 @@ def test_interface_constructs_and_all_routes_are_callable(iface) -> None:
 def test_every_schema_listed_tool_has_a_route(iface) -> None:
     """tools/list is built from TOOL_SCHEMAS; a schema without a route is a
     tool that advertises itself and then fails on call."""
-    from schemas.tool_schemas import TOOL_SCHEMAS
+    from kicad_mcp.schemas.tool_schemas import TOOL_SCHEMAS
 
     missing = sorted(set(TOOL_SCHEMAS) - set(iface.command_routes))
     assert not missing, f"schema-listed tools with no command route: {missing}"

@@ -53,7 +53,7 @@ class TestAddNetLabelSchema:
 
     @pytest.fixture(autouse=True)
     def load_schemas(self) -> Any:
-        from schemas.tool_schemas import SCHEMATIC_TOOLS
+        from kicad_mcp.schemas.tool_schemas import SCHEMATIC_TOOLS
 
         self.tools = {t["name"]: t for t in SCHEMATIC_TOOLS}
 
@@ -80,7 +80,7 @@ class TestConnectToNetSchema:
 
     @pytest.fixture(autouse=True)
     def load_schemas(self) -> Any:
-        from schemas.tool_schemas import SCHEMATIC_TOOLS
+        from kicad_mcp.schemas.tool_schemas import SCHEMATIC_TOOLS
 
         self.tools = {t["name"]: t for t in SCHEMATIC_TOOLS}
 
@@ -217,7 +217,7 @@ class TestConnectToNetRicherResponse:
         mock_add_wire: Any,
         mock_add_label: Any,
     ) -> None:
-        from commands.connection_schematic import ConnectionManager
+        from kicad_mcp.commands.connection_schematic import ConnectionManager
 
         result = ConnectionManager.connect_to_net(Path("/fake/sch.kicad_sch"), "U1", "5", "VCC")
         assert result["success"] is True
@@ -230,7 +230,7 @@ class TestConnectToNetRicherResponse:
 
     @patch("commands.pin_locator.PinLocator.get_pin_location", return_value=None)
     def test_unknown_pin_returns_failure_dict(self, mock_pin_loc: Any) -> None:
-        from commands.connection_schematic import ConnectionManager
+        from kicad_mcp.commands.connection_schematic import ConnectionManager
 
         result = ConnectionManager.connect_to_net(Path("/fake/sch.kicad_sch"), "U99", "99", "VCC")
         assert result["success"] is False
@@ -242,7 +242,7 @@ class TestConnectToNetRicherResponse:
     def test_wire_failure_returns_failure_dict(
         self, mock_pin_loc: Any, mock_pin_angle: Any, mock_add_wire: Any
     ) -> None:
-        from commands.connection_schematic import ConnectionManager
+        from kicad_mcp.commands.connection_schematic import ConnectionManager
 
         result = ConnectionManager.connect_to_net(Path("/fake/sch.kicad_sch"), "R1", "1", "GND")
         assert result["success"] is False
@@ -273,7 +273,7 @@ class TestConnectPassthroughUsesDict:
         side_effect=[{"1": [0.0, 0.0]}, {"1": [10.0, 10.0]}],
     )
     def test_passthrough_succeeds_with_dict_return(self, mock_pins: Any, mock_connect: Any) -> None:
-        from commands.connection_schematic import ConnectionManager
+        from kicad_mcp.commands.connection_schematic import ConnectionManager
 
         result = ConnectionManager.connect_passthrough(
             Path("/fake/sch.kicad_sch"), "J1", "J2", net_prefix="PIN"
@@ -292,7 +292,7 @@ class TestConnectPassthroughUsesDict:
     def test_passthrough_records_failure_with_dict_return(
         self, mock_pins: Any, mock_connect: Any
     ) -> None:
-        from commands.connection_schematic import ConnectionManager
+        from kicad_mcp.commands.connection_schematic import ConnectionManager
 
         result = ConnectionManager.connect_passthrough(
             Path("/fake/sch.kicad_sch"), "J1", "J2", net_prefix="PIN"

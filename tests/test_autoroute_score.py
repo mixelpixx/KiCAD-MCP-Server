@@ -13,7 +13,7 @@ import pytest
 PYTHON_DIR = Path(__file__).parent.parent / "python"
 sys.path.insert(0, str(PYTHON_DIR))
 
-from commands.freerouting import _score_ses  # noqa: E402
+from kicad_mcp.commands.freerouting import _score_ses  # noqa: E402
 
 
 def _ses(nets, segments, vias=0):

@@ -19,7 +19,7 @@ from sexpdata import Symbol
 # Ensure the python/ package is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
 
-from commands.schematic_analysis import (
+from kicad_mcp.commands.schematic_analysis import (
     _aabb_overlap,
     _check_wire_overlap,
     _compute_symbol_bbox_direct,
@@ -357,7 +357,7 @@ class TestComputeSymbolBbox:
 
     def test_returns_none_for_unknown_symbol(self) -> None:
         tmp = _make_temp_schematic()
-        from commands.pin_locator import PinLocator
+        from kicad_mcp.commands.pin_locator import PinLocator
 
         locator = PinLocator()
         result = compute_symbol_bbox(tmp, "NONEXISTENT", locator)

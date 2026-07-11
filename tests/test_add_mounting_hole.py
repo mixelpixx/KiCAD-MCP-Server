@@ -47,7 +47,7 @@ def fresh_pcbnew_mock(monkeypatch):
 
 @pytest.fixture
 def cmds(fresh_pcbnew_mock):
-    from commands.board.outline import BoardOutlineCommands
+    from kicad_mcp.commands.board.outline import BoardOutlineCommands
 
     board = MagicMock(name="board")
     board.GetFootprints.return_value = []  # no existing MHs

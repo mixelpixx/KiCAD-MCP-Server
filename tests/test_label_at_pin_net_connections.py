@@ -91,7 +91,7 @@ def _make_schematic(
 def _get_connection_manager() -> Any:
     for mod in ["pcbnew", "skip"]:
         sys.modules.setdefault(mod, types.ModuleType(mod))
-    from commands.connection_schematic import ConnectionManager
+    from kicad_mcp.commands.connection_schematic import ConnectionManager
 
     return ConnectionManager
 

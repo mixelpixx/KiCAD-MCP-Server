@@ -15,12 +15,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands.schematic_field_layout import (  # noqa: E402
+from kicad_mcp.commands.schematic_field_layout import (  # noqa: E402
     SchematicFieldLayoutCommands,
     _bbox_overlaps,
     _gather_labels,
 )
-from commands.schematic_text_utils import (  # noqa: E402
+from kicad_mcp.commands.schematic_text_utils import (  # noqa: E402
     _extract_component_properties,
     _extract_property_position,
     _extract_property_visible,

@@ -28,7 +28,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands.library_symbol import SymbolLibraryCommands, SymbolLibraryManager
+from kicad_mcp.commands.library_symbol import SymbolLibraryCommands, SymbolLibraryManager
 
 
 def _make_empty_manager(project_path) -> SymbolLibraryManager:

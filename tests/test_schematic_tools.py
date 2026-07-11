@@ -61,7 +61,7 @@ class TestDeleteWireUnit:
     """Unit-level tests for WireManager.delete_wire."""
 
     def setup_method(self) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         self.WireManager = WireManager
 
@@ -93,7 +93,7 @@ class TestDeleteLabelUnit:
     """Unit-level tests for WireManager.delete_label."""
 
     def setup_method(self) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         self.WireManager = WireManager
 
@@ -124,7 +124,7 @@ class TestDeleteWireIntegration:
     """Integration tests that read/write real .kicad_sch files."""
 
     def setup_method(self) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         self.WireManager = WireManager
 
@@ -201,7 +201,7 @@ class TestDeleteWireIntegration:
 @pytest.mark.integration
 class TestDeleteLabelIntegration:
     def setup_method(self) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         self.WireManager = WireManager
 
@@ -318,7 +318,7 @@ class TestHandlerParamValidation:
     # --- delete_schematic_wire ---
 
     def test_delete_wire_missing_schematic_path(self) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         with patch.object(WireManager, "delete_wire", return_value=False):
             # Simulate the handler logic inline

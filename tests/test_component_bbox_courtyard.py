@@ -64,7 +64,7 @@ def _make_board(modules):
 
 
 def test_get_component_properties_returns_bounding_box():
-    from commands.component import ComponentCommands
+    from kicad_mcp.commands.component import ComponentCommands
 
     module = _make_module()
     cmd = ComponentCommands(board=_make_board([module]))
@@ -82,7 +82,7 @@ def test_get_component_properties_returns_bounding_box():
 
 
 def test_get_component_properties_returns_courtyard_when_present():
-    from commands.component import ComponentCommands
+    from kicad_mcp.commands.component import ComponentCommands
 
     module = _make_module(with_courtyard=True)
     cmd = ComponentCommands(board=_make_board([module]))
@@ -96,7 +96,7 @@ def test_get_component_properties_returns_courtyard_when_present():
 
 
 def test_get_component_properties_courtyard_none_when_absent():
-    from commands.component import ComponentCommands
+    from kicad_mcp.commands.component import ComponentCommands
 
     module = _make_module(with_courtyard=False)
     cmd = ComponentCommands(board=_make_board([module]))
@@ -106,7 +106,7 @@ def test_get_component_properties_courtyard_none_when_absent():
 
 
 def test_get_component_list_includes_bounding_box():
-    from commands.component import ComponentCommands
+    from kicad_mcp.commands.component import ComponentCommands
 
     modules = [_make_module(ref="R1"), _make_module(ref="R2")]
     cmd = ComponentCommands(board=_make_board(modules))

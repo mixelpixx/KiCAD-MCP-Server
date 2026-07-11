@@ -50,7 +50,7 @@ class TestCreateComponentInstanceUnit:
     """Tests for DynamicSymbolLoader.create_component_instance unit parameter."""
 
     def setup_method(self) -> None:
-        from commands.dynamic_symbol_loader import DynamicSymbolLoader
+        from kicad_mcp.commands.dynamic_symbol_loader import DynamicSymbolLoader
 
         self.DynamicSymbolLoader = DynamicSymbolLoader
 
@@ -229,7 +229,7 @@ class TestCreateComponentInstanceSubSheet:
     """
 
     def setup_method(self) -> None:
-        from commands.dynamic_symbol_loader import DynamicSymbolLoader
+        from kicad_mcp.commands.dynamic_symbol_loader import DynamicSymbolLoader
 
         self.DynamicSymbolLoader = DynamicSymbolLoader
 
@@ -317,8 +317,8 @@ class TestAddComponentMirrorParam:
     for add-then-save callers)."""
 
     def setup_method(self) -> None:
-        from commands.component_schematic import ComponentManager
-        from commands.schematic import SchematicManager
+        from kicad_mcp.commands.component_schematic import ComponentManager
+        from kicad_mcp.commands.schematic import SchematicManager
 
         self.ComponentManager = ComponentManager
         self.SchematicManager = SchematicManager

@@ -20,7 +20,7 @@ import pytest
 PYTHON_DIR = Path(__file__).parent.parent / "python"
 sys.path.insert(0, str(PYTHON_DIR))
 
-from commands.component import ComponentCommands  # noqa: E402
+from kicad_mcp.commands.component import ComponentCommands  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

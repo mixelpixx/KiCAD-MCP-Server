@@ -84,7 +84,7 @@ def test_ipc_move_component_converts_mil_to_mm():
 
 def test_python_tool_schema_unit_enums_include_mil():
     """Every unit enum in TOOL_SCHEMAS must include mil."""
-    from schemas.tool_schemas import TOOL_SCHEMAS
+    from kicad_mcp.schemas.tool_schemas import TOOL_SCHEMAS
 
     def _find_unit_enums(node):
         """Walk the schema and yield every enum list found under 'unit' fields."""

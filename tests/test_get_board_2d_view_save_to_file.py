@@ -28,7 +28,7 @@ _FAKE_PNG = b"\x89PNG\r\n\x1a\n" + b"fakepngbytes"
 
 def _make_view_cmd(tmp_path: Path):
     """Build a BoardViewCommands instance with a real PCB file and optional fake board."""
-    from commands.board.view import BoardViewCommands
+    from kicad_mcp.commands.board.view import BoardViewCommands
 
     board_path = tmp_path / "MyBoard.kicad_pcb"
     board_path.write_text("(kicad_pcb)")

@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands.library_symbol import SymbolLibraryCommands, SymbolLibraryManager
+from kicad_mcp.commands.library_symbol import SymbolLibraryCommands, SymbolLibraryManager
 
 FIXTURE = Path(__file__).parent / "fixtures" / "Simulation_SPICE_minimal.kicad_sym"
 SPICE_LIB = Path("/usr/share/kicad/symbols/Simulation_SPICE.kicad_sym")

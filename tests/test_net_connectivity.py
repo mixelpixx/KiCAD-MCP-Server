@@ -22,7 +22,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands.wire_connectivity import (
+from kicad_mcp.commands.wire_connectivity import (
     _build_adjacency,
     _parse_virtual_connections,
     _parse_wires,
@@ -76,18 +76,18 @@ class TestListFloatingLabelsSchema:
     """Verify the list_floating_labels schema is registered and well-formed."""
 
     def test_schema_registered(self) -> None:
-        from schemas.tool_schemas import TOOL_SCHEMAS
+        from kicad_mcp.schemas.tool_schemas import TOOL_SCHEMAS
 
         assert "list_floating_labels" in TOOL_SCHEMAS
 
     def test_schema_required_fields(self) -> None:
-        from schemas.tool_schemas import TOOL_SCHEMAS
+        from kicad_mcp.schemas.tool_schemas import TOOL_SCHEMAS
 
         required = TOOL_SCHEMAS["list_floating_labels"]["inputSchema"]["required"]
         assert required == ["schematicPath"]
 
     def test_schema_has_title_and_description(self) -> None:
-        from schemas.tool_schemas import TOOL_SCHEMAS
+        from kicad_mcp.schemas.tool_schemas import TOOL_SCHEMAS
 
         schema = TOOL_SCHEMAS["list_floating_labels"]
         assert schema.get("title")

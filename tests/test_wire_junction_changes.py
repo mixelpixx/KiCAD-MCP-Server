@@ -58,7 +58,7 @@ class TestSchemas:
 
     @pytest.fixture(autouse=True)
     def load_schemas(self) -> Any:
-        from schemas.tool_schemas import SCHEMATIC_TOOLS
+        from kicad_mcp.schemas.tool_schemas import SCHEMATIC_TOOLS
 
         self.tools = {t["name"]: t for t in SCHEMATIC_TOOLS}
 
@@ -412,21 +412,21 @@ class TestPinSnapping:
 class TestConnectionManagerOrphanedMethodsRemoved:
 
     def test_add_wire_removed(self) -> None:
-        from commands.connection_schematic import ConnectionManager
+        from kicad_mcp.commands.connection_schematic import ConnectionManager
 
         assert not hasattr(
             ConnectionManager, "add_wire"
         ), "ConnectionManager.add_wire should have been removed"
 
     def test_add_connection_removed(self) -> None:
-        from commands.connection_schematic import ConnectionManager
+        from kicad_mcp.commands.connection_schematic import ConnectionManager
 
         assert not hasattr(
             ConnectionManager, "add_connection"
         ), "ConnectionManager.add_connection should have been removed"
 
     def test_get_pin_location_removed(self) -> None:
-        from commands.connection_schematic import ConnectionManager
+        from kicad_mcp.commands.connection_schematic import ConnectionManager
 
         assert not hasattr(
             ConnectionManager, "get_pin_location"
@@ -449,7 +449,7 @@ class TestIntegrationWireManager:
         shutil.rmtree(path.parent, ignore_errors=True)
 
     def test_add_wire_writes_wire_element(self, sch: Any) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         ok = WireManager.add_wire(sch, [10.0, 10.0], [30.0, 10.0])
         assert ok is True
@@ -459,7 +459,7 @@ class TestIntegrationWireManager:
 
     def test_add_polyline_wire_creates_segments(self, sch: Any) -> None:
         """N waypoints should produce N-1 individual 2-point wire segments."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         pts = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [20.0, 10.0]]
         ok = WireManager.add_polyline_wire(sch, pts)
@@ -469,7 +469,7 @@ class TestIntegrationWireManager:
         assert len(wires) == 3, f"4 waypoints should produce 3 wire segments, got {len(wires)}"
 
     def test_wire_endpoint_coordinates_match(self, sch: Any) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         WireManager.add_wire(sch, [5.0, 7.5], [15.0, 7.5])
         data = _parse_sch(sch)
@@ -542,7 +542,7 @@ class TestPointStrictlyOnWire:
 
     @staticmethod
     def _fn(px: Any, py: Any, x1: Any, y1: Any, x2: Any, y2: Any, eps: Any = 1e-6) -> Any:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         return WireManager._point_strictly_on_wire(px, py, x1, y1, x2, y2, eps)
 
@@ -614,7 +614,7 @@ class TestParseWire:
 
     @staticmethod
     def _fn(item: Any) -> Any:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         return WireManager._parse_wire(item)
 
@@ -680,7 +680,7 @@ class TestMakeWireSexp:
     """Unit tests for WireManager._make_wire_sexp builder."""
 
     def test_produces_valid_parseable_wire(self) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sexp = WireManager._make_wire_sexp([10, 20], [30, 20])
         parsed = WireManager._parse_wire(sexp)
@@ -692,7 +692,7 @@ class TestMakeWireSexp:
         assert stype == "default"
 
     def test_custom_stroke(self) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sexp = WireManager._make_wire_sexp([0, 0], [5, 0], stroke_width=0.5, stroke_type="dash")
         parsed = WireManager._parse_wire(sexp)
@@ -702,7 +702,7 @@ class TestMakeWireSexp:
         assert stype == "dash"
 
     def test_has_uuid(self) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sexp = WireManager._make_wire_sexp([0, 0], [10, 0])
         # uuid is the last element
@@ -711,7 +711,7 @@ class TestMakeWireSexp:
         assert isinstance(uuid_entry[1], str) and len(uuid_entry[1]) > 0
 
     def test_two_calls_produce_different_uuids(self) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sexp1 = WireManager._make_wire_sexp([0, 0], [10, 0])
         sexp2 = WireManager._make_wire_sexp([0, 0], [10, 0])
@@ -730,7 +730,7 @@ class TestBreakWiresAtPoint:
     @staticmethod
     def _make_sch_data_with_wires(wire_coords: Any) -> list[Any]:
         """Build a minimal sch_data list with wire elements and a sheet_instances marker."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = [Symbol("kicad_sch")]
         for start, end in wire_coords:
@@ -739,7 +739,7 @@ class TestBreakWiresAtPoint:
         return data
 
     def test_split_horizontal_wire_at_midpoint(self) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._make_sch_data_with_wires([([0, 0], [20, 0])])
         splits = WireManager._break_wires_at_point(data, [10, 0])
@@ -755,7 +755,7 @@ class TestBreakWiresAtPoint:
         assert (10.0, 0.0) in endpoints
 
     def test_split_vertical_wire_at_midpoint(self) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._make_sch_data_with_wires([([5, 0], [5, 30])])
         splits = WireManager._break_wires_at_point(data, [5, 15])
@@ -765,7 +765,7 @@ class TestBreakWiresAtPoint:
 
     def test_no_split_at_wire_endpoint(self) -> None:
         """Point at existing endpoint should not trigger a split."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._make_sch_data_with_wires([([0, 0], [20, 0])])
         splits = WireManager._break_wires_at_point(data, [0, 0])
@@ -774,7 +774,7 @@ class TestBreakWiresAtPoint:
         assert len(wires) == 1
 
     def test_no_split_point_not_on_wire(self) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._make_sch_data_with_wires([([0, 0], [20, 0])])
         splits = WireManager._break_wires_at_point(data, [10, 5])
@@ -784,7 +784,7 @@ class TestBreakWiresAtPoint:
 
     def test_split_multiple_wires_at_same_point(self) -> None:
         """Two crossing wires at (10, 10) — both should be split."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._make_sch_data_with_wires(
             [
@@ -798,7 +798,7 @@ class TestBreakWiresAtPoint:
         assert len(wires) == 4  # each wire split into 2
 
     def test_split_preserves_stroke_properties(self) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = [Symbol("kicad_sch")]
         data.append(
@@ -815,14 +815,14 @@ class TestBreakWiresAtPoint:
 
     def test_no_split_on_diagonal_wire(self) -> None:
         """Diagonal wires are not handled by _point_strictly_on_wire → no split."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._make_sch_data_with_wires([([0, 0], [10, 10])])
         splits = WireManager._break_wires_at_point(data, [5, 5])
         assert splits == 0
 
     def test_empty_sch_data(self) -> None:
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = [Symbol("kicad_sch"), [Symbol("sheet_instances")]]
         splits = WireManager._break_wires_at_point(data, [10, 10])
@@ -846,7 +846,7 @@ class TestIntegrationTJunction:
 
     def test_add_wire_breaks_existing_horizontal_wire(self, sch: Any) -> None:
         """Adding a vertical wire whose endpoint is mid-horizontal-wire should split it."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         # First add a horizontal wire (0,10) -> (20,10)
         WireManager.add_wire(sch, [0, 10], [20, 10])
@@ -859,7 +859,7 @@ class TestIntegrationTJunction:
 
     def test_add_wire_does_not_break_at_shared_endpoint(self, sch: Any) -> None:
         """Wire connecting at an existing endpoint should not trigger a split."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         WireManager.add_wire(sch, [0, 0], [10, 0])
         # New wire starts at (10,0) — existing endpoint, not midpoint
@@ -870,7 +870,7 @@ class TestIntegrationTJunction:
 
     def test_polyline_breaks_existing_wire(self, sch: Any) -> None:
         """Polyline whose start/end hits mid-wire should break it."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         WireManager.add_wire(sch, [0, 10], [20, 10])
         # Polyline starting at (10,10) — mid-horizontal-wire
@@ -882,7 +882,7 @@ class TestIntegrationTJunction:
 
     def test_polyline_two_points_same_as_add_wire(self, sch: Any) -> None:
         """Polyline with exactly 2 points should produce 1 wire segment."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         WireManager.add_polyline_wire(sch, [[0, 0], [10, 0]])
         data = _parse_sch(sch)
@@ -921,7 +921,7 @@ class TestSyncJunctionsUnit:
 
     def test_t_junction_adds_junction(self) -> None:
         """Three wire endpoints meeting at one point → one junction added."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._base_data()
         # Horizontal wire split at (10,0): (0,0)→(10,0) and (10,0)→(20,0)
@@ -942,7 +942,7 @@ class TestSyncJunctionsUnit:
 
     def test_two_wire_join_no_junction(self) -> None:
         """Two wires meeting end-to-end (2 endpoints) → no junction."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._base_data()
         data.insert(1, self._wire(0, 0, 10, 0))
@@ -956,7 +956,7 @@ class TestSyncJunctionsUnit:
 
     def test_stale_junction_removed(self) -> None:
         """A junction with fewer than 3 wire endpoints at its position is removed."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._base_data()
         # Only two wires meeting at (10,0) — junction is stale
@@ -972,7 +972,7 @@ class TestSyncJunctionsUnit:
 
     def test_x_junction_gets_one_junction(self) -> None:
         """Four wire endpoints meeting (X-junction) → exactly one junction."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._base_data()
         # Simulate already-split X: four segments meeting at (10,10)
@@ -989,7 +989,7 @@ class TestSyncJunctionsUnit:
 
     def test_idempotent_on_correct_junction(self) -> None:
         """Running sync_junctions when junction is already correct is a no-op."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._base_data()
         data.insert(1, self._wire(0, 0, 10, 0))
@@ -1016,7 +1016,7 @@ class TestSyncJunctionsIntegration:
 
     def test_t_junction_auto_inserted_on_add_wire(self, sch: Any) -> None:
         """Adding a wire that creates a T-junction should auto-insert a junction dot."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         # Horizontal wire, then split it manually, then add connecting vertical
         WireManager.add_wire(sch, [0, 10], [10, 10])
@@ -1029,7 +1029,7 @@ class TestSyncJunctionsIntegration:
 
     def test_straight_join_no_junction(self, sch: Any) -> None:
         """Two wires joining end-to-end should not produce a junction."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         WireManager.add_wire(sch, [0, 0], [10, 0])
         WireManager.add_wire(sch, [10, 0], [20, 0])
@@ -1040,7 +1040,7 @@ class TestSyncJunctionsIntegration:
 
     def test_delete_wire_removes_stale_junction(self, sch: Any) -> None:
         """Removing a wire that was part of a T-junction should remove the junction."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         WireManager.add_wire(sch, [0, 10], [10, 10])
         WireManager.add_wire(sch, [10, 10], [20, 10])
@@ -1057,7 +1057,7 @@ class TestSyncJunctionsIntegration:
 
     def test_polyline_t_junction_auto_inserted(self, sch: Any) -> None:
         """Polyline whose endpoint hits a wire midpoint auto-inserts a junction."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         WireManager.add_wire(sch, [0, 10], [20, 10])  # horizontal
         # Polyline from above ending at (10,10) — mid-wire, wire breaks → T at (10,10)
@@ -1136,7 +1136,7 @@ class TestSyncJunctionsPinAware:
 
     def test_collect_pin_positions_no_rotation(self) -> None:
         """_collect_pin_positions returns correct world coords for R at (100,100) rot=0."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._base_data_with_resistor(100, 100, rotation=0)
         pins = WireManager._collect_pin_positions(data)
@@ -1150,7 +1150,7 @@ class TestSyncJunctionsPinAware:
 
     def test_collect_pin_positions_rotation_90(self) -> None:
         """_collect_pin_positions handles 90° rotation correctly."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._base_data_with_resistor(100, 100, rotation=90)
         pins = WireManager._collect_pin_positions(data)
@@ -1164,7 +1164,7 @@ class TestSyncJunctionsPinAware:
 
     def test_two_wires_plus_pin_gets_junction(self) -> None:
         """Two wires ending at a pin position → junction needed (total 3)."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         # R at (100, 100): pin 1 world = (100, 96.19)
         data = self._base_data_with_resistor(100, 100, rotation=0)
@@ -1179,7 +1179,7 @@ class TestSyncJunctionsPinAware:
 
     def test_one_wire_plus_pin_no_junction(self) -> None:
         """Single wire connecting to a pin (total 2) → no junction."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._base_data_with_resistor(100, 100, rotation=0)
         # Single wire ending at pin 1
@@ -1192,7 +1192,7 @@ class TestSyncJunctionsPinAware:
 
     def test_wire_midpoint_pin_gets_junction(self) -> None:
         """Wire passing through (broken at) a pin position + another wire → junction."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         # R at (100, 100): pin 1 world = (100, 96.19)
         # Simulate a horizontal wire already split at pin position
@@ -1237,7 +1237,7 @@ class TestSyncJunctionsPinAware:
         Pin 1: lib(0, 3.81) → y-neg → (0, -3.81) → mirror_x → (0, +3.81) → world (100, 103.81)
         Pin 2: lib(0,-3.81) → y-neg → (0, +3.81) → mirror_x → (0, -3.81) → world (100,  96.19)
         """
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._base_data_with_resistor_mirrored(100, 100, rotation=0, mirror="x")
         pins = WireManager._collect_pin_positions(data)
@@ -1253,7 +1253,7 @@ class TestSyncJunctionsPinAware:
         Pin 1: lib(0, 3.81) → y-neg → (0, -3.81) → mirror_y: lx=-0=0 → world (100, 96.19)
         Pin 2: lib(0,-3.81) → y-neg → (0, +3.81) → mirror_y: lx=-0=0 → world (100, 103.81)
         """
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._base_data_with_resistor_mirrored(100, 100, rotation=0, mirror="y")
         pins = WireManager._collect_pin_positions(data)
@@ -1273,7 +1273,7 @@ class TestSyncJunctionsPinAware:
                → rot90: lx'=0*0-(-3.81)*1=3.81, ly'=0*1+(-3.81)*0=0
                → world (103.81, 100.0)
         """
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._base_data_with_resistor_mirrored(100, 100, rotation=90, mirror="x")
         pins = WireManager._collect_pin_positions(data)
@@ -1293,7 +1293,7 @@ class TestSyncJunctionsPinAware:
                → rot180: lx'=0*(-1)-3.81*0=0, ly'=0*0+3.81*(-1)=-3.81
                → world (100.0, 96.19)
         """
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         data = self._base_data_with_resistor_mirrored(100, 100, rotation=180, mirror="y")
         pins = WireManager._collect_pin_positions(data)
@@ -1373,7 +1373,7 @@ class TestMultiUnitLibPins:
 
     def test_unit2_returns_only_unit2_and_common_pins(self) -> None:
         """Placing unit 2 must return 3 op-amp pins + 2 power (common) pins = 5 total."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sym_def = self._make_lm324_lib_symbol()
         pins = WireManager._parse_lib_pins(sym_def, unit=2)
@@ -1391,7 +1391,7 @@ class TestMultiUnitLibPins:
 
     def test_unit1_does_not_include_unit2_pins(self) -> None:
         """Placing unit 1 must not return pins from units 2-5."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sym_def = self._make_lm324_lib_symbol()
         pins = WireManager._parse_lib_pins(sym_def, unit=1)
@@ -1404,7 +1404,7 @@ class TestMultiUnitLibPins:
 
     def test_common_unit_zero_always_included(self) -> None:
         """A sub-unit named <base>_0_1 (unit=0) must appear for every placed unit."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         # Build a symbol that has a _0_1 common sub-unit
         def _pin(px: float, py: float) -> list:
@@ -1436,7 +1436,7 @@ class TestMultiUnitLibPins:
     def test_no_spurious_junctions_for_multi_unit_ic(self) -> None:
         """Placing unit 2 of an LM324-like part must not create phantom junctions
         from the pins of units 1, 3, 4, or 5."""
-        from commands.wire_manager import WireManager
+        from kicad_mcp.commands.wire_manager import WireManager
 
         sym_def = self._make_lm324_lib_symbol()
         lib_symbols_section = [Symbol("lib_symbols"), sym_def]

@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-from commands.update_symbol_from_library import (  # noqa: E402
+from kicad_mcp.commands.update_symbol_from_library import (  # noqa: E402
     _adapt_library_block_for_schematic,
     _extract_paren_block,
     _lib_ids_in_lib_symbols,

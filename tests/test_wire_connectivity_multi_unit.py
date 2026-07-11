@@ -116,7 +116,7 @@ def multi_unit_sch():
 
 def _pins_on_net_at(sch_path, x_mm, y_mm):
     """Return the set of "REF/PIN" strings on the net reachable from a point."""
-    from commands.wire_connectivity import get_wire_connections
+    from kicad_mcp.commands.wire_connectivity import get_wire_connections
     from skip import Schematic
 
     sch = Schematic(str(sch_path))

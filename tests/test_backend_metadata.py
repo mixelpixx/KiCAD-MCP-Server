@@ -572,7 +572,7 @@ def test_query_traces_ipc_filters_and_vias(monkeypatch):
 
 
 def test_ipc_board_size_supports_kicad_10_box2_pos_size(monkeypatch):
-    from kicad_api.ipc_backend import IPCBoardAPI
+    from kicad_mcp.backends.ipc_backend import IPCBoardAPI
 
     _stub_kipy_units(monkeypatch)
     board_api = IPCBoardAPI(None, lambda *_args: None)
@@ -589,7 +589,7 @@ def test_ipc_board_size_supports_kicad_10_box2_pos_size(monkeypatch):
 
 
 def test_ipc_board_size_keeps_min_max_box2_compatibility(monkeypatch):
-    from kicad_api.ipc_backend import IPCBoardAPI
+    from kicad_mcp.backends.ipc_backend import IPCBoardAPI
 
     _stub_kipy_units(monkeypatch)
     board_api = IPCBoardAPI(None, lambda *_args: None)

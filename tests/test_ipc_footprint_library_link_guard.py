@@ -49,7 +49,7 @@ def _make_fp(*, library_link=None, fp_id=None):
 
 def _list_components_with(fps):
     """Run IPCBoardAPI.list_components against a list of mock footprints."""
-    from kicad_api.ipc_backend import IPCBoardAPI
+    from kicad_mcp.backends.ipc_backend import IPCBoardAPI
 
     api = IPCBoardAPI.__new__(IPCBoardAPI)
     fake_board = MagicMock()

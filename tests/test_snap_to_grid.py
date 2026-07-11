@@ -18,7 +18,7 @@ from sexpdata import Symbol
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
 
-from commands.schematic_snap import _is_on_grid, _snap_mm, snap_to_grid
+from kicad_mcp.commands.schematic_snap import _is_on_grid, _snap_mm, snap_to_grid
 
 # ---------------------------------------------------------------------------
 # Shared fixture helpers
