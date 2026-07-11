@@ -230,11 +230,28 @@ class SchematicHandlersMixin:
 
             self._reload_kicad_schematic()
 
-            return {
+            # Read back the actual placed position so callers can see grid-snapped
+            # coordinates when they differ from the request.
+            response: Dict[str, Any] = {
                 "success": True,
                 "component_reference": reference,
                 "symbol_source": f"{library}:{comp_type}",
             }
+            try:
+                content = schematic_file.read_text(encoding="utf-8")
+                m = re.search(
+                    rf'\(symbol\s+\(lib_id\s+"{re.escape(library)}:{re.escape(comp_type)}"\)\s+\(at\s+([\d.]+)\s+([\d.]+)',
+                    content,
+                )
+                if m:
+                    placed_x, placed_y = float(m.group(1)), float(m.group(2))
+                    response["placed_at"] = {"x": placed_x, "y": placed_y}
+                    if (placed_x, placed_y) != (x, y):
+                        response["snapped"] = True
+                        response["requested_at"] = {"x": x, "y": y}
+            except Exception:
+                pass  # Best-effort read; the component was placed successfully.
+            return response
         except Exception as e:
             logger.error(f"Error adding component to schematic: {str(e)}")
             import traceback

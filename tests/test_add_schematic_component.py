@@ -358,3 +358,54 @@ class TestAddComponentMirrorParam:
             "ComponentManager.add_component now appears to honor mirror='y'. "
             "See sibling test_mirror_x_arg_is_silently_dropped."
         )
+
+
+# ---------------------------------------------------------------------------
+# Grid snap — placement origin is snapped to the 1.27 mm connection grid so
+# pins land on-grid and wires/net-labels can bind electrically.
+# ---------------------------------------------------------------------------
+
+WITH_SYMBOLS_SCH = TEMPLATES_DIR / "template_with_symbols.kicad_sch"
+
+
+@pytest.mark.unit
+class TestGridSnap:
+    def _loader(self) -> Any:
+        from commands.dynamic_symbol_loader import DynamicSymbolLoader
+
+        return DynamicSymbolLoader()
+
+    def test_origin_snapped_to_127_grid(self, tmp_path: Any) -> None:
+        """Off-grid placement coordinates are snapped to the 1.27 mm grid."""
+        sch = tmp_path / "grid.kicad_sch"
+        shutil.copy(WITH_SYMBOLS_SCH, sch)
+        # 100 is not a 1.27 multiple → round(100/1.27)*1.27 ≈ 100.33
+        self._loader().create_component_instance(
+            sch, "Device", "R", reference="R1", value="1k", x=100, y=100
+        )
+        content = sch.read_text()
+        at = re.search(
+            r'\(symbol \(lib_id "Device:R"\) \(at ([\d.]+) ([\d.]+)', content
+        )
+        assert at is not None
+        for coord in (float(at.group(1)), float(at.group(2))):
+            # on-grid ⇔ coord / 1.27 is (near) an integer
+            assert (
+                abs(round(coord / 1.27) * 1.27 - coord) < 1e-6
+            ), f"{coord} off grid"
+
+    def test_on_grid_coordinate_unchanged(self, tmp_path: Any) -> None:
+        """A coordinate that is already on-grid stays unchanged (no drift)."""
+        sch = tmp_path / "ongrid.kicad_sch"
+        shutil.copy(WITH_SYMBOLS_SCH, sch)
+        # 101.6 = 80 × 1.27 — already on the grid
+        self._loader().create_component_instance(
+            sch, "Device", "R", reference="R1", value="1k", x=101.6, y=50.8
+        )
+        content = sch.read_text()
+        at = re.search(
+            r'\(symbol \(lib_id "Device:R"\) \(at ([\d.]+) ([\d.]+)', content
+        )
+        assert at is not None
+        assert float(at.group(1)) == 101.6
+        assert float(at.group(2)) == 50.8
