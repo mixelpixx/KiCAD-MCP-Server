@@ -4,7 +4,34 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Performance
+
+- **Module-level caches for symbol library discovery, resolution, and
+  extraction** (#299): a fresh `DynamicSymbolLoader` is created for every
+  `add_schematic_component` call and a fresh `SymbolLibraryManager` (with its
+  warm-up thread) for every `KiCADInterface`, so instance-level caches never
+  survived — each component add re-scanned the sym-lib-table and re-read
+  multi-MB `.kicad_sym` files, and each interface construction re-parsed all
+  installed libraries on its own thread (super-linear cost across the test
+  suite). Library directories, resolved library paths, extracted symbol
+  blocks, and parsed symbol lists are now cached process-wide. Staleness
+  guards, because libraries are NOT immutable mid-session (`create_symbol`,
+  `delete_symbol`, `add_symbol_property`, `register_symbol_library`):
+  resolution misses are never cached, resolved paths are revalidated with
+  `exists()`, block/list entries carry the source file's `mtime_ns`, and the
+  mutating write paths explicitly clear the caches. Tests can skip the
+  speculative warm-up via `KICAD_SKIP_SYMBOL_WARMUP=1`.
+
 ### New Features
+
+- **`replace_instance_lib_ids` tool** — library-migration primitive: swaps
+  `lib_id` references in schematic symbol instances per an explicit
+  old-to-new mapping (values used verbatim, so one migration may target
+  several libraries), with automatic angle correction for the Eagle
+  importer's mirror-variant suffixes (`__m0`/`__m90`/`__m180`/`__m270`).
+  Instances only — the `lib_symbols` section is preserved;
+  `update_symbol_from_library` refreshes definitions afterwards. Matching
+  logic (which symbol replaces which) deliberately stays with the caller.
 
 - **Symbol property tools** (#308): `add_symbol_property` adds or updates a
   custom property (Manufacturer, MPN, LCSC, ...) on a symbol in a
@@ -26,6 +53,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Tooling
 
+- **pathlib migration, first slice**: `kicad_interface.py` and
+  `schematic_handlers.py` now use `pathlib.Path` for file-path handling
+  (`os.path.normcase` remains in `_normalize_board_path` — it has no pathlib
+  equivalent). Values crossing into JSON responses and subprocess argv stay
+  `str`. Also strips a stray UTF-8 BOM from `commands/export.py` and bumps
+  mypy's `python_version` to 3.10 — required by current mypy, which dropped
+  the 3.9 target (note: the project's declared `requires-python = ">=3.9"`
+  floor is therefore no longer verified by the type checker). `export.py`
+  and the remaining `os.path` call sites are follow-up slices.
+
 - **Interface construction smoke test**: a new test constructs
   `KiCADInterface` with the stubbed pcbnew and asserts every
   `command_routes` entry is callable, every schema-listed tool has a route,
@@ -35,6 +72,44 @@ All notable changes to the KiCAD MCP Server project are documented here.
   that); this makes the class unshippable.
 
 ### Bug Fixes
+
+- **`add_schematic_component` snaps the placement origin to the 1.27 mm
+  (50 mil) schematic connection grid** (#299): library pins sit at integer
+  multiples of 1.27 mm from the symbol origin, so an off-grid origin leaves
+  every pin off-grid — wires and net labels cannot bind electrically, ERC
+  reports `endpoint_off_grid`, and the netlist comes up empty. The snap is
+  always on; the handler response reports the actual `placed_at` position
+  (looked up by reference, so multiple instances of the same symbol report
+  correctly) plus `snapped: true` and `requested_at` when the coordinates
+  were adjusted. Snapped values are written with at most two decimals —
+  exact for every multiple of 1.27 — instead of raw float products.
+
+- **`sync_schematic_to_board` no longer re-parses the fp-lib-table on every
+  call** (#248): `_add_missing_footprints_from_schematic` built a fresh
+  `LibraryManager` — re-parsing the global and project `fp-lib-table` files,
+  recursively following any `Table` references — on every single invocation.
+  In an iterative rebuild flow (call `sync_schematic_to_board`, tweak the
+  schematic, call it again), that overhead was paid again each time even
+  though the project hadn't changed. The interface now caches the
+  `LibraryManager` via `_get_project_library_manager`, keyed on the project
+  directory plus the mtimes of the fp-lib-table files it parses, so the
+  cache is reused across repeat calls but rebuilds automatically when a
+  table changes (e.g. `register_footprint_library`, or a KiCad GUI edit
+  mid-session).
+
+- **Fixed a test-suite state leak that caused spurious pin-position failures
+  when test files ran in combination** (#287): `tests/test_rotate_schematic_mirror.py`
+  installed a throwaway `MagicMock` at `sys.modules["commands.pin_locator"]`
+  via `sys.modules.setdefault(...)` at module-collection time, with no
+  teardown. Any later-collected file relying on the real
+  `commands.pin_locator` (e.g. `WireDragger.get_pin_defs`, via
+  `commands.wire_dragger`) silently got empty pin data instead of an error —
+  iterating a bare `MagicMock()` is a no-op by default. A `teardown_module`
+  now undoes the stub, and `test_rotate_handler_no_crash`'s stubbed
+  `kicad_interface.py` exec additionally evicts any `commands.*` submodule it
+  imported for the first time while `pcbnew`/`skip` were mocked, so later
+  tests get a clean re-import instead of a module bound to a discarded mock.
+  Test-only change; no production code touched.
 
 - **`import_ses` no longer creates phantom slashless nets — routed tracks bind
   to the real board nets** (#246): KiCad global-label nets are named with a

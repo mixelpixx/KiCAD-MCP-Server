@@ -56,6 +56,7 @@ def test_recently_added_tools_are_routed(iface) -> None:
     # Sentinels from the last few merges — the exact entries a bad rebase or
     # rename is most likely to drop.
     for tool in (
+        "replace_instance_lib_ids",
         "update_symbol_from_library",
         "add_library_symbol_property",
         "add_symbol_property",

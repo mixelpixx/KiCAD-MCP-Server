@@ -132,6 +132,31 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
     },
   );
 
+  // Replace instance lib_ids per mapping (library migration)
+  server.tool(
+    "replace_instance_lib_ids",
+    "Replace lib_id references in schematic symbol instances per an explicit old-to-new mapping — the mechanical layer of a library migration (e.g. eagle_import symbols to curated library symbols). Mirror-variant suffixes (__m0/__m90/__m180/__m270) get automatic angle correction; each needs its own mapping entry. Only instances are rewritten; lib_symbols is preserved (use update_symbol_from_library to refresh definitions afterwards).",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      mapping: z
+        .record(z.string())
+        .describe(
+          'Map of old full lib_id to new full lib_id, e.g. {"eagle_import:C_100n": "Device:C"}. Values are used verbatim.',
+        ),
+      sourceLibrary: z
+        .string()
+        .optional()
+        .default("eagle_import")
+        .describe("Library prefix whose instances are candidates"),
+    },
+    async (args: any) => {
+      const r = await callKicadScript("replace_instance_lib_ids", args);
+      if (r.success === false)
+        return { content: [{ type: "text", text: `Failed: ${r.error || r.message || "Unknown error"}` }] };
+      return { content: [{ type: "text", text: r.message }] };
+    },
+  );
+
   // Swap a symbol, preserving position/fields
   server.tool(
     "replace_schematic_component",
