@@ -17,16 +17,21 @@ from typing import Dict, List, Optional, Tuple
 logger = logging.getLogger("kicad_interface")
 
 # Module-level caches shared across DynamicSymbolLoader instances.
-# Symbol libraries are effectively immutable during a process run, but a fresh
-# loader is created for every add_component call (see schematic_handlers), so
-# instance-level caches never survive — every component add would otherwise
-# re-scan the sym-lib-table and re-read multi-MB .kicad_sym files.  These
-# caches make library resolution and symbol extraction pay their cost once.
-# Call DynamicSymbolLoader.clear_library_caches() if a library changes on disk
-# mid-session.
+# A fresh loader is created for every add_component call (see
+# schematic_handlers), so instance-level caches never survive — every
+# component add would otherwise re-scan the sym-lib-table and re-read
+# multi-MB .kicad_sym files. These caches make library resolution and symbol
+# extraction pay their cost once. Libraries are NOT immutable mid-session,
+# though: create_symbol / delete_symbol / add_library_symbol_property rewrite
+# .kicad_sym files and register_symbol_library rewrites the sym-lib-table, so
+# stale entries are guarded three ways — resolution misses are never cached,
+# resolved paths are revalidated with exists(), and symbol blocks carry the
+# source file's mtime_ns. The mutating handlers additionally call
+# DynamicSymbolLoader.clear_library_caches() for the case a stat cannot see
+# (re-pointing an existing library name at a different path).
 _LIB_DIRS_CACHE: Optional[List[Path]] = None
-_LIB_FILE_CACHE: Dict[Tuple[Optional[str], str], Optional[Path]] = {}
-_SYMBOL_BLOCK_CACHE: Dict[Tuple[str, str], Optional[str]] = {}
+_LIB_FILE_CACHE: Dict[Tuple[Optional[str], str], Path] = {}
+_SYMBOL_BLOCK_CACHE: Dict[Tuple[str, str], Tuple[Optional[int], Optional[str]]] = {}
 
 
 class DynamicSymbolLoader:
@@ -108,10 +113,16 @@ class DynamicSymbolLoader:
 
         Resolution is cached module-wide by (project_path, library_name) so that
         repeated component adds don't re-scan the sym-lib-table every time.
+        Only successful resolutions are cached: a "not found" is typically
+        followed by the user creating or registering that library, and a
+        cached miss would keep the name unresolvable until process restart.
+        Cached paths are revalidated with exists() so a deleted or moved
+        library re-resolves instead of being served stale.
         """
         cache_key = (str(self.project_path) if self.project_path else None, library_name)
-        if cache_key in _LIB_FILE_CACHE:
-            return _LIB_FILE_CACHE[cache_key]
+        hit = _LIB_FILE_CACHE.get(cache_key)
+        if hit is not None and hit.exists():
+            return hit
 
         def _search() -> Optional[Path]:
             # 1. Check project-specific sym-lib-table
@@ -150,7 +161,10 @@ class DynamicSymbolLoader:
             return None
 
         result = _search()
-        _LIB_FILE_CACHE[cache_key] = result
+        if result is not None:
+            _LIB_FILE_CACHE[cache_key] = result
+        else:
+            _LIB_FILE_CACHE.pop(cache_key, None)
         return result
 
     def _global_sym_lib_table_paths(self) -> list:
@@ -442,23 +456,40 @@ class DynamicSymbolLoader:
         if not lib_path:
             return None
 
+        # The physical file the symbol lives in: for a KiCAD 10 directory
+        # library each symbol is its own shard file.
+        src_file = lib_path / f"{symbol_name}.kicad_sym" if lib_path.is_dir() else lib_path
+
+        def _src_mtime_ns() -> Optional[int]:
+            try:
+                return src_file.stat().st_mtime_ns
+            except OSError:
+                return None
+
         # Module-level cache keyed by the resolved library path + symbol, so the
         # multi-MB .kicad_sym is read and parsed once even though a fresh loader
         # (and empty self.symbol_cache) is created for every component add.
+        # Entries carry the source file's mtime_ns: create_symbol /
+        # delete_symbol / add_library_symbol_property rewrite .kicad_sym files
+        # mid-session, so a hit is honoured only while the mtime matches. (For
+        # a symdir symbol whose (extends ...) parent lives in a sibling shard,
+        # a parent-only edit is invisible to this stat — the mutating handlers
+        # call clear_library_caches() to cover that.)
         mod_key = (str(lib_path), symbol_name)
-        if mod_key in _SYMBOL_BLOCK_CACHE:
-            cached = _SYMBOL_BLOCK_CACHE[mod_key]
+        current_mtime = _src_mtime_ns()
+        entry = _SYMBOL_BLOCK_CACHE.get(mod_key)
+        if entry is not None and entry[0] == current_mtime:
+            cached = entry[1]
             self.symbol_cache[cache_key] = cached
             return cached
 
         # KiCAD 10 directory library: each symbol is its own file
         if lib_path.is_dir():
-            sym_file = lib_path / f"{symbol_name}.kicad_sym"
-            if not sym_file.exists():
+            if not src_file.exists():
                 logger.warning(f"Symbol '{symbol_name}' not found in directory library {lib_path}")
-                _SYMBOL_BLOCK_CACHE[mod_key] = None
+                _SYMBOL_BLOCK_CACHE[mod_key] = (current_mtime, None)
                 return None
-            with open(sym_file, "r", encoding="utf-8") as f:
+            with open(src_file, "r", encoding="utf-8") as f:
                 lib_content = f.read()
         else:
             with open(lib_path, "r", encoding="utf-8") as f:
@@ -467,7 +498,7 @@ class DynamicSymbolLoader:
         block = self._extract_symbol_block(lib_content, symbol_name)
         if block is None:
             logger.warning(f"Symbol '{symbol_name}' not found in {library_name}")
-            _SYMBOL_BLOCK_CACHE[mod_key] = None
+            _SYMBOL_BLOCK_CACHE[mod_key] = (current_mtime, None)
             return None
 
         # If the symbol uses (extends "ParentName"), inline the parent content
@@ -496,7 +527,7 @@ class DynamicSymbolLoader:
         result = block
 
         self.symbol_cache[cache_key] = result
-        _SYMBOL_BLOCK_CACHE[mod_key] = result
+        _SYMBOL_BLOCK_CACHE[mod_key] = (current_mtime, result)
         logger.info(f"Extracted symbol {full_name} ({len(result)} chars)")
         return result
 

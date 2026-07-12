@@ -25,7 +25,10 @@ logger = logging.getLogger("kicad_interface")
 # interfaces (e.g. one per test) spawned N concurrent warm threads that
 # saturated the CPU and piled up SymbolInfo objects — construction time grew
 # super-linearly. Keying by file path makes the parse happen once per process.
-_SYMBOL_CACHE_BY_PATH: Dict[str, list] = {}
+# Entries are (mtime_ns, symbols) pairs: create_symbol / delete_symbol rewrite
+# .kicad_sym files mid-session, so a hit is honoured only while the file's
+# mtime matches what was parsed.
+_SYMBOL_CACHE_BY_PATH: Dict[str, tuple] = {}
 _SYMBOL_CACHE_LOCK = threading.Lock()
 _WARM_STARTED = False
 
@@ -455,11 +458,22 @@ class SymbolLibraryManager:
             return []
 
         # Then the process-wide cache keyed by file path, so the same library is
-        # parsed once even across many manager instances / warm-up threads.
+        # parsed once even across many manager instances / warm-up threads. The
+        # hit is honoured only while the file's mtime matches what was parsed —
+        # create_symbol / delete_symbol rewrite .kicad_sym files mid-session.
+        def _lib_mtime_ns() -> Optional[int]:
+            try:
+                return os.stat(library_path).st_mtime_ns
+            except OSError:
+                return None
+
+        current_mtime = _lib_mtime_ns()
         with _SYMBOL_CACHE_LOCK:
-            shared = _SYMBOL_CACHE_BY_PATH.get(library_path)
-        if shared is not None:
-            self.symbol_cache[library_nickname] = shared
+            entry = _SYMBOL_CACHE_BY_PATH.get(library_path)
+        if entry is not None and entry[0] == current_mtime:
+            shared = entry[1]
+            with self._cache_lock:
+                self.symbol_cache[library_nickname] = shared
             return shared
 
         # Parse the library file (cold — pay it once per process per file).
@@ -468,7 +482,7 @@ class SymbolLibraryManager:
         # Cache the results. Guarded so an on-demand parse and the background
         # warm-up thread can't corrupt the dict mid-update.
         with _SYMBOL_CACHE_LOCK:
-            _SYMBOL_CACHE_BY_PATH[library_path] = symbols
+            _SYMBOL_CACHE_BY_PATH[library_path] = (current_mtime, symbols)
         with self._cache_lock:
             self.symbol_cache[library_nickname] = symbols
 

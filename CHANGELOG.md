@@ -4,6 +4,24 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Performance
+
+- **Module-level caches for symbol library discovery, resolution, and
+  extraction** (#299): a fresh `DynamicSymbolLoader` is created for every
+  `add_schematic_component` call and a fresh `SymbolLibraryManager` (with its
+  warm-up thread) for every `KiCADInterface`, so instance-level caches never
+  survived — each component add re-scanned the sym-lib-table and re-read
+  multi-MB `.kicad_sym` files, and each interface construction re-parsed all
+  installed libraries on its own thread (super-linear cost across the test
+  suite). Library directories, resolved library paths, extracted symbol
+  blocks, and parsed symbol lists are now cached process-wide. Staleness
+  guards, because libraries are NOT immutable mid-session (`create_symbol`,
+  `delete_symbol`, `add_symbol_property`, `register_symbol_library`):
+  resolution misses are never cached, resolved paths are revalidated with
+  `exists()`, block/list entries carry the source file's `mtime_ns`, and the
+  mutating write paths explicitly clear the caches. Tests can skip the
+  speculative warm-up via `KICAD_SKIP_SYMBOL_WARMUP=1`.
+
 ### New Features
 
 - **Symbol property tools** (#308): `add_symbol_property` adds or updates a
