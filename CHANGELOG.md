@@ -44,6 +44,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Tooling
 
+- **pathlib migration, first slice**: `kicad_interface.py` and
+  `schematic_handlers.py` now use `pathlib.Path` for file-path handling
+  (`os.path.normcase` remains in `_normalize_board_path` — it has no pathlib
+  equivalent). Values crossing into JSON responses and subprocess argv stay
+  `str`. Also strips a stray UTF-8 BOM from `commands/export.py` and bumps
+  mypy's `python_version` to 3.10 — required by current mypy, which dropped
+  the 3.9 target (note: the project's declared `requires-python = ">=3.9"`
+  floor is therefore no longer verified by the type checker). `export.py`
+  and the remaining `os.path` call sites are follow-up slices.
+
 - **Interface construction smoke test**: a new test constructs
   `KiCADInterface` with the stubbed pcbnew and asserts every
   `command_routes` entry is callable, every schema-listed tool has a route,
