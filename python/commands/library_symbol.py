@@ -18,6 +18,20 @@ from utils.platform_helper import PlatformHelper
 
 logger = logging.getLogger("kicad_interface")
 
+# Parsed-symbol cache shared across SymbolLibraryManager instances, keyed by the
+# resolved .kicad_sym file path.  A fresh manager (and its warm-up thread) is
+# created for every KiCADInterface; with an instance-only cache, each
+# construction re-parsed all 200+ libraries on a new daemon thread, so N
+# interfaces (e.g. one per test) spawned N concurrent warm threads that
+# saturated the CPU and piled up SymbolInfo objects — construction time grew
+# super-linearly. Keying by file path makes the parse happen once per process.
+# Entries are (mtime_ns, symbols) pairs: create_symbol / delete_symbol rewrite
+# .kicad_sym files mid-session, so a hit is honoured only while the file's
+# mtime matches what was parsed.
+_SYMBOL_CACHE_BY_PATH: Dict[str, tuple] = {}
+_SYMBOL_CACHE_LOCK = threading.Lock()
+_WARM_STARTED = False
+
 
 @dataclass
 class SymbolInfo:
@@ -76,7 +90,22 @@ class SymbolLibraryManager:
         delayed (and on large libraries effectively prevented) that handshake,
         so the MCP server never finished starting. ``list_symbols`` is
         cache-locked, so on-demand parses race-free with this background warm.
+
+        Warming is started at most once per process (guarded by _WARM_STARTED):
+        the parsed results live in the process-wide _SYMBOL_CACHE_BY_PATH, so a
+        second manager would only re-warm data that is already cached.
         """
+        # Tests (and any caller that doesn't need pre-warmed symbol search) can
+        # skip the speculative full-library parse entirely; on-demand parses via
+        # list_symbols still populate the shared cache lazily.
+        if os.environ.get("KICAD_SKIP_SYMBOL_WARMUP") == "1":
+            return
+
+        global _WARM_STARTED
+        with _SYMBOL_CACHE_LOCK:
+            if _WARM_STARTED:
+                return
+            _WARM_STARTED = True
 
         def _warm() -> None:
             for nickname in list(self.libraries.keys()):
@@ -428,11 +457,32 @@ class SymbolLibraryManager:
             logger.warning(f"Library not found: {library_nickname}")
             return []
 
-        # Parse the library file
+        # Then the process-wide cache keyed by file path, so the same library is
+        # parsed once even across many manager instances / warm-up threads. The
+        # hit is honoured only while the file's mtime matches what was parsed —
+        # create_symbol / delete_symbol rewrite .kicad_sym files mid-session.
+        def _lib_mtime_ns() -> Optional[int]:
+            try:
+                return os.stat(library_path).st_mtime_ns
+            except OSError:
+                return None
+
+        current_mtime = _lib_mtime_ns()
+        with _SYMBOL_CACHE_LOCK:
+            entry = _SYMBOL_CACHE_BY_PATH.get(library_path)
+        if entry is not None and entry[0] == current_mtime:
+            shared = entry[1]
+            with self._cache_lock:
+                self.symbol_cache[library_nickname] = shared
+            return shared
+
+        # Parse the library file (cold — pay it once per process per file).
         symbols = self._parse_kicad_sym_file(library_path, library_nickname)
 
         # Cache the results. Guarded so an on-demand parse and the background
         # warm-up thread can't corrupt the dict mid-update.
+        with _SYMBOL_CACHE_LOCK:
+            _SYMBOL_CACHE_BY_PATH[library_path] = (current_mtime, symbols)
         with self._cache_lock:
             self.symbol_cache[library_nickname] = symbols
 
