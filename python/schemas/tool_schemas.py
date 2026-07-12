@@ -2544,6 +2544,42 @@ SCHEMATIC_TOOLS = [
             "required": ["libraryPath", "symbolName", "propertyName", "propertyValue"],
         },
     },
+    {
+        "name": "replace_instance_lib_ids",
+        "title": "Replace Instance lib_ids (Library Migration)",
+        "description": (
+            "Replace lib_id references in schematic symbol instances per an explicit "
+            "old-to-new mapping — the mechanical layer of a library migration (e.g. "
+            "eagle_import symbols to curated library symbols). Mirror-variant "
+            "suffixes (__m0/__m90/__m180/__m270) get automatic angle correction; "
+            "each needs its own mapping entry. Only instances are rewritten; the "
+            "lib_symbols section is preserved (use update_symbol_from_library to "
+            "refresh definitions afterwards)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch file",
+                },
+                "mapping": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                    "description": (
+                        "Map of old full lib_id to new full lib_id, e.g. "
+                        '{"eagle_import:C_100n": "Device:C"}. Values are used verbatim.'
+                    ),
+                },
+                "sourceLibrary": {
+                    "type": "string",
+                    "description": "Library prefix whose instances are candidates",
+                    "default": "eagle_import",
+                },
+            },
+            "required": ["schematicPath", "mapping"],
+        },
+    },
 ]
 
 # =============================================================================

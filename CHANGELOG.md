@@ -24,6 +24,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **`replace_instance_lib_ids` tool** — library-migration primitive: swaps
+  `lib_id` references in schematic symbol instances per an explicit
+  old-to-new mapping (values used verbatim, so one migration may target
+  several libraries), with automatic angle correction for the Eagle
+  importer's mirror-variant suffixes (`__m0`/`__m90`/`__m180`/`__m270`).
+  Instances only — the `lib_symbols` section is preserved;
+  `update_symbol_from_library` refreshes definitions afterwards. Matching
+  logic (which symbol replaces which) deliberately stays with the caller.
+
 - **Symbol property tools** (#308): `add_symbol_property` adds or updates a
   custom property (Manufacturer, MPN, LCSC, ...) on a symbol in a
   `.kicad_sym` library file — the durable, library-wide path for BOM fields.
