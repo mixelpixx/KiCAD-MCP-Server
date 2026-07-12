@@ -8,11 +8,14 @@
 recursively following any ``Table`` references) on every single call. In an
 iterative rebuild flow, where the tool is invoked repeatedly against the same
 project, that is pure re-parsing overhead. ``_get_project_library_manager``
-caches the manager on the interface instance and only rebuilds it when the
-project directory changes.
+caches the manager on the interface instance and rebuilds it only when the
+project directory changes or an fp-lib-table it parsed is modified (e.g. by
+``register_footprint_library`` or a KiCad GUI edit mid-session).
 """
 
+import os
 import sys
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -70,3 +73,29 @@ def test_cache_is_per_instance_not_global():
         _Host()._get_project_library_manager(project_dir)
     # Two distinct hosts (distinct KiCADInterface sessions) must not share state.
     assert calls == [project_dir, project_dir]
+
+
+def test_fp_lib_table_edit_invalidates_cache(tmp_path):
+    """Editing the project fp-lib-table mid-session must rebuild the manager.
+
+    ``register_footprint_library`` rewrites the project (or global)
+    fp-lib-table while the server is running, and the KiCad GUI can too. A
+    cache keyed only on the project directory would keep serving library data
+    parsed *before* the edit — footprints from a just-registered library
+    would be silently skipped by ``sync_schematic_to_board``.
+    """
+    fake_cls, calls = _fake_library_manager()
+    host = _Host()
+    table = tmp_path / "fp-lib-table"
+    table.write_text("(fp_lib_table\n  (version 7)\n)\n")
+    with patch("commands.library.LibraryManager", fake_cls):
+        first = host._get_project_library_manager(tmp_path)
+        assert host._get_project_library_manager(tmp_path) is first  # cache hit
+        # A registration rewrites the table. Force the mtime forward so the
+        # test doesn't depend on filesystem timestamp granularity.
+        table.write_text('(fp_lib_table\n  (version 7)\n  (lib (name "custom"))\n)\n')
+        bumped = time.time_ns() + 1_000_000_000
+        os.utime(table, ns=(bumped, bumped))
+        rebuilt = host._get_project_library_manager(tmp_path)
+    assert rebuilt is not first
+    assert calls == [tmp_path, tmp_path]
