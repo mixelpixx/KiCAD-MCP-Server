@@ -24,6 +24,26 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **Library management tools: `import_symbol`, `export_symbol`,
+  `rename_symbol`** — copy a symbol between `.kicad_sym` libraries (with
+  optional rename/overwrite; target created if missing), extract one symbol
+  to a standalone file, and rename a symbol including its sub-symbol shards
+  and any `(extends ...)` references from derived symbols in the same
+  library. Deletion deliberately stays with the existing `delete_symbol`
+  tool — one tool per capability. All three writes invalidate the
+  module-level symbol caches, and new/exported files reuse SymbolCreator's
+  header token so every `.kicad_sym` this server writes carries the same,
+  oldest-supported format version.
+
+- **`replace_instance_lib_ids` tool** — library-migration primitive: swaps
+  `lib_id` references in schematic symbol instances per an explicit
+  old-to-new mapping (values used verbatim, so one migration may target
+  several libraries), with automatic angle correction for the Eagle
+  importer's mirror-variant suffixes (`__m0`/`__m90`/`__m180`/`__m270`).
+  Instances only — the `lib_symbols` section is preserved;
+  `update_symbol_from_library` refreshes definitions afterwards. Matching
+  logic (which symbol replaces which) deliberately stays with the caller.
+
 - **Symbol property tools** (#308): `add_symbol_property` adds or updates a
   custom property (Manufacturer, MPN, LCSC, ...) on a symbol in a
   `.kicad_sym` library file — the durable, library-wide path for BOM fields.
@@ -43,6 +63,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
   backup. Writes go through the canonical formatter.
 
 ### Tooling
+
+- **pathlib migration, first slice**: `kicad_interface.py` and
+  `schematic_handlers.py` now use `pathlib.Path` for file-path handling
+  (`os.path.normcase` remains in `_normalize_board_path` — it has no pathlib
+  equivalent). Values crossing into JSON responses and subprocess argv stay
+  `str`. Also strips a stray UTF-8 BOM from `commands/export.py` and bumps
+  mypy's `python_version` to 3.10 — required by current mypy, which dropped
+  the 3.9 target (note: the project's declared `requires-python = ">=3.9"`
+  floor is therefore no longer verified by the type checker). `export.py`
+  and the remaining `os.path` call sites are follow-up slices.
 
 - **Interface construction smoke test**: a new test constructs
   `KiCADInterface` with the stubbed pcbnew and asserts every

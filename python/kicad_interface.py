@@ -24,11 +24,11 @@ from typing import Any, Dict, List, Optional, Tuple
 if sys.platform == "win32":
     for _bin_dir in [
         os.environ.get("PYTHONPATH", ""),
-        os.path.dirname(sys.executable),
+        str(Path(sys.executable).parent),
         r"C:\Program Files\KiCad\9.0\bin",
         r"C:\Program Files\KiCad\8.0\bin",
     ]:
-        if _bin_dir and os.path.isfile(os.path.join(_bin_dir, "cairo-2.dll")):
+        if _bin_dir and (Path(_bin_dir) / "cairo-2.dll").is_file():
             _current_path = os.environ.get("PATH", "")
             if _bin_dir not in _current_path:
                 os.environ["PATH"] = _bin_dir + os.pathsep + _current_path
@@ -97,9 +97,9 @@ _LOG_LEVEL = _parse_log_level()
 # envs, restricted CI runners) we fall back to console-only logging so importing
 # this module never crashes.
 try:
-    log_dir = os.path.join(os.path.expanduser("~"), ".kicad-mcp", "logs")
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "kicad_interface.log")
+    log_dir = Path.home() / ".kicad-mcp" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = str(log_dir / "kicad_interface.log")
     max_log_bytes = _parse_positive_int_env("KICAD_MCP_LOG_MAX_BYTES", 10 * 1024 * 1024)
     backup_count = _parse_positive_int_env("KICAD_MCP_LOG_BACKUP_COUNT", 3)
     if max_log_bytes:
@@ -136,7 +136,7 @@ for _skip_logger_name in ("skip", "skip.sexp", "skip.sexp.parser", "skip.sexp.so
 logger.info(f"Python version: {sys.version}")
 logger.info(f"Python executable: {sys.executable}")
 logger.info(f"Platform: {sys.platform}")
-logger.info(f"Working directory: {os.getcwd()}")
+logger.info(f"Working directory: {Path.cwd()}")
 
 # Windows-specific diagnostics
 if sys.platform == "win32":
@@ -149,19 +149,16 @@ if sys.platform == "win32":
 
     found_kicad = False
     for base_path in common_kicad_paths:
-        if os.path.exists(base_path):
-            logger.info(f"Found KiCAD installation at: {base_path}")
+        base = Path(base_path)
+        if base.exists():
+            logger.info(f"Found KiCAD installation at: {base}")
             # List versions
             try:
-                versions = [
-                    d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))
-                ]
-                logger.info(f"  Versions found: {', '.join(versions)}")
-                for version in versions:
-                    python_path = os.path.join(
-                        base_path, version, "lib", "python3", "dist-packages"
-                    )
-                    if os.path.exists(python_path):
+                version_dirs = [d for d in base.iterdir() if d.is_dir()]
+                logger.info(f"  Versions found: {', '.join(d.name for d in version_dirs)}")
+                for version_dir in version_dirs:
+                    python_path = version_dir / "lib" / "python3" / "dist-packages"
+                    if python_path.exists():
                         logger.info(f"  ✓ Python path exists: {python_path}")
                         found_kicad = True
                     else:
@@ -178,7 +175,7 @@ if sys.platform == "win32":
     logger.info("========================================")
 
 # Add utils directory to path for imports
-utils_dir = os.path.join(os.path.dirname(__file__))
+utils_dir = str(Path(__file__).parent)
 if utils_dir not in sys.path:
     sys.path.insert(0, utils_dir)
 
@@ -328,9 +325,9 @@ try:
     from commands.connection_schematic import ConnectionManager
     from commands.datasheet_manager import DatasheetManager
     from commands.design_rules import DesignRuleCommands
+    from commands.eagle import EagleCommands
     from commands.export import ExportCommands
     from commands.footprint import FootprintCreator
-    from commands.eagle import EagleCommands
     from commands.freerouting import FreeroutingCommands
     from commands.jlcpcb import JLCPCBClient, test_jlcpcb_connection
     from commands.jlcpcb_parts import JLCPCBPartsManager
@@ -349,6 +346,8 @@ try:
     from commands.schematic_hierarchy import SchematicHierarchyCommands
     from commands.symbol_creator import SymbolCreator
     from commands.symbol_pins import SymbolPinCommands
+    from commands.symbol_schematic import SymbolSchematicCommands
+    from commands.library_management import LibraryManagementCommands
     from commands.update_symbol_from_library import update_symbol_from_library
     from commands.add_library_symbol_property import add_library_symbol_property
     from commands.add_symbol_property import add_symbol_property
@@ -411,6 +410,8 @@ class KiCADInterface(SchematicHandlersMixin):
         self.routing_commands = RoutingCommands(self.board)
         self.freerouting_commands = FreeroutingCommands(self.board)
         self.eagle_commands = EagleCommands()
+        self.symbol_schematic_commands = SymbolSchematicCommands()
+        self.library_management_commands = LibraryManagementCommands()
         self.design_rule_commands = DesignRuleCommands(self.board)
         self.export_commands = ExportCommands(self.board)
         self.library_commands = LibraryCommands(self.footprint_library)
@@ -650,6 +651,12 @@ class KiCADInterface(SchematicHandlersMixin):
             "check_freerouting": self.freerouting_commands.check_freerouting,
             # Eagle import commands
             "import_eagle_project": self.eagle_commands.import_eagle_project,
+            # Schematic migration
+            "replace_instance_lib_ids": self.symbol_schematic_commands.replace_instance_lib_ids,
+            # Library management (deletion stays with the existing delete_symbol tool)
+            "import_symbol": self.library_management_commands.import_symbol,
+            "export_symbol": self.library_management_commands.export_symbol,
+            "rename_symbol": self.library_management_commands.rename_symbol,
         }
 
         logger.info(f"KiCAD interface initialized (backend: {'IPC' if self.use_ipc else 'SWIG'})")
@@ -716,7 +723,7 @@ class KiCADInterface(SchematicHandlersMixin):
         """Normalize a board file path for cross-backend comparison."""
         if not path:
             return None
-        return os.path.normcase(os.path.normpath(os.path.abspath(str(path))))
+        return os.path.normcase(str(Path(str(path)).resolve()))
 
     def _ipc_board_path_matches(self, path: Any) -> bool:
         """True when the live KiCad GUI has the same .kicad_pcb open as `path`."""
@@ -796,7 +803,7 @@ class KiCADInterface(SchematicHandlersMixin):
             self.session_board_path,
         )
         path = self.session_board_path
-        if path and os.path.exists(path):
+        if path and Path(path).exists():
             recovered = self._safe_load_board(path)
             if recovered is not None:
                 self.board = recovered
@@ -1139,7 +1146,7 @@ class KiCADInterface(SchematicHandlersMixin):
         content change.
         """
         try:
-            st = os.stat(path)
+            st = Path(path).stat()
             h = hashlib.sha256()
             with open(path, "rb") as f:
                 for chunk in iter(lambda: f.read(65536), b""):
@@ -1173,7 +1180,7 @@ class KiCADInterface(SchematicHandlersMixin):
             path = board.GetFileName()
         except Exception:
             return None
-        return os.path.abspath(path) if path else None
+        return str(Path(path).resolve()) if path else None
 
     def _current_project_file_path(self, board_path: Optional[str]) -> Optional[str]:
         """Best-effort project file path for the currently loaded board."""
@@ -1252,15 +1259,11 @@ class KiCADInterface(SchematicHandlersMixin):
     def _prune_auto_save_backups(self, backup_dir: str, base_name: str) -> None:
         """Keep only the most recent `_auto_save_backup_keep` backups for `base_name`."""
         try:
-            entries = [
-                os.path.join(backup_dir, f)
-                for f in os.listdir(backup_dir)
-                if f.startswith(base_name + ".")
-            ]
-            entries.sort(key=os.path.getmtime, reverse=True)
+            entries = [p for p in Path(backup_dir).iterdir() if p.name.startswith(base_name + ".")]
+            entries.sort(key=lambda p: p.stat().st_mtime, reverse=True)
             for old in entries[self._auto_save_backup_keep :]:
                 try:
-                    os.remove(old)
+                    old.unlink()
                 except OSError:
                     pass
         except OSError as e:
@@ -1343,11 +1346,15 @@ class KiCADInterface(SchematicHandlersMixin):
         backup_path: Optional[str] = None
         if current is not None:
             try:
-                backup_dir = os.path.join(os.path.dirname(board_path) or ".", ".mcp-backups")
-                os.makedirs(backup_dir, exist_ok=True)
+                board_p = Path(board_path)
+                backup_dir_p = (
+                    board_p.parent if board_p.parent != Path("") else Path(".")
+                ) / ".mcp-backups"
+                backup_dir_p.mkdir(parents=True, exist_ok=True)
                 stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
-                base = os.path.basename(board_path)
-                backup_path = os.path.join(backup_dir, f"{base}.{stamp}")
+                base = board_p.name
+                backup_dir = str(backup_dir_p)
+                backup_path = str(backup_dir_p / f"{base}.{stamp}")
                 shutil.copy2(board_path, backup_path)
                 self._prune_auto_save_backups(backup_dir, base)
             except OSError as e:
@@ -1553,7 +1560,7 @@ class KiCADInterface(SchematicHandlersMixin):
         filename = params.get("filename")
         saving_to_loaded_file = board_path is not None and (
             not filename
-            or self._normalize_board_path(os.path.abspath(os.path.expanduser(filename)))
+            or self._normalize_board_path(str(Path(filename).expanduser().resolve()))
             == self._normalize_board_path(board_path)
         )
 
@@ -1647,9 +1654,7 @@ class KiCADInterface(SchematicHandlersMixin):
         result: Dict[str, Any] = {
             "success": True,
             "message": (
-                f"Closed project: {os.path.basename(closed_path)}"
-                if closed_path
-                else "Closed project"
+                f"Closed project: {Path(closed_path).name}" if closed_path else "Closed project"
             ),
             "closed": True,
             "saved": saved,
@@ -2451,7 +2456,7 @@ class KiCADInterface(SchematicHandlersMixin):
                 return {"success": False, "message": "schematicPath is required"}
             if not output_path:
                 return {"success": False, "message": "outputPath is required"}
-            if not os.path.exists(schematic_path):
+            if not Path(schematic_path).exists():
                 return {"success": False, "message": f"Schematic not found: {schematic_path}"}
 
             kicad_cli = self._find_kicad_cli_static()
@@ -2466,7 +2471,7 @@ class KiCADInterface(SchematicHandlersMixin):
             }
             cli_format = fmt_map.get(fmt, "kicadxml")
 
-            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+            Path(output_path).resolve().parent.mkdir(parents=True, exist_ok=True)
 
             cmd = [
                 kicad_cli,
@@ -4103,7 +4108,7 @@ class KiCADInterface(SchematicHandlersMixin):
             schematic_path = params.get("schematicPath")
             if not schematic_path:
                 return {"success": False, "message": "Schematic path is required"}
-            if not os.path.exists(schematic_path):
+            if not Path(schematic_path).exists():
                 return {"success": False, "message": f"Schematic not found: {schematic_path}"}
 
             kicad_cli = self._find_kicad_cli_static()
@@ -4162,7 +4167,7 @@ class KiCADInterface(SchematicHandlersMixin):
 
             finally:
                 try:
-                    os.unlink(tmp_path)
+                    Path(tmp_path).unlink()
                 except OSError:
                     pass
 
@@ -4300,7 +4305,7 @@ class KiCADInterface(SchematicHandlersMixin):
                     project_dir = str(Path(board_file).parent)
             if not project_dir:
                 project_dir = params.get("projectPath")
-            if not project_dir or not os.path.isdir(project_dir):
+            if not project_dir or not Path(project_dir).is_dir():
                 return {
                     "success": False,
                     "message": "Could not determine project directory for snapshot",
@@ -4324,14 +4329,14 @@ class KiCADInterface(SchematicHandlersMixin):
 
             system = platform.system()
             if system == "Windows":
-                mcp_log_dir = os.path.join(os.environ.get("APPDATA", ""), "Claude", "logs")
+                mcp_log_dir = Path(os.environ.get("APPDATA", "")) / "Claude" / "logs"
             elif system == "Darwin":
-                mcp_log_dir = os.path.expanduser("~/Library/Logs/Claude")
+                mcp_log_dir = Path("~/Library/Logs/Claude").expanduser()
             else:
-                mcp_log_dir = os.path.expanduser("~/.config/Claude/logs")
-            mcp_log_src = os.path.join(mcp_log_dir, "mcp-server-kicad.log")
+                mcp_log_dir = Path("~/.config/Claude/logs").expanduser()
+            mcp_log_src = mcp_log_dir / "mcp-server-kicad.log"
             mcp_log_dest = None
-            if os.path.exists(mcp_log_src):
+            if mcp_log_src.exists():
                 with open(mcp_log_src, "r", encoding="utf-8", errors="replace") as f:
                     all_lines = f.readlines()
                 session_start = 0
