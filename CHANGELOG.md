@@ -187,7 +187,7 @@ load on every KiCad 10.0.x build.
   dynamic loader (and the legacy fallback was removed in #288), so the seeds only
   leaked into user files. Both tools now copy a new blank KiCad 10 template
   (`python/templates/blank.kicad_sch`: `(version 20260101) (generator
-"eeschema")`, empty `lib_symbols`, no placed symbols).
+  "eeschema")`, empty `lib_symbols`, no placed symbols).
   `template_with_symbols.kicad_sch` is kept unchanged in-repo as a test fixture.
   A regression test asserts a created schematic contains no `_TEMPLATE_`
   references and no seeded `lib_symbols` entries.

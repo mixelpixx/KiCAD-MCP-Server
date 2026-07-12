@@ -37,11 +37,12 @@ def test_rotate_mirror_then_compute_pin_positions_no_state_leak():
             str(TESTS_DIR / "test_move_with_wire_preservation.py") + "::TestComputePinPositions",
             "-q",
             "--no-cov",
-            "--timeout=60",
-            "--timeout-method=thread",
         ],
         capture_output=True,
         text=True,
+        # Hang protection lives here rather than in pytest-timeout flags:
+        # the plugin is not a declared dependency of this repo, and passing
+        # --timeout to a pytest without it is a usage error (exit code 4).
         timeout=90,
     )
     assert result.returncode == 0, (
