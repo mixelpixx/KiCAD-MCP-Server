@@ -6,6 +6,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **Symbol property tools** (#308): `add_symbol_property` adds or updates a
+  custom property (Manufacturer, MPN, LCSC, ...) on a symbol in a
+  `.kicad_sym` library file — the durable, library-wide path for BOM fields.
+  `add_library_symbol_property` does the same on a symbol definition in a
+  schematic's `lib_symbols` cache; note those cache edits are overwritten by
+  a later `update_symbol_from_library` refresh, so the tool descriptions
+  steer callers to the library-file tool first.
+
 - **`update_symbol_from_library` tool** (#291): refresh the cached
   `lib_symbols` definitions in one schematic, a list of schematics, or every
   project under a directory from the current `.kicad_sym` library — the
@@ -16,6 +24,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
   optional `repairMirrorFromBackup` to restore them from a pre-update
   backup. Writes go through the canonical formatter.
 
+### Tooling
+
+- **Interface construction smoke test**: a new test constructs
+  `KiCADInterface` with the stubbed pcbnew and asserts every
+  `command_routes` entry is callable, every schema-listed tool has a route,
+  and recently-added tools are present. A route entry referencing a renamed
+  or un-imported handler function passes every module-level test but
+  crashes the server at startup with `NameError` (#308 shipped exactly
+  that); this makes the class unshippable.
+
 ### Bug Fixes
 
 - **`sync_schematic_to_board` no longer re-parses the fp-lib-table on every
@@ -25,9 +43,25 @@ All notable changes to the KiCAD MCP Server project are documented here.
   In an iterative rebuild flow (call `sync_schematic_to_board`, tweak the
   schematic, call it again), that overhead was paid again each time even
   though the project hadn't changed. The interface now caches the
-  `LibraryManager` via `_get_project_library_manager`, keyed on the resolved
-  project directory, and only rebuilds it when that directory changes —
-  mirroring the caching pattern `place_component` already uses.
+  `LibraryManager` via `_get_project_library_manager`, keyed on the project
+  directory plus the mtimes of the fp-lib-table files it parses, so the
+  cache is reused across repeat calls but rebuilds automatically when a
+  table changes (e.g. `register_footprint_library`, or a KiCad GUI edit
+  mid-session).
+
+- **Fixed a test-suite state leak that caused spurious pin-position failures
+  when test files ran in combination** (#287): `tests/test_rotate_schematic_mirror.py`
+  installed a throwaway `MagicMock` at `sys.modules["commands.pin_locator"]`
+  via `sys.modules.setdefault(...)` at module-collection time, with no
+  teardown. Any later-collected file relying on the real
+  `commands.pin_locator` (e.g. `WireDragger.get_pin_defs`, via
+  `commands.wire_dragger`) silently got empty pin data instead of an error —
+  iterating a bare `MagicMock()` is a no-op by default. A `teardown_module`
+  now undoes the stub, and `test_rotate_handler_no_crash`'s stubbed
+  `kicad_interface.py` exec additionally evicts any `commands.*` submodule it
+  imported for the first time while `pcbnew`/`skip` were mocked, so later
+  tests get a clean re-import instead of a module bound to a discarded mock.
+  Test-only change; no production code touched.
 
 - **`import_ses` no longer creates phantom slashless nets — routed tracks bind
   to the real board nets** (#246): KiCad global-label nets are named with a
@@ -166,7 +200,7 @@ load on every KiCad 10.0.x build.
   dynamic loader (and the legacy fallback was removed in #288), so the seeds only
   leaked into user files. Both tools now copy a new blank KiCad 10 template
   (`python/templates/blank.kicad_sch`: `(version 20260101) (generator
-"eeschema")`, empty `lib_symbols`, no placed symbols).
+  "eeschema")`, empty `lib_symbols`, no placed symbols).
   `template_with_symbols.kicad_sch` is kept unchanged in-repo as a test fixture.
   A regression test asserts a created schematic contains no `_TEMPLATE_`
   references and no seeded `lib_symbols` entries.
