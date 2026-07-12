@@ -32,6 +32,30 @@ from utils.sexpr_format import dumps as kicad_dumps
 logger = logging.getLogger("kicad_interface")
 
 
+def _find_placed_symbol_position(content: str, reference: str) -> Optional[Tuple[float, float]]:
+    """Locate the ``(at x y ...)`` origin of the symbol instance ``reference``.
+
+    Matches by reference, not by lib_id: with several instances of the same
+    symbol in one schematic (two resistors), a first-match lib_id search
+    reports the coordinates of the WRONG instance for every placement after
+    the first. Scans symbol headers and picks the block whose
+    ``(property "Reference" ...)`` is the requested one. Returns ``None`` if
+    no block matches (best-effort caller metadata, not a load-bearing path).
+    """
+    headers = list(
+        re.finditer(
+            r'\(symbol\s+\(lib_id\s+"[^"]+"\)\s+\(at\s+(-?[\d.]+)\s+(-?[\d.]+)',
+            content,
+        )
+    )
+    ref_needle = f'(property "Reference" "{reference}"'
+    for i, header in enumerate(headers):
+        block_end = headers[i + 1].start() if i + 1 < len(headers) else len(content)
+        if ref_needle in content[header.start() : block_end]:
+            return float(header.group(1)), float(header.group(2))
+    return None
+
+
 def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
     """Convert SVG to PNG. No cffi dependency.
 
@@ -230,11 +254,25 @@ class SchematicHandlersMixin:
 
             self._reload_kicad_schematic()
 
-            return {
+            # Read back the actual placed position so callers can see grid-snapped
+            # coordinates when they differ from the request.
+            response: Dict[str, Any] = {
                 "success": True,
                 "component_reference": reference,
                 "symbol_source": f"{library}:{comp_type}",
             }
+            try:
+                content = schematic_file.read_text(encoding="utf-8")
+                placed = _find_placed_symbol_position(content, reference)
+                if placed is not None:
+                    placed_x, placed_y = placed
+                    response["placed_at"] = {"x": placed_x, "y": placed_y}
+                    if (placed_x, placed_y) != (x, y):
+                        response["snapped"] = True
+                        response["requested_at"] = {"x": x, "y": y}
+            except Exception:
+                pass  # Best-effort read; the component was placed successfully.
+            return response
         except Exception as e:
             logger.error(f"Error adding component to schematic: {str(e)}")
             import traceback

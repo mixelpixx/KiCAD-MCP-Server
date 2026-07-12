@@ -823,6 +823,26 @@ class DynamicSymbolLoader:
         full_lib_id = f"{library_name}:{symbol_name}"
         new_uuid = str(uuid.uuid4())
 
+        # Snap the symbol origin to the 1.27 mm (50 mil) schematic connection grid.
+        # Library pins sit at integer multiples of 1.27 mm from the origin, so once
+        # the origin is on-grid every pin lands on-grid too — a prerequisite for
+        # wires and net labels to bind electrically (otherwise ERC reports
+        # endpoint_off_grid and the netlist comes up empty).
+        # The round(..., 2) is exact, not cosmetic: every multiple of 1.27 is
+        # k*127/100 and so has at most two decimals, but the float product
+        # (e.g. 79 * 1.27) can carry binary representation dust that would
+        # otherwise be written into the file verbatim ("100.32999999999998")
+        # and reformatted by KiCad on its next save.
+        _GRID = 1.27
+        snapped_x = round(round(x / _GRID) * _GRID, 2)
+        snapped_y = round(round(y / _GRID) * _GRID, 2)
+        if (snapped_x, snapped_y) != (x, y):
+            logger.info(
+                f"Snapped {reference} origin ({x}, {y}) -> ({snapped_x}, {snapped_y})"
+                " onto 1.27mm grid"
+            )
+        x, y = snapped_x, snapped_y
+
         # --- read property offsets from the already-injected lib_symbols block -----
         lib_props = self._extract_lib_property_positions(schematic_path, library_name, symbol_name)
 

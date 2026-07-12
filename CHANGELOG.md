@@ -36,6 +36,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`add_schematic_component` snaps the placement origin to the 1.27 mm
+  (50 mil) schematic connection grid** (#299): library pins sit at integer
+  multiples of 1.27 mm from the symbol origin, so an off-grid origin leaves
+  every pin off-grid — wires and net labels cannot bind electrically, ERC
+  reports `endpoint_off_grid`, and the netlist comes up empty. The snap is
+  always on; the handler response reports the actual `placed_at` position
+  (looked up by reference, so multiple instances of the same symbol report
+  correctly) plus `snapped: true` and `requested_at` when the coordinates
+  were adjusted. Snapped values are written with at most two decimals —
+  exact for every multiple of 1.27 — instead of raw float products.
+
 - **`sync_schematic_to_board` no longer re-parses the fp-lib-table on every
   call** (#248): `_add_missing_footprints_from_schematic` built a fresh
   `LibraryManager` — re-parsing the global and project `fp-lib-table` files,
