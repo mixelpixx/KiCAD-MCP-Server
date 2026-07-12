@@ -25,8 +25,8 @@ import sexpdata
 from commands.library_schematic import LibraryManager as SchematicLibraryManager
 from commands.schematic import SchematicManager
 from commands.wire_manager import WireManager
-from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.interactive_schematic import reload_kicad_schematic
+from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.sexpr_format import dumps as kicad_dumps
 
 logger = logging.getLogger("kicad_interface")
@@ -2844,6 +2844,63 @@ class SchematicHandlersMixin:
             except OSError:
                 pass
 
+    @staticmethod
+    def _fp_lib_tables_state(project_dir: "Path", manager: Any) -> Tuple[Any, Any]:
+        """Freshness key for a cached ``LibraryManager``: fp-lib-table mtimes.
+
+        A cached manager must not outlive edits to the tables it parsed —
+        ``register_footprint_library`` rewrites the project or global
+        fp-lib-table mid-session, and the KiCad GUI can too (Preferences >
+        Manage Footprint Libraries). Two ``stat`` calls per sync are noise
+        next to the parse they let us skip. The global table path is
+        re-probed each time (rather than remembered) so a global table
+        *created* after the first build is also detected.
+        """
+
+        def _mtime_ns(path: Any) -> Any:
+            if path is None:
+                return None
+            try:
+                return path.stat().st_mtime_ns
+            except OSError:
+                return None
+
+        # Tolerant getattr: tests substitute lightweight fakes for
+        # LibraryManager that don't carry the probe helper.
+        probe = getattr(manager, "_get_global_fp_lib_table", lambda: None)
+        return (_mtime_ns(project_dir / "fp-lib-table"), _mtime_ns(probe()))
+
+    def _get_project_library_manager(self, project_dir: "Path") -> Any:
+        """Return a footprint ``LibraryManager`` for ``project_dir``, cached on ``self``.
+
+        Building one re-parses the global fp-lib-table plus the project's
+        fp-lib-table (recursively following any ``Table`` references). Doing
+        that on every ``sync_schematic_to_board`` call is pure waste when the
+        tool is invoked repeatedly against the same project, e.g. an
+        iterative rebuild flow (#248). Mirrors the cache-on-project-change
+        pattern already used for ``place_component`` above, with one addition:
+        the cache key includes the fp-lib-table mtimes (see
+        ``_fp_lib_tables_state``), so a table edit mid-session triggers a
+        rebuild instead of serving stale library data.
+        """
+        from commands.library import LibraryManager
+
+        cached = getattr(self, "_sync_library_manager", None)
+        cached_dir = getattr(self, "_sync_library_manager_project", None)
+        cached_state = getattr(self, "_sync_library_manager_state", None)
+        if (
+            cached is None
+            or cached_dir != project_dir
+            or cached_state != self._fp_lib_tables_state(project_dir, cached)
+        ):
+            cached = LibraryManager(project_path=project_dir)
+            self._sync_library_manager = cached
+            self._sync_library_manager_project = project_dir
+            # Stamp freshness after the parse: if a table changes between the
+            # parse and the stat, the next call sees a newer mtime and rebuilds.
+            self._sync_library_manager_state = self._fp_lib_tables_state(project_dir, cached)
+        return cached
+
     def _add_missing_footprints_from_schematic(
         self, board: Any, schematic_path: str
     ) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
@@ -2858,8 +2915,6 @@ class SchematicHandlersMixin:
         """
         from pathlib import Path
 
-        from commands.library import LibraryManager
-
         added: List[Dict[str, str]] = []
         skipped: List[Dict[str, str]] = []
 
@@ -2869,7 +2924,7 @@ class SchematicHandlersMixin:
 
         existing_refs = {fp.GetReference() for fp in board.GetFootprints()}
         project_dir = Path(schematic_path).parent
-        library_manager = LibraryManager(project_path=project_dir)
+        library_manager = self._get_project_library_manager(project_dir)
 
         for comp in components:
             ref = comp["reference"]
