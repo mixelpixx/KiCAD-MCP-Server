@@ -346,6 +346,9 @@ try:
     from commands.schematic_hierarchy import SchematicHierarchyCommands
     from commands.symbol_creator import SymbolCreator
     from commands.symbol_pins import SymbolPinCommands
+    from commands.update_symbol_from_library import update_symbol_from_library
+    from commands.add_library_symbol_property import add_library_symbol_property
+    from commands.add_symbol_property import add_symbol_property
 
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
@@ -529,6 +532,8 @@ class KiCADInterface(SchematicHandlersMixin):
             "batch_add_no_connects": self.batch_commands.batch_add_no_connects,
             "batch_connect": self.batch_commands.batch_connect,
             "batch_add_and_connect": self.batch_commands.batch_add_and_connect,
+            "update_symbol_from_library": update_symbol_from_library,
+            "add_library_symbol_property": add_library_symbol_property,
             # JLCPCB API commands (complete parts catalog via API)
             "download_jlcpcb_database": self._handle_download_jlcpcb_database,
             "search_jlcpcb_parts": self._handle_search_jlcpcb_parts,
@@ -634,6 +639,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "delete_symbol": self._handle_delete_symbol,
             "list_symbols_in_library": self._handle_list_symbols_in_library,
             "register_symbol_library": self._handle_register_symbol_library,
+            "add_symbol_property": add_symbol_property,
             # Freerouting autoroute commands
             "autoroute": self.freerouting_commands.autoroute,
             "export_dsn": self.freerouting_commands.export_dsn,
