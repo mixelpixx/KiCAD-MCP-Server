@@ -24,6 +24,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **Library management tools: `import_symbol`, `export_symbol`,
+  `rename_symbol`** — copy a symbol between `.kicad_sym` libraries (with
+  optional rename/overwrite; target created if missing), extract one symbol
+  to a standalone file, and rename a symbol including its sub-symbol shards
+  and any `(extends ...)` references from derived symbols in the same
+  library. Deletion deliberately stays with the existing `delete_symbol`
+  tool — one tool per capability. All three writes invalidate the
+  module-level symbol caches, and new/exported files reuse SymbolCreator's
+  header token so every `.kicad_sym` this server writes carries the same,
+  oldest-supported format version.
+
 - **`replace_instance_lib_ids` tool** — library-migration primitive: swaps
   `lib_id` references in schematic symbol instances per an explicit
   old-to-new mapping (values used verbatim, so one migration may target
