@@ -228,8 +228,8 @@ load on every KiCad 10.0.x build.
   `add_schematic_component` tool synthesizes its own `lib_symbols` via the
   dynamic loader (and the legacy fallback was removed in #288), so the seeds only
   leaked into user files. Both tools now copy a new blank KiCad 10 template
-  (`python/templates/blank.kicad_sch`: `(version 20260101) (generator
-  "eeschema")`, empty `lib_symbols`, no placed symbols).
+  (`python/templates/blank.kicad_sch`: `(version 20260101) (generator "eeschema")`,
+  empty `lib_symbols`, no placed symbols).
   `template_with_symbols.kicad_sch` is kept unchanged in-repo as a test fixture.
   A regression test asserts a created schematic contains no `_TEMPLATE_`
   references and no seeded `lib_symbols` entries.
@@ -407,8 +407,8 @@ the KiCad GUI connects later (reopen the project to adopt IPC).
 - **Fallback schematic writer emits the KiCad 10 header** (#221, partial): the
   template-missing fallback in `create_schematic` and `create_project` wrote the
   stale KiCad 9 header `(version 20250114) (generator "KiCAD-MCP-Server")`. It
-  now writes `(version 20260306) (generator "eeschema") (generator_version
-"10.0")`, matching what eeschema writes for a new file. This covers only the
+  now writes `(version 20260306) (generator "eeschema") (generator_version "10.0")`,
+  matching what eeschema writes for a new file. This covers only the
   fallback path; the main templates (which still carry the KiCad 9 version and
   the `_TEMPLATE_*` clone-source instances used by `add_schematic_component`)
   are tracked separately because rewriting them touches the component-cloning
@@ -534,9 +534,7 @@ the KiCad GUI connects later (reopen the project to adopt IPC).
   _would_ be made without modifying the board — useful for previewing
   before committing.
 
-  Returns `{ placed: [{x, y, unit}, ...], summary: {placed_count,
-candidates_evaluated, skipped_by_zone_membership,
-skipped_by_collision, ...} }`.
+  Returns `{ placed: [{x, y, unit}, ...], summary: {placed_count, candidates_evaluated, skipped_by_zone_membership, skipped_by_collision, ...} }`.
 
   Approach ported from
   [morningfire-pcb-automation](https://github.com/NiNjA-CodE/morningfire-pcb-automation)
