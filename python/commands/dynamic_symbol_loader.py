@@ -16,6 +16,40 @@ from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger("kicad_interface")
 
+# Module-level caches shared across DynamicSymbolLoader instances.
+# A fresh loader is created for every add_component call (see
+# schematic_handlers), so instance-level caches never survive — every
+# component add would otherwise re-scan the sym-lib-table and re-read
+# multi-MB .kicad_sym files. These caches make library resolution and symbol
+# extraction pay their cost once. Libraries are NOT immutable mid-session,
+# though: create_symbol / delete_symbol / add_library_symbol_property rewrite
+# .kicad_sym files and register_symbol_library rewrites the sym-lib-table, so
+# stale entries are guarded three ways — resolution misses are never cached,
+# resolved paths are revalidated with exists(), and symbol blocks carry the
+# source file's mtime_ns. The mutating handlers additionally call
+# DynamicSymbolLoader.clear_library_caches() for the case a stat cannot see
+# (re-pointing an existing library name at a different path).
+_LIB_DIRS_CACHE: Optional[Tuple[Tuple, List[Path]]] = None  # (env fingerprint, dirs)
+_LIB_FILE_CACHE: Dict[Tuple, Path] = {}
+_SYMBOL_BLOCK_CACHE: Dict[Tuple[str, str], Tuple[Optional[int], Optional[str]]] = {}
+
+_SYMBOL_DIR_ENV_VARS = (
+    "KICAD10_SYMBOL_DIR",
+    "KICAD9_SYMBOL_DIR",
+    "KICAD8_SYMBOL_DIR",
+    "KICAD_SYMBOL_DIR",
+)
+
+
+def _symbol_dir_env_fingerprint() -> Tuple:
+    """The env-var inputs library discovery depends on.
+
+    Cached discovery results are only valid for the environment they were
+    computed under — tests monkeypatch KICAD_SYMBOL_DIR per test, and a cache
+    key that ignores it serves one test's temp directory to the next.
+    """
+    return tuple(os.environ.get(v) for v in _SYMBOL_DIR_ENV_VARS)
+
 
 class DynamicSymbolLoader:
     """
@@ -33,8 +67,24 @@ class DynamicSymbolLoader:
         self.symbol_cache = {}  # Cache: "lib:symbol" -> raw text block
         self.project_path = project_path  # Project directory for project-specific libraries
 
+    @staticmethod
+    def clear_library_caches() -> None:
+        """Reset the module-level library caches (call if libraries change on disk)."""
+        global _LIB_DIRS_CACHE
+        _LIB_DIRS_CACHE = None
+        _LIB_FILE_CACHE.clear()
+        _SYMBOL_BLOCK_CACHE.clear()
+
     def find_kicad_symbol_libraries(self) -> List[Path]:
-        """Find all KiCad symbol library directories"""
+        """Find all KiCad symbol library directories (cached module-wide).
+
+        The cache entry records the env fingerprint it was computed under and
+        is ignored if the KICAD*_SYMBOL_DIR environment has changed since.
+        """
+        global _LIB_DIRS_CACHE
+        env = _symbol_dir_env_fingerprint()
+        if _LIB_DIRS_CACHE is not None and _LIB_DIRS_CACHE[0] == env:
+            return _LIB_DIRS_CACHE[1]
         # Discovered install roots first (registry + Program Files globs +
         # custom roots like C:\KiCad, newest version first) — the same shared
         # helper the cli/footprint/symbol-search paths use (#286), so the
@@ -68,7 +118,9 @@ class DynamicSymbolLoader:
             if env_var in os.environ:
                 possible_paths.insert(0, Path(os.environ[env_var]))
 
-        return [p for p in possible_paths if p.exists() and p.is_dir()]
+        dirs = [p for p in possible_paths if p.exists() and p.is_dir()]
+        _LIB_DIRS_CACHE = (env, dirs)
+        return dirs
 
     def find_library_file(self, library_name: str) -> Optional[Path]:
         """Find the .kicad_sym file for a given library name.
@@ -81,41 +133,74 @@ class DynamicSymbolLoader:
            registered libraries that live outside the bundled symbol directories
            (e.g. company libraries in OneDrive, network shares, custom paths).
         3. Bundled / well-known KiCad symbol library directories.
+
+        Resolution is cached module-wide by (project_path, library_name, env
+        fingerprint) so that repeated component adds don't re-scan the
+        sym-lib-table every time. Only successful resolutions are cached: a
+        "not found" is typically followed by the user creating or registering
+        that library, and a cached miss would keep the name unresolvable
+        until process restart. Cached paths are revalidated with exists() so
+        a deleted or moved library re-resolves instead of being served stale.
         """
-        # 1. Check project-specific sym-lib-table
-        if self.project_path:
-            project_table = Path(self.project_path) / "sym-lib-table"
-            if project_table.exists():
-                resolved = self._resolve_library_from_table(project_table, library_name)
-                if resolved:
-                    logger.info(f"Found '{library_name}' in project sym-lib-table: {resolved}")
-                    return resolved
+        # A loader whose discovery has been instance-patched (tests point
+        # find_kicad_symbol_libraries at a temp dir) must not read or write
+        # the shared cache: its results are not valid for other loaders, and
+        # the patched state is invisible to any module-level cache key.
+        shares_cache = "find_kicad_symbol_libraries" not in self.__dict__
 
-        # 2. Check global user sym-lib-table
-        for global_table in self._global_sym_lib_table_paths():
-            if global_table.exists():
-                resolved = self._resolve_library_from_table(global_table, library_name)
-                if resolved:
-                    logger.info(
-                        f"Found '{library_name}' in global sym-lib-table {global_table}: {resolved}"
-                    )
-                    return resolved
-
-        # 3. Fall back to bundled / well-known KiCad symbol directories
-        for lib_dir in self.find_kicad_symbol_libraries():
-            # Classic single-file library (KiCAD 8/9)
-            lib_file = lib_dir / f"{library_name}.kicad_sym"
-            if lib_file.exists():
-                return lib_file
-            # KiCAD 10 per-symbol directory library
-            lib_symdir = lib_dir / f"{library_name}.kicad_symdir"
-            if lib_symdir.exists() and lib_symdir.is_dir():
-                return lib_symdir
-
-        logger.warning(
-            f"Library file not found: {library_name}.kicad_sym / {library_name}.kicad_symdir"
+        cache_key = (
+            str(self.project_path) if self.project_path else None,
+            library_name,
+            _symbol_dir_env_fingerprint(),
         )
-        return None
+        if shares_cache:
+            hit = _LIB_FILE_CACHE.get(cache_key)
+            if hit is not None and hit.exists():
+                return hit
+
+        def _search() -> Optional[Path]:
+            # 1. Check project-specific sym-lib-table
+            if self.project_path:
+                project_table = Path(self.project_path) / "sym-lib-table"
+                if project_table.exists():
+                    resolved = self._resolve_library_from_table(project_table, library_name)
+                    if resolved:
+                        logger.info(f"Found '{library_name}' in project sym-lib-table: {resolved}")
+                        return resolved
+
+            # 2. Check global user sym-lib-table
+            for global_table in self._global_sym_lib_table_paths():
+                if global_table.exists():
+                    resolved = self._resolve_library_from_table(global_table, library_name)
+                    if resolved:
+                        logger.info(
+                            f"Found '{library_name}' in global sym-lib-table {global_table}: {resolved}"
+                        )
+                        return resolved
+
+            # 3. Fall back to bundled / well-known KiCad symbol directories
+            for lib_dir in self.find_kicad_symbol_libraries():
+                # Classic single-file library (KiCAD 8/9)
+                lib_file = lib_dir / f"{library_name}.kicad_sym"
+                if lib_file.exists():
+                    return lib_file
+                # KiCAD 10 per-symbol directory library
+                lib_symdir = lib_dir / f"{library_name}.kicad_symdir"
+                if lib_symdir.exists() and lib_symdir.is_dir():
+                    return lib_symdir
+
+            logger.warning(
+                f"Library file not found: {library_name}.kicad_sym / {library_name}.kicad_symdir"
+            )
+            return None
+
+        result = _search()
+        if shares_cache:
+            if result is not None:
+                _LIB_FILE_CACHE[cache_key] = result
+            else:
+                _LIB_FILE_CACHE.pop(cache_key, None)
+        return result
 
     def _global_sym_lib_table_paths(self) -> list:
         """Candidate paths for the user-global sym-lib-table, newest version first."""
@@ -406,13 +491,40 @@ class DynamicSymbolLoader:
         if not lib_path:
             return None
 
+        # The physical file the symbol lives in: for a KiCAD 10 directory
+        # library each symbol is its own shard file.
+        src_file = lib_path / f"{symbol_name}.kicad_sym" if lib_path.is_dir() else lib_path
+
+        def _src_mtime_ns() -> Optional[int]:
+            try:
+                return src_file.stat().st_mtime_ns
+            except OSError:
+                return None
+
+        # Module-level cache keyed by the resolved library path + symbol, so the
+        # multi-MB .kicad_sym is read and parsed once even though a fresh loader
+        # (and empty self.symbol_cache) is created for every component add.
+        # Entries carry the source file's mtime_ns: create_symbol /
+        # delete_symbol / add_library_symbol_property rewrite .kicad_sym files
+        # mid-session, so a hit is honoured only while the mtime matches. (For
+        # a symdir symbol whose (extends ...) parent lives in a sibling shard,
+        # a parent-only edit is invisible to this stat — the mutating handlers
+        # call clear_library_caches() to cover that.)
+        mod_key = (str(lib_path), symbol_name)
+        current_mtime = _src_mtime_ns()
+        entry = _SYMBOL_BLOCK_CACHE.get(mod_key)
+        if entry is not None and entry[0] == current_mtime:
+            cached = entry[1]
+            self.symbol_cache[cache_key] = cached
+            return cached
+
         # KiCAD 10 directory library: each symbol is its own file
         if lib_path.is_dir():
-            sym_file = lib_path / f"{symbol_name}.kicad_sym"
-            if not sym_file.exists():
+            if not src_file.exists():
                 logger.warning(f"Symbol '{symbol_name}' not found in directory library {lib_path}")
+                _SYMBOL_BLOCK_CACHE[mod_key] = (current_mtime, None)
                 return None
-            with open(sym_file, "r", encoding="utf-8") as f:
+            with open(src_file, "r", encoding="utf-8") as f:
                 lib_content = f.read()
         else:
             with open(lib_path, "r", encoding="utf-8") as f:
@@ -421,6 +533,7 @@ class DynamicSymbolLoader:
         block = self._extract_symbol_block(lib_content, symbol_name)
         if block is None:
             logger.warning(f"Symbol '{symbol_name}' not found in {library_name}")
+            _SYMBOL_BLOCK_CACHE[mod_key] = (current_mtime, None)
             return None
 
         # If the symbol uses (extends "ParentName"), inline the parent content
@@ -449,6 +562,7 @@ class DynamicSymbolLoader:
         result = block
 
         self.symbol_cache[cache_key] = result
+        _SYMBOL_BLOCK_CACHE[mod_key] = (current_mtime, result)
         logger.info(f"Extracted symbol {full_name} ({len(result)} chars)")
         return result
 

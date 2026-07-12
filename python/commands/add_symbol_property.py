@@ -86,6 +86,14 @@ def add_symbol_property(params: dict[str, Any]) -> dict[str, Any]:
     content = content[:sym_start] + block + content[sym_end + 1 :]
     lib_path.write_text(content, encoding="utf-8")
 
+    # This rewrote a .kicad_sym file: drop the module-level symbol caches so a
+    # subsequent extract/list sees the new property instead of a stale block
+    # (the mtime guards over there also catch this; the explicit clear keeps
+    # every library-mutating write path uniform).
+    from commands.symbol_creator import _invalidate_symbol_caches
+
+    _invalidate_symbol_caches()
+
     action = "Updated" if updated else "Added"
     return {
         "success": True,
