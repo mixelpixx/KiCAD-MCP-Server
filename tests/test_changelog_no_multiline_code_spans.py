@@ -30,9 +30,16 @@ def test_changelog_has_no_multiline_inline_code_spans():
 
     open_span_from: Optional[int] = None
     offenders = []
+    in_fence = False
     for lineno, line in enumerate(lines, start=1):
         if line.strip().startswith("```"):
-            continue  # fenced code blocks are exempt; only inline `code` spans are unsafe
+            # Fenced code blocks are exempt; only inline `code` spans are
+            # unsafe. Track the fence STATE, not just the fence lines — a
+            # lone backtick in fenced content must not count as an open span.
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
         if open_span_from is not None:
             offenders.append((open_span_from, lineno))
             open_span_from = None
