@@ -828,9 +828,14 @@ class DynamicSymbolLoader:
         # the origin is on-grid every pin lands on-grid too — a prerequisite for
         # wires and net labels to bind electrically (otherwise ERC reports
         # endpoint_off_grid and the netlist comes up empty).
+        # The round(..., 2) is exact, not cosmetic: every multiple of 1.27 is
+        # k*127/100 and so has at most two decimals, but the float product
+        # (e.g. 79 * 1.27) can carry binary representation dust that would
+        # otherwise be written into the file verbatim ("100.32999999999998")
+        # and reformatted by KiCad on its next save.
         _GRID = 1.27
-        snapped_x = round(x / _GRID) * _GRID
-        snapped_y = round(y / _GRID) * _GRID
+        snapped_x = round(round(x / _GRID) * _GRID, 2)
+        snapped_y = round(round(y / _GRID) * _GRID, 2)
         if (snapped_x, snapped_y) != (x, y):
             logger.info(
                 f"Snapped {reference} origin ({x}, {y}) -> ({snapped_x}, {snapped_y})"

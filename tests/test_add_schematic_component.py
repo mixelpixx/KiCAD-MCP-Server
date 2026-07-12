@@ -384,15 +384,11 @@ class TestGridSnap:
             sch, "Device", "R", reference="R1", value="1k", x=100, y=100
         )
         content = sch.read_text()
-        at = re.search(
-            r'\(symbol \(lib_id "Device:R"\) \(at ([\d.]+) ([\d.]+)', content
-        )
+        at = re.search(r'\(symbol \(lib_id "Device:R"\) \(at ([\d.]+) ([\d.]+)', content)
         assert at is not None
         for coord in (float(at.group(1)), float(at.group(2))):
             # on-grid ⇔ coord / 1.27 is (near) an integer
-            assert (
-                abs(round(coord / 1.27) * 1.27 - coord) < 1e-6
-            ), f"{coord} off grid"
+            assert abs(round(coord / 1.27) * 1.27 - coord) < 1e-6, f"{coord} off grid"
 
     def test_on_grid_coordinate_unchanged(self, tmp_path: Any) -> None:
         """A coordinate that is already on-grid stays unchanged (no drift)."""
@@ -403,9 +399,48 @@ class TestGridSnap:
             sch, "Device", "R", reference="R1", value="1k", x=101.6, y=50.8
         )
         content = sch.read_text()
-        at = re.search(
-            r'\(symbol \(lib_id "Device:R"\) \(at ([\d.]+) ([\d.]+)', content
-        )
+        at = re.search(r'\(symbol \(lib_id "Device:R"\) \(at ([\d.]+) ([\d.]+)', content)
         assert at is not None
         assert float(at.group(1)) == 101.6
         assert float(at.group(2)) == 50.8
+
+    def test_snapped_value_is_written_exactly_two_decimals(self, tmp_path: Any) -> None:
+        """The snapped coordinate is written as e.g. 100.33, not 100.32999..."""
+        sch = tmp_path / "clean.kicad_sch"
+        shutil.copy(WITH_SYMBOLS_SCH, sch)
+        # round(100 / 1.27) * 1.27 = 79 * 1.27, which carries float dust
+        # (100.32999999999998) unless the snap rounds the product.
+        self._loader().create_component_instance(
+            sch, "Device", "R", reference="R1", value="1k", x=100, y=100
+        )
+        content = sch.read_text()
+        at = re.search(r'\(symbol \(lib_id "Device:R"\) \(at ([\d.]+) ([\d.]+)', content)
+        assert at is not None
+        assert at.group(1) == "100.33", f"file contains {at.group(1)!r}"
+        assert at.group(2) == "100.33"
+
+    def test_placed_position_read_back_matches_reference_not_first_lib_id(
+        self, tmp_path: Any
+    ) -> None:
+        """placed_at must report the just-placed instance, not the first same-type one.
+
+        With two resistors in the schematic, a first-match lib_id search finds
+        R1's block when R2 was placed — reporting the wrong coordinates and a
+        spurious ``snapped`` flag. ``_find_placed_symbol_position`` matches by
+        reference instead.
+        """
+        from commands.schematic_handlers import _find_placed_symbol_position
+
+        sch = tmp_path / "two.kicad_sch"
+        shutil.copy(WITH_SYMBOLS_SCH, sch)
+        loader = self._loader()
+        loader.create_component_instance(
+            sch, "Device", "R", reference="R1", value="1k", x=101.6, y=50.8
+        )
+        loader.create_component_instance(
+            sch, "Device", "R", reference="R2", value="10k", x=127, y=63.5
+        )
+        content = sch.read_text()
+        assert _find_placed_symbol_position(content, "R1") == (101.6, 50.8)
+        assert _find_placed_symbol_position(content, "R2") == (127.0, 63.5)
+        assert _find_placed_symbol_position(content, "R99") is None
