@@ -16,6 +16,18 @@ from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger("kicad_interface")
 
+# Module-level caches shared across DynamicSymbolLoader instances.
+# Symbol libraries are effectively immutable during a process run, but a fresh
+# loader is created for every add_component call (see schematic_handlers), so
+# instance-level caches never survive — every component add would otherwise
+# re-scan the sym-lib-table and re-read multi-MB .kicad_sym files.  These
+# caches make library resolution and symbol extraction pay their cost once.
+# Call DynamicSymbolLoader.clear_library_caches() if a library changes on disk
+# mid-session.
+_LIB_DIRS_CACHE: Optional[List[Path]] = None
+_LIB_FILE_CACHE: Dict[Tuple[Optional[str], str], Optional[Path]] = {}
+_SYMBOL_BLOCK_CACHE: Dict[Tuple[str, str], Optional[str]] = {}
+
 
 class DynamicSymbolLoader:
     """
@@ -33,8 +45,19 @@ class DynamicSymbolLoader:
         self.symbol_cache = {}  # Cache: "lib:symbol" -> raw text block
         self.project_path = project_path  # Project directory for project-specific libraries
 
+    @staticmethod
+    def clear_library_caches() -> None:
+        """Reset the module-level library caches (call if libraries change on disk)."""
+        global _LIB_DIRS_CACHE
+        _LIB_DIRS_CACHE = None
+        _LIB_FILE_CACHE.clear()
+        _SYMBOL_BLOCK_CACHE.clear()
+
     def find_kicad_symbol_libraries(self) -> List[Path]:
-        """Find all KiCad symbol library directories"""
+        """Find all KiCad symbol library directories (cached module-wide)."""
+        global _LIB_DIRS_CACHE
+        if _LIB_DIRS_CACHE is not None:
+            return _LIB_DIRS_CACHE
         # Discovered install roots first (registry + Program Files globs +
         # custom roots like C:\KiCad, newest version first) — the same shared
         # helper the cli/footprint/symbol-search paths use (#286), so the
@@ -68,7 +91,8 @@ class DynamicSymbolLoader:
             if env_var in os.environ:
                 possible_paths.insert(0, Path(os.environ[env_var]))
 
-        return [p for p in possible_paths if p.exists() and p.is_dir()]
+        _LIB_DIRS_CACHE = [p for p in possible_paths if p.exists() and p.is_dir()]
+        return _LIB_DIRS_CACHE
 
     def find_library_file(self, library_name: str) -> Optional[Path]:
         """Find the .kicad_sym file for a given library name.
@@ -81,41 +105,53 @@ class DynamicSymbolLoader:
            registered libraries that live outside the bundled symbol directories
            (e.g. company libraries in OneDrive, network shares, custom paths).
         3. Bundled / well-known KiCad symbol library directories.
+
+        Resolution is cached module-wide by (project_path, library_name) so that
+        repeated component adds don't re-scan the sym-lib-table every time.
         """
-        # 1. Check project-specific sym-lib-table
-        if self.project_path:
-            project_table = Path(self.project_path) / "sym-lib-table"
-            if project_table.exists():
-                resolved = self._resolve_library_from_table(project_table, library_name)
-                if resolved:
-                    logger.info(f"Found '{library_name}' in project sym-lib-table: {resolved}")
-                    return resolved
+        cache_key = (str(self.project_path) if self.project_path else None, library_name)
+        if cache_key in _LIB_FILE_CACHE:
+            return _LIB_FILE_CACHE[cache_key]
 
-        # 2. Check global user sym-lib-table
-        for global_table in self._global_sym_lib_table_paths():
-            if global_table.exists():
-                resolved = self._resolve_library_from_table(global_table, library_name)
-                if resolved:
-                    logger.info(
-                        f"Found '{library_name}' in global sym-lib-table {global_table}: {resolved}"
-                    )
-                    return resolved
+        def _search() -> Optional[Path]:
+            # 1. Check project-specific sym-lib-table
+            if self.project_path:
+                project_table = Path(self.project_path) / "sym-lib-table"
+                if project_table.exists():
+                    resolved = self._resolve_library_from_table(project_table, library_name)
+                    if resolved:
+                        logger.info(f"Found '{library_name}' in project sym-lib-table: {resolved}")
+                        return resolved
 
-        # 3. Fall back to bundled / well-known KiCad symbol directories
-        for lib_dir in self.find_kicad_symbol_libraries():
-            # Classic single-file library (KiCAD 8/9)
-            lib_file = lib_dir / f"{library_name}.kicad_sym"
-            if lib_file.exists():
-                return lib_file
-            # KiCAD 10 per-symbol directory library
-            lib_symdir = lib_dir / f"{library_name}.kicad_symdir"
-            if lib_symdir.exists() and lib_symdir.is_dir():
-                return lib_symdir
+            # 2. Check global user sym-lib-table
+            for global_table in self._global_sym_lib_table_paths():
+                if global_table.exists():
+                    resolved = self._resolve_library_from_table(global_table, library_name)
+                    if resolved:
+                        logger.info(
+                            f"Found '{library_name}' in global sym-lib-table {global_table}: {resolved}"
+                        )
+                        return resolved
 
-        logger.warning(
-            f"Library file not found: {library_name}.kicad_sym / {library_name}.kicad_symdir"
-        )
-        return None
+            # 3. Fall back to bundled / well-known KiCad symbol directories
+            for lib_dir in self.find_kicad_symbol_libraries():
+                # Classic single-file library (KiCAD 8/9)
+                lib_file = lib_dir / f"{library_name}.kicad_sym"
+                if lib_file.exists():
+                    return lib_file
+                # KiCAD 10 per-symbol directory library
+                lib_symdir = lib_dir / f"{library_name}.kicad_symdir"
+                if lib_symdir.exists() and lib_symdir.is_dir():
+                    return lib_symdir
+
+            logger.warning(
+                f"Library file not found: {library_name}.kicad_sym / {library_name}.kicad_symdir"
+            )
+            return None
+
+        result = _search()
+        _LIB_FILE_CACHE[cache_key] = result
+        return result
 
     def _global_sym_lib_table_paths(self) -> list:
         """Candidate paths for the user-global sym-lib-table, newest version first."""
@@ -406,11 +442,21 @@ class DynamicSymbolLoader:
         if not lib_path:
             return None
 
+        # Module-level cache keyed by the resolved library path + symbol, so the
+        # multi-MB .kicad_sym is read and parsed once even though a fresh loader
+        # (and empty self.symbol_cache) is created for every component add.
+        mod_key = (str(lib_path), symbol_name)
+        if mod_key in _SYMBOL_BLOCK_CACHE:
+            cached = _SYMBOL_BLOCK_CACHE[mod_key]
+            self.symbol_cache[cache_key] = cached
+            return cached
+
         # KiCAD 10 directory library: each symbol is its own file
         if lib_path.is_dir():
             sym_file = lib_path / f"{symbol_name}.kicad_sym"
             if not sym_file.exists():
                 logger.warning(f"Symbol '{symbol_name}' not found in directory library {lib_path}")
+                _SYMBOL_BLOCK_CACHE[mod_key] = None
                 return None
             with open(sym_file, "r", encoding="utf-8") as f:
                 lib_content = f.read()
@@ -421,6 +467,7 @@ class DynamicSymbolLoader:
         block = self._extract_symbol_block(lib_content, symbol_name)
         if block is None:
             logger.warning(f"Symbol '{symbol_name}' not found in {library_name}")
+            _SYMBOL_BLOCK_CACHE[mod_key] = None
             return None
 
         # If the symbol uses (extends "ParentName"), inline the parent content
@@ -449,6 +496,7 @@ class DynamicSymbolLoader:
         result = block
 
         self.symbol_cache[cache_key] = result
+        _SYMBOL_BLOCK_CACHE[mod_key] = result
         logger.info(f"Extracted symbol {full_name} ({len(result)} chars)")
         return result
 
