@@ -2,17 +2,18 @@
 Replace instance lib_ids in KiCad schematics — library migration helper.
 
 Handles the mechanical work of swapping lib_id references in schematic
-instances, including mirror-variant angle correction (__m0/__m90/__m180/__m270).
-Matching logic belongs in callers (Hermes skills), not here.
+instances, including mirror-variant angle correction (__m0/__m90/__m180/__m270
+suffixes produced by the Eagle importer's mirror cache). Which symbol maps to
+which — by type, value, footprint — is the caller's decision; this tool only
+applies a given mapping.
 """
 
 import logging
-import os
 import re
 from pathlib import Path
 from typing import Any, Dict
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("kicad_interface")
 
 MIRROR_TO_ANGLE = {"__m0": 0, "__m90": 90, "__m180": 180, "__m270": 270}
 
@@ -26,22 +27,28 @@ class SymbolSchematicCommands:
 
         Params
         ------
-        schematic_path : path to .kicad_sch file (required)
-        mapping        : dict {old_full_lib_id: new_full_lib_id} (required)
-                         e.g. {"eagle_import:1-RCL-EIGEN_C": "FOG_components:C_100nF_0402"}
-        source_library : old library prefix (default "eagle_import")
-        target_library : new library prefix (default "FOG_components")
+        schematicPath : path to .kicad_sch file (required)
+        mapping       : dict {old_full_lib_id: new_full_lib_id} (required),
+                        e.g. {"eagle_import:1-RCL-EIGEN_C": "project_lib:C_100nF_0402"}.
+                        Values are used verbatim, so one migration may target
+                        several libraries. Mirror-variant instances
+                        (…__m90 etc.) need their own entries — the variant
+                        chooses both the target symbol and the angle offset.
+        sourceLibrary : library prefix whose instances are candidates
+                        (default "eagle_import", the Eagle importer's output)
+
+        Only instances are rewritten; the lib_symbols section is preserved
+        (use update_symbol_from_library to refresh definitions).
         """
-        sch_path = params.get("schematic_path")
+        sch_path = params.get("schematicPath")
         mapping: Dict[str, str] = params.get("mapping", {})
-        source_lib = params.get("source_library", "eagle_import")
-        target_lib = params.get("target_library", "FOG_components")
+        source_lib = params.get("sourceLibrary", "eagle_import")
 
         if not sch_path:
-            return {"success": False, "error": "schematic_path is required"}
+            return {"success": False, "error": "schematicPath is required"}
         if not mapping:
             return {"success": False, "error": "mapping dict is required"}
-        if not os.path.exists(sch_path):
+        if not Path(sch_path).exists():
             return {"success": False, "error": f"File not found: {sch_path}"}
 
         try:
@@ -71,32 +78,32 @@ class SymbolSchematicCommands:
             replaced = 0
 
             # ── per-instance replacer ──
-            def _replace(m: re.Match) -> str:
+            def _replace(m: "re.Match[str]") -> str:
                 nonlocal replaced
                 full = m.group(0)
                 lib_id = m.group(1)
                 x, y = m.group(2), m.group(3)
                 old_angle = int(m.group(4))
 
-                # strip mirror suffix, track angle offset
-                base = lib_id
-                angle_offset = 0
-                for suffix, offset in MIRROR_TO_ANGLE.items():
-                    if base.endswith(suffix):
-                        base = base[: -len(suffix)]
-                        angle_offset = offset
-                        break
-
                 full_key = f"{source_lib}:{lib_id}"
                 if full_key not in mapping:
                     return full
 
-                new_lib = mapping[full_key].split(":", 1)[-1]
+                # A mirror-variant suffix contributes an angle offset; the
+                # mapping entry (keyed on the full suffixed id) supplies the
+                # target lib_id.
+                angle_offset = 0
+                for suffix, offset in MIRROR_TO_ANGLE.items():
+                    if lib_id.endswith(suffix):
+                        angle_offset = offset
+                        break
+
+                # The mapping value is the complete replacement lib_id, used
+                # verbatim — different entries may target different libraries.
+                new_full_id = mapping[full_key]
                 new_angle = (old_angle + angle_offset) % 360
 
-                result = full.replace(
-                    f"{source_lib}:{lib_id}", f"{target_lib}:{new_lib}", 1
-                )
+                result = full.replace(full_key, new_full_id, 1)
                 if angle_offset != 0:
                     result = result.replace(
                         f"(at {x} {y} {old_angle})",
@@ -106,11 +113,13 @@ class SymbolSchematicCommands:
                 replaced += 1
                 return result
 
+            # Both header layouts KiCad-family writers produce:
+            #   (symbol\n  (lib_id "…")\n  (at x y a)   — KiCad GUI / Eagle import
+            #   (symbol (lib_id "…") (at x y a)         — this repo's dynamic loader
             pattern = re.compile(
-                r'\(symbol\s*\n\s*\(lib_id "'
+                r'\(symbol\s+\(lib_id "'
                 + re.escape(source_lib)
-                + r':([^"]+)"\)\s*\n\s*\(at ([\d.-]+) ([\d.-]+) (\d+)\)',
-                re.DOTALL,
+                + r':([^"]+)"\)\s+\(at ([\d.-]+) ([\d.-]+) (\d+)\)',
             )
 
             inst_part = pattern.sub(_replace, inst_part)
@@ -118,17 +127,18 @@ class SymbolSchematicCommands:
             new_content = lib_part + inst_part
             Path(sch_path).write_text(new_content, encoding="utf-8", newline="\n")
 
-            remaining = inst_part.count(f"{source_lib}:")
+            remaining = inst_part.count(f'(lib_id "{source_lib}:')
 
             return {
                 "success": True,
                 "replaced": replaced,
-                "remaining_eagle": remaining,
+                "remaining": remaining,
                 "message": (
-                    f"Replaced {replaced} instance lib_ids, {remaining} remaining"
+                    f"Replaced {replaced} instance lib_ids, "
+                    f"{remaining} {source_lib}: instance(s) remaining"
                 ),
             }
 
-        except Exception:
+        except Exception as e:
             logger.exception("replace_instance_lib_ids failed")
-            return {"success": False, "error": "Replacement error (see log)"}
+            return {"success": False, "error": f"Replacement error: {e}"}
