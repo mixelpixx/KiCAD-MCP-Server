@@ -124,6 +124,42 @@ def test_symbol_creator_write_clears_loader_caches(tmp_path, monkeypatch):
     assert dsl_mod._LIB_DIRS_CACHE is None  # cleared by the write
 
 
+def test_instance_patched_discovery_does_not_poison_shared_cache(tmp_path):
+    """Loaders with instance-patched discovery must bypass the shared cache.
+
+    tests/test_symdir_extends.py builds one loader per test, each with
+    ``loader.find_kicad_symbol_libraries = lambda: [its own tmp dir]`` and the
+    SAME library name. That per-instance state is invisible to any
+    module-level cache key, so the first loader's resolution must not be
+    served to the second.
+    """
+    dir_a, dir_b = tmp_path / "a", tmp_path / "b"
+    for d in (dir_a, dir_b):
+        d.mkdir()
+        (d / "TestLib.kicad_sym").write_text(MINIMAL_LIB, encoding="utf-8")
+
+    loader_a = DynamicSymbolLoader()
+    loader_a.find_kicad_symbol_libraries = lambda: [dir_a]  # type: ignore[method-assign]
+    loader_b = DynamicSymbolLoader()
+    loader_b.find_kicad_symbol_libraries = lambda: [dir_b]  # type: ignore[method-assign]
+
+    assert loader_a.find_library_file("TestLib") == dir_a / "TestLib.kicad_sym"
+    assert loader_b.find_library_file("TestLib") == dir_b / "TestLib.kicad_sym"
+
+
+def test_env_change_invalidates_discovery_caches(tmp_path, monkeypatch):
+    """KICAD*_SYMBOL_DIR is an input to discovery, so it belongs to the key."""
+    dir_a, dir_b = tmp_path / "a", tmp_path / "b"
+    for d in (dir_a, dir_b):
+        d.mkdir()
+        (d / "TestLib.kicad_sym").write_text(MINIMAL_LIB, encoding="utf-8")
+
+    monkeypatch.setenv("KICAD_SYMBOL_DIR", str(dir_a))
+    assert DynamicSymbolLoader().find_library_file("TestLib") == dir_a / "TestLib.kicad_sym"
+    monkeypatch.setenv("KICAD_SYMBOL_DIR", str(dir_b))
+    assert DynamicSymbolLoader().find_library_file("TestLib") == dir_b / "TestLib.kicad_sym"
+
+
 def _manager_for(lib: Path, nickname: str) -> SymbolLibraryManager:
     manager = SymbolLibraryManager.__new__(SymbolLibraryManager)
     manager.project_path = None
