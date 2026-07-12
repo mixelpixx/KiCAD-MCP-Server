@@ -36,6 +36,19 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`sync_schematic_to_board` no longer re-parses the fp-lib-table on every
+  call** (#248): `_add_missing_footprints_from_schematic` built a fresh
+  `LibraryManager` — re-parsing the global and project `fp-lib-table` files,
+  recursively following any `Table` references — on every single invocation.
+  In an iterative rebuild flow (call `sync_schematic_to_board`, tweak the
+  schematic, call it again), that overhead was paid again each time even
+  though the project hadn't changed. The interface now caches the
+  `LibraryManager` via `_get_project_library_manager`, keyed on the project
+  directory plus the mtimes of the fp-lib-table files it parses, so the
+  cache is reused across repeat calls but rebuilds automatically when a
+  table changes (e.g. `register_footprint_library`, or a KiCad GUI edit
+  mid-session).
+
 - **Fixed a test-suite state leak that caused spurious pin-position failures
   when test files ran in combination** (#287): `tests/test_rotate_schematic_mirror.py`
   installed a throwaway `MagicMock` at `sys.modules["commands.pin_locator"]`
