@@ -69,9 +69,12 @@ USER kicad
 COPY --chown=kicad:kicad package.json package-lock.json ./
 COPY --chown=kicad:kicad requirements.txt ./
 
-# --ignore-scripts avoids running package.json's `prepare` (npm run build → tsc),
-# since typescript is a devDependency not installed in this prod-only stage.
-# The later `build` stage does a full `npm ci` where `prepare` runs correctly.
+# --ignore-scripts avoids running package.json's `prepare` (npm run build → tsc)
+# for two reasons: (a) this is the prod-only install (--omit=dev), so the
+# `typescript` devDep isn't present, and (b) even in the `build` stage below,
+# `npm ci` runs BEFORE tsconfig.json/src/ are copied, so `prepare` would have
+# no project to compile. The compile happens via the explicit `RUN npm run build`
+# in the `build` stage after sources are in place.
 RUN --mount=type=cache,target=/home/kicad/.npm,uid=1000,gid=1000 \
     npm ci --omit=dev --ignore-scripts
 
