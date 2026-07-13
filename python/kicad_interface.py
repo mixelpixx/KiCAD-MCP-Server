@@ -320,6 +320,8 @@ elif KICAD_BACKEND == "ipc" and not USE_IPC_BACKEND:
 # Import command handlers
 try:
     logger.info("Importing command handlers...")
+    from commands.add_library_symbol_property import add_library_symbol_property
+    from commands.add_symbol_property import add_symbol_property
     from commands.board import BoardCommands
     from commands.component import ComponentCommands
     from commands.connection_schematic import ConnectionManager
@@ -349,8 +351,6 @@ try:
     from commands.symbol_schematic import SymbolSchematicCommands
     from commands.library_management import LibraryManagementCommands
     from commands.update_symbol_from_library import update_symbol_from_library
-    from commands.add_library_symbol_property import add_library_symbol_property
-    from commands.add_symbol_property import add_symbol_property
 
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
@@ -502,6 +502,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "get_design_rules": self.design_rule_commands.get_design_rules,
             "run_drc": self.design_rule_commands.run_drc,
             "get_drc_violations": self.design_rule_commands.get_drc_violations,
+            "set_layer_constraints": self.design_rule_commands.set_layer_constraints,
             # Export commands
             "export_gerber": self.export_commands.export_gerber,
             "export_pdf": self.export_commands.export_pdf,
