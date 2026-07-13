@@ -96,3 +96,26 @@ COPY --chown=kicad:kicad tsconfig.json ./
 COPY --chown=kicad:kicad src/ ./src/
 
 RUN npm run build
+
+# ─── runtime ─── slim final image for MCP invocation
+FROM base AS runtime
+WORKDIR /app
+
+# Copy prod node_modules from deps (NOT from build — build has dev deps too)
+COPY --from=deps --chown=kicad:kicad /app/node_modules ./node_modules
+# Copy Python user-site
+COPY --from=deps --chown=kicad:kicad /home/kicad/.local /home/kicad/.local
+# Copy compiled TS output
+COPY --from=build --chown=kicad:kicad /app/dist ./dist
+# Copy Python source + manifests needed at runtime
+COPY --chown=kicad:kicad python/ ./python/
+COPY --chown=kicad:kicad package.json ./
+COPY --chown=kicad:kicad resources/ ./resources/
+COPY --chown=kicad:kicad config/ ./config/
+
+ENV KICAD_BACKEND=auto \
+    LOG_LEVEL=info \
+    NODE_ENV=production
+
+USER kicad
+ENTRYPOINT ["/usr/bin/tini", "--", "node", "/app/dist/index.js"]
