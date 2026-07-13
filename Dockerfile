@@ -119,3 +119,24 @@ ENV KICAD_BACKEND=auto \
 
 USER kicad
 ENTRYPOINT ["/usr/bin/tini", "--", "node", "/app/dist/index.js"]
+
+# ─── dev ─── devcontainer target (adds dev tooling + passwordless sudo)
+FROM base AS dev
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+        ripgrep \
+        fd-find \
+        jq \
+        less \
+        vim-tiny \
+        sudo \
+        make \
+    && rm -rf /var/lib/apt/lists/* \
+    && echo 'kicad ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kicad \
+    && chmod 0440 /etc/sudoers.d/kicad
+
+USER kicad
+WORKDIR /workspaces/KiCAD-MCP-Server
+CMD ["sleep", "infinity"]
