@@ -1,0 +1,48 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Node build artifacts
+node_modules
+dist
+*.tsbuildinfo
+
+# Python caches
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.coverage
+htmlcov
+
+# Test suites (not needed in image)
+tests
+tests-ts
+test-router.js
+
+# Editor / OS junk
+.vscode
+.idea
+.DS_Store
+*.swp
+
+# Docs & specs (not needed in image)
+docs
+*.md
+!CHANGELOG.md
+!LICENSE
+
+# CI / setup scripts targeting other platforms
+setup-macos.sh
+setup-windows.ps1
+setup-windows-opencode.ps1
+
+# Devcontainer folder (not needed inside runtime image; dev target COPYs nothing)
+.devcontainer
+
+# Env / secrets
+.env
+.env.*
+!.env.example
