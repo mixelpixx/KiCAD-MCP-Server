@@ -59,3 +59,37 @@ RUN userdel -r ubuntu 2>/dev/null || true \
 ENV HOME=/home/kicad \
     PATH=/home/kicad/.local/bin:/usr/local/bin:/usr/bin:/bin \
     PYTHONPATH=/usr/lib/kicad/lib/python3/dist-packages
+
+# ─── deps ─── install repo dependencies (npm + pip) as user
+FROM base AS deps
+WORKDIR /app
+USER kicad
+
+# Copy only manifests to maximize cache hits on dep changes
+COPY --chown=kicad:kicad package.json package-lock.json ./
+COPY --chown=kicad:kicad requirements.txt ./
+
+# --ignore-scripts avoids running package.json's `prepare` (npm run build → tsc),
+# since typescript is a devDependency not installed in this prod-only stage.
+# The later `build` stage does a full `npm ci` where `prepare` runs correctly.
+RUN --mount=type=cache,target=/home/kicad/.npm,uid=1000,gid=1000 \
+    npm ci --omit=dev --ignore-scripts
+
+RUN --mount=type=cache,target=/home/kicad/.cache/pip,uid=1000,gid=1000 \
+    pip install --user --break-system-packages -r requirements.txt
+
+# ─── build ─── compile TypeScript
+FROM deps AS build
+
+# Bring in dev deps for the TS compile.
+# --ignore-scripts again: `prepare` (npm run build → tsc) would fire during
+# `npm ci` here, but tsconfig.json and src/ are copied AFTER this step, so tsc
+# would run with no project to compile. The explicit `npm run build` below
+# performs the compile once the sources are in place.
+RUN --mount=type=cache,target=/home/kicad/.npm,uid=1000,gid=1000 \
+    npm ci --ignore-scripts
+
+COPY --chown=kicad:kicad tsconfig.json ./
+COPY --chown=kicad:kicad src/ ./src/
+
+RUN npm run build
