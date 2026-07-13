@@ -1,0 +1,36 @@
+{
+  "name": "KiCAD-MCP-Server",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "target": "dev"
+  },
+  "runArgs": [
+    "--device=/dev/dri"
+  ],
+  "mounts": [
+    "source=${localEnv:XDG_RUNTIME_DIR}/${localEnv:WAYLAND_DISPLAY},target=/run/user/1000/${localEnv:WAYLAND_DISPLAY},type=bind",
+    "source=${localEnv:XDG_RUNTIME_DIR}/bus,target=/run/user/1000/bus,type=bind",
+    "source=${localEnv:HOME}/.config/kicad,target=/home/kicad/.config/kicad,type=bind",
+    "source=${localEnv:HOME}/.local/share/kicad,target=/home/kicad/.local/share/kicad,type=bind"
+  ],
+  "containerEnv": {
+    "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
+    "XDG_RUNTIME_DIR": "/run/user/1000",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+    "GDK_BACKEND": "wayland",
+    "QT_QPA_PLATFORM": "wayland",
+    "PYTHONPATH": "/usr/lib/kicad/lib/python3/dist-packages"
+  },
+  "workspaceFolder": "/workspaces/KiCAD-MCP-Server",
+  "remoteUser": "kicad",
+  "postCreateCommand": "npm ci && pip install --user --break-system-packages -r requirements.txt -r requirements-dev.txt && npm run build",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  }
+}
