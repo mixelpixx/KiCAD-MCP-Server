@@ -6,7 +6,7 @@
 ARG UBUNTU_VERSION=24.04
 
 # ─── base ─── shared KiCAD 10 + Node 22 + Python 3.12 + Java 21 runtime
-FROM ubuntu:${UBUNTU_VERSION} AS base
+FROM --platform=linux/amd64 ubuntu:${UBUNTU_VERSION} AS base
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         tini \
     && add-apt-repository -y ppa:kicad/kicad-10.0-releases \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get update && apt-get install -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
         kicad \
         kicad-libraries \
         kicad-symbols \
@@ -44,8 +44,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         libgtk-3-0 \
         adwaita-icon-theme \
         fonts-dejavu-core \
-        git \
-    && rm -rf /var/lib/apt/lists/*
+        git
 
 # Non-root user (UID matches typical single-user Linux host).
 # Ubuntu 24.04's base image ships a pre-existing `ubuntu` user at UID/GID
@@ -61,13 +60,13 @@ ENV HOME=/home/kicad \
     PYTHONPATH=/usr/lib/kicad/lib/python3/dist-packages
 
 # ─── deps ─── install repo dependencies (npm + pip) as user
-FROM base AS deps
+FROM --platform=linux/amd64 base AS deps
 WORKDIR /app
 USER kicad
 
-# Copy only manifests to maximize cache hits on dep changes
+# Copy only the npm manifests first so a requirements.txt-only change
+# doesn't bust the npm layer cache.
 COPY --chown=kicad:kicad package.json package-lock.json ./
-COPY --chown=kicad:kicad requirements.txt ./
 
 # --ignore-scripts avoids running package.json's `prepare` (npm run build → tsc)
 # for two reasons: (a) this is the prod-only install (--omit=dev), so the
@@ -78,11 +77,13 @@ COPY --chown=kicad:kicad requirements.txt ./
 RUN --mount=type=cache,target=/home/kicad/.npm,uid=1000,gid=1000 \
     npm ci --omit=dev --ignore-scripts
 
+COPY --chown=kicad:kicad requirements.txt ./
+
 RUN --mount=type=cache,target=/home/kicad/.cache/pip,uid=1000,gid=1000 \
     pip install --user --break-system-packages -r requirements.txt
 
 # ─── build ─── compile TypeScript
-FROM deps AS build
+FROM --platform=linux/amd64 deps AS build
 
 # Bring in dev deps for the TS compile.
 # --ignore-scripts again: `prepare` (npm run build → tsc) would fire during
@@ -98,7 +99,7 @@ COPY --chown=kicad:kicad src/ ./src/
 RUN npm run build
 
 # ─── runtime ─── slim final image for MCP invocation
-FROM base AS runtime
+FROM --platform=linux/amd64 base AS runtime
 WORKDIR /app
 
 # Copy prod node_modules from deps (NOT from build — build has dev deps too)
@@ -121,7 +122,7 @@ USER kicad
 ENTRYPOINT ["/usr/bin/tini", "--", "node", "/app/dist/index.js"]
 
 # ─── dev ─── devcontainer target (adds dev tooling + passwordless sudo)
-FROM base AS dev
+FROM --platform=linux/amd64 base AS dev
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
