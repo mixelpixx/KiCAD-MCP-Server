@@ -157,8 +157,11 @@ class KiCADProcessManager:
         """
         system = platform.system()
 
-        # Try to find executable in PATH first
-        for cmd in ["pcbnew", "kicad"]:
+        # Try to find executable in PATH first. Prefer `kicad` (the project
+        # manager) over `pcbnew` (PCB editor alone): the PM opens a top-level
+        # window even without a project, whereas pcbnew launched with no args
+        # can spin without ever mapping a window.
+        for cmd in ["kicad", "pcbnew"]:
             result = subprocess.run(
                 ["which", cmd] if system != "Windows" else ["where", cmd],
                 capture_output=True,
@@ -175,9 +178,9 @@ class KiCADProcessManager:
         # Platform-specific default paths
         if system == "Linux":
             candidates = [
-                Path("/usr/bin/pcbnew"),
-                Path("/usr/local/bin/pcbnew"),
                 Path("/usr/bin/kicad"),
+                Path("/usr/local/bin/kicad"),
+                Path("/usr/bin/pcbnew"),
             ]
         elif system == "Darwin":  # macOS
             candidates = [
