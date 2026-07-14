@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # kicad-mcp — invokes the KiCAD MCP Server container as a stdio MCP server.
-# Auto-detects Wayland, DBus, and GPU on the host.
+# Auto-detects Wayland (+ XWayland fallback), DBus, and GPU on the host.
 set -euo pipefail
 
 IMAGE="${KICAD_MCP_IMAGE:-kicad-mcp:runtime}"
@@ -18,22 +18,46 @@ install -d \
     "$HOME/.kicad-mcp" \
     "$PROJECTS_DIR"
 
-# ─── Wayland forwarding (only when host has a Wayland session) ─────────────
-wayland_args=()
+# ─── Display forwarding ───────────────────────────────────────────────────
+# We forward BOTH Wayland and X11 sockets when present. KiCAD is built on
+# wxWidgets 3, which calls XOpenDisplay() directly at wxApp init regardless
+# of GDK_BACKEND=wayland — so a pure Wayland forward is not enough. On
+# Wayland compositors that ship XWayland (Hyprland, GNOME, KDE, Sway with
+# xwayland enabled, etc.) the X11 socket in /tmp/.X11-unix is answered by
+# XWayland and KiCAD renders through it. GDK_BACKEND=wayland is still
+# preferred so GTK widgets go native-Wayland where possible.
+display_args=()
+
+# Wayland leg
 if [[ -n "${WAYLAND_DISPLAY:-}" && -n "${XDG_RUNTIME_DIR:-}" ]] \
    && [[ -S "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}" ]]; then
-    wayland_args+=(
+    display_args+=(
         -e "WAYLAND_DISPLAY=${WAYLAND_DISPLAY}"
         -e "XDG_RUNTIME_DIR=/run/user/${UID_HOST}"
-        -e "GDK_BACKEND=wayland"
-        -e "QT_QPA_PLATFORM=wayland"
+        -e "GDK_BACKEND=wayland,x11"
+        -e "QT_QPA_PLATFORM=wayland;xcb"
         -v "${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}:/run/user/${UID_HOST}/${WAYLAND_DISPLAY}"
     )
     # Also forward user DBus session for GTK theme / portals
     if [[ -S "${XDG_RUNTIME_DIR}/bus" ]]; then
-        wayland_args+=(
+        display_args+=(
             -v "${XDG_RUNTIME_DIR}/bus:/run/user/${UID_HOST}/bus"
             -e "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${UID_HOST}/bus"
+        )
+    fi
+fi
+
+# X11 leg (XWayland or native Xorg)
+if [[ -n "${DISPLAY:-}" && -d /tmp/.X11-unix ]]; then
+    display_args+=(
+        -e "DISPLAY=${DISPLAY}"
+        -v "/tmp/.X11-unix:/tmp/.X11-unix"
+    )
+    # If host uses XAUTHORITY, forward it too
+    if [[ -n "${XAUTHORITY:-}" && -f "${XAUTHORITY}" ]]; then
+        display_args+=(
+            -e "XAUTHORITY=/tmp/.Xauthority"
+            -v "${XAUTHORITY}:/tmp/.Xauthority:ro"
         )
     fi
 fi
@@ -59,6 +83,6 @@ exec docker run --rm -i \
     -v "$HOME/.local/share/kicad:/home/kicad/.local/share/kicad" \
     -v "$HOME/.kicad-mcp:/home/kicad/.kicad-mcp" \
     -v "$PROJECTS_DIR:$PROJECTS_DIR" \
-    "${wayland_args[@]}" \
+    "${display_args[@]}" \
     "${gpu_args[@]}" \
     "$IMAGE" "$@"

@@ -79,10 +79,18 @@ host can see them.
 
 Requirements auto-detected by the wrapper:
 - `$WAYLAND_DISPLAY` is set and the socket exists at `$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY`
+- `$DISPLAY` is set and `/tmp/.X11-unix` exists (XWayland answers this on
+  modern Wayland compositors — Hyprland, GNOME, KDE, Sway-with-xwayland)
 - Optional: `$XDG_RUNTIME_DIR/bus` (DBus session) for GTK theme
 - Optional: `/dev/dri` for GPU acceleration
 
-If your host is a TTY / SSH without a display server, GUI tools will
+The wrapper forwards BOTH Wayland and X11 sockets when present. KiCAD is
+built on wxWidgets 3, which opens an X11 display directly at startup
+regardless of `GDK_BACKEND=wayland`, so a pure Wayland forward is not
+enough — the X11 socket is what actually gets KiCAD's window on screen.
+GTK widgets still prefer Wayland when the backend list allows.
+
+If your host is a TTY / SSH without any display server, GUI tools will
 report an error. All headless tools (`create_project`, `export_gerber`,
 `run_drc`, etc.) still work.
 

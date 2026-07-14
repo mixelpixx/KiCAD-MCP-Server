@@ -11,6 +11,7 @@
   "mounts": [
     "source=${localEnv:XDG_RUNTIME_DIR}/${localEnv:WAYLAND_DISPLAY},target=/run/user/1000/${localEnv:WAYLAND_DISPLAY},type=bind",
     "source=${localEnv:XDG_RUNTIME_DIR}/bus,target=/run/user/1000/bus,type=bind",
+    "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
     "source=${localEnv:HOME}/.config/kicad,target=/home/kicad/.config/kicad,type=bind",
     "source=${localEnv:HOME}/.local/share/kicad,target=/home/kicad/.local/share/kicad,type=bind"
   ],
@@ -18,8 +19,9 @@
     "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
     "XDG_RUNTIME_DIR": "/run/user/1000",
     "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
-    "GDK_BACKEND": "wayland",
-    "QT_QPA_PLATFORM": "wayland",
+    "DISPLAY": "${localEnv:DISPLAY}",
+    "GDK_BACKEND": "wayland,x11",
+    "QT_QPA_PLATFORM": "wayland;xcb",
     "PYTHONPATH": "/usr/lib/kicad/lib/python3/dist-packages"
   },
   "workspaceFolder": "/workspaces/KiCAD-MCP-Server",
