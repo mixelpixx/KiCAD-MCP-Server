@@ -4,6 +4,7 @@
     "dockerfile": "../Dockerfile",
     "target": "dev"
   },
+  "initializeCommand": "mkdir -p ${localEnv:HOME}/.config/kicad ${localEnv:HOME}/.local/share/kicad ${localEnv:HOME}/.kicad-mcp",
   "runArgs": [
     "--device=/dev/dri"
   ],

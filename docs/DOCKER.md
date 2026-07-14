@@ -18,17 +18,24 @@ DOCKER_BUILDKIT=1 docker build --target runtime -t kicad-mcp:runtime .
 # 2. Install the wrapper on your PATH
 install -m 755 scripts/kicad-mcp.sh ~/.local/bin/kicad-mcp
 
-# 3. Register with Claude Code
-claude mcp add -s user kicad -- kicad-mcp
+# 3. Register with Claude Code (absolute path — see note below)
+claude mcp add -s user kicad -- "$HOME/.local/bin/kicad-mcp"
 ```
 
-For Claude Desktop, add to `~/.config/Claude/claude_desktop_config.json`:
+`~/.local/bin` is not on `PATH` in every default shell config (notably
+Arch/Ubuntu/Fedora minimal setups), and Claude Code resolves the command via
+a plain `PATH` lookup — so the bare name `kicad-mcp` can fail to launch even
+though `install` succeeded. Using the absolute path sidesteps that.
+
+For Claude Desktop, add to `~/.config/Claude/claude_desktop_config.json`,
+substituting your actual home directory for `command` (JSON config files
+cannot expand `$HOME` or other env vars, so the path must be resolved first):
 
 ```json
 {
   "mcpServers": {
     "kicad": {
-      "command": "kicad-mcp"
+      "command": "/home/YOUR_USERNAME/.local/bin/kicad-mcp"
     }
   }
 }
@@ -82,7 +89,10 @@ report an error. All headless tools (`create_project`, `export_gerber`,
 ## Development / devcontainer
 
 The `dev` stage of the same Dockerfile powers a devcontainer for editing
-this repo without installing anything on the host.
+this repo without installing anything on the host. The devcontainer's
+`initializeCommand` auto-creates `~/.config/kicad`, `~/.local/share/kicad`,
+and `~/.kicad-mcp` on the host (owned by you) before the container's first
+boot, so Docker never has to create them itself as root.
 
 ```bash
 # With VS Code:
@@ -115,7 +125,9 @@ KICAD_MCP_IMAGE=kicad-mcp:dev kicad-mcp
 ```bash
 claude mcp remove kicad
 rm ~/.local/bin/kicad-mcp
-docker rmi kicad-mcp:runtime kicad-mcp:dev kicad-mcp:base
+docker rmi kicad-mcp:runtime
+# If you also built the devcontainer or an intermediate stage:
+docker rmi kicad-mcp:dev kicad-mcp:base 2>/dev/null || true
 # Optional: also remove persisted state
 rm -rf ~/.kicad-mcp
 # ~/.config/kicad and ~/.local/share/kicad may also be used by a host
