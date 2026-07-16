@@ -137,6 +137,66 @@ def persist_netclass_to_project(
         }
 
 
+def apply_net_assignment_to_project_settings(
+    data: Dict[str, Any], net_name: str, class_name: str
+) -> Dict[str, Any]:
+    """Insert or update a net's netclass assignment in a parsed ``.kicad_pro`` dict.
+    Pure: mutates and returns ``data``; performs no I/O.
+
+    Explicit per-net assignments live in ``net_settings.netclass_assignments``
+    on KiCad 9+ (net name -> list of class names). A net keeps only the most
+    recent assignment here — composite/multi-class membership is not modeled.
+    """
+    net_settings = data.setdefault("net_settings", {})
+    assignments = net_settings.setdefault("netclass_assignments", {})
+    assignments[net_name] = [class_name]
+    return data
+
+
+def persist_net_assignment_to_project(
+    pro_path: Optional[str], net_name: str, class_name: str
+) -> Dict[str, Any]:
+    """Read/modify/write ``pro_path`` so a net's class assignment survives a
+    reload (KiCad 7+ keeps net-to-class membership in the project file, not
+    the board).
+
+    Returns ``{"persisted": bool, "projectFile"?: str, "warning"?: str}``. Never
+    raises: a persistence failure is reported, not fatal, so the in-memory
+    assignment still stands. The write is atomic (temp file + ``os.replace``)
+    so a crash mid-write cannot corrupt the project file.
+    """
+    if not pro_path or not os.path.exists(pro_path):
+        return {
+            "persisted": False,
+            "warning": "no .kicad_pro project file found; net class assignment set "
+            "in memory only and will not persist across a reload",
+        }
+    try:
+        with open(pro_path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        apply_net_assignment_to_project_settings(data, net_name, class_name)
+
+        directory = os.path.dirname(pro_path) or "."
+        fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".netassign-", suffix=".kicad_pro")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, indent=2, sort_keys=True)
+                handle.write("\n")
+            os.replace(tmp_path, pro_path)
+        except Exception:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
+        return {"persisted": True, "projectFile": pro_path}
+    except Exception as exc:  # report, never fail the command on a persistence error
+        return {
+            "persisted": False,
+            "warning": f"could not persist net class assignment to {pro_path}: {exc}",
+        }
+
+
 class RoutingCommands:
     """Handles routing-related KiCAD operations"""
 

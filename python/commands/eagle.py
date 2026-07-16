@@ -1894,7 +1894,9 @@ class EagleCommands:
                 from utils.sexpr_format import prettify
 
                 text = Path(sch_out).read_text(encoding="utf-8")
-                Path(sch_out).write_text(prettify(text), encoding="utf-8", newline="\n")
+                Path(sch_out).write_text(
+                    prettify(text), encoding="utf-8", newline="\n"
+                )  # type: ignore[call-arg]  # newline= is valid on Path.write_text (3.10+); outdated typeshed stub
                 logger.info("Prettified schematic: %s", sch_out)
             except Exception as e:
                 logger.warning("Schematic prettify skipped: %s", e)
