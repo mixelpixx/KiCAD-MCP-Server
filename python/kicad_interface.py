@@ -5689,20 +5689,51 @@ print("ok")
             return {"success": False, "message": f"Search failed: {str(e)}"}
 
     def _handle_get_jlcpcb_part(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get detailed information for a specific JLCPCB part"""
+        """Get detailed information for a specific JLCPCB part.
+
+        Prefers a real-time lookup via the Open Platform API (live stock + tiered
+        pricing) when credentials are configured; otherwise, or if the live call
+        fails, falls back to the local snapshot database. ``source`` in the result
+        reports which backend answered ("live-api" vs "local-db").
+        """
         try:
             lcsc_number = params.get("lcsc_number")
             if not lcsc_number:
                 return {"success": False, "message": "Missing lcsc_number parameter"}
 
-            part = self.jlcpcb_parts.get_part_info(lcsc_number)
+            part = None
+            source = "local-db"
+
+            # 1) Real-time API path (only when credentials are present).
+            if self.jlcpcb_client.has_credentials():
+                try:
+                    part = self.jlcpcb_client.get_part_by_lcsc(lcsc_number)
+                    if part:
+                        source = "live-api"
+                        # The live detail response omits manufacturer; backfill it
+                        # from the local snapshot row when one is available so the
+                        # rendered "Manufacturer:" line is never blank.
+                        if not part.get("manufacturer"):
+                            local = self.jlcpcb_parts.get_part_info(lcsc_number)
+                            if local and local.get("manufacturer"):
+                                part["manufacturer"] = local["manufacturer"]
+                except Exception as api_err:
+                    logger.warning(
+                        f"Live JLCPCB lookup for {lcsc_number} failed, "
+                        f"falling back to local DB: {api_err}"
+                    )
+
+            # 2) Local snapshot fallback.
+            if not part:
+                part = self.jlcpcb_parts.get_part_info(lcsc_number)
+
             if not part:
                 return {"success": False, "message": f"Part not found: {lcsc_number}"}
 
             # Get suggested KiCAD footprints
             footprints = self.jlcpcb_parts.map_package_to_footprint(part.get("package", ""))
 
-            return {"success": True, "part": part, "footprints": footprints}
+            return {"success": True, "part": part, "source": source, "footprints": footprints}
 
         except Exception as e:
             logger.error(f"Error getting JLCPCB part: {e}", exc_info=True)

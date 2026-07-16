@@ -2,13 +2,19 @@
 
 > **Note:** This document provides usage examples and workflow guidance. For complete API reference and setup instructions, see [JLCPCB_INTEGRATION.md](JLCPCB_INTEGRATION.md).
 
-The KiCAD MCP Server provides **three complementary approaches** for working with JLCPCB parts:
+The KiCAD MCP Server works with JLCPCB parts through two backends, by design:
 
-1. **JLCSearch Public API** - No authentication required, 2.5M+ parts with pricing (Recommended)
-2. **Local Symbol Libraries** - Search JLCPCB libraries installed via KiCad PCM _(contributed by [@l3wi](https://github.com/l3wi) in [PR #25](https://github.com/mixelpixx/KiCAD-MCP-Server/pull/25))_
-3. **Official JLCPCB API** - Requires enterprise account (Advanced)
+- **Search → local snapshot.** `search_jlcpcb_parts` queries a local SQLite database
+  you populate once with `download_jlcpcb_database` (default `cdfer` source, a ~600k
+  in-stock subset). The JLCPCB Open Platform API has **no search endpoint**, so search
+  must run locally.
+- **Single-part lookup → real-time.** `get_jlcpcb_part` prefers the JLCPCB **Open
+  Platform** `getComponentDetailByCode` endpoint for live stock and tiered pricing when
+  credentials are set, and falls back to the local snapshot otherwise. Each result's
+  `source` field says which backend answered (`"live-api"` vs `"local-db"`).
 
-All approaches can be used together to give you maximum flexibility.
+You can also search JLCPCB **local symbol libraries** installed via KiCad PCM
+_(contributed by [@l3wi](https://github.com/l3wi) in [PR #25](https://github.com/mixelpixx/KiCAD-MCP-Server/pull/25))_.
 
 ## Credits
 
@@ -17,39 +23,38 @@ All approaches can be used together to give you maximum flexibility.
 
 ---
 
-## Approach 1: JLCSearch Public API (Recommended)
+## Approach 1: Local snapshot database (Recommended for search)
 
 ### What It Does
 
-- Access to 2.5M+ JLCPCB parts with pricing and stock data
-- **No authentication required** - works immediately
-- **No JLCPCB account needed**
-- Real-time pricing with quantity breaks
-- Basic vs Extended library type identification
-- Local SQLite database for fast offline searching
-- Note: Download takes 40-60 minutes due to API pagination (100 parts per request)
+- A local SQLite snapshot of ~600k in-stock JLCPCB parts for fast offline **search**
+- **No authentication required** — the default `cdfer` source is a public prebuilt DB
+- Pricing, stock and Basic/Extended library type per part (as of the snapshot date)
+- Powers `search_jlcpcb_parts`, `suggest_jlcpcb_alternatives` and the local fallback
+  for `get_jlcpcb_part`
+
+> The snapshot mirror can lag JLCPCB by days-to-weeks, so a specific part's stock/price
+> may be stale. Use `get_jlcpcb_part` with Open Platform credentials (Approach 3) for
+> real-time figures on a part you care about.
 
 ### Setup
 
-No setup required! Just download the database:
+No credentials required — just download the database:
 
 ```
 download_jlcpcb_database({ force: false })
 ```
 
-This downloads ~2.5M parts from JLCSearch API and creates a local SQLite database (`data/jlcpcb_parts.db`).
+This fetches the prebuilt `cdfer` catalog and builds a local SQLite database. See
+`get_jlcpcb_database_stats` for the resulting counts and path.
 
 **Expected Output:**
 
 ```
-Downloading JLCPCB parts database...
-Downloaded 100 parts...
-Downloaded 200 parts...
-... (continues for 40-60 minutes)
-Downloaded 2,500,000 parts...
-
-Total parts: 2,500,000+
-Database size: 3-5 GB (full catalog)
+✓ Successfully downloaded JLCPCB parts database
+Source: cdfer
+Total parts: ~600,000
+Database size: ~465 MB
 ```
 
 ### Usage Examples
@@ -146,63 +151,61 @@ Class: Extended
 
 ---
 
-## Approach 3: Official JLCPCB API (Advanced - Enterprise Accounts Only)
+## Approach 3: JLCPCB Open Platform API (real-time lookup)
 
 ### What It Does
 
-- Downloads from the **official JLCPCB API** (requires enterprise account)
-- Provides **real-time pricing and stock information**
+- Real-time **single-part** detail via the JLCPCB **Open Platform**
+  (`https://open.jlcpcb.com`, `getComponentDetailByCode`)
+- Provides **live pricing and stock information** (not the snapshot)
 - Automatic **Basic vs Extended** library type identification (Basic = free assembly)
-- Smart suggestions for cheaper/in-stock alternatives
-- Package-to-footprint mapping for KiCad
+- Used by `get_jlcpcb_part`, which falls back to the local snapshot if the API call
+  fails or credentials are absent; the result's `source` field reports which backend
+  answered
+
+> The Open Platform has **no search endpoint** — it only returns detail by LCSC code.
+> Keyword/parametric search always runs against the local snapshot (Approach 1).
 
 ### Setup
 
 #### 1. Get JLCPCB API Credentials
 
-Visit [JLCPCB](https://jlcpcb.com/) and get your API credentials:
+Log in to your JLCPCB account, open **Account → API Management**, create an API key,
+and save your App ID, Access Key and Secret Key.
 
-1. Log in to your JLCPCB account
-2. Go to: **Account → API Management**
-3. Click "Create API Key"
-4. Save your `appKey` and `appSecret`
+#### 2. Configure credentials
 
-#### 2. Configure Environment Variables
-
-Add to your shell profile (`~/.bashrc`, `~/.zshrc`, or `~/.profile`):
-
-```bash
-export JLCPCB_API_KEY="your_app_key_here"
-export JLCPCB_API_SECRET="your_app_secret_here"
-```
-
-Or create a `.env` file in the project root:
+Create a `.env` file in the project root (it is gitignored — copy `.env.example`):
 
 ```
-JLCPCB_API_KEY=your_app_key_here
-JLCPCB_API_SECRET=your_app_secret_here
+JLCPCB_APP_ID=your_app_id
+JLCPCB_API_KEY=your_access_key
+JLCPCB_API_SECRET=your_secret_key
 ```
 
-#### 3. Download the Parts Database
+The server auto-loads this `.env` on first use of the JLCPCB client, non-destructively
+(it never overrides a variable already set in the environment). You may also export the
+same variables in your shell instead.
 
-**One-time setup** (takes 5-10 minutes):
+#### 3. Look up a part
 
-```
-download_jlcpcb_database({ force: false })
-```
-
-This downloads ~100k parts from JLCPCB and creates a local SQLite database (`data/jlcpcb_parts.db`).
-
-**Output:**
+No separate download step is needed for real-time lookup:
 
 ```
-✓ Successfully downloaded JLCPCB parts database
+get_jlcpcb_part({ lcsc_number: "C25804" })
+```
 
-Total parts: 108,523
-Basic parts: 2,856 (free assembly)
-Extended parts: 105,667 ($3 setup fee each)
-Database size: 42.3 MB
-Database path: /home/user/KiCAD-MCP-Server/data/jlcpcb_parts.db
+**Output (abridged):**
+
+```
+LCSC: C25804
+MFR Part: ...
+Stock: 12345
+Source: JLCPCB Open Platform (real-time)
+
+Price Breaks:
+  1+: $0.02/ea
+  100+: $0.01/ea
 ```
 
 ### Usage Examples

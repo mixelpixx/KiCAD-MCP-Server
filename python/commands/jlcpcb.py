@@ -15,11 +15,89 @@ import secrets
 import string
 import time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import requests
 
 logger = logging.getLogger("kicad_interface")
+
+
+def _load_env_file(env_path: Optional[Path] = None) -> None:
+    """Best-effort load of a project-root ``.env`` so JLCPCB_* creds are picked up.
+
+    The MCP server only reads ``os.environ``; it never loaded ``.env`` before, so a
+    user who dropped credentials in a (gitignored) ``.env`` saw them silently ignored.
+    We load it lazily and non-destructively (never override an already-set env var).
+
+    Args:
+        env_path: Path to the ``.env`` file. Defaults to the repo-root ``.env``
+            (three parents up from this module); overridable for testing.
+    """
+    try:
+        from dotenv import load_dotenv
+    except Exception:  # python-dotenv is a declared dep, but degrade gracefully
+        return
+    if env_path is None:
+        # python/commands/jlcpcb.py -> repo root is three parents up.
+        env_path = Path(__file__).resolve().parents[2] / ".env"
+    if env_path.is_file():
+        load_dotenv(env_path, override=False)
+
+
+def _library_type_label(raw: Any) -> str:
+    """Normalize JLCPCB's library-type strings to Basic / Preferred / Extended.
+
+    The API returns ``base``/``Basic`` for basic parts and ``expand``/``Extended``
+    for extended; some responses use ``preferred``. Anything unknown -> Extended.
+    """
+    val = str(raw or "").strip().lower()
+    if val in ("base", "basic"):
+        return "Basic"
+    if val in ("preferred", "prefer"):
+        return "Preferred"
+    return "Extended"
+
+
+def normalize_detail_to_part(detail: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert a getComponentDetailByCode item into the JLCPCBPartsManager part shape.
+
+    Produces the same keys ``get_part_info`` returns (so callers/UI stay uniform),
+    plus richer live-only fields: ``price_ranges`` (full tiers), ``parameters``,
+    ``rohs``, ``eccn_code``, and ``source='live-api'``.
+
+    ``price_breaks`` is deliberately kept in the *same* ``[{qty, price}]`` shape the
+    local ``get_part_info`` emits (the TS renderer at ``src/tools/jlcpcb-api.ts``
+    reads ``pb.qty`` / ``pb.price``). The verbose per-tier ranges from the API — with
+    start/end quantities — are exposed separately under ``price_ranges``.
+    """
+    price_ranges = detail.get("priceRanges") or []
+    # Manager-compatible [{qty, price}] list, keyed on each tier's start quantity.
+    price_breaks = [
+        {"qty": pr.get("startQuantity", 1), "price": pr.get("unitPrice")}
+        for pr in price_ranges
+        if pr.get("unitPrice") is not None
+    ]
+    return {
+        "lcsc": detail.get("componentCode"),
+        "category": detail.get("firstTypeName", ""),
+        "subcategory": detail.get("secondTypeName", ""),
+        "mfr_part": detail.get("componentModel", ""),
+        "package": detail.get("componentSpecification", ""),
+        "solder_joints": detail.get("solderJointCount", 0),
+        "manufacturer": detail.get("manufacturer", ""),
+        "library_type": _library_type_label(detail.get("libraryType")),
+        "description": detail.get("description", ""),
+        "datasheet": detail.get("datasheetUrl", ""),
+        "stock": detail.get("stockCount", 0),
+        "price_json": json.dumps(price_breaks),
+        "price_breaks": price_breaks,  # [{qty, price}] — same shape as get_part_info
+        "price_ranges": price_ranges,  # full [{startQuantity,endQuantity,unitPrice}]
+        "parameters": detail.get("parameters", []),
+        "rohs": detail.get("rohsFlag"),
+        "eccn_code": detail.get("eccnCode"),
+        "assembly_component": detail.get("assemblyComponentFlag"),
+        "source": "live-api",
+    }
 
 
 class JLCPCBClient:
@@ -30,7 +108,12 @@ class JLCPCBClient:
     the complete parts library from JLCPCB's external API.
     """
 
+    # Legacy bulk-download host (kept for download_full_database compatibility).
     BASE_URL = "https://jlcpcb.com/external"
+    # New Open Platform host — real-time component detail / library-list endpoints.
+    OPEN_BASE_URL = "https://open.jlcpcb.com"
+    DETAIL_PATH = "/overseas/openapi/component/getComponentDetailByCode"
+    LIBRARY_LIST_PATH = "/overseas/openapi/component/getComponentLibraryList"
 
     def __init__(
         self,
@@ -46,6 +129,7 @@ class JLCPCBClient:
             access_key: JLCPCB Access Key (or reads from JLCPCB_API_KEY env var)
             secret_key: JLCPCB Secret Key (or reads from JLCPCB_API_SECRET env var)
         """
+        _load_env_file()
         self.app_id = app_id or os.getenv("JLCPCB_APP_ID")
         self.access_key = access_key or os.getenv("JLCPCB_API_KEY")
         self.secret_key = secret_key or os.getenv("JLCPCB_API_SECRET")
@@ -131,6 +215,71 @@ class JLCPCBClient:
         )
 
         return f'JOP appid="{self.app_id}",accesskey="{self.access_key}",nonce="{nonce}",timestamp="{timestamp}",signature="{signature}"'
+
+    def has_credentials(self) -> bool:
+        """True if all three credentials are present (App ID / Access Key / Secret Key)."""
+        return bool(self.app_id and self.access_key and self.secret_key)
+
+    def _post_signed(self, base_url: str, path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Sign and POST a JSON payload, returning the parsed ``data`` field.
+
+        Shared by the Open Platform endpoints. The signed body string and the wire
+        body MUST be byte-identical, so we serialize once with compact separators
+        and send it as raw ``data`` (not ``json=``) to avoid re-encoding drift.
+        """
+        body_str = json.dumps(payload, separators=(",", ":"))
+        auth_header = self._get_auth_header("POST", path, body_str)
+        headers = {
+            "Authorization": auth_header,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        resp = requests.post(f"{base_url}{path}", headers=headers, data=body_str, timeout=30)
+        trace = resp.headers.get("J-Trace-ID")
+        logger.debug(f"POST {path} -> HTTP {resp.status_code} (J-Trace-ID={trace})")
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("code") != 200:
+            raise Exception(
+                f"JLCPCB API error (code {data.get('code')}): "
+                f"{data.get('message', 'Unknown error')} [J-Trace-ID={trace}]"
+            )
+        return data.get("data")
+
+    def get_component_detail(self, codes: List[str]) -> List[Dict[str, Any]]:
+        """Real-time detail lookup by LCSC C-code(s) via the Open Platform.
+
+        Uses ``getComponentDetailByCode`` (batch, up to 1000 codes per call), which
+        returns live stock, tiered pricing, parameters, datasheet and library type.
+
+        Args:
+            codes: List of C-codes (e.g. ``["C8734", "C25804"]``). A missing/normalized
+                ``C`` prefix is added automatically.
+
+        Returns:
+            List of raw detail dicts (see ``normalize_detail_to_part`` to reshape).
+        """
+        if not codes:
+            return []
+        # LCSC codes are "C" + digits; upper-case and ensure the C prefix.
+        norm = []
+        for c in codes:
+            s = str(c).strip().upper()
+            norm.append(s if s.startswith("C") else f"C{s}")
+        # API caps the batch at 1000 codes per request.
+        out: List[Dict[str, Any]] = []
+        for i in range(0, len(norm), 1000):
+            batch = norm[i : i + 1000]
+            data = self._post_signed(
+                self.OPEN_BASE_URL, self.DETAIL_PATH, {"componentCodes": batch}
+            )
+            # ``data`` is the list itself on this endpoint (not wrapped in a VOList key
+            # in the live response), but tolerate the documented wrapped shape too.
+            if isinstance(data, dict):
+                data = data.get("componentDetailResponseVOList", [])
+            if data:
+                out.extend(data)
+        return out
 
     def fetch_parts_page(self, last_key: Optional[str] = None) -> Dict:
         """
@@ -234,22 +383,22 @@ class JLCPCBClient:
 
     def get_part_by_lcsc(self, lcsc_number: str) -> Optional[Dict]:
         """
-        Get detailed information for a specific LCSC part number
+        Get real-time detail for a specific LCSC part number.
 
-        Note: This uses the same endpoint as fetching parts, as JLCPCB doesn't
-        have a dedicated single-part endpoint. In practice, you should use
-        the local database after initial download.
+        Backed by the Open Platform ``getComponentDetailByCode`` endpoint, so stock
+        and pricing are live (not the local snapshot).
 
         Args:
             lcsc_number: LCSC part number (e.g., "C25804")
 
         Returns:
-            Part info dict or None if not found
+            Part info dict (JLCPCBPartsManager shape, via ``normalize_detail_to_part``)
+            or None if not found.
         """
-        # For now, this would require searching through pages
-        # In practice, you'd use the local database
-        logger.warning("get_part_by_lcsc should use local database, not API")
-        return None
+        details = self.get_component_detail([lcsc_number])
+        if not details:
+            return None
+        return normalize_detail_to_part(details[0])
 
 
 def test_jlcpcb_connection(
