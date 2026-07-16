@@ -148,7 +148,8 @@ class LibraryManagementCommands:
             tgt_content[:lib_close].rstrip() + "\n" + block + "\n" + tgt_content[lib_close:]
         )
 
-        tgt.write_text(tgt_content, encoding="utf-8", newline="\n")
+        with tgt.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(tgt_content)
         logger.info(f"Imported symbol '{symbol_name}' as '{new_name}' into {tgt_path}")
         _invalidate_symbol_caches()
 
@@ -195,7 +196,8 @@ class LibraryManagementCommands:
         new_lib = _NEW_LIB_HEADER[: _NEW_LIB_HEADER.rfind(")")] + block + "\n)\n"
 
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(new_lib, encoding="utf-8", newline="\n")
+        with out.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(new_lib)
         logger.info(f"Exported symbol '{symbol_name}' to {out_path}")
         _invalidate_symbol_caches()
 
@@ -251,7 +253,8 @@ class LibraryManagementCommands:
         if extends_updated:
             content = content.replace(f'(extends "{old_name}")', f'(extends "{new_name}")')
 
-        lib.write_text(content, encoding="utf-8", newline="\n")
+        with lib.open("w", encoding="utf-8", newline="\n") as f:
+            f.write(content)
         logger.info(f"Renamed symbol '{old_name}' to '{new_name}' in {lib_path}")
         _invalidate_symbol_caches()
 
