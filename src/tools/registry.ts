@@ -180,6 +180,12 @@ export const toolCategories: ToolCategory[] = [
     description: "Freerouting autorouter: automatic PCB routing via Specctra DSN/SES",
     tools: ["autoroute", "export_dsn", "import_ses", "check_freerouting"],
   },
+  {
+    name: "parts-registry",
+    description:
+      "Open gate-verified parts registry (PartReel by default, no auth): search existing KiCAD parts and download footprint/symbol/3D files before generating custom ones",
+    tools: ["search_parts_registry", "get_registry_part", "download_registry_part"],
+  },
 ];
 
 /**
