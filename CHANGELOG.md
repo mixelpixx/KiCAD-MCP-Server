@@ -91,8 +91,8 @@ All notable changes to the KiCAD MCP Server project are documented here.
   `Path.write_text` did not accept the `newline` keyword until Python 3.10 —
   so on the project's declared `>=3.9` floor every one of those calls raised
   `TypeError: write_text() got an unexpected keyword argument 'newline'`. Each
-  site now opens the file explicitly (`path.open("w", encoding="utf-8",
-  newline="\n")`) and writes through the handle, preserving the forced LF line
+  site now opens the file handle explicitly with an `open("w", ...)` call that
+  passes `newline="\n"` and writes through it, preserving the forced LF line
   ending (so the files stay byte-identical on Windows rather than emitting
   CRLF) while running on 3.9.
 
