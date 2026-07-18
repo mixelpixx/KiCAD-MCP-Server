@@ -125,7 +125,8 @@ class SymbolSchematicCommands:
             inst_part = pattern.sub(_replace, inst_part)
 
             new_content = lib_part + inst_part
-            Path(sch_path).write_text(new_content, encoding="utf-8", newline="\n")
+            with Path(sch_path).open("w", encoding="utf-8", newline="\n") as f:
+                f.write(new_content)
 
             remaining = inst_part.count(f'(lib_id "{source_lib}:')
 

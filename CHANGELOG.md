@@ -84,6 +84,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`.kicad_sym` and schematic writes work again on Python 3.9** (#328): the
+  library-management (`import_symbol`/`export_symbol`/`rename_symbol`), Eagle
+  prettify, and symbol-schematic writers introduced with the recent tooling
+  wrote files via `Path.write_text(content, newline="\n")`, but
+  `Path.write_text` did not accept the `newline` keyword until Python 3.10 —
+  so on the project's declared `>=3.9` floor every one of those calls raised
+  `TypeError: write_text() got an unexpected keyword argument 'newline'`. Each
+  site now opens the file explicitly (`path.open("w", encoding="utf-8",
+  newline="\n")`) and writes through the handle, preserving the forced LF line
+  ending (so the files stay byte-identical on Windows rather than emitting
+  CRLF) while running on 3.9.
+
 - **JLCPCB part search finds hyphenated MPNs** (#327): `search_parts` built
   its FTS5 `MATCH` query by appending `*` to each whitespace term, so a real
   manufacturer part number like `SHT41-AD1F-R2` became `SHT41-AD1F-R2*` — and

@@ -82,7 +82,8 @@ SAMPLE_LIB = """(kicad_symbol_lib
 
 def _write_lib(tmp_path: Path, name: str = "test.kicad_sym") -> Path:
     p = tmp_path / name
-    p.write_text(SAMPLE_LIB, encoding="utf-8", newline="\n")
+    with p.open("w", encoding="utf-8", newline="\n") as f:
+        f.write(SAMPLE_LIB)
     return p
 
 

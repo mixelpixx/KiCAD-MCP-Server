@@ -51,7 +51,8 @@ SINGLE_LINE_SCH = """(kicad_sch
 
 def _write_sch(tmp_path: Path, content: str = SAMPLE_SCH) -> Path:
     p = tmp_path / "test.kicad_sch"
-    p.write_text(content, encoding="utf-8", newline="\n")
+    with p.open("w", encoding="utf-8", newline="\n") as f:
+        f.write(content)
     return p
 
 
