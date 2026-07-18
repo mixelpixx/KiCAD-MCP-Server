@@ -84,6 +84,19 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **JLCPCB part search finds hyphenated MPNs** (#327): `search_parts` built
+  its FTS5 `MATCH` query by appending `*` to each whitespace term, so a real
+  manufacturer part number like `SHT41-AD1F-R2` became `SHT41-AD1F-R2*` — and
+  FTS5 reads `-` as a column/NOT operator, raising
+  `sqlite3.OperationalError: no such column: AD1F`. `search_parts` wraps the
+  query in a broad `except` that returns `[]`, so searching by an exact MPN
+  silently found nothing instead of erroring. Each term is now emitted as a
+  quoted prefix phrase (`"term"*`) with any embedded double quote doubled, so
+  hyphens and other FTS punctuation are matched as literal text; plain prefix
+  matching (`SHT41` still matches the full MPN) is unchanged. A regression test
+  builds a tiny in-schema FTS database and pins both the pre-fix crash and the
+  fixed lookup.
+
 - **`add_schematic_component` snaps the placement origin to the 1.27 mm
   (50 mil) schematic connection grid** (#299): library pins sit at integer
   multiples of 1.27 mm from the symbol origin, so an off-grid origin leaves

@@ -18,6 +18,37 @@ from utils.platform_helper import PlatformHelper
 logger = logging.getLogger("kicad_interface")
 
 
+def _build_fts_match_query(query: str) -> str:
+    """Turn a free-text search into a safe FTS5 MATCH expression.
+
+    Each whitespace-delimited term becomes a quoted prefix phrase
+    (``"term"*``), so FTS5 special characters — most importantly the hyphen in
+    real MPNs like ``SHT41-AD1F-R2`` — are treated as literal text rather than
+    query operators. Without quoting, FTS5 parses ``SHT41-AD1F-R2*`` as a
+    column filter / NOT expression and raises ``no such column: AD1F``, which
+    ``search_parts`` swallowed into an empty result — so searching by a real
+    MPN silently found nothing.
+
+    Embedded double quotes are escaped by doubling. A trailing ``*`` the caller
+    already supplied is normalized so the term stays a prefix match.
+
+    Args:
+        query: Raw free-text query (e.g. ``"SHT41-AD1F-R2"`` or ``"10k 0603"``).
+
+    Returns:
+        An FTS5 MATCH string, e.g. ``'"sht41-ad1f-r2"*'`` or ``'"10k"* "0603"*'``.
+    """
+    terms = []
+    for term in query.strip().split():
+        if term.endswith("*"):
+            term = term[:-1]
+        if not term:
+            continue
+        escaped = term.replace('"', '""')
+        terms.append(f'"{escaped}"*')
+    return " ".join(terms)
+
+
 class JLCPCBPartsManager:
     """
     Manages local database of JLCPCB parts
@@ -293,19 +324,19 @@ class JLCPCBPartsManager:
         params = []
 
         if query:
-            # Use FTS for text search
-            # Add prefix wildcard to each term for partial matching
-            # (e.g., "BQ25895" becomes "BQ25895*" so FTS matches "BQ25895RTWR")
-            fts_query = " ".join(
-                f"{term}*" if not term.endswith("*") else term for term in query.strip().split()
-            )
-            sql_parts.append("""
-                AND lcsc IN (
-                    SELECT lcsc FROM components_fts
-                    WHERE components_fts MATCH ?
-                )
-            """)
-            params.append(fts_query)
+            # Use FTS for text search. Each term becomes a quoted prefix phrase
+            # (e.g. "BQ25895" -> '"BQ25895"*' so FTS matches "BQ25895RTWR"), which
+            # also makes hyphenated MPNs like "SHT41-AD1F-R2" literal text instead
+            # of FTS operators. See _build_fts_match_query.
+            fts_query = _build_fts_match_query(query)
+            if fts_query:
+                sql_parts.append("""
+                    AND lcsc IN (
+                        SELECT lcsc FROM components_fts
+                        WHERE components_fts MATCH ?
+                    )
+                """)
+                params.append(fts_query)
 
         if category:
             sql_parts.append("AND category LIKE ?")
