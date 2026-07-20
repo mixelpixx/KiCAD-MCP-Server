@@ -15,6 +15,7 @@ from commands.eagle import (  # noqa: E402
     _prune_dangling_wires,
     _trim_wires,
     generate_kicad_sch,
+    generate_sym_lib,
     parse_eagle_schematic,
 )
 from utils.kicad_cli import resolve_kicad_cli  # noqa: E402
@@ -45,11 +46,27 @@ def test_generate_kicad_sch_from_minimal_fixture(tmp_path: Path) -> None:
     assert sch_uuid
     assert dangling == 0
     text = out.read_text(encoding="utf-8")
-    assert "(kicad_sch" in text
+    assert text.startswith(
+        '(kicad_sch (version 20260101) (generator "eeschema")' ' (generator_version "10.0")'
+    )
     assert "eagle_import:" in text
     assert "(symbol (lib_id" in text
     assert "(wire" in text
     assert "(label" in text
+
+
+def test_generate_sym_lib_uses_supported_format_version(tmp_path: Path) -> None:
+    _, instances, _, _, _ = parse_eagle_schematic(str(FIXTURE))
+    unique_symbols = {
+        inst.sym_geom.kicad_id: inst.sym_geom for inst in instances if inst.sym_geom is not None
+    }
+    out = tmp_path / "eagle_import.kicad_sym"
+
+    generate_sym_lib(list(unique_symbols.values()), str(out))
+
+    text = out.read_text(encoding="utf-8")
+    assert text.startswith("(kicad_symbol_lib (version 20241209)")
+    assert "20250114" not in text
 
 
 def test_trim_and_prune_remove_isolated_stub() -> None:
