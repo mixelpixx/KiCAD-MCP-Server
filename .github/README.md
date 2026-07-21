@@ -35,18 +35,7 @@
 >
 > This Python/TypeScript server remains fully open (MIT) and maintained.
 >
->
->
-> **Simulate what you just built — meet Spic3y
-> You've had Claude design a schematic with this server. Now close the loop: Spic3y is a circuit simulator from the same author, built KiCad-first — open your .kicad_pro and it simulates, with a watch mode that > re-runs the analysis every time you hit save in KiCad.
->
-> Under the hood: a native Rust engine differentially validated against ngspice, with operating point, DC, AC, transient, noise, Monte Carlo, and FFT analyses — and parameter sweeps that actually use all your
-> cores. It also imports LTspice schematics, runs compiled Verilog-A compact models (BSIM4, PSP, HICUM/L2) through the OSDI interface, and converts structural Verilog netlists into simulatable subcircuits for
-> mixed-signal work.
->
-> Try it in your browser — the full engine compiled to WebAssembly, running entirely on your machine. Nothing is uploaded.
->
-> Spic3y is commercial software; the desktop application is nearing release. Questions and feedback: forum.orchis.ai
+
 
 
 #
