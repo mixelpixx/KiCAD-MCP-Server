@@ -34,8 +34,6 @@
 > individuals and open source; commercial licenses available for businesses).
 >
 > This Python/TypeScript server remains fully open (MIT) and maintained.
->
-
 
 
 #
