@@ -123,6 +123,50 @@ class TestBatchEdit:
         assert any(c_["reference"] == "R1" and c_["value"] == "10k" for c_ in calls)
 
 
+class TestReplaceComponentRecovery:
+    def test_restores_original_and_keeps_backup_when_loader_fails(self, monkeypatch, tmp_path):
+        schematic = tmp_path / "recover.kicad_sch"
+        original = """(kicad_sch
+  (lib_symbols)
+  (symbol (lib_id \"Device:R\") (at 10 20 0)
+    (property \"Reference\" \"R1\" (at 10 20 0))
+    (property \"Value\" \"1k\" (at 10 22 0))
+  )
+)\n"""
+        schematic.write_text(original, encoding="utf-8")
+
+        iface = types.SimpleNamespace(
+            _handle_get_schematic_component=lambda _params: {
+                "success": True,
+                "position": {"x": 10, "y": 20, "angle": 0},
+                "fields": {"Value": "1k", "Footprint": ""},
+            }
+        )
+
+        class FailingLoader:
+            def __init__(self, **_kwargs):
+                pass
+
+            def add_component(self, *_args, **_kwargs):
+                raise RuntimeError("synthetic loader failure")
+
+        monkeypatch.setattr(sb, "DynamicSymbolLoader", FailingLoader)
+
+        result = SchematicBatchCommands(iface).replace_schematic_component(
+            {
+                "schematicPath": str(schematic),
+                "reference": "R1",
+                "newSymbol": "Device:C",
+            }
+        )
+
+        assert result["success"] is False
+        assert schematic.read_text(encoding="utf-8") == original
+        backups = list((tmp_path / ".mcp-backups").glob("recover.kicad_sch.*.bak"))
+        assert len(backups) == 1
+        assert backups[0].read_text(encoding="utf-8") == original
+
+
 class TestBatchAddNoConnects:
     def test_happy_and_fallback(self, monkeypatch):
         fake_loc = types.SimpleNamespace(
