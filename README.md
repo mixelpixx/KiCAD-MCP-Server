@@ -23,7 +23,7 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 122 tools across 16 categories with JSON Schema validation
+- 122 tools across 12 categories with JSON Schema validation
 - Smart tool discovery with router pattern (reduces AI context by 70%)
 - 8 dynamic resources exposing project state
 - Complete schematic workflow with 27 tools and dynamic symbol loading (~10,000 symbols)
@@ -309,9 +309,8 @@ configuration command and backend options.
 
 We've implemented an intelligent tool router to keep AI context efficient while maintaining full functionality:
 
-- **18 direct tools** always visible for high-frequency operations
-- **65 routed tools** organized into 8 categories (board, component, export, drc, schematic, library, routing, autoroute)
-- **35 additional tools** always visible (symbol/footprint creators, JLCPCB, datasheet, advanced routing)
+- **22 direct tools** always visible for high-frequency operations
+- **100 routed tools** organized into 12 categories (board, component, export, drc, schematic, library, symbol_pins, schematic_hierarchy, schematic_layout, schematic_batch, routing, autoroute)
 - **4 router tools** for discovery and execution:
   - `list_tool_categories` - Browse all available categories
   - `get_category_tools` - View tools in a specific category
@@ -380,7 +379,7 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server provides **122 tools** organized into 16 functional categories. With the router pattern, tools are automatically discovered as needed -- just ask Claude what you want to accomplish.
+The server provides **122 tools** organized into 12 functional categories. With the router pattern, tools are automatically discovered as needed -- just ask Claude what you want to accomplish.
 
 For the complete tool reference with access types (direct/routed/additional), see [Tool Inventory](docs/TOOL_INVENTORY.md).
 
@@ -1257,7 +1256,7 @@ How many Basic parts are available?
 - **JSON-RPC 2.0 Transport:** Bi-directional communication via STDIO
 - **Protocol Version:** MCP 2025-06-18
 - **Capabilities:** Tools (122), Resources (8)
-- **Tool Router:** Intelligent discovery system with 8 categories
+- **Tool Router:** Intelligent discovery system with 12 categories
 - **Error Handling:** Standard JSON-RPC error codes
 
 ### TypeScript Server (`src/`)
