@@ -2,7 +2,17 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
-## [Unreleased]
+## [2.4.0] - 2026-07-22
+
+Eighteen merges since v2.3.1. Four new tool families land — symbol library
+management, symbol property editing, `lib_id` replacement for library
+migration, and update-from-library refresh — alongside a process-wide caching
+layer for symbol discovery that removes repeated multi-MB library re-reads.
+Two fixes restore basic operation for whole classes of users: every
+`.kicad_sym` and schematic write was broken on the project's declared Python
+3.9 floor (#328), and JLCPCB part search could not find hyphenated MPNs
+(#327). Eagle import now writes KiCad 10 headers (#330), closing the last of
+the stale-format leftovers from the #221 scaffolding work.
 
 ### Performance
 
@@ -83,6 +93,23 @@ All notable changes to the KiCAD MCP Server project are documented here.
   that); this makes the class unshippable.
 
 ### Bug Fixes
+
+- **Eagle import writes KiCad 10 schematic headers** (#330, closes #321): the
+  Eagle importer still stamped the KiCad 9 token `(version 20250114)` on every
+  `.kicad_sch` it generated — the same stale token #221 removed from the
+  project scaffolding path, left behind because the importer has its own
+  writer. Generated schematics now carry the canonical KiCad 10 header,
+  byte-identical to the string `python/commands/schematic.py` and
+  `python/commands/project.py` already write, and the Eagle symbol-library
+  writer reuses `KICAD9_SYMBOL_LIB_VERSION` from `symbol_creator.py` rather
+  than a third hardcoded literal, so every `.kicad_sym` this server emits now
+  tracks one constant. Verified against real `kicad-cli` 10.0 rather than
+  string assertions alone: the importer's output exports to PDF and passes
+  ERC. The now-unused `KICAD9_FORMAT_VERSION` constant and a broken standalone
+  `ComponentManager` demo block are removed. Seed templates under
+  `python/templates/` intentionally keep `20250114` — their header is
+  rewritten at write time, and existing tests assert the stale token never
+  reaches written output.
 
 - **`.kicad_sym` and schematic writes work again on Python 3.9** (#328): the
   library-management (`import_symbol`/`export_symbol`/`rename_symbol`), Eagle

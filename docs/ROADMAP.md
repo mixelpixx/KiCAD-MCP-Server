@@ -2,8 +2,8 @@
 
 **Vision:** Enable anyone to design professional PCBs through natural conversation with AI
 
-**Current Version:** 2.3.1
-**Last Updated:** 2026-07-05
+**Current Version:** 2.4.0
+**Last Updated:** 2026-07-22
 
 ---
 

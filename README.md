@@ -40,6 +40,44 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 https://github.com/mixelpixx/arduino-ide
 
+## What's New in v2.4.0
+
+### Symbol library management
+
+- `import_symbol` / `export_symbol` / `rename_symbol` copy a symbol between
+  `.kicad_sym` libraries, extract one to a standalone file, and rename a
+  symbol including its sub-symbol shards and any `(extends ...)` references
+  from derived symbols in the same library.
+- `add_symbol_property` and `add_library_symbol_property` set custom BOM
+  fields (Manufacturer, MPN, LCSC, ...) on a library symbol or on a
+  schematic's cached definition.
+- `update_symbol_from_library` refreshes cached `lib_symbols` definitions
+  across one schematic, a list, or every project under a directory —
+  the programmatic equivalent of KiCad's Update Symbol from Library.
+- `replace_instance_lib_ids` swaps `lib_id` references per an explicit
+  old-to-new mapping, for migrating a schematic between libraries.
+
+### Faster symbol discovery
+
+- Library directories, resolved paths, extracted symbol blocks, and parsed
+  symbol lists are now cached process-wide instead of being rebuilt for every
+  component add. Staleness guards revalidate paths and track source `mtime_ns`,
+  and the mutating write paths clear the caches explicitly.
+
+### Fixes that restore basic operation
+
+- Every `.kicad_sym` and schematic write raised `TypeError` on Python 3.9, the
+  project's declared floor — `Path.write_text` did not accept `newline` until
+  3.10.
+- JLCPCB part search could not find hyphenated MPNs.
+- Eagle import wrote a KiCad 9 schematic header; it now writes the KiCad 10
+  header, verified against real `kicad-cli` 10.0.
+- Component placement snaps to the 1.27 mm grid, `import_ses` no longer
+  creates phantom slashless nets, and `export_dsn`/`autoroute` keep
+  `.kicad_pro` net classes.
+
+Full details in the [CHANGELOG](CHANGELOG.md).
+
 ## What's New in v2.3.1
 
 ### Eagle schematic import
@@ -1362,7 +1400,7 @@ npm run format
 
 ## Project Status
 
-**Current Version:** 2.3.1
+**Current Version:** 2.4.0
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
