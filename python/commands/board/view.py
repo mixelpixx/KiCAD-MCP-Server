@@ -170,7 +170,15 @@ class BoardViewCommands:
                     "message": f"Unsupported format '{fmt}'. Use 'png', 'jpg', or 'svg'.",
                     "errorDetails": f"Got: {fmt}",
                 }
-            layers: List[str] = params.get("layers", [])
+            # KiCad 10 rejects `pcb export svg` without --layers ("at least one
+            # layer must be specified"), so an omitted layers list must not stay
+            # empty. Default to the layers that make a board readable at a glance.
+            layers: List[str] = params.get("layers") or [
+                "F.Cu",
+                "B.Cu",
+                "F.SilkS",
+                "Edge.Cuts",
+            ]
             response_mode = params.get("responseMode", "inline")
 
             kicad_cli = resolve_kicad_cli()

@@ -41,6 +41,16 @@ _SYMBOL_DIR_ENV_VARS = (
 )
 
 
+def _esc_sexpr(value: str) -> str:
+    """Escape a string for safe insertion into an S-expression double-quoted token.
+
+    Library property values may themselves contain quotes — power:GND's Description
+    is `Power symbol creates a global label with name "GND"`. Emitted raw, the inner
+    quote closes the token early and corrupts the rest of the .kicad_sch.
+    """
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def _symbol_dir_env_fingerprint() -> Tuple:
     """The env-var inputs library discovery depends on.
 
@@ -1009,7 +1019,7 @@ class DynamicSymbolLoader:
             """
             hide_line = "      (hide yes)\n" if hide else ""
             return (
-                f'    (property "{name}" "{value}"\n'
+                f'    (property "{_esc_sexpr(name)}" "{_esc_sexpr(value)}"\n'
                 f"      (at {_fmt(px)} {_fmt(py)} {_fmt(pa)})\n"
                 f"{hide_line}"
                 f"      (show_name no)\n"
