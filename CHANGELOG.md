@@ -4,6 +4,28 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- **`replace_schematic_component` no longer corrupts `lib_symbols` while
+  restoring fields**: the post-replace field restore ran a `count=1` regex
+  substitution over the whole file, so the first matching
+  `(property "<name>" ...)` in the document was rewritten — for common field
+  names like `Description` that is a library symbol definition inside
+  `lib_symbols`, not the replaced component (observed corrupting an unrelated
+  `Conn_01x04` entry and tripping ERC library-mismatch warnings on every
+  instance). Restoration now delegates to the block-scoped
+  `edit_schematic_component` path, which also creates fields that the new
+  symbol does not carry yet instead of silently dropping them.
+
+- **`delete_schematic_net_label` refuses ambiguous bare-name deletes**:
+  without a `position`, `WireManager.delete_label` silently removed the first
+  label matching the name — dangerous when the same net name appears many
+  times (and easy to trigger, since misspelled top-level `x`/`y` arguments are
+  stripped by schema validation and arrive as `position=None`). A bare-name
+  delete of a name that occurs more than once now fails with the full list of
+  candidate positions so the caller can disambiguate; unique names and
+  position-qualified deletes behave as before.
+
 ### Performance
 
 - **Module-level caches for symbol library discovery, resolution, and
