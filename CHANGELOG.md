@@ -2,7 +2,95 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
-## [Unreleased]
+## [2.4.0] - 2026-07-22
+
+Eighteen merges since v2.3.1. Four new tool families land — symbol library
+management, symbol property editing, `lib_id` replacement for library
+migration, and update-from-library refresh — alongside a process-wide caching
+layer for symbol discovery that removes repeated multi-MB library re-reads.
+Two fixes restore basic operation for whole classes of users: every
+`.kicad_sym` and schematic write was broken on the project's declared Python
+3.9 floor (#328), and JLCPCB part search could not find hyphenated MPNs
+(#327). Eagle import now writes KiCad 10 headers (#330), closing the last of
+the stale-format leftovers from the #221 scaffolding work.
+
+### Performance
+
+- **Module-level caches for symbol library discovery, resolution, and
+  extraction** (#299): a fresh `DynamicSymbolLoader` is created for every
+  `add_schematic_component` call and a fresh `SymbolLibraryManager` (with its
+  warm-up thread) for every `KiCADInterface`, so instance-level caches never
+  survived — each component add re-scanned the sym-lib-table and re-read
+  multi-MB `.kicad_sym` files, and each interface construction re-parsed all
+  installed libraries on its own thread (super-linear cost across the test
+  suite). Library directories, resolved library paths, extracted symbol
+  blocks, and parsed symbol lists are now cached process-wide. Staleness
+  guards, because libraries are NOT immutable mid-session (`create_symbol`,
+  `delete_symbol`, `add_symbol_property`, `register_symbol_library`):
+  resolution misses are never cached, resolved paths are revalidated with
+  `exists()`, block/list entries carry the source file's `mtime_ns`, and the
+  mutating write paths explicitly clear the caches. Tests can skip the
+  speculative warm-up via `KICAD_SKIP_SYMBOL_WARMUP=1`.
+
+### New Features
+
+- **Library management tools: `import_symbol`, `export_symbol`,
+  `rename_symbol`** — copy a symbol between `.kicad_sym` libraries (with
+  optional rename/overwrite; target created if missing), extract one symbol
+  to a standalone file, and rename a symbol including its sub-symbol shards
+  and any `(extends ...)` references from derived symbols in the same
+  library. Deletion deliberately stays with the existing `delete_symbol`
+  tool — one tool per capability. All three writes invalidate the
+  module-level symbol caches, and new/exported files reuse SymbolCreator's
+  header token so every `.kicad_sym` this server writes carries the same,
+  oldest-supported format version.
+
+- **`replace_instance_lib_ids` tool** — library-migration primitive: swaps
+  `lib_id` references in schematic symbol instances per an explicit
+  old-to-new mapping (values used verbatim, so one migration may target
+  several libraries), with automatic angle correction for the Eagle
+  importer's mirror-variant suffixes (`__m0`/`__m90`/`__m180`/`__m270`).
+  Instances only — the `lib_symbols` section is preserved;
+  `update_symbol_from_library` refreshes definitions afterwards. Matching
+  logic (which symbol replaces which) deliberately stays with the caller.
+
+- **Symbol property tools** (#308): `add_symbol_property` adds or updates a
+  custom property (Manufacturer, MPN, LCSC, ...) on a symbol in a
+  `.kicad_sym` library file — the durable, library-wide path for BOM fields.
+  `add_library_symbol_property` does the same on a symbol definition in a
+  schematic's `lib_symbols` cache; note those cache edits are overwritten by
+  a later `update_symbol_from_library` refresh, so the tool descriptions
+  steer callers to the library-file tool first.
+
+- **`update_symbol_from_library` tool** (#291): refresh the cached
+  `lib_symbols` definitions in one schematic, a list of schematics, or every
+  project under a directory from the current `.kicad_sym` library — the
+  programmatic equivalent of KiCad's Update Symbol from Library. Placed
+  instances are preserved (per-pin uuids, references, `instances` blocks);
+  power symbols have their `(power)` wrapper flattened to the schematic
+  layout; mirror-cache symbols (`__m0`, `__m90`, ...) are skipped, with an
+  optional `repairMirrorFromBackup` to restore them from a pre-update
+  backup. Writes go through the canonical formatter.
+
+### Tooling
+
+- **pathlib migration, first slice**: `kicad_interface.py` and
+  `schematic_handlers.py` now use `pathlib.Path` for file-path handling
+  (`os.path.normcase` remains in `_normalize_board_path` — it has no pathlib
+  equivalent). Values crossing into JSON responses and subprocess argv stay
+  `str`. Also strips a stray UTF-8 BOM from `commands/export.py` and bumps
+  mypy's `python_version` to 3.10 — required by current mypy, which dropped
+  the 3.9 target (note: the project's declared `requires-python = ">=3.9"`
+  floor is therefore no longer verified by the type checker). `export.py`
+  and the remaining `os.path` call sites are follow-up slices.
+
+- **Interface construction smoke test**: a new test constructs
+  `KiCADInterface` with the stubbed pcbnew and asserts every
+  `command_routes` entry is callable, every schema-listed tool has a route,
+  and recently-added tools are present. A route entry referencing a renamed
+  or un-imported handler function passes every module-level test but
+  crashes the server at startup with `NameError` (#308 shipped exactly
+  that); this makes the class unshippable.
 
 ### New Features
 
@@ -18,6 +106,111 @@ All notable changes to the KiCAD MCP Server project are documented here.
   no Concept HDL / OrCAD schematic importer.
 
 ### Bug Fixes
+
+- **Eagle import writes KiCad 10 schematic headers** (#330, closes #321): the
+  Eagle importer still stamped the KiCad 9 token `(version 20250114)` on every
+  `.kicad_sch` it generated — the same stale token #221 removed from the
+  project scaffolding path, left behind because the importer has its own
+  writer. Generated schematics now carry the canonical KiCad 10 header,
+  byte-identical to the string `python/commands/schematic.py` and
+  `python/commands/project.py` already write, and the Eagle symbol-library
+  writer reuses `KICAD9_SYMBOL_LIB_VERSION` from `symbol_creator.py` rather
+  than a third hardcoded literal, so every `.kicad_sym` this server emits now
+  tracks one constant. Verified against real `kicad-cli` 10.0 rather than
+  string assertions alone: the importer's output exports to PDF and passes
+  ERC. The now-unused `KICAD9_FORMAT_VERSION` constant and a broken standalone
+  `ComponentManager` demo block are removed. Seed templates under
+  `python/templates/` intentionally keep `20250114` — their header is
+  rewritten at write time, and existing tests assert the stale token never
+  reaches written output.
+
+- **`.kicad_sym` and schematic writes work again on Python 3.9** (#328): the
+  library-management (`import_symbol`/`export_symbol`/`rename_symbol`), Eagle
+  prettify, and symbol-schematic writers introduced with the recent tooling
+  wrote files via `Path.write_text(content, newline="\n")`, but
+  `Path.write_text` did not accept the `newline` keyword until Python 3.10 —
+  so on the project's declared `>=3.9` floor every one of those calls raised
+  `TypeError: write_text() got an unexpected keyword argument 'newline'`. Each
+  site now opens the file handle explicitly with an `open("w", ...)` call that
+  passes `newline="\n"` and writes through it, preserving the forced LF line
+  ending (so the files stay byte-identical on Windows rather than emitting
+  CRLF) while running on 3.9.
+
+- **JLCPCB part search finds hyphenated MPNs** (#327): `search_parts` built
+  its FTS5 `MATCH` query by appending `*` to each whitespace term, so a real
+  manufacturer part number like `SHT41-AD1F-R2` became `SHT41-AD1F-R2*` — and
+  FTS5 reads `-` as a column/NOT operator, raising
+  `sqlite3.OperationalError: no such column: AD1F`. `search_parts` wraps the
+  query in a broad `except` that returns `[]`, so searching by an exact MPN
+  silently found nothing instead of erroring. Each term is now emitted as a
+  quoted prefix phrase (`"term"*`) with any embedded double quote doubled, so
+  hyphens and other FTS punctuation are matched as literal text; plain prefix
+  matching (`SHT41` still matches the full MPN) is unchanged. A regression test
+  builds a tiny in-schema FTS database and pins both the pre-fix crash and the
+  fixed lookup.
+
+- **`add_schematic_component` snaps the placement origin to the 1.27 mm
+  (50 mil) schematic connection grid** (#299): library pins sit at integer
+  multiples of 1.27 mm from the symbol origin, so an off-grid origin leaves
+  every pin off-grid — wires and net labels cannot bind electrically, ERC
+  reports `endpoint_off_grid`, and the netlist comes up empty. The snap is
+  always on; the handler response reports the actual `placed_at` position
+  (looked up by reference, so multiple instances of the same symbol report
+  correctly) plus `snapped: true` and `requested_at` when the coordinates
+  were adjusted. Snapped values are written with at most two decimals —
+  exact for every multiple of 1.27 — instead of raw float products.
+
+- **`sync_schematic_to_board` no longer re-parses the fp-lib-table on every
+  call** (#248): `_add_missing_footprints_from_schematic` built a fresh
+  `LibraryManager` — re-parsing the global and project `fp-lib-table` files,
+  recursively following any `Table` references — on every single invocation.
+  In an iterative rebuild flow (call `sync_schematic_to_board`, tweak the
+  schematic, call it again), that overhead was paid again each time even
+  though the project hadn't changed. The interface now caches the
+  `LibraryManager` via `_get_project_library_manager`, keyed on the project
+  directory plus the mtimes of the fp-lib-table files it parses, so the
+  cache is reused across repeat calls but rebuilds automatically when a
+  table changes (e.g. `register_footprint_library`, or a KiCad GUI edit
+  mid-session).
+
+- **Fixed a test-suite state leak that caused spurious pin-position failures
+  when test files ran in combination** (#287): `tests/test_rotate_schematic_mirror.py`
+  installed a throwaway `MagicMock` at `sys.modules["commands.pin_locator"]`
+  via `sys.modules.setdefault(...)` at module-collection time, with no
+  teardown. Any later-collected file relying on the real
+  `commands.pin_locator` (e.g. `WireDragger.get_pin_defs`, via
+  `commands.wire_dragger`) silently got empty pin data instead of an error —
+  iterating a bare `MagicMock()` is a no-op by default. A `teardown_module`
+  now undoes the stub, and `test_rotate_handler_no_crash`'s stubbed
+  `kicad_interface.py` exec additionally evicts any `commands.*` submodule it
+  imported for the first time while `pcbnew`/`skip` were mocked, so later
+  tests get a clean re-import instead of a module bound to a discarded mock.
+  Test-only change; no production code touched.
+
+- **`import_ses` no longer creates phantom slashless nets — routed tracks bind
+  to the real board nets** (#246): KiCad global-label nets are named with a
+  leading `/` (e.g. `/GND`), but a Specctra DSN round-trip through Freerouting
+  can drop that prefix. `ImportSpecctraSES` then fails its exact-string net
+  lookup and creates a _new_ slashless net (`GND`), leaving `/GND` unconnected
+  and every routed track flagged by DRC. `import_ses` now reconciles the SES
+  before import: a pure `_reconcile_ses_net_names` re-adds the `/` to any
+  `(net "NAME" …)` token that matches a board net only when prefixed (idempotent;
+  names that genuinely have no slash on the board are left untouched), and the
+  repaired copy is imported. Any reconciliation error falls back to importing the
+  original file unchanged; the response reports `netsRemapped`.
+
+- **`add_sheet_pin` finds sheets regardless of line formatting; sheet/text
+  insertion no longer splices mid-line** (#298): `add_hierarchical_sheet`
+  and the wire/label/text insert helper located their insertion point with
+  `content.rfind(...)` — a raw character offset — so on files where the
+  marker does not start its own line (sexpdata-written schematics keep
+  several forms on one line) the new block landed mid-line. `add_sheet_pin`
+  then scanned line-by-line for `(sheet` at the start of a line and could
+  never find such a sheet, failing with "sheet not found" on a sheet that
+  plainly existed. Insertions now snap to a line boundary (breaking the
+  line when the marker shares it), and `add_sheet_pin` scans by character
+  with paren matching, so it also works on files already written with
+  mid-line sheets and on fully minified single-line schematics.
 
 - **`export_dsn`/`autoroute` no longer drop `.kicad_pro` net classes — power
   nets keep their width** (#302): net-class definitions live in the project
@@ -130,8 +323,8 @@ load on every KiCad 10.0.x build.
   `add_schematic_component` tool synthesizes its own `lib_symbols` via the
   dynamic loader (and the legacy fallback was removed in #288), so the seeds only
   leaked into user files. Both tools now copy a new blank KiCad 10 template
-  (`python/templates/blank.kicad_sch`: `(version 20260101) (generator
-  "eeschema")`, empty `lib_symbols`, no placed symbols).
+  (`python/templates/blank.kicad_sch`: `(version 20260101) (generator "eeschema")`,
+  empty `lib_symbols`, no placed symbols).
   `template_with_symbols.kicad_sch` is kept unchanged in-repo as a test fixture.
   A regression test asserts a created schematic contains no `_TEMPLATE_`
   references and no seeded `lib_symbols` entries.
@@ -309,8 +502,8 @@ the KiCad GUI connects later (reopen the project to adopt IPC).
 - **Fallback schematic writer emits the KiCad 10 header** (#221, partial): the
   template-missing fallback in `create_schematic` and `create_project` wrote the
   stale KiCad 9 header `(version 20250114) (generator "KiCAD-MCP-Server")`. It
-  now writes `(version 20260306) (generator "eeschema") (generator_version
-"10.0")`, matching what eeschema writes for a new file. This covers only the
+  now writes `(version 20260306) (generator "eeschema") (generator_version "10.0")`,
+  matching what eeschema writes for a new file. This covers only the
   fallback path; the main templates (which still carry the KiCad 9 version and
   the `_TEMPLATE_*` clone-source instances used by `add_schematic_component`)
   are tracked separately because rewriting them touches the component-cloning
@@ -436,9 +629,7 @@ the KiCad GUI connects later (reopen the project to adopt IPC).
   _would_ be made without modifying the board — useful for previewing
   before committing.
 
-  Returns `{ placed: [{x, y, unit}, ...], summary: {placed_count,
-candidates_evaluated, skipped_by_zone_membership,
-skipped_by_collision, ...} }`.
+  Returns `{ placed: [{x, y, unit}, ...], summary: {placed_count, candidates_evaluated, skipped_by_zone_membership, skipped_by_collision, ...} }`.
 
   Approach ported from
   [morningfire-pcb-automation](https://github.com/NiNjA-CodE/morningfire-pcb-automation)

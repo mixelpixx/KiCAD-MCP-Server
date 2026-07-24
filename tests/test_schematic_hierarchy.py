@@ -44,6 +44,54 @@ class TestAddHierarchicalSheet:
         # a sheet_instances path entry for the new sheet block was added
         assert f'/{ "abcd-1234" }/{ r["sheet_uuid"] }' in content
 
+    def test_sheet_block_starts_its_own_line(self, tmp_path):
+        """#298: rfind gives a raw char offset; when (sheet_instances does not
+        start a line (sexpdata-written files), the sheet block used to be
+        spliced mid-line, where add_sheet_pin's scan could never find it."""
+        import sexpdata
+
+        parent = tmp_path / "top.kicad_sch"
+        # Everything on one line: (sheet_instances shares it with the uuid.
+        parent.write_text('(kicad_sch (uuid abcd-1234) (sheet_instances (path "/" (page "1"))))')
+        r = _cmds().add_hierarchical_sheet(
+            {
+                "schematicPath": str(parent),
+                "subsheetPath": str(tmp_path / "sub.kicad_sch"),
+                "sheetName": "Power",
+            }
+        )
+        assert r["success"] is True
+        content = parent.read_text()
+        # The (sheet block must start its own line (any indentation).
+        sheet_lines = [ln for ln in content.split("\n") if ln.lstrip().startswith("(sheet ")]
+        assert sheet_lines, f"(sheet does not start any line:\n{content}"
+        # The file must still be a single balanced s-expression.
+        sexpdata.loads(content)
+
+    def test_sheet_insertion_keeps_indented_files_intact(self, tmp_path):
+        """The normal KiCad-written shape ((sheet_instances starts a line)
+        must keep working and stay balanced."""
+        import sexpdata
+
+        parent = tmp_path / "top.kicad_sch"
+        parent.write_text(
+            '(kicad_sch (uuid abcd-1234)\n\t(sheet_instances (path "/" (page "1")))\n)'
+        )
+        r = _cmds().add_hierarchical_sheet(
+            {
+                "schematicPath": str(parent),
+                "subsheetPath": str(tmp_path / "sub.kicad_sch"),
+                "sheetName": "IO",
+            }
+        )
+        assert r["success"] is True
+        content = parent.read_text()
+        sheet_lines = [ln for ln in content.split("\n") if ln.lstrip().startswith("(sheet ")]
+        assert sheet_lines
+        # (sheet_instances keeps its own line and indentation
+        assert any(ln.lstrip().startswith("(sheet_instances") for ln in content.split("\n"))
+        sexpdata.loads(content)
+
 
 class TestCreateHierarchicalSubsheet:
     def test_orchestrates(self):

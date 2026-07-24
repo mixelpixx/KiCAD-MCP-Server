@@ -25,8 +25,8 @@ import sexpdata
 from commands.library_schematic import LibraryManager as SchematicLibraryManager
 from commands.schematic import SchematicLoadError, SchematicManager
 from commands.wire_manager import WireManager
-from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.interactive_schematic import reload_kicad_schematic
+from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.sexpr_format import dumps as kicad_dumps
 from utils.project_settings_guard import preserve_project_settings
 
@@ -48,6 +48,30 @@ def _pick_root_svg(svg_dir: str, schematic_path: str) -> Optional[str]:
     svg_files = sorted(glob.glob(os.path.join(svg_dir, "*.svg")))
     if len(svg_files) == 1:
         return svg_files[0]
+    return None
+
+
+def _find_placed_symbol_position(content: str, reference: str) -> Optional[Tuple[float, float]]:
+    """Locate the ``(at x y ...)`` origin of the symbol instance ``reference``.
+
+    Matches by reference, not by lib_id: with several instances of the same
+    symbol in one schematic (two resistors), a first-match lib_id search
+    reports the coordinates of the WRONG instance for every placement after
+    the first. Scans symbol headers and picks the block whose
+    ``(property "Reference" ...)`` is the requested one. Returns ``None`` if
+    no block matches (best-effort caller metadata, not a load-bearing path).
+    """
+    headers = list(
+        re.finditer(
+            r'\(symbol\s+\(lib_id\s+"[^"]+"\)\s+\(at\s+(-?[\d.]+)\s+(-?[\d.]+)',
+            content,
+        )
+    )
+    ref_needle = f'(property "Reference" "{reference}"'
+    for i, header in enumerate(headers):
+        block_end = headers[i + 1].start() if i + 1 < len(headers) else len(content)
+        if ref_needle in content[header.start() : block_end]:
+            return float(header.group(1)), float(header.group(2))
     return None
 
 
@@ -73,7 +97,7 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
     except Exception:
         pass
 
-    out_path = os.path.join(tempfile.mkdtemp(), "out.png")
+    out_path = Path(tempfile.mkdtemp()) / "out.png"
 
     try:
         r = subprocess.run(
@@ -88,7 +112,7 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
             capture_output=True,
             timeout=60,
         )
-        if r.returncode == 0 and os.path.exists(out_path):
+        if r.returncode == 0 and out_path.exists():
             with open(out_path, "rb") as f:
                 return f.read()
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -96,11 +120,11 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
 
     try:
         r = subprocess.run(
-            ["convert", "-density", "150", svg_path, "-resize", f"{width}x{height}", out_path],
+            ["convert", "-density", "150", svg_path, "-resize", f"{width}x{height}", str(out_path)],
             capture_output=True,
             timeout=60,
         )
-        if r.returncode == 0 and os.path.exists(out_path):
+        if r.returncode == 0 and out_path.exists():
             with open(out_path, "rb") as f:
                 return f.read()
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -137,8 +161,9 @@ class SchematicHandlersMixin:
                 # If filename provided, extract name and path from it
                 if filename.endswith(".kicad_sch"):
                     filename = filename[:-10]  # Remove .kicad_sch extension
-                path = os.path.dirname(filename) or "."
-                project_name = project_name or os.path.basename(filename)
+                filename_p = Path(filename)
+                path = str(filename_p.parent) if str(filename_p.parent) != "" else "."
+                project_name = project_name or filename_p.name
             else:
                 path = params.get("path", ".")
             metadata = params.get("metadata", {})
@@ -167,7 +192,7 @@ class SchematicHandlersMixin:
                     else f"{project_name}.kicad_sch"
                 )
                 normalized_path = path or "."
-                file_path = os.path.join(normalized_path, base_name)
+                file_path = str(Path(normalized_path) / base_name)
             success = SchematicManager.save_schematic(schematic, file_path)
 
             return {"success": success, "file_path": file_path}
@@ -248,11 +273,25 @@ class SchematicHandlersMixin:
 
             self._reload_kicad_schematic()
 
-            return {
+            # Read back the actual placed position so callers can see grid-snapped
+            # coordinates when they differ from the request.
+            response: Dict[str, Any] = {
                 "success": True,
                 "component_reference": reference,
                 "symbol_source": f"{library}:{comp_type}",
             }
+            try:
+                content = schematic_file.read_text(encoding="utf-8")
+                placed = _find_placed_symbol_position(content, reference)
+                if placed is not None:
+                    placed_x, placed_y = placed
+                    response["placed_at"] = {"x": placed_x, "y": placed_y}
+                    if (placed_x, placed_y) != (x, y):
+                        response["snapped"] = True
+                        response["requested_at"] = {"x": x, "y": y}
+            except Exception:
+                pass  # Best-effort read; the component was placed successfully.
+            return response
         except Exception as e:
             logger.error(f"Error adding component to schematic: {str(e)}")
             import traceback
@@ -1195,7 +1234,7 @@ class SchematicHandlersMixin:
             if not output_path:
                 return {"success": False, "message": "Output path is required"}
 
-            if not os.path.exists(schematic_path):
+            if not Path(schematic_path).exists():
                 return {
                     "success": False,
                     "message": f"Schematic not found: {schematic_path}",
@@ -1424,7 +1463,7 @@ class SchematicHandlersMixin:
 
         try:
             schematic_path = params.get("schematicPath")
-            if not schematic_path or not os.path.exists(schematic_path):
+            if not schematic_path or not Path(schematic_path).exists():
                 return {
                     "success": False,
                     "message": f"Schematic not found: {schematic_path}",
@@ -1439,7 +1478,7 @@ class SchematicHandlersMixin:
             if not kicad_cli:
                 return {"success": False, "message": kicad_cli_not_found_message()}
             with tempfile.TemporaryDirectory() as tmpdir:
-                svg_path = os.path.join(tmpdir, "schematic.svg")
+                svg_path = str(Path(tmpdir) / "schematic.svg")
                 cmd = [
                     kicad_cli,
                     "sch",
@@ -2243,7 +2282,6 @@ class SchematicHandlersMixin:
     def _handle_export_schematic_svg(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Export schematic to SVG using kicad-cli"""
         logger.info("Exporting schematic SVG")
-        import glob
         import shutil
         import subprocess
 
@@ -2257,7 +2295,7 @@ class SchematicHandlersMixin:
                     "message": "schematicPath and outputPath are required",
                 }
 
-            if not os.path.exists(schematic_path):
+            if not Path(schematic_path).exists():
                 return {
                     "success": False,
                     "message": f"Schematic not found: {schematic_path}",
@@ -2618,13 +2656,12 @@ class SchematicHandlersMixin:
     def _handle_run_erc(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Run Electrical Rules Check on a schematic via kicad-cli"""
         logger.info("Running ERC on schematic")
-        import os
         import subprocess
         import tempfile
 
         try:
             schematic_path = params.get("schematicPath")
-            if not schematic_path or not os.path.exists(schematic_path):
+            if not schematic_path or not Path(schematic_path).exists():
                 return {
                     "success": False,
                     "message": "Schematic file not found",
@@ -2660,7 +2697,8 @@ class SchematicHandlersMixin:
                 # kicad-cli returns non-zero when ERC violations are found —
                 # this is normal, not an error.  Only fail when no JSON was
                 # produced (genuine CLI failure).
-                if not os.path.exists(json_output) or os.path.getsize(json_output) == 0:
+                json_output_p = Path(json_output)
+                if not json_output_p.exists() or json_output_p.stat().st_size == 0:
                     logger.error(f"ERC command produced no output: {result.stderr}")
                     return {
                         "success": False,
@@ -2712,8 +2750,8 @@ class SchematicHandlersMixin:
                 }
 
             finally:
-                if os.path.exists(json_output):
-                    os.unlink(json_output)
+                if Path(json_output).exists():
+                    Path(json_output).unlink()
 
         except subprocess.TimeoutExpired:
             return {"success": False, "message": "ERC timed out after 120 seconds"}
@@ -3047,9 +3085,66 @@ class SchematicHandlersMixin:
             return []
         finally:
             try:
-                os.unlink(tmp_path)
+                Path(tmp_path).unlink()
             except OSError:
                 pass
+
+    @staticmethod
+    def _fp_lib_tables_state(project_dir: "Path", manager: Any) -> Tuple[Any, Any]:
+        """Freshness key for a cached ``LibraryManager``: fp-lib-table mtimes.
+
+        A cached manager must not outlive edits to the tables it parsed —
+        ``register_footprint_library`` rewrites the project or global
+        fp-lib-table mid-session, and the KiCad GUI can too (Preferences >
+        Manage Footprint Libraries). Two ``stat`` calls per sync are noise
+        next to the parse they let us skip. The global table path is
+        re-probed each time (rather than remembered) so a global table
+        *created* after the first build is also detected.
+        """
+
+        def _mtime_ns(path: Any) -> Any:
+            if path is None:
+                return None
+            try:
+                return path.stat().st_mtime_ns
+            except OSError:
+                return None
+
+        # Tolerant getattr: tests substitute lightweight fakes for
+        # LibraryManager that don't carry the probe helper.
+        probe = getattr(manager, "_get_global_fp_lib_table", lambda: None)
+        return (_mtime_ns(project_dir / "fp-lib-table"), _mtime_ns(probe()))
+
+    def _get_project_library_manager(self, project_dir: "Path") -> Any:
+        """Return a footprint ``LibraryManager`` for ``project_dir``, cached on ``self``.
+
+        Building one re-parses the global fp-lib-table plus the project's
+        fp-lib-table (recursively following any ``Table`` references). Doing
+        that on every ``sync_schematic_to_board`` call is pure waste when the
+        tool is invoked repeatedly against the same project, e.g. an
+        iterative rebuild flow (#248). Mirrors the cache-on-project-change
+        pattern already used for ``place_component`` above, with one addition:
+        the cache key includes the fp-lib-table mtimes (see
+        ``_fp_lib_tables_state``), so a table edit mid-session triggers a
+        rebuild instead of serving stale library data.
+        """
+        from commands.library import LibraryManager
+
+        cached = getattr(self, "_sync_library_manager", None)
+        cached_dir = getattr(self, "_sync_library_manager_project", None)
+        cached_state = getattr(self, "_sync_library_manager_state", None)
+        if (
+            cached is None
+            or cached_dir != project_dir
+            or cached_state != self._fp_lib_tables_state(project_dir, cached)
+        ):
+            cached = LibraryManager(project_path=project_dir)
+            self._sync_library_manager = cached
+            self._sync_library_manager_project = project_dir
+            # Stamp freshness after the parse: if a table changes between the
+            # parse and the stat, the next call sees a newer mtime and rebuilds.
+            self._sync_library_manager_state = self._fp_lib_tables_state(project_dir, cached)
+        return cached
 
     def _add_missing_footprints_from_schematic(
         self, board: Any, schematic_path: str
@@ -3065,8 +3160,6 @@ class SchematicHandlersMixin:
         """
         from pathlib import Path
 
-        from commands.library import LibraryManager
-
         added: List[Dict[str, str]] = []
         skipped: List[Dict[str, str]] = []
 
@@ -3076,7 +3169,7 @@ class SchematicHandlersMixin:
 
         existing_refs = {fp.GetReference() for fp in board.GetFootprints()}
         project_dir = Path(schematic_path).parent
-        library_manager = LibraryManager(project_path=project_dir)
+        library_manager = self._get_project_library_manager(project_dir)
 
         for comp in components:
             ref = comp["reference"]
@@ -3145,13 +3238,12 @@ class SchematicHandlersMixin:
         """Export a cropped region of the schematic as an image"""
         logger.info("Exporting schematic view region")
         import base64
-        import os
         import subprocess
         import tempfile
 
         try:
             schematic_path = params.get("schematicPath")
-            if not schematic_path or not os.path.exists(schematic_path):
+            if not schematic_path or not Path(schematic_path).exists():
                 return {"success": False, "message": "Schematic file not found"}
 
             x1 = float(params.get("x1", 0))
@@ -3230,7 +3322,7 @@ class SchematicHandlersMixin:
                         root.set("height", str(height))
 
                 # Write modified SVG
-                cropped_svg_path = os.path.join(tmp_dir, "cropped.svg")
+                cropped_svg_path = str(tmp_dir_p / "cropped.svg")
                 tree.write(cropped_svg_path, xml_declaration=True, encoding="utf-8")
 
                 if out_format == "svg":

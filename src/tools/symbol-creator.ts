@@ -211,4 +211,88 @@ export function registerSymbolCreatorTools(server: McpServer, callKicadScript: F
       };
     },
   );
+
+  // ── add_symbol_property ───────────────────────────────────────────────── //
+  server.tool(
+    "add_symbol_property",
+    "Add or update a custom property (Manufacturer, MPN, LCSC, etc.) on a symbol in a .kicad_sym library file.",
+    {
+      libraryPath: z.string().describe("Path to the .kicad_sym file"),
+      symbolName: z.string().describe("Symbol name"),
+      propertyName: z.string().describe("Property name (e.g. Manufacturer, MPN)"),
+      propertyValue: z.string().describe("Property value"),
+      position: z
+        .object({ x: z.number(), y: z.number() })
+        .optional()
+        .describe("Position {x, y} in mm (default: 0, 0)"),
+      hide: z.boolean().optional().describe("Hide the property (default false)"),
+    },
+    async (args: any) => {
+      const r = await callKicadScript("add_symbol_property", args);
+      if (r.success === false)
+        return { content: [{ type: "text", text: `Failed: ${r.message || "Unknown error"}` }] };
+      return { content: [{ type: "text", text: r.message }] };
+    },
+  );
+
+  // ── import_symbol ─────────────────────────────────────────────────────── //
+  server.tool(
+    "import_symbol",
+    "Copy a symbol from one .kicad_sym library into another, with optional rename and overwrite. " +
+      "The target library is created if missing. A derived symbol (one using (extends ...)) needs " +
+      "its parent imported into the target first.",
+    {
+      sourceLibraryPath: z.string().describe("Path to the source .kicad_sym file"),
+      symbolName: z.string().describe("Symbol to import"),
+      targetLibraryPath: z.string().describe("Path to the target .kicad_sym (created if missing)"),
+      newName: z.string().optional().describe("Rename the symbol on import"),
+      overwrite: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Overwrite if the symbol already exists in the target"),
+    },
+    async (args: any) => {
+      const result = await callKicadScript("import_symbol", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
+  // ── export_symbol ─────────────────────────────────────────────────────── //
+  server.tool(
+    "export_symbol",
+    "Extract a single symbol from a .kicad_sym library into a standalone .kicad_sym file.",
+    {
+      libraryPath: z.string().describe("Path to the source .kicad_sym file"),
+      symbolName: z.string().describe("Symbol to export"),
+      outputPath: z.string().describe("Path for the output .kicad_sym file"),
+    },
+    async (args: any) => {
+      const result = await callKicadScript("export_symbol", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
+  // ── rename_symbol ─────────────────────────────────────────────────────── //
+  server.tool(
+    "rename_symbol",
+    "Rename a symbol in a .kicad_sym library, including its sub-symbol shards (name_0_1, ...) and " +
+      "any (extends ...) references from derived symbols in the same library. Note: schematics that " +
+      "already place the old lib_id are NOT updated — use replace_instance_lib_ids for that.",
+    {
+      libraryPath: z.string().describe("Path to the .kicad_sym file"),
+      oldName: z.string().describe("Current symbol name"),
+      newName: z.string().describe("New symbol name"),
+    },
+    async (args: any) => {
+      const result = await callKicadScript("rename_symbol", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
 }

@@ -23,7 +23,7 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 122 tools across 16 categories with JSON Schema validation
+- 122 tools across 12 categories with JSON Schema validation
 - Smart tool discovery with router pattern (reduces AI context by 70%)
 - 8 dynamic resources exposing project state
 - Complete schematic workflow with 27 tools and dynamic symbol loading (~10,000 symbols)
@@ -55,6 +55,44 @@ https://github.com/mixelpixx/arduino-ide
   the result. **PCB/layout data only** — kicad-cli has no importer for
   Cadence Concept HDL / OrCAD Capture schematics, so this tool never produces
   a schematic.
+
+## What's New in v2.4.0
+
+### Symbol library management
+
+- `import_symbol` / `export_symbol` / `rename_symbol` copy a symbol between
+  `.kicad_sym` libraries, extract one to a standalone file, and rename a
+  symbol including its sub-symbol shards and any `(extends ...)` references
+  from derived symbols in the same library.
+- `add_symbol_property` and `add_library_symbol_property` set custom BOM
+  fields (Manufacturer, MPN, LCSC, ...) on a library symbol or on a
+  schematic's cached definition.
+- `update_symbol_from_library` refreshes cached `lib_symbols` definitions
+  across one schematic, a list, or every project under a directory —
+  the programmatic equivalent of KiCad's Update Symbol from Library.
+- `replace_instance_lib_ids` swaps `lib_id` references per an explicit
+  old-to-new mapping, for migrating a schematic between libraries.
+
+### Faster symbol discovery
+
+- Library directories, resolved paths, extracted symbol blocks, and parsed
+  symbol lists are now cached process-wide instead of being rebuilt for every
+  component add. Staleness guards revalidate paths and track source `mtime_ns`,
+  and the mutating write paths clear the caches explicitly.
+
+### Fixes that restore basic operation
+
+- Every `.kicad_sym` and schematic write raised `TypeError` on Python 3.9, the
+  project's declared floor — `Path.write_text` did not accept `newline` until
+  3.10.
+- JLCPCB part search could not find hyphenated MPNs.
+- Eagle import wrote a KiCad 9 schematic header; it now writes the KiCad 10
+  header, verified against real `kicad-cli` 10.0.
+- Component placement snaps to the 1.27 mm grid, `import_ses` no longer
+  creates phantom slashless nets, and `export_dsn`/`autoroute` keep
+  `.kicad_pro` net classes.
+
+Full details in the [CHANGELOG](CHANGELOG.md).
 
 ## What's New in v2.3.1
 
@@ -287,9 +325,8 @@ configuration command and backend options.
 
 We've implemented an intelligent tool router to keep AI context efficient while maintaining full functionality:
 
-- **18 direct tools** always visible for high-frequency operations
-- **65 routed tools** organized into 8 categories (board, component, export, drc, schematic, library, routing, autoroute)
-- **35 additional tools** always visible (symbol/footprint creators, JLCPCB, datasheet, advanced routing)
+- **22 direct tools** always visible for high-frequency operations
+- **100 routed tools** organized into 12 categories (board, component, export, drc, schematic, library, symbol_pins, schematic_hierarchy, schematic_layout, schematic_batch, routing, autoroute)
 - **4 router tools** for discovery and execution:
   - `list_tool_categories` - Browse all available categories
   - `get_category_tools` - View tools in a specific category
@@ -358,7 +395,7 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server provides **122 tools** organized into 16 functional categories. With the router pattern, tools are automatically discovered as needed -- just ask Claude what you want to accomplish.
+The server provides **122 tools** organized into 12 functional categories. With the router pattern, tools are automatically discovered as needed -- just ask Claude what you want to accomplish.
 
 For the complete tool reference with access types (direct/routed/additional), see [Tool Inventory](docs/TOOL_INVENTORY.md).
 
@@ -1235,7 +1272,7 @@ How many Basic parts are available?
 - **JSON-RPC 2.0 Transport:** Bi-directional communication via STDIO
 - **Protocol Version:** MCP 2025-06-18
 - **Capabilities:** Tools (122), Resources (8)
-- **Tool Router:** Intelligent discovery system with 8 categories
+- **Tool Router:** Intelligent discovery system with 12 categories
 - **Error Handling:** Standard JSON-RPC error codes
 
 ### TypeScript Server (`src/`)
@@ -1378,7 +1415,7 @@ npm run format
 
 ## Project Status
 
-**Current Version:** 2.3.1
+**Current Version:** 2.4.0
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
@@ -1413,12 +1450,12 @@ Set `KICAD_MCP_DEV=1` to capture MCP session logs for debugging. See CHANGELOG v
 **Logging (`~/.kicad-mcp/logs/`):**
 Logs default to `INFO` and the file is size-capped so it can't grow without bound. Tune via the MCP server's environment:
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `LOG_LEVEL` / `KICAD_MCP_LOG_LEVEL` | `info` | Log verbosity (`error`/`warn`/`info`/`debug`, or `off`). `KICAD_MCP_LOG_LEVEL` wins. |
-| `KICAD_MCP_LOG_MAX_BYTES` | `10485760` (10 MB) | Max size per log file before it rotates; `0` disables rotation. |
-| `KICAD_MCP_LOG_BACKUP_COUNT` | `3` | Number of rotated backups to keep. |
-| `KICAD_MCP_DEBUG_SKIP` | unset | Set to `1` to re-enable the verbose kicad-skip parser DEBUG logs (muted by default). |
+| Variable                            | Default            | Purpose                                                                              |
+| ----------------------------------- | ------------------ | ------------------------------------------------------------------------------------ |
+| `LOG_LEVEL` / `KICAD_MCP_LOG_LEVEL` | `info`             | Log verbosity (`error`/`warn`/`info`/`debug`, or `off`). `KICAD_MCP_LOG_LEVEL` wins. |
+| `KICAD_MCP_LOG_MAX_BYTES`           | `10485760` (10 MB) | Max size per log file before it rotates; `0` disables rotation.                      |
+| `KICAD_MCP_LOG_BACKUP_COUNT`        | `3`                | Number of rotated backups to keep.                                                   |
+| `KICAD_MCP_DEBUG_SKIP`              | unset              | Set to `1` to re-enable the verbose kicad-skip parser DEBUG logs (muted by default). |
 
 See [ROADMAP.md](docs/ROADMAP.md) for planned features.
 

@@ -94,6 +94,7 @@ class TestGetSymbolInfoHandler:
         if not SPICE_LIB.exists():
             pytest.skip(f"System library not found: {SPICE_LIB}")
         manager = SymbolLibraryManager.__new__(SymbolLibraryManager)
+        manager._cache_lock = threading.Lock()
         manager.project_path = None
         manager.libraries = {"Simulation_SPICE": str(SPICE_LIB)}
         manager.symbol_cache = {}
@@ -110,6 +111,7 @@ class TestGetSymbolInfoHandler:
         if not SPICE_LIB.exists():
             pytest.skip(f"System library not found: {SPICE_LIB}")
         manager = SymbolLibraryManager.__new__(SymbolLibraryManager)
+        manager._cache_lock = threading.Lock()
         manager.project_path = None
         manager.libraries = {"Simulation_SPICE": str(SPICE_LIB)}
         manager.symbol_cache = {}

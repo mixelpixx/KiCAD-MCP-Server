@@ -24,7 +24,7 @@ const LogLevelSchema = z.enum(LOG_LEVEL_VALUES);
  */
 const ConfigSchema = z.object({
   name: z.string().default("kicad-mcp-server"),
-  version: z.string().default("1.0.0"),
+  version: z.string().default("2.4.0"),
   description: z.string().default("MCP server for KiCAD PCB design operations"),
   pythonPath: z.string().optional(),
   kicadPath: z.string().optional(),

@@ -265,7 +265,7 @@ export class KiCADMcpServer {
     // Initialize the MCP server
     this.server = new McpServer({
       name: "kicad-mcp-server",
-      version: "1.0.0",
+      version: "2.4.0",
       description: "MCP server for KiCAD PCB design operations",
     });
     // Create the ready promise (resolved when Python sends {"type":"ready"})
@@ -604,7 +604,6 @@ export class KiCADMcpServer {
       await this.runWarmup(120_000);
       logger.info("Warm-up complete — pcbnew/wxApp initialised");
 
-
       // Write a ready message to stderr (for debugging)
       process.stderr.write("KiCAD MCP SERVER READY\n");
 
@@ -638,14 +637,14 @@ export class KiCADMcpServer {
   private async waitForReady(timeoutMs: number): Promise<void> {
     return new Promise((_resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error(
-          `Python process did not send READY within ${timeoutMs / 1000} s`
-        ));
+        reject(new Error(`Python process did not send READY within ${timeoutMs / 1000} s`));
       }, timeoutMs);
-      this.readyPromise.then(() => {
-        clearTimeout(timeout);
-        _resolve();
-      }).catch(reject);
+      this.readyPromise
+        .then(() => {
+          clearTimeout(timeout);
+          _resolve();
+        })
+        .catch(reject);
     });
   }
 
@@ -672,7 +671,7 @@ export class KiCADMcpServer {
       const timeoutHandle = setTimeout(() => {
         logger.warn(
           `Warm-up timed out after ${timeoutMs / 1000} s — ` +
-          "continuing without full initialisation"
+            "continuing without full initialisation",
         );
         this.responseBuffer = "";
         this.processingRequest = false;
@@ -689,13 +688,9 @@ export class KiCADMcpServer {
           this.processingRequest = false;
           this.currentRequestHandler = null;
           if (result?.success) {
-            logger.info(
-              `Warm-up succeeded: pcbnew ${result.version} (${result.elapsed_s}s)`
-            );
+            logger.info(`Warm-up succeeded: pcbnew ${result.version} (${result.elapsed_s}s)`);
           } else {
-            logger.warn(
-              `Warm-up returned failure: ${result?.message || "unknown"} — continuing`
-            );
+            logger.warn(`Warm-up returned failure: ${result?.message || "unknown"} — continuing`);
           }
           resolve();
         },
