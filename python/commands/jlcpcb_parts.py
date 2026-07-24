@@ -65,14 +65,34 @@ class JLCPCBPartsManager:
                 user data directory, e.g. ~/.local/share/kicad-mcp/jlcpcb_parts.db
                 on Linux). See PlatformHelper.get_data_dir() for platform paths.
         """
+        self.conn: Optional[sqlite3.Connection] = None
+        self.db_path = db_path or ""
+
         if db_path is None:
             data_dir = PlatformHelper.get_data_dir()
-            data_dir.mkdir(parents=True, exist_ok=True)
-            db_path = str(data_dir / "jlcpcb_parts.db")
+            try:
+                data_dir.mkdir(parents=True, exist_ok=True)
+            except (PermissionError, OSError) as exc:
+                logger.warning(
+                    "Cannot create JLCPCB data directory %s: %s. "
+                    "JLCPCB parts database will be disabled.",
+                    data_dir,
+                    exc,
+                )
+                return  # self.conn stays None — disabled
 
-        self.db_path = db_path
-        self.conn: Optional[sqlite3.Connection] = None
-        self._init_database()
+            db_path = str(data_dir / "jlcpcb_parts.db")
+            self.db_path = db_path
+
+        try:
+            self._init_database()
+        except sqlite3.OperationalError as exc:
+            logger.warning(
+                "Cannot open JLCPCB parts database at %s: %s. "
+                "JLCPCB parts database will be disabled.",
+                self.db_path,
+                exc,
+            )
 
     def _init_database(self) -> None:
         """Initialize SQLite database with schema"""
@@ -133,6 +153,9 @@ class JLCPCBPartsManager:
             parts: List of part dicts from JLCPCB API
             progress_callback: Optional callback(current, total, message)
         """
+        if self.conn is None:
+            logger.warning("JLCPCB database not available — skipping import_parts")
+            return
         cursor = self.conn.cursor()
         imported = 0
         skipped = 0
@@ -212,6 +235,9 @@ class JLCPCBPartsManager:
             parts: List of part dicts from JLCSearch API
             progress_callback: Optional callback(current, total, message)
         """
+        if self.conn is None:
+            logger.warning("JLCPCB database not available — skipping import_jlcsearch_parts")
+            return
         cursor = self.conn.cursor()
         imported = 0
         skipped = 0
@@ -317,6 +343,9 @@ class JLCPCBPartsManager:
         Returns:
             List of matching parts
         """
+        if self.conn is None:
+            logger.warning("JLCPCB database not available — skipping search_parts")
+            return []
         cursor = self.conn.cursor()
 
         # Build query
@@ -380,6 +409,8 @@ class JLCPCBPartsManager:
         Returns:
             Part info dict or None if not found
         """
+        if self.conn is None:
+            return None
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM components WHERE lcsc = ?", (lcsc_number,))
         row = cursor.fetchone()
@@ -397,6 +428,8 @@ class JLCPCBPartsManager:
 
     def get_database_stats(self) -> Dict:
         """Get statistics about the database"""
+        if self.conn is None:
+            return {"total_parts": 0, "basic_parts": 0, "extended_parts": 0, "in_stock": 0, "db_path": self.db_path}
         cursor = self.conn.cursor()
 
         cursor.execute("SELECT COUNT(*) as total FROM components")
@@ -508,6 +541,7 @@ class JLCPCBPartsManager:
         """Close database connection"""
         if self.conn:
             self.conn.close()
+            self.conn = None
 
 
 if __name__ == "__main__":

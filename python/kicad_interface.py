@@ -19,6 +19,12 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+
+# 获取当前python文件夹绝对路径
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# 把根目录放入sys.path最前面
+sys.path.insert(0, BASE_DIR)
+
 # Fix cairo DLL loading on Windows before any cairocffi import.
 # cairocffi uses cffi's ffi.dlopen('cairo-2') which needs the DLL on PATH.
 if sys.platform == "win32":
