@@ -810,5 +810,23 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
     },
   );
 
+  // ------------------------------------------------------
+  // Hierarchical Place Tool (footprint clustering by schematic sheet)
+  // ------------------------------------------------------
+  server.tool(
+    "hierarchical_place",
+    "Cluster a board's footprints by their schematic-sheet hierarchy (the HierPlace algorithm). After sync_schematic_to_board piles every footprint at the origin, this packs each functional block together as a starting point for manual placement. File-based: reads and rewrites the .kicad_pcb on disk, so save any in-memory board edits first. Locked footprints are left in place.",
+    {
+      boardPath: z.string().describe("Absolute path to the .kicad_pcb file to re-place"),
+    },
+    async ({ boardPath }) => {
+      logger.debug(`Hierarchical place on board: ${boardPath}`);
+      const result = await callKicadScript("hierarchical_place", { boardPath });
+      if (result.success === false && result.message)
+        return { content: [{ type: "text", text: `Failed: ${result.message}` }] };
+      return { content: [{ type: "text", text: result.message || JSON.stringify(result) }] };
+    },
+  );
+
   logger.info("Component management tools registered");
 }

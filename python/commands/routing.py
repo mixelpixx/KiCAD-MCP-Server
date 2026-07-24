@@ -38,6 +38,7 @@ _NETCLASS_NUMERIC_FIELDS = (
     "microvia_drill",
     "diff_pair_width",
     "diff_pair_gap",
+    "diff_pair_via_gap",
 )
 
 # Fallback field set (KiCad 10 defaults) used only when the project has no
@@ -94,8 +95,37 @@ def apply_netclass_to_project_settings(
     return data
 
 
+def apply_netclass_patterns_to_project_settings(
+    data: Dict[str, Any], name: str, patterns: List[str]
+) -> Dict[str, Any]:
+    """Merge net-membership patterns for a class into a parsed ``.kicad_pro``.
+    Pure: mutates and returns ``data``; performs no I/O; drops no keys.
+
+    KiCad 7+ stores class membership as ``net_settings.netclass_patterns`` —
+    a list of ``{"netclass": <class>, "pattern": <wildcard-or-exact-name>}``
+    entries. Exact net names are literal patterns. Entries are deduplicated
+    on (netclass, pattern).
+    """
+    net_settings = data.setdefault("net_settings", {})
+    pattern_entries = net_settings.setdefault("netclass_patterns", [])
+    existing = {
+        (entry.get("netclass"), entry.get("pattern"))
+        for entry in pattern_entries
+        if isinstance(entry, dict)
+    }
+    for pattern in patterns:
+        key = (name, pattern)
+        if key not in existing:
+            pattern_entries.append({"netclass": name, "pattern": pattern})
+            existing.add(key)
+    return data
+
+
 def persist_netclass_to_project(
-    pro_path: Optional[str], name: str, props: Dict[str, Any]
+    pro_path: Optional[str],
+    name: str,
+    props: Dict[str, Any],
+    patterns: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Read/modify/write ``pro_path`` so the net class definition survives a
     reload (KiCad 7+ keeps it in the project file, not the board).
@@ -115,6 +145,8 @@ def persist_netclass_to_project(
         with open(pro_path, "r", encoding="utf-8") as handle:
             data = json.load(handle)
         apply_netclass_to_project_settings(data, name, props)
+        if patterns:
+            apply_netclass_patterns_to_project_settings(data, name, patterns)
 
         directory = os.path.dirname(pro_path) or "."
         fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".netclass-", suffix=".kicad_pro")
@@ -1378,7 +1410,9 @@ class RoutingCommands:
             uvia_drill = params.get("uviaDrill")
             diff_pair_width = params.get("diffPairWidth")
             diff_pair_gap = params.get("diffPairGap")
+            diff_pair_via_gap = params.get("diffPairViaGap")
             nets = params.get("nets", [])
+            netclass_patterns = params.get("netclassPatterns", [])
 
             if not name:
                 return {
@@ -1450,6 +1484,7 @@ class RoutingCommands:
                 _safe_set("SetMicroViaDrill", uvia_drill)
                 _safe_set("SetDiffPairWidth", diff_pair_width)
                 _safe_set("SetDiffPairGap", diff_pair_gap)
+                _safe_set("SetDiffPairViaGap", diff_pair_via_gap)
 
                 netinfo = self.board.GetNetInfo()
                 nets_map = netinfo.NetsByName()
@@ -1477,6 +1512,7 @@ class RoutingCommands:
                     "uviaDrill": _safe_get("GetMicroViaDrill"),
                     "diffPairWidth": _safe_get("GetDiffPairWidth"),
                     "diffPairGap": _safe_get("GetDiffPairGap"),
+                    "diffPairViaGap": _safe_get("GetDiffPairViaGap"),
                 }
             except Exception as exc:
                 in_memory_warning = "in-memory NETCLASS update failed: %s" % exc
@@ -1484,8 +1520,10 @@ class RoutingCommands:
 
             # Persist the class DEFINITION (net_settings.classes) using the same
             # normalized values as the live path, so the persisted class can never
-            # diverge from the request. Membership lives in netclass_patterns and
-            # is out of scope here (create_netclass exposes no `nets` field).
+            # diverge from the request. Membership is persisted alongside it as
+            # netclass_patterns entries: explicit wildcard patterns plus the
+            # exact net names from `nets` (exact names are literal patterns on
+            # KiCad 7+).
             project_props = {
                 "clearance": clearance,
                 "track_width": track_width,
@@ -1495,8 +1533,12 @@ class RoutingCommands:
                 "microvia_drill": uvia_drill,
                 "diff_pair_width": diff_pair_width,
                 "diff_pair_gap": diff_pair_gap,
+                "diff_pair_via_gap": diff_pair_via_gap,
             }
-            persist = persist_netclass_to_project(pro_path, name, project_props)
+            patterns = list(netclass_patterns) + [str(n) for n in nets]
+            persist = persist_netclass_to_project(
+                pro_path, name, project_props, patterns=patterns
+            )
 
             warnings = [w for w in (in_memory_warning, persist.get("warning")) if w]
             if in_memory_warning and not persist.get("persisted"):
@@ -1524,6 +1566,123 @@ class RoutingCommands:
             return {
                 "success": False,
                 "message": "Failed to create net class",
+                "errorDetails": str(e),
+            }
+
+    def add_net_class(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """DEPRECATED alias of create_netclass.
+
+        Normalizes this tool's historical parameter spellings
+        (trackWidth / uvia_diameter / uvia_drill / diff_pair_width /
+        diff_pair_gap) into create_netclass keys and delegates. Kept for
+        backward compatibility with existing callers.
+        """
+        alias_map = {
+            "trackWidth": "traceWidth",
+            "uvia_diameter": "uviaDiameter",
+            "uvia_drill": "uviaDrill",
+            "diff_pair_width": "diffPairWidth",
+            "diff_pair_gap": "diffPairGap",
+            "diff_pair_via_gap": "diffPairViaGap",
+        }
+        normalized: Dict[str, Any] = {}
+        for key, value in params.items():
+            if value is None or key == "description":
+                continue
+            normalized[alias_map.get(key, key)] = value
+        return self.create_netclass(normalized)
+
+    def assign_net_to_class(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Assign a net to an existing net class, persisted to .kicad_pro.
+
+        Records an exact-net netclass_patterns entry (exact names are
+        literal patterns on KiCad 7+) plus a best-effort in-memory
+        net.SetClass for the live session.
+        """
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first",
+                }
+
+            net_name = params.get("net")
+            class_name = params.get("netClass")
+            if not net_name or not class_name:
+                return {
+                    "success": False,
+                    "message": "net and netClass are required",
+                }
+
+            pro_path = None
+            try:
+                board_path = self.board.GetFileName()
+                if board_path and board_path.endswith(".kicad_pcb"):
+                    pro_path = str(Path(board_path).with_suffix(".kicad_pro"))
+            except Exception:
+                pro_path = None
+
+            if not pro_path or not os.path.exists(pro_path):
+                return {
+                    "success": False,
+                    "message": "No .kicad_pro project file found; create the "
+                    "net class with create_netclass first",
+                }
+
+            with open(pro_path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            classes = data.get("net_settings", {}).get("classes", [])
+            if not any(c.get("name") == class_name for c in classes):
+                return {
+                    "success": False,
+                    "message": f"Net class '{class_name}' does not exist in "
+                    f"{pro_path}; create it with create_netclass first",
+                }
+
+            # Best-effort in-memory assignment (KiCad 9/10 SWIG may not
+            # support it; the durable artifact is the .kicad_pro pattern).
+            warning = None
+            try:
+                net_classes = self.board.GetNetClasses()
+                netclass = None
+                if hasattr(net_classes, "Find"):
+                    netclass = net_classes.Find(class_name)
+                else:
+                    try:
+                        if class_name in net_classes:
+                            netclass = net_classes[class_name]
+                    except Exception:
+                        netclass = None
+                if netclass is not None:
+                    nets_map = self.board.GetNetInfo().NetsByName()
+                    if nets_map.has_key(net_name):
+                        nets_map[net_name].SetClass(netclass)
+            except Exception as exc:
+                warning = f"in-memory net assignment failed: {exc}"
+                logger.warning("assign_net_to_class: %s", warning)
+
+            persist = persist_netclass_to_project(
+                pro_path, class_name, {}, patterns=[str(net_name)]
+            )
+
+            result = {
+                "success": True,
+                "message": f"Assigned net '{net_name}' to class '{class_name}'",
+                "persisted": persist.get("persisted", False),
+            }
+            if persist.get("projectFile"):
+                result["projectFile"] = persist["projectFile"]
+            warnings = [w for w in (warning, persist.get("warning")) if w]
+            if warnings:
+                result["warning"] = "; ".join(warnings)
+            return result
+
+        except Exception as e:
+            logger.error(f"Error assigning net to class: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to assign net to class",
                 "errorDetails": str(e),
             }
 

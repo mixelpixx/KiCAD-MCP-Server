@@ -8,8 +8,10 @@ No behavior change — pure relocation.
 """
 
 import base64
+import glob
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -21,13 +23,32 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 import pcbnew
 import sexpdata
 from commands.library_schematic import LibraryManager as SchematicLibraryManager
-from commands.schematic import SchematicManager
+from commands.schematic import SchematicLoadError, SchematicManager
 from commands.wire_manager import WireManager
 from utils.interactive_schematic import reload_kicad_schematic
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.sexpr_format import dumps as kicad_dumps
+from utils.project_settings_guard import preserve_project_settings
 
 logger = logging.getLogger("kicad_interface")
+
+
+def _pick_root_svg(svg_dir: str, schematic_path: str) -> Optional[str]:
+    """Return the root-page SVG produced by ``kicad-cli sch export svg``.
+
+    kicad-cli names the root page ``<schematic-stem>.svg`` and hierarchical
+    sub-sheet pages ``<stem>-<SheetName>.svg``. Returns the absolute path of
+    the stem-matched root SVG when present, the sole SVG when exactly one was
+    produced, or None when the root page cannot be identified.
+    """
+    stem = Path(schematic_path).stem
+    candidate = os.path.join(svg_dir, stem + ".svg")
+    if os.path.isfile(candidate):
+        return candidate
+    svg_files = sorted(glob.glob(os.path.join(svg_dir, "*.svg")))
+    if len(svg_files) == 1:
+        return svg_files[0]
+    return None
 
 
 def _find_placed_symbol_position(content: str, reference: str) -> Optional[Tuple[float, float]]:
@@ -188,14 +209,13 @@ class SchematicHandlersMixin:
             if not filename:
                 return {"success": False, "message": "Filename is required"}
 
-            schematic = SchematicManager.load_schematic(filename)
-            success = schematic is not None
+            try:
+                schematic = SchematicManager.load_schematic(filename)
+            except SchematicLoadError as e:
+                return e.to_response()
 
-            if success:
-                metadata = SchematicManager.get_schematic_metadata(schematic)
-                return {"success": success, "metadata": metadata}
-            else:
-                return {"success": False, "message": "Failed to load schematic"}
+            metadata = SchematicManager.get_schematic_metadata(schematic)
+            return {"success": True, "metadata": metadata}
         except Exception as e:
             logger.error(f"Error loading schematic: {str(e)}")
             return {"success": False, "message": str(e)}
@@ -288,6 +308,7 @@ class SchematicHandlersMixin:
 
             schematic_path = params.get("schematicPath")
             reference = params.get("reference")
+            delete_attached_labels = bool(params.get("deleteAttachedLabels", False))
 
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
@@ -356,6 +377,28 @@ class SchematicHandlersMixin:
                     "message": f"Component '{reference}' not found in schematic (note: this tool removes schematic symbols, use delete_component for PCB footprints)",
                 }
 
+            # Compute the doomed symbol's pin world positions BEFORE removal so
+            # the optional label cleanup knows where its labels sat.
+            target_pin_positions: List[Tuple[float, float]] = []
+            label_cleanup_warning: Optional[str] = None
+            if delete_attached_labels:
+                try:
+                    target_pin_positions = self._pin_positions_for_reference(
+                        content, reference
+                    )
+                    if not target_pin_positions:
+                        logger.warning(
+                            "deleteAttachedLabels: no pin positions resolvable "
+                            "for %s (missing lib_symbols entry?); skipping "
+                            "label cleanup",
+                            reference,
+                        )
+                except Exception as e:
+                    label_cleanup_warning = f"could not compute pin positions: {e}"
+                    logger.warning(
+                        "deleteAttachedLabels: %s", label_cleanup_warning
+                    )
+
             # Delete from back to front to preserve character offsets
             for b_start, b_end in sorted(blocks_to_delete, reverse=True):
                 # Include any leading newline/whitespace before the block
@@ -371,12 +414,26 @@ class SchematicHandlersMixin:
 
             deleted_count = len(blocks_to_delete)
             logger.info(f"Deleted {deleted_count} instance(s) of {reference} from {sch_file.name}")
-            return {
+            result = {
                 "success": True,
                 "reference": reference,
                 "deleted_count": deleted_count,
                 "schematic": str(sch_file),
             }
+
+            if delete_attached_labels:
+                if label_cleanup_warning is not None:
+                    result["deleted_labels"] = []
+                    result["deleted_label_count"] = 0
+                    result["labelCleanupWarning"] = label_cleanup_warning
+                else:
+                    result.update(
+                        self._delete_dangling_labels_at(
+                            sch_file, target_pin_positions
+                        )
+                    )
+
+            return result
 
         except Exception as e:
             logger.error(f"Error deleting schematic component: {e}")
@@ -384,6 +441,147 @@ class SchematicHandlersMixin:
 
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
+
+    @staticmethod
+    def _pin_positions_for_reference(
+        content: str, reference: str
+    ) -> List[Tuple[float, float]]:
+        """World (x, y) positions of every pin of every placed instance whose
+        Reference property equals ``reference``.
+
+        Builds a mini document of [lib_symbols] + [matching placed symbols]
+        and reuses WireManager._collect_pin_positions, which applies the
+        authoritative unit-aware y-negate/mirror/rotate/translate transform.
+        Returns [] when the symbol has no lib_symbols entry.
+        """
+        sym = sexpdata.Symbol("symbol")
+        lib_symbols = sexpdata.Symbol("lib_symbols")
+        prop = sexpdata.Symbol("property")
+
+        data = sexpdata.loads(content)
+        mini_doc: list = []
+        for item in data:
+            if not (isinstance(item, list) and item):
+                continue
+            if item[0] == lib_symbols:
+                mini_doc.append(item)
+                continue
+            if item[0] != sym:
+                continue
+            # Placed instance whose (property "Reference" "<ref>") matches
+            for part in item[1:]:
+                if (
+                    isinstance(part, list)
+                    and len(part) >= 3
+                    and part[0] == prop
+                    and str(part[1]) == "Reference"
+                    and str(part[2]) == reference
+                ):
+                    mini_doc.append(item)
+                    break
+        return WireManager._collect_pin_positions(mini_doc)
+
+    @staticmethod
+    def _delete_dangling_labels_at(
+        sch_file: Path,
+        target_positions: List[Tuple[float, float]],
+        tolerance: float = 0.5,
+    ) -> Dict[str, Any]:
+        """Delete net labels left dangling at a removed symbol's pin positions.
+
+        Re-reads ``sch_file`` (the symbol is already gone) and removes every
+        label/global_label/hierarchical_label whose anchor lies within
+        ``tolerance`` mm of one of ``target_positions`` — unless the label is
+        still attached to something else: coincident with a remaining
+        component pin, coincident with a wire endpoint, or lying strictly on
+        a wire segment. Never raises; cleanup failure is reported via
+        ``labelCleanupWarning``.
+        """
+        try:
+            if not target_positions:
+                return {"deleted_labels": [], "deleted_label_count": 0}
+
+            with open(sch_file, "r", encoding="utf-8") as f:
+                sch_content = f.read()
+            sch_data = sexpdata.loads(sch_content)
+
+            remaining_pins = WireManager._collect_pin_positions(sch_data)
+            wire_endpoints = WireManager._collect_wire_endpoints(sch_data)
+            wire_segments = [
+                parsed
+                for parsed in (WireManager._parse_wire(item) for item in sch_data)
+                if parsed is not None
+            ]
+
+            def _near(x: float, y: float, points: List[Tuple[float, float]]) -> bool:
+                return any(
+                    abs(x - px) <= tolerance and abs(y - py) <= tolerance
+                    for px, py in points
+                )
+
+            label_types = {
+                sexpdata.Symbol("label"),
+                sexpdata.Symbol("global_label"),
+                sexpdata.Symbol("hierarchical_label"),
+            }
+            at_sym = sexpdata.Symbol("at")
+
+            deleted: List[Dict[str, Any]] = []
+            doomed_indices: List[int] = []
+            for i, item in enumerate(sch_data):
+                if not (isinstance(item, list) and item and item[0] in label_types):
+                    continue
+                at_entry = next(
+                    (
+                        p
+                        for p in item[1:]
+                        if isinstance(p, list) and len(p) >= 3 and p[0] == at_sym
+                    ),
+                    None,
+                )
+                if at_entry is None:
+                    continue
+                x, y = float(at_entry[1]), float(at_entry[2])
+                if not _near(x, y, target_positions):
+                    continue
+                # Attachment guards: keep the label if it still serves live
+                # connectivity.
+                if _near(x, y, remaining_pins):
+                    continue
+                if _near(x, y, wire_endpoints):
+                    continue
+                if any(
+                    WireManager._point_strictly_on_wire(x, y, x1, y1, x2, y2)
+                    for (x1, y1), (x2, y2), _w, _t in wire_segments
+                ):
+                    continue
+                doomed_indices.append(i)
+                deleted.append(
+                    {
+                        "text": str(item[1]) if len(item) > 1 else "",
+                        "type": str(item[0]),
+                        "position": {"x": x, "y": y},
+                    }
+                )
+
+            if doomed_indices:
+                for i in reversed(doomed_indices):
+                    del sch_data[i]
+                with open(sch_file, "w", encoding="utf-8") as f:
+                    f.write(kicad_dumps(sch_data))
+                logger.info(
+                    "Deleted %d dangling label(s) at removed pin positions",
+                    len(deleted),
+                )
+
+            return {"deleted_labels": deleted, "deleted_label_count": len(deleted)}
+        except Exception as e:
+            logger.warning(f"Label cleanup after component delete failed: {e}")
+            return {
+                "deleted_labels": [],
+                "deleted_label_count": 0,
+                "labelCleanupWarning": str(e),
+            }
 
     @staticmethod
     def _escape_sexpr_string(value: str) -> str:
@@ -899,10 +1097,9 @@ class SchematicHandlersMixin:
                 locator = PinLocator()
                 sch_path = Path(schematic_path)
 
-                # Load schematic to iterate all symbols
-                from skip import Schematic as SkipSchematic
-
-                sch = SkipSchematic(str(sch_path))
+                # Load schematic via the guarded loader so a parse failure
+                # surfaces a diagnosed SchematicLoadError instead of a crash.
+                sch = SchematicManager.load_schematic(str(sch_path))
 
                 # Collect all pin locations: list of (ref, pin_num, [x, y])
                 all_pins = []
@@ -980,6 +1177,8 @@ class SchematicHandlersMixin:
                 return {"success": True, "message": message}
             else:
                 return {"success": False, "message": "Failed to add wire"}
+        except SchematicLoadError as e:
+            return e.to_response()
         except Exception as e:
             logger.error(f"Error adding wire to schematic: {str(e)}")
             import traceback
@@ -1298,14 +1497,25 @@ class SchematicHandlersMixin:
                         "message": f"kicad-cli SVG export failed: {result.stderr}",
                     }
 
-                # kicad-cli may name the file after the schematic, find it
-                svg_files = list(Path(tmpdir).glob("*.svg"))
+                # kicad-cli names one file per page after the schematic/sheet
+                # names — pick the root page deterministically.
+                import glob
+
+                svg_files = glob.glob(os.path.join(tmpdir, "*.svg"))
                 if not svg_files:
                     return {
                         "success": False,
                         "message": "No SVG file produced by kicad-cli",
                     }
-                svg_path = str(svg_files[0])
+                svg_path = _pick_root_svg(tmpdir, schematic_path)
+                if svg_path is None:
+                    svg_path = sorted(svg_files)[0]
+                    logger.warning(
+                        "Could not identify root SVG page for %s; "
+                        "falling back to %s",
+                        schematic_path,
+                        svg_path,
+                    )
 
                 if fmt == "svg":
                     with open(svg_path, "r", encoding="utf-8") as f:
@@ -1360,9 +1570,10 @@ class SchematicHandlersMixin:
                     "message": f"Schematic not found: {schematic_path}",
                 }
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             # Optional filters
             filter_params = params.get("filter", {})
@@ -1453,9 +1664,10 @@ class SchematicHandlersMixin:
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             # Collect net names from the top-level sheet using sexpdata.
             # Falls back to kicad-skip's label collections when the file
@@ -1537,9 +1749,10 @@ class SchematicHandlersMixin:
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             wires = []
             if hasattr(schematic, "wire"):
@@ -1587,9 +1800,10 @@ class SchematicHandlersMixin:
             if label_type is not None and label_type not in _valid_label_types:
                 return {"success": False, "message": "labelType must be one of: net, global, power"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             labels = []
 
@@ -1844,9 +2058,10 @@ class SchematicHandlersMixin:
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             # Collect existing references by prefix
             existing_refs = {}  # prefix -> set of numbers
@@ -2086,53 +2301,63 @@ class SchematicHandlersMixin:
                     "message": f"Schematic not found: {schematic_path}",
                 }
 
-            # kicad-cli's --output flag for SVG export expects a directory, not a file path.
-            # The output file is auto-named based on the schematic name.
-            output_dir_p = Path(output_path).parent
-            if str(output_dir_p) == "":
-                output_dir_p = Path(".")
-            output_dir_p.mkdir(parents=True, exist_ok=True)
-            output_dir = str(output_dir_p)
-
             kicad_cli = resolve_kicad_cli()
             if not kicad_cli:
                 return {"success": False, "message": kicad_cli_not_found_message()}
-            cmd = [
-                kicad_cli,
-                "sch",
-                "export",
-                "svg",
-                schematic_path,
-                "-o",
-                output_dir,
-            ]
 
-            if params.get("blackAndWhite"):
-                cmd.append("--black-and-white")
+            # kicad-cli's --output flag for SVG export expects a directory, and
+            # auto-names one SVG per page after the schematic/sheet names.
+            # Export into a private temp directory so stale SVGs from earlier
+            # exports (or extra hierarchical pages) can never be picked up,
+            # then move only the root page to the requested outputPath.
+            with tempfile.TemporaryDirectory() as tmpdir:
+                cmd = [
+                    kicad_cli,
+                    "sch",
+                    "export",
+                    "svg",
+                    schematic_path,
+                    "-o",
+                    tmpdir,
+                ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                if params.get("blackAndWhite"):
+                    cmd.append("--black-and-white")
 
-            if result.returncode != 0:
-                return {
-                    "success": False,
-                    "message": f"kicad-cli failed: {result.stderr}",
-                }
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=60
+                )
 
-            # kicad-cli names the file after the schematic, so find the generated SVG
-            svg_files = list(output_dir_p.glob("*.svg"))
-            if not svg_files:
-                return {
-                    "success": False,
-                    "message": "No SVG file produced by kicad-cli",
-                }
+                if result.returncode != 0:
+                    return {
+                        "success": False,
+                        "message": f"kicad-cli failed: {result.stderr}",
+                    }
 
-            generated_svg = str(svg_files[0])
+                pages = sorted(
+                    os.path.basename(f)
+                    for f in glob.glob(os.path.join(tmpdir, "*.svg"))
+                )
+                if not pages:
+                    return {
+                        "success": False,
+                        "message": "No SVG file produced by kicad-cli",
+                    }
 
-            # Move/rename to the user-specified output path if it differs
-            if Path(generated_svg).resolve() != Path(output_path).resolve():
-                shutil.move(generated_svg, output_path)
+                root_svg = _pick_root_svg(tmpdir, schematic_path)
+                if root_svg is None:
+                    return {
+                        "success": False,
+                        "message": "Could not identify root SVG page",
+                        "files": pages,
+                    }
 
-            return {"success": True, "file": {"path": output_path}}
+                output_dir = os.path.dirname(output_path)
+                if output_dir:
+                    os.makedirs(output_dir, exist_ok=True)
+                shutil.move(root_svg, output_path)
+
+            return {"success": True, "file": {"path": output_path}, "pages": pages}
 
         except FileNotFoundError:
             return {"success": False, "message": kicad_cli_not_found_message()}
@@ -2192,9 +2417,10 @@ class SchematicHandlersMixin:
                 except (TypeError, ValueError):
                     return {"success": False, "message": "Parameters x and y must be numeric"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             if not hasattr(schematic, "wire"):
                 return {"success": False, "message": "Schematic has no wires"}
@@ -2577,11 +2803,10 @@ class SchematicHandlersMixin:
         logger.info(f"_build_hierarchical_pad_net_map: scanning {len(sch_files)} schematic files")
 
         for sch_path in sch_files:
-            try:
-                sch = Schematic(str(sch_path))
-            except Exception as e:
-                logger.warning(f"Could not load {sch_path}: {e}")
-                continue
+            # A broken sheet must fail the sync loudly: silently skipping it
+            # would produce an incomplete pad->net map and wrong-looking
+            # success. SchematicLoadError carries the flat-symbol diagnosis.
+            sch = SchematicManager.load_schematic(str(sch_path))
 
             # ── 1. Collect explicit label positions → net name ──────────────
             point_net: dict = {}  # snap(x,y) -> net_name
@@ -2770,7 +2995,8 @@ class SchematicHandlersMixin:
                     else:
                         unmatched.append(f"{ref}/{pad_num}")
 
-            board.Save(board_path)
+            with preserve_project_settings(board_path):
+                board.Save(board_path)
 
             # If board was loaded fresh, update internal reference
             if params.get("boardPath"):
@@ -2795,6 +3021,8 @@ class SchematicHandlersMixin:
                 "footprints_skipped": skipped_footprints,
             }
 
+        except SchematicLoadError as e:
+            return e.to_response()
         except Exception as e:
             logger.error(f"Error in sync_schematic_to_board: {e}")
             import traceback
@@ -3053,15 +3281,23 @@ class SchematicHandlersMixin:
                         "message": f"SVG export failed: {result.stderr}",
                     }
 
-                # kicad-cli names the file after the schematic
-                tmp_dir_p = Path(tmp_dir)
-                svg_files = [p for p in tmp_dir_p.iterdir() if p.suffix == ".svg"]
+                # kicad-cli names one file per page after the schematic/sheet
+                # names — pick the root page deterministically.
+                svg_files = [f for f in os.listdir(tmp_dir) if f.endswith(".svg")]
                 if not svg_files:
                     return {
                         "success": False,
                         "message": "kicad-cli produced no SVG output",
                     }
-                svg_output = str(svg_files[0])
+                svg_output = _pick_root_svg(tmp_dir, schematic_path)
+                if svg_output is None:
+                    svg_output = os.path.join(tmp_dir, sorted(svg_files)[0])
+                    logger.warning(
+                        "Could not identify root SVG page for %s; "
+                        "falling back to %s",
+                        schematic_path,
+                        svg_output,
+                    )
 
                 import xml.etree.ElementTree as ET
 
@@ -3161,6 +3397,8 @@ class SchematicHandlersMixin:
                 **result,
                 "message": f"Found {result['count']} orphaned wire(s)",
             }
+        except SchematicLoadError as e:
+            return e.to_response()
         except Exception as e:
             logger.error(f"Error finding orphaned wires: {e}")
             import traceback
@@ -3178,9 +3416,10 @@ class SchematicHandlersMixin:
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             labels = list_floating_labels(schematic, schematic_path)
             return {
@@ -3223,6 +3462,60 @@ class SchematicHandlersMixin:
             }
         except Exception as e:
             logger.error(f"Error snapping to grid: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_lint_offgrid(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Report (and optionally fix) off-grid connection geometry"""
+        logger.info("Linting schematic for off-grid geometry")
+        try:
+            from commands.schematic_lint_grid import lint_offgrid
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not os.path.isfile(schematic_path):
+                return {
+                    "success": False,
+                    "message": f"Schematic not found: {schematic_path}",
+                }
+
+            fix = bool(params.get("fix", False))
+            grid_size = float(params.get("gridSize", 1.27))
+            if grid_size <= 0:
+                return {"success": False, "message": "gridSize must be > 0"}
+
+            result = lint_offgrid(schematic_path, grid_mm=grid_size, fix=fix)
+            offender_count = len(result["offenders"])
+            if offender_count == 0:
+                message = f"No off-grid geometry (grid {grid_size} mm)"
+            elif fix:
+                message = (
+                    f"Snapped {result['fixed']} of {offender_count} off-grid "
+                    f"item(s) to the {grid_size} mm grid"
+                    + (
+                        f"; {result['needsHuman']} offender(s) >0.5mm off-grid "
+                        f"left untouched (needsHuman)"
+                        if result["needsHuman"]
+                        else ""
+                    )
+                )
+            else:
+                message = (
+                    f"Found {offender_count} off-grid item(s) on the "
+                    f"{grid_size} mm grid ({result['needsHuman']} needing "
+                    f"human review); run with fix=true to snap them"
+                )
+            return {
+                "success": True,
+                "gridSize": grid_size,
+                **result,
+                "message": message,
+            }
+        except Exception as e:
+            logger.error(f"Error linting off-grid geometry: {e}")
             import traceback
 
             logger.error(traceback.format_exc())

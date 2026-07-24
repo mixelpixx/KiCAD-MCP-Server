@@ -206,3 +206,177 @@ class TestDeleteSchematicComponentIntegration:
         sch = _make_test_schematic(tmp_path)
         result = self._get_handler()({"schematicPath": str(sch)})
         assert result["success"] is False
+
+
+# ---------------------------------------------------------------------------
+# deleteAttachedLabels — orphan label cleanup
+# ---------------------------------------------------------------------------
+
+
+def _label_block(text: str, x: float, y: float, kind: str = "label") -> str:
+    return (
+        f'  ({kind} "{text}" (at {x} {y} 0)\n'
+        "    (effects (font (size 1.27 1.27)) (justify left bottom))\n"
+        '    (uuid "12121212-3434-5656-7878-909090909090")\n'
+        "  )\n"
+    )
+
+
+def _wire_block(x1: float, y1: float, x2: float, y2: float) -> str:
+    return (
+        f"  (wire (pts (xy {x1} {y1}) (xy {x2} {y2}))\n"
+        "    (stroke (width 0) (type default))\n"
+        '    (uuid "abababab-cdcd-efef-0101-232323232323")\n'
+        "  )\n"
+    )
+
+
+# A second resistor whose top pin coincides with R1's bottom pin region is
+# not needed; instead place it so ONE pin coincides with a label under test.
+def _placed_resistor(ref: str, x: float, y: float) -> str:
+    return PLACED_RESISTOR_INLINE.replace('"R1"', f'"{ref}"').replace(
+        "(at 50 50 0)", f"(at {x} {y} 0)"
+    )
+
+
+@pytest.mark.unit
+class TestDeleteAttachedLabels:
+    """R1 (Device:R at 50,50) has pins at (50, 46.19) and (50, 53.81) —
+    derived from WireManager._collect_pin_positions in _pin_positions()."""
+
+    PIN_TOP = (50.0, 46.19)
+    PIN_BOT = (50.0, 53.81)
+
+    def _get_handler(self) -> Any:
+        from kicad_interface import KiCADInterface
+
+        iface = KiCADInterface.__new__(KiCADInterface)
+        return iface._handle_delete_schematic_component
+
+    def _pin_positions(self, sch: Path) -> list:
+        import sexpdata
+
+        from commands.wire_manager import WireManager
+
+        return WireManager._collect_pin_positions(
+            sexpdata.loads(sch.read_text(encoding="utf-8"))
+        )
+
+    def test_fixture_pins_self_check(self, tmp_path: Any) -> None:
+        sch = _make_test_schematic(tmp_path, PLACED_RESISTOR_INLINE)
+        pins = sorted(self._pin_positions(sch), key=lambda p: p[1])
+        assert pins == [self.PIN_TOP, self.PIN_BOT]
+
+    def test_labels_on_both_pins_deleted(self, tmp_path: Any) -> None:
+        extra = (
+            PLACED_RESISTOR_INLINE
+            + _label_block("NET_A", *self.PIN_TOP)
+            + _label_block("NET_B", *self.PIN_BOT)
+        )
+        sch = _make_test_schematic(tmp_path, extra)
+        result = self._get_handler()(
+            {
+                "schematicPath": str(sch),
+                "reference": "R1",
+                "deleteAttachedLabels": True,
+            }
+        )
+        assert result["success"] is True
+        assert result["deleted_label_count"] == 2
+        assert {d["text"] for d in result["deleted_labels"]} == {"NET_A", "NET_B"}
+        content = sch.read_text(encoding="utf-8")
+        assert "NET_A" not in content
+        assert "NET_B" not in content
+        assert '"R1"' not in content
+
+    def test_default_off_keeps_labels(self, tmp_path: Any) -> None:
+        extra = PLACED_RESISTOR_INLINE + _label_block("NET_A", *self.PIN_TOP)
+        sch = _make_test_schematic(tmp_path, extra)
+        for flag_params in ({}, {"deleteAttachedLabels": False}):
+            sch_i = _make_test_schematic(tmp_path, extra)
+            result = self._get_handler()(
+                {"schematicPath": str(sch_i), "reference": "R1", **flag_params}
+            )
+            assert result["success"] is True
+            assert "deleted_labels" not in result or not result["deleted_labels"]
+            content = sch_i.read_text(encoding="utf-8")
+            assert 'label "NET_A"' in content
+
+    def test_label_shared_with_wire_survives(self, tmp_path: Any) -> None:
+        # NET_A sits on the top pin AND is a wire endpoint -> keep.
+        # NET_B sits strictly mid-wire -> keep. NET_C is only on the pin -> delete.
+        extra = (
+            PLACED_RESISTOR_INLINE
+            + _label_block("NET_A", *self.PIN_TOP)
+            + _wire_block(self.PIN_TOP[0], self.PIN_TOP[1], 70, self.PIN_TOP[1])
+            + _wire_block(
+                self.PIN_BOT[0] - 10, self.PIN_BOT[1], self.PIN_BOT[0] + 10, self.PIN_BOT[1]
+            )
+            + _label_block("NET_B", *self.PIN_BOT)
+        )
+        sch = _make_test_schematic(tmp_path, extra)
+        result = self._get_handler()(
+            {
+                "schematicPath": str(sch),
+                "reference": "R1",
+                "deleteAttachedLabels": True,
+            }
+        )
+        assert result["success"] is True
+        content = sch.read_text(encoding="utf-8")
+        assert 'label "NET_A"' in content  # wire endpoint at pin
+        assert 'label "NET_B"' in content  # strictly mid-wire
+        assert result["deleted_label_count"] == 0
+
+    def test_label_shared_with_other_component_pin_survives(self, tmp_path: Any) -> None:
+        # R9 placed so its top pin lands exactly on R1's bottom pin position:
+        # R9 at (50, 53.81 + 3.81) has top pin at (50, 53.81).
+        extra = (
+            PLACED_RESISTOR_INLINE
+            + _placed_resistor("R9", 50, 57.62)
+            + _label_block("SHARED", *self.PIN_BOT)
+            + _label_block("ONLY_R1", *self.PIN_TOP)
+        )
+        sch = _make_test_schematic(tmp_path, extra)
+        result = self._get_handler()(
+            {
+                "schematicPath": str(sch),
+                "reference": "R1",
+                "deleteAttachedLabels": True,
+            }
+        )
+        assert result["success"] is True
+        content = sch.read_text(encoding="utf-8")
+        assert 'label "SHARED"' in content
+        assert "ONLY_R1" not in content
+        assert result["deleted_label_count"] == 1
+        assert result["deleted_labels"][0]["text"] == "ONLY_R1"
+
+    def test_global_label_deleted_and_typed(self, tmp_path: Any) -> None:
+        extra = PLACED_RESISTOR_INLINE + _label_block(
+            "GNET", *self.PIN_TOP, kind="global_label"
+        )
+        sch = _make_test_schematic(tmp_path, extra)
+        result = self._get_handler()(
+            {
+                "schematicPath": str(sch),
+                "reference": "R1",
+                "deleteAttachedLabels": True,
+            }
+        )
+        assert result["success"] is True
+        assert result["deleted_label_count"] == 1
+        assert result["deleted_labels"][0]["type"] == "global_label"
+        assert "GNET" not in sch.read_text(encoding="utf-8")
+
+    def test_unknown_reference_with_flag_unchanged(self, tmp_path: Any) -> None:
+        sch = _make_test_schematic(tmp_path, PLACED_RESISTOR_INLINE)
+        result = self._get_handler()(
+            {
+                "schematicPath": str(sch),
+                "reference": "U99",
+                "deleteAttachedLabels": True,
+            }
+        )
+        assert result["success"] is False
+        assert "not found" in result["message"]

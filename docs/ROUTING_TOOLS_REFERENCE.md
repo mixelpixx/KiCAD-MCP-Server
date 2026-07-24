@@ -249,23 +249,30 @@ Get a list of all nets in the PCB with optional statistics.
 
 ### create_netclass
 
-Create a new net class with custom design rules.
+Create or update a net class with custom design rules, persisted into the project's `.kicad_pro` `net_settings` (definition, wildcard `netclass_patterns`, and exact-net assignment). This is the complete netclass tool; `add_net_class` is a deprecated alias.
 
 **Parameters:**
 
-| Parameter   | Type   | Required | Description               |
-| ----------- | ------ | -------- | ------------------------- |
-| name        | string | Yes      | Net class name            |
-| traceWidth  | number | No       | Default trace width in mm |
-| clearance   | number | No       | Clearance in mm           |
-| viaDiameter | number | No       | Via diameter in mm        |
-| viaDrill    | number | No       | Via drill size in mm      |
+| Parameter         | Type            | Required | Description                                                                    |
+| ----------------- | --------------- | -------- | ------------------------------------------------------------------------------ |
+| name              | string          | Yes      | Net class name                                                                 |
+| traceWidth        | number          | No       | Default trace width in mm                                                      |
+| clearance         | number          | No       | Clearance in mm                                                                |
+| viaDiameter       | number          | No       | Via diameter in mm                                                             |
+| viaDrill          | number          | No       | Via drill size in mm                                                           |
+| uviaDiameter      | number          | No       | Micro via diameter in mm                                                       |
+| uviaDrill         | number          | No       | Micro via drill size in mm                                                     |
+| diffPairWidth     | number          | No       | Differential pair track width in mm                                            |
+| diffPairGap       | number          | No       | Differential pair gap in mm                                                    |
+| diffPairViaGap    | number          | No       | Differential pair via gap in mm                                                |
+| nets              | array\<string\> | No       | Exact net names to assign (persisted as literal `netclass_patterns` entries)   |
+| netclassPatterns  | array\<string\> | No       | KiCad wildcard patterns assigning nets to this class (e.g. `/CAN_*`)           |
 
 **Usage Notes:**
 
 - Net classes define design rules for groups of nets
 - Common use cases: power nets (wider traces), high-speed signals (controlled impedance)
-- Once created, assign nets to the class using the netClass parameter in `add_net`
+- Assign membership with `nets` (exact names) or `netclassPatterns` (wildcards) — both persist to `.kicad_pro`; `assign_net_to_class` adds a single exact-net assignment to an existing class
 - All measurements in mm
 
 **Example:**

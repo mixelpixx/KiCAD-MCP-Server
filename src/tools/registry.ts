@@ -36,6 +36,8 @@ export const toolCategories: ToolCategory[] = [
       "add_zone",
       "get_board_extents",
       "get_board_2d_view",
+      "set_board_origin",
+      "get_board_origin",
       "launch_kicad_ui",
     ],
   },
@@ -51,6 +53,7 @@ export const toolCategories: ToolCategory[] = [
       "add_component_annotation",
       "group_components",
       "replace_component",
+      "hierarchical_place",
     ],
   },
   {
@@ -95,6 +98,7 @@ export const toolCategories: ToolCategory[] = [
       "run_drc",
       "add_net_class",
       "assign_net_to_class",
+      "create_netclass",
       "set_layer_constraints",
       "check_clearance",
       "get_drc_violations",
@@ -155,6 +159,7 @@ export const toolCategories: ToolCategory[] = [
       "set_schematic_property_position",
       "batch_set_schematic_property_positions",
       "autoplace_schematic_fields",
+      "lint_schematic_cosmetic",
     ],
   },
   {

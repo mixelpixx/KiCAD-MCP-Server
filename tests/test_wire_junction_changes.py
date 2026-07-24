@@ -332,7 +332,12 @@ class TestPinSnapping:
         with patch.object(KiCADInterface, "__init__", lambda self, *a, **kw: None):
             iface = KiCADInterface.__new__(KiCADInterface)
 
-        with patch("commands.wire_manager.WireManager.add_wire", return_value=True) as mw:
+        with (
+            patch("commands.wire_manager.WireManager.add_wire", return_value=True) as mw,
+            # add_schematic_wire loads via the guarded SchematicManager
+            # loader, whose Schematic binding lives in commands.schematic.
+            patch("commands.schematic.Schematic", skip_mod.Schematic),
+        ):
             result = iface._handle_add_schematic_wire(
                 {
                     "schematicPath": str(self.sch_path),

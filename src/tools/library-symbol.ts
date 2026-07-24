@@ -42,6 +42,56 @@ export function registerSymbolLibraryTools(server: McpServer, callKicadScript: F
     },
   );
 
+  // Repair flat vendor symbols (no _1_1 sub-unit) that break kicad-skip
+  server.tool(
+    "repair_flat_symbols",
+    `Repair "flat" vendor symbols so schematic tools can parse the file.
+
+SnapEDA/SamacSys .kicad_sym captures often put pins and graphics directly
+under the top-level (symbol "NAME" ...) with no _1_1 sub-unit. KiCad and
+kicad-cli tolerate this, but the kicad-skip parser used by the schematic
+edit/inspect tools (list_schematic_components, batch_connect, ...) crashes
+on it — for any sheet that uses, or embeds a snapshot of, such a symbol.
+
+This tool wraps the drawable/pin children in a proper (symbol "NAME_1_1")
+sub-unit via pure text insertion (formatting preserved, render-neutral).
+Works on standalone .kicad_sym libraries and on the embedded (lib_symbols)
+block of a .kicad_sch. Idempotent; already-wrapped and extends-derived
+symbols are skipped. Dry-run by default — files are edited in place, so
+keep them under version control before repairing.`,
+    {
+      path: z.string().describe(".kicad_sym library or .kicad_sch schematic to repair"),
+      dryRun: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe("Report flat symbols without writing (default true)"),
+    },
+    async (args: { path: string; dryRun?: boolean }) => {
+      const result = await callKicadScript("repair_flat_symbols", args);
+      if (!result.success) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Failed to repair: ${result.message || "Unknown error"}`,
+            },
+          ],
+        };
+      }
+      const lines = [result.message];
+      if (result.flat_symbols_found?.length) {
+        lines.push(`Flat symbols: ${result.flat_symbols_found.join(", ")}`);
+      }
+      if (result.repaired?.length) {
+        lines.push(`Repaired: ${result.repaired.join(", ")}`);
+      } else if (result.dryRun) {
+        lines.push("Dry run — pass dryRun: false to write the repair.");
+      }
+      return { content: [{ type: "text", text: lines.join("\n") }] };
+    },
+  );
+
   // Search for symbols across all libraries
   server.tool(
     "search_symbols",
@@ -58,6 +108,10 @@ Returns symbol references that can be used directly in schematics.`,
         .optional()
         .describe("Optional: filter to specific library name pattern (e.g., 'JLCPCB')"),
       limit: z.number().optional().default(20).describe("Maximum number of results to return"),
+      rebuildIndex: z
+        .boolean()
+        .optional()
+        .describe("Force re-parse of symbol libraries, ignoring the persistent index"),
       projectPath: z
         .string()
         .optional()
@@ -65,7 +119,13 @@ Returns symbol references that can be used directly in schematics.`,
           "Optional: project directory or .kicad_pro/.kicad_pcb/.kicad_sch path so project-scope sym-lib-table libraries are searched too.",
         ),
     },
-    async (args: { query: string; library?: string; limit?: number; projectPath?: string }) => {
+    async (args: {
+      query: string;
+      library?: string;
+      limit?: number;
+      projectPath?: string;
+      rebuildIndex?: boolean;
+    }) => {
       const result = await callKicadScript("search_symbols", args);
       if (result.success && result.symbols) {
         if (result.symbols.length === 0) {

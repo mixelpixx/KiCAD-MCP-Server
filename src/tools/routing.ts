@@ -399,13 +399,30 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   // Create netclass tool
   server.tool(
     "create_netclass",
-    "Create a new net class with custom design rules.",
+    "Create or update a net class with custom design rules, persisted into the project's " +
+      ".kicad_pro net_settings (definition, wildcard netclass_patterns, and exact-net " +
+      "assignment). The complete netclass tool — add_net_class is a deprecated alias.",
     {
       name: z.string().describe("Net class name"),
       traceWidth: z.number().optional().describe("Default trace width in mm"),
       clearance: z.number().optional().describe("Clearance in mm"),
       viaDiameter: z.number().optional().describe("Via diameter in mm"),
       viaDrill: z.number().optional().describe("Via drill size in mm"),
+      uviaDiameter: z.number().optional().describe("Micro via diameter in mm"),
+      uviaDrill: z.number().optional().describe("Micro via drill size in mm"),
+      diffPairWidth: z.number().optional().describe("Differential pair track width in mm"),
+      diffPairGap: z.number().optional().describe("Differential pair gap in mm"),
+      diffPairViaGap: z.number().optional().describe("Differential pair via gap in mm"),
+      nets: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Exact net names to assign to this class (persisted as literal netclass_patterns entries)",
+        ),
+      netclassPatterns: z
+        .array(z.string())
+        .optional()
+        .describe("KiCad wildcard patterns assigning nets to this class (e.g. '/CAN_*')"),
     },
     async (args: any) => {
       const result = await callKicadScript("create_netclass", args);

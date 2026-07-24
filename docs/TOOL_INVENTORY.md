@@ -107,8 +107,8 @@ _Source: `src/tools/design-rules.ts`_
 | `set_design_rules`      | Set global design rules (clearance, track width, via sizes) | Routed (drc) |
 | `get_design_rules`      | Get current design rules                                    | Routed (drc) |
 | `run_drc`               | Run design rule check                                       | Routed (drc) |
-| `add_net_class`         | Add net class with custom rules                             | Routed (drc) |
-| `assign_net_to_class`   | Assign net to a net class                                   | Routed (drc) |
+| `add_net_class`         | DEPRECATED alias of `create_netclass`                       | Routed (drc) |
+| `assign_net_to_class`   | Assign net to a net class (persists to `.kicad_pro`)        | Routed (drc) |
 | `set_layer_constraints` | Set layer-specific constraints                              | Routed (drc) |
 | `check_clearance`       | Check clearance between two items                           | Routed (drc) |
 | `get_drc_violations`    | Get DRC violation list (filter by severity)                 | Routed (drc) |
@@ -172,6 +172,8 @@ _Source: `src/tools/schematic.ts`_
 | ---------------------------------- | -------------------------------------------------- | ------------------ |
 | `add_schematic_hierarchical_label` | Add hierarchical label for multi-sheet connections | Routed (schematic) |
 | `add_sheet_pin`                    | Add a sheet pin to a hierarchical sheet symbol     | Routed (schematic) |
+| `set_sheet_property`               | Add/update a custom property on a hierarchical sheet (metadata, e.g. generator cell identity) | Routed (schematic) |
+| `get_sheet_properties`             | List hierarchical sheets with their full property maps | Routed (schematic) |
 
 ### Net Analysis (5)
 

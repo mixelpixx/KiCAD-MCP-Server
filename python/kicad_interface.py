@@ -183,6 +183,7 @@ if utils_dir not in sys.path:
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.kicad_process import KiCADProcessManager, check_and_launch_kicad
 from utils.platform_helper import PlatformHelper
+from utils.project_settings_guard import preserve_project_settings
 
 logger.info(f"Detecting KiCAD Python paths for {PlatformHelper.get_platform_name()}...")
 paths_added = PlatformHelper.add_kicad_to_python_path()
@@ -321,6 +322,7 @@ elif KICAD_BACKEND == "ipc" and not USE_IPC_BACKEND:
 try:
     logger.info("Importing command handlers...")
     from commands.board import BoardCommands
+    from commands.board.origin import BoardOriginCommands
     from commands.component import ComponentCommands
     from commands.connection_schematic import ConnectionManager
     from commands.datasheet_manager import DatasheetManager
@@ -329,6 +331,7 @@ try:
     from commands.export import ExportCommands
     from commands.footprint import FootprintCreator
     from commands.freerouting import FreeroutingCommands
+    from commands.pcb_import import PcbImportCommands
     from commands.jlcpcb import JLCPCBClient, test_jlcpcb_connection
     from commands.jlcpcb_parts import JLCPCBPartsManager
     from commands.library import (
@@ -337,15 +340,18 @@ try:
     from commands.library import LibraryManager as FootprintLibraryManager
     from commands.library_schematic import LibraryManager as SchematicLibraryManager
     from commands.library_symbol import SymbolLibraryCommands, SymbolLibraryManager
+    from commands.hierarchical_place import HierarchicalPlaceCommands
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
-    from commands.schematic import SchematicManager
+    from commands.schematic import SchematicLoadError, SchematicManager
     from commands.schematic_batch import SchematicBatchCommands
     from commands.schematic_declutter import SchematicDeclutterCommands
     from commands.schematic_field_layout import SchematicFieldLayoutCommands
+    from commands.schematic_lint import SchematicLintCommands
     from commands.schematic_hierarchy import SchematicHierarchyCommands
     from commands.symbol_creator import SymbolCreator
     from commands.symbol_pins import SymbolPinCommands
+    from commands.symbol_repair import SymbolRepairCommands
     from commands.symbol_schematic import SymbolSchematicCommands
     from commands.library_management import LibraryManagementCommands
     from commands.update_symbol_from_library import update_symbol_from_library
@@ -406,14 +412,17 @@ class KiCADInterface(SchematicHandlersMixin):
         # Initialize command handlers
         self.project_commands = ProjectCommands(self.board)
         self.board_commands = BoardCommands(self.board)
+        self.board_origin_commands = BoardOriginCommands()
         self.component_commands = ComponentCommands(self.board, self.footprint_library)
         self.routing_commands = RoutingCommands(self.board)
         self.freerouting_commands = FreeroutingCommands(self.board)
         self.eagle_commands = EagleCommands()
+        self.pcb_import_commands = PcbImportCommands()
         self.symbol_schematic_commands = SymbolSchematicCommands()
         self.library_management_commands = LibraryManagementCommands()
         self.design_rule_commands = DesignRuleCommands(self.board)
         self.export_commands = ExportCommands(self.board)
+        self.hierarchical_place_commands = HierarchicalPlaceCommands()
         self.library_commands = LibraryCommands(self.footprint_library)
         self._current_project_path: Optional[Path] = None  # set when boardPath is known
 
@@ -422,10 +431,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
         # Symbol pin discovery commands (read-only pin lookup from symbol libraries)
         self.symbol_pin_commands = SymbolPinCommands()
+        self.symbol_repair_commands = SymbolRepairCommands()
         # Schematic hierarchy commands (insert sheets, scaffold sub-sheets)
         self.hierarchy_commands = SchematicHierarchyCommands(self)
         # Schematic field placement / layout-check commands
         self.field_layout_commands = SchematicFieldLayoutCommands()
+        self.schematic_lint_commands = SchematicLintCommands()
         # Schematic label declutter (re-orient overlapping labels)
         self.declutter_commands = SchematicDeclutterCommands()
         # Batch schematic authoring commands (need an interface back-reference for the
@@ -453,6 +464,8 @@ class KiCADInterface(SchematicHandlersMixin):
             "get_project_info": self.project_commands.get_project_info,
             # Board commands
             "set_board_size": self.board_commands.set_board_size,
+            "set_board_origin": self.board_origin_commands.set_board_origin,
+            "get_board_origin": self.board_origin_commands.get_board_origin,
             "add_layer": self.board_commands.add_layer,
             "set_active_layer": self.board_commands.set_active_layer,
             "get_board_info": self.board_commands.get_board_info,
@@ -461,6 +474,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "get_board_extents": self.board_commands.get_board_extents,
             "add_board_outline": self.board_commands.add_board_outline,
             "add_mounting_hole": self.board_commands.add_mounting_hole,
+            "hierarchical_place": self.hierarchical_place_commands.hierarchical_place,
             "add_text": self.board_commands.add_text,
             "add_board_text": self.board_commands.add_text,  # Alias for TypeScript tool
             # Component commands
@@ -494,6 +508,8 @@ class KiCADInterface(SchematicHandlersMixin):
             "copy_routing_pattern": self.routing_commands.copy_routing_pattern,
             "get_nets_list": self.routing_commands.get_nets_list,
             "create_netclass": self.routing_commands.create_netclass,
+            "add_net_class": self.routing_commands.add_net_class,
+            "assign_net_to_class": self.routing_commands.assign_net_to_class,
             "add_copper_pour": self.routing_commands.add_copper_pour,
             "route_differential_pair": self.routing_commands.route_differential_pair,
             "refill_zones": self._handle_refill_zones,
@@ -521,13 +537,18 @@ class KiCADInterface(SchematicHandlersMixin):
             # Symbol pin discovery commands (read pins straight from symbol libraries)
             "list_symbol_pins": self.symbol_pin_commands.list_symbol_pins,
             "batch_list_symbol_pins": self.symbol_pin_commands.batch_list_symbol_pins,
+            "repair_flat_symbols": self.symbol_repair_commands.repair_flat_symbols,
             # Schematic hierarchy commands (sheet insertion + subsheet scaffolding)
             "add_hierarchical_sheet": self.hierarchy_commands.add_hierarchical_sheet,
+            "remove_hierarchical_sheet": self.hierarchy_commands.remove_hierarchical_sheet,
+            "set_sheet_property": self.hierarchy_commands.set_sheet_property,
+            "get_sheet_properties": self.hierarchy_commands.get_sheet_properties,
             "create_hierarchical_subsheet": self.hierarchy_commands.create_hierarchical_subsheet,
             # Schematic field placement commands
             "set_schematic_property_position": self.field_layout_commands.set_schematic_property_position,
             "batch_set_schematic_property_positions": self.field_layout_commands.batch_set_schematic_property_positions,
             "autoplace_schematic_fields": self.field_layout_commands.autoplace_schematic_fields,
+            "lint_schematic_cosmetic": self.schematic_lint_commands.lint_schematic_cosmetic,
             "suggest_schematic_declutter": self.declutter_commands.suggest_schematic_declutter,
             # Batch schematic authoring commands
             "batch_add_components": self.batch_commands.batch_add_components,
@@ -610,6 +631,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "find_orphaned_wires": self._handle_find_orphaned_wires,
             "list_floating_labels": self._handle_list_floating_labels,
             "snap_to_grid": self._handle_snap_to_grid,
+            "lint_offgrid": self._handle_lint_offgrid,
             "add_schematic_hierarchical_label": self._handle_add_schematic_hierarchical_label,
             "add_schematic_text": self._handle_add_schematic_text,
             "list_schematic_texts": self._handle_list_schematic_texts,
@@ -651,6 +673,8 @@ class KiCADInterface(SchematicHandlersMixin):
             "check_freerouting": self.freerouting_commands.check_freerouting,
             # Eagle import commands
             "import_eagle_project": self.eagle_commands.import_eagle_project,
+            # Vendor PCB import (kicad-cli pcb import wrapper)
+            "import_pcb": self.pcb_import_commands.import_pcb,
             # Schematic migration
             "replace_instance_lib_ids": self.symbol_schematic_commands.replace_instance_lib_ids,
             # Library management (deletion stays with the existing delete_symbol tool)
@@ -1099,6 +1123,12 @@ class KiCADInterface(SchematicHandlersMixin):
                     "errorDetails": "The specified command is not supported",
                 }
 
+        except SchematicLoadError as e:
+            # Backstop: any load site missed by the per-handler conversion
+            # still yields the structured, diagnosed error rather than the
+            # generic "Error handling command" below.
+            logger.error(f"Schematic load failed handling {command}: {e}")
+            return e.to_response()
         except Exception as e:
             # Get the full traceback
             traceback_str = traceback.format_exc()
@@ -1363,7 +1393,8 @@ class KiCADInterface(SchematicHandlersMixin):
 
         # Write the board.
         try:
-            pcbnew.SaveBoard(board_path, self.board)
+            with preserve_project_settings(board_path):
+                pcbnew.SaveBoard(board_path, self.board)
             logger.debug(f"Auto-saved board to: {board_path}")
             self._board_disk_signature = self._disk_signature(board_path)
         except Exception as e:
@@ -2382,9 +2413,10 @@ class KiCADInterface(SchematicHandlersMixin):
             if not all([schematic_path, net_name]):
                 return {"success": False, "message": "Missing required parameters"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             connections = get_connections_for_net(schematic, schematic_path, net_name)
             return {"success": True, "connections": connections}
@@ -2412,9 +2444,10 @@ class KiCADInterface(SchematicHandlersMixin):
             except (TypeError, ValueError):
                 return {"success": False, "message": "Parameters x and y must be numeric"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             result = get_net_at_point(schematic, schematic_path, x, y)
             return {"success": True, **result}
@@ -4450,7 +4483,8 @@ class KiCADInterface(SchematicHandlersMixin):
                     "success": False,
                     "message": "Board has no file path — save first",
                 }
-            self.board.Save(board_path)
+            with preserve_project_settings(board_path):
+                self.board.Save(board_path)
 
             zone_count = self.board.GetAreaCount() if hasattr(self.board, "GetAreaCount") else 0
 

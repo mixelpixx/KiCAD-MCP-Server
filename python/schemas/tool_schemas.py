@@ -154,6 +154,58 @@ BOARD_TOOLS = [
         },
     },
     {
+        "name": "set_board_origin",
+        "title": "Set Board Aux/Grid Origin",
+        "description": (
+            "Set the auxiliary (drill/place) origin and/or grid origin of a "
+            ".kicad_pcb. The aux origin is the datum used by export_drill's "
+            "drillOrigin:'plot' option and by pick-and-place / plot exports "
+            "with useAuxOrigin."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "boardPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_pcb file",
+                },
+                "type": {
+                    "type": "string",
+                    "enum": ["aux", "grid", "both"],
+                    "description": "Which origin to set (default: aux)",
+                    "default": "aux",
+                },
+                "x": {"type": "number", "description": "Origin X coordinate"},
+                "y": {"type": "number", "description": "Origin Y coordinate"},
+                "unit": {
+                    "type": "string",
+                    "enum": ["mm", "mil", "inch"],
+                    "description": "Coordinate unit (default: mm)",
+                    "default": "mm",
+                },
+            },
+            "required": ["boardPath", "x", "y"],
+        },
+    },
+    {
+        "name": "get_board_origin",
+        "title": "Get Board Aux/Grid Origin",
+        "description": (
+            "Read back the auxiliary (drill/place) origin and grid origin of a "
+            ".kicad_pcb in mm."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "boardPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_pcb file",
+                },
+            },
+            "required": ["boardPath"],
+        },
+    },
+    {
         "name": "add_board_outline",
         "title": "Add Board Outline",
         "description": "Adds a board outline shape (rectangle, rounded_rectangle, circle, or polygon) on the Edge.Cuts layer. By default the board top-left corner is placed at (0, 0) so all coordinates are positive. Use x/y to set a different top-left corner position.",
@@ -1444,8 +1496,64 @@ ROUTING_TOOLS = [
                     "type": "number",
                     "description": "Via drill diameter in millimeters",
                 },
+                "uviaDiameter": {
+                    "type": "number",
+                    "description": "Micro via diameter in millimeters",
+                },
+                "uviaDrill": {
+                    "type": "number",
+                    "description": "Micro via drill diameter in millimeters",
+                },
+                "diffPairWidth": {
+                    "type": "number",
+                    "description": "Differential pair track width in millimeters",
+                },
+                "diffPairGap": {
+                    "type": "number",
+                    "description": "Differential pair gap in millimeters",
+                },
+                "diffPairViaGap": {
+                    "type": "number",
+                    "description": "Differential pair via gap in millimeters",
+                },
+                "nets": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Exact net names to assign to this class (persisted as "
+                        "literal netclass_patterns entries)"
+                    ),
+                },
+                "netclassPatterns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "KiCad wildcard patterns assigning nets to this class "
+                        "(e.g. '/CAN_*')"
+                    ),
+                },
             },
             "required": ["name", "traceWidth", "clearance"],
+        },
+    },
+    {
+        "name": "assign_net_to_class",
+        "title": "Assign Net to Net Class",
+        "description": (
+            "Assign a net to an existing net class; persisted into the "
+            "project's .kicad_pro net_settings as an exact-net "
+            "netclass_patterns entry."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {"type": "string", "description": "Net name"},
+                "netClass": {
+                    "type": "string",
+                    "description": "Existing net class name",
+                },
+            },
+            "required": ["net", "netClass"],
         },
     },
     {
@@ -2385,6 +2493,44 @@ SCHEMATIC_TOOLS = [
                         "type": "string",
                         "enum": ["wires", "junctions", "labels", "components"],
                     },
+                },
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
+        "name": "lint_offgrid",
+        "title": "Lint Off-Grid Schematic Geometry",
+        "description": (
+            "Report every off-grid connection-relevant coordinate in a schematic — "
+            "wire/bus endpoints, symbol origins, label/junction/no_connect anchors — "
+            "and optionally snap them to the nearest grid point (fix=true). "
+            "KiCad's connection grid is fixed at 50 mil (1.27 mm) and junction "
+            "placement uses exact matching, so a single off-grid endpoint can poison "
+            "junction placement for a whole sheet. Fixes are byte-exact text splices "
+            "that preserve file formatting; (lib_symbols) content and property field "
+            "positions are never touched. Offenders more than 0.5 mm off-grid are "
+            "reported as needsHuman and never auto-snapped."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                },
+                "fix": {
+                    "type": "boolean",
+                    "description": "Snap offenders in place (default false: report only)",
+                    "default": False,
+                },
+                "gridSize": {
+                    "type": "number",
+                    "description": (
+                        "Grid spacing in mm (default: 1.27 = 50 mil, the KiCad "
+                        "connection grid)"
+                    ),
+                    "default": 1.27,
                 },
             },
             "required": ["schematicPath"],

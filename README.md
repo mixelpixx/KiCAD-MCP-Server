@@ -40,6 +40,22 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 https://github.com/mixelpixx/arduino-ide
 
+## What's New (Unreleased)
+
+### Vendor PCB import
+
+- `import_pcb` wraps KiCad 10's native `kicad-cli pcb import` to convert a
+  vendor PCB file — PADS, Altium, Eagle, CADSTAR, Fabmaster, P-CAD,
+  SolidWorks PCB, or a binary Cadence Allegro `.brd` — into a `.kicad_pcb`
+  file. Use `format: "auto"` for binary Cadence Allegro `.brd` files: the CLI
+  auto-detects the Allegro binary format by magic and reports it on stdout
+  (there is no `"allegro"` literal in the `--format` enum — passing one
+  errors). Optionally pass `reportFormat: "json"` or `"text"` to capture
+  kicad-cli's structured import report (layer mapping, warnings, errors) in
+  the result. **PCB/layout data only** — kicad-cli has no importer for
+  Cadence Concept HDL / OrCAD Capture schematics, so this tool never produces
+  a schematic.
+
 ## What's New in v2.4.0
 
 ### Symbol library management
@@ -285,7 +301,7 @@ connections = ConnectionManager.get_net_connections(sch, "VCC", sch_path)
 - Net connectivity: 100% accurate (VCC: 2 connections, GND: 4 connections)
 - Netlist generation: Working with accurate pin-level connections
 
-See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for the complete schematic tool documentation.
+See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for the complete schematic tool documentation, and the [Headless Authoring Guide](docs/HEADLESS_AUTHORING.md) for field-tested practice driving these tools without the KiCad GUI.
 
 ### IPC Backend (Experimental)
 
