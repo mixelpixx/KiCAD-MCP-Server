@@ -58,6 +58,31 @@ class BoardCommands:
         self.outline_commands.board = self.board
         return self.outline_commands.add_board_outline(params)
 
+    def clear_board_outline(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Clear all Edge.Cuts drawing items from the PCB"""
+        self.outline_commands.board = self.board
+        return self.outline_commands.clear_board_outline(params)
+
+    def replace_board_outline(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Replace all Edge.Cuts drawing items with a new outline"""
+        self.outline_commands.board = self.board
+        return self.outline_commands.replace_board_outline(params)
+
+    def list_graphics(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List board drawing items"""
+        self.outline_commands.board = self.board
+        return self.outline_commands.list_graphics(params)
+
+    def delete_graphic(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Delete a board drawing item by UUID"""
+        self.outline_commands.board = self.board
+        return self.outline_commands.delete_graphic(params)
+
+    def update_graphic(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Update a board drawing item by UUID"""
+        self.outline_commands.board = self.board
+        return self.outline_commands.update_graphic(params)
+
     def add_mounting_hole(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Add a mounting hole to the PCB"""
         self.outline_commands.board = self.board

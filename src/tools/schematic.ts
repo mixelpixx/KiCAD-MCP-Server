@@ -58,11 +58,15 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
       angle: z
         .number()
         .optional()
-        .describe("Rotation angle in degrees (KiCad CCW). 0=vertical resistor, 90=horizontal. Defaults to 0."),
+        .describe(
+          "Rotation angle in degrees (KiCad CCW). 0=vertical resistor, 90=horizontal. Defaults to 0.",
+        ),
       mirrorY: z
         .boolean()
         .optional()
-        .describe("Mirror the symbol horizontally (flip left-right). Useful for transistors facing opposite direction."),
+        .describe(
+          "Mirror the symbol horizontally (flip left-right). Useful for transistors facing opposite direction.",
+        ),
     },
     async (args: {
       schematicPath: string;
@@ -1559,6 +1563,25 @@ edit_schematic_component and set its value to an empty string.`,
     },
     async (args: { schematicPath: string; boardPath: string }) => {
       const result = await callKicadScript("sync_schematic_to_board", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
+  server.tool(
+    "create_board_from_schematic",
+    "Create a new .kicad_pcb file from a schematic, then update the PCB from that schematic so footprints and nets are present.",
+    {
+      schematicPath: z.string().describe("Absolute path to the .kicad_sch schematic file"),
+      boardPath: z
+        .string()
+        .optional()
+        .describe("Destination .kicad_pcb path; defaults next to schematic"),
+      overwrite: z.boolean().optional().describe("Replace boardPath if it already exists"),
+    },
+    async (args: { schematicPath: string; boardPath?: string; overwrite?: boolean }) => {
+      const result = await callKicadScript("create_board_from_schematic", args);
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
       };

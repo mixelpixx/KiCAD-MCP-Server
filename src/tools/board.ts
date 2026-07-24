@@ -205,6 +205,86 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
     },
   );
 
+  server.tool(
+    "clear_board_outline",
+    "Delete all Edge.Cuts graphics from the current PCB board.",
+    {},
+    async () => {
+      logger.debug("Clearing board outline");
+      const result = await callKicadScript("clear_board_outline", {});
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.tool(
+    "replace_board_outline",
+    "Replace the current Edge.Cuts board outline with a rectangle, rounded rectangle, circle or polygon.",
+    {
+      shape: z.enum(["rectangle", "circle", "polygon", "rounded_rectangle"]),
+      params: z.object({
+        width: z.number().optional(),
+        height: z.number().optional(),
+        cornerRadius: z.number().optional(),
+        radius: z.number().optional(),
+        points: z.array(z.object({ x: z.number(), y: z.number() })).optional(),
+        x: z.number().optional(),
+        y: z.number().optional(),
+        centerX: z.number().optional(),
+        centerY: z.number().optional(),
+        unit: z.enum(["mm", "mil", "inch"]).optional(),
+      }),
+    },
+    async ({ shape, params }) => {
+      logger.debug(`Replacing board outline with ${shape}`);
+      const result = await callKicadScript("replace_board_outline", { shape, ...params });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.tool(
+    "list_graphics",
+    "List PCB graphic/drawing items such as gr_line, gr_arc, gr_rect, gr_text and dimensions.",
+    {
+      layer: z.string().optional().describe("Optional layer filter, e.g. Edge.Cuts or F.SilkS"),
+    },
+    async ({ layer }) => {
+      const result = await callKicadScript("list_graphics", { layer });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.tool(
+    "delete_graphic",
+    "Delete a PCB graphic/drawing item by UUID.",
+    {
+      uuid: z.string().describe("KiCad UUID of the graphic item"),
+    },
+    async ({ uuid }) => {
+      const result = await callKicadScript("delete_graphic", { uuid });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.tool(
+    "update_graphic",
+    "Update common properties of a PCB graphic/drawing item by UUID.",
+    {
+      uuid: z.string(),
+      layer: z.string().optional(),
+      width: z.number().optional(),
+      unit: z.enum(["mm", "mil", "inch"]).optional(),
+      start: z.object({ x: z.number(), y: z.number() }).optional(),
+      end: z.object({ x: z.number(), y: z.number() }).optional(),
+      center: z.object({ x: z.number(), y: z.number() }).optional(),
+      position: z.object({ x: z.number(), y: z.number() }).optional(),
+      text: z.string().optional(),
+    },
+    async (args) => {
+      const result = await callKicadScript("update_graphic", args);
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
   // ------------------------------------------------------
   // Add Mounting Hole Tool
   // ------------------------------------------------------
@@ -364,15 +444,23 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
     "get_board_2d_view",
     [
       "Render a 2D image of the PCB using kicad-cli. Returns PNG, JPG, or SVG.",
-      "Use layers to filter — e.g. [\"F.Cu\",\"B.Cu\",\"Edge.Cuts\"] for copper + outline only.",
+      'Use layers to filter — e.g. ["F.Cu","B.Cu","Edge.Cuts"] for copper + outline only.',
       "Use responseMode to choose delivery:",
       '  "inline" (default) — PNG/JPG rendered as an image visible to Claude; SVG returned as text.',
       '  "file" — image written next to the .kicad_pcb as <board>_2d_view.<ext>; filePath is returned.',
       "Use file mode for large boards to avoid MCP message-size limits.",
     ].join(" "),
     {
-      pcbPath: z.string().optional().describe("Absolute path to the .kicad_pcb file. Falls back to the currently loaded board if omitted."),
-      layers: z.array(z.string()).optional().describe("Layer names to include, e.g. [\"F.Cu\",\"B.Cu\",\"Edge.Cuts\"]. Omit for all layers."),
+      pcbPath: z
+        .string()
+        .optional()
+        .describe(
+          "Absolute path to the .kicad_pcb file. Falls back to the currently loaded board if omitted.",
+        ),
+      layers: z
+        .array(z.string())
+        .optional()
+        .describe('Layer names to include, e.g. ["F.Cu","B.Cu","Edge.Cuts"]. Omit for all layers.'),
       width: z.number().optional().describe("Output image width in pixels (default: 1600)"),
       height: z.number().optional().describe("Output image height in pixels (default: 1200)"),
       format: z.enum(["png", "jpg", "svg"]).optional().describe("Output format (default: png)"),
@@ -405,7 +493,10 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
         if (result.format === "svg") {
           const parts: { type: "text"; text: string }[] = [];
           if (result.message) parts.push({ type: "text" as const, text: result.message });
-          parts.push({ type: "text" as const, text: Buffer.from(result.imageData, "base64").toString("utf-8") });
+          parts.push({
+            type: "text" as const,
+            text: Buffer.from(result.imageData, "base64").toString("utf-8"),
+          });
           return { content: parts };
         }
         // inline png/jpg — return as renderable image
