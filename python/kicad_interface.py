@@ -365,6 +365,7 @@ try:
         set_library_table_uri,
     )
     from commands.pcb_import import PcbImportCommands
+    from commands.gui_driver import GuiDriverCommands
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
     from commands.schematic import SchematicLoadError, SchematicManager
@@ -446,6 +447,10 @@ class KiCADInterface(SchematicHandlersMixin):
         self.design_rule_commands = DesignRuleCommands(self.board)
         self.export_commands = ExportCommands(self.board)
         self.hierarchical_place_commands = HierarchicalPlaceCommands()
+        # GUI-driver channel (chrome, not design): socket client for the
+        # in-KiCad helper plugin (gui_driver_plugin/) + the Linux AT-SPI shim.
+        # Independent of kipy/SWIG — never touches board objects.
+        self.gui_driver_commands = GuiDriverCommands(self)
         self.library_commands = LibraryCommands(self.footprint_library)
         self._current_project_path: Optional[Path] = None  # set when boardPath is known
 
@@ -561,6 +566,21 @@ class KiCADInterface(SchematicHandlersMixin):
             "assign_net_to_class": self.design_rule_commands.assign_net_to_class,
             "check_clearance": self.design_rule_commands.check_clearance,
             "set_layer_constraints": self.design_rule_commands.set_layer_constraints,
+            # GUI-driver channel (in-process wx helper over a localhost socket;
+            # generic scriptable surface, destructive names are advisory-flagged
+            # with a "⚠ " prefix — never gated). See commands/gui_driver.py.
+            "kicad_gui_tree": self.gui_driver_commands.kicad_gui_tree,
+            "kicad_gui_click": self.gui_driver_commands.kicad_gui_click,
+            "kicad_run_action_plugin": self.gui_driver_commands.kicad_run_action_plugin,
+            "kicad_gui_wait_for": self.gui_driver_commands.kicad_gui_wait_for,
+            "kicad_gui_screenshot": self.gui_driver_commands.kicad_gui_screenshot,
+            # GUI playbooks (thin wrappers over the generic surface)
+            "kicad_pcb_snapshot": self.gui_driver_commands.kicad_pcb_snapshot,
+            "kicad_reload_and_open_plugin": self.gui_driver_commands.kicad_reload_and_open_plugin,
+            "kicad_run_drc": self.gui_driver_commands.kicad_run_drc,
+            # Backend B: AT-SPI (Linux zero-in-KiCad fast-path)
+            "kicad_gui_tree_atspi": self.gui_driver_commands.kicad_gui_tree_atspi,
+            "kicad_gui_click_atspi": self.gui_driver_commands.kicad_gui_click_atspi,
             # Export commands
             "export_gerber": self.export_commands.export_gerber,
             "export_pdf": self.export_commands.export_pdf,
