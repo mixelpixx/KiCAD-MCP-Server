@@ -116,29 +116,80 @@ function listHas3d(p: RegistryPart): boolean {
   return Boolean(p.model_3d || p.has_3d || (p.files && p.files.model_3d));
 }
 
-/** Map the requested format to the detail `files` key and a default extension. */
-const FORMAT_MAP: Record<string, { fileKey: string; defaultExt: string }> = {
-  kicad_mod: { fileKey: "footprint", defaultExt: ".kicad_mod" },
-  kicad_sym: { fileKey: "symbol", defaultExt: ".kicad_sym" },
-  step: { fileKey: "model_3d", defaultExt: ".step" },
+/** Map the requested format to the detail `files` key and the extensions it may produce. */
+interface FormatMapping {
+  fileKey: string;
+  defaultExt: string;
+  allowedExts: string[];
+}
+
+const FORMAT_MAP: Record<string, FormatMapping> = {
+  kicad_mod: { fileKey: "footprint", defaultExt: ".kicad_mod", allowedExts: [".kicad_mod"] },
+  kicad_sym: { fileKey: "symbol", defaultExt: ".kicad_sym", allowedExts: [".kicad_sym"] },
+  step: { fileKey: "model_3d", defaultExt: ".step", allowedExts: [".step", ".stp", ".glb"] },
 };
+
+/** Refuse to buffer assets beyond this size — registry parts are KB-to-few-MB. */
+const MAX_ASSET_BYTES = 50 * 1024 * 1024;
 
 function sanitizeId(id: string): string {
   return id.replace(/[^A-Za-z0-9._-]+/g, "_");
 }
 
-/** Derive a filename for a downloaded asset from its URL, with a fallback. */
-function filenameForAsset(url: string, id: string, defaultExt: string): string {
+/**
+ * Derive a filename for a downloaded asset. The remote basename comes from
+ * registry data, not from anything this code controls, so it is only kept when
+ * its extension matches the *requested* format — otherwise a hostile index
+ * could make a "kicad_mod" request write e.g. payload.ps1 or a dotfile.
+ * Exported for tests.
+ */
+export function filenameForAsset(url: string, id: string, mapping: FormatMapping): string {
   try {
-    const path = new URL(url).pathname;
-    const base = basename(path);
-    if (base && /\.[A-Za-z0-9]+$/.test(base)) {
-      return base;
+    const base = basename(new URL(url).pathname);
+    // Underscore matters: ".kicad_mod" is one extension.
+    const ext = /\.[A-Za-z0-9_]+$/.exec(base)?.[0]?.toLowerCase();
+    if (ext && mapping.allowedExts.includes(ext)) {
+      return base.replace(/[^A-Za-z0-9._-]+/g, "_");
     }
   } catch {
     // Not an absolute URL — fall through to the default name.
   }
-  return `${sanitizeId(id)}${defaultExt}`;
+  return `${sanitizeId(id)}${mapping.defaultExt}`;
+}
+
+/** Extra asset hosts (comma-separated env) allowed in addition to the API host. */
+function extraAssetHosts(): string[] {
+  return (process.env.PARTS_REGISTRY_ASSET_HOSTS || "")
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * A download URL is only followed when its host is the API host, a subdomain of
+ * it (PartReel serves assets from assets.partreel.com while the API lives on
+ * partreel.com), or explicitly allow-listed via PARTS_REGISTRY_ASSET_HOSTS.
+ * This keeps a hostile or compromised index from redirecting downloads to an
+ * arbitrary host. Exported for tests.
+ */
+export function assetUrlAllowed(url: string, base: string = apiBase()): boolean {
+  let asset: URL;
+  let api: URL;
+  try {
+    asset = new URL(url);
+    api = new URL(base);
+  } catch {
+    return false;
+  }
+  if (asset.protocol !== "https:" && asset.protocol !== api.protocol) {
+    return false;
+  }
+  const host = asset.hostname.toLowerCase();
+  const apiHost = api.hostname.toLowerCase();
+  if (host === apiHost || host.endsWith(`.${apiHost}`)) {
+    return true;
+  }
+  return extraAssetHosts().includes(host);
 }
 
 // ---- tool registration --------------------------------------------------- //
@@ -375,14 +426,40 @@ Files are written to dest_dir with a sensible filename; returns the saved path(s
           };
         }
 
+        if (!assetUrlAllowed(url)) {
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  `Refusing to download from ${url}: its host is not the registry API host ` +
+                  `(${apiBase()}) or a subdomain of it. If your registry intentionally serves ` +
+                  `assets from another host, allow it via PARTS_REGISTRY_ASSET_HOSTS.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
         logger.info(`Downloading ${args.format} for ${args.id}: ${url}`);
         const res = await fetch(url);
         if (!res.ok) {
           throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
         }
+        const declared = Number(res.headers.get("content-length") || 0);
+        if (declared > MAX_ASSET_BYTES) {
+          throw new Error(
+            `Asset too large (${declared} bytes > ${MAX_ASSET_BYTES} cap) for ${url}`,
+          );
+        }
         const buffer = Buffer.from(await res.arrayBuffer());
+        if (buffer.length > MAX_ASSET_BYTES) {
+          throw new Error(
+            `Asset too large (${buffer.length} bytes > ${MAX_ASSET_BYTES} cap) for ${url}`,
+          );
+        }
 
-        const filename = filenameForAsset(url, args.id, mapping.defaultExt);
+        const filename = filenameForAsset(url, args.id, mapping);
         const savedPath = join(args.dest_dir, filename);
         writeFileSync(savedPath, buffer);
         logger.info(`Saved ${buffer.length} bytes to ${savedPath}`);
