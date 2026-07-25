@@ -49,7 +49,7 @@ DESTRUCTIVE_PREFIX = "⚠ "
 # changes; ensure_helper_installed() re-deploys on a marker mismatch, so
 # helper updates ship with the MCP with zero user steps.
 
-HELPER_VERSION = "0.0.1"
+HELPER_VERSION = "0.0.2"  # 0.0.2: run_plugin triggers async (no UI-thread block/timeout)
 HELPER_IDENTIFIER = "com_github_rossvonfange_kicad-gui-driver"
 HELPER_VERSION_MARKER = "HELPER_VERSION"
 

@@ -469,3 +469,63 @@ class TestRegistration:
         interface = kicad_interface.KiCADInterface()
         for name in GUI_TOOL_NAMES:
             assert name in interface.command_routes, name
+
+
+# ---------------------------------------------------------------------------
+# real driver.py against a fake wx: prove plugin triggers fire ASYNCHRONOUSLY
+# (via wx.CallAfter) so a plugin whose Run() blocks the UI thread neither
+# freezes KiCad nor trips the listener's UI_CALL_TIMEOUT.
+# ---------------------------------------------------------------------------
+
+def _load_real_driver_with_fake_wx(monkeypatch):
+    """Import the real gui_driver_plugin driver with a minimal fake wx."""
+    plugin_root = REPO_ROOT / "gui_driver_plugin"
+    monkeypatch.syspath_prepend(str(plugin_root))
+    for mod in ("plugins", "plugins.driver", "wx"):
+        sys.modules.pop(mod, None)
+
+    calls = {"call_after": [], "process_event": []}
+
+    class _Frame:
+        def GetName(self):
+            return "PcbFrame"
+
+        def GetTitle(self):
+            return "board — PCB Editor"
+
+        def ProcessEvent(self, evt):
+            calls["process_event"].append(evt)
+            return True
+
+    fake_wx = types.ModuleType("wx")
+    fake_wx.wxEVT_COMMAND_MENU_SELECTED = 10001
+    fake_wx.wxEVT_COMMAND_TOOL_CLICKED = 10002
+    fake_wx.GetTopLevelWindows = lambda: [_Frame()]
+    fake_wx.CommandEvent = lambda evt_type, item_id: {"type": evt_type, "id": item_id}
+    fake_wx.CallAfter = lambda fn, *a, **k: calls["call_after"].append((fn, a, k))
+    sys.modules["wx"] = fake_wx
+
+    import plugins.driver as driver  # noqa: E402 — real module, fake wx underneath
+
+    return driver, calls
+
+
+class TestDriverAsyncTrigger:
+    def test_async_click_uses_call_after_not_process_event(self, monkeypatch):
+        driver, calls = _load_real_driver_with_fake_wx(monkeypatch)
+        out = driver.click(item_id=-2245, async_trigger=True)
+        # returns immediately, marked async — Run() is NOT awaited
+        assert out["triggered"] is True and out["async"] is True and out["id"] == -2245
+        assert len(calls["call_after"]) == 1
+        assert calls["process_event"] == []  # nothing fired synchronously
+        # the queued callback, when the UI tick runs it, performs the real trigger
+        fn, a, k = calls["call_after"][0]
+        fn(*a, **k)
+        assert len(calls["process_event"]) == 1
+
+    def test_sync_click_still_processes_immediately(self, monkeypatch):
+        driver, calls = _load_real_driver_with_fake_wx(monkeypatch)
+        out = driver.click(item_id=42, async_trigger=False)
+        assert out["processed"] is True and out["id"] == 42
+        assert len(calls["process_event"]) == 1
+        assert calls["call_after"] == []

@@ -209,8 +209,17 @@ def click(
     name: Optional[str] = None,
     kind: str = "menu",
     frame_match: Optional[str] = None,
+    async_trigger: bool = False,
 ) -> Dict[str, Any]:
-    """Inject a menu/tool activation into the frame's event handler."""
+    """Inject a menu/tool activation into the frame's event handler.
+
+    ``async_trigger`` posts the event via ``wx.CallAfter`` and returns without
+    waiting for the handler to finish. Use it for plugin actions whose ``Run()``
+    may occupy the UI thread (open a dialog, launch a browser, start a server):
+    the activation fires on the next UI tick, so the caller's control channel is
+    never held hostage to the plugin's duration — and a plugin that blocks the
+    UI thread no longer trips the listener's UI_CALL_TIMEOUT.
+    """
     frame = find_frame(frame_match)
     if frame is None:
         raise RuntimeError(f"no top-level frame matching {frame_match!r}")
@@ -230,6 +239,10 @@ def click(
     evt_type = (
         wx.wxEVT_COMMAND_TOOL_CLICKED if resolved_kind == "tool" else wx.wxEVT_COMMAND_MENU_SELECTED
     )
+    if async_trigger:
+        # Fire on the next UI tick and return now — do NOT wait on Run().
+        wx.CallAfter(lambda: frame.ProcessEvent(wx.CommandEvent(evt_type, item_id)))
+        return {"id": item_id, "kind": resolved_kind, "triggered": True, "async": True}
     evt = wx.CommandEvent(evt_type, item_id)
     processed = frame.ProcessEvent(evt)
     return {"id": item_id, "kind": resolved_kind, "processed": bool(processed)}
@@ -252,11 +265,11 @@ def run_plugin(name: str, frame_match: Optional[str] = None) -> Dict[str, Any]:
                 continue
             in_external = any("external plugins" in normalize_label(p) for p in path[:-1])
             if in_external:
-                return click(item_id=entry["id"], frame_match=frame_match)
+                return click(item_id=entry["id"], frame_match=frame_match, async_trigger=True)
             if fallback_id is None:
                 fallback_id = entry["id"]
     if fallback_id is not None:
-        return click(item_id=fallback_id, frame_match=frame_match)
+        return click(item_id=fallback_id, frame_match=frame_match, async_trigger=True)
     raise LookupError(f"no plugin menu entry named {name!r}")
 
 
