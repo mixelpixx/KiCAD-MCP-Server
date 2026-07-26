@@ -4,16 +4,64 @@
 
 The KiCAD MCP Server integrates with JLCPCB's parts library to provide intelligent component selection, cost optimization, and automated part sourcing for PCB assembly.
 
-**Current Implementation**: Uses the **JLCSearch public API** (by tscircuit) for free, unauthenticated access to JLCPCB's ~100k parts catalog.
+**Current implementation — two backends, by design:**
+
+- **Search is local.** `search_jlcpcb_parts` queries a local SQLite snapshot that
+  you populate once with `download_jlcpcb_database` (the default `cdfer` source is a
+  ~600k in-stock subset). The JLCPCB Open Platform API has **no keyword/parametric
+  search endpoint**, so search must stay local.
+- **Single-part lookup is real-time.** `get_jlcpcb_part` prefers the **JLCPCB Open
+  Platform** `getComponentDetailByCode` endpoint (`https://open.jlcpcb.com`) for live
+  stock and tiered pricing when credentials are configured, and transparently falls
+  back to the local snapshot otherwise. The response's `source` field reports which
+  backend answered (`"live-api"` vs `"local-db"`).
+
+Why the split matters: the local snapshot mirror can lag JLCPCB by weeks, so its
+stock/price for a specific part may be stale — real-time lookup exists to close that
+gap for the part you actually care about.
 
 ## Features
 
-✅ **Parametric Search** - Find components by specifications (resistance, capacitance, package, etc.)
+✅ **Parametric Search** - Find components by specifications (resistance, capacitance, package, etc.) against the local snapshot
+✅ **Real-time Lookup** - Live stock + tiered pricing for a specific LCSC part via the Open Platform API (with local fallback)
 ✅ **Price Comparison** - Compare Basic vs Extended library pricing
 ✅ **Alternative Suggestions** - Find cheaper or higher-stock alternatives
 ✅ **Footprint Mapping** - Automatic JLCPCB package to KiCad footprint mapping
-✅ **Stock Availability** - Real-time stock levels from JLCPCB
-✅ **No Authentication Required** - Public API, no API keys needed
+
+## Real-time part lookup (Open Platform API)
+
+`get_jlcpcb_part` performs a **real-time** lookup when JLCPCB Open Platform
+credentials are configured, and falls back to the local snapshot otherwise.
+
+- **Endpoint:** `POST https://open.jlcpcb.com/overseas/openapi/component/getComponentDetailByCode`
+  with JSON body `{"componentCodes": ["C25804", ...]}` (batched up to 1000 codes per
+  call). Returns live `stockCount`, tiered `priceRanges`, `parameters`, `datasheetUrl`
+  and `libraryType` (base → Basic, expand → Extended).
+- **Auth:** JOP / HMAC-SHA256 (`Authorization: JOP appid=...,accesskey=...,nonce=...,timestamp=...,signature=...`).
+  The signed body must be byte-identical to the wire body, so the request is sent as
+  a raw JSON string.
+- **No server-side search:** the Open Platform only exposes detail-by-code and a
+  full library dump (`getComponentLibraryList`, `{componentCode, componentModel,
+  componentSpecification}` only) — there is no keyword/parametric search, which is
+  why `search_jlcpcb_parts` stays local.
+- **`source` field:** every `get_jlcpcb_part` result includes `source` — `"live-api"`
+  when the Open Platform answered, `"local-db"` when the snapshot did.
+- **Manufacturer:** the detail response omits `manufacturer`; it is backfilled from
+  the local snapshot row when available.
+
+### Configuring credentials (`.env`)
+
+Create a `.env` file in the project root (it is gitignored — see `.env.example`):
+
+```
+JLCPCB_APP_ID=your_app_id
+JLCPCB_API_KEY=your_access_key
+JLCPCB_API_SECRET=your_secret_key
+```
+
+The server auto-loads this `.env` on first use of the JLCPCB client (non-destructively —
+it never overrides a variable already present in the environment). Without credentials,
+`get_jlcpcb_part` silently uses the local snapshot.
 
 ## Quick Start
 
@@ -339,29 +387,27 @@ JLCSearch may not have all fields that official JLCPCB API provides:
 
 Stock levels are updated periodically but may lag real-time JLCPCB data by a few hours.
 
-## Official JLCPCB API (Alternative)
+## JLCPCB Open Platform API (real-time lookup)
 
-The project also includes an implementation of the official JLCPCB API with HMAC-SHA256 authentication. However, this requires:
-
-1. API approval from JLCPCB (not all applications are approved)
-2. APP_ID, ACCESS_KEY, and SECRET_KEY credentials
-3. Previous order history with JLCPCB
-
-To use the official API instead of JLCSearch:
+`get_jlcpcb_part` uses the JLCPCB **Open Platform** (`https://open.jlcpcb.com`) with
+HMAC-SHA256 (JOP) authentication for real-time single-part detail. This requires
+APP_ID, ACCESS_KEY and SECRET_KEY credentials from your JLCPCB account (see
+"Configuring credentials" above). The client:
 
 ```python
 from commands.jlcpcb import JLCPCBClient
 
-# Set credentials in .env file:
-# JLCPCB_APP_ID=<your_app_id>
-# JLCPCB_API_KEY=<your_access_key>
-# JLCPCB_API_SECRET=<your_secret_key>
-
-client = JLCPCBClient(app_id, access_key, secret_key)
-data = client.fetch_parts_page()
+# Credentials are read from the project-root .env (auto-loaded) or the environment:
+# JLCPCB_APP_ID / JLCPCB_API_KEY / JLCPCB_API_SECRET
+client = JLCPCBClient()
+if client.has_credentials():
+    part = client.get_part_by_lcsc("C25804")  # live stock + tiered pricing
 ```
 
-**Note:** Most users should use JLCSearch public API instead, as it's freely available and requires no authentication.
+**Note:** The Open Platform has no search endpoint — keyword/parametric search always
+runs against the local snapshot (`search_jlcpcb_parts`). The legacy
+`jlcpcb.com/external` bulk-download path (`fetch_parts_page` /
+`download_full_database`) is deprecated and only kept for backwards compatibility.
 
 ## Credits
 
