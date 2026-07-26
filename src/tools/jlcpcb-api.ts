@@ -82,7 +82,9 @@ force=true to refresh.`,
 Searches the local JLCPCB database (must be downloaded first with download_jlcpcb_database).
 Provides real pricing, stock info, and library type (Basic parts = free assembly).
 
-Use this to find components with exact specifications and cost optimization.`,
+Use this to find components with exact specifications and cost optimization.
+
+For a verified, ready-to-use KiCAD footprint/symbol/3D bundle (rather than sourcing/stock data), use search_parts_registry instead.`,
     {
       query: z
         .string()

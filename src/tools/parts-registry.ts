@@ -199,7 +199,7 @@ export function registerPartsRegistryTools(server: McpServer): void {
   server.tool(
     "search_parts_registry",
     `Search an open, gate-verified parts registry for existing KiCAD parts BEFORE
-generating a custom footprint/symbol from scratch.
+generating a custom footprint/symbol from scratch. Complements search_jlcpcb_parts: use that tool for JLCPCB sourcing data (price, stock, assembly tier); use this one to fetch a verified existing footprint/symbol/3D bundle.
 
 Default registry: PartReel (https://partreel.com) — 18k+ verified parts, no auth.
 Override with the PARTREEL_API_BASE environment variable to point at any
