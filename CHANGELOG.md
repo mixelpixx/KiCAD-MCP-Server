@@ -2,7 +2,48 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
-## [Unreleased]
+## [2.4.1] - 2026-07-26
+
+Eight merges since v2.4.0. The headline is infrastructural: **CI had never
+once passed in this repository's history** — 32 failed runs, 0 successes, and
+GitHub Actions disabled repo-wide since January — so seven months of merges
+landed with no automated gating whatsoever. That is fixed (#334), and it paid
+for itself on the first real run by surfacing a live bug: every `create_zone`
+call over the IPC backend had been raising `AttributeError`.
+
+Three tools that were registered but had no backend at all now work
+(`assign_net_to_class`, `check_clearance`, `set_layer_constraints`), found by
+a documentation-coverage audit rather than by anyone using them. Two more
+fixes remove silent failures on paths users cannot easily diagnose:
+`autoroute` was being abandoned at 30 s while Freerouting was still working,
+and `get_board_2d_view` produced no file at all when the caller omitted
+`layers`.
+
+Note for anyone tracking `assign_net_to_class`: it did not work on any real
+project as first written, because a freshly written `.kicad_pro` carries
+`"netclass_assignments": null` and the writer assumed an empty dict. Caught by
+a round-trip test across the boundary it shares with #302's DSN exporter —
+both sides had green suites that never crossed it.
+
+### New Features
+
+- **Open parts-registry lookup** (#329, closes #297): `search_parts_registry`,
+  `get_registry_part` and `download_registry_part` search an open parts
+  registry, inspect a part, and fetch its footprint / symbol / 3D files to
+  disk — so a verified existing part can be reused instead of generating one
+  from scratch with `create_footprint` / `create_symbol`. Downloads are
+  host-allowlisted (the API host and its subdomains, or an explicit
+  `PARTS_REGISTRY_ASSET_HOSTS` list), extension-checked against the requested
+  format, and capped at 50 MB, so a hostile or compromised index cannot
+  redirect a fetch to an arbitrary host or dictate an arbitrary filename.
+
+- **Real-time JLCPCB part lookup via the Open Platform API** (#326):
+  `get_jlcpcb_part` now returns live stock, tiered pricing and library type
+  when `JLCPCB_APP_ID` / `JLCPCB_API_KEY` / `JLCPCB_API_SECRET` are configured
+  (see `.env.example`). Credentials are optional: without them — or on any API
+  error — the tool falls back to the existing local snapshot database, and the
+  response carries `source: "live-api" | "local-db"` so callers can tell which
+  path answered. Part _search_ remains local-only.
 
 ### Tooling
 
@@ -15,7 +56,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
   switched off in January). Format and type checks now run once on a pinned
   interpreter rather than once per matrix entry, because `pip install black`
   resolves a different build per Python version (black >=25.12 requires
-  >=3.10, so the 3.9 runner silently got 25.1.0 and disagreed on three files).
+  > =3.10, so the 3.9 runner silently got 25.1.0 and disagreed on three files).
 
 ### Bug Fixes
 
@@ -90,20 +131,6 @@ All notable changes to the KiCAD MCP Server project are documented here.
   `normcase` case-folding assumption and a hardcoded `\` path separator, both
   of which could never pass on Linux runners.
 
-## [2.4.0] - 2026-07-22
-
-Eighteen merges since v2.3.1. Four new tool families land — symbol library
-management, symbol property editing, `lib_id` replacement for library
-migration, and update-from-library refresh — alongside a process-wide caching
-layer for symbol discovery that removes repeated multi-MB library re-reads.
-Two fixes restore basic operation for whole classes of users: every
-`.kicad_sym` and schematic write was broken on the project's declared Python
-3.9 floor (#328), and JLCPCB part search could not find hyphenated MPNs
-(#327). Eagle import now writes KiCad 10 headers (#330), closing the last of
-the stale-format leftovers from the #221 scaffolding work.
-
-### Bug Fixes
-
 - **`replace_schematic_component` no longer corrupts `lib_symbols` while
   restoring fields**: the post-replace field restore ran a `count=1` regex
   substitution over the whole file, so the first matching
@@ -123,6 +150,18 @@ the stale-format leftovers from the #221 scaffolding work.
   delete of a name that occurs more than once now fails with the full list of
   candidate positions so the caller can disambiguate; unique names and
   position-qualified deletes behave as before.
+
+## [2.4.0] - 2026-07-22
+
+Eighteen merges since v2.3.1. Four new tool families land — symbol library
+management, symbol property editing, `lib_id` replacement for library
+migration, and update-from-library refresh — alongside a process-wide caching
+layer for symbol discovery that removes repeated multi-MB library re-reads.
+Two fixes restore basic operation for whole classes of users: every
+`.kicad_sym` and schematic write was broken on the project's declared Python
+3.9 floor (#328), and JLCPCB part search could not find hyphenated MPNs
+(#327). Eagle import now writes KiCad 10 headers (#330), closing the last of
+the stale-format leftovers from the #221 scaffolding work.
 
 ### Performance
 

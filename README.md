@@ -40,6 +40,42 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 https://github.com/mixelpixx/arduino-ide
 
+## What's New in v2.4.1
+
+### Three tools that were registered but had no backend now work
+
+- `assign_net_to_class`, `check_clearance` and `set_layer_constraints` each had
+  a full schema and a router entry but no dispatch handler, so every call
+  returned `Unknown command`. Found by a documentation-coverage audit.
+- Per-layer constraints are written to a project-scoped `.kicad_dru`
+  custom-rules file, which `kicad-cli pcb drc` and the GUI both pick up — there
+  is no pcbnew API for them.
+
+### Silent failures removed
+
+- `autoroute` was abandoned by the Node bridge at 30 s while Freerouting was
+  still running, reporting failure against a valid `.ses` that existed on disk.
+  Its timeout now derives from the `timeout` and `attempts` you pass.
+- `get_board_2d_view` omitted `--layers` entirely when no layers were given,
+  and KiCad 9+ then refuses the export — producing no file at all.
+- `create_zone` raised `AttributeError` on every call over the IPC backend.
+
+### New part-sourcing tools
+
+- `search_parts_registry` / `get_registry_part` / `download_registry_part`
+  reuse a verified existing footprint or symbol instead of generating one.
+  Downloads are host-allowlisted, extension-checked and size-capped.
+- `get_jlcpcb_part` returns live stock and tiered pricing when JLCPCB Open
+  Platform credentials are configured, falling back to the local snapshot.
+
+### CI now actually runs the test suite
+
+- The Python job had been a no-op in four independent ways, and Actions was
+  disabled repo-wide — 32 failed runs and 0 successes across the project's
+  whole history. All 1551 Python and 63 TypeScript tests now gate every push.
+
+Full details in the [CHANGELOG](CHANGELOG.md).
+
 ## What's New in v2.4.0
 
 ### Symbol library management
@@ -1399,7 +1435,7 @@ npm run format
 
 ## Project Status
 
-**Current Version:** 2.4.0
+**Current Version:** 2.4.1
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
