@@ -681,10 +681,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
         .describe(
           "If true, move + rotate components to the proposed positions. Default false (dry run — board untouched).",
         ),
-      iterations: z
-        .number()
-        .optional()
-        .describe("Force-directed relaxation passes (default 200)."),
+      iterations: z.number().optional().describe("Force-directed relaxation passes (default 200)."),
       grid_mm: z
         .number()
         .optional()
@@ -693,10 +690,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
         .number()
         .optional()
         .describe("Extra keepout enforced between courtyards (default 0.3)."),
-      rotate: z
-        .boolean()
-        .optional()
-        .describe("Enable pin-facing rotation (default true)."),
+      rotate: z.boolean().optional().describe("Enable pin-facing rotation (default true)."),
       spread: z
         .boolean()
         .optional()
@@ -725,10 +719,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
         .describe(
           "Net-name fragments treated as high-current and pulled short & direct (case-insensitive). Defaults to common rails (VBAT, VBUS, VCC, 3V3, 5V, ...). Pass [] to disable.",
         ),
-      power_weight: z
-        .number()
-        .optional()
-        .describe("Pull multiplier for power nets (default 3.0)."),
+      power_weight: z.number().optional().describe("Pull multiplier for power nets (default 3.0)."),
       decoupling_boost: z
         .number()
         .optional()

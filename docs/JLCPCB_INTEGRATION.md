@@ -42,7 +42,7 @@ credentials are configured, and falls back to the local snapshot otherwise.
   a raw JSON string.
 - **No server-side search:** the Open Platform only exposes detail-by-code and a
   full library dump (`getComponentLibraryList`, `{componentCode, componentModel,
-  componentSpecification}` only) — there is no keyword/parametric search, which is
+componentSpecification}` only) — there is no keyword/parametric search, which is
   why `search_jlcpcb_parts` stays local.
 - **`source` field:** every `get_jlcpcb_part` result includes `source` — `"live-api"`
   when the Open Platform answered, `"local-db"` when the snapshot did.

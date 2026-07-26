@@ -51,6 +51,11 @@ repos:
         additional_dependencies:
           - types-requests
           - pytest
+          # The hook runs in its own isolated venv, so every third-party import
+          # mypy should resolve has to be listed here. python-dotenv ships
+          # py.typed, so installing it type-checks the real API rather than
+          # silencing the import (commands/jlcpcb.py loads .env credentials).
+          - python-dotenv
 
   - repo: local
     hooks:

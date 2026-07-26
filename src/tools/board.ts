@@ -364,15 +364,23 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
     "get_board_2d_view",
     [
       "Render a 2D image of the PCB using kicad-cli. Returns PNG, JPG, or SVG.",
-      "Use layers to filter — e.g. [\"F.Cu\",\"B.Cu\",\"Edge.Cuts\"] for copper + outline only.",
+      'Use layers to filter — e.g. ["F.Cu","B.Cu","Edge.Cuts"] for copper + outline only.',
       "Use responseMode to choose delivery:",
       '  "inline" (default) — PNG/JPG rendered as an image visible to Claude; SVG returned as text.',
       '  "file" — image written next to the .kicad_pcb as <board>_2d_view.<ext>; filePath is returned.',
       "Use file mode for large boards to avoid MCP message-size limits.",
     ].join(" "),
     {
-      pcbPath: z.string().optional().describe("Absolute path to the .kicad_pcb file. Falls back to the currently loaded board if omitted."),
-      layers: z.array(z.string()).optional().describe("Layer names to include, e.g. [\"F.Cu\",\"B.Cu\",\"Edge.Cuts\"]. Omit for all layers."),
+      pcbPath: z
+        .string()
+        .optional()
+        .describe(
+          "Absolute path to the .kicad_pcb file. Falls back to the currently loaded board if omitted.",
+        ),
+      layers: z
+        .array(z.string())
+        .optional()
+        .describe('Layer names to include, e.g. ["F.Cu","B.Cu","Edge.Cuts"]. Omit for all layers.'),
       width: z.number().optional().describe("Output image width in pixels (default: 1600)"),
       height: z.number().optional().describe("Output image height in pixels (default: 1200)"),
       format: z.enum(["png", "jpg", "svg"]).optional().describe("Output format (default: png)"),
@@ -405,7 +413,10 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
         if (result.format === "svg") {
           const parts: { type: "text"; text: string }[] = [];
           if (result.message) parts.push({ type: "text" as const, text: result.message });
-          parts.push({ type: "text" as const, text: Buffer.from(result.imageData, "base64").toString("utf-8") });
+          parts.push({
+            type: "text" as const,
+            text: Buffer.from(result.imageData, "base64").toString("utf-8"),
+          });
           return { content: parts };
         }
         // inline png/jpg — return as renderable image

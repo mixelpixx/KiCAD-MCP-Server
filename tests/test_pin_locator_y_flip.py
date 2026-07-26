@@ -216,8 +216,8 @@ def test_asymmetric_multi_pin_symbol_y_flip():
         # *above* the placement centre.
         expected = {
             "1": (100 - 10.16, 100 - 10.16),  # 89.84, 89.84
-            "2": (100 - 10.16, 100 - 5.08),   # 89.84, 94.92
-            "3": (100 - 10.16, 100 + 5.08),   # 89.84, 105.08
+            "2": (100 - 10.16, 100 - 5.08),  # 89.84, 94.92
+            "3": (100 - 10.16, 100 + 5.08),  # 89.84, 105.08
             "4": (100 - 10.16, 100 + 10.16),  # 89.84, 110.16
             "5": (100 + 10.16, 100 - 10.16),  # 110.16, 89.84
             "6": (100 + 10.16, 100 + 10.16),  # 110.16, 110.16
@@ -226,12 +226,12 @@ def test_asymmetric_multi_pin_symbol_y_flip():
         for pin_num, (exp_x, exp_y) in expected.items():
             loc = locator.get_pin_location(sch_path, "U1", pin_num)
             assert loc is not None, f"PinLocator returned None for pin {pin_num}"
-            assert loc[0] == pytest.approx(exp_x), (
-                f"pin {pin_num} X wrong: got {loc[0]}, expected {exp_x}"
-            )
-            assert loc[1] == pytest.approx(exp_y), (
-                f"pin {pin_num} Y wrong: got {loc[1]}, expected {exp_y}"
-            )
+            assert loc[0] == pytest.approx(
+                exp_x
+            ), f"pin {pin_num} X wrong: got {loc[0]}, expected {exp_x}"
+            assert loc[1] == pytest.approx(
+                exp_y
+            ), f"pin {pin_num} Y wrong: got {loc[1]}, expected {exp_y}"
 
         # Cross-check the side-asymmetry directly: top-left (lib y=+10.16) must
         # be ABOVE centre, bottom-left (lib y=-10.16) BELOW centre. Pre-fix

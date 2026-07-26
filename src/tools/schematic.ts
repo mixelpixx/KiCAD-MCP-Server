@@ -58,11 +58,15 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
       angle: z
         .number()
         .optional()
-        .describe("Rotation angle in degrees (KiCad CCW). 0=vertical resistor, 90=horizontal. Defaults to 0."),
+        .describe(
+          "Rotation angle in degrees (KiCad CCW). 0=vertical resistor, 90=horizontal. Defaults to 0.",
+        ),
       mirrorY: z
         .boolean()
         .optional()
-        .describe("Mirror the symbol horizontally (flip left-right). Useful for transistors facing opposite direction."),
+        .describe(
+          "Mirror the symbol horizontally (flip left-right). Useful for transistors facing opposite direction.",
+        ),
     },
     async (args: {
       schematicPath: string;

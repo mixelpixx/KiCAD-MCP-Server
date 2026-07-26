@@ -35,7 +35,7 @@ def _make_empty_manager(project_path) -> SymbolLibraryManager:
     """Return a SymbolLibraryManager that matches the project but has no libraries loaded."""
     manager = SymbolLibraryManager.__new__(SymbolLibraryManager)
     manager.project_path = project_path
-    manager.libraries = {}        # <-- empty: sym-lib-table wasn't there yet
+    manager.libraries = {}  # <-- empty: sym-lib-table wasn't there yet
     manager.symbol_cache = {}
     manager._cache_lock = threading.Lock()
     return manager
@@ -72,9 +72,9 @@ class TestSymbolLibraryEmptyCacheRebuild:
             "Expected use_project to construct a new SymbolLibraryManager "
             "when libraries={}, but it returned early instead."
         )
-        assert cmds.library_manager is not original_manager, (
-            "The manager instance should have been replaced after rebuild."
-        )
+        assert (
+            cmds.library_manager is not original_manager
+        ), "The manager instance should have been replaced after rebuild."
         assert len(cmds.library_manager.libraries) > 0
 
     def test_no_rebuild_when_libraries_already_loaded(self):
@@ -98,9 +98,9 @@ class TestSymbolLibraryEmptyCacheRebuild:
         with patch.object(SymbolLibraryManager, "__init__", fake_init):
             cmds.use_project(Path(project_path))
 
-        assert rebuild_count["n"] == 0, (
-            "Should NOT rebuild when libraries are already loaded for the same project."
-        )
+        assert (
+            rebuild_count["n"] == 0
+        ), "Should NOT rebuild when libraries are already loaded for the same project."
         assert cmds.library_manager is original_manager
 
     def test_rebuild_on_different_project_path(self):
@@ -125,6 +125,6 @@ class TestSymbolLibraryEmptyCacheRebuild:
         with patch.object(SymbolLibraryManager, "__init__", fake_init):
             cmds.use_project(Path(new_path))
 
-        assert rebuild_count["n"] == 1, (
-            "Switching to a different project path must always trigger rebuild."
-        )
+        assert (
+            rebuild_count["n"] == 1
+        ), "Switching to a different project path must always trigger rebuild."

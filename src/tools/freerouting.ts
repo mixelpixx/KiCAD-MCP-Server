@@ -28,9 +28,12 @@ export function registerFreeroutingTools(server: McpServer, callKicadScript: Fun
         .describe(
           "Path to freerouting.jar (default: ~/.kicad-mcp/freerouting.jar or FREEROUTING_JAR env)",
         ),
-      maxPasses: z.number().optional().describe(
-        "Maximum routing passes for single-attempt mode (default: 20). Ignored when `attempts` > 1; use `passSchedule` instead.",
-      ),
+      maxPasses: z
+        .number()
+        .optional()
+        .describe(
+          "Maximum routing passes for single-attempt mode (default: 20). Ignored when `attempts` > 1; use `passSchedule` instead.",
+        ),
       timeout: z.number().optional().describe("Per-attempt timeout in seconds (default: 300)"),
       attempts: z
         .number()

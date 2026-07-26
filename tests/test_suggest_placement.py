@@ -172,11 +172,13 @@ def test_dry_run_does_not_move_parts():
 
 def test_scoped_bounds_limits_movers_and_stays_in_box():
     host = _two_converters_board()
-    res = host.suggest_placement({
-        "refs": ["R1", "C1"],
-        "bounds": {"x1": 13, "y1": 15, "x2": 20, "y2": 25, "unit": "mm"},
-        "iterations": 300,
-    })
+    res = host.suggest_placement(
+        {
+            "refs": ["R1", "C1"],
+            "bounds": {"x1": 13, "y1": 15, "x2": 20, "y2": 25, "unit": "mm"},
+            "iterations": 300,
+        }
+    )
     assert set(res["proposals"]) == {"R1", "C1"}
     for r in ("R1", "C1"):
         x, y, _ = res["proposals"][r]
@@ -193,12 +195,18 @@ def test_cluster_snap_aligns_rows_and_columns():
     def mk(x, y):
         return {"x": x, "y": y, "cox": 0.0, "coy": 0.0, "locked": False}
 
-    parts = [mk(5.0, 10.3), mk(9.8, 9.7), mk(15.1, 10.1),
-             mk(5.2, 20.2), mk(10.1, 19.8), mk(14.9, 20.3)]
+    parts = [
+        mk(5.0, 10.3),
+        mk(9.8, 9.7),
+        mk(15.1, 10.1),
+        mk(5.2, 20.2),
+        mk(10.1, 19.8),
+        mk(14.9, 20.3),
+    ]
     PO._opt_cluster_snap(parts, "y", 1.5)
-    assert len(set(round(p["y"], 3) for p in parts)) == 2   # two row lines
+    assert len(set(round(p["y"], 3) for p in parts)) == 2  # two row lines
     PO._opt_cluster_snap(parts, "x", 1.5)
-    assert len(set(round(p["x"], 3) for p in parts)) == 3   # three column lines
+    assert len(set(round(p["x"], 3) for p in parts)) == 3  # three column lines
 
 
 def test_resolve_outline_unit_conversion_includes_mil():
@@ -207,5 +215,5 @@ def test_resolve_outline_unit_conversion_includes_mil():
     mil = host._opt_resolve_outline({"x1": 0, "y1": 0, "x2": 1000, "y2": 1000, "unit": "mil"})
     inch = host._opt_resolve_outline({"x1": 0, "y1": 0, "x2": 1, "y2": 1, "unit": "inch"})
     assert mm == (0, 0, 10, 10)
-    assert mil == (0, 0, 25.4, 25.4)       # 1000 mil = 25.4 mm
-    assert inch == (0, 0, 25.4, 25.4)      # 1 inch = 25.4 mm
+    assert mil == (0, 0, 25.4, 25.4)  # 1000 mil = 25.4 mm
+    assert inch == (0, 0, 25.4, 25.4)  # 1 inch = 25.4 mm
