@@ -9,6 +9,7 @@ import { spawn, exec, execSync, ChildProcess } from "child_process";
 import { existsSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import { logger } from "./logger.js";
+import { computeCommandTimeout, DEFAULT_COMMAND_TIMEOUT_MS } from "./command-timeout.js";
 
 // Import tool registration functions
 import { registerProjectTools } from "./tools/project.js";
@@ -722,21 +723,9 @@ export class KiCADMcpServer {
         return;
       }
 
-      // Determine timeout based on command type
-      // DRC and export operations need longer timeouts for large boards
-      let commandTimeout = 30000; // Default 30 seconds
-      const longRunningCommands = [
-        "run_drc",
-        "export_gerber",
-        "export_pdf",
-        "export_3d",
-        "sync_schematic_to_board",
-        "list_schematic_nets",
-        "list_schematic_labels",
-        "get_schematic_view",
-      ];
-      if (longRunningCommands.includes(command)) {
-        commandTimeout = 600000; // 10 minutes for long operations
+      // Determine timeout based on command type (see src/command-timeout.ts).
+      const commandTimeout = computeCommandTimeout(command, params);
+      if (commandTimeout !== DEFAULT_COMMAND_TIMEOUT_MS) {
         logger.info(`Using extended timeout (${commandTimeout / 1000}s) for command: ${command}`);
       }
 
