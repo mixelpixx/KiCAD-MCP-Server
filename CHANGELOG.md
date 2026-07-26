@@ -2,6 +2,76 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
+## [2.5.0] - 2026-07-26
+
+A minor bump rather than a patch: **20 new board-lifecycle and geometry tools**
+(#311) take the surface from 124 to 143. The rest is the formatting and
+tooling groundwork that #334 deliberately deferred.
+
+### New Features
+
+- **PCB editing interface tools** (#311): 20 tools covering board lifecycle,
+  graphics editing and geometry queries — `open_board`, `reload_board`,
+  `save_board`, `save_as`, `is_dirty`, `discard_or_reload`,
+  `create_board_from_schematic`; `clear_board_outline`,
+  `replace_board_outline`, `list_graphics`, `delete_graphic`,
+  `update_graphic`, `move_footprint_text`; and `batch_move_components`,
+  `get_component_geometry`, `get_pads`, `get_net_pads`, `get_ratsnest`,
+  `estimate_airwire_lengths`, `check_placement_clearance`.
+
+  All of them respect backend session pinning (#223), which took three
+  rounds to get right and is the reason this landed as carefully as it did.
+  `create_board_from_schematic` re-pins after swapping the board, so
+  `session_board_path` can no longer point at the previous file;
+  `save_board`/`save_as` route through the command dispatcher rather than
+  calling the save handler directly, so the dispatcher stays the single
+  owner of the pinning decision; and `save_as` additionally realigns both
+  the SWIG fallback and the session pin when an IPC save changes the board's
+  identity, dropping the stale board outright if that reload fails rather
+  than retaining it under the new path. `batch_move_components` refuses in
+  an IPC-owned session and points at `move_component`, since the IPC
+  BoardAPI exposes only single-component moves.
+  `tests/test_backend_session_pinning.py` grew to 32 tests covering each of
+  those paths on both backends.
+
+- **Search-tool role distinction** (#338): `search_parts_registry` and
+  `search_jlcpcb_parts` now each say when to prefer the other — a verified
+  existing footprint/symbol/3D bundle versus JLCPCB sourcing data (price,
+  stock, assembly tier). Both were "find me a part" entry points with
+  nothing to disambiguate them.
+
+### Tooling
+
+- **Formatting is normalized repo-wide and enforced** (#339): the deferred
+  half of #334. `pre-commit run --all-files` (black, isort, prettier,
+  flake8, mypy, eslint, whitespace) is now a real gate in CI, which is what
+  `CONTRIBUTING.md` has always claimed while nothing checked it. The
+  normalization itself touched 31 files — almost entirely `tests/` and
+  `src/tools/`, which the old `black --check python/` gate never covered —
+  and was verified formatting-only by AST-comparing every changed Python
+  file against its predecessor: 16 identical, 5 differing only in import
+  order, 0 semantic changes.
+
+  Four latent problems surfaced in the process. The pre-commit mypy hook
+  could not resolve `dotenv` (its isolated venv never listed
+  `python-dotenv`). `npm run lint` ran `black` in **write** mode against
+  whatever `black` was on `PATH` — a global 25.1.0 here, while pre-commit
+  pins 26.3.1 — so "linting" silently rewrote the working tree with a
+  formatter that disagrees with CI; it now checks only, via `python -m`, with
+  `format:py` as the write path and `lint:all` delegating to pre-commit. Two
+  more `|| echo`-swallowed gates in the `code-quality` job were replaced with
+  real ones. And `mixed-line-ending`'s `--fix=lf` had been in permanent
+  conflict with `.gitattributes`' `*.ps1 text eol=crlf` — the hook rewriting
+  to LF, git checking back out as CRLF, forever; invisible on Windows because
+  `core.autocrlf` masks it, and unfixable on Linux. `.gitattributes` now owns
+  line endings for Windows-native scripts.
+
+- **The README's tool count self-corrects** (#338):
+  `tests-ts/readme-counts.test.ts` asserts the headline "N tools across M
+  categories" matches `getRegistryStats()`. The number had already drifted
+  twice. It caught #311 within the hour — `expected 124 to be 143` — which
+  is exactly the point.
+
 ## [2.4.1] - 2026-07-26
 
 Eight merges since v2.4.0. The headline is infrastructural: **CI had never

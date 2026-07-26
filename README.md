@@ -40,6 +40,36 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 https://github.com/mixelpixx/arduino-ide
 
+## What's New in v2.5.0
+
+### 20 new board-lifecycle and geometry tools
+
+- **Lifecycle**: `open_board`, `reload_board`, `save_board`, `save_as`,
+  `is_dirty`, `discard_or_reload`, `create_board_from_schematic`.
+- **Graphics editing**: `clear_board_outline`, `replace_board_outline`,
+  `list_graphics`, `delete_graphic`, `update_graphic`, `move_footprint_text`.
+- **Geometry queries**: `batch_move_components`, `get_component_geometry`,
+  `get_pads`, `get_net_pads`, `get_ratsnest`, `estimate_airwire_lengths`,
+  `check_placement_clearance`.
+
+All of them respect backend session pinning, so a board saved while KiCad's
+GUI owns the session routes to the GUI rather than writing a stale in-memory
+copy — including the awkward case where `save_as` changes the board's
+identity mid-session.
+
+### Formatting is normalized and enforced
+
+- `pre-commit run --all-files` (black, isort, prettier, flake8, mypy, eslint)
+  is now a real CI gate, which is what CONTRIBUTING has always claimed.
+- `npm run lint` used to run `black` in **write** mode against whatever
+  `black` was on `PATH`, silently reformatting your working tree with a
+  version that disagreed with CI. It now checks only; `npm run format:py` is
+  the write path.
+- The README's tool count is pinned to the registry by a test, so it
+  self-corrects instead of drifting.
+
+Full details in the [CHANGELOG](CHANGELOG.md).
+
 ## What's New in v2.4.1
 
 ### Three tools that were registered but had no backend now work
@@ -1435,7 +1465,7 @@ npm run format
 
 ## Project Status
 
-**Current Version:** 2.4.1
+**Current Version:** 2.5.0
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
