@@ -163,7 +163,13 @@ Use this to find components with exact specifications and cost optimization.`,
   // Get JLCPCB part details
   server.tool(
     "get_jlcpcb_part",
-    "Get detailed information about a specific JLCPCB part by LCSC number",
+    `Get detailed information about a specific JLCPCB part by LCSC number.
+
+When JLCPCB Open Platform credentials are configured (JLCPCB_APP_ID / JLCPCB_API_KEY /
+JLCPCB_API_SECRET, e.g. in a project-root .env), this performs a REAL-TIME lookup — live
+stock, tiered pricing, parameters and library type — and falls back to the local snapshot
+database if the API call fails or no credentials are set. The response reports which backend
+answered via "source" ("live-api" vs "local-db").`,
     {
       lcsc_number: z.string().describe("LCSC part number (e.g., 'C25804', 'C2286')"),
     },
@@ -183,6 +189,13 @@ Use this to find components with exact specifications and cost optimization.`,
               result.footprints.map((f: string) => `  - ${f}`).join("\n")
             : "";
 
+        const sourceLine =
+          result.source === "live-api"
+            ? `Source: JLCPCB Open Platform (real-time)\n`
+            : result.source === "local-db"
+              ? `Source: local snapshot database\n`
+              : "";
+
         return {
           content: [
             {
@@ -190,13 +203,14 @@ Use this to find components with exact specifications and cost optimization.`,
               text:
                 `LCSC: ${p.lcsc}\n` +
                 `MFR Part: ${p.mfr_part}\n` +
-                `Manufacturer: ${p.manufacturer}\n` +
+                `Manufacturer: ${p.manufacturer || "—"}\n` +
                 `Category: ${p.category} / ${p.subcategory}\n` +
                 `Package: ${p.package}\n` +
                 `Description: ${p.description}\n` +
                 `Library Type: ${p.library_type} ${p.library_type === "Basic" ? "(Free assembly!)" : ""}\n` +
                 `Stock: ${p.stock}\n` +
                 (p.datasheet ? `Datasheet: ${p.datasheet}\n` : "") +
+                sourceLine +
                 priceTable +
                 footprints,
             },

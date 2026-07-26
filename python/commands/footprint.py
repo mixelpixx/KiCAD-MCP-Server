@@ -17,7 +17,6 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("kicad_interface")
 
-KICAD9_FORMAT_VERSION = "20250114"  # .kicad_sch schematic files
 KICAD9_FOOTPRINT_VERSION = "20241229"  # .kicad_mod footprint files
 
 

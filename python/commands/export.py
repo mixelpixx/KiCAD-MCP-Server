@@ -1,4 +1,4 @@
-﻿"""
+"""
 Export command implementations for KiCAD interface
 """
 

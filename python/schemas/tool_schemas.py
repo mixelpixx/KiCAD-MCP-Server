@@ -1873,6 +1873,66 @@ DESIGN_RULE_TOOLS = [
         "description": "Returns a list of design rule violations from the most recent DRC run.",
         "inputSchema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "assign_net_to_class",
+        "title": "Assign Net to Class",
+        "description": "Assigns an existing net to an existing net class to apply its design rules.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {"type": "string", "description": "Name of the net"},
+                "netClass": {"type": "string", "description": "Name of the net class"},
+            },
+            "required": ["net", "netClass"],
+        },
+    },
+    {
+        "name": "check_clearance",
+        "title": "Check Clearance",
+        "description": "Checks the measured clearance between two PCB items against the board's minimum clearance design rule.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "item1": {
+                    "type": "object",
+                    "description": "First item: {type, id?, reference?}",
+                },
+                "item2": {
+                    "type": "object",
+                    "description": "Second item: {type, id?, reference?}",
+                },
+            },
+            "required": ["item1", "item2"],
+        },
+    },
+    {
+        "name": "set_layer_constraints",
+        "title": "Set Layer Constraints",
+        "description": "Sets per-layer minimum track width, clearance, and via dimensions via a .kicad_dru custom rule.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "layer": {"type": "string", "description": "Layer name (e.g. 'F.Cu')"},
+                "minTrackWidth": {
+                    "type": "number",
+                    "description": "Minimum track width for this layer (mm)",
+                },
+                "minClearance": {
+                    "type": "number",
+                    "description": "Minimum clearance for this layer (mm)",
+                },
+                "minViaDiameter": {
+                    "type": "number",
+                    "description": "Minimum via diameter for this layer (mm)",
+                },
+                "minViaDrill": {
+                    "type": "number",
+                    "description": "Minimum via drill size for this layer (mm)",
+                },
+            },
+            "required": ["layer"],
+        },
+    },
 ]
 
 # =============================================================================
@@ -2773,6 +2833,42 @@ SCHEMATIC_TOOLS = [
                 "hide": {"type": "boolean", "default": False},
             },
             "required": ["libraryPath", "symbolName", "propertyName", "propertyValue"],
+        },
+    },
+    {
+        "name": "replace_instance_lib_ids",
+        "title": "Replace Instance lib_ids (Library Migration)",
+        "description": (
+            "Replace lib_id references in schematic symbol instances per an explicit "
+            "old-to-new mapping — the mechanical layer of a library migration (e.g. "
+            "eagle_import symbols to curated library symbols). Mirror-variant "
+            "suffixes (__m0/__m90/__m180/__m270) get automatic angle correction; "
+            "each needs its own mapping entry. Only instances are rewritten; the "
+            "lib_symbols section is preserved (use update_symbol_from_library to "
+            "refresh definitions afterwards)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch file",
+                },
+                "mapping": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                    "description": (
+                        "Map of old full lib_id to new full lib_id, e.g. "
+                        '{"eagle_import:C_100n": "Device:C"}. Values are used verbatim.'
+                    ),
+                },
+                "sourceLibrary": {
+                    "type": "string",
+                    "description": "Library prefix whose instances are candidates",
+                    "default": "eagle_import",
+                },
+            },
+            "required": ["schematicPath", "mapping"],
         },
     },
 ]

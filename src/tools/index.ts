@@ -17,3 +17,4 @@ export { registerDatasheetTools } from "./datasheet.js";
 export { registerFootprintTools } from "./footprint.js";
 export { registerSymbolCreatorTools } from "./symbol-creator.js";
 export { registerFreeroutingTools } from "./freerouting.js";
+export { registerPartsRegistryTools } from "./parts-registry.js";

@@ -30,10 +30,23 @@ _wd_mod = importlib.util.module_from_spec(_wd_spec)
 # We stub only the submodule, not the parent package, so that
 # kicad_interface can still import commands.board etc. from disk.
 _pin_locator_mock = MagicMock()
+_had_real_pin_locator = "commands.pin_locator" in sys.modules
 sys.modules.setdefault("commands.pin_locator", _pin_locator_mock)
 
 _wd_spec.loader.exec_module(_wd_mod)
 WireDragger = _wd_mod.WireDragger
+
+
+def teardown_module(module: object) -> None:
+    """Undo the module-level ``commands.pin_locator`` stub above.
+
+    Without this, ``setdefault`` leaves the throwaway mock installed for the
+    rest of the pytest process: every later-collected file that imports the
+    real ``commands.pin_locator`` (e.g. via ``WireDragger.get_pin_defs``) gets
+    this mock instead, silently returning empty pin data (#287).
+    """
+    if not _had_real_pin_locator and sys.modules.get("commands.pin_locator") is _pin_locator_mock:
+        del sys.modules["commands.pin_locator"]
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +219,7 @@ def test_rotate_handler_no_crash(tmp_path):
         "annotations",
     )
     _saved_modules = {n: sys.modules.get(n) for n in _stub_modnames}
+    _modules_before = set(sys.modules)
     try:
         for modname in _stub_modnames:
             sys.modules[modname] = MagicMock()
@@ -230,6 +244,22 @@ def test_rotate_handler_no_crash(tmp_path):
                 sys.modules.pop(modname, None)
             else:
                 sys.modules[modname] = mod
+
+        # kicad_interface.py eagerly imports ~20 commands.* submodules, several
+        # of which do `from skip import Schematic` / `import pcbnew` at their
+        # own module level. Any of those imported here for the first time in
+        # the whole session captured a reference to *this test's* throwaway
+        # mocks — restoring sys.modules["skip"]/["pcbnew"] above doesn't fix
+        # that, since the submodule already bound its own name to the mock at
+        # import time. Evict any such newly-added commands.* submodule so a
+        # later, unstubbed import re-executes it against the real/conftest
+        # modules instead of silently keeping the stale mock reference (#287).
+        # Scoped to "commands." specifically: third-party/stdlib modules
+        # pulled in as a side effect (e.g. PIL's C extension) are not
+        # safely re-importable and must be left alone.
+        for modname in set(sys.modules) - _modules_before:
+            if modname.startswith("commands."):
+                sys.modules.pop(modname, None)
 
     # Write a minimal schematic file
     sch_path = str(tmp_path / "test.kicad_sch")

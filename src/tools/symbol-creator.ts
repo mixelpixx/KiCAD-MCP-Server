@@ -234,4 +234,65 @@ export function registerSymbolCreatorTools(server: McpServer, callKicadScript: F
       return { content: [{ type: "text", text: r.message }] };
     },
   );
+
+  // ── import_symbol ─────────────────────────────────────────────────────── //
+  server.tool(
+    "import_symbol",
+    "Copy a symbol from one .kicad_sym library into another, with optional rename and overwrite. " +
+      "The target library is created if missing. A derived symbol (one using (extends ...)) needs " +
+      "its parent imported into the target first.",
+    {
+      sourceLibraryPath: z.string().describe("Path to the source .kicad_sym file"),
+      symbolName: z.string().describe("Symbol to import"),
+      targetLibraryPath: z.string().describe("Path to the target .kicad_sym (created if missing)"),
+      newName: z.string().optional().describe("Rename the symbol on import"),
+      overwrite: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Overwrite if the symbol already exists in the target"),
+    },
+    async (args: any) => {
+      const result = await callKicadScript("import_symbol", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
+  // ── export_symbol ─────────────────────────────────────────────────────── //
+  server.tool(
+    "export_symbol",
+    "Extract a single symbol from a .kicad_sym library into a standalone .kicad_sym file.",
+    {
+      libraryPath: z.string().describe("Path to the source .kicad_sym file"),
+      symbolName: z.string().describe("Symbol to export"),
+      outputPath: z.string().describe("Path for the output .kicad_sym file"),
+    },
+    async (args: any) => {
+      const result = await callKicadScript("export_symbol", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
+  // ── rename_symbol ─────────────────────────────────────────────────────── //
+  server.tool(
+    "rename_symbol",
+    "Rename a symbol in a .kicad_sym library, including its sub-symbol shards (name_0_1, ...) and " +
+      "any (extends ...) references from derived symbols in the same library. Note: schematics that " +
+      "already place the old lib_id are NOT updated — use replace_instance_lib_ids for that.",
+    {
+      libraryPath: z.string().describe("Path to the .kicad_sym file"),
+      oldName: z.string().describe("Current symbol name"),
+      newName: z.string().describe("New symbol name"),
+    },
+    async (args: any) => {
+      const result = await callKicadScript("rename_symbol", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
 }

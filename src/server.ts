@@ -9,6 +9,7 @@ import { spawn, exec, execSync, ChildProcess } from "child_process";
 import { existsSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import { logger } from "./logger.js";
+import { computeCommandTimeout, DEFAULT_COMMAND_TIMEOUT_MS } from "./command-timeout.js";
 
 // Import tool registration functions
 import { registerProjectTools } from "./tools/project.js";
@@ -24,6 +25,7 @@ import { registerSchematicHierarchyTools } from "./tools/schematic-hierarchy.js"
 import { registerSchematicLayoutTools } from "./tools/schematic-layout.js";
 import { registerSchematicBatchTools } from "./tools/schematic-batch.js";
 import { registerJLCPCBApiTools } from "./tools/jlcpcb-api.js";
+import { registerPartsRegistryTools } from "./tools/parts-registry.js";
 import { registerDatasheetTools } from "./tools/datasheet.js";
 import { registerFootprintTools } from "./tools/footprint.js";
 import { registerSymbolCreatorTools } from "./tools/symbol-creator.js";
@@ -264,7 +266,7 @@ export class KiCADMcpServer {
     // Initialize the MCP server
     this.server = new McpServer({
       name: "kicad-mcp-server",
-      version: "1.0.0",
+      version: "2.4.0",
       description: "MCP server for KiCAD PCB design operations",
     });
     // Create the ready promise (resolved when Python sends {"type":"ready"})
@@ -304,6 +306,7 @@ export class KiCADMcpServer {
     registerSchematicLayoutTools(this.server, this.callKicadScript.bind(this));
     registerSchematicBatchTools(this.server, this.callKicadScript.bind(this));
     registerJLCPCBApiTools(this.server, this.callKicadScript.bind(this));
+    registerPartsRegistryTools(this.server);
     registerDatasheetTools(this.server, this.callKicadScript.bind(this));
     registerFootprintTools(this.server, this.callKicadScript.bind(this));
     registerSymbolCreatorTools(this.server, this.callKicadScript.bind(this));
@@ -602,7 +605,6 @@ export class KiCADMcpServer {
       await this.runWarmup(120_000);
       logger.info("Warm-up complete — pcbnew/wxApp initialised");
 
-
       // Write a ready message to stderr (for debugging)
       process.stderr.write("KiCAD MCP SERVER READY\n");
 
@@ -636,14 +638,14 @@ export class KiCADMcpServer {
   private async waitForReady(timeoutMs: number): Promise<void> {
     return new Promise((_resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error(
-          `Python process did not send READY within ${timeoutMs / 1000} s`
-        ));
+        reject(new Error(`Python process did not send READY within ${timeoutMs / 1000} s`));
       }, timeoutMs);
-      this.readyPromise.then(() => {
-        clearTimeout(timeout);
-        _resolve();
-      }).catch(reject);
+      this.readyPromise
+        .then(() => {
+          clearTimeout(timeout);
+          _resolve();
+        })
+        .catch(reject);
     });
   }
 
@@ -670,7 +672,7 @@ export class KiCADMcpServer {
       const timeoutHandle = setTimeout(() => {
         logger.warn(
           `Warm-up timed out after ${timeoutMs / 1000} s — ` +
-          "continuing without full initialisation"
+            "continuing without full initialisation",
         );
         this.responseBuffer = "";
         this.processingRequest = false;
@@ -687,13 +689,9 @@ export class KiCADMcpServer {
           this.processingRequest = false;
           this.currentRequestHandler = null;
           if (result?.success) {
-            logger.info(
-              `Warm-up succeeded: pcbnew ${result.version} (${result.elapsed_s}s)`
-            );
+            logger.info(`Warm-up succeeded: pcbnew ${result.version} (${result.elapsed_s}s)`);
           } else {
-            logger.warn(
-              `Warm-up returned failure: ${result?.message || "unknown"} — continuing`
-            );
+            logger.warn(`Warm-up returned failure: ${result?.message || "unknown"} — continuing`);
           }
           resolve();
         },
@@ -727,21 +725,9 @@ export class KiCADMcpServer {
         return;
       }
 
-      // Determine timeout based on command type
-      // DRC and export operations need longer timeouts for large boards
-      let commandTimeout = 30000; // Default 30 seconds
-      const longRunningCommands = [
-        "run_drc",
-        "export_gerber",
-        "export_pdf",
-        "export_3d",
-        "sync_schematic_to_board",
-        "list_schematic_nets",
-        "list_schematic_labels",
-        "get_schematic_view",
-      ];
-      if (longRunningCommands.includes(command)) {
-        commandTimeout = 600000; // 10 minutes for long operations
+      // Determine timeout based on command type (see src/command-timeout.ts).
+      const commandTimeout = computeCommandTimeout(command, params);
+      if (commandTimeout !== DEFAULT_COMMAND_TIMEOUT_MS) {
         logger.info(`Using extended timeout (${commandTimeout / 1000}s) for command: ${command}`);
       }
 

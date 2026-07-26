@@ -125,7 +125,7 @@ Design rule checking and electrical validation.
 - `set_design_rules` - Configure design rules
 - `get_design_rules` - Get current rules
 - `run_drc` - Run design rule check
-- `add_net_class` - Add net class
+- `create_netclass` - Create a net class
 - `assign_net_to_class` - Assign net to class
 - `set_layer_constraints` - Set layer constraints
 - `check_clearance` - Check clearance between items

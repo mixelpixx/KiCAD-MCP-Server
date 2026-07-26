@@ -43,6 +43,23 @@ _WIRE_SCH = """\
 """
 
 
+_DUP_LABEL_SCH = """\
+(kicad_sch (version 20250114) (generator "test")
+  (uuid aaaaaaaa-0000-0000-0000-000000000010)
+  (paper "A4")
+  (label "X" (at 10 10 0)
+    (effects (font (size 1.27 1.27)) (justify left bottom))
+    (uuid cccccccc-0000-0000-0000-000000000011)
+  )
+  (label "X" (at 50 50 0)
+    (effects (font (size 1.27 1.27)) (justify left bottom))
+    (uuid cccccccc-0000-0000-0000-000000000012)
+  )
+  (sheet_instances (path "/" (page "1")))
+)
+"""
+
+
 def _write_temp_sch(content: str) -> Path:
     """Write *content* to a temp file and return its Path."""
     tmp = tempfile.NamedTemporaryFile(suffix=".kicad_sch", delete=False, mode="w", encoding="utf-8")
@@ -112,6 +129,40 @@ class TestDeleteLabelUnit:
         shutil.copy(EMPTY_SCH, sch)
         result = self.WireManager.delete_label(sch, "VCC", position=[10.0, 20.0], tolerance=0.5)
         assert result is False
+
+    def test_ambiguous_name_without_position_refuses(self, tmp_path: Any) -> None:
+        """Two labels share a name: a bare-name delete must refuse, not pick one."""
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_DUP_LABEL_SCH, encoding="utf-8")
+
+        with pytest.raises(ValueError, match=r"2 times"):
+            self.WireManager.delete_label(sch, "X")
+
+        # nothing was deleted
+        data = sexpdata.loads(sch.read_text(encoding="utf-8"))
+        labels = [
+            item for item in data if isinstance(item, list) and item and str(item[0]) == "label"
+        ]
+        assert len(labels) == 2
+
+    def test_ambiguous_name_with_position_deletes_only_match(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_DUP_LABEL_SCH, encoding="utf-8")
+
+        assert self.WireManager.delete_label(sch, "X", position=[50.0, 50.0]) is True
+
+        data = sexpdata.loads(sch.read_text(encoding="utf-8"))
+        remaining = [
+            item for item in data if isinstance(item, list) and item and str(item[0]) == "label"
+        ]
+        assert len(remaining) == 1
+        at = next(pp for pp in remaining[0] if isinstance(pp, list) and str(pp[0]) == "at")
+        assert (float(at[1]), float(at[2])) == (10.0, 10.0)
+
+    def test_unique_name_without_position_still_deletes(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_WIRE_SCH, encoding="utf-8")
+        assert self.WireManager.delete_label(sch, "VCC") is True
 
 
 # ---------------------------------------------------------------------------
