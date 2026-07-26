@@ -87,10 +87,15 @@ class TestWindowsInstallDirs:
         monkeypatch.setattr(sz.platform, "system", lambda: "Windows")
         monkeypatch.setenv("ProgramW6432", r"C:\Program Files")
         monkeypatch.setenv("ProgramFiles", r"C:\Program Files")
-        candidates = [str(c) for c in sz._candidate_paths()]
-        assert any(c.endswith(r"7-Zip\7z.exe") for c in candidates)
+        # Compare path components, not a string with a hardcoded separator:
+        # under a faked Windows platform the Path objects are still built by
+        # the host's flavour, so on Linux CI these render with "/" and an
+        # endswith(r"7-Zip\7z.exe") check fails for a reason that has nothing
+        # to do with the resolver.
+        tails = [Path(c).parts[-2:] for c in sz._candidate_paths()]
+        assert ("7-Zip", "7z.exe") in tails
         # Reduced CLIs are offered as fallbacks too.
-        assert any(c.endswith(r"7-Zip\7za.exe") for c in candidates)
+        assert ("7-Zip", "7za.exe") in tails
 
 
 # --------------------------------------------------------------------------- #
