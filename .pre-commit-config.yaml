@@ -29,8 +29,14 @@ repos:
     hooks:
       - id: prettier
         name: prettier
-        entry: npx prettier --write --ignore-unknown
+        entry: prettier --write --ignore-unknown
         language: node
+        # Pinned here rather than resolved via `npx` from node_modules: a
+        # `language: node` local hook must declare its own dependencies (newer
+        # pre-commit asserts this outright), and pinning means the hook formats
+        # identically whether or not `npm ci` has run. Keep in step with the
+        # prettier version in package.json devDependencies.
+        additional_dependencies: ["prettier@3.8.1"]
         types_or: [javascript, ts, json, yaml, markdown]
         exclude: ^(dist/|package-lock\.json|\.venv/|python/)
 
@@ -62,6 +68,13 @@ repos:
       - id: eslint
         name: eslint
         entry: npx eslint --fix
-        language: node
+        # `language: system` rather than `node`: eslint.config.js imports
+        # @eslint/js and typescript-eslint, so eslint has to resolve modules
+        # from the repo's own node_modules. An isolated `language: node` env
+        # would need those pinned here too and would still resolve the config's
+        # imports against the wrong tree. This requires `npm ci` to have run —
+        # true for local dev, and the code-quality CI job installs before
+        # invoking pre-commit.
+        language: system
         types: [ts]
         files: ^src/
