@@ -281,9 +281,7 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
       gndNet: z
         .string()
         .optional()
-        .describe(
-          "Name of the ground net (default: auto-detect GND / GROUND / VSS / /GND).",
-        ),
+        .describe("Name of the ground net (default: auto-detect GND / GROUND / VSS / /GND)."),
       strategies: z
         .array(z.enum(["grid", "around_refs", "in_zones"]))
         .optional()
@@ -304,9 +302,7 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
       spacing: z
         .number()
         .optional()
-        .describe(
-          "Grid spacing in mm for `grid` and `around_refs` strategies (default 5.0).",
-        ),
+        .describe("Grid spacing in mm for `grid` and `around_refs` strategies (default 5.0)."),
       densifyRefs: z
         .array(z.string())
         .optional()
@@ -399,13 +395,21 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   // Create netclass tool
   server.tool(
     "create_netclass",
-    "Create a new net class with custom design rules.",
+    "Create a new net class with custom design rules, optionally assigning nets to it immediately.",
     {
       name: z.string().describe("Net class name"),
       traceWidth: z.number().optional().describe("Default trace width in mm"),
       clearance: z.number().optional().describe("Clearance in mm"),
       viaDiameter: z.number().optional().describe("Via diameter in mm"),
       viaDrill: z.number().optional().describe("Via drill size in mm"),
+      uviaDiameter: z.number().optional().describe("Micro via diameter in mm"),
+      uviaDrill: z.number().optional().describe("Micro via drill size in mm"),
+      diffPairWidth: z.number().optional().describe("Differential pair trace width in mm"),
+      diffPairGap: z.number().optional().describe("Differential pair gap in mm"),
+      nets: z
+        .array(z.string())
+        .optional()
+        .describe("Net names to assign to this class immediately"),
     },
     async (args: any) => {
       const result = await callKicadScript("create_netclass", args);

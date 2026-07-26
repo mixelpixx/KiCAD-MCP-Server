@@ -1656,6 +1656,38 @@ DESIGN_RULE_TOOLS = [
         "description": "Returns a list of design rule violations from the most recent DRC run.",
         "inputSchema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "assign_net_to_class",
+        "title": "Assign Net to Class",
+        "description": "Assigns an existing net to an existing net class to apply its design rules.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {"type": "string", "description": "Name of the net"},
+                "netClass": {"type": "string", "description": "Name of the net class"},
+            },
+            "required": ["net", "netClass"],
+        },
+    },
+    {
+        "name": "check_clearance",
+        "title": "Check Clearance",
+        "description": "Checks the measured clearance between two PCB items against the board's minimum clearance design rule.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "item1": {
+                    "type": "object",
+                    "description": "First item: {type, id?, reference?}",
+                },
+                "item2": {
+                    "type": "object",
+                    "description": "Second item: {type, id?, reference?}",
+                },
+            },
+            "required": ["item1", "item2"],
+        },
+    },
 ]
 
 # =============================================================================

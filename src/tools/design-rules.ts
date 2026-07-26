@@ -90,63 +90,6 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
   );
 
   // ------------------------------------------------------
-  // Add Net Class Tool
-  // ------------------------------------------------------
-  server.tool(
-    "add_net_class",
-    "Create a named net class with specific design rules (clearance, track width, via size) and assign nets to it.",
-    {
-      name: z.string().describe("Name of the net class"),
-      description: z.string().optional().describe("Optional description of the net class"),
-      clearance: z.number().describe("Clearance for this net class (mm)"),
-      trackWidth: z.number().describe("Track width for this net class (mm)"),
-      viaDiameter: z.number().describe("Via diameter for this net class (mm)"),
-      viaDrill: z.number().describe("Via drill size for this net class (mm)"),
-      uvia_diameter: z.number().optional().describe("Micro via diameter for this net class (mm)"),
-      uvia_drill: z.number().optional().describe("Micro via drill size for this net class (mm)"),
-      diff_pair_width: z
-        .number()
-        .optional()
-        .describe("Differential pair width for this net class (mm)"),
-      diff_pair_gap: z
-        .number()
-        .optional()
-        .describe("Differential pair gap for this net class (mm)"),
-      nets: z.array(z.string()).optional().describe("Array of net names to assign to this class"),
-    },
-    async ({
-      name,
-      description,
-      clearance,
-      trackWidth,
-      viaDiameter,
-      viaDrill,
-      uvia_diameter,
-      uvia_drill,
-      diff_pair_width,
-      diff_pair_gap,
-      nets,
-    }) => {
-      logger.debug(`Adding net class: ${name}`);
-      const result = await callKicadScript("add_net_class", {
-        name,
-        description,
-        clearance,
-        trackWidth,
-        viaDiameter,
-        viaDrill,
-        uvia_diameter,
-        uvia_drill,
-        diff_pair_width,
-        diff_pair_gap,
-        nets,
-      });
-
-      return formatKicadResult(result);
-    },
-  );
-
-  // ------------------------------------------------------
   // Assign Net to Class Tool
   // ------------------------------------------------------
   server.tool(

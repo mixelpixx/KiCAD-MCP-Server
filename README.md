@@ -487,7 +487,7 @@ See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for details a
 - `set_design_rules` / `get_design_rules` - Configure and inspect rules
 - `run_drc` - Execute design rule check
 - `get_drc_violations` - Get violation list by severity
-- `add_net_class` / `assign_net_to_class` - Net class management
+- `create_netclass` / `assign_net_to_class` - Net class management
 - `set_layer_constraints` / `check_clearance` - Layer and clearance rules
 
 ### Export (8 tools)

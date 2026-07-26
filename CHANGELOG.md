@@ -2,6 +2,74 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
+## [Unreleased]
+
+### Tooling
+
+- **CI actually gates the Python suite now** (#334): the `python-tests` job had
+  been a no-op in four independent ways — every gate ended in
+  `|| echo "... not configured yet"`, `pytest python/` pointed at the source
+  tree so it collected 7 tests instead of the ~1477 in `tests/`, no JRE was
+  installed for the freerouting suites, and GitHub Actions was disabled
+  repo-wide so the workflow never ran at all (32 failed runs, 0 successes,
+  switched off in January). Format and type checks now run once on a pinned
+  interpreter rather than once per matrix entry, because `pip install black`
+  resolves a different build per Python version (black >=25.12 requires
+  >=3.10, so the 3.9 runner silently got 25.1.0 and disagreed on three files).
+
+### Bug Fixes
+
+- **`assign_net_to_class` and `check_clearance` now actually work — both were
+  registered MCP tools with no backend** (#315): found while auditing
+  DRC/design-rule documentation coverage. Both had a full Zod schema in
+  `design-rules.ts` and were listed in the router's `drc` category, but neither
+  had an entry in `kicad_interface.py`'s command dispatch table, so every call
+  silently returned `{"success": false, "message": "Unknown command: ..."}`.
+  `assign_net_to_class` now assigns an existing net to an existing net class,
+  mirroring `create_netclass`'s dual-write shape (best-effort in-memory
+  `NETINFO_ITEM.SetClass` plus a durable write to the project's
+  `net_settings.netclass_assignments`, since KiCad 7+ keeps net-class
+  membership in `.kicad_pro`, not the board — same reasoning as #302, and the
+  same key `utils/project_netclasses.py` already reads back for DSN export).
+  `check_clearance` resolves two items by UUID (or reference, for components)
+  and measures the gap between their bounding boxes against the board's
+  minimum clearance — the same AABB approximation `check_courtyard_overlaps`
+  already uses, not a substitute for a full `run_drc`. Also removed the dead
+  duplicate `add_net_class` tool (it overlapped with the already-working
+  `create_netclass`, which had more capability than its own TS schema exposed —
+  `create_netclass` now also accepts `uviaDiameter`, `uviaDrill`,
+  `diffPairWidth`, `diffPairGap`, and `nets`).
+
+- **IPC `create_zone` assigned a read-only property** (found by #334 on its
+  first real run): kipy's `Zone.fill_mode` is a read-only property — its getter
+  reads `_proto.copper_settings.fill_mode` and there is no setter — so
+  `zone.fill_mode = ...` raised `AttributeError` and every `create_zone` call
+  over the IPC backend failed. It stayed hidden because kipy is absent from a
+  bare dev environment, where mypy types `Zone` as `Any`; CI installs
+  `requirements.txt`, sees the real type, and flags it. Now writes through the
+  proto, the same way the zone outline already did.
+
+- **`autoroute` no longer times out at 30 s** (#251): `autoroute` was missing
+  from the Node bridge's long-running command list, so the call was abandoned
+  after the 30 s default while the Python side was still working through its
+  own 300 s budget — on any board past ~20 nets the tool reported failure
+  against a `.ses` that existed and was valid. Its timeout is now derived from
+  the caller's own parameters (`attempts × timeout` plus overhead, floored at
+  the blanket allowance) rather than a fixed ceiling, since `timeout` is
+  per-attempt and best-of-N multiplies it. The policy moved to
+  `src/command-timeout.ts` as a pure function so it is unit-testable.
+
+- **`get_board_2d_view` always passes `--layers`** (#235): the flag was omitted
+  entirely when the caller specified no layers, and KiCad 9+ then refuses the
+  export — verified against real KiCad 10, which prints "At least one layer
+  must be specified" and writes no file, so the tool silently produced nothing.
+  Defaults to copper + both silkscreens + `Edge.Cuts`. (Cherry-picked from
+  #277, authored by Stefan Gordon.)
+
+- **Two Windows-only test assertions made genuinely cross-platform**: a
+  `normcase` case-folding assumption and a hardcoded `\` path separator, both
+  of which could never pass on Linux runners.
+
 ## [2.4.0] - 2026-07-22
 
 Eighteen merges since v2.3.1. Four new tool families land — symbol library
@@ -116,6 +184,7 @@ the stale-format leftovers from the #221 scaffolding work.
 
 ### Bug Fixes
 
+<<<<<<< HEAD
 - **Eagle import writes KiCad 10 schematic headers** (#330, closes #321): the
   Eagle importer still stamped the KiCad 9 token `(version 20250114)` on every
   `.kicad_sch` it generated — the same stale token #221 removed from the
