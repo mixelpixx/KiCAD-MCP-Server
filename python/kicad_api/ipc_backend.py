@@ -1431,11 +1431,13 @@ class IPCBoardAPI(BoardAPI):
             if name:
                 zone.name = name
 
-            # Set fill mode
-            if fill_mode == "hatched":
-                zone.fill_mode = ZoneFillMode.ZFM_HATCHED
-            else:
-                zone.fill_mode = ZoneFillMode.ZFM_SOLID
+            # Set fill mode. kipy's Zone.fill_mode is a read-only property
+            # (its getter reads _proto.copper_settings.fill_mode and there is
+            # no setter), so assigning to it raises AttributeError at runtime.
+            # Write through the proto, the same way the outline is set below.
+            zone._proto.copper_settings.fill_mode = (
+                ZoneFillMode.ZFM_HATCHED if fill_mode == "hatched" else ZoneFillMode.ZFM_SOLID
+            )
 
             # Create outline polyline
             outline = PolyLine()
