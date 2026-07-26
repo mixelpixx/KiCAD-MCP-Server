@@ -47,6 +47,37 @@ export function registerProjectTools(server: McpServer, callKicadScript: Functio
     },
   );
 
+  server.tool(
+    "open_board",
+    "Open a specific .kicad_pcb board file and refresh the MCP in-memory board state.",
+    {
+      boardPath: z.string().describe("Path to the .kicad_pcb file to open"),
+    },
+    async (args: { boardPath: string }) => {
+      const result = await callKicadScript("open_board", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
+  server.tool(
+    "reload_board",
+    "Reload the current or specified .kicad_pcb from disk, discarding stale in-memory board state.",
+    {
+      boardPath: z
+        .string()
+        .optional()
+        .describe("Optional .kicad_pcb path; defaults to current board"),
+    },
+    async (args: { boardPath?: string }) => {
+      const result = await callKicadScript("reload_board", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
   // Close project tool
   server.tool(
     "close_project",
@@ -58,8 +89,13 @@ export function registerProjectTools(server: McpServer, callKicadScript: Functio
         .describe(
           "Save the board to disk before closing (default true). If false and there are unsaved changes, the close proceeds but the response warns they were discarded.",
         ),
+      forceExternalChanges: z
+        .boolean()
+        .optional()
+        .describe("Save despite external changes to the loaded SWIG board file"),
+      force: z.boolean().optional().describe("Backward-compatible alias for forceExternalChanges"),
     },
-    async (args: { save?: boolean }) => {
+    async (args: { save?: boolean; force?: boolean; forceExternalChanges?: boolean }) => {
       const result = await callKicadScript("close_project", args);
       return {
         content: [
@@ -85,8 +121,21 @@ export function registerProjectTools(server: McpServer, callKicadScript: Functio
         .describe(
           "Overwrite the loaded board file even if its on-disk contents changed externally",
         ),
+      forceExternalChanges: z
+        .boolean()
+        .optional()
+        .describe("Explicit alias for force; takes precedence when both are provided"),
+      overwrite: z
+        .boolean()
+        .optional()
+        .describe("Replace an existing destination when path points to a different file"),
     },
-    async (args: { path?: string; force?: boolean }) => {
+    async (args: {
+      path?: string;
+      force?: boolean;
+      forceExternalChanges?: boolean;
+      overwrite?: boolean;
+    }) => {
       const result = await callKicadScript("save_project", args);
       return {
         content: [
@@ -95,6 +144,91 @@ export function registerProjectTools(server: McpServer, callKicadScript: Functio
             text: JSON.stringify(result, null, 2),
           },
         ],
+      };
+    },
+  );
+
+  server.tool(
+    "save_board",
+    "Save the current PCB board. Refuses to overwrite external disk edits unless force=true.",
+    {
+      boardPath: z.string().optional().describe("Optional destination .kicad_pcb path"),
+      force: z
+        .boolean()
+        .optional()
+        .describe("Overwrite even if the board changed externally on disk"),
+      forceExternalChanges: z.boolean().optional().describe("Explicit alias for force"),
+      overwrite: z
+        .boolean()
+        .optional()
+        .describe("Replace boardPath if it already exists and differs from the current board"),
+    },
+    async (args: {
+      boardPath?: string;
+      force?: boolean;
+      forceExternalChanges?: boolean;
+      overwrite?: boolean;
+    }) => {
+      const result = await callKicadScript("save_board", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
+  server.tool(
+    "save_as",
+    "Save the current PCB board to a new .kicad_pcb path.",
+    {
+      boardPath: z.string().describe("Destination .kicad_pcb path"),
+      overwrite: z.boolean().optional().describe("Replace the destination if it already exists"),
+      force: z
+        .boolean()
+        .optional()
+        .describe("Allow saving over external changes to the loaded file"),
+      forceExternalChanges: z
+        .boolean()
+        .optional()
+        .describe("Explicit alias for force; takes precedence when both are provided"),
+    },
+    async (args: {
+      boardPath: string;
+      overwrite?: boolean;
+      force?: boolean;
+      forceExternalChanges?: boolean;
+    }) => {
+      const result = await callKicadScript("save_as", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
+  server.tool(
+    "is_dirty",
+    "Return whether the MCP knows the loaded board has unsaved memory changes or external disk changes.",
+    {},
+    async () => {
+      const result = await callKicadScript("is_dirty", {});
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
+  server.tool(
+    "discard_or_reload",
+    "Discard the current in-memory PCB state and reload the board from disk.",
+    {
+      boardPath: z
+        .string()
+        .optional()
+        .describe("Optional .kicad_pcb path; defaults to current board"),
+    },
+    async (args: { boardPath?: string }) => {
+      const result = await callKicadScript("discard_or_reload", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
       };
     },
   );

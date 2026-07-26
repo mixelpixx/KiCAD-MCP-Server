@@ -68,12 +68,17 @@ def _make_interface(board: Any, project_commands: Any) -> Any:
         setattr(iface, name, types.SimpleNamespace(board=board))
     # Per-project session state populated by a real open/create.
     iface.ipc_board_api = object()
-    iface.session_backend = "swig"
-    iface.session_board_path = "/proj/board.kicad_pcb"
+    iface.session_backend = "swig" if board is not None else None
+    iface.session_board_path = "/proj/board.kicad_pcb" if board is not None else None
     iface._board_disk_signature = (123, "abc")
     iface._last_auto_save_status = None
     iface.project_filename = "/proj/board.kicad_pro"
     iface._current_project_path = Path("/proj")
+    iface.handle_command = lambda command, params: {
+        **project_commands.save_project(params),
+        "_backend": "swig",
+        "_realtime": False,
+    }
     return iface
 
 
