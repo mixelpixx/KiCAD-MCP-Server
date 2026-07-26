@@ -104,7 +104,7 @@ class SWIGBackend(KiCADBackend):
             logger.error(f"Failed to open project: {e}")
             raise
 
-    def save_project(self, path: Optional[Path] = None) -> Dict[str, Any]:
+    def save_project(self, path: Optional[Path] = None, overwrite: bool = False) -> Dict[str, Any]:
         """Save project using existing SWIG implementation"""
         if not self.is_connected():
             raise ConnectionError("Not connected")
@@ -115,6 +115,7 @@ class SWIGBackend(KiCADBackend):
             params: Dict[str, Any] = {}
             if path:
                 params["filename"] = str(path)
+                params["force"] = overwrite
             result = ProjectCommands().save_project(params)
             return result
         except Exception as e:

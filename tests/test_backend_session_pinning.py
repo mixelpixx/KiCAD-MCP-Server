@@ -52,6 +52,7 @@ class _FakeIPCBackend:
         self.open_board_path = open_board_path
         self.save_calls = 0
         self.save_as_paths = []
+        self.save_as_overwrites = []
 
     def connect(self):
         self.connected = True
@@ -69,9 +70,10 @@ class _FakeIPCBackend:
     def get_version(self):
         return "10.0-test"
 
-    def save_project(self, path=None):
+    def save_project(self, path=None, overwrite=False):
         if path is not None:
             self.save_as_paths.append(str(path))
+            self.save_as_overwrites.append(overwrite)
             self.open_board_path = str(path)
         else:
             self.save_calls += 1
@@ -357,10 +359,70 @@ class TestNewBoardLifecycleRouting:
         assert result["success"] is True
         assert result["_backend"] == "ipc"
         assert backend.save_as_paths == [str(new_path.resolve())]
+        assert backend.save_as_overwrites == [True]
         assert iface.session_board_path == iface._normalize_board_path(new_path)
         assert iface.session_backend == "ipc"
         assert iface.board.GetFileName() == str(new_path.resolve())
         assert holder.get("swig_saves") is None
+
+    def test_save_as_existing_path_respects_force_in_ipc_session(self, tmp_path, monkeypatch):
+        board_path = tmp_path / "proj" / "proj.kicad_pcb"
+        existing_path = tmp_path / "copy" / "copy.kicad_pcb"
+        existing_path.parent.mkdir(parents=True)
+        existing_path.write_text("(existing-board)")
+        iface, backend, _, _, _ = _loaded_iface(
+            tmp_path, gui_board_path=board_path, monkeypatch=monkeypatch
+        )
+        iface.command_routes["save_as"] = iface._handle_save_as
+        iface._safe_load_board = lambda path: _FakeBoard(path)
+
+        result = iface.handle_command("save_as", {"boardPath": str(existing_path)})
+
+        assert result["success"] is True
+        assert backend.save_as_paths == [str(existing_path.resolve())]
+        assert backend.save_as_overwrites == [True]
+
+    def test_save_as_ipc_reload_failure_does_not_leave_stale_swig_board(
+        self, tmp_path, monkeypatch
+    ):
+        board_path = tmp_path / "proj" / "proj.kicad_pcb"
+        new_path = tmp_path / "copy" / "copy.kicad_pcb"
+        iface, _, _, _, _ = _loaded_iface(
+            tmp_path, gui_board_path=board_path, monkeypatch=monkeypatch
+        )
+        iface.command_routes["save_as"] = iface._handle_save_as
+        iface._safe_load_board = lambda path: None
+        board_handlers = (
+            "project_commands",
+            "board_commands",
+            "component_commands",
+            "routing_commands",
+            "design_rule_commands",
+            "export_commands",
+            "freerouting_commands",
+        )
+        for handler_name in board_handlers:
+            handler = MagicMock()
+            handler.board = iface.board
+            setattr(iface, handler_name, handler)
+        iface._update_command_handlers = KiCADInterface._update_command_handlers.__get__(
+            iface, KiCADInterface
+        )
+        iface._record_board_signature = KiCADInterface._record_board_signature.__get__(
+            iface, KiCADInterface
+        )
+        iface._board_disk_signature = (1, "old-board-signature")
+
+        result = iface.handle_command("save_as", {"boardPath": str(new_path)})
+
+        assert result["success"] is True
+        assert result["_backend"] == "ipc"
+        assert iface.session_board_path == iface._normalize_board_path(new_path)
+        assert iface.session_backend == "ipc"
+        assert iface.board is None
+        assert iface._board_disk_signature is None
+        assert all(getattr(iface, handler_name).board is None for handler_name in board_handlers)
+        assert any("stale SWIG fallback was cleared" in warning for warning in result["warnings"])
 
     def test_batch_move_refuses_instead_of_mutating_swig_for_ipc_session(
         self, tmp_path, monkeypatch

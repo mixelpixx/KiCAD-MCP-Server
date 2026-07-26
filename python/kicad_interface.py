@@ -1610,14 +1610,30 @@ class KiCADInterface(SchematicHandlersMixin):
                 # Save As changes the board identity. Keep both the SWIG fallback
                 # and the session pin aligned with the GUI's newly saved board.
                 if result.get("_backend") == "ipc":
-                    reloaded = self._safe_load_board(board_path)
+                    try:
+                        reloaded = self._safe_load_board(board_path)
+                    except Exception as exc:  # noqa: BLE001 - preserve IPC save success
+                        logger.warning(
+                            "IPC Save As succeeded, but SWIG reload failed for %s: %s",
+                            board_path,
+                            exc,
+                        )
+                        reloaded = None
                     if reloaded is not None:
                         self.board = reloaded
                         self._update_command_handlers()
                     else:
+                        # The GUI owns the successfully saved destination. Do not
+                        # retain the old SWIG board under the new session path: that
+                        # would recreate the cross-backend divergence this session
+                        # pin is intended to prevent.
+                        self.board = None
+                        self._update_command_handlers()
+                        self._board_disk_signature = None
                         result.setdefault("warnings", []).append(
                             "Board was saved through IPC, but the SWIG fallback "
-                            "could not reload the new path"
+                            "could not reload the new path; the stale SWIG fallback "
+                            "was cleared"
                         )
                 self._pin_session_backend(board_path)
             self._record_board_signature()
@@ -5187,7 +5203,10 @@ print("ok")
             destination = params.get("filename") or params.get("path")
             if destination:
                 destination_path = Path(destination).expanduser().resolve()
-                result = self.ipc_backend.save_project(destination_path)
+                result = self.ipc_backend.save_project(
+                    destination_path,
+                    overwrite=bool(params.get("force", False)),
+                )
                 if result.get("success"):
                     result["boardPath"] = str(destination_path)
                 return result

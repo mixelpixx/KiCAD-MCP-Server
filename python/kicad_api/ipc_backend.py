@@ -288,7 +288,7 @@ class IPCBackend(KiCADBackend):
             logger.error(f"Failed to check project: {e}")
             return {"success": False, "message": "Failed to check project", "errorDetails": str(e)}
 
-    def save_project(self, path: Optional[Path] = None) -> Dict[str, Any]:
+    def save_project(self, path: Optional[Path] = None, overwrite: bool = False) -> Dict[str, Any]:
         """Save current project via IPC."""
         if not self.is_connected():
             raise ConnectionError("Not connected to KiCAD")
@@ -296,7 +296,7 @@ class IPCBackend(KiCADBackend):
         try:
             board = self._kicad.get_board()
             if path:
-                board.save_as(str(path))
+                board.save_as(str(path), overwrite=overwrite)
             else:
                 board.save()
 
