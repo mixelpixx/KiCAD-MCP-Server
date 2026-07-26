@@ -120,9 +120,7 @@ def _install_post_capture(monkeypatch, payload_for):
 
 def test_get_component_detail_normalizes_c_prefix(monkeypatch):
     client = _client()
-    calls = _install_post_capture(
-        monkeypatch, lambda codes: [{"componentCode": c} for c in codes]
-    )
+    calls = _install_post_capture(monkeypatch, lambda codes: [{"componentCode": c} for c in codes])
 
     client.get_component_detail(["8734", "c25804", "C100"])
 
@@ -133,9 +131,7 @@ def test_get_component_detail_normalizes_c_prefix(monkeypatch):
 
 def test_get_component_detail_batches_over_1000(monkeypatch):
     client = _client()
-    calls = _install_post_capture(
-        monkeypatch, lambda codes: [{"componentCode": c} for c in codes]
-    )
+    calls = _install_post_capture(monkeypatch, lambda codes: [{"componentCode": c} for c in codes])
 
     codes = [f"C{i}" for i in range(2500)]
     result = client.get_component_detail(codes)
@@ -242,7 +238,12 @@ def test_normalize_price_breaks_have_manager_shape():
 
 
 def test_normalize_price_breaks_skip_null_prices():
-    detail = {"priceRanges": [{"startQuantity": 1, "unitPrice": None}, {"startQuantity": 10, "unitPrice": 0.5}]}
+    detail = {
+        "priceRanges": [
+            {"startQuantity": 1, "unitPrice": None},
+            {"startQuantity": 10, "unitPrice": 0.5},
+        ]
+    }
     part = normalize_detail_to_part(detail)
     assert part["price_breaks"] == [{"qty": 10, "price": 0.5}]
 

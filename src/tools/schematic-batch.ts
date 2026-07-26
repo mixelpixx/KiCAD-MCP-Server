@@ -152,7 +152,9 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
     async (args: any) => {
       const r = await callKicadScript("replace_instance_lib_ids", args);
       if (r.success === false)
-        return { content: [{ type: "text", text: `Failed: ${r.error || r.message || "Unknown error"}` }] };
+        return {
+          content: [{ type: "text", text: `Failed: ${r.error || r.message || "Unknown error"}` }],
+        };
       return { content: [{ type: "text", text: r.message }] };
     },
   );

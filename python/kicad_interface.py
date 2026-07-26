@@ -337,6 +337,7 @@ try:
         LibraryCommands,
     )
     from commands.library import LibraryManager as FootprintLibraryManager
+    from commands.library_management import LibraryManagementCommands
     from commands.library_schematic import LibraryManager as SchematicLibraryManager
     from commands.library_symbol import SymbolLibraryCommands, SymbolLibraryManager
     from commands.project import ProjectCommands
@@ -349,7 +350,6 @@ try:
     from commands.symbol_creator import SymbolCreator
     from commands.symbol_pins import SymbolPinCommands
     from commands.symbol_schematic import SymbolSchematicCommands
-    from commands.library_management import LibraryManagementCommands
     from commands.update_symbol_from_library import update_symbol_from_library
 
     logger.info("Successfully imported all command handlers")

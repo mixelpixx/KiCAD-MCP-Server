@@ -139,7 +139,9 @@ def fetch_proto_from_gitlab(ref: str) -> dict[str, str]:
     try:
         import requests
     except ImportError:
-        sys.exit("requests is required for --fetch-from-gitlab.  Install with: pip install requests")
+        sys.exit(
+            "requests is required for --fetch-from-gitlab.  Install with: pip install requests"
+        )
 
     files: dict[str, str] = {}
     session = requests.Session()
@@ -174,7 +176,9 @@ def load_proto_from_dir(proto_dir: Path) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 # Matches license/copyright headers so we can suppress them from comment text.
-_LICENSE_KEYWORDS = frozenset(["copyright", "gnu general public", "program source code", "free software"])
+_LICENSE_KEYWORDS = frozenset(
+    ["copyright", "gnu general public", "program source code", "free software"]
+)
 
 # Matches proto field declarations (handles repeated/optional qualifiers).
 _FIELD_RE = re.compile(
@@ -312,7 +316,9 @@ def parse_proto_text(text: str, source_name: str = "") -> list[ProtoMessage]:
                             )
                         )
                         field_comments = []
-                    elif fstripped and not fstripped.startswith(("/*", "*", "enum", "oneof", "map")):
+                    elif fstripped and not fstripped.startswith(
+                        ("/*", "*", "enum", "oneof", "map")
+                    ):
                         field_comments = []
 
                 j += 1
@@ -746,8 +752,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     # ── parse ────────────────────────────────────────────────────────────────
     messages = parse_all_protos(proto_files)
     request_count = sum(1 for m in messages.values() if not m.is_response)
-    print(f"  Parsed {len(messages)} messages ({request_count} request, "
-          f"{len(messages) - request_count} response/type)")
+    print(
+        f"  Parsed {len(messages)} messages ({request_count} request, "
+        f"{len(messages) - request_count} response/type)"
+    )
 
     if args.dry_run:
         dry_run_cmd = {
