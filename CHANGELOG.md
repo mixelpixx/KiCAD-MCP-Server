@@ -19,6 +19,35 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Saving to the board's own path was silently treated as a Save As, and
+  failed on the IPC backend**: `save_board` accepts an optional `boardPath`, and
+  callers routinely echo the currently loaded path back into it. That path was
+  forwarded unconditionally as `save_params["filename"]`, so `_ipc_save_project`
+  saw a `destination` and called `ipc_backend.save_project(path, overwrite=False)`
+  → `board.save_as(current_path, overwrite=False)`. The KiCad IPC API separates
+  `save()` from `save_as(filename, overwrite=False)`, where `save_as` targets a
+  _new_ file and refuses a destination that already exists unless `overwrite` is
+  set — and the board's own file always exists, so an ordinary save could fail.
+  SWIG never hit this because it compared `filename` against the board's current
+  path and fell through to a plain `SaveBoard`, which made the identical call
+  succeed on one backend and fail on the other. The destination is now compared
+  against the authoritative board path before dispatch and dropped when they
+  name the same file, with the same collapse repeated defensively inside
+  `_handle_save_project` and `_ipc_save_project`. Real Save As to a different
+  path is unchanged, including its `overwrite` gate.
+- **Save As path comparison could misjudge the same file on Windows**:
+  `ProjectCommands.save_project()` compared `os.path.abspath(os.path.expanduser(...))`
+  strings directly. On Windows `C:\Project\Board.kicad_pcb` and
+  `c:\project\board.kicad_pcb` name one file but compare unequal, so a
+  differently cased spelling of the loaded board was classified as a Save As and
+  then rejected because the destination existed and `overwrite` defaulted to
+  False. Comparisons now go through a new `commands.project.normalize_fs_path`
+  helper (`normcase` + `realpath` + `abspath`, matching the normalization
+  `KiCADInterface` already used for session paths), which also resolves symlinks
+  and `..` segments. Normalization is used only for comparing; the path actually
+  written is still the board's own, so symlinks stay intact. Unlikely to show up
+  in Linux CI, but it affected real Windows users.
+
 - **`assign_net_to_class` and `check_clearance` now actually work — both were
   registered MCP tools with no backend** (#315): found while auditing
   DRC/design-rule documentation coverage. Both had a full Zod schema in

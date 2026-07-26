@@ -447,6 +447,106 @@ class TestNewBoardLifecycleRouting:
         assert backend.save_as_overwrites == [True]
         assert iface.session_board_path == iface._normalize_board_path(existing_path)
 
+    def test_save_board_current_path_uses_ipc_save_not_save_as(self, tmp_path, monkeypatch):
+        """Passing the current board path is a save, not a Save As.
+
+        ``board.save_as(current, overwrite=False)`` refuses an existing
+        destination by API contract, so forwarding the echoed path made an
+        ordinary save fail on IPC while succeeding on SWIG.
+        """
+        board_path = tmp_path / "proj" / "proj.kicad_pcb"
+        iface, backend, holder, _, _ = _loaded_iface(
+            tmp_path, gui_board_path=board_path, monkeypatch=monkeypatch
+        )
+        iface.command_routes["save_board"] = iface._handle_save_board
+        iface._safe_load_board = lambda path: _FakeBoard(path)
+
+        result = iface.handle_command("save_board", {"boardPath": str(board_path)})
+
+        assert result["success"] is True, result.get("message")
+        assert result["_backend"] == "ipc"
+        assert backend.save_as_paths == []  # never routed through save_as
+        assert backend.save_calls == 1
+        assert result["boardPath"] == iface._normalize_board_path(board_path)
+        assert iface.session_board_path == iface._normalize_board_path(board_path)
+        assert holder.get("swig_saves") is None
+
+    def test_save_project_current_path_uses_ipc_save_not_save_as(self, tmp_path, monkeypatch):
+        board_path = tmp_path / "proj" / "proj.kicad_pcb"
+        iface, backend, _, _, _ = _loaded_iface(
+            tmp_path, gui_board_path=board_path, monkeypatch=monkeypatch
+        )
+        iface.command_routes["save_project"] = iface._handle_save_project
+        iface._dirty_state = lambda path: {"diskChangedExternally": False}
+
+        result = iface.handle_command("save_project", {"filename": str(board_path)})
+
+        assert result["success"] is True, result.get("message")
+        assert result["_backend"] == "ipc"
+        assert backend.save_as_paths == []
+        assert backend.save_calls == 1
+
+    def test_ipc_save_handler_collapses_current_path_even_when_called_directly(
+        self, tmp_path, monkeypatch
+    ):
+        """Defense in depth: the IPC handler itself must not build a Save As."""
+        board_path = tmp_path / "proj" / "proj.kicad_pcb"
+        iface, backend, _, _, _ = _loaded_iface(
+            tmp_path, gui_board_path=board_path, monkeypatch=monkeypatch
+        )
+
+        result = iface._ipc_save_project({"filename": str(board_path)})
+
+        assert result["success"] is True
+        assert backend.save_as_paths == []
+        assert backend.save_calls == 1
+        assert result["boardPath"] == str(board_path.resolve())
+
+    def test_save_board_current_path_has_same_semantics_on_ipc_and_swig(
+        self, tmp_path, monkeypatch
+    ):
+        """The identical call must succeed on both backends (parity guard)."""
+        board_path = tmp_path / "proj" / "proj.kicad_pcb"
+
+        ipc_iface, ipc_backend, _, _, _ = _loaded_iface(
+            tmp_path, gui_board_path=board_path, monkeypatch=monkeypatch
+        )
+        ipc_iface.command_routes["save_board"] = ipc_iface._handle_save_board
+        ipc_iface._safe_load_board = lambda path: _FakeBoard(path)
+        assert ipc_iface.session_backend == "ipc"
+        ipc_result = ipc_iface.handle_command("save_board", {"boardPath": str(board_path)})
+
+        swig_iface, _, holder, swig_board_path, _ = _loaded_iface(
+            tmp_path, gui_board_path=None, monkeypatch=monkeypatch
+        )
+        swig_iface.command_routes["save_board"] = swig_iface._handle_save_board
+        swig_iface.board = _FakeBoard(swig_board_path)
+        assert swig_iface.session_backend == "swig"
+        swig_result = swig_iface.handle_command("save_board", {"boardPath": str(swig_board_path)})
+
+        assert ipc_result["success"] == swig_result["success"] is True
+        assert ipc_result["_backend"] == "ipc"
+        assert swig_result["_backend"] == "swig"
+        assert ipc_backend.save_as_paths == []
+        assert holder.get("swig_saves") == 1
+
+    def test_save_board_still_treats_a_different_path_as_save_as(self, tmp_path, monkeypatch):
+        """The same-path collapse must not disable real Save As."""
+        board_path = tmp_path / "proj" / "proj.kicad_pcb"
+        new_path = tmp_path / "copy" / "copy.kicad_pcb"
+        iface, backend, _, _, _ = _loaded_iface(
+            tmp_path, gui_board_path=board_path, monkeypatch=monkeypatch
+        )
+        iface.command_routes["save_board"] = iface._handle_save_board
+        iface._safe_load_board = lambda path: _FakeBoard(path)
+        iface._refresh_project_context_for_board = MagicMock()
+
+        result = iface.handle_command("save_board", {"boardPath": str(new_path)})
+
+        assert result["success"] is True
+        assert backend.save_as_paths == [str(new_path.resolve())]
+        assert iface.session_board_path == iface._normalize_board_path(new_path)
+
     def test_save_as_ipc_reload_failure_does_not_leave_stale_swig_board(
         self, tmp_path, monkeypatch
     ):

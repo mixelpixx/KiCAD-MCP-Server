@@ -1659,10 +1659,21 @@ class KiCADInterface(SchematicHandlersMixin):
             "forceExternalChanges": params.get("forceExternalChanges", params.get("force", False)),
             "overwrite": params.get("overwrite", False),
         }
-        board_path = params.get("boardPath") or params.get("path")
-        if board_path:
-            board_path = str(Path(board_path).expanduser().resolve())
-            save_params["filename"] = board_path
+        requested_path = params.get("boardPath") or params.get("path")
+        # ``board_path`` is set only for a *real* Save As. Callers routinely echo
+        # the current board path back into save_board; forwarding that as a
+        # ``filename`` turned an ordinary save into a Save As, which the IPC
+        # backend rejects (``board.save_as(current, overwrite=False)`` refuses an
+        # existing destination) while SWIG silently accepted it. Normalize and
+        # compare first so both backends perform a plain save (issue: save to
+        # current path must not be Save As).
+        board_path = None
+        if requested_path:
+            destination = str(Path(requested_path).expanduser().resolve())
+            current = self._authoritative_board_path()
+            if self._normalize_board_path(destination) != self._normalize_board_path(current):
+                board_path = destination
+                save_params["filename"] = destination
 
         # Do not call _handle_save_project directly: save_project is IPC-capable,
         # and the dispatcher is the single owner of the session-pinning decision.
@@ -1880,6 +1891,13 @@ class KiCADInterface(SchematicHandlersMixin):
             or self._normalize_board_path(str(Path(filename).expanduser().resolve()))
             == self._normalize_board_path(board_path)
         )
+        if filename and saving_to_loaded_file:
+            # Saving to the path already loaded is an ordinary save, not a Save
+            # As. Drop the destination so neither backend applies "destination
+            # already exists" semantics to the board's own file.
+            call_params.pop("filename", None)
+            call_params.pop("path", None)
+            filename = None
 
         if saving_to_loaded_file and not force_external_changes:
             dirty = self._dirty_state(board_path)
@@ -5300,16 +5318,30 @@ print("ok")
             return {"success": False, "message": str(e)}
 
     def _ipc_save_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """IPC handler for save_project"""
+        """IPC handler for save_project.
+
+        ``BoardAPI.save()`` and ``BoardAPI.save_as(filename, overwrite=False)``
+        are different operations: ``save_as`` targets a *new* file and refuses an
+        existing destination unless ``overwrite`` is set. A caller that echoes
+        the currently loaded path back as ``filename`` means "save", so collapse
+        that to ``save()`` here as well as in the save_board wrapper — otherwise
+        the same call succeeds on SWIG and fails on IPC.
+        """
         try:
             destination = params.get("filename") or params.get("path")
             destination_path = Path(destination).expanduser().resolve() if destination else None
+            reported_path = str(destination_path) if destination_path is not None else None
+            if destination_path is not None:
+                current = self._normalize_board_path(self._authoritative_board_path())
+                if self._normalize_board_path(destination_path) == current:
+                    # Same file: a plain save, never save_as.
+                    destination_path = None
             result = self.ipc_backend.save_project(
                 destination_path,
                 overwrite=bool(params.get("overwrite", False)),
             )
-            if result.get("success") and destination_path is not None:
-                result["boardPath"] = str(destination_path)
+            if result.get("success") and reported_path is not None:
+                result["boardPath"] = reported_path
             return result
         except Exception as e:
             logger.error(f"IPC save_project error: {e}")
