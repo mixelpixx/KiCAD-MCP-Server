@@ -6,6 +6,13 @@ repos:
       - id: end-of-file-fixer
       - id: mixed-line-ending
         args: ["--fix=lf"]
+        # .gitattributes deliberately pins Windows-native scripts to CRLF
+        # (`*.bat`/`*.cmd`/`*.ps1 text eol=crlf`), so forcing them to LF here
+        # puts the two in permanent conflict: the hook rewrites to LF, git
+        # checks them back out as CRLF, forever. It is invisible on Windows
+        # (autocrlf hides the flip-flop) and fails every run on Linux.
+        # .gitattributes owns line endings for these types.
+        exclude: \.(bat|cmd|ps1)$
       - id: check-yaml
       - id: check-json
       - id: check-added-large-files
