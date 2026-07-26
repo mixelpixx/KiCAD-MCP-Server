@@ -115,7 +115,7 @@ class SWIGBackend(KiCADBackend):
             params: Dict[str, Any] = {}
             if path:
                 params["filename"] = str(path)
-                params["force"] = overwrite
+                params["overwrite"] = overwrite
             result = ProjectCommands().save_project(params)
             return result
         except Exception as e:

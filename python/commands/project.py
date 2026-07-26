@@ -206,14 +206,42 @@ class ProjectCommands:
                     "errorDetails": "Load or create a board first",
                 }
 
-            filename = params.get("filename")
+            filename = params.get("filename") or params.get("path")
+            current_filename = self.board.GetFileName()
+            save_filename = current_filename
             if filename:
                 # Save to new location
                 filename = os.path.abspath(os.path.expanduser(filename))
-                self.board.SetFileName(filename)
+                current_path = (
+                    os.path.abspath(os.path.expanduser(current_filename))
+                    if current_filename
+                    else None
+                )
+                if (
+                    filename != current_path
+                    and os.path.exists(filename)
+                    and not params.get("overwrite", False)
+                ):
+                    return {
+                        "success": False,
+                        "message": f"Destination already exists: {filename}",
+                        "errorDetails": "Pass overwrite=true to replace it",
+                        "boardPath": filename,
+                    }
+                save_filename = filename
 
-            # Save the board
-            pcbnew.SaveBoard(self.board.GetFileName(), self.board)
+            # Save first, then switch the in-memory identity. A failed Save As
+            # must not leave the BOARD claiming to own a destination that was
+            # never written successfully.
+            saved = pcbnew.SaveBoard(save_filename, self.board)
+            if saved is False:
+                return {
+                    "success": False,
+                    "message": f"Failed to save project to: {save_filename}",
+                    "errorDetails": "pcbnew.SaveBoard returned false",
+                }
+            if filename:
+                self.board.SetFileName(filename)
 
             return {
                 "success": True,

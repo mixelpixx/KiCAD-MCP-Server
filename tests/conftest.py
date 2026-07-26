@@ -9,7 +9,15 @@ real KiCAD environment is not fully initialised for testing.
 import os
 import sys
 import types
+from pathlib import Path
 from unittest.mock import MagicMock
+
+# Make the repository's Python package tree importable in a clean checkout.
+# Individual test modules must not depend on the caller's PYTHONPATH or on an
+# editable install that CI does not perform.
+_PYTHON_ROOT = Path(__file__).resolve().parents[1] / "python"
+if str(_PYTHON_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PYTHON_ROOT))
 
 # Skip the speculative full-symbol-library warm-up in tests. Each KiCADInterface
 # would otherwise spawn a daemon thread parsing every installed .kicad_sym file;

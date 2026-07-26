@@ -89,8 +89,13 @@ export function registerProjectTools(server: McpServer, callKicadScript: Functio
         .describe(
           "Save the board to disk before closing (default true). If false and there are unsaved changes, the close proceeds but the response warns they were discarded.",
         ),
+      forceExternalChanges: z
+        .boolean()
+        .optional()
+        .describe("Save despite external changes to the loaded SWIG board file"),
+      force: z.boolean().optional().describe("Backward-compatible alias for forceExternalChanges"),
     },
-    async (args: { save?: boolean }) => {
+    async (args: { save?: boolean; force?: boolean; forceExternalChanges?: boolean }) => {
       const result = await callKicadScript("close_project", args);
       return {
         content: [
@@ -116,8 +121,21 @@ export function registerProjectTools(server: McpServer, callKicadScript: Functio
         .describe(
           "Overwrite the loaded board file even if its on-disk contents changed externally",
         ),
+      forceExternalChanges: z
+        .boolean()
+        .optional()
+        .describe("Explicit alias for force; takes precedence when both are provided"),
+      overwrite: z
+        .boolean()
+        .optional()
+        .describe("Replace an existing destination when path points to a different file"),
     },
-    async (args: { path?: string; force?: boolean }) => {
+    async (args: {
+      path?: string;
+      force?: boolean;
+      forceExternalChanges?: boolean;
+      overwrite?: boolean;
+    }) => {
       const result = await callKicadScript("save_project", args);
       return {
         content: [
@@ -139,8 +157,18 @@ export function registerProjectTools(server: McpServer, callKicadScript: Functio
         .boolean()
         .optional()
         .describe("Overwrite even if the board changed externally on disk"),
+      forceExternalChanges: z.boolean().optional().describe("Explicit alias for force"),
+      overwrite: z
+        .boolean()
+        .optional()
+        .describe("Replace boardPath if it already exists and differs from the current board"),
     },
-    async (args: { boardPath?: string; force?: boolean }) => {
+    async (args: {
+      boardPath?: string;
+      force?: boolean;
+      forceExternalChanges?: boolean;
+      overwrite?: boolean;
+    }) => {
       const result = await callKicadScript("save_board", args);
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
@@ -153,8 +181,22 @@ export function registerProjectTools(server: McpServer, callKicadScript: Functio
     "Save the current PCB board to a new .kicad_pcb path.",
     {
       boardPath: z.string().describe("Destination .kicad_pcb path"),
+      overwrite: z.boolean().optional().describe("Replace the destination if it already exists"),
+      force: z
+        .boolean()
+        .optional()
+        .describe("Allow saving over external changes to the loaded file"),
+      forceExternalChanges: z
+        .boolean()
+        .optional()
+        .describe("Explicit alias for force; takes precedence when both are provided"),
     },
-    async (args: { boardPath: string }) => {
+    async (args: {
+      boardPath: string;
+      overwrite?: boolean;
+      force?: boolean;
+      forceExternalChanges?: boolean;
+    }) => {
       const result = await callKicadScript("save_as", args);
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],

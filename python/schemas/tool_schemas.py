@@ -66,7 +66,17 @@ PROJECT_TOOLS = [
                 "save": {
                     "type": "boolean",
                     "description": "Save the board to disk before closing (default true). If false and there are unsaved changes, the close proceeds but the response warns they were discarded.",
-                }
+                },
+                "forceExternalChanges": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Save despite external changes to the loaded SWIG board file",
+                },
+                "force": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Backward-compatible alias for forceExternalChanges",
+                },
             },
         },
     },
@@ -86,6 +96,10 @@ PROJECT_TOOLS = [
                     "type": "string",
                     "description": "Optional new path to save the board (if not provided, saves to current location)",
                 },
+                "path": {
+                    "type": "string",
+                    "description": "Alias for filename",
+                },
                 "force": {
                     "type": "boolean",
                     "default": False,
@@ -93,6 +107,16 @@ PROJECT_TOOLS = [
                         "Overwrite the loaded board file even if its on-disk contents "
                         "changed externally since this session loaded it"
                     ),
+                },
+                "forceExternalChanges": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Explicit alias for force; takes precedence when both are provided",
+                },
+                "overwrite": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Replace an existing destination when saving to a different path",
                 },
             },
         },
@@ -122,6 +146,8 @@ PROJECT_TOOLS = [
             "properties": {
                 "boardPath": {"type": "string"},
                 "force": {"type": "boolean", "default": False},
+                "forceExternalChanges": {"type": "boolean", "default": False},
+                "overwrite": {"type": "boolean", "default": False},
             },
         },
     },
@@ -131,7 +157,12 @@ PROJECT_TOOLS = [
         "description": "Saves the loaded board to a new .kicad_pcb path.",
         "inputSchema": {
             "type": "object",
-            "properties": {"boardPath": {"type": "string"}},
+            "properties": {
+                "boardPath": {"type": "string"},
+                "overwrite": {"type": "boolean", "default": False},
+                "force": {"type": "boolean", "default": False},
+                "forceExternalChanges": {"type": "boolean", "default": False},
+            },
             "required": ["boardPath"],
         },
     },

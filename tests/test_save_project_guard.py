@@ -90,6 +90,15 @@ class TestOverrides:
         assert result["success"] is True
         assert len(iface.project_commands.save_calls) == 1
 
+    def test_overwrite_does_not_bypass_external_change_guard(self, tmp_path):
+        iface, _ = _make_iface(tmp_path, diverged=True)
+
+        result = iface._handle_save_project({"overwrite": True})
+
+        assert result["success"] is False
+        assert result["diskChangedExternally"] is True
+        assert iface.project_commands.save_calls == []
+
     def test_saving_to_a_different_filename_is_never_blocked(self, tmp_path):
         iface, _ = _make_iface(tmp_path, diverged=True)
         other = tmp_path / "elsewhere.kicad_pcb"

@@ -296,9 +296,16 @@ class IPCBackend(KiCADBackend):
         try:
             board = self._kicad.get_board()
             if path:
-                board.save_as(str(path), overwrite=overwrite)
+                saved = board.save_as(str(path), overwrite=overwrite)
             else:
-                board.save()
+                saved = board.save()
+
+            if saved is False:
+                return {
+                    "success": False,
+                    "message": "Failed to save project",
+                    "errorDetails": "KiCad IPC save returned false",
+                }
 
             self._notify_change("save", {"path": str(path) if path else "current"})
 

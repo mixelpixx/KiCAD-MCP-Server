@@ -838,12 +838,15 @@ class KiCADInterface(SchematicHandlersMixin):
             else:
                 logger.error(
                     "Downgrade to SWIG could not reload the board from %s — "
-                    "subsequent SWIG commands operate on the pre-IPC in-memory "
-                    "state, which may be stale",
+                    "clearing the stale SWIG fallback",
                     path,
                 )
+                self._clear_swig_board_state()
         elif path:
             logger.warning("Downgrade to SWIG: board file is no longer accessible at %s", path)
+            self._clear_swig_board_state()
+        else:
+            self._clear_swig_board_state()
         self.session_backend = "swig"
         self.ipc_board_api = None
 
@@ -1215,6 +1218,27 @@ class KiCADInterface(SchematicHandlersMixin):
             return None
         return str(Path(path).resolve()) if path else None
 
+    def _authoritative_board_path(self) -> Optional[str]:
+        """Return the board identity owned by the current backend session.
+
+        For an IPC-owned session, ``session_board_path`` is the lifecycle
+        identity and wins over any stale fallback object.  A SWIG-owned
+        session is loaded only when it has a healthy in-memory board.  IPC
+        connection health is reported separately and must not erase the last
+        known identity of an IPC session.
+        """
+        session_path = getattr(self, "session_board_path", None)
+        if getattr(self, "session_backend", None) == "ipc" and session_path:
+            return session_path
+        return self._current_board_path()
+
+    def _clear_swig_board_state(self) -> None:
+        """Remove every reference to a SWIG board that is absent or stale."""
+        self.board = None
+        self._update_command_handlers()
+        self._board_disk_signature = None
+        self._last_auto_save_status = None
+
     def _current_project_file_path(self, board_path: Optional[str]) -> Optional[str]:
         """Best-effort project file path for the currently loaded board."""
         candidates = []
@@ -1244,6 +1268,18 @@ class KiCADInterface(SchematicHandlersMixin):
         dirty is intentionally tri-state: True/False when the MCP has evidence,
         None when no reliable disk signature exists.
         """
+        if (
+            board_path
+            and getattr(self, "session_backend", None) == "ipc"
+            and self._normalize_board_path(board_path)
+            == self._normalize_board_path(getattr(self, "session_board_path", None))
+        ):
+            return {
+                "dirty": None,
+                "dirtyReason": "Dirty state is unavailable for the live IPC-owned board",
+                "diskChangedExternally": False,
+            }
+
         if not board_path:
             return {
                 "dirty": False,
@@ -1521,10 +1557,31 @@ class KiCADInterface(SchematicHandlersMixin):
         if project_path is None:
             return
         self._current_project_path = project_path
+        symbol_commands = getattr(self, "symbol_library_commands", None)
+        if symbol_commands is None:
+            return
         try:
-            self.symbol_library_commands.use_project(project_path)
+            symbol_commands.use_project(project_path)
         except Exception as e:
             logger.warning(f"Failed to refresh symbol library for project {project_path}: {e}")
+
+    def _refresh_project_context_for_board(self, board_path: str) -> None:
+        """Refresh all project-local library context after a board identity change."""
+        project_path = self._project_path_from_filename(board_path)
+        self._refresh_symbol_library_for_project(project_path)
+        if project_path is None:
+            return
+        component_commands = getattr(self, "component_commands", None)
+        library_commands = getattr(self, "library_commands", None)
+        if component_commands is None or library_commands is None:
+            return
+        try:
+            footprint_library = FootprintLibraryManager(project_path=project_path)
+            self.footprint_library = footprint_library
+            component_commands.library_manager = footprint_library
+            library_commands.library_manager = footprint_library
+        except Exception as e:
+            logger.warning(f"Failed to refresh footprint libraries for {project_path}: {e}")
 
     def _handle_open_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Wrap project_commands.open_project so project-scope symbol libraries
@@ -1585,7 +1642,9 @@ class KiCADInterface(SchematicHandlersMixin):
 
     def _handle_reload_board(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Reload a board from disk, discarding the current in-memory board."""
-        board_path = params.get("boardPath") or params.get("path") or self._current_board_path()
+        board_path = (
+            params.get("boardPath") or params.get("path") or self._authoritative_board_path()
+        )
         if not board_path:
             return {"success": False, "message": "No board loaded and no boardPath provided"}
         return self._handle_open_board({"boardPath": board_path})
@@ -1596,7 +1655,10 @@ class KiCADInterface(SchematicHandlersMixin):
 
     def _handle_save_board(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Save the loaded board, with the same external-change guard as save_project."""
-        save_params: Dict[str, Any] = {"force": params.get("force", False)}
+        save_params: Dict[str, Any] = {
+            "forceExternalChanges": params.get("forceExternalChanges", params.get("force", False)),
+            "overwrite": params.get("overwrite", False),
+        }
         board_path = params.get("boardPath") or params.get("path")
         if board_path:
             board_path = str(Path(board_path).expanduser().resolve())
@@ -1627,18 +1689,26 @@ class KiCADInterface(SchematicHandlersMixin):
                         # retain the old SWIG board under the new session path: that
                         # would recreate the cross-backend divergence this session
                         # pin is intended to prevent.
-                        self.board = None
-                        self._update_command_handlers()
-                        self._board_disk_signature = None
+                        self._clear_swig_board_state()
                         result.setdefault("warnings", []).append(
                             "Board was saved through IPC, but the SWIG fallback "
                             "could not reload the new path; the stale SWIG fallback "
                             "was cleared"
                         )
-                self._pin_session_backend(board_path)
+                if result.get("_backend") == "ipc":
+                    # A successful IPC Save As is itself authoritative evidence
+                    # that the GUI owns the destination.  Do not re-probe and
+                    # accidentally downgrade a pure-IPC session merely because
+                    # the optional open-document query is unavailable.
+                    self.session_board_path = self._normalize_board_path(board_path)
+                    self.session_backend = "ipc"
+                    self._refresh_ipc_board_api()
+                else:
+                    self._pin_session_backend(board_path)
+                self._refresh_project_context_for_board(board_path)
             self._record_board_signature()
             self._last_auto_save_status = None
-            result["boardPath"] = board_path or self._current_board_path()
+            result["boardPath"] = board_path or self._authoritative_board_path()
         return result
 
     def _handle_save_as(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -1646,16 +1716,27 @@ class KiCADInterface(SchematicHandlersMixin):
         board_path = params.get("boardPath") or params.get("path") or params.get("filename")
         if not board_path:
             return {"success": False, "message": "boardPath is required"}
-        return self._handle_save_board({"boardPath": board_path, "force": True})
+        return self._handle_save_board(
+            {
+                "boardPath": board_path,
+                "overwrite": params.get("overwrite", False),
+                "forceExternalChanges": params.get(
+                    "forceExternalChanges", params.get("force", False)
+                ),
+            }
+        )
 
     def _handle_is_dirty(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Report MCP's known disk/memory save state."""
-        board_path = params.get("boardPath") or self._current_board_path()
+        board_path = params.get("boardPath") or self._authoritative_board_path()
         state = self._dirty_state(board_path)
         return {"success": True, "boardPath": board_path, **state}
 
     def _handle_batch_move_components(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Batch move wrapper that preserves the external-edit save guard."""
+        if getattr(self, "session_backend", None) == "ipc" and not self._ipc_session_alive():
+            self._downgrade_session_to_swig()
+
         # The IPC BoardAPI currently exposes only single-component moves, each
         # with its own commit. Falling through to ComponentCommands here would
         # mutate the stale SWIG copy while an IPC session owns the live board.
@@ -1672,7 +1753,7 @@ class KiCADInterface(SchematicHandlersMixin):
             }
 
         save = bool(params.get("save", True)) and not bool(params.get("dryRun", False))
-        board_path = self._current_board_path()
+        board_path = self._authoritative_board_path()
         if save:
             dirty = self._dirty_state(board_path)
             if dirty.get("diskChangedExternally"):
@@ -1758,15 +1839,10 @@ class KiCADInterface(SchematicHandlersMixin):
         Symmetric with the state that open_project / create_project establish, so
         a subsequent open/create starts from a clean slate (issue #225).
         """
-        self.board = None
-        # Propagate the None board to every command handler (project, board,
-        # component, routing, design-rule, export, freerouting).
-        self._update_command_handlers()
+        self._clear_swig_board_state()
         self.ipc_board_api = None
         self.session_backend = None
         self.session_board_path = None
-        self._board_disk_signature = None
-        self._last_auto_save_status = None
         self.project_filename = None
         self._current_project_path = None
 
@@ -1784,18 +1860,28 @@ class KiCADInterface(SchematicHandlersMixin):
           filename (str, optional): save to a new location. Saving to a path
             other than the loaded board file is an explicit destination choice
             and is never blocked by the divergence guard.
-          force (bool, default False): overwrite the loaded board file even if
-            its on-disk contents changed externally since load.
+          forceExternalChanges (bool, default False): overwrite the loaded board
+            file even if its on-disk contents changed externally since load.
+            ``force`` remains a backwards-compatible alias.
+          overwrite (bool, default False): allow a distinct existing Save As
+            destination to be replaced.
         """
-        board_path = self._current_board_path()
-        filename = params.get("filename")
+        board_path = self._authoritative_board_path()
+        filename = params.get("filename") or params.get("path")
+        call_params = dict(params)
+        if filename:
+            call_params["filename"] = filename
+            call_params.pop("path", None)
+        force_external_changes = bool(
+            params.get("forceExternalChanges", params.get("force", False))
+        )
         saving_to_loaded_file = board_path is not None and (
             not filename
             or self._normalize_board_path(str(Path(filename).expanduser().resolve()))
             == self._normalize_board_path(board_path)
         )
 
-        if saving_to_loaded_file and not params.get("force", False):
+        if saving_to_loaded_file and not force_external_changes:
             dirty = self._dirty_state(board_path)
             if dirty.get("diskChangedExternally"):
                 return {
@@ -1812,7 +1898,7 @@ class KiCADInterface(SchematicHandlersMixin):
                     "diskChangedExternally": True,
                 }
 
-        return self.project_commands.save_project(params)
+        return self.project_commands.save_project(call_params)
 
     def _handle_close_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Close the currently loaded project (issue #225).
@@ -1829,7 +1915,7 @@ class KiCADInterface(SchematicHandlersMixin):
             the response warns that in-memory changes were discarded.
         """
         save = params.get("save", True)
-        board_path = self._current_board_path()
+        board_path = self._authoritative_board_path()
         loaded = board_path is not None or self.board is not None
 
         if not loaded:
@@ -1846,12 +1932,20 @@ class KiCADInterface(SchematicHandlersMixin):
         saved = False
         saved_path = None
 
-        if save and self.board is not None:
+        save_backend = None
+        if save:
             try:
-                # Route through the divergence guard (#244) so a close cannot
-                # clobber external file edits either; force passes through for
-                # callers that explicitly want the overwrite.
-                save_result = self._handle_save_project({"force": params.get("force", False)})
+                # The dispatcher exclusively owns IPC/SWIG selection. Calling
+                # _handle_save_project directly here would bypass the session pin
+                # and could save a stale SWIG fallback over the live GUI board.
+                save_result = self.handle_command(
+                    "save_project",
+                    {
+                        "forceExternalChanges": params.get(
+                            "forceExternalChanges", params.get("force", False)
+                        )
+                    },
+                )
             except Exception as e:  # noqa: BLE001 - surfaced to caller below
                 logger.error("close_project: save failed: %s", e)
                 return {
@@ -1870,7 +1964,12 @@ class KiCADInterface(SchematicHandlersMixin):
                     "saved": False,
                 }
             saved = True
-            saved_path = (save_result.get("project") or {}).get("path")
+            save_backend = save_result.get("_backend")
+            saved_path = (
+                save_result.get("boardPath")
+                or (save_result.get("project") or {}).get("path")
+                or board_path
+            )
         elif not save:
             dirty = self._dirty_state(board_path)
             if dirty.get("dirty"):
@@ -1894,6 +1993,9 @@ class KiCADInterface(SchematicHandlersMixin):
             result["savedPath"] = saved_path
         if warnings:
             result["warnings"] = warnings
+        if save_backend:
+            result["_backend"] = save_backend
+            result["_realtime"] = save_backend == "ipc"
         return result
 
     def _handle_place_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -5201,22 +5303,14 @@ print("ok")
         """IPC handler for save_project"""
         try:
             destination = params.get("filename") or params.get("path")
-            if destination:
-                destination_path = Path(destination).expanduser().resolve()
-                result = self.ipc_backend.save_project(
-                    destination_path,
-                    overwrite=bool(params.get("force", False)),
-                )
-                if result.get("success"):
-                    result["boardPath"] = str(destination_path)
-                return result
-
-            success = self.ipc_board_api.save()
-
-            return {
-                "success": success,
-                "message": "Project saved" if success else "Failed to save project",
-            }
+            destination_path = Path(destination).expanduser().resolve() if destination else None
+            result = self.ipc_backend.save_project(
+                destination_path,
+                overwrite=bool(params.get("overwrite", False)),
+            )
+            if result.get("success") and destination_path is not None:
+                result["boardPath"] = str(destination_path)
+            return result
         except Exception as e:
             logger.error(f"IPC save_project error: {e}")
             return {"success": False, "message": str(e)}
@@ -5657,7 +5751,7 @@ print("ok")
             self._try_enable_ipc_backend()
 
         status = self._backend_status()
-        board_path = self._current_board_path()
+        board_path = self._authoritative_board_path()
         project_path = self._current_project_file_path(board_path)
         dirty_state = self._dirty_state(board_path)
         loaded_board = board_path is not None
