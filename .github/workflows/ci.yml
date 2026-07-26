@@ -58,6 +58,15 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
 
+      # The autoroute/freerouting suites resolve a `java` executable before
+      # they mock out the actual subprocess call, so without a JRE on PATH
+      # 8 tests fail for a purely environmental reason.
+      - name: Set up Java (required by the freerouting test suites)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
@@ -66,16 +75,24 @@ jobs:
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
 
       - name: Run Black formatter check
-        run: black --check python/ || echo "Black not configured yet"
+        run: black --check python/
 
       - name: Run MyPy type checker
-        run: mypy python/ || echo "MyPy not configured yet"
+        run: mypy python/
 
-      - name: Run Pylint
-        run: pylint python/ || echo "Pylint not configured yet"
+      # Advisory only: pylint's default rule set has never been enforced on this
+      # tree, so a hard gate would fail on thousands of pre-existing findings.
+      # --exit-zero says that honestly instead of hiding a real failure behind
+      # `|| echo`, which is what the other four steps used to do.
+      - name: Run Pylint (advisory)
+        run: pylint python/ --exit-zero
 
+      # `pytest python/` pointed at the SOURCE tree, and an explicit path
+      # argument overrides pytest.ini's `testpaths = tests` — so CI collected 7
+      # tests from a stray python/test_ipc_backend.py while the real suite in
+      # tests/ never ran. Bare `pytest` picks up testpaths correctly.
       - name: Run pytest
-        run: pytest python/ --cov=python --cov-report=xml || echo "Tests not configured yet"
+        run: pytest --cov=python --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
