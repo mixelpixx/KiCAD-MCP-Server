@@ -504,6 +504,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "get_drc_violations": self.design_rule_commands.get_drc_violations,
             "assign_net_to_class": self.design_rule_commands.assign_net_to_class,
             "check_clearance": self.design_rule_commands.check_clearance,
+            "set_layer_constraints": self.design_rule_commands.set_layer_constraints,
             # Export commands
             "export_gerber": self.export_commands.export_gerber,
             "export_pdf": self.export_commands.export_pdf,

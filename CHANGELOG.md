@@ -40,6 +40,26 @@ All notable changes to the KiCAD MCP Server project are documented here.
   `create_netclass` now also accepts `uviaDiameter`, `uviaDrill`,
   `diffPairWidth`, `diffPairGap`, and `nets`).
 
+- **`set_layer_constraints` now actually works — it was a registered MCP tool
+  with no backend**: found during the same DRC-tool audit as
+  `assign_net_to_class`/`check_clearance`. Had a full Zod schema in
+  `design-rules.ts` and was listed in the router's `drc` category, but had no
+  entry in `kicad_interface.py`'s command dispatch table, so every call
+  silently returned `{"success": false, "message": "Unknown command: set_layer_constraints"}`.
+  Unlike the other two DRC gaps, there is no pcbnew SWIG API for per-layer
+  constraints at all (confirmed against the real KiCad 10 bindings) — real
+  per-layer minimums in KiCad 9+ live in a project-scoped
+  `.kicad_dru` custom-rules text file (S-expression DSL), sibling to the
+  `.kicad_pcb`, which `kicad-cli pcb drc` auto-discovers with no flag needed.
+  New `python/utils/kicad_dru.py` does a surgical text edit — insert or
+  replace a `(rule "mcp_layer_constraint_<layer>" ...)` block by name,
+  leaving any other rules, comments, and formatting in the file untouched —
+  rather than a full parse/reserialize. Verified against real KiCad 10
+  (`kicad-cli pcb drc` on a real demo board with a deliberately strict rule):
+  all four constraint types (`track_width`, `clearance`, `via_diameter`,
+  `hole_size`) are recognized and enforced, with violations citing the rule
+  by name.
+
 - **IPC `create_zone` assigned a read-only property** (found by #334 on its
   first real run): kipy's `Zone.fill_mode` is a read-only property — its getter
   reads `_proto.copper_settings.fill_mode` and there is no setter — so
@@ -184,7 +204,6 @@ the stale-format leftovers from the #221 scaffolding work.
 
 ### Bug Fixes
 
-<<<<<<< HEAD
 - **Eagle import writes KiCad 10 schematic headers** (#330, closes #321): the
   Eagle importer still stamped the KiCad 9 token `(version 20250114)` on every
   `.kicad_sch` it generated — the same stale token #221 removed from the

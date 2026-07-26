@@ -11,6 +11,12 @@ from typing import Any, Dict, List, Optional, Tuple
 import pcbnew
 from commands.routing import persist_net_assignment_to_project
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
+from utils.kicad_dru import (
+    build_layer_constraint_rule,
+    persist_layer_constraint_rule,
+    resolve_dru_path,
+    rule_name_for_layer,
+)
 
 logger = logging.getLogger("kicad_interface")
 
@@ -171,6 +177,111 @@ class DesignRuleCommands:
             return {
                 "success": False,
                 "message": "Failed to get design rules",
+                "errorDetails": str(e),
+            }
+
+    def set_layer_constraints(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Set per-layer minimum track width / clearance / via dimensions.
+
+        Unlike ``set_design_rules`` (global board settings, mutated on the
+        live ``pcbnew.BOARD``), per-layer constraints are not exposed by any
+        pcbnew API — real KiCad 9+ per-layer rules are expressed in a
+        project-scoped ``.kicad_dru`` custom-rules text file, sibling to the
+        ``.kicad_pcb``, which ``kicad-cli pcb drc`` (and the GUI) picks up
+        automatically. This writes a ``(rule "mcp_layer_constraint_<layer>"
+        ...)`` block to that file — pure text, no live board mutation — so
+        the constraint takes effect on the *next* DRC run (``run_drc`` /
+        ``get_drc_violations``), not retroactively on data already computed.
+        """
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first",
+                }
+
+            layer = params.get("layer")
+            if not layer:
+                return {
+                    "success": False,
+                    "message": "Missing parameter",
+                    "errorDetails": "layer is required",
+                }
+
+            # The layer name is interpolated into two quoted S-expression
+            # tokens — (rule "mcp_layer_constraint_<layer>") and
+            # (layer "<layer>") — so a quote, backslash or paren would both
+            # corrupt the .kicad_dru and break the by-name lookup that a later
+            # update relies on to find and replace this rule. Reject those
+            # rather than write a file KiCad cannot parse. Deliberately not an
+            # allowlist of known layer names: KiCad 10 reports "F.Silkscreen"
+            # while ".kicad_dru" and kicad-cli also accept "F.SilkS", and user
+            # layers can be renamed, so a strict check would reject valid input.
+            if any(c in str(layer) for c in '"\\()\n\r'):
+                return {
+                    "success": False,
+                    "message": "Invalid layer name",
+                    "errorDetails": (
+                        f"Layer name {layer!r} contains a character that cannot appear "
+                        'in a .kicad_dru quoted token (one of: " \\ ( ) newline)'
+                    ),
+                }
+
+            min_track_width = params.get("minTrackWidth")
+            min_clearance = params.get("minClearance")
+            min_via_diameter = params.get("minViaDiameter")
+            min_via_drill = params.get("minViaDrill")
+
+            if not any(
+                v is not None
+                for v in (min_track_width, min_clearance, min_via_diameter, min_via_drill)
+            ):
+                return {
+                    "success": False,
+                    "message": "No constraints provided",
+                    "errorDetails": (
+                        "Provide at least one of minTrackWidth, minClearance, "
+                        "minViaDiameter, minViaDrill"
+                    ),
+                }
+
+            try:
+                board_path = self.board.GetFileName()
+            except Exception:
+                board_path = None
+            dru_path = resolve_dru_path(board_path)
+
+            rule_name = rule_name_for_layer(layer)
+            rule_text = build_layer_constraint_rule(
+                layer,
+                min_track_width=min_track_width,
+                min_clearance=min_clearance,
+                min_via_diameter=min_via_diameter,
+                min_via_drill=min_via_drill,
+            )
+            persist = persist_layer_constraint_rule(dru_path, rule_name, rule_text)
+
+            if not persist.get("persisted"):
+                return {
+                    "success": False,
+                    "message": "Failed to set layer constraints",
+                    "errorDetails": persist.get("warning"),
+                }
+
+            return {
+                "success": True,
+                "message": f"Set layer constraints for {layer}",
+                "layer": layer,
+                "ruleName": rule_name,
+                "druFile": persist["druFile"],
+            }
+
+        except Exception as e:
+            logger.error(f"Error setting layer constraints: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to set layer constraints",
                 "errorDetails": str(e),
             }
 
