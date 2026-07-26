@@ -9,6 +9,7 @@ losing the SWIG edits.
 
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -26,6 +27,20 @@ class _FakeBoard:
         return self._filename
 
 
+class _CreatableFakeBoard(_FakeBoard):
+    def __init__(self):
+        super().__init__("")
+        self.title = None
+
+    def SetFileName(self, filename):
+        self._filename = str(filename)
+
+    def GetTitleBlock(self):
+        title_block = MagicMock()
+        title_block.SetTitle.side_effect = lambda title: setattr(self, "title", title)
+        return title_block
+
+
 class _FakeIPCBoardAPI:
     def get_size(self):
         return {"width": 10, "height": 20, "unit": "mm"}
@@ -36,6 +51,7 @@ class _FakeIPCBackend:
         self.connected = connected
         self.open_board_path = open_board_path
         self.save_calls = 0
+        self.save_as_paths = []
 
     def connect(self):
         self.connected = True
@@ -52,6 +68,14 @@ class _FakeIPCBackend:
 
     def get_version(self):
         return "10.0-test"
+
+    def save_project(self, path=None):
+        if path is not None:
+            self.save_as_paths.append(str(path))
+            self.open_board_path = str(path)
+        else:
+            self.save_calls += 1
+        return {"success": True, "message": "saved via ipc backend"}
 
 
 def _make_iface(command_routes, ipc_backend, use_ipc=True, board=None):
@@ -210,6 +234,40 @@ class TestIssue223Repro:
 
 @pytest.mark.unit
 class TestSessionTransitions:
+    def test_create_board_from_schematic_repins_after_board_swap(self, tmp_path, monkeypatch):
+        """A newly created board must not inherit the previous board's IPC pin."""
+        old_board_path = tmp_path / "old" / "old.kicad_pcb"
+        new_board_path = tmp_path / "new" / "new.kicad_pcb"
+        schematic_path = tmp_path / "new" / "new.kicad_sch"
+        schematic_path.parent.mkdir(parents=True)
+        schematic_path.write_text("(kicad_sch)")
+
+        backend = _FakeIPCBackend(open_board_path=str(old_board_path))
+        iface = _make_iface({}, backend, board=_FakeBoard(old_board_path))
+        iface.session_backend = "ipc"
+        iface.session_board_path = iface._normalize_board_path(old_board_path)
+        iface._handle_sync_schematic_to_board = lambda params: {"success": True}
+
+        created_board = _CreatableFakeBoard()
+        monkeypatch.setattr(kicad_interface.pcbnew, "BOARD", lambda: created_board)
+        monkeypatch.setattr(
+            kicad_interface.pcbnew,
+            "SaveBoard",
+            lambda path, board: Path(path).write_text("(kicad_pcb)"),
+        )
+        monkeypatch.setattr(KiCADProcessManager, "is_running", staticmethod(lambda: False))
+
+        result = iface._handle_create_board_from_schematic(
+            {
+                "schematicPath": str(schematic_path),
+                "boardPath": str(new_board_path),
+            }
+        )
+
+        assert result["success"] is True
+        assert iface.session_board_path == iface._normalize_board_path(new_board_path)
+        assert iface.session_backend == "swig"
+
     def test_ipc_pinned_session_downgrades_when_connection_lost(self, tmp_path, monkeypatch):
         board_path = tmp_path / "proj" / "proj.kicad_pcb"
         iface, backend, holder, _, _ = _loaded_iface(
@@ -262,6 +320,63 @@ class TestSessionTransitions:
         result = iface.handle_command("open_project", {"path": str(board_path)})
         assert iface.session_backend == "ipc"
         assert result["_backend"] == "ipc"
+
+
+@pytest.mark.unit
+class TestNewBoardLifecycleRouting:
+    def test_save_board_uses_ipc_dispatch_in_ipc_pinned_session(self, tmp_path, monkeypatch):
+        board_path = tmp_path / "proj" / "proj.kicad_pcb"
+        iface, _, holder, _, _ = _loaded_iface(
+            tmp_path, gui_board_path=board_path, monkeypatch=monkeypatch
+        )
+        iface.command_routes["save_board"] = iface._handle_save_board
+
+        def ipc_save(params):
+            holder["ipc_saves"] = holder.get("ipc_saves", 0) + 1
+            return {"success": True, "message": "saved via ipc"}
+
+        iface._ipc_save_project = ipc_save
+        result = iface.handle_command("save_board", {})
+
+        assert result["success"] is True
+        assert result["_backend"] == "ipc"
+        assert holder.get("ipc_saves") == 1
+        assert holder.get("swig_saves") is None
+
+    def test_save_as_uses_ipc_and_repins_new_path(self, tmp_path, monkeypatch):
+        board_path = tmp_path / "proj" / "proj.kicad_pcb"
+        new_path = tmp_path / "copy" / "copy.kicad_pcb"
+        iface, backend, holder, _, _ = _loaded_iface(
+            tmp_path, gui_board_path=board_path, monkeypatch=monkeypatch
+        )
+        iface.command_routes["save_as"] = iface._handle_save_as
+        iface._safe_load_board = lambda path: _FakeBoard(path)
+
+        result = iface.handle_command("save_as", {"boardPath": str(new_path)})
+
+        assert result["success"] is True
+        assert result["_backend"] == "ipc"
+        assert backend.save_as_paths == [str(new_path.resolve())]
+        assert iface.session_board_path == iface._normalize_board_path(new_path)
+        assert iface.session_backend == "ipc"
+        assert iface.board.GetFileName() == str(new_path.resolve())
+        assert holder.get("swig_saves") is None
+
+    def test_batch_move_refuses_instead_of_mutating_swig_for_ipc_session(
+        self, tmp_path, monkeypatch
+    ):
+        board_path = tmp_path / "proj" / "proj.kicad_pcb"
+        iface, _, _, _, _ = _loaded_iface(
+            tmp_path, gui_board_path=board_path, monkeypatch=monkeypatch
+        )
+        iface.component_commands = MagicMock()
+        iface.command_routes["batch_move_components"] = iface._handle_batch_move_components
+
+        result = iface.handle_command("batch_move_components", {"moves": {"R1": {"x": 1, "y": 2}}})
+
+        assert result["success"] is False
+        assert "move_component" in result["errorDetails"]
+        iface.component_commands.batch_move_components.assert_not_called()
 
 
 @pytest.mark.unit

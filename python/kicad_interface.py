@@ -920,7 +920,11 @@ class KiCADInterface(SchematicHandlersMixin):
         if command in self.IPC_DIRECT_COMMANDS:
             return "ipc" if self.use_ipc else "unavailable"
 
-        return "swig"
+        # Wrapper commands such as save_board/save_as may deliberately route
+        # through handle_command("save_project", ...). Preserve the backend
+        # selected by that nested dispatch instead of relabelling an IPC save
+        # as SWIG at the outer command boundary.
+        return result.get("_backend", "swig")
 
     def handle_command(self, command: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Route command to appropriate handler, preferring IPC when available"""
@@ -1585,12 +1589,30 @@ class KiCADInterface(SchematicHandlersMixin):
         save_params: Dict[str, Any] = {"force": params.get("force", False)}
         board_path = params.get("boardPath") or params.get("path")
         if board_path:
+            board_path = str(Path(board_path).expanduser().resolve())
             save_params["filename"] = board_path
-        result = self._handle_save_project(save_params)
+
+        # Do not call _handle_save_project directly: save_project is IPC-capable,
+        # and the dispatcher is the single owner of the session-pinning decision.
+        result = self.handle_command("save_project", save_params)
         if result.get("success"):
+            if board_path:
+                # Save As changes the board identity. Keep both the SWIG fallback
+                # and the session pin aligned with the GUI's newly saved board.
+                if result.get("_backend") == "ipc":
+                    reloaded = self._safe_load_board(board_path)
+                    if reloaded is not None:
+                        self.board = reloaded
+                        self._update_command_handlers()
+                    else:
+                        result.setdefault("warnings", []).append(
+                            "Board was saved through IPC, but the SWIG fallback "
+                            "could not reload the new path"
+                        )
+                self._pin_session_backend(board_path)
             self._record_board_signature()
             self._last_auto_save_status = None
-            result["boardPath"] = self._current_board_path()
+            result["boardPath"] = board_path or self._current_board_path()
         return result
 
     def _handle_save_as(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -1608,6 +1630,21 @@ class KiCADInterface(SchematicHandlersMixin):
 
     def _handle_batch_move_components(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Batch move wrapper that preserves the external-edit save guard."""
+        # The IPC BoardAPI currently exposes only single-component moves, each
+        # with its own commit. Falling through to ComponentCommands here would
+        # mutate the stale SWIG copy while an IPC session owns the live board.
+        # Refuse rather than violate the tool's all-or-nothing contract.
+        if getattr(self, "use_ipc", False) and self._session_allows_ipc():
+            return {
+                "success": False,
+                "message": "batch_move_components is unavailable for an IPC-owned session",
+                "errorDetails": (
+                    "Use move_component for each component while KiCad IPC owns the board, "
+                    "or reopen the board in a SWIG-owned session for transactional batch moves."
+                ),
+                "sessionBackend": getattr(self, "session_backend", None),
+            }
+
         save = bool(params.get("save", True)) and not bool(params.get("dryRun", False))
         board_path = self._current_board_path()
         if save:
@@ -1663,6 +1700,10 @@ class KiCADInterface(SchematicHandlersMixin):
             self.board = board
             self._update_command_handlers()
             self._record_board_signature()
+            # Replacing self.board also replaces the board identity owned by
+            # this session. Re-pin immediately so a prior IPC pin cannot route
+            # later commands to the GUI's old board if schematic sync fails.
+            self._pin_session_backend(self._current_board_path())
             sync = self._handle_sync_schematic_to_board(
                 {"schematicPath": schematic_path, "boardPath": board_path}
             )
@@ -5135,6 +5176,14 @@ print("ok")
     def _ipc_save_project(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for save_project"""
         try:
+            destination = params.get("filename") or params.get("path")
+            if destination:
+                destination_path = Path(destination).expanduser().resolve()
+                result = self.ipc_backend.save_project(destination_path)
+                if result.get("success"):
+                    result["boardPath"] = str(destination_path)
+                return result
+
             success = self.ipc_board_api.save()
 
             return {

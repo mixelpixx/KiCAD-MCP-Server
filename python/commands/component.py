@@ -280,7 +280,7 @@ class ComponentCommands(PlacementOptimizerCommands):
                         "errorDetails": f"moves['{ref}'] must be an object",
                     }
                 pos_spec = spec.get("position") if isinstance(spec.get("position"), dict) else spec
-                if "x" not in pos_spec or "y" not in pos_spec:
+                if not isinstance(pos_spec, dict) or "x" not in pos_spec or "y" not in pos_spec:
                     return {
                         "success": False,
                         "message": "Bad move spec",
