@@ -74,10 +74,19 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
 
+      # Formatting and type checks run ONCE, not once per matrix entry. pip
+      # resolves a different linter build per interpreter (black >=25.12
+      # requires Python >=3.10, so the 3.9 runner silently gets black 25.1.0,
+      # which formats three files differently from the 26.x used everywhere
+      # else). Pinning the interpreter for these steps is what makes the gate
+      # deterministic; the matrix is there to exercise the CODE on each Python,
+      # which pytest below still does. Same condition the coverage upload uses.
       - name: Run Black formatter check
+        if: matrix.python-version == '3.12' && matrix.os == 'ubuntu-24.04'
         run: black --check python/
 
       - name: Run MyPy type checker
+        if: matrix.python-version == '3.12' && matrix.os == 'ubuntu-24.04'
         run: mypy python/
 
       # Advisory only: pylint's default rule set has never been enforced on this
@@ -85,6 +94,7 @@ jobs:
       # --exit-zero says that honestly instead of hiding a real failure behind
       # `|| echo`, which is what the other four steps used to do.
       - name: Run Pylint (advisory)
+        if: matrix.python-version == '3.12' && matrix.os == 'ubuntu-24.04'
         run: pylint python/ --exit-zero
 
       # `pytest python/` pointed at the SOURCE tree, and an explicit path
