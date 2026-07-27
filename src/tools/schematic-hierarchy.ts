@@ -92,10 +92,7 @@ export function registerSchematicHierarchyTools(server: McpServer, callKicadScri
     {
       schematicPath: z.string().describe("Path to the parent .kicad_sch"),
       sheetName: z.string().optional().describe("Only this sheet (by display name)"),
-      sheetPath: z
-        .string()
-        .optional()
-        .describe("Only this sheet (by file basename)"),
+      sheetPath: z.string().optional().describe("Only this sheet (by file basename)"),
     },
     async (args: any) => {
       const r = await callKicadScript("get_sheet_properties", args);

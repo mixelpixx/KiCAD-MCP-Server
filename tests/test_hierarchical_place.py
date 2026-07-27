@@ -23,9 +23,7 @@ def test_requires_board_path():
 
 
 def test_missing_file():
-    r = HierarchicalPlaceCommands().hierarchical_place(
-        {"boardPath": "/no/such/board.kicad_pcb"}
-    )
+    r = HierarchicalPlaceCommands().hierarchical_place({"boardPath": "/no/such/board.kicad_pcb"})
     assert r["success"] is False
     assert "not found" in r["message"]
 

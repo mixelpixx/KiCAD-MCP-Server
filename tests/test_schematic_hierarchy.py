@@ -253,14 +253,9 @@ class TestSheetProperties:
         c = _cmds()
         assert c.set_sheet_property({})["success"] is False
         assert c.set_sheet_property({"schematicPath": "/x"})["success"] is False
+        assert c.set_sheet_property({"schematicPath": "/x", "sheetName": "A"})["success"] is False
         assert (
-            c.set_sheet_property({"schematicPath": "/x", "sheetName": "A"})["success"]
-            is False
-        )
-        assert (
-            c.set_sheet_property(
-                {"schematicPath": "/x", "sheetName": "A", "key": "K"}
-            )["success"]
+            c.set_sheet_property({"schematicPath": "/x", "sheetName": "A", "key": "K"})["success"]
             is False
         )
         assert c.get_sheet_properties({})["success"] is False
@@ -334,9 +329,7 @@ class TestSheetProperties:
             }
         )
         assert r["success"] is True
-        g = c.get_sheet_properties(
-            {"schematicPath": str(parent), "sheetPath": "sub.kicad_sch"}
-        )
+        g = c.get_sheet_properties({"schematicPath": str(parent), "sheetPath": "sub.kicad_sch"})
         assert g["sheets"][0]["properties"]["IS.Param.freq"] == "440"
 
     def test_unknown_sheet_fails(self, tmp_path):
@@ -399,9 +392,7 @@ class TestSheetProperties:
         if _shutil.which("kicad-cli") is None:
             _pytest.skip("kicad-cli not available")
 
-        template = (
-            Path(__file__).parent.parent / "python" / "templates" / "blank.kicad_sch"
-        )
+        template = Path(__file__).parent.parent / "python" / "templates" / "blank.kicad_sch"
         parent = tmp_path / "top.kicad_sch"
         parent.write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
         sub = tmp_path / "sub.kicad_sch"

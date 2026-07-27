@@ -232,9 +232,7 @@ class SchematicHierarchyCommands:
                 "removed_sheet": sheet_name or target_base,
                 "sheet_uuid": sheet_uuid,
                 "removed_instance_path": removed_instance,
-                "message": (
-                    f"Removed sheet '{sheet_name or target_base}' from {parent_file.name}"
-                ),
+                "message": (f"Removed sheet '{sheet_name or target_base}' from {parent_file.name}"),
             }
 
         except Exception as e:
@@ -323,8 +321,7 @@ class SchematicHierarchyCommands:
         for start, end in self._find_sheet_blocks(content):
             block = content[start:end]
             if sheet_name and (
-                f'"Sheetname" "{sheet_name}"' in block
-                or f'"Sheet name" "{sheet_name}"' in block
+                f'"Sheetname" "{sheet_name}"' in block or f'"Sheet name" "{sheet_name}"' in block
             ):
                 return start, end
             if (
@@ -399,16 +396,12 @@ class SchematicHierarchyCommands:
                 block,
             )
             if existing:
-                new_block = (
-                    block[: existing.start(2)] + escaped_value + block[existing.end(2) :]
-                )
+                new_block = block[: existing.start(2)] + escaped_value + block[existing.end(2) :]
                 created = False
             else:
                 # Anchor the new property at the sheet origin; created hidden
                 # (it is metadata, not display text).
-                at_match = re.search(
-                    r"\(at\s+(-?[\d.]+)\s+(-?[\d.]+)", block
-                )
+                at_match = re.search(r"\(at\s+(-?[\d.]+)\s+(-?[\d.]+)", block)
                 x = float(at_match.group(1)) if at_match else 0.0
                 y = float(at_match.group(2)) if at_match else 0.0
                 property_block = (
@@ -422,12 +415,12 @@ class SchematicHierarchyCommands:
                 insert_at = len(block) - 1
                 while insert_at > 0 and block[insert_at - 1] in (" ", "\t", "\n"):
                     insert_at -= 1
-                new_block = block[:insert_at] + "\n" + property_block + block[insert_at:].lstrip(" \t")
+                new_block = (
+                    block[:insert_at] + "\n" + property_block + block[insert_at:].lstrip(" \t")
+                )
                 created = True
 
-            parent_file.write_text(
-                content[:start] + new_block + content[end:], encoding="utf-8"
-            )
+            parent_file.write_text(content[:start] + new_block + content[end:], encoding="utf-8")
             return {
                 "success": True,
                 "key": key,
@@ -484,16 +477,17 @@ class SchematicHierarchyCommands:
                 for m in re.finditer(
                     r'\(property\s+"((?:[^"\\]|\\.)*)"\s+"((?:[^"\\]|\\.)*)"', block
                 ):
-                    unescape = lambda s: s.replace('\\"', '"').replace("\\\\", "\\")
+
+                    def unescape(s: str) -> str:
+                        return s.replace('\\"', '"').replace("\\\\", "\\")
+
                     properties[unescape(m.group(1))] = unescape(m.group(2))
                 uuid_match = re.search(r'\(uuid\s+"?([0-9a-fA-F-]+)"?\)', block)
                 at_match = re.search(r"\(at\s+(-?[\d.]+)\s+(-?[\d.]+)", block)
                 sheets.append(
                     {
-                        "name": properties.get("Sheet name")
-                        or properties.get("Sheetname"),
-                        "file": properties.get("Sheet file")
-                        or properties.get("Sheetfile"),
+                        "name": properties.get("Sheet name") or properties.get("Sheetname"),
+                        "file": properties.get("Sheet file") or properties.get("Sheetfile"),
                         "uuid": uuid_match.group(1) if uuid_match else None,
                         "position": {
                             "x": float(at_match.group(1)) if at_match else None,
