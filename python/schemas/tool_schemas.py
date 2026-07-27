@@ -2741,8 +2741,7 @@ SCHEMATIC_TOOLS = [
                 "gridSize": {
                     "type": "number",
                     "description": (
-                        "Grid spacing in mm (default: 1.27 = 50 mil, the KiCad "
-                        "connection grid)"
+                        "Grid spacing in mm (default: 1.27 = 50 mil, the KiCad " "connection grid)"
                     ),
                     "default": 1.27,
                 },

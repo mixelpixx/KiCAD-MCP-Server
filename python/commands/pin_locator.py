@@ -13,10 +13,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import sexpdata
+from commands.schematic import SchematicLoadError, SchematicManager
 from sexpdata import Symbol
 from skip import Schematic
-
-from commands.schematic import SchematicLoadError, SchematicManager
 
 logger = logging.getLogger("kicad_interface")
 

@@ -44,7 +44,7 @@ class SchematicLoadError(Exception):
                 f"Schematic load failed for {self.path}: embedded flat lib "
                 f"symbols [{names}] have no sub-units and break the "
                 f"kicad-skip parser; run the repair_flat_symbols tool (if "
-                f'available) or wrap each flat symbol\'s pins/graphics in a '
+                f"available) or wrap each flat symbol's pins/graphics in a "
                 f'(symbol "NAME_1_1" ...) sub-unit'
             )
         cause = (self.details or "").strip().splitlines()
@@ -83,16 +83,11 @@ def find_flat_lib_symbols(file_path: str) -> List[str]:
             if not (isinstance(item, list) and item and item[0] == lib_symbols):
                 continue
             for sym_def in item[1:]:
-                if not (
-                    isinstance(sym_def, list)
-                    and len(sym_def) > 1
-                    and sym_def[0] == sym
-                ):
+                if not (isinstance(sym_def, list) and len(sym_def) > 1 and sym_def[0] == sym):
                     continue
                 name = str(sym_def[1])
                 has_subunit = any(
-                    isinstance(child, list) and child and child[0] == sym
-                    for child in sym_def[2:]
+                    isinstance(child, list) and child and child[0] == sym for child in sym_def[2:]
                 )
                 is_derived = any(
                     isinstance(child, list) and child and child[0] == extends

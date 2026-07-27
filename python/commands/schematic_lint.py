@@ -106,11 +106,7 @@ def _hide_pin_names(src: str) -> Tuple[str, int]:
             for ps, pe in _find_blocks(blk, "(pin_names"):
                 if ps == pn:
                     if "hide" not in blk[ps:pe]:
-                        blk = (
-                            blk[: pe - 1].rstrip()
-                            + "\n\t\t\t\t(hide yes)\n\t\t\t)"
-                            + blk[pe:]
-                        )
+                        blk = blk[: pe - 1].rstrip() + "\n\t\t\t\t(hide yes)\n\t\t\t)" + blk[pe:]
                         n += 1
                     break
         else:
@@ -140,9 +136,7 @@ def _build_pin_orient_map(sch_path: Path) -> Dict[Tuple[float, float], int]:
     pin_map: Dict[Tuple[float, float], int] = {}
     for symbol in getattr(sch, "symbol", None) or []:
         try:
-            if not hasattr(symbol, "property") or not hasattr(
-                symbol.property, "Reference"
-            ):
+            if not hasattr(symbol, "property") or not hasattr(symbol.property, "Reference"):
                 continue
             ref = symbol.property.Reference.value
             if ref.startswith("_TEMPLATE"):
@@ -161,9 +155,7 @@ def _build_pin_orient_map(sch_path: Path) -> Dict[Tuple[float, float], int]:
     return pin_map
 
 
-def _orient_labels(
-    src: str, pin_map: Dict[Tuple[float, float], int]
-) -> Tuple[str, int, int]:
+def _orient_labels(src: str, pin_map: Dict[Tuple[float, float], int]) -> Tuple[str, int, int]:
     """Rewrite label text angle + justify from the pin each label sits on.
 
     The anchor coordinates are never touched. Returns
@@ -244,9 +236,7 @@ class SchematicLintCommands:
                         pin_map = _build_pin_orient_map(Path(schematic_path))
                     except SchematicLoadError as e:
                         return e.to_response()
-                    src, counts["orient_labels"], skipped_labels = _orient_labels(
-                        src, pin_map
-                    )
+                    src, counts["orient_labels"], skipped_labels = _orient_labels(src, pin_map)
 
             changed = src != original
             if changed and not dry_run:
@@ -255,9 +245,7 @@ class SchematicLintCommands:
 
             message_parts = []
             if "hide_pin_names" in passes:
-                message_parts.append(
-                    f"hide_pin_names: {counts['hide_pin_names']} def(s) hidden"
-                )
+                message_parts.append(f"hide_pin_names: {counts['hide_pin_names']} def(s) hidden")
             if "orient_labels" in passes:
                 message_parts.append(
                     f"orient_labels: {counts['orient_labels']} label(s) reoriented "

@@ -200,9 +200,7 @@ def lint_offgrid(
             # Post-fix sanity: the file must still parse before we write it.
             sexpdata.loads(new_text)
             directory = os.path.dirname(path) or "."
-            fd, tmp_path = tempfile.mkstemp(
-                dir=directory, prefix=".lintgrid-", suffix=".kicad_sch"
-            )
+            fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".lintgrid-", suffix=".kicad_sch")
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write(new_text)

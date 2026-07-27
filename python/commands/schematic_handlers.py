@@ -382,9 +382,7 @@ class SchematicHandlersMixin:
             label_cleanup_warning: Optional[str] = None
             if delete_attached_labels:
                 try:
-                    target_pin_positions = self._pin_positions_for_reference(
-                        content, reference
-                    )
+                    target_pin_positions = self._pin_positions_for_reference(content, reference)
                     if not target_pin_positions:
                         logger.warning(
                             "deleteAttachedLabels: no pin positions resolvable "
@@ -394,9 +392,7 @@ class SchematicHandlersMixin:
                         )
                 except Exception as e:
                     label_cleanup_warning = f"could not compute pin positions: {e}"
-                    logger.warning(
-                        "deleteAttachedLabels: %s", label_cleanup_warning
-                    )
+                    logger.warning("deleteAttachedLabels: %s", label_cleanup_warning)
 
             # Delete from back to front to preserve character offsets
             for b_start, b_end in sorted(blocks_to_delete, reverse=True):
@@ -426,11 +422,7 @@ class SchematicHandlersMixin:
                     result["deleted_label_count"] = 0
                     result["labelCleanupWarning"] = label_cleanup_warning
                 else:
-                    result.update(
-                        self._delete_dangling_labels_at(
-                            sch_file, target_pin_positions
-                        )
-                    )
+                    result.update(self._delete_dangling_labels_at(sch_file, target_pin_positions))
 
             return result
 
@@ -442,9 +434,7 @@ class SchematicHandlersMixin:
             return {"success": False, "message": str(e)}
 
     @staticmethod
-    def _pin_positions_for_reference(
-        content: str, reference: str
-    ) -> List[Tuple[float, float]]:
+    def _pin_positions_for_reference(content: str, reference: str) -> List[Tuple[float, float]]:
         """World (x, y) positions of every pin of every placed instance whose
         Reference property equals ``reference``.
 
@@ -514,8 +504,7 @@ class SchematicHandlersMixin:
 
             def _near(x: float, y: float, points: List[Tuple[float, float]]) -> bool:
                 return any(
-                    abs(x - px) <= tolerance and abs(y - py) <= tolerance
-                    for px, py in points
+                    abs(x - px) <= tolerance and abs(y - py) <= tolerance for px, py in points
                 )
 
             label_types = {
@@ -531,11 +520,7 @@ class SchematicHandlersMixin:
                 if not (isinstance(item, list) and item and item[0] in label_types):
                     continue
                 at_entry = next(
-                    (
-                        p
-                        for p in item[1:]
-                        if isinstance(p, list) and len(p) >= 3 and p[0] == at_sym
-                    ),
+                    (p for p in item[1:] if isinstance(p, list) and len(p) >= 3 and p[0] == at_sym),
                     None,
                 )
                 if at_entry is None:
@@ -1508,8 +1493,7 @@ class SchematicHandlersMixin:
                 if svg_path is None:
                     svg_path = sorted(svg_files)[0]
                     logger.warning(
-                        "Could not identify root SVG page for %s; "
-                        "falling back to %s",
+                        "Could not identify root SVG page for %s; " "falling back to %s",
                         schematic_path,
                         svg_path,
                     )
@@ -2321,9 +2305,7 @@ class SchematicHandlersMixin:
                 if params.get("blackAndWhite"):
                     cmd.append("--black-and-white")
 
-                result = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=60
-                )
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
                 if result.returncode != 0:
                     return {
@@ -2332,8 +2314,7 @@ class SchematicHandlersMixin:
                     }
 
                 pages = sorted(
-                    os.path.basename(f)
-                    for f in glob.glob(os.path.join(tmpdir, "*.svg"))
+                    os.path.basename(f) for f in glob.glob(os.path.join(tmpdir, "*.svg"))
                 )
                 if not pages:
                     return {
@@ -3289,8 +3270,7 @@ class SchematicHandlersMixin:
                 if svg_output is None:
                     svg_output = os.path.join(tmp_dir, sorted(svg_files)[0])
                     logger.warning(
-                        "Could not identify root SVG page for %s; "
-                        "falling back to %s",
+                        "Could not identify root SVG page for %s; " "falling back to %s",
                         schematic_path,
                         svg_output,
                     )

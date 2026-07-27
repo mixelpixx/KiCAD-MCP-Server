@@ -30,8 +30,8 @@ Remove a placed symbol from a KiCAD schematic (.kicad_sch). This removes the sym
 
 | Parameter            | Type    | Required | Description                                                                                                    |
 | -------------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------- |
-| schematicPath        | string  | Yes      | Path to the .kicad_sch file                                                                                     |
-| reference            | string  | Yes      | Reference designator of the component to remove (e.g. R1, U3)                                                   |
+| schematicPath        | string  | Yes      | Path to the .kicad_sch file                                                                                    |
+| reference            | string  | Yes      | Reference designator of the component to remove (e.g. R1, U3)                                                  |
 | deleteAttachedLabels | boolean | No       | Also delete net labels sitting on the deleted component's pin positions (default false; see usage notes below) |
 
 **Usage Notes:** `deleteAttachedLabels` removes the labels that `batch_add_and_connect` placed on the component's pins, which otherwise remain as `label_dangling` ERC errors. A label is kept whenever it is still attached to something else: coincident with a remaining component's pin, coincident with a wire endpoint, or lying on a wire segment (0.5 mm tolerance). Deleted labels are reported in the response (`deleted_labels`, `deleted_label_count`). Labels joined to a pin only through a short wire are not chased — that is wire-graph cleanup, out of scope. Recommended when permanently removing a wired part; leave off (default) for delete-then-re-add-in-place workflows.
@@ -494,7 +494,7 @@ Snap schematic element coordinates to the nearest grid point. KiCAD uses exact i
 | Parameter     | Type            | Required | Description                                                                                                                                                                                                          |
 | ------------- | --------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | schematicPath | string          | Yes      | Path to the .kicad_sch schematic file                                                                                                                                                                                |
-| gridSize      | number          | No       | Grid spacing in mm (default: 1.27 = 50 mil, the KiCad connection grid; do NOT use 2.54 — it moves pins off their 50 mil positions)                                                                                                                        |
+| gridSize      | number          | No       | Grid spacing in mm (default: 1.27 = 50 mil, the KiCad connection grid; do NOT use 2.54 — it moves pins off their 50 mil positions)                                                                                   |
 | elements      | array\<string\> | No       | Types to snap: `"wires"`, `"junctions"`, `"labels"`, `"components"`. Default: `["wires", "junctions", "labels"]`. `"components"` is opt-in — moving a component without re-routing its wires creates new mismatches. |
 
 **Response fields:**
@@ -509,11 +509,11 @@ Snap schematic element coordinates to the nearest grid point. KiCAD uses exact i
 
 Netlist-safe cosmetic cleanup of a schematic, applied as raw-text edits that never move a symbol, pin, wire, junction, or label anchor — only display attributes change. Two passes: `hide_pin_names` gives every top-level embedded lib_symbol definition a `(pin_names ... (hide yes))` directive (in label-driven schematics the internal pin names duplicate the net label on the same pin); `orient_labels` sets each net/global/hierarchical label's text angle and justify from the sheet-space outward side of the pin it sits on (rotation/mirror aware via PinLocator), so text reads away from the symbol body — labels not sitting on a pin are counted and left untouched. Complements `autoplace_schematic_fields`, which handles Reference/Value field placement.
 
-| Parameter     | Type            | Required | Description                                                          |
-| ------------- | --------------- | -------- | -------------------------------------------------------------------- |
-| schematicPath | string          | Yes      | Path to the .kicad_sch file                                          |
+| Parameter     | Type            | Required | Description                                                                  |
+| ------------- | --------------- | -------- | ---------------------------------------------------------------------------- |
+| schematicPath | string          | Yes      | Path to the .kicad_sch file                                                  |
 | passes        | array\<string\> | No       | Passes to run in order: `"hide_pin_names"`, `"orient_labels"` (default both) |
-| dryRun        | boolean         | No       | Report change counts without writing (default false)                |
+| dryRun        | boolean         | No       | Report change counts without writing (default false)                         |
 
 **Response fields:** `changed`, `counts` per pass, `skippedLabels` (labels not on a pin), `message`.
 
@@ -521,10 +521,10 @@ Netlist-safe cosmetic cleanup of a schematic, applied as raw-text edits that nev
 
 Report every off-grid connection-relevant coordinate in a schematic — wire/bus endpoints, symbol origins, label/junction/no_connect anchors — and optionally snap them (`fix: true`). KiCad's connection grid is fixed at 50 mil (1.27 mm) and junction placement uses exact matching, so one off-grid endpoint can poison junction placement for a whole sheet. Fixes are byte-exact text splices that preserve file formatting (unlike `snap_to_grid`'s whole-file rewrite). `(lib_symbols)` content (local pin definitions) and property field positions (cosmetic) are never flagged or touched. Offenders more than 0.5 mm off-grid are reported as `needsHuman` and never auto-snapped — sub-half-grid offsets round coincident points to the same grid node, preserving connectivity, while larger ones need a human decision.
 
-| Parameter     | Type    | Required | Description                                                       |
-| ------------- | ------- | -------- | ----------------------------------------------------------------- |
-| schematicPath | string  | Yes      | Path to the .kicad_sch schematic file                             |
-| fix           | boolean | No       | Snap offenders in place (default false: report only)              |
+| Parameter     | Type    | Required | Description                                                      |
+| ------------- | ------- | -------- | ---------------------------------------------------------------- |
+| schematicPath | string  | Yes      | Path to the .kicad_sch schematic file                            |
+| fix           | boolean | No       | Snap offenders in place (default false: report only)             |
 | gridSize      | number  | No       | Grid spacing in mm (default: 1.27 = 50 mil, the connection grid) |
 
 **Response fields:** `offenders` (type, x/y, snappedX/Y, offsetMm, needsHuman, line), `counts` per type, `fixed`, `needsHuman`.

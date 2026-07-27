@@ -210,7 +210,7 @@ class TestRepairFlatSymbols:
         assert "not found" in r["message"]
 
     def test_unbalanced_file_fails_cleanly(self, commands, tmp_path):
-        path = _write(tmp_path, "broken.kicad_sym", "(kicad_symbol_lib (symbol \"X\" (pin ")
+        path = _write(tmp_path, "broken.kicad_sym", '(kicad_symbol_lib (symbol "X" (pin ')
         before = Path(path).read_text(encoding="utf-8")
         r = commands.repair_flat_symbols({"path": path, "dryRun": False})
         assert r["success"] is False

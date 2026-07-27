@@ -346,13 +346,13 @@ try:
     from commands.schematic_batch import SchematicBatchCommands
     from commands.schematic_declutter import SchematicDeclutterCommands
     from commands.schematic_field_layout import SchematicFieldLayoutCommands
-    from commands.schematic_lint import SchematicLintCommands
     from commands.schematic_hierarchy import SchematicHierarchyCommands
+    from commands.schematic_lint import SchematicLintCommands
     from commands.symbol_creator import SymbolCreator
     from commands.symbol_pins import SymbolPinCommands
+    from commands.symbol_repair import SymbolRepairCommands
     from commands.symbol_schematic import SymbolSchematicCommands
     from commands.update_symbol_from_library import update_symbol_from_library
-    from commands.symbol_repair import SymbolRepairCommands
 
     logger.info("Successfully imported all command handlers")
 except ImportError as e:

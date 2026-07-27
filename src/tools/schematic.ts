@@ -154,11 +154,7 @@ To remove a footprint from a PCB, use delete_component instead.`,
             "unless still attached to a wire or another component's pin (default false)",
         ),
     },
-    async (args: {
-      schematicPath: string;
-      reference: string;
-      deleteAttachedLabels?: boolean;
-    }) => {
+    async (args: { schematicPath: string; reference: string; deleteAttachedLabels?: boolean }) => {
       const result = await callKicadScript("delete_schematic_component", args);
       if (result.success) {
         const labelNote =
@@ -1899,10 +1895,7 @@ edit_schematic_component and set its value to an empty string.`,
       "Offenders more than 0.5 mm off-grid are reported as NEEDS HUMAN and never auto-snapped.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
-      fix: z
-        .boolean()
-        .optional()
-        .describe("Snap offenders in place (default false: report only)"),
+      fix: z.boolean().optional().describe("Snap offenders in place (default false: report only)"),
       gridSize: z
         .number()
         .optional()

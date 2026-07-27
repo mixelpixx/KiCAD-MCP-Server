@@ -194,6 +194,7 @@ class TestBatchConnect:
             add_wire=lambda *a: True,
             delete_label=lambda *a, **k: True,
         )
+
         # _find_facing_label must NOT be consulted for global labels; make it raise if called.
         def _boom(*a, **k):
             raise AssertionError("facing-label lookup should be skipped for global labels")
