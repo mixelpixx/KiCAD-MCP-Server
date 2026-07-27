@@ -27,7 +27,12 @@ export function registerPcbImportTools(server: McpServer, callKicadScript: Funct
         .optional()
         .describe("Capture a structured import report from kicad-cli (default 'none')"),
     },
-    async (args: { inputFile: string; outputFile?: string; format?: string; reportFormat?: string }) => {
+    async (args: {
+      inputFile: string;
+      outputFile?: string;
+      format?: string;
+      reportFormat?: string;
+    }) => {
       const result = await callKicadScript("import_pcb", args);
       return {
         content: [

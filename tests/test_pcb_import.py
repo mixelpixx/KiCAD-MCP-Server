@@ -196,7 +196,9 @@ def test_real_allegro_brd_import(tmp_path: Path) -> None:
     pic = PcbImportCommands()
     out_file = tmp_path / "discovery_kit.kicad_pcb"
 
-    result = pic.import_pcb({"inputFile": str(_ALLEGRO_BRD), "format": "auto", "outputFile": str(out_file)})
+    result = pic.import_pcb(
+        {"inputFile": str(_ALLEGRO_BRD), "format": "auto", "outputFile": str(out_file)}
+    )
 
     assert result["success"] is True, result
     assert result["format"].lower() == "allegro"
