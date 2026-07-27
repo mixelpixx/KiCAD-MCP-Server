@@ -87,9 +87,7 @@ def kicad_plugin_dirs(
     if base is None or not base.is_dir():
         return []
     return sorted(
-        ver / "3rdparty" / "plugins"
-        for ver in base.glob("[0-9]*.[0-9]*")
-        if ver.is_dir()
+        ver / "3rdparty" / "plugins" for ver in base.glob("[0-9]*.[0-9]*") if ver.is_dir()
     )
 
 
@@ -135,6 +133,7 @@ def ensure_helper_installed(
         except OSError as exc:  # never let self-install break the graceful path
             logger.warning("gui-driver helper install into %s failed: %s", target, exc)
     return {"installed": installed, "current": current}
+
 
 # Seed list of destructive menu labels (docs/gui_destructive_seed.txt,
 # regex-derived from the live pcbnew 215-item enumeration; embedded here so the
@@ -230,9 +229,10 @@ def resolve_name(tree: Dict[str, Any], name: str) -> Optional[Tuple[int, str]]:
             return (hit, "menu")
     for bar in tree.get("toolbars", []):
         for tool in bar.get("tools", []):
-            if _normalize_label(tool.get("tooltip") or "") == wanted or _normalize_label(
-                tool.get("label") or ""
-            ) == wanted:
+            if (
+                _normalize_label(tool.get("tooltip") or "") == wanted
+                or _normalize_label(tool.get("label") or "") == wanted
+            ):
                 return (tool["id"], "tool")
     return None
 
@@ -404,7 +404,11 @@ class GuiDriverCommands:
         shot = self.kicad_gui_screenshot(params)
         if not shot.get("success"):
             return shot
-        return {"success": True, "zoomed": True, **{k: v for k, v in shot.items() if k != "success"}}
+        return {
+            "success": True,
+            "zoomed": True,
+            **{k: v for k, v in shot.items() if k != "success"},
+        }
 
     def kicad_reload_and_open_plugin(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Playbook: Refresh Plugins, then trigger the named External-Plugins item.
@@ -414,9 +418,7 @@ class GuiDriverCommands:
         name = params.get("name")
         if not name:
             return {"success": False, "error": "kicad_reload_and_open_plugin needs `name`"}
-        refresh = self.kicad_gui_click(
-            {"name": "Refresh Plugins", "frame": params.get("frame")}
-        )
+        refresh = self.kicad_gui_click({"name": "Refresh Plugins", "frame": params.get("frame")})
         if not refresh.get("success"):
             return {"success": False, "error": "Refresh Plugins failed", "detail": refresh}
         time.sleep(float(params.get("settle", 1.0)))  # let the re-scan rebuild the menu
@@ -464,9 +466,11 @@ class GuiDriverCommands:
             "success": True,
             "dialog": title,
             "violations": violations,
-            "violationCount": sum(len(g["rows"]) for g in violations)
-            if violations
-            else self._collect_row_counts(scraped),
+            "violationCount": (
+                sum(len(g["rows"]) for g in violations)
+                if violations
+                else self._collect_row_counts(scraped)
+            ),
             "rawScrape": scraped,
         }
 
@@ -506,10 +510,10 @@ class GuiDriverCommands:
     def _atspi():
         """Import gi/Atspi or explain how to enable it (returns (module, error))."""
         try:
-            import gi
+            import gi  # type: ignore[import-not-found]
 
             gi.require_version("Atspi", "2.0")
-            from gi.repository import Atspi
+            from gi.repository import Atspi  # type: ignore[import-not-found]
 
             return Atspi, None
         except Exception as exc:  # noqa: BLE001

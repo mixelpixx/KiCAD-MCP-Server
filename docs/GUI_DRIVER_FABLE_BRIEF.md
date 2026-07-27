@@ -6,12 +6,14 @@ concrete build** for Backend A (in-process wx, cross-platform) plus the AT-SPI f
 are wiring proven pieces into the MCP, not researching.
 
 ## PROVEN this session (don't re-derive)
+
 A throwaway plugin `__init__.py` doing `import wx; wx.CallLater(3000, probe)` inside a live
 pcbnew produced:
+
 - `wx.GetTopLevelWindows()` → the `PcbFrame` (name `'PcbFrame'`, title `'PCB Editor'`).
 - `frame.GetMenuBar()` → menus `[File, Edit, View, Place, Route, Inspect, Tools, Preferences, Help]`.
 - **Recursing `menu.GetMenuItems()` (incl. `item.GetSubMenu()`) found plugin actions BY NAME
-  with IDs:** under *Tools → External Plugins*: `Git Plugin` id=-2242, **`Open kiHarness`
+  with IDs:** under _Tools → External Plugins_: `Git Plugin` id=-2242, **`Open kiHarness`
   id=-2245**. → trigger with
   `frame.ProcessEvent(wx.CommandEvent(wx.wxEVT_COMMAND_MENU_SELECTED, item_id))`.
 - `frame.GetToolBar()` returns **None** — KiCad uses **AUI toolbars**. Recurse `win.GetChildren()`,
@@ -20,7 +22,9 @@ pcbnew produced:
   `.GetShortHelp()`/tooltip, not `.GetLabel()`). Trigger with `wxEVT_COMMAND_TOOL_CLICKED`.
 
 ## Architecture (fits our FastMCP harness)
+
 Two processes, one thin channel:
+
 1. **In-KiCad helper** — a tiny plugin (ship it the way kiHarness/Loom do: files at `plugins/`
    ROOT so they install to `<id>/`, per the packaging bug we just fixed). Its `__init__.py`
    starts a **background listener thread** on `127.0.0.1:<port>` (localhost TCP, JSON lines).
@@ -39,6 +43,7 @@ This is a SECOND channel to KiCad, independent of kipy (kipy stays design-only).
 KiCad changes — helper uses only public wx/pcbnew surface.
 
 ## Build steps
+
 1. `helper/` (bundled, or its own PCM plugin): `__init__.py` → start listener; a `driver.py`
    with the verified wx introspection (menu recursion + AuiToolBar walk) and event injection,
    all executed under `wx.CallAfter`. Name→id resolution: menus by `GetItemLabelText()`,
@@ -52,6 +57,7 @@ KiCad changes — helper uses only public wx/pcbnew surface.
    `127.0.0.1:8761` (end-to-end proof the harness can drive a plugin button).
 
 ## Gotchas (learned)
+
 - **UI-thread only** for wx calls (`wx.CallAfter`); the listener thread just queues.
 - KiCad toolbars are AUI (`GetToolBar()` is None) — walk children for `AuiToolBar`.
 - Toolbar buttons are icon-only → identify by `GetShortHelp()` (tooltip), not label.
@@ -60,6 +66,7 @@ KiCad changes — helper uses only public wx/pcbnew surface.
 - Timing: query after the UI is built (`CallLater`/retry), not at plugin-scan time.
 
 ## Stretch (only if it lands cleanly): upstream
+
 If this proves out in our fork, it could ride along with the PR #314 contribution before the
 maintainer merges — but scope-check first (that PR is design-authoring tools; a GUI-driver is
 a different capability and may belong in its own PR).
@@ -78,10 +85,11 @@ Seed destructive-label list: `docs/gui_destructive_seed.txt` (regex-derived — 
 match by resolved KiCad ACTION where possible, not just label text, so it survives renames).
 
 **Playbooks (a couple, thin wrappers over the generic surface — GUI-only, common):**
+
 1. `kicad_pcb_snapshot()` — Zoom-to-Fit → `gui_screenshot()`. Visual board verification.
-2. `kicad_reload_and_open_plugin(name)` — *Refresh Plugins* → trigger the named External-Plugins
+2. `kicad_reload_and_open_plugin(name)` — _Refresh Plugins_ → trigger the named External-Plugins
    item. The plugin dev/test loop (re-scan + launch).
-3. `kicad_run_drc()` — open the DRC dialog → click *Run* → scrape the violations grid → return
+3. `kicad_run_drc()` — open the DRC dialog → click _Run_ → scrape the violations grid → return
    structured results. Exercises the dialog-driving path (`wait_for` + child enumeration + click).
 
 Keep playbooks as thin, named conveniences on top of the generic tools — not a framework. Add
@@ -91,6 +99,7 @@ more only if a GUI-only macro actually recurs.
 
 Do NOT ship the helper as a thing the user installs. The MCP **bundles** the helper
 (`gui_driver_plugin/plugins/`) and **self-deploys** it:
+
 - On any `gui_driver` tool call, if the listener socket doesn't answer, `ensure_helper_installed()`
   copies the bundled `plugins/*` into `~/.local/share/kicad/<ver>/3rdparty/plugins/<identifier>/`
   (glob the `<ver>` dir; use the **root-flatten** layout — files at `<id>/`, not `<id>/<name>/`;
@@ -105,6 +114,7 @@ Do NOT ship the helper as a thing the user installs. The MCP **bundles** the hel
   helper updates ship with the MCP with zero user action.
 
 ## Graceful degradation = REQUIRED (Ross, 2026-07-24) — verified
+
 A dependency is acceptable; failing gracefully when the helper isn't loaded is NOT optional.
 VERIFIED already-built: every tool routes through `_call()`, which catches `(OSError,
 ConnectionError)` and returns `{"success": False, "error": "GUI-driver helper not reachable
@@ -115,6 +125,7 @@ above is now a NICE-TO-HAVE (reduce friction), NOT the reliance — the graceful
 hint is the required behavior.
 
 ## Non-Linux / cross-platform (Ross, 2026-07-24)
+
 **Backend A (in-process wx) IS the cross-platform core** — Windows/macOS/Linux by construction
 (all wx inside KiCad: menu/AUI enumeration, `ProcessEvent` injection, localhost socket,
 `wx.CallAfter`). Target BY NAME (resolve name→id at call time) so per-OS ID/layout differences
@@ -124,6 +135,7 @@ Build-order note: A is the portable REQUIREMENT (build/verify it everywhere); B 
 fast-path, optional.
 
 **Per-OS work (verified only on Linux so far; needs a Win/Mac pass):**
+
 - **Plugin dir per OS** for `ensure_helper_installed` + docs: Win `%APPDATA%\kicad\<ver>\3rdparty\plugins`,
   macOS `~/Library/Preferences/kicad/<ver>/3rdparty/plugins`, Linux `~/.local/share/kicad/<ver>/3rdparty/plugins`.
 - **macOS global menu bar** — Preferences/Quit/About relocate to the app menu; wx still exposes

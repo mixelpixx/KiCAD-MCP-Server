@@ -31,10 +31,10 @@ from typing import Any, Dict, List, Optional
 
 import wx
 
-
 # ---------------------------------------------------------------------------
 # label normalization (shared convention with the MCP client's resolver)
 # ---------------------------------------------------------------------------
+
 
 def normalize_label(label: str) -> str:
     """Casefolded label with mnemonic '&', trailing ellipsis and accel stripped."""
@@ -50,6 +50,7 @@ def normalize_label(label: str) -> str:
 # ---------------------------------------------------------------------------
 # frames
 # ---------------------------------------------------------------------------
+
 
 def list_frames() -> List[Dict[str, Any]]:
     frames = []
@@ -88,6 +89,7 @@ def find_frame(match: Optional[str] = None):
 # ---------------------------------------------------------------------------
 # menu tree
 # ---------------------------------------------------------------------------
+
 
 def _menu_items(menu) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
@@ -131,6 +133,7 @@ def menu_tree(frame) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # AUI toolbars (frame.GetToolBar() is None in KiCad)
 # ---------------------------------------------------------------------------
+
 
 def _find_aui_toolbars(win, found: List[Any]) -> None:
     for child in win.GetChildren():
@@ -176,6 +179,7 @@ def full_tree(frame_match: Optional[str] = None) -> Dict[str, Any]:
 # resolution + event injection
 # ---------------------------------------------------------------------------
 
+
 def _walk_menu_entries(entries, path=()):
     for entry in entries:
         here = path + (entry["name"],)
@@ -197,9 +201,10 @@ def resolve_tool_id(frame, name: str) -> Optional[int]:
     wanted = normalize_label(name)
     for bar in toolbar_tree(frame):
         for tool in bar["tools"]:
-            if normalize_label(tool.get("tooltip") or "") == wanted or normalize_label(
-                tool.get("label") or ""
-            ) == wanted:
+            if (
+                normalize_label(tool.get("tooltip") or "") == wanted
+                or normalize_label(tool.get("label") or "") == wanted
+            ):
                 return tool["id"]
     return None
 
@@ -276,6 +281,7 @@ def run_plugin(name: str, frame_match: Optional[str] = None) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # windows / dialog scraping / button clicks (for playbooks like run_drc)
 # ---------------------------------------------------------------------------
+
 
 def window_titles() -> List[str]:
     titles = []
@@ -374,12 +380,11 @@ def click_button(title: str, label: str) -> Dict[str, Any]:
 # screenshot
 # ---------------------------------------------------------------------------
 
+
 def screenshot(path: Optional[str] = None, frame_match: Optional[str] = None) -> Dict[str, Any]:
     """Capture the driven frame's screen rect (whole screen if no frame)."""
     if not path:
-        fd, path = tempfile.mkstemp(
-            prefix="kicad_gui_%d_" % int(time.time()), suffix=".png"
-        )
+        fd, path = tempfile.mkstemp(prefix="kicad_gui_%d_" % int(time.time()), suffix=".png")
         os.close(fd)
     frame = find_frame(frame_match)
     screen = wx.ScreenDC()

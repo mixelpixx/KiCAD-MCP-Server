@@ -22,7 +22,9 @@ export function registerGuiDriverTools(server: McpServer, callKicadScript: Funct
   const frame = z
     .string()
     .optional()
-    .describe("Optional frame name/title filter (e.g. 'PcbFrame', 'Schematic'). Default: main frame.");
+    .describe(
+      "Optional frame name/title filter (e.g. 'PcbFrame', 'Schematic'). Default: main frame.",
+    );
 
   // --- Backend A: in-process wx (cross-platform core) ---
   server.tool(
@@ -133,7 +135,10 @@ export function registerGuiDriverTools(server: McpServer, callKicadScript: Funct
     "Backend B: activate the first accessible node matching `name` (and optional role) via do_action.",
     {
       name: z.string().describe("Accessible name to activate."),
-      role: z.string().optional().describe("Optional role substring filter (e.g. 'push button', 'menu item')."),
+      role: z
+        .string()
+        .optional()
+        .describe("Optional role substring filter (e.g. 'push button', 'menu item')."),
       app: z.string().optional().describe("Accessible application name filter (default 'kicad')."),
     },
     async (args: { name: string; role?: string; app?: string }) =>

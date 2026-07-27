@@ -3511,8 +3511,14 @@ GUI_DRIVER_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "Menu label or toolbar tooltip to activate."},
-                "id": {"type": "integer", "description": "Explicit wx item id (skips name resolution)."},
+                "name": {
+                    "type": "string",
+                    "description": "Menu label or toolbar tooltip to activate.",
+                },
+                "id": {
+                    "type": "integer",
+                    "description": "Explicit wx item id (skips name resolution).",
+                },
                 "kind": {
                     "type": "string",
                     "enum": ["menu", "tool"],
@@ -3545,8 +3551,15 @@ GUI_DRIVER_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "title": {"type": "string", "description": "Substring of the window title to wait for."},
-                "timeout": {"type": "number", "description": "Seconds to wait (default 10).", "default": 10},
+                "title": {
+                    "type": "string",
+                    "description": "Substring of the window title to wait for.",
+                },
+                "timeout": {
+                    "type": "number",
+                    "description": "Seconds to wait (default 10).",
+                    "default": 10,
+                },
             },
             "required": ["title"],
         },
@@ -3558,7 +3571,10 @@ GUI_DRIVER_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Output PNG path (temp file if omitted)."},
+                "path": {
+                    "type": "string",
+                    "description": "Output PNG path (temp file if omitted).",
+                },
                 **_GUI_FRAME_PROP,
             },
         },
@@ -3570,8 +3586,14 @@ GUI_DRIVER_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Output PNG path (temp file if omitted)."},
-                "settle": {"type": "number", "description": "Seconds to wait after zoom (default 0.5)."},
+                "path": {
+                    "type": "string",
+                    "description": "Output PNG path (temp file if omitted).",
+                },
+                "settle": {
+                    "type": "number",
+                    "description": "Seconds to wait after zoom (default 0.5).",
+                },
                 **_GUI_FRAME_PROP,
             },
         },
@@ -3586,8 +3608,14 @@ GUI_DRIVER_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "Plugin menu entry to open after the refresh."},
-                "settle": {"type": "number", "description": "Seconds to wait after refresh (default 1)."},
+                "name": {
+                    "type": "string",
+                    "description": "Plugin menu entry to open after the refresh.",
+                },
+                "settle": {
+                    "type": "number",
+                    "description": "Seconds to wait after refresh (default 1).",
+                },
                 **_GUI_FRAME_PROP,
             },
             "required": ["name"],
@@ -3604,9 +3632,18 @@ GUI_DRIVER_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "dialogTitle": {"type": "string", "description": "Dialog title substring (default 'DRC')."},
-                "timeout": {"type": "number", "description": "Seconds to wait for the dialog (default 15)."},
-                "runTimeout": {"type": "number", "description": "Seconds to wait for results (default 60)."},
+                "dialogTitle": {
+                    "type": "string",
+                    "description": "Dialog title substring (default 'DRC').",
+                },
+                "timeout": {
+                    "type": "number",
+                    "description": "Seconds to wait for the dialog (default 15).",
+                },
+                "runTimeout": {
+                    "type": "number",
+                    "description": "Seconds to wait for results (default 60).",
+                },
                 **_GUI_FRAME_PROP,
             },
         },
@@ -3622,8 +3659,14 @@ GUI_DRIVER_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "app": {"type": "string", "description": "Accessible application name filter (default 'kicad')."},
-                "maxDepth": {"type": "integer", "description": "Recursion depth limit (default 12)."},
+                "app": {
+                    "type": "string",
+                    "description": "Accessible application name filter (default 'kicad').",
+                },
+                "maxDepth": {
+                    "type": "integer",
+                    "description": "Recursion depth limit (default 12).",
+                },
             },
         },
     },
@@ -3635,8 +3678,14 @@ GUI_DRIVER_TOOLS = [
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "Accessible name to activate."},
-                "role": {"type": "string", "description": "Optional role substring filter (e.g. 'push button', 'menu item')."},
-                "app": {"type": "string", "description": "Accessible application name filter (default 'kicad')."},
+                "role": {
+                    "type": "string",
+                    "description": "Optional role substring filter (e.g. 'push button', 'menu item').",
+                },
+                "app": {
+                    "type": "string",
+                    "description": "Accessible application name filter (default 'kicad').",
+                },
             },
             "required": ["name"],
         },

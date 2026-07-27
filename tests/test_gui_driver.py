@@ -44,6 +44,7 @@ from commands.gui_driver import (  # noqa: E402
 # fixture tree — shape as captured from the live pcbnew probe (2026-07-24)
 # ---------------------------------------------------------------------------
 
+
 def _captured_tree():
     return {
         "frame": {"name": "PcbFrame", "title": "PCB Editor"},
@@ -59,7 +60,12 @@ def _captured_tree():
                         "action": None,
                         "enabled": True,
                         "children": [
-                            {"name": "Gerbers (.gbr)...", "id": 4100, "action": None, "enabled": True}
+                            {
+                                "name": "Gerbers (.gbr)...",
+                                "id": 4100,
+                                "action": None,
+                                "enabled": True,
+                            }
                         ],
                     },
                 ],
@@ -73,16 +79,31 @@ def _captured_tree():
             {
                 "name": "Tools",
                 "children": [
-                    {"name": "Update PCB from Schematic…", "id": 4300, "action": None, "enabled": True},
+                    {
+                        "name": "Update PCB from Schematic…",
+                        "id": 4300,
+                        "action": None,
+                        "enabled": True,
+                    },
                     {
                         "name": "External Plugins",
                         "id": 4301,
                         "action": None,
                         "enabled": True,
                         "children": [
-                            {"name": "Refresh Plugins", "id": -2240, "action": None, "enabled": True},
+                            {
+                                "name": "Refresh Plugins",
+                                "id": -2240,
+                                "action": None,
+                                "enabled": True,
+                            },
                             {"name": "Git Plugin", "id": -2242, "action": None, "enabled": True},
-                            {"name": "Open kiHarness", "id": -2245, "action": None, "enabled": True},
+                            {
+                                "name": "Open kiHarness",
+                                "id": -2245,
+                                "action": None,
+                                "enabled": True,
+                            },
                         ],
                     },
                 ],
@@ -104,6 +125,7 @@ def _captured_tree():
 # ---------------------------------------------------------------------------
 # destructive flagging + resolution (pure logic)
 # ---------------------------------------------------------------------------
+
 
 class TestDestructiveFlagging:
     def test_seed_labels_flagged_with_prefix(self):
@@ -161,6 +183,7 @@ class TestResolveName:
 # loopback protocol: real listener + real client, stubbed wx layer
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def helper(monkeypatch):
     """The real helper listener on an ephemeral port with a fake driver module."""
@@ -181,8 +204,16 @@ def helper(monkeypatch):
         return {"id": item_id, "kind": kind, "processed": True}
 
     fake.click = _click
-    fake.run_plugin = lambda name, frame_match=None: {"id": -2245, "kind": "menu", "processed": True}
-    fake.screenshot = lambda path=None, frame_match=None: {"path": path or "/tmp/x.png", "width": 1, "height": 1}
+    fake.run_plugin = lambda name, frame_match=None: {
+        "id": -2245,
+        "kind": "menu",
+        "processed": True,
+    }
+    fake.screenshot = lambda path=None, frame_match=None: {
+        "path": path or "/tmp/x.png",
+        "width": 1,
+        "height": 1,
+    }
     fake.scrape = lambda title: {"class": "Dialog", "name": title, "id": 1, "children": []}
     fake.click_button = lambda title, label: {"id": 9, "label": label}
     fake.list_frames = lambda: [{"name": "PcbFrame"}]
@@ -279,6 +310,7 @@ class TestSocketProtocol:
 # helper self-install: per-OS path resolution + idempotent deploy
 # ---------------------------------------------------------------------------
 
+
 class TestPluginDirResolution:
     """kicad_plugin_dirs with injected platform/environ/home — no monkeying with
     the live OS needed; the injectables ARE the per-OS switch under test."""
@@ -367,9 +399,7 @@ class TestEnsureHelperInstalled:
 
     def test_missing_bundle_is_a_noop(self, tmp_path):
         plugins = self._plugins_dir(tmp_path)
-        out = ensure_helper_installed(
-            plugin_dirs=[plugins], bundled=tmp_path / "no-such-bundle"
-        )
+        out = ensure_helper_installed(plugin_dirs=[plugins], bundled=tmp_path / "no-such-bundle")
         assert out == {"installed": [], "current": []}
 
 
@@ -385,9 +415,7 @@ class TestGracefulFailWithSelfInstall:
         plugins = tmp_path / "9.0" / "3rdparty" / "plugins"
         plugins.mkdir(parents=True)
         monkeypatch.setattr(gui_driver, "kicad_plugin_dirs", lambda: [plugins])
-        monkeypatch.setattr(
-            GuiDriverCommands, "_try_refresh_plugins_atspi", lambda self: False
-        )
+        monkeypatch.setattr(GuiDriverCommands, "_try_refresh_plugins_atspi", lambda self: False)
         out = self._unreachable(monkeypatch).kicad_gui_tree({})
         assert out["success"] is False
         assert "not reachable" in out["error"]
@@ -399,9 +427,7 @@ class TestGracefulFailWithSelfInstall:
         plugins = tmp_path / "9.0" / "3rdparty" / "plugins"
         plugins.mkdir(parents=True)
         monkeypatch.setattr(gui_driver, "kicad_plugin_dirs", lambda: [plugins])
-        monkeypatch.setattr(
-            GuiDriverCommands, "_try_refresh_plugins_atspi", lambda self: True
-        )
+        monkeypatch.setattr(GuiDriverCommands, "_try_refresh_plugins_atspi", lambda self: True)
         out = self._unreachable(monkeypatch).kicad_gui_tree({})
         assert out["success"] is False
         assert "AT-SPI" in out["error"] and "retry" in out["error"]
@@ -476,6 +502,7 @@ class TestRegistration:
 # (via wx.CallAfter) so a plugin whose Run() blocks the UI thread neither
 # freezes KiCad nor trips the listener's UI_CALL_TIMEOUT.
 # ---------------------------------------------------------------------------
+
 
 def _load_real_driver_with_fake_wx(monkeypatch):
     """Import the real gui_driver_plugin driver with a minimal fake wx."""

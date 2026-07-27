@@ -39,6 +39,7 @@ _server_lock = threading.Lock()
 # UI-thread executor
 # ---------------------------------------------------------------------------
 
+
 def wx_executor(fn: Callable[[], Any], timeout: float = UI_CALL_TIMEOUT) -> Any:
     """Run ``fn`` on the wx UI thread; block this (listener) thread for the result."""
     import wx  # deferred: only reachable inside a live KiCad
@@ -68,6 +69,7 @@ def wx_executor(fn: Callable[[], Any], timeout: float = UI_CALL_TIMEOUT) -> Any:
 # ---------------------------------------------------------------------------
 # command dispatch
 # ---------------------------------------------------------------------------
+
 
 def _dispatch(request: Dict[str, Any], executor: Callable[..., Any]) -> Any:
     """Execute one request; returns the JSON-serializable result (or raises)."""
@@ -159,6 +161,7 @@ def _dispatch(request: Dict[str, Any], executor: Callable[..., Any]) -> Any:
 # ---------------------------------------------------------------------------
 # socket server
 # ---------------------------------------------------------------------------
+
 
 class _Handler(socketserver.StreamRequestHandler):
     def handle(self) -> None:  # one connection, many JSON lines
