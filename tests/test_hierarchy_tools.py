@@ -423,7 +423,6 @@ class TestAddSheetPin:
         """End-to-end #298 repro: link a sheet into a sexpdata-style parent
         (no newline before (sheet_instances), then add a pin to it."""
         import sexpdata
-
         from commands.schematic_hierarchy import SchematicHierarchyCommands
 
         parent = tmp_path / "top.kicad_sch"

@@ -23,7 +23,7 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 122 tools across 12 categories with JSON Schema validation
+- 143 tools across 13 categories with JSON Schema validation
 - Smart tool discovery with router pattern (reduces AI context by 70%)
 - 8 dynamic resources exposing project state
 - Complete schematic workflow with 27 tools and dynamic symbol loading (~10,000 symbols)
@@ -55,6 +55,72 @@ https://github.com/mixelpixx/arduino-ide
   the result. **PCB/layout data only** — kicad-cli has no importer for
   Cadence Concept HDL / OrCAD Capture schematics, so this tool never produces
   a schematic.
+
+## What's New in v2.5.0
+
+### 20 new board-lifecycle and geometry tools
+
+- **Lifecycle**: `open_board`, `reload_board`, `save_board`, `save_as`,
+  `is_dirty`, `discard_or_reload`, `create_board_from_schematic`.
+- **Graphics editing**: `clear_board_outline`, `replace_board_outline`,
+  `list_graphics`, `delete_graphic`, `update_graphic`, `move_footprint_text`.
+- **Geometry queries**: `batch_move_components`, `get_component_geometry`,
+  `get_pads`, `get_net_pads`, `get_ratsnest`, `estimate_airwire_lengths`,
+  `check_placement_clearance`.
+
+All of them respect backend session pinning, so a board saved while KiCad's
+GUI owns the session routes to the GUI rather than writing a stale in-memory
+copy — including the awkward case where `save_as` changes the board's
+identity mid-session.
+
+### Formatting is normalized and enforced
+
+- `pre-commit run --all-files` (black, isort, prettier, flake8, mypy, eslint)
+  is now a real CI gate, which is what CONTRIBUTING has always claimed.
+- `npm run lint` used to run `black` in **write** mode against whatever
+  `black` was on `PATH`, silently reformatting your working tree with a
+  version that disagreed with CI. It now checks only; `npm run format:py` is
+  the write path.
+- The README's tool count is pinned to the registry by a test, so it
+  self-corrects instead of drifting.
+
+Full details in the [CHANGELOG](CHANGELOG.md).
+
+## What's New in v2.4.1
+
+### Three tools that were registered but had no backend now work
+
+- `assign_net_to_class`, `check_clearance` and `set_layer_constraints` each had
+  a full schema and a router entry but no dispatch handler, so every call
+  returned `Unknown command`. Found by a documentation-coverage audit.
+- Per-layer constraints are written to a project-scoped `.kicad_dru`
+  custom-rules file, which `kicad-cli pcb drc` and the GUI both pick up — there
+  is no pcbnew API for them.
+
+### Silent failures removed
+
+- `autoroute` was abandoned by the Node bridge at 30 s while Freerouting was
+  still running, reporting failure against a valid `.ses` that existed on disk.
+  Its timeout now derives from the `timeout` and `attempts` you pass.
+- `get_board_2d_view` omitted `--layers` entirely when no layers were given,
+  and KiCad 9+ then refuses the export — producing no file at all.
+- `create_zone` raised `AttributeError` on every call over the IPC backend.
+
+### New part-sourcing tools
+
+- `search_parts_registry` / `get_registry_part` / `download_registry_part`
+  reuse a verified existing footprint or symbol instead of generating one.
+  Downloads are host-allowlisted, extension-checked and size-capped.
+- `get_jlcpcb_part` returns live stock and tiered pricing when JLCPCB Open
+  Platform credentials are configured, falling back to the local snapshot.
+
+### CI now actually runs the test suite
+
+- The Python job had been a no-op in four independent ways, and Actions was
+  disabled repo-wide — 32 failed runs and 0 successes across the project's
+  whole history. All 1551 Python and 63 TypeScript tests now gate every push.
+
+Full details in the [CHANGELOG](CHANGELOG.md).
 
 ## What's New in v2.4.0
 
@@ -326,7 +392,7 @@ configuration command and backend options.
 We've implemented an intelligent tool router to keep AI context efficient while maintaining full functionality:
 
 - **22 direct tools** always visible for high-frequency operations
-- **100 routed tools** organized into 12 categories (board, component, export, drc, schematic, library, symbol_pins, schematic_hierarchy, schematic_layout, schematic_batch, routing, autoroute)
+- **111 routed tools** organized into 13 categories (board, component, export, drc, schematic, library, symbol_pins, schematic_hierarchy, schematic_layout, schematic_batch, routing, autoroute, parts-registry)
 - **4 router tools** for discovery and execution:
   - `list_tool_categories` - Browse all available categories
   - `get_category_tools` - View tools in a specific category
@@ -395,7 +461,7 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server provides **122 tools** organized into 12 functional categories. With the router pattern, tools are automatically discovered as needed -- just ask Claude what you want to accomplish.
+The server provides **143 tools** organized into 13 functional categories. With the router pattern, tools are automatically discovered as needed -- just ask Claude what you want to accomplish.
 
 For the complete tool reference with access types (direct/routed/additional), see [Tool Inventory](docs/TOOL_INVENTORY.md).
 
@@ -503,7 +569,7 @@ See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for details a
 - `set_design_rules` / `get_design_rules` - Configure and inspect rules
 - `run_drc` - Execute design rule check
 - `get_drc_violations` - Get violation list by severity
-- `add_net_class` / `assign_net_to_class` - Net class management
+- `create_netclass` / `assign_net_to_class` - Net class management
 - `set_layer_constraints` / `check_clearance` - Layer and clearance rules
 
 ### Export (8 tools)
@@ -1272,7 +1338,7 @@ How many Basic parts are available?
 - **JSON-RPC 2.0 Transport:** Bi-directional communication via STDIO
 - **Protocol Version:** MCP 2025-06-18
 - **Capabilities:** Tools (122), Resources (8)
-- **Tool Router:** Intelligent discovery system with 12 categories
+- **Tool Router:** Intelligent discovery system with 13 categories
 - **Error Handling:** Standard JSON-RPC error codes
 
 ### TypeScript Server (`src/`)
@@ -1415,11 +1481,11 @@ npm run format
 
 ## Project Status
 
-**Current Version:** 2.4.0
+**Current Version:** 2.5.0
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-**Working Features (122 tools):**
+**Working Features (143 tools):**
 
 - Project management with snapshot checkpointing
 - Complete board design (outline, layers, zones, mounting holes, text, SVG logos)

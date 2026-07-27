@@ -11,6 +11,7 @@ lookup table; the version in this PR reads real courtyard polygons
 from pcbnew. These tests cover the AABB-and-translation logic
 deterministically without depending on real polygon geometry.
 """
+
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -21,7 +22,6 @@ PYTHON_DIR = Path(__file__).parent.parent / "python"
 sys.path.insert(0, str(PYTHON_DIR))
 
 from commands.component import ComponentCommands  # noqa: E402
-
 
 # ---------------------------------------------------------------------------
 # Helpers: build mock footprints/boards whose courtyard bboxes are exactly
@@ -98,10 +98,12 @@ def _cmd(board):
 
 @pytest.mark.unit
 def test_no_overlaps_when_components_are_spaced():
-    board = _make_board([
-        _make_fp("U1", 10, 10, 2, 1.5),
-        _make_fp("U2", 25, 10, 2, 1.5),  # 15mm apart
-    ])
+    board = _make_board(
+        [
+            _make_fp("U1", 10, 10, 2, 1.5),
+            _make_fp("U2", 25, 10, 2, 1.5),  # 15mm apart
+        ]
+    )
     out = _cmd(board).check_courtyard_overlaps({})
     assert out["success"], out
     assert out["overlaps"] == []
@@ -111,10 +113,12 @@ def test_no_overlaps_when_components_are_spaced():
 
 @pytest.mark.unit
 def test_overlap_detected_when_courtyards_intersect():
-    board = _make_board([
-        _make_fp("U1", 10, 10, 2, 1.5),  # x: 8..12
-        _make_fp("U2", 11, 10, 2, 1.5),  # x: 9..13 -> overlap x=9..12 (3mm)
-    ])
+    board = _make_board(
+        [
+            _make_fp("U1", 10, 10, 2, 1.5),  # x: 8..12
+            _make_fp("U2", 11, 10, 2, 1.5),  # x: 9..13 -> overlap x=9..12 (3mm)
+        ]
+    )
     out = _cmd(board).check_courtyard_overlaps({})
     assert out["success"]
     assert len(out["overlaps"]) == 1
@@ -139,11 +143,13 @@ def test_margin_pushes_borderline_pairs_into_overlap():
 
 @pytest.mark.unit
 def test_refs_filter_restricts_to_subset():
-    board = _make_board([
-        _make_fp("U1", 10, 10, 2, 1.5),
-        _make_fp("U2", 11, 10, 2, 1.5),
-        _make_fp("U3", 30, 20, 2, 1.5),
-    ])
+    board = _make_board(
+        [
+            _make_fp("U1", 10, 10, 2, 1.5),
+            _make_fp("U2", 11, 10, 2, 1.5),
+            _make_fp("U3", 30, 20, 2, 1.5),
+        ]
+    )
     out = _cmd(board).check_courtyard_overlaps({"refs": ["U1", "U3"]})
     assert out["success"]
     assert out["summary"]["checked"] == 2
@@ -154,7 +160,7 @@ def test_refs_filter_restricts_to_subset():
 def test_boundary_violation_flagged():
     board = _make_board(
         [_make_fp("U1", 19, 10, 2, 1.5)],  # courtyard right = 21mm
-        outline_mm=(0, 0, 20, 20),         # board right = 20mm
+        outline_mm=(0, 0, 20, 20),  # board right = 20mm
     )
     out = _cmd(board).check_courtyard_overlaps({})
     assert len(out["boundary_violations"]) == 1
@@ -181,9 +187,11 @@ def test_virtual_position_does_not_mutate_footprint():
     fp_other = _make_fp("U2", 25, 10, 2, 1.5)
     board = _make_board([fp, fp_other])
 
-    out = _cmd(board).check_courtyard_overlaps({
-        "positions": {"U1": [25.0, 10.0]},   # virtually move U1 onto U2
-    })
+    out = _cmd(board).check_courtyard_overlaps(
+        {
+            "positions": {"U1": [25.0, 10.0]},  # virtually move U1 onto U2
+        }
+    )
     assert len(out["overlaps"]) == 1, "virtual placement must surface the overlap"
 
     # SetPosition must NEVER be called by this tool.
@@ -206,12 +214,14 @@ def test_virtual_rotation_swaps_aabb_extents():
 
     # Rotating U1 90° makes its courtyard 10mm × 2mm → right edge x=15
     # → overlap with U2 (right edge at x=14.5).
-    rotated = _cmd(board).check_courtyard_overlaps({
-        "positions": {"U1": [10.0, 10.0, 90.0]},
-    })
-    assert len(rotated["overlaps"]) == 1, (
-        "90° rotation of 2x10mm footprint must expose overlap with U2"
+    rotated = _cmd(board).check_courtyard_overlaps(
+        {
+            "positions": {"U1": [10.0, 10.0, 90.0]},
+        }
     )
+    assert (
+        len(rotated["overlaps"]) == 1
+    ), "90° rotation of 2x10mm footprint must expose overlap with U2"
 
 
 @pytest.mark.unit
@@ -250,9 +260,11 @@ def test_board_outline_override_replaces_edge_cuts_bbox():
         [_make_fp("U1", 5, 5, 2, 1.5)],
         outline_mm=(0, 0, 100, 100),
     )
-    out = _cmd(board).check_courtyard_overlaps({
-        "board_outline": {"x1": 0, "y1": 0, "x2": 5, "y2": 5, "unit": "mm"},
-    })
+    out = _cmd(board).check_courtyard_overlaps(
+        {
+            "board_outline": {"x1": 0, "y1": 0, "x2": 5, "y2": 5, "unit": "mm"},
+        }
+    )
     # U1's right edge at x=7 violates the override (right edge x=5)
     assert len(out["boundary_violations"]) == 1
     assert out["boundary_violations"][0]["exceeds"]["right"] == pytest.approx(2.0)

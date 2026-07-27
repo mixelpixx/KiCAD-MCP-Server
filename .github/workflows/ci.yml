@@ -32,9 +32,13 @@ jobs:
       - name: Run TypeScript compiler
         run: npm run build
 
-      - name: Run linter
-        shell: bash
-        run: npm run lint || echo "Linter not configured yet"
+      # `npm run lint` also runs the Python linters, which are not installed in
+      # this job — that is why it used to be `|| echo`-swallowed. Scoping it to
+      # the TypeScript half makes it a real gate here; the Python linters and
+      # the whole-repo formatting check run in the code-quality job via
+      # pre-commit.
+      - name: Run TypeScript linter
+        run: npm run lint:ts
 
       - name: Run TypeScript tests
         run: npm run test:ts
@@ -58,6 +62,15 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
 
+      # The autoroute/freerouting suites resolve a `java` executable before
+      # they mock out the actual subprocess call, so without a JRE on PATH
+      # 8 tests fail for a purely environmental reason.
+      - name: Set up Java (required by the freerouting test suites)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
@@ -65,17 +78,35 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
 
+      # Formatting and type checks run ONCE, not once per matrix entry. pip
+      # resolves a different linter build per interpreter (black >=25.12
+      # requires Python >=3.10, so the 3.9 runner silently gets black 25.1.0,
+      # which formats three files differently from the 26.x used everywhere
+      # else). Pinning the interpreter for these steps is what makes the gate
+      # deterministic; the matrix is there to exercise the CODE on each Python,
+      # which pytest below still does. Same condition the coverage upload uses.
       - name: Run Black formatter check
-        run: black --check python/ || echo "Black not configured yet"
+        if: matrix.python-version == '3.12' && matrix.os == 'ubuntu-24.04'
+        run: black --check python/
 
       - name: Run MyPy type checker
-        run: mypy python/ || echo "MyPy not configured yet"
+        if: matrix.python-version == '3.12' && matrix.os == 'ubuntu-24.04'
+        run: mypy python/
 
-      - name: Run Pylint
-        run: pylint python/ || echo "Pylint not configured yet"
+      # Advisory only: pylint's default rule set has never been enforced on this
+      # tree, so a hard gate would fail on thousands of pre-existing findings.
+      # --exit-zero says that honestly instead of hiding a real failure behind
+      # `|| echo`, which is what the other four steps used to do.
+      - name: Run Pylint (advisory)
+        if: matrix.python-version == '3.12' && matrix.os == 'ubuntu-24.04'
+        run: pylint python/ --exit-zero
 
+      # `pytest python/` pointed at the SOURCE tree, and an explicit path
+      # argument overrides pytest.ini's `testpaths = tests` — so CI collected 7
+      # tests from a stray python/test_ipc_backend.py while the real suite in
+      # tests/ never ran. Bare `pytest` picks up testpaths correctly.
       - name: Run pytest
-        run: pytest python/ --cov=python --cov-report=xml || echo "Tests not configured yet"
+        run: pytest --cov=python --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -341,16 +372,40 @@ jobs:
           node-version: "20.x"
 
       - name: Install dependencies
+        # Needed before pre-commit: the prettier and eslint hooks shell out to
+        # `npx`, and eslint resolves its config and TS parser from node_modules.
         run: npm ci
 
-      - name: Run ESLint
-        run: npx eslint src/ || echo "ESLint not configured yet"
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
 
-      - name: Run Prettier check
-        run: npx prettier --check "src/**/*.ts" || echo "Prettier not configured yet"
+      - name: Install pre-commit
+        run: python -m pip install --upgrade pip pre-commit
 
-      - name: Check for security vulnerabilities
-        run: npm audit --audit-level=moderate || echo "No critical vulnerabilities"
+      - name: Cache pre-commit hook environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      # The single authoritative formatting/lint gate, and the one CONTRIBUTING
+      # has always claimed ("hooks enforce Black, isort, Prettier, flake8, mypy,
+      # ESLint ... must pass before code is merged") while nothing enforced it.
+      # Replaces two steps that ran `npx eslint src/ || echo` and
+      # `npx prettier --check "src/**/*.ts" || echo` — both of which reported
+      # success regardless of outcome, and only covered src/.
+      - name: Run pre-commit hooks
+        run: pre-commit run --all-files --show-diff-on-failure
+
+      # Advisory: a transitive advisory in a dev dependency should not block a
+      # PR that did not introduce it. `|| true` is explicit about that, unlike
+      # the `|| echo "No critical vulnerabilities"` it replaces, which printed a
+      # reassuring message that was not checked against anything.
+      - name: Check for security vulnerabilities (advisory)
+        run: npm audit --audit-level=moderate || true
 
   # Documentation check
   docs-check:

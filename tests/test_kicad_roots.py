@@ -114,8 +114,17 @@ def _make_fake_winreg(hive_trees):
 
 @pytest.fixture
 def as_windows(monkeypatch):
-    """Force the module to take its Windows path."""
+    """Force the module to take its Windows path.
+
+    Also simulates Windows path-case semantics. The dedup in
+    ``_merge_roots`` relies on ``os.path.normcase`` folding case, which it
+    only does on Windows — on POSIX it is the identity function, so
+    differently-cased spellings of one root stay distinct and the dedup
+    assertions fail on Linux CI for a reason that cannot occur in
+    production (these code paths are guarded by a platform check).
+    """
     monkeypatch.setattr(kr.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(kr.os.path, "normcase", lambda p: str(p).lower())
 
 
 def _install(tmp_path, name):

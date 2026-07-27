@@ -53,7 +53,7 @@ File export for fabrication and documentation
 Design rule checking and electrical validation
 
 - set_design_rules, get_design_rules, run_drc
-- add_net_class, assign_net_to_class, set_layer_constraints
+- create_netclass, assign_net_to_class, set_layer_constraints
 - check_clearance, get_drc_violations
 
 ### 5. schematic (8 tools)

@@ -9,6 +9,7 @@ actually invoking Freerouting or KiCad. Specifically:
   - One failing attempt doesn't abort the whole best-of-N run.
   - The pass schedule wraps when attempts > len(schedule).
 """
+
 import sys
 import types
 from pathlib import Path
@@ -48,7 +49,7 @@ def _stub_pcbnew(dsn_to_create=None):
     def _fake_export(_board, dsn_path, *_args, **_kw):
         # Write a placeholder DSN so the existence check passes
         with open(dsn_path, "w") as f:
-            f.write("(pcb \"stub\")\n")
+            f.write('(pcb "stub")\n')
         return True
 
     pcb.ExportSpecctraDSN.side_effect = _fake_export
@@ -85,9 +86,12 @@ def fake_jar(tmp_path):
 
 def _patch_exec_mode(cc):
     """Force direct (non-Docker) mode so we don't go down the docker branch."""
-    cc._resolve_execution_mode = MagicMock(return_value={
-        "mode": "direct", "use_docker": False,
-    })
+    cc._resolve_execution_mode = MagicMock(
+        return_value={
+            "mode": "direct",
+            "use_docker": False,
+        }
+    )
 
 
 @pytest.mark.unit
@@ -105,14 +109,15 @@ def test_single_attempt_default_keeps_legacy_response_shape(workdir, fake_jar):
 
     fake_pcb = _stub_pcbnew()
 
-    with patch.object(fr_mod, "subprocess") as sp, \
-         patch.dict(sys.modules, {"pcbnew": fake_pcb}):
+    with patch.object(fr_mod, "subprocess") as sp, patch.dict(sys.modules, {"pcbnew": fake_pcb}):
         sp.run.side_effect = fake_run
         sp.TimeoutExpired = TimeoutError
-        out = cc.autoroute({
-            "boardPath": str(workdir / "test.kicad_pcb"),
-            "freeroutingJar": str(fake_jar),
-        })
+        out = cc.autoroute(
+            {
+                "boardPath": str(workdir / "test.kicad_pcb"),
+                "freeroutingJar": str(fake_jar),
+            }
+        )
 
     assert out["success"], out
     assert "attempts" not in out, "single-attempt response must not include attempts list"
@@ -138,15 +143,16 @@ def test_best_of_three_picks_highest_scoring_ses(workdir, fake_jar):
 
     fake_pcb = _stub_pcbnew()
 
-    with patch.object(fr_mod, "subprocess") as sp, \
-         patch.dict(sys.modules, {"pcbnew": fake_pcb}):
+    with patch.object(fr_mod, "subprocess") as sp, patch.dict(sys.modules, {"pcbnew": fake_pcb}):
         sp.run.side_effect = fake_run
         sp.TimeoutExpired = TimeoutError
-        out = cc.autoroute({
-            "boardPath": str(workdir / "test.kicad_pcb"),
-            "freeroutingJar": str(fake_jar),
-            "attempts": 3,
-        })
+        out = cc.autoroute(
+            {
+                "boardPath": str(workdir / "test.kicad_pcb"),
+                "freeroutingJar": str(fake_jar),
+                "attempts": 3,
+            }
+        )
 
     assert out["success"], out
     assert "attempts" in out
@@ -181,15 +187,16 @@ def test_one_failing_attempt_does_not_abort_best_of_n(workdir, fake_jar):
 
     fake_pcb = _stub_pcbnew()
 
-    with patch.object(fr_mod, "subprocess") as sp, \
-         patch.dict(sys.modules, {"pcbnew": fake_pcb}):
+    with patch.object(fr_mod, "subprocess") as sp, patch.dict(sys.modules, {"pcbnew": fake_pcb}):
         sp.run.side_effect = fake_run
         sp.TimeoutExpired = TimeoutError
-        out = cc.autoroute({
-            "boardPath": str(workdir / "test.kicad_pcb"),
-            "freeroutingJar": str(fake_jar),
-            "attempts": 3,
-        })
+        out = cc.autoroute(
+            {
+                "boardPath": str(workdir / "test.kicad_pcb"),
+                "freeroutingJar": str(fake_jar),
+                "attempts": 3,
+            }
+        )
 
     assert out["success"], out
     assert sp.run.call_count == 3
@@ -218,16 +225,17 @@ def test_pass_schedule_wraps_when_attempts_exceeds_schedule_length(workdir, fake
 
     fake_pcb = _stub_pcbnew()
 
-    with patch.object(fr_mod, "subprocess") as sp, \
-         patch.dict(sys.modules, {"pcbnew": fake_pcb}):
+    with patch.object(fr_mod, "subprocess") as sp, patch.dict(sys.modules, {"pcbnew": fake_pcb}):
         sp.run.side_effect = fake_run
         sp.TimeoutExpired = TimeoutError
-        out = cc.autoroute({
-            "boardPath": str(workdir / "test.kicad_pcb"),
-            "freeroutingJar": str(fake_jar),
-            "attempts": 5,
-            "passSchedule": [42, 99],
-        })
+        out = cc.autoroute(
+            {
+                "boardPath": str(workdir / "test.kicad_pcb"),
+                "freeroutingJar": str(fake_jar),
+                "attempts": 5,
+                "passSchedule": [42, 99],
+            }
+        )
 
     assert out["success"], out
     assert seen_mp == [42, 99, 42, 99, 42]
@@ -264,16 +272,17 @@ def test_target_nets_bonus_wins_against_more_nets_without_targets(workdir, fake_
 
     fake_pcb = _stub_pcbnew()
 
-    with patch.object(fr_mod, "subprocess") as sp, \
-         patch.dict(sys.modules, {"pcbnew": fake_pcb}):
+    with patch.object(fr_mod, "subprocess") as sp, patch.dict(sys.modules, {"pcbnew": fake_pcb}):
         sp.run.side_effect = fake_run
         sp.TimeoutExpired = TimeoutError
-        out = cc.autoroute({
-            "boardPath": str(workdir / "test.kicad_pcb"),
-            "freeroutingJar": str(fake_jar),
-            "attempts": 2,
-            "targetNets": ["CRIT"],
-        })
+        out = cc.autoroute(
+            {
+                "boardPath": str(workdir / "test.kicad_pcb"),
+                "freeroutingJar": str(fake_jar),
+                "attempts": 2,
+                "targetNets": ["CRIT"],
+            }
+        )
 
     assert out["success"], out
     assert out["best_attempt"] == 2, (
@@ -286,10 +295,12 @@ def test_target_nets_bonus_wins_against_more_nets_without_targets(workdir, fake_
 def test_invalid_attempts_rejected_cleanly(workdir, fake_jar):
     cc = _make_cmds(workdir / "test.kicad_pcb")
     _patch_exec_mode(cc)
-    out = cc.autoroute({
-        "boardPath": str(workdir / "test.kicad_pcb"),
-        "freeroutingJar": str(fake_jar),
-        "attempts": 0,
-    })
+    out = cc.autoroute(
+        {
+            "boardPath": str(workdir / "test.kicad_pcb"),
+            "freeroutingJar": str(fake_jar),
+            "attempts": 0,
+        }
+    )
     assert out["success"] is False
     assert "Invalid attempts" in out["message"]

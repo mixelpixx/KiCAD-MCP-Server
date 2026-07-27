@@ -87,7 +87,6 @@ def _write_project(pro_path: Path) -> None:
 
 def test_export_dsn_emits_project_net_classes(tmp_path: Path) -> None:
     import pcbnew
-
     from commands.freerouting import FreeroutingCommands
 
     pcb_path = tmp_path / "t302.kicad_pcb"

@@ -158,7 +158,7 @@ Once a project is loaded, its entire lifecycle is **pinned to one backend**
 until it is reopened:
 
 - `open_project` pins the session to **ipc** only when the live KiCad GUI
-  provably has the *same* `.kicad_pcb` open (path comparison via the IPC
+  provably has the _same_ `.kicad_pcb` open (path comparison via the IPC
   open-documents list). Otherwise — including every `create_project`, since
   the GUI cannot have a brand-new board open — the session pins to **swig**.
 - A **swig-pinned session never silently upgrades to IPC**, even if KiCad

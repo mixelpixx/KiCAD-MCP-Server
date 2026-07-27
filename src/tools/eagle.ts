@@ -11,11 +11,15 @@ export function registerEagleTools(server: McpServer, callKicadScript: Function)
       schematic_file: z
         .string()
         .optional()
-        .describe("Absolute path to the Eagle .sch schematic file (auto-detected from .brd path if omitted)"),
+        .describe(
+          "Absolute path to the Eagle .sch schematic file (auto-detected from .brd path if omitted)",
+        ),
       output_dir: z
         .string()
         .optional()
-        .describe("Output directory for the KiCad project (defaults to a subdirectory next to the .brd file)"),
+        .describe(
+          "Output directory for the KiCad project (defaults to a subdirectory next to the .brd file)",
+        ),
       project_name: z
         .string()
         .optional()

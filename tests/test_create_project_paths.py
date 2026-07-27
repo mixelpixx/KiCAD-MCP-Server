@@ -33,10 +33,12 @@ def test_create_project_returns_paths_without_mixed_separators():
     (issue #224 reported "C:/.../EspDinIoT\\EspDinIoT.kicad_pro").
     """
     cmds = ProjectCommands()
-    with patch.object(_mod, "pcbnew", MagicMock()), \
-         patch("os.makedirs"), \
-         patch("os.path.exists", return_value=False), \
-         patch("builtins.open", mock_open()):
+    with (
+        patch.object(_mod, "pcbnew", MagicMock()),
+        patch("os.makedirs"),
+        patch("os.path.exists", return_value=False),
+        patch("builtins.open", mock_open()),
+    ):
         result = cmds.create_project(
             {
                 "name": "EspDinIoT",
@@ -64,13 +66,13 @@ def test_create_project_fallback_schematic_uses_kicad10_header():
     """
     cmds = ProjectCommands()
     m = mock_open()
-    with patch.object(_mod, "pcbnew", MagicMock()), \
-         patch("os.makedirs"), \
-         patch("os.path.exists", return_value=False), \
-         patch("builtins.open", m):
-        result = cmds.create_project(
-            {"name": "EspDinIoT", "path": "C:/tmp/EspDinIoT"}
-        )
+    with (
+        patch.object(_mod, "pcbnew", MagicMock()),
+        patch("os.makedirs"),
+        patch("os.path.exists", return_value=False),
+        patch("builtins.open", m),
+    ):
+        result = cmds.create_project({"name": "EspDinIoT", "path": "C:/tmp/EspDinIoT"})
 
     assert result["success"] is True, result
     written = "".join(call.args[0] for call in m().write.call_args_list)
