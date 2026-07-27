@@ -79,9 +79,7 @@ def _read_json(path: str) -> Optional[Dict[str, Any]]:
 
 def _write_json_atomic(path: str, data: Dict[str, Any]) -> None:
     directory = os.path.dirname(path) or "."
-    fd, tmp_path = tempfile.mkstemp(
-        dir=directory, prefix=".prosettings-", suffix=".kicad_pro"
-    )
+    fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".prosettings-", suffix=".kicad_pro")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(data, handle, indent=2, sort_keys=True)
@@ -150,9 +148,7 @@ def snapshot_project_file(board_path: Optional[str]) -> Optional[bytes]:
         return None
 
 
-def restore_project_file_if_changed(
-    board_path: Optional[str], snapshot: Optional[bytes]
-) -> bool:
+def restore_project_file_if_changed(board_path: Optional[str], snapshot: Optional[bytes]) -> bool:
     """Restore ``<board>.kicad_pro`` verbatim if its content changed.
 
     Used around read-only operations (opening a project must not rewrite
@@ -174,9 +170,7 @@ def restore_project_file_if_changed(
         if current == snapshot:
             return False
         directory = os.path.dirname(pro_path) or "."
-        fd, tmp_path = tempfile.mkstemp(
-            dir=directory, prefix=".prosettings-", suffix=".kicad_pro"
-        )
+        fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".prosettings-", suffix=".kicad_pro")
         try:
             with os.fdopen(fd, "wb") as handle:
                 handle.write(snapshot)

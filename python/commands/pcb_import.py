@@ -82,11 +82,15 @@ class PcbImportCommands:
 
         if not output_file:
             input_stem = os.path.splitext(os.path.basename(input_file))[0]
-            output_file = os.path.join(os.path.dirname(os.path.abspath(input_file)), input_stem + ".kicad_pcb")
+            output_file = os.path.join(
+                os.path.dirname(os.path.abspath(input_file)), input_stem + ".kicad_pcb"
+            )
 
         report_file: Optional[str] = None
         if report_format != "none":
-            report_file = output_file + ".import-report." + ("json" if report_format == "json" else "txt")
+            report_file = (
+                output_file + ".import-report." + ("json" if report_format == "json" else "txt")
+            )
 
         cmd = [cli, "pcb", "import", "--format", fmt, "-o", output_file]
         if report_format != "none":
@@ -101,7 +105,9 @@ class PcbImportCommands:
         if result.returncode != 0 or not os.path.exists(output_file):
             return {
                 "success": False,
-                "error": result.stderr.strip() or result.stdout.strip() or "kicad-cli exited non-zero",
+                "error": result.stderr.strip()
+                or result.stdout.strip()
+                or "kicad-cli exited non-zero",
             }
 
         detected_format = fmt

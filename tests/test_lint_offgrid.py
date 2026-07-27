@@ -19,7 +19,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 import sexpdata  # noqa: E402
-
 from commands.schematic_lint_grid import lint_offgrid  # noqa: E402
 
 TEMPLATE_SCH = Path(__file__).parent.parent / "python" / "templates" / "empty.kicad_sch"
@@ -118,7 +117,7 @@ class TestLint:
 
         # Both offenders snapped to the SAME grid node -> connectivity kept
         assert "157.51" not in after
-        assert '(at 157.48 50.8 0)' in after
+        assert "(at 157.48 50.8 0)" in after
         assert "(xy 157.48 50.8)" in after
 
         # re-lint: clean; file still parses

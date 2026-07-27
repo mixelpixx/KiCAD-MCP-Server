@@ -255,12 +255,9 @@ class TestDeleteAttachedLabels:
 
     def _pin_positions(self, sch: Path) -> list:
         import sexpdata
-
         from commands.wire_manager import WireManager
 
-        return WireManager._collect_pin_positions(
-            sexpdata.loads(sch.read_text(encoding="utf-8"))
-        )
+        return WireManager._collect_pin_positions(sexpdata.loads(sch.read_text(encoding="utf-8")))
 
     def test_fixture_pins_self_check(self, tmp_path: Any) -> None:
         sch = _make_test_schematic(tmp_path, PLACED_RESISTOR_INLINE)
@@ -353,9 +350,7 @@ class TestDeleteAttachedLabels:
         assert result["deleted_labels"][0]["text"] == "ONLY_R1"
 
     def test_global_label_deleted_and_typed(self, tmp_path: Any) -> None:
-        extra = PLACED_RESISTOR_INLINE + _label_block(
-            "GNET", *self.PIN_TOP, kind="global_label"
-        )
+        extra = PLACED_RESISTOR_INLINE + _label_block("GNET", *self.PIN_TOP, kind="global_label")
         sch = _make_test_schematic(tmp_path, extra)
         result = self._get_handler()(
             {

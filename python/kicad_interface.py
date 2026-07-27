@@ -333,7 +333,7 @@ try:
     from commands.export import ExportCommands
     from commands.footprint import FootprintCreator
     from commands.freerouting import FreeroutingCommands
-    from commands.pcb_import import PcbImportCommands
+    from commands.hierarchical_place import HierarchicalPlaceCommands
     from commands.jlcpcb import JLCPCBClient, test_jlcpcb_connection
     from commands.jlcpcb_parts import JLCPCBPartsManager
     from commands.library import (
@@ -343,15 +343,15 @@ try:
     from commands.library_management import LibraryManagementCommands
     from commands.library_schematic import LibraryManager as SchematicLibraryManager
     from commands.library_symbol import SymbolLibraryCommands, SymbolLibraryManager
-    from commands.hierarchical_place import HierarchicalPlaceCommands
+    from commands.pcb_import import PcbImportCommands
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
     from commands.schematic import SchematicLoadError, SchematicManager
     from commands.schematic_batch import SchematicBatchCommands
     from commands.schematic_declutter import SchematicDeclutterCommands
     from commands.schematic_field_layout import SchematicFieldLayoutCommands
-    from commands.schematic_lint import SchematicLintCommands
     from commands.schematic_hierarchy import SchematicHierarchyCommands
+    from commands.schematic_lint import SchematicLintCommands
     from commands.symbol_creator import SymbolCreator
     from commands.symbol_pins import SymbolPinCommands
     from commands.symbol_repair import SymbolRepairCommands

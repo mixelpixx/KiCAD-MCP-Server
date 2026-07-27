@@ -272,8 +272,7 @@ BOARD_TOOLS = [
         "name": "get_board_origin",
         "title": "Get Board Aux/Grid Origin",
         "description": (
-            "Read back the auxiliary (drill/place) origin and grid origin of a "
-            ".kicad_pcb in mm."
+            "Read back the auxiliary (drill/place) origin and grid origin of a " ".kicad_pcb in mm."
         ),
         "inputSchema": {
             "type": "object",
@@ -2793,8 +2792,7 @@ SCHEMATIC_TOOLS = [
                 "gridSize": {
                     "type": "number",
                     "description": (
-                        "Grid spacing in mm (default: 1.27 = 50 mil, the KiCad "
-                        "connection grid)"
+                        "Grid spacing in mm (default: 1.27 = 50 mil, the KiCad " "connection grid)"
                     ),
                     "default": 1.27,
                 },

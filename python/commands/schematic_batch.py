@@ -813,9 +813,7 @@ class SchematicBatchCommands:
                     {
                         "schematicPath": schematic_path,
                         "connections": nets_per_ref,
-                        "labelType": params.get("labelType")
-                        or params.get("label_type")
-                        or "label",
+                        "labelType": params.get("labelType") or params.get("label_type") or "label",
                     }
                 )
 

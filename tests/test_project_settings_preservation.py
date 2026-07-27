@@ -27,7 +27,6 @@ from utils.project_settings_guard import (  # noqa: E402
     snapshot_project_file,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -71,9 +70,9 @@ def _clobber_pro(pro_path: str) -> None:
         data = json.load(fh)
     data["net_settings"] = json.loads(json.dumps(_DEFAULT_ONLY_NET_SETTINGS))
     data.pop("custom_unknown_key", None)
-    data.setdefault("board", {}).setdefault("design_settings", {}).setdefault(
-        "defaults", {}
-    )["track_width"] = 0.42
+    data.setdefault("board", {}).setdefault("design_settings", {}).setdefault("defaults", {})[
+        "track_width"
+    ] = 0.42
     with open(pro_path, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2)
 
@@ -135,9 +134,7 @@ class TestMergePreservedKeys:
 @pytest.mark.unit
 class TestPreserveProjectSettings:
     def test_clobbering_save_is_merged_back(self, tmp_path):
-        board_path, pro_path = _make_project(
-            tmp_path, extra={"custom_unknown_key": {"keep": True}}
-        )
+        board_path, pro_path = _make_project(tmp_path, extra={"custom_unknown_key": {"keep": True}})
         with preserve_project_settings(board_path):
             _clobber_pro(pro_path)
 
@@ -267,6 +264,6 @@ class TestRealPcbnewRoundTrip:
         final = json.loads(Path(pro_path).read_text())
         names = [c["name"] for c in final["net_settings"]["classes"]]
         assert "CAN_DIFF" in names
-        assert {"netclass": "CAN_DIFF", "pattern": "/CAN_*"} in final[
-            "net_settings"
-        ]["netclass_patterns"]
+        assert {"netclass": "CAN_DIFF", "pattern": "/CAN_*"} in final["net_settings"][
+            "netclass_patterns"
+        ]

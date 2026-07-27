@@ -22,7 +22,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 from commands.schematic_handlers import _pick_root_svg  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -74,9 +73,7 @@ class FakeKicadCli:
         else:
             Path(out_dir, f"{stem}.svg").write_text(marker)
             for suffix in self.extra_pages:
-                Path(out_dir, f"{stem}-{suffix}.svg").write_text(
-                    f"{marker}:{suffix}"
-                )
+                Path(out_dir, f"{stem}-{suffix}.svg").write_text(f"{marker}:{suffix}")
 
         class _Result:
             returncode = 0
@@ -93,13 +90,14 @@ def _make_sch(tmp_path, name):
 
 
 def _export(iface, sch, out, fake_cli):
-    with patch(
-        "commands.schematic_handlers.resolve_kicad_cli",
-        return_value="/fake/kicad-cli",
-    ), patch("subprocess.run", side_effect=fake_cli):
-        return iface._handle_export_schematic_svg(
-            {"schematicPath": sch, "outputPath": out}
-        )
+    with (
+        patch(
+            "commands.schematic_handlers.resolve_kicad_cli",
+            return_value="/fake/kicad-cli",
+        ),
+        patch("subprocess.run", side_effect=fake_cli),
+    ):
+        return iface._handle_export_schematic_svg({"schematicPath": sch, "outputPath": out})
 
 
 # ---------------------------------------------------------------------------
@@ -171,9 +169,7 @@ class TestExportSchematicSvg:
         sch = _make_sch(tmp_path, "root.kicad_sch")
         out = tmp_path / "out"
         out.mkdir()
-        r = _export(
-            iface, sch, str(out / "root_view.svg"), FakeKicadCli(["Sub1"])
-        )
+        r = _export(iface, sch, str(out / "root_view.svg"), FakeKicadCli(["Sub1"]))
         assert r["success"], r
         assert (out / "root_view.svg").read_text() == "MARKER:root"
         # Sub-sheet page is not leaked into the user directory
@@ -219,13 +215,14 @@ class TestExportSchematicSvg:
 class TestGetSchematicView:
     def test_multipage_returns_root_content(self, iface, tmp_path):
         sch = _make_sch(tmp_path, "root.kicad_sch")
-        with patch(
-            "commands.schematic_handlers.resolve_kicad_cli",
-            return_value="/fake/kicad-cli",
-        ), patch("subprocess.run", side_effect=FakeKicadCli(["Sub1"])):
-            r = iface._handle_get_schematic_view(
-                {"schematicPath": sch, "format": "svg"}
-            )
+        with (
+            patch(
+                "commands.schematic_handlers.resolve_kicad_cli",
+                return_value="/fake/kicad-cli",
+            ),
+            patch("subprocess.run", side_effect=FakeKicadCli(["Sub1"])),
+        ):
+            r = iface._handle_get_schematic_view({"schematicPath": sch, "format": "svg"})
         assert r["success"], r
         assert r["format"] == "svg"
         assert r["imageData"] == "MARKER:root"

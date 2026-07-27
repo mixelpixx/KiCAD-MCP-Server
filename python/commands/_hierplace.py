@@ -35,9 +35,8 @@ headless use inside an MCP server:
 The placement algorithm (group_modules / pack / hier_place) is unchanged.
 """
 
-from collections import defaultdict
-
 import builtins
+from collections import defaultdict
 
 from pcbnew import *  # noqa: F401,F403  (Module/board API used unqualified, as upstream)
 
@@ -54,29 +53,29 @@ GROUP_SPACING = 5 * MODULE_SPACING
 
 
 class Module(object):
-    '''A class to provide extra functions for PCBNEW MODULES.'''
+    """A class to provide extra functions for PCBNEW MODULES."""
 
     def __init__(self, pcbnew_module):
-        '''Create a Module instance that stores a PCBNEW MODULE instance.'''
+        """Create a Module instance that stores a PCBNEW MODULE instance."""
         self.m = pcbnew_module
 
     @property
     def ref(self):
-        '''Return a string with the module's reference id, such as "R3".'''
+        """Return a string with the module's reference id, such as "R3"."""
         return self.m.GetReference()
 
     @property
     def hier_level(self):
-        '''Return a string with the hierarchical level of the module.'''
+        """Return a string with the hierarchical level of the module."""
         try:
-            path_parts = self.m.GetPath().AsString().split('/')
+            path_parts = self.m.GetPath().AsString().split("/")
         except AttributeError:
-            path_parts = self.m.GetPath().split('/')
-        return '/'.join(path_parts[:-1])
+            path_parts = self.m.GetPath().split("/")
+        return "/".join(path_parts[:-1])
 
     @property
     def bbox(self):
-        '''Return an EDA_RECT or BOX2I with the bounding box of the module.'''
+        """Return an EDA_RECT or BOX2I with the bounding box of the module."""
         try:
             bb = self.m.GetBoundingBox()
         except AttributeError:
@@ -85,7 +84,7 @@ class Module(object):
         return bb
 
     def touches(self, module):
-        '''Return True if the given module intersects this module.'''
+        """Return True if the given module intersects this module."""
         bb1 = self.bbox
         # Slightly shrink the bounding box so two modules that abut each other
         # won't be reported as touching.
@@ -94,40 +93,40 @@ class Module(object):
 
     @property
     def center(self):
-        '''Return wxPoint containing the centroid of the module.'''
+        """Return wxPoint containing the centroid of the module."""
         return self.bbox.GetCenter()
 
     @property
     def tl_corner(self):
-        '''Return wxPoint containing the top-left corner of the module.'''
+        """Return wxPoint containing the top-left corner of the module."""
         bb = self.bbox
         return wxPoint(bb.GetLeft(), bb.GetTop())
 
     @property
     def br_corner(self):
-        '''Return wxPoint containing the bottom-right corner of the module.'''
+        """Return wxPoint containing the bottom-right corner of the module."""
         bb = self.bbox
         return wxPoint(bb.GetRight(), bb.GetBottom())
 
     @property
     def bl_corner(self):
-        '''Return wxPoint containing the bottom-left corner of the module.'''
+        """Return wxPoint containing the bottom-left corner of the module."""
         bb = self.bbox
         return wxPoint(bb.GetLeft(), bb.GetBottom())
 
     @property
     def w(self):
-        '''Return the width of the module.'''
+        """Return the width of the module."""
         return self.bbox.GetWidth()
 
     @property
     def h(self):
-        '''Return the height of the module.'''
+        """Return the height of the module."""
         return self.bbox.GetHeight()
 
     @property
     def area(self):
-        '''Return the area of the module's bounding box.'''
+        """Return the area of the module's bounding box."""
         return self.bbox.GetArea()
 
     @property
@@ -136,11 +135,11 @@ class Module(object):
 
     @property
     def locked(self):
-        '''Return True if the module is locked in place.'''
+        """Return True if the module is locked in place."""
         return self.m.IsLocked()
 
     def move(self, dx, dy):
-        '''Move a module by the given distance in the X and Y directions.'''
+        """Move a module by the given distance in the X and Y directions."""
         if not self.locked:
             if KICAD_VERSION >= 7:
                 self.m.Move(VECTOR2I(dx, dy))
@@ -148,31 +147,31 @@ class Module(object):
                 self.m.Move(wxPoint(dx, dy))
 
     def set_bl_position(self, point):
-        '''Set the position of the module's bottom-left corner to the given (X,Y) coordinate.'''
+        """Set the position of the module's bottom-left corner to the given (X,Y) coordinate."""
         if not self.locked:
             mv = point - self.bl_corner  # Get vector from BL corner to desired point.
             self.move(mv.x, mv.y)
 
 
 class ModuleGroup(list, Module):
-    '''A class that stores modules or module-groups as a list and also acts like a module.'''
+    """A class that stores modules or module-groups as a list and also acts like a module."""
 
     def __init__(self, *args):
         super(ModuleGroup, self).__init__(*args)
 
     @property
     def ref(self):
-        '''Return a string composed of the reference ids of the modules it contains.'''
-        return '[' + ','.join([m.ref for m in self]) + ']'
+        """Return a string composed of the reference ids of the modules it contains."""
+        return "[" + ",".join([m.ref for m in self]) + "]"
 
     @property
     def hier_level(self):
-        '''Return a string with the hierarchical level of the module group.'''
-        return '/'.join((self[0].hier_level.split('/'))[:-1])
+        """Return a string with the hierarchical level of the module group."""
+        return "/".join((self[0].hier_level.split("/"))[:-1])
 
     @property
     def bbox(self):
-        '''Return an EDA_RECT or BOX2I with the bounding box of the group of modules.'''
+        """Return an EDA_RECT or BOX2I with the bounding box of the group of modules."""
         try:
             bbox = BOX2I()
         except NameError:
@@ -185,20 +184,20 @@ class ModuleGroup(list, Module):
 
     @property
     def locked(self):
-        '''Alsways return False because a module group never contains any locked modules.'''
+        """Alsways return False because a module group never contains any locked modules."""
         return False
 
     def move(self, dx, dy):
-        '''Move all the modules in a group by the given distance in the X and Y directions.'''
+        """Move all the modules in a group by the given distance in the X and Y directions."""
         if not self.locked:
             for m in self:
                 m.move(dx, dy)
 
 
 def group_modules(modules):
-    '''
+    """
     Create a dictionary where each entry contains the modules at that level of the hierarchy.
-    '''
+    """
     groups = defaultdict(ModuleGroup)
     for m in modules:
         if not m.locked:
@@ -208,9 +207,9 @@ def group_modules(modules):
 
 
 def pack(group):
-    '''
+    """
     Pack a group of modules into a tight formation.
-    '''
+    """
 
     # Packing starts with the module that's largest in area. The top-left (TL)
     # and bottom-right (BR) corners of that module become potential points where
@@ -246,7 +245,7 @@ def pack(group):
 
             # Iterate through the potential placement points and pick the one that
             # least expands the total bounding box.
-            best_pt, smallest_size = None, float('inf')
+            best_pt, smallest_size = None, float("inf")
             for pt in placement_pts:
 
                 # Move module bottom-left corner to the placement point.
@@ -266,8 +265,11 @@ def pack(group):
                     # group of modules. The size is the sum of the height and width
                     # plus the difference between the height and width. This
                     # measure will attempt to keep the area small and square-like.
-                    size = packed_modules.h + packed_modules.w + builtins.abs(
-                        packed_modules.h - packed_modules.w)
+                    size = (
+                        packed_modules.h
+                        + packed_modules.w
+                        + builtins.abs(packed_modules.h - packed_modules.w)
+                    )
 
                     # If this configuration is the smallest so far, store it.
                     if size <= smallest_size:
@@ -286,9 +288,9 @@ def pack(group):
 
 
 def hier_place(brd=None):
-    '''
+    """
     Remove overlaps of board parts while respecting their hierarchy.
-    '''
+    """
 
     brd = brd or GetBoard()
     try:
