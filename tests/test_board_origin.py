@@ -54,9 +54,7 @@ class TestValidation:
         assert "not found" in r["message"]
 
     def test_invalid_type(self, commands, board_file):
-        r = commands.set_board_origin(
-            {"boardPath": board_file, "type": "bogus", "x": 1, "y": 2}
-        )
+        r = commands.set_board_origin({"boardPath": board_file, "type": "bogus", "x": 1, "y": 2})
         assert r["success"] is False
         assert "type must be one of" in r["message"]
 
@@ -68,16 +66,12 @@ class TestValidation:
         assert r["success"] is False
 
     def test_non_numeric_coordinates(self, commands, board_file):
-        r = commands.set_board_origin(
-            {"boardPath": board_file, "x": "abc", "y": 2}
-        )
+        r = commands.set_board_origin({"boardPath": board_file, "x": "abc", "y": 2})
         assert r["success"] is False
         assert "numeric" in r["message"]
 
     def test_invalid_unit(self, commands, board_file):
-        r = commands.set_board_origin(
-            {"boardPath": board_file, "x": 1, "y": 2, "unit": "furlong"}
-        )
+        r = commands.set_board_origin({"boardPath": board_file, "x": 1, "y": 2, "unit": "furlong"})
         assert r["success"] is False
         assert "unit must be one of" in r["message"]
 
@@ -104,9 +98,7 @@ class TestRealPcbnew:
 
     def test_aux_round_trip(self, commands, tmp_path):
         board_path = self._make_board(tmp_path)
-        r = commands.set_board_origin(
-            {"boardPath": board_path, "type": "aux", "x": 10, "y": 20}
-        )
+        r = commands.set_board_origin({"boardPath": board_path, "type": "aux", "x": 10, "y": 20})
         assert r["success"], r
         # Nonzero origins are serialized as an aux_axis_origin token
         text = Path(board_path).read_text(encoding="utf-8")
@@ -118,17 +110,13 @@ class TestRealPcbnew:
 
     def test_grid_and_both(self, commands, tmp_path):
         board_path = self._make_board(tmp_path)
-        r = commands.set_board_origin(
-            {"boardPath": board_path, "type": "grid", "x": 5, "y": 6}
-        )
+        r = commands.set_board_origin({"boardPath": board_path, "type": "grid", "x": 5, "y": 6})
         assert r["success"], r
         g = commands.get_board_origin({"boardPath": board_path})
         assert g["grid"] == {"x": 5.0, "y": 6.0}
         assert g["aux"] == {"x": 0.0, "y": 0.0}
 
-        r = commands.set_board_origin(
-            {"boardPath": board_path, "type": "both", "x": 7, "y": 8}
-        )
+        r = commands.set_board_origin({"boardPath": board_path, "type": "both", "x": 7, "y": 8})
         assert r["success"], r
         g = commands.get_board_origin({"boardPath": board_path})
         assert g["aux"] == {"x": 7.0, "y": 8.0}
@@ -138,9 +126,7 @@ class TestRealPcbnew:
         import pcbnew
 
         board_path = self._make_board(tmp_path)
-        r = commands.set_board_origin(
-            {"boardPath": board_path, "x": 1, "y": 0.5, "unit": "inch"}
-        )
+        r = commands.set_board_origin({"boardPath": board_path, "x": 1, "y": 0.5, "unit": "inch"})
         assert r["success"], r
         board = pcbnew.LoadBoard(board_path)
         aux = board.GetDesignSettings().GetAuxOrigin()
@@ -196,9 +182,7 @@ class TestRealPcbnew:
             return coords
 
         before = _drill_coords(tmp_path / "before")
-        r = commands.set_board_origin(
-            {"boardPath": board_path, "type": "aux", "x": 30, "y": 30}
-        )
+        r = commands.set_board_origin({"boardPath": board_path, "type": "aux", "x": 30, "y": 30})
         assert r["success"], r
         after = _drill_coords(tmp_path / "after")
 
