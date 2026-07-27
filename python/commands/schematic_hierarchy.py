@@ -477,7 +477,10 @@ class SchematicHierarchyCommands:
                 for m in re.finditer(
                     r'\(property\s+"((?:[^"\\]|\\.)*)"\s+"((?:[^"\\]|\\.)*)"', block
                 ):
-                    unescape = lambda s: s.replace('\\"', '"').replace("\\\\", "\\")
+
+                    def unescape(s):
+                        return s.replace('\\"', '"').replace("\\\\", "\\")
+
                     properties[unescape(m.group(1))] = unescape(m.group(2))
                 uuid_match = re.search(r'\(uuid\s+"?([0-9a-fA-F-]+)"?\)', block)
                 at_match = re.search(r"\(at\s+(-?[\d.]+)\s+(-?[\d.]+)", block)

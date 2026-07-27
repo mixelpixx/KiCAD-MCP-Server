@@ -1492,14 +1492,16 @@ class SchematicHandlersMixin:
                         "success": False,
                         "message": "No SVG file produced by kicad-cli",
                     }
-                svg_path = _pick_root_svg(tmpdir, schematic_path)
-                if svg_path is None:
+                root_svg = _pick_root_svg(tmpdir, schematic_path)
+                if root_svg is None:
                     svg_path = sorted(svg_files)[0]
                     logger.warning(
-                        "Could not identify root SVG page for %s; " "falling back to %s",
+                        "Could not identify root SVG page for %s; falling back to %s",
                         schematic_path,
                         svg_path,
                     )
+                else:
+                    svg_path = root_svg
 
                 if fmt == "svg":
                     with open(svg_path, "r", encoding="utf-8") as f:
@@ -3302,7 +3304,7 @@ class SchematicHandlersMixin:
                         root.set("height", str(height))
 
                 # Write modified SVG
-                cropped_svg_path = str(tmp_dir_p / "cropped.svg")
+                cropped_svg_path = os.path.join(tmp_dir, "cropped.svg")
                 tree.write(cropped_svg_path, xml_declaration=True, encoding="utf-8")
 
                 if out_format == "svg":

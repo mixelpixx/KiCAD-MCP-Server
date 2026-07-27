@@ -35,13 +35,14 @@ headless use inside an MCP server:
 The placement algorithm (group_modules / pack / hier_place) is unchanged.
 """
 
+# flake8: noqa: F405  (vendored HierPlace uses the pcbnew star-import API unqualified)
 import builtins
 from collections import defaultdict
 
 from pcbnew import *  # noqa: F401,F403  (Module/board API used unqualified, as upstream)
 
 try:
-    KICAD_VERSION = int(Version().split(".")[0])
+    KICAD_VERSION = int(Version().split(".")[0])  # type: ignore[name-defined]
 except NameError:
     # No version function, so assume this is KiCad 5.
     KICAD_VERSION = 5

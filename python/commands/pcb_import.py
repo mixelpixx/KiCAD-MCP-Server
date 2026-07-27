@@ -94,6 +94,7 @@ class PcbImportCommands:
 
         cmd = [cli, "pcb", "import", "--format", fmt, "-o", output_file]
         if report_format != "none":
+            assert report_file is not None  # set above under the same condition
             cmd += ["--report-format", report_format, "--report-file", report_file]
         cmd.append(input_file)
 
