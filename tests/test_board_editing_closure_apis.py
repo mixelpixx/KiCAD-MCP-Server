@@ -162,7 +162,10 @@ def test_board_outline_and_graphic_crud():
 
     deleted = cmd.delete_graphic({"uuid": "edge-1"})
     assert deleted["success"] is True
-    board.Remove.assert_called_with(edge)
+    # Delete(), not Remove(): Remove() transfers C++ ownership to Python and
+    # frees an item KiCad still references once the reference drops (#247).
+    board.Delete.assert_called_with(edge)
+    board.Remove.assert_not_called()
 
     cleared = cmd.clear_board_outline({})
     assert cleared["success"] is True

@@ -7,6 +7,7 @@ import math
 from typing import Any, Dict, Optional
 
 import pcbnew
+from utils.board_items import delete_board_item
 
 logger = logging.getLogger("kicad_interface")
 
@@ -218,7 +219,7 @@ class BoardOutlineCommands:
             for item in list(self.board.GetDrawings()):
                 try:
                     if item.GetLayer() == edge_layer:
-                        self.board.Remove(item)
+                        delete_board_item(self.board, item)
                         removed += 1
                 except Exception:
                     continue
@@ -283,7 +284,7 @@ class BoardOutlineCommands:
                 return {"success": False, "message": "uuid is required"}
             for item in list(self.board.GetDrawings()):
                 if self._item_uuid(item) == uuid:
-                    self.board.Remove(item)
+                    delete_board_item(self.board, item)
                     return {"success": True, "message": f"Deleted graphic {uuid}", "uuid": uuid}
             return {
                 "success": False,

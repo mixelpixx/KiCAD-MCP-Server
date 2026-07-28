@@ -1491,12 +1491,41 @@ class KiCADInterface(SchematicHandlersMixin):
         "GetFileName",
     )
 
+    # Probing the BOARD alone is not enough. SWIG dehydration can leave the
+    # BOARD dispatching fine while every child item it hands back is a raw
+    # SwigPyObject — that is exactly the #247 shape, and it is why this check
+    # silently passed while users' next command died on a dead footprint
+    # proxy. Sample one child item as well.
+    _ITEM_HEALTH_METHODS = ("GetPosition",)
+
     def _is_board_healthy(self, board: Optional[Any] = None) -> bool:
-        """Return True if the board (default self.board) has live SWIG dispatch."""
+        """Return True if the board (default self.board) has live SWIG dispatch.
+
+        Checks the BOARD *and* a sampled child item: the two can rot
+        independently, and a healthy BOARD with dead children is the more
+        common failure (#247).
+        """
         target = board if board is not None else self.board
         if target is None:
             return False
-        return all(hasattr(target, m) for m in self._BOARD_HEALTH_METHODS)
+        if not all(hasattr(target, m) for m in self._BOARD_HEALTH_METHODS):
+            return False
+
+        # Child probe is best-effort: a board with no footprints is healthy,
+        # and a backend whose GetFootprints is absent (IPC doubles, mocks)
+        # must not be reported as broken on that basis alone.
+        get_footprints = getattr(target, "GetFootprints", None)
+        if not callable(get_footprints):
+            return True
+        try:
+            footprints = get_footprints()
+            first = next(iter(footprints), None)
+        except Exception:
+            # Iteration itself blowing up is the damage we are looking for.
+            return False
+        if first is None:
+            return True
+        return all(hasattr(first, m) for m in self._ITEM_HEALTH_METHODS)
 
     def _safe_load_board(self, path: str) -> Optional[Any]:
         """Load a board from disk, recovering from SWIG dehydration if pcbnew is broken.
