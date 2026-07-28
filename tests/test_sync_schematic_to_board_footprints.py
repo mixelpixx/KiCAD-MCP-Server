@@ -89,10 +89,16 @@ class TestAddMissingFootprintsFromSchematic:
         assert added[0]["reference"] == "R99"
         assert added[0]["footprint"] == "Resistor_SMD:R_0603_1608Metric"
         assert skipped == []
-        # Footprint was added to the board.
-        board.Add.assert_called_once_with(loaded_module)
-        loaded_module.SetReference.assert_called_with("R99")
-        loaded_module.SetValue.assert_called_with("10k")
+        # Footprint was added to the board. Since #248 the loaded footprint is
+        # a cached prototype and a CLONE is what gets added — the prototype
+        # must never be handed to board.Add(), or the cache would end up
+        # holding a board-owned object.
+        board.Add.assert_called_once()
+        added_object = board.Add.call_args.args[0]
+        assert added_object is not loaded_module, "prototype was added instead of a clone"
+        assert added_object is loaded_module.Duplicate.return_value
+        added_object.SetReference.assert_called_with("R99")
+        added_object.SetValue.assert_called_with("10k")
 
     def test_skips_reference_already_on_board(self, tmp_path: Any) -> None:
         sch = tmp_path / "test.kicad_sch"

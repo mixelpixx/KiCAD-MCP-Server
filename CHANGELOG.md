@@ -67,6 +67,27 @@ symbols, and `repair_flat_symbols` fixes the common cause. See
   `batch_add_and_connect` take `labelType: "global_label"` for nets that span
   sheets, instead of only sheet-local labels.
 
+### Performance
+
+- **`sync_schematic_to_board` loads each distinct footprint once** (#248).
+  The footprint loop called `pcbnew.FootprintLoad` per component with no
+  memoization anywhere downstream, so a board with thirteen identical
+  resistors paid for thirteen identical disk reads. Each distinct
+  `(library, footprint)` is now loaded once and cloned per component.
+
+  On the reporter's measured component mix, warm cache: 29 loads to 6, and
+  the loop runs roughly twice as fast. The saving is larger cold, where a
+  first read of an untouched `.pretty` dominated everything else.
+
+  Cloning is version-tolerant: `Duplicate()` gained a required argument in
+  KiCad 10, and it returns a `BOARD_ITEM` that SWIG does not down-cast, so
+  the result is passed through `Cast_to_FOOTPRINT`. Verified against a real
+  KiCad 10.0 install.
+
+  Thanks to @Dewieinns for the instrumented per-library timing table, which
+  is what showed repeated loads into the same library costing the same as
+  the first.
+
 ### Bug Fixes
 
 - **`.kicad_pro` net settings survive a board save** (#341, @rossvonfange).
