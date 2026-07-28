@@ -78,9 +78,8 @@ class TestLoadIsMemoized:
 
     def _run(self, monkeypatch, footprints):
         """Drive the real loop with N schematic components, return load count."""
-        from commands.schematic_handlers import SchematicHandlersMixin
-
         import pcbnew
+        from commands.schematic_handlers import SchematicHandlersMixin
 
         load_calls = []
 
@@ -95,15 +94,15 @@ class TestLoadIsMemoized:
         monkeypatch.setattr(pcbnew, "FootprintLoad", fake_load)
 
         handler = SchematicHandlersMixin.__new__(SchematicHandlersMixin)
-        components = [
-            {"reference": ref, "footprint": fp, "value": "x"} for ref, fp in footprints
-        ]
+        components = [{"reference": ref, "footprint": fp, "value": "x"} for ref, fp in footprints]
         monkeypatch.setattr(
             handler, "_extract_components_from_schematic", lambda _p: components, raising=False
         )
         lib_mgr = MagicMock()
-        lib_mgr.libraries = {"Resistor_SMD": "/libs/Resistor_SMD.pretty",
-                             "Capacitor_SMD": "/libs/Capacitor_SMD.pretty"}
+        lib_mgr.libraries = {
+            "Resistor_SMD": "/libs/Resistor_SMD.pretty",
+            "Capacitor_SMD": "/libs/Capacitor_SMD.pretty",
+        }
         monkeypatch.setattr(
             handler, "_get_project_library_manager", lambda _d: lib_mgr, raising=False
         )
