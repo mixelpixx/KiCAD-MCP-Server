@@ -168,10 +168,12 @@ _Source: `src/tools/schematic.ts`_
 
 ### Hierarchical Schematics (2)
 
-| Tool                               | Description                                        | Access             |
-| ---------------------------------- | -------------------------------------------------- | ------------------ |
-| `add_schematic_hierarchical_label` | Add hierarchical label for multi-sheet connections | Routed (schematic) |
-| `add_sheet_pin`                    | Add a sheet pin to a hierarchical sheet symbol     | Routed (schematic) |
+| Tool                               | Description                                                                                   | Access             |
+| ---------------------------------- | --------------------------------------------------------------------------------------------- | ------------------ |
+| `add_schematic_hierarchical_label` | Add hierarchical label for multi-sheet connections                                            | Routed (schematic) |
+| `add_sheet_pin`                    | Add a sheet pin to a hierarchical sheet symbol                                                | Routed (schematic) |
+| `set_sheet_property`               | Add/update a custom property on a hierarchical sheet (metadata, e.g. generator cell identity) | Routed (schematic) |
+| `get_sheet_properties`             | List hierarchical sheets with their full property maps                                        | Routed (schematic) |
 
 ### Net Analysis (5)
 

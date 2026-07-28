@@ -23,7 +23,7 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 144 tools across 13 categories with JSON Schema validation
+- 141 tools across 13 categories with JSON Schema validation
 - Smart tool discovery with router pattern (reduces AI context by 70%)
 - 8 dynamic resources exposing project state
 - Complete schematic workflow with 27 tools and dynamic symbol loading (~10,000 symbols)
@@ -461,7 +461,7 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server provides **143 tools** organized into 13 functional categories. With the router pattern, tools are automatically discovered as needed -- just ask Claude what you want to accomplish.
+The server provides **141 tools** organized into 13 functional categories. With the router pattern, tools are automatically discovered as needed -- just ask Claude what you want to accomplish.
 
 For the complete tool reference with access types (direct/routed/additional), see [Tool Inventory](docs/TOOL_INVENTORY.md).
 
@@ -1485,7 +1485,7 @@ npm run format
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-**Working Features (143 tools):**
+**Working Features (141 tools):**
 
 - Project management with snapshot checkpointing
 - Complete board design (outline, layers, zones, mounting holes, text, SVG logos)
