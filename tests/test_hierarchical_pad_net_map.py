@@ -154,8 +154,9 @@ def iface() -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Helper: call _build_hierarchical_pad_net_map with both skip.Schematic
-# entry-points patched (walker import + PinLocator module-level import).
+# Helper: call _build_hierarchical_pad_net_map with every skip.Schematic
+# entry-point patched (walker import, PinLocator module-level import, and
+# the guarded SchematicManager loader in commands.schematic).
 # ---------------------------------------------------------------------------
 
 
@@ -163,6 +164,7 @@ def _call(iface: Any, sch_file: Path, mock_sch: MagicMock):
     with (
         patch("skip.Schematic", return_value=mock_sch),
         patch("commands.pin_locator.Schematic", return_value=mock_sch),
+        patch("commands.schematic.Schematic", return_value=mock_sch),
     ):
         return iface._build_hierarchical_pad_net_map(str(sch_file))
 
@@ -373,6 +375,7 @@ class TestMultipleSubsheets:
         with (
             patch("skip.Schematic", side_effect=_factory),
             patch("commands.pin_locator.Schematic", side_effect=_factory),
+            patch("commands.schematic.Schematic", side_effect=_factory),
         ):
             pad_net_map, net_names = iface._build_hierarchical_pad_net_map(str(top))
 
@@ -405,6 +408,7 @@ class TestMultipleSubsheets:
         with (
             patch("skip.Schematic", side_effect=_factory),
             patch("commands.pin_locator.Schematic", side_effect=_factory),
+            patch("commands.schematic.Schematic", side_effect=_factory),
         ):
             pad_net_map, _ = iface._build_hierarchical_pad_net_map(str(top))
 

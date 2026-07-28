@@ -44,14 +44,15 @@ KiCAD MCP Server -- AI-assisted PCB design via Model Context Protocol
 
 ## Workflows
 
-| Document                                      | Description                               |
-| --------------------------------------------- | ----------------------------------------- |
-| [Realtime Workflow](REALTIME_WORKFLOW.md)     | Working with IPC backend for live updates |
-| [Visual Feedback](VISUAL_FEEDBACK.md)         | UI visual feedback guide                  |
-| [UI Auto Launch](UI_AUTO_LAUNCH.md)           | Automatic KiCAD UI launch feature         |
-| [Router Guide](mcp-router-guide.md)           | Tool router pattern usage                 |
-| [Router Architecture](ROUTER_ARCHITECTURE.md) | Router pattern design                     |
-| [Router Quick Start](ROUTER_QUICK_START.md)   | Quick start for the router pattern        |
+| Document                                      | Description                                                                                 |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| [Realtime Workflow](REALTIME_WORKFLOW.md)     | Working with IPC backend for live updates                                                   |
+| [Headless Authoring](HEADLESS_AUTHORING.md)   | Driving the server without the KiCad GUI: build recipe, ERC triage, verification discipline |
+| [Visual Feedback](VISUAL_FEEDBACK.md)         | UI visual feedback guide                                                                    |
+| [UI Auto Launch](UI_AUTO_LAUNCH.md)           | Automatic KiCAD UI launch feature                                                           |
+| [Router Guide](mcp-router-guide.md)           | Tool router pattern usage                                                                   |
+| [Router Architecture](ROUTER_ARCHITECTURE.md) | Router pattern design                                                                       |
+| [Router Quick Start](ROUTER_QUICK_START.md)   | Quick start for the router pattern                                                          |
 
 ---
 

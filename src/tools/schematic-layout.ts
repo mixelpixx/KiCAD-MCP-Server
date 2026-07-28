@@ -102,6 +102,41 @@ export function registerSchematicLayoutTools(server: McpServer, callKicadScript:
     },
   );
 
+  // Netlist-safe cosmetic lint: hide pin names, orient labels pin-side-aware
+  server.tool(
+    "lint_schematic_cosmetic",
+    "Netlist-safe cosmetic cleanup of a .kicad_sch, applied as raw-text edits that never " +
+      "move a symbol, pin, wire, junction, or label anchor. Pass hide_pin_names gives every " +
+      "top-level embedded lib_symbol a (pin_names ... (hide yes)) directive — in label-driven " +
+      "schematics the internal pin names duplicate the net label on the same pin. Pass " +
+      "orient_labels sets each net/global/hierarchical label's text angle and justify from " +
+      "the sheet-space outward side of the pin it sits on (rotation/mirror aware), so text " +
+      "reads away from the symbol body; labels not on a pin are left untouched. " +
+      "Complements autoplace_schematic_fields (which handles Reference/Value fields).",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      passes: z
+        .array(z.enum(["hide_pin_names", "orient_labels"]))
+        .optional()
+        .describe("Passes to run, in order (default: both)"),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe("Report change counts without writing (default false)"),
+    },
+    async (args: any) => {
+      const result = await callKicadScript("lint_schematic_cosmetic", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: result.success ? result.message : `Failed: ${result.message || "Unknown error"}`,
+          },
+        ],
+      };
+    },
+  );
+
   server.tool(
     "suggest_schematic_declutter",
     "Re-orient overlapping net/global labels so their text lands in free space and becomes readable. Each label's (at x,y) anchor is its electrical connection point, so it is held FIXED — only the orientation (0/90/180/270) and justification change, throwing the text away from component bodies and other labels. Connectivity is never altered. DRY RUN by default: returns proposals [{name, at, from_angle, to_angle}] plus an overlap score (before/after) WITHOUT modifying the schematic. Set apply=true to rewrite the label orientations. (Phase 1: labels only; symbol spreading + wire reroute is a separate future capability.)",

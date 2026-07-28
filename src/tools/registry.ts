@@ -146,8 +146,18 @@ export const toolCategories: ToolCategory[] = [
   },
   {
     name: "library",
-    description: "Footprint library access: search, browse, get footprint information",
-    tools: ["list_libraries", "search_footprints", "list_library_footprints", "get_footprint_info"],
+    description:
+      "Footprint library access: search, browse, get footprint information; plus symbol-library repair",
+    tools: [
+      "list_libraries",
+      "search_footprints",
+      "list_library_footprints",
+      "get_footprint_info",
+      // Symbol-library maintenance. Sits here for now because there is no
+      // symbol-library category yet -- see #345, which tracks giving the
+      // ~13 unregistered symbol tools a proper home.
+      "repair_flat_symbols",
+    ],
   },
   {
     name: "symbol_pins",
@@ -169,11 +179,13 @@ export const toolCategories: ToolCategory[] = [
   {
     name: "schematic_layout",
     description:
-      "Schematic field placement: move Ref/Value fields and autoplace them clear of bodies and labels",
+      "Schematic field placement and geometry lint: move Ref/Value fields, autoplace them clear of bodies and labels, and find/snap off-grid coordinates",
     tools: [
       "set_schematic_property_position",
       "batch_set_schematic_property_positions",
       "autoplace_schematic_fields",
+      "lint_schematic_cosmetic",
+      "lint_offgrid",
     ],
   },
   {

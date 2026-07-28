@@ -953,8 +953,14 @@ def get_connections_for_net(schematic: Any, schematic_path: str, net_name: str) 
     sub_sheets = _discover_sub_sheets(schematic_path)
     for sub_path in sub_sheets:
         try:
-            sub_sch = SkipSchematic(sub_path)
+            from commands.schematic import SchematicLoadError, SchematicManager
+
+            sub_sch = SchematicManager.load_schematic(sub_path)
             _collect(_process_single_sheet(sub_sch, sub_path, net_name))
+        except SchematicLoadError:
+            # A broken sub-sheet must fail the hierarchical traversal loudly
+            # instead of silently omitting that sheet's pins from the net.
+            raise
         except Exception as e:
             logger.warning(f"Error processing sub-sheet {sub_path}: {e}")
 

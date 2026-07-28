@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import sexpdata
+from commands.schematic import SchematicLoadError, SchematicManager
 from sexpdata import Symbol
 from skip import Schematic
 
@@ -198,6 +199,8 @@ class PinLocator:
             logger.warning(f"Symbol {lib_id} not found in lib_symbols")
             return {}
 
+        except SchematicLoadError:
+            raise
         except Exception as e:
             logger.error(f"Error getting symbol pins: {e}")
             import traceback
@@ -239,11 +242,13 @@ class PinLocator:
         try:
             sch_key = str(schematic_path)
             if sch_key not in self._schematic_cache:
-                self._schematic_cache[sch_key] = Schematic(sch_key)
+                self._schematic_cache[sch_key] = SchematicManager.load_schematic(sch_key)
             sch = self._schematic_cache[sch_key]
             for symbol in sch.symbol:
                 if symbol.property.Reference.value.rstrip("_") == symbol_reference:
                     return symbol.lib_id.value if hasattr(symbol, "lib_id") else None
+        except SchematicLoadError:
+            raise
         except Exception:
             pass
         return None
@@ -432,6 +437,8 @@ class PinLocator:
             )
             return math.degrees(math.atan2(-(ey - by), ex - bx)) % 360.0
 
+        except SchematicLoadError:
+            raise
         except Exception:
             return None
 
@@ -454,7 +461,7 @@ class PinLocator:
             # Use cache to avoid reloading the file for every pin lookup
             sch_key = str(schematic_path)
             if sch_key not in self._schematic_cache:
-                self._schematic_cache[sch_key] = Schematic(sch_key)
+                self._schematic_cache[sch_key] = SchematicManager.load_schematic(sch_key)
             sch = self._schematic_cache[sch_key]
 
             # Find the symbol instance.
@@ -548,6 +555,8 @@ class PinLocator:
             logger.info(f"Pin {symbol_reference}/{pin_number} located at ({abs_x}, {abs_y})")
             return [abs_x, abs_y]
 
+        except SchematicLoadError:
+            raise
         except Exception as e:
             logger.error(f"Error getting pin location: {e}")
             import traceback
@@ -572,7 +581,7 @@ class PinLocator:
             # Load schematic (use cache)
             sch_key = str(schematic_path)
             if sch_key not in self._schematic_cache:
-                self._schematic_cache[sch_key] = Schematic(sch_key)
+                self._schematic_cache[sch_key] = SchematicManager.load_schematic(sch_key)
             sch = self._schematic_cache[sch_key]
 
             # Find symbol
@@ -607,6 +616,8 @@ class PinLocator:
             logger.info(f"Located {len(result)} pins on {symbol_reference}")
             return result
 
+        except SchematicLoadError:
+            raise
         except Exception as e:
             logger.error(f"Error getting all symbol pins: {e}")
             return {}

@@ -346,13 +346,15 @@ try:
     from commands.pcb_import import PcbImportCommands
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
-    from commands.schematic import SchematicManager
+    from commands.schematic import SchematicLoadError, SchematicManager
     from commands.schematic_batch import SchematicBatchCommands
     from commands.schematic_declutter import SchematicDeclutterCommands
     from commands.schematic_field_layout import SchematicFieldLayoutCommands
     from commands.schematic_hierarchy import SchematicHierarchyCommands
+    from commands.schematic_lint import SchematicLintCommands
     from commands.symbol_creator import SymbolCreator
     from commands.symbol_pins import SymbolPinCommands
+    from commands.symbol_repair import SymbolRepairCommands
     from commands.symbol_schematic import SymbolSchematicCommands
     from commands.update_symbol_from_library import update_symbol_from_library
 
@@ -429,10 +431,12 @@ class KiCADInterface(SchematicHandlersMixin):
 
         # Symbol pin discovery commands (read-only pin lookup from symbol libraries)
         self.symbol_pin_commands = SymbolPinCommands()
+        self.symbol_repair_commands = SymbolRepairCommands()
         # Schematic hierarchy commands (insert sheets, scaffold sub-sheets)
         self.hierarchy_commands = SchematicHierarchyCommands(self)
         # Schematic field placement / layout-check commands
         self.field_layout_commands = SchematicFieldLayoutCommands()
+        self.schematic_lint_commands = SchematicLintCommands()
         # Schematic label declutter (re-orient overlapping labels)
         self.declutter_commands = SchematicDeclutterCommands()
         # Batch schematic authoring commands (need an interface back-reference for the
@@ -553,6 +557,7 @@ class KiCADInterface(SchematicHandlersMixin):
             # Symbol pin discovery commands (read pins straight from symbol libraries)
             "list_symbol_pins": self.symbol_pin_commands.list_symbol_pins,
             "batch_list_symbol_pins": self.symbol_pin_commands.batch_list_symbol_pins,
+            "repair_flat_symbols": self.symbol_repair_commands.repair_flat_symbols,
             # Schematic hierarchy commands (sheet insertion + subsheet scaffolding)
             "add_hierarchical_sheet": self.hierarchy_commands.add_hierarchical_sheet,
             "remove_hierarchical_sheet": self.hierarchy_commands.remove_hierarchical_sheet,
@@ -563,6 +568,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "set_schematic_property_position": self.field_layout_commands.set_schematic_property_position,
             "batch_set_schematic_property_positions": self.field_layout_commands.batch_set_schematic_property_positions,
             "autoplace_schematic_fields": self.field_layout_commands.autoplace_schematic_fields,
+            "lint_schematic_cosmetic": self.schematic_lint_commands.lint_schematic_cosmetic,
             "suggest_schematic_declutter": self.declutter_commands.suggest_schematic_declutter,
             # Batch schematic authoring commands
             "batch_add_components": self.batch_commands.batch_add_components,
@@ -646,6 +652,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "find_orphaned_wires": self._handle_find_orphaned_wires,
             "list_floating_labels": self._handle_list_floating_labels,
             "snap_to_grid": self._handle_snap_to_grid,
+            "lint_offgrid": self._handle_lint_offgrid,
             "add_schematic_hierarchical_label": self._handle_add_schematic_hierarchical_label,
             "add_schematic_text": self._handle_add_schematic_text,
             "list_schematic_texts": self._handle_list_schematic_texts,
@@ -1144,6 +1151,12 @@ class KiCADInterface(SchematicHandlersMixin):
                     "errorDetails": "The specified command is not supported",
                 }
 
+        except SchematicLoadError as e:
+            # Backstop: any load site missed by the per-handler conversion
+            # still yields the structured, diagnosed error rather than the
+            # generic "Error handling command" below.
+            logger.error(f"Schematic load failed handling {command}: {e}")
+            return e.to_response()
         except Exception as e:
             # Get the full traceback
             traceback_str = traceback.format_exc()
@@ -2778,9 +2791,10 @@ class KiCADInterface(SchematicHandlersMixin):
             if not all([schematic_path, net_name]):
                 return {"success": False, "message": "Missing required parameters"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             connections = get_connections_for_net(schematic, schematic_path, net_name)
             return {"success": True, "connections": connections}
@@ -2808,9 +2822,10 @@ class KiCADInterface(SchematicHandlersMixin):
             except (TypeError, ValueError):
                 return {"success": False, "message": "Parameters x and y must be numeric"}
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
 
             result = get_net_at_point(schematic, schematic_path, x, y)
             return {"success": True, **result}
