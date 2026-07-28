@@ -25,6 +25,7 @@ import sexpdata
 from commands.library_schematic import LibraryManager as SchematicLibraryManager
 from commands.schematic import SchematicLoadError, SchematicManager
 from commands.wire_manager import WireManager
+from utils.board_items import clone_footprint
 from utils.interactive_schematic import reload_kicad_schematic
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.project_settings_guard import preserve_project_settings
@@ -3151,6 +3152,14 @@ class SchematicHandlersMixin:
         project_dir = Path(schematic_path).parent
         library_manager = self._get_project_library_manager(project_dir)
 
+        # One FootprintLoad per distinct (library, footprint), cloned per use.
+        # Measured on a 40-component board (#248): FootprintLoad costs the same
+        # every time -- nothing downstream memoizes it -- so a board with 13
+        # identical resistors paid for 13 identical disk reads. Scoped to this
+        # call rather than process-wide so an edited library is never served
+        # stale.
+        proto_cache: Dict[Tuple[str, str], Any] = {}
+
         for comp in components:
             ref = comp["reference"]
             fp_str = comp["footprint"]
@@ -3181,8 +3190,17 @@ class SchematicHandlersMixin:
                 )
                 continue
 
+            cache_key = (library_path, fp_name)
             try:
-                module = pcbnew.FootprintLoad(library_path, fp_name)
+                if cache_key not in proto_cache:
+                    proto_cache[cache_key] = pcbnew.FootprintLoad(library_path, fp_name)
+                prototype = proto_cache[cache_key]
+                # Always clone, including the first use: the prototype must
+                # never be handed to board.Add(), or the cache would be left
+                # holding a board-owned object that later gets mutated and
+                # invalidated on save/reload. Cloning costs ~0.01 ms against
+                # ~15 ms for a FootprintLoad.
+                module = clone_footprint(prototype) if prototype is not None else None
             except Exception as e:
                 skipped.append(
                     {"reference": ref, "footprint": fp_str, "reason": f"FootprintLoad failed: {e}"}

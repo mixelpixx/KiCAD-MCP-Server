@@ -47,6 +47,39 @@ from typing import Any
 logger = logging.getLogger("kicad_interface")
 
 
+def clone_footprint(footprint: Any) -> Any:
+    """Return an independent copy of ``footprint``, ready for ``board.Add()``.
+
+    Used to load a footprint from disk once and stamp out many instances
+    (#248): ``FootprintLoad`` costs the same on every call, so a board with
+    thirteen identical resistors otherwise paid for thirteen identical disk
+    reads. Cloning is ~1000x cheaper than reloading.
+
+    Two portability wrinkles, both verified against a real KiCad 10.0 install:
+
+    * ``Duplicate()`` gained a required ``addToParentGroup`` argument in
+      KiCad 10; KiCad 8/9 take none.
+    * It returns a ``BOARD_ITEM`` — SWIG does not down-cast automatically, so
+      the result has no ``SetReference``/``SetValue`` until it is passed
+      through ``Cast_to_FOOTPRINT``.
+
+    The caller must keep the prototype out of the board: handing it to
+    ``board.Add()`` would leave the cache holding a board-owned object.
+    """
+    import pcbnew  # local: keeps this module importable without KiCad
+
+    try:
+        duplicate = footprint.Duplicate(False)  # KiCad 10
+    except TypeError:
+        duplicate = footprint.Duplicate()  # KiCad 8/9
+
+    if not hasattr(duplicate, "SetReference"):
+        cast = getattr(pcbnew, "Cast_to_FOOTPRINT", None)
+        if cast is not None:
+            duplicate = cast(duplicate)
+    return duplicate
+
+
 def delete_board_item(board: Any, item: Any) -> None:
     """Detach ``item`` from ``board`` and let C++ destroy it.
 
