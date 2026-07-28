@@ -183,6 +183,7 @@ if utils_dir not in sys.path:
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.kicad_process import KiCADProcessManager, check_and_launch_kicad
 from utils.platform_helper import PlatformHelper
+from utils.project_settings_guard import preserve_project_settings
 
 logger.info(f"Detecting KiCAD Python paths for {PlatformHelper.get_platform_name()}...")
 paths_added = PlatformHelper.add_kicad_to_python_path()
@@ -323,6 +324,7 @@ try:
     from commands.add_library_symbol_property import add_library_symbol_property
     from commands.add_symbol_property import add_symbol_property
     from commands.board import BoardCommands
+    from commands.board.origin import BoardOriginCommands
     from commands.component import ComponentCommands
     from commands.connection_schematic import ConnectionManager
     from commands.datasheet_manager import DatasheetManager
@@ -408,6 +410,7 @@ class KiCADInterface(SchematicHandlersMixin):
         # Initialize command handlers
         self.project_commands = ProjectCommands(self.board)
         self.board_commands = BoardCommands(self.board)
+        self.board_origin_commands = BoardOriginCommands()
         self.component_commands = ComponentCommands(self.board, self.footprint_library)
         self.routing_commands = RoutingCommands(self.board)
         self.freerouting_commands = FreeroutingCommands(self.board)
@@ -463,6 +466,8 @@ class KiCADInterface(SchematicHandlersMixin):
             "get_project_info": self.project_commands.get_project_info,
             # Board commands
             "set_board_size": self.board_commands.set_board_size,
+            "set_board_origin": self.board_origin_commands.set_board_origin,
+            "get_board_origin": self.board_origin_commands.get_board_origin,
             "add_layer": self.board_commands.add_layer,
             "set_active_layer": self.board_commands.set_active_layer,
             "get_board_info": self.board_commands.get_board_info,
@@ -1442,7 +1447,8 @@ class KiCADInterface(SchematicHandlersMixin):
 
         # Write the board.
         try:
-            pcbnew.SaveBoard(board_path, self.board)
+            with preserve_project_settings(board_path):
+                pcbnew.SaveBoard(board_path, self.board)
             logger.debug(f"Auto-saved board to: {board_path}")
             self._board_disk_signature = self._disk_signature(board_path)
         except Exception as e:
@@ -4840,7 +4846,8 @@ class KiCADInterface(SchematicHandlersMixin):
                     "success": False,
                     "message": "Board has no file path — save first",
                 }
-            self.board.Save(board_path)
+            with preserve_project_settings(board_path):
+                self.board.Save(board_path)
 
             zone_count = self.board.GetAreaCount() if hasattr(self.board, "GetAreaCount") else 0
 

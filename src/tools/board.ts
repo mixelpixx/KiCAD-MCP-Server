@@ -51,6 +51,58 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   );
 
   // ------------------------------------------------------
+  // Board Origin Tools (aux / grid origin)
+  // ------------------------------------------------------
+  server.tool(
+    "set_board_origin",
+    "Set the auxiliary (drill/place) origin and/or grid origin of a .kicad_pcb. " +
+      "The aux origin is the datum used by export_drill's drillOrigin:'plot' option and " +
+      "by pick-and-place / plot exports with useAuxOrigin. File-based (LoadBoard -> " +
+      "SaveBoard): if the board is open in the KiCad GUI, a later GUI save will overwrite " +
+      "this edit.",
+    {
+      boardPath: z.string().describe("Path to the .kicad_pcb file"),
+      type: z
+        .enum(["aux", "grid", "both"])
+        .optional()
+        .describe("Which origin to set (default: aux)"),
+      x: z.number().describe("Origin X coordinate"),
+      y: z.number().describe("Origin Y coordinate"),
+      unit: z.enum(["mm", "mil", "inch"]).optional().describe("Coordinate unit (default: mm)"),
+    },
+    async (args) => {
+      const result = await callKicadScript("set_board_origin", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
+  server.tool(
+    "get_board_origin",
+    "Read back the auxiliary (drill/place) origin and grid origin of a .kicad_pcb in mm.",
+    {
+      boardPath: z.string().describe("Path to the .kicad_pcb file"),
+    },
+    async (args) => {
+      const result = await callKicadScript("get_board_origin", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    },
+  );
+
+  // ------------------------------------------------------
   // Add Layer Tool
   // ------------------------------------------------------
   server.tool(
