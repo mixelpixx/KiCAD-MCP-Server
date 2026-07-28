@@ -32,6 +32,7 @@ import { registerSymbolCreatorTools } from "./tools/symbol-creator.js";
 import { registerUITools } from "./tools/ui.js";
 import { registerFreeroutingTools } from "./tools/freerouting.js";
 import { registerEagleTools } from "./tools/eagle.js";
+import { registerPcbImportTools } from "./tools/pcb-import.js";
 import { registerRouterTools } from "./tools/router.js";
 
 // Import resource registration functions
@@ -313,6 +314,7 @@ export class KiCADMcpServer {
     registerUITools(this.server, this.callKicadScript.bind(this));
     registerFreeroutingTools(this.server, this.callKicadScript.bind(this));
     registerEagleTools(this.server, this.callKicadScript.bind(this));
+    registerPcbImportTools(this.server, this.callKicadScript.bind(this));
 
     // Register all resources
     registerProjectResources(this.server, this.callKicadScript.bind(this));

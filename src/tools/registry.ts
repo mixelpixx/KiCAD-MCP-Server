@@ -40,6 +40,7 @@ export const toolCategories: ToolCategory[] = [
       "get_board_extents",
       "get_board_2d_view",
       "launch_kicad_ui",
+      "import_pcb",
     ],
   },
   {

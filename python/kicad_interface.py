@@ -340,6 +340,7 @@ try:
     from commands.library_management import LibraryManagementCommands
     from commands.library_schematic import LibraryManager as SchematicLibraryManager
     from commands.library_symbol import SymbolLibraryCommands, SymbolLibraryManager
+    from commands.pcb_import import PcbImportCommands
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
     from commands.schematic import SchematicManager
@@ -412,6 +413,7 @@ class KiCADInterface(SchematicHandlersMixin):
         self.eagle_commands = EagleCommands()
         self.symbol_schematic_commands = SymbolSchematicCommands()
         self.library_management_commands = LibraryManagementCommands()
+        self.pcb_import_commands = PcbImportCommands()
         self.design_rule_commands = DesignRuleCommands(self.board)
         self.export_commands = ExportCommands(self.board)
         self.library_commands = LibraryCommands(self.footprint_library)
@@ -680,6 +682,8 @@ class KiCADInterface(SchematicHandlersMixin):
             "import_symbol": self.library_management_commands.import_symbol,
             "export_symbol": self.library_management_commands.export_symbol,
             "rename_symbol": self.library_management_commands.rename_symbol,
+            # Vendor PCB import (kicad-cli pcb import wrapper)
+            "import_pcb": self.pcb_import_commands.import_pcb,
         }
 
         logger.info(f"KiCAD interface initialized (backend: {'IPC' if self.use_ipc else 'SWIG'})")
