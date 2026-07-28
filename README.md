@@ -40,21 +40,46 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 https://github.com/mixelpixx/arduino-ide
 
-## What's New (Unreleased)
+## What's New in v2.6.0
 
-### Vendor PCB import
+### A session-killing bug is fixed
 
-- `import_pcb` wraps KiCad 10's native `kicad-cli pcb import` to convert a
-  vendor PCB file — PADS, Altium, Eagle, CADSTAR, Fabmaster, P-CAD,
-  SolidWorks PCB, or a binary Cadence Allegro `.brd` — into a `.kicad_pcb`
-  file. Use `format: "auto"` for binary Cadence Allegro `.brd` files: the CLI
-  auto-detects the Allegro binary format by magic and reports it on stdout
-  (there is no `"allegro"` literal in the `--format` enum — passing one
-  errors). Optionally pass `reportFormat: "json"` or `"text"` to capture
-  kicad-cli's structured import report (layer mapping, warnings, errors) in
-  the result. **PCB/layout data only** — kicad-cli has no importer for
-  Cadence Concept HDL / OrCAD Capture schematics, so this tool never produces
-  a schematic.
+Deleting anything from a board — a component, a trace, a board outline —
+worked exactly once. The next operation, even a pure read, failed with a
+`SwigPyObject` error, and only `close_project` then `open_project` recovered.
+`BOARD.Remove()` hands C++ ownership to Python, so dropping the reference ran
+a destructor on an object KiCad still pointed at, corrupting SWIG state
+process-wide. Six call sites were affected; all now use `BOARD.Delete()`.
+
+### 10 new tools
+
+- **Vendor PCB import**: `import_pcb` converts PADS, Altium, Eagle, CADSTAR,
+  Fabmaster, P-CAD, SolidWorks PCB and binary Cadence Allegro `.brd` files via
+  KiCad 10's native importer.
+- **Hierarchical schematics**: `remove_hierarchical_sheet`,
+  `set_sheet_property`, `get_sheet_properties`, and `hierarchical_place` for
+  arranging footprints by schematic hierarchy.
+- **Schematic lint and repair**: `lint_offgrid` finds and safely snaps
+  off-grid geometry that silently breaks junction placement;
+  `repair_flat_symbols` fixes SnapEDA/SamacSys symbols that crash kicad-skip;
+  `lint_schematic_cosmetic` tidies pin names and label orientation.
+- **Board origins**: `set_board_origin` / `get_board_origin`.
+
+### Your `.kicad_pro` net classes stop disappearing
+
+Board saves no longer let pcbnew serialize a stale in-memory project model
+over your hand-edited net classes and `netclass_patterns`. Opening a project
+no longer rewrites the file at all.
+
+### Breaking: schematic tools fail loudly on an unparseable sheet
+
+Tools that used to return partial or empty results now return a structured
+`schematic_load_failed` error naming the offending symbols. Silently skipping
+a broken sheet produced an incomplete pad-to-net map reported as success,
+which is worse. `repair_flat_symbols` fixes the usual cause. See
+[KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) section 7.
+
+Full details in the [CHANGELOG](CHANGELOG.md).
 
 ## What's New in v2.5.0
 

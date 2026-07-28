@@ -2,7 +2,11 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
-## [Unreleased]
+## [2.6.0] - 2026-07-28
+
+A minor bump: **10 new tools** take the registry from 136 to 146, and #343
+changes how schematic tools report an unparseable sheet. The headline fix is
+#247 — deleting anything from a board used to break the session.
 
 ### Breaking Changes
 
