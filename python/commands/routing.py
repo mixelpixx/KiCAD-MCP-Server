@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pcbnew
+from utils.board_items import delete_board_item
 
 logger = logging.getLogger("kicad_interface")
 
@@ -762,7 +763,7 @@ class RoutingCommands:
 
                 deleted_count = len(tracks_to_remove)
                 for track in tracks_to_remove:
-                    self.board.Remove(track)
+                    delete_board_item(self.board, track)
                 tracks_to_remove.clear()
                 self.board.SetModified()
 
@@ -787,7 +788,7 @@ class RoutingCommands:
                         "errorDetails": f"Could not find track with UUID: {trace_uuid}",
                     }
 
-                self.board.Remove(track)
+                delete_board_item(self.board, track)
                 track = None
                 self.board.SetModified()
                 return {"success": True, "message": f"Deleted track: {trace_uuid}"}
@@ -821,7 +822,7 @@ class RoutingCommands:
                         closest_track = track
 
                 if closest_track and min_distance < 1000000:  # Within 1mm
-                    self.board.Remove(closest_track)
+                    delete_board_item(self.board, closest_track)
                     closest_track = None
                     self.board.SetModified()
                     return {

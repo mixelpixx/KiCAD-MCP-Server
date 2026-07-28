@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pcbnew
 from commands.library import LibraryManager
 from commands.placement_optimizer import PlacementOptimizerCommands
+from utils.board_items import delete_board_item
 
 logger = logging.getLogger("kicad_interface")
 
@@ -448,8 +449,10 @@ class ComponentCommands(PlacementOptimizerCommands):
                     "errorDetails": f"Could not find component: {reference}",
                 }
 
-            # Remove from board
-            self.board.Remove(module)
+            # Delete, not Remove: Remove() hands C++ ownership to Python, so
+            # dropping `module` on return frees an item KiCad still references
+            # and corrupts SWIG state process-wide (#247).
+            delete_board_item(self.board, module)
 
             return {"success": True, "message": f"Deleted component: {reference}"}
 

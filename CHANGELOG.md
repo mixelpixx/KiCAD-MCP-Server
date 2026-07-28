@@ -2,6 +2,44 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
+## [Unreleased]
+
+### Bug Fixes
+
+- **Deleting anything from a board no longer breaks the session** (#247).
+  `delete_component` worked exactly once: the next board operation — even a
+  pure read like `get_component_list` — failed with `'SwigPyObject' object
+has no attribute ...`, and recovery needed a full `close_project` /
+  `open_project` cycle.
+
+  The cause was an ownership bug, not a lifetime one. KiCad's SWIG wrapper
+  documents that `BOARD.Remove()` _transfers C++ ownership to the Python
+  wrapper_ (`item.thisown = 1`) — it is for detaching an item you intend to
+  keep or re-add. Six handlers called it to delete and then dropped the
+  reference, so the interpreter ran the C++ destructor on an object KiCad
+  still pointed at. Reproduced against a real KiCad 10.0 install: the damage
+  is **process-wide**, corrupting SWIG's type registry so that even
+  `pcbnew.FootprintLoad` degrades to a raw `SwigPyObject` — and on some
+  builds the process segfaults outright.
+
+  All deletion now goes through `utils.board_items.delete_board_item()`,
+  which uses `BOARD.Delete()` (ownership stays in C++). This fixes
+  `delete_component`, `delete_trace` (all three deletion paths),
+  `clear_board_outline` and `delete_graphic` — the same defect was present
+  in every one. A static test fails the build if bare `board.Remove()` is
+  reintroduced.
+
+  Thanks to @Dewieinns for the instrumented trace that made this findable:
+  the two errors named _different_ methods (`thisown` on the board path,
+  `GetPosition` on the read path), which is what pointed at child proxies
+  rather than the board.
+
+- **Board health checks can now see this class of damage** (#247). The
+  `_is_board_healthy()` probe tested only BOARD-level methods, so a board
+  that dispatched fine while handing back dead child items passed — which is
+  precisely why the existing post-save auto-recovery never fired here. It
+  now samples a child item as well.
+
 ## [2.5.0] - 2026-07-26
 
 A minor bump rather than a patch: **20 new board-lifecycle and geometry tools**
