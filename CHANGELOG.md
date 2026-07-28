@@ -7,10 +7,10 @@ All notable changes to the KiCAD MCP Server project are documented here.
 ### Bug Fixes
 
 - **Deleting anything from a board no longer breaks the session** (#247).
-  `delete_component` worked exactly once: the next board operation — even a
-  pure read like `get_component_list` — failed with `'SwigPyObject' object
-has no attribute ...`, and recovery needed a full `close_project` /
-  `open_project` cycle.
+  `delete_component` worked exactly once. The next board operation — even a
+  pure read like `get_component_list` — failed with an `AttributeError`
+  naming a raw `SwigPyObject`, and recovery needed a full `close_project`
+  then `open_project` cycle.
 
   The cause was an ownership bug, not a lifetime one. KiCad's SWIG wrapper
   documents that `BOARD.Remove()` _transfers C++ ownership to the Python
