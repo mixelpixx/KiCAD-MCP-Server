@@ -2,11 +2,18 @@
 
 ## What is the Router?
 
-The KiCAD MCP Server includes an intelligent tool router that organizes 122+ tools into 8 discoverable categories. This reduces AI context usage by up to 70% while maintaining full access to all functionality.
+The KiCAD MCP Server indexes its tools into 13 discoverable categories, so you
+can find one by keyword instead of scanning the whole list.
+
+> **It is a search catalogue, not a gate.** Every tool is registered directly
+> and is already visible to your assistant, so the router saves no context.
+> The original gated design (`execute_tool`) was removed in `963a39c` because
+> indirect execution made the model invent tool schemas it had not been shown.
+> See [ROUTER_ARCHITECTURE.md](ROUTER_ARCHITECTURE.md) for the full history.
 
 ## How It Works
 
-Instead of loading all 59 tool schemas into every conversation, Claude now sees:
+Alongside the directly-registered tools, Claude gets three discovery tools:
 
 - **12 direct tools** for high-frequency operations (always visible)
 - **4 router tools** for discovering and executing the other 47 tools
@@ -163,11 +170,13 @@ You can also browse tools explicitly:
 
 ## Benefits
 
-1. **Reduced Context Usage**: 70% less AI context consumed per conversation
-2. **Organized Tools**: Logical categorization makes tools easy to find
+1. **Organized Tools**: Logical categorization makes tools easy to find
+2. **Keyword Search**: `search_tools` locates a tool without knowing its name
 3. **Seamless Experience**: Works transparently - no changes to how you interact
 4. **Extensible**: Easy to add new tools and categories
 5. **Backwards Compatible**: All existing tools still work
+
+Note: context reduction is _not_ among these. See the caveat at the top.
 
 ## Technical Details
 

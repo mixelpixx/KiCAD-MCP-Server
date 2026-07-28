@@ -132,7 +132,7 @@ The server automatically selects the best backend:
 - Complete schematic wiring system
 - Dynamic symbol loading (~10,000 symbols)
 - JLCPCB parts integration
-- Router pattern (70% context reduction)
+- Router pattern (70% context reduction -- later rolled back; see ROUTER_ARCHITECTURE.md)
 
 ---
 

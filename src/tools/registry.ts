@@ -40,6 +40,7 @@ export const toolCategories: ToolCategory[] = [
       "get_board_extents",
       "get_board_2d_view",
       "launch_kicad_ui",
+      "import_pcb",
     ],
   },
   {
@@ -60,6 +61,7 @@ export const toolCategories: ToolCategory[] = [
       "add_component_annotation",
       "group_components",
       "replace_component",
+      "hierarchical_place",
     ],
   },
   {
@@ -152,8 +154,15 @@ export const toolCategories: ToolCategory[] = [
   },
   {
     name: "schematic_hierarchy",
-    description: "Hierarchical schematic sheets: insert a sheet, scaffold a sub-sheet",
-    tools: ["add_hierarchical_sheet", "create_hierarchical_subsheet"],
+    description:
+      "Hierarchical schematic sheets: insert/remove a sheet, scaffold a sub-sheet, read and write sheet properties",
+    tools: [
+      "add_hierarchical_sheet",
+      "remove_hierarchical_sheet",
+      "create_hierarchical_subsheet",
+      "set_sheet_property",
+      "get_sheet_properties",
+    ],
   },
   {
     name: "schematic_layout",
@@ -284,7 +293,11 @@ export function getAllCategories(): ToolCategory[] {
 }
 
 /**
- * Get all routed tool names (excludes direct tools)
+ * Get every tool name reachable through a category.
+ *
+ * NOTE: this is not disjoint from `directToolNames`. Seven schematic
+ * essentials appear in both — always visible to the client *and* findable
+ * via search_tools. That overlap is deliberate; see `directToolNames`.
  */
 export function getRoutedToolNames(): string[] {
   const allRoutedTools: string[] = [];
@@ -292,6 +305,16 @@ export function getRoutedToolNames(): string[] {
     allRoutedTools.push(...category.tools);
   }
   return allRoutedTools;
+}
+
+/**
+ * Distinct tool names across categories and the direct list.
+ *
+ * The headline "N tools" figure must come from here, not from
+ * routed.length + direct.length — that sum double-counts the overlap above.
+ */
+export function getDistinctToolNames(): string[] {
+  return [...new Set([...getRoutedToolNames(), ...directToolNames])];
 }
 
 /**
@@ -363,7 +386,9 @@ export function getRegistryStats() {
     total_categories: toolCategories.length,
     total_routed_tools: routedToolCount,
     total_direct_tools: directToolCount,
-    total_tools: routedToolCount + directToolCount,
+    // Distinct, not routed+direct: seven tools are in both lists on purpose,
+    // and summing overstated the headline count by exactly those seven.
+    total_tools: getDistinctToolNames().length,
     categories: toolCategories.map((c) => ({
       name: c.name,
       tool_count: c.tools.length,

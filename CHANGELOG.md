@@ -166,6 +166,19 @@ both sides had green suites that never crossed it.
   resolves a different build per Python version (black >=25.12 requires
   > =3.10, so the 3.9 runner silently got 25.1.0 and disagreed on three files).
 
+### New Features
+
+- **`import_pcb`**: wraps KiCad 10's native `kicad-cli pcb import` so any MCP
+  consumer can convert a vendor PCB file (PADS, Altium, Eagle, CADSTAR,
+  Fabmaster, P-CAD, SolidWorks PCB, or a binary Cadence Allegro `.brd`) into
+  a `.kicad_pcb` file, with an optional structured import report
+  (`reportFormat: "json"|"text"`). Verified against a real 10 MB binary
+  Cadence Allegro `.brd` (581 footprints, thousands of net occurrences).
+  Binary Allegro `.brd` files must use `format: "auto"` — the CLI's
+  `--format` enum has no `"allegro"` literal, auto-detection by magic is the
+  only supported path. This tool imports PCB/layout data only; kicad-cli has
+  no Concept HDL / OrCAD schematic importer.
+
 ### Bug Fixes
 
 - **Saving to the board's own path was silently treated as a Save As, and

@@ -331,6 +331,7 @@ try:
     from commands.export import ExportCommands
     from commands.footprint import FootprintCreator
     from commands.freerouting import FreeroutingCommands
+    from commands.hierarchical_place import HierarchicalPlaceCommands
     from commands.jlcpcb import JLCPCBClient, test_jlcpcb_connection
     from commands.jlcpcb_parts import JLCPCBPartsManager
     from commands.library import (
@@ -340,6 +341,7 @@ try:
     from commands.library_management import LibraryManagementCommands
     from commands.library_schematic import LibraryManager as SchematicLibraryManager
     from commands.library_symbol import SymbolLibraryCommands, SymbolLibraryManager
+    from commands.pcb_import import PcbImportCommands
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
     from commands.schematic import SchematicManager
@@ -412,8 +414,10 @@ class KiCADInterface(SchematicHandlersMixin):
         self.eagle_commands = EagleCommands()
         self.symbol_schematic_commands = SymbolSchematicCommands()
         self.library_management_commands = LibraryManagementCommands()
+        self.pcb_import_commands = PcbImportCommands()
         self.design_rule_commands = DesignRuleCommands(self.board)
         self.export_commands = ExportCommands(self.board)
+        self.hierarchical_place_commands = HierarchicalPlaceCommands()
         self.library_commands = LibraryCommands(self.footprint_library)
         self._current_project_path: Optional[Path] = None  # set when boardPath is known
 
@@ -472,6 +476,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "delete_graphic": self.board_commands.delete_graphic,
             "update_graphic": self.board_commands.update_graphic,
             "add_mounting_hole": self.board_commands.add_mounting_hole,
+            "hierarchical_place": self.hierarchical_place_commands.hierarchical_place,
             "add_text": self.board_commands.add_text,
             "add_board_text": self.board_commands.add_text,  # Alias for TypeScript tool
             # Component commands
@@ -545,6 +550,9 @@ class KiCADInterface(SchematicHandlersMixin):
             "batch_list_symbol_pins": self.symbol_pin_commands.batch_list_symbol_pins,
             # Schematic hierarchy commands (sheet insertion + subsheet scaffolding)
             "add_hierarchical_sheet": self.hierarchy_commands.add_hierarchical_sheet,
+            "remove_hierarchical_sheet": self.hierarchy_commands.remove_hierarchical_sheet,
+            "set_sheet_property": self.hierarchy_commands.set_sheet_property,
+            "get_sheet_properties": self.hierarchy_commands.get_sheet_properties,
             "create_hierarchical_subsheet": self.hierarchy_commands.create_hierarchical_subsheet,
             # Schematic field placement commands
             "set_schematic_property_position": self.field_layout_commands.set_schematic_property_position,
@@ -680,6 +688,8 @@ class KiCADInterface(SchematicHandlersMixin):
             "import_symbol": self.library_management_commands.import_symbol,
             "export_symbol": self.library_management_commands.export_symbol,
             "rename_symbol": self.library_management_commands.rename_symbol,
+            # Vendor PCB import (kicad-cli pcb import wrapper)
+            "import_pcb": self.pcb_import_commands.import_pcb,
         }
 
         logger.info(f"KiCAD interface initialized (backend: {'IPC' if self.use_ipc else 'SWIG'})")
