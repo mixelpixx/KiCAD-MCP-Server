@@ -1,8 +1,21 @@
 # Router Architecture Design
 
+> **⚠ Historical design document.** The gating half of this design was
+> deliberately rolled back in 2026-03 and `execute_tool` was deleted in
+> 2026-05. Nothing is hidden from the client today and no context is saved.
+> What remains is a search/browse catalogue. Read
+> [Status: discovery only](#status-discovery-only-no-context-reduction)
+> below before treating anything here as current behaviour.
+
 ## Overview
 
-This document describes the router pattern implementation for the KiCAD MCP Server. The router reduces context window consumption by organizing 122+ tools into 8 discoverable categories, keeping only the most frequently used tools directly visible.
+This document describes the router pattern as originally designed for the
+KiCAD MCP Server: organize the tools into discoverable categories, keep only
+the most frequently used ones directly visible, and reduce context window
+consumption by hiding the rest behind `execute_tool`.
+
+Sections below describe that design. The **Status** section records which
+parts are live.
 
 ## Architecture Layers
 
@@ -310,13 +323,44 @@ Advanced routing operations beyond basic trace routing.
 2. Add tool usage analytics
 3. Implement intelligent tool suggestions
 
-## Benefits
+## Status: discovery only (no context reduction)
 
-1. **Context Efficiency**: 70% reduction in tokens (~28K saved)
-2. **Better Organization**: Tools grouped by function
-3. **Discoverability**: Easy to find the right tool
-4. **Scalability**: Can add unlimited tools without bloating context
-5. **Backwards Compatible**: Existing Python commands still work
+> **This document describes the original design. Part of it was deliberately
+> abandoned — read this section before relying on the claims above.**
+>
+> The router no longer gates which tools reach the client, and there is no
+> `execute_tool`. Every tool is registered directly in `registerAll()`
+> (`src/server.ts`) and appears in `tools/list`, so **no context reduction
+> happens**. What survives is a browse/search catalogue over the registry:
+> `list_tool_categories`, `get_category_tools`, `search_tools`.
+>
+> History:
+>
+> - `c656000` implemented the full pattern, `search_tools` + `execute_tool`.
+> - `3d9497e` (2026-03-11) disabled it, with the reason recorded in the code:
+>   _"causes Claude to hallucinate tool schemas via search_tools/execute_tool.
+>   All tools are registered directly below and are immediately visible."_
+> - `963a39c` (2026-05-03) deleted `execute_tool` and re-enabled the three
+>   remaining read-only discovery tools.
+>
+> So this is a considered trade — correctness over token savings — not an
+> unfinished feature or a regression. Indirect execution made the model
+> invent schemas it had not been shown; direct registration does not.
+
+## Benefits of the discovery catalogue
+
+1. **Better Organization**: Tools grouped by function
+2. **Discoverability**: `search_tools` finds a tool by keyword without
+   scanning the full list by hand
+3. **Backwards Compatible**: Existing Python commands still work
+
+## Benefits of the original gated design (not currently realised)
+
+1. **Context Efficiency**: ~70% reduction in tokens (~28K saved)
+2. **Scalability**: Add unlimited tools without bloating context
+
+Reinstating these means solving the schema-hallucination problem that caused
+the rollback. Anyone attempting it should start from `3d9497e`.
 
 ## Usage Examples
 

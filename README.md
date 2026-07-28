@@ -24,7 +24,7 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 **Key Capabilities:**
 
 - 141 tools across 13 categories with JSON Schema validation
-- Smart tool discovery with router pattern (reduces AI context by 70%)
+- Keyword tool discovery via `search_tools` / `get_category_tools`
 - 8 dynamic resources exposing project state
 - Complete schematic workflow with 27 tools and dynamic symbol loading (~10,000 symbols)
 - Freerouting autorouter integration (Java, Docker, or Podman)
@@ -461,7 +461,7 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server provides **141 tools** organized into 13 functional categories. With the router pattern, tools are automatically discovered as needed -- just ask Claude what you want to accomplish.
+The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. **141 tools** are additionally indexed into 13 functional categories, so `search_tools` and `get_category_tools` can find one by keyword.
 
 For the complete tool reference with access types (direct/routed/additional), see [Tool Inventory](docs/TOOL_INVENTORY.md).
 
@@ -1347,10 +1347,13 @@ How many Basic parts are available?
 - Manages Python subprocess lifecycle
 - Handles message routing and validation
 - Provides logging and error recovery
-- **Router System:**
+- **Discovery catalogue:**
   - `src/tools/registry.ts` - Tool categorization and lookup
-  - `src/tools/router.ts` - Discovery and execution tools
-  - Reduces AI context usage by 70% while maintaining full functionality
+  - `src/tools/router.ts` - `list_tool_categories`, `get_category_tools`, `search_tools`
+  - Search and browse only. It does not gate which tools reach the client, so
+    it saves no context; indirect execution was removed in 963a39c because it
+    caused schema hallucination. See
+    [ROUTER_ARCHITECTURE.md](docs/ROUTER_ARCHITECTURE.md).
 
 ### Python Interface (`python/`)
 

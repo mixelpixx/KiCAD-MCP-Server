@@ -23,7 +23,8 @@
 
 ### v2.0.0-alpha - Router and IPC (November-December 2025)
 
-- [x] Tool router pattern -- 70% AI context reduction
+- [x] Tool router pattern -- 70% AI context reduction (the gating half was
+      rolled back in 2026-03; see ROUTER_ARCHITECTURE.md)
 - [x] IPC backend for real-time KiCAD UI synchronization (21 commands)
 - [x] Hybrid SWIG/IPC backend with automatic fallback
 - [x] Comprehensive Windows support with automated setup
