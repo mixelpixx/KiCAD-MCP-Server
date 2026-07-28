@@ -4,6 +4,69 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Schematic tools now fail loudly on an unparseable schematic** (#343,
+  @rossvonfange). Tools that previously returned partial or empty results
+  when kicad-skip could not parse a sheet now return a structured error:
+
+```json
+{
+  "success": false,
+  "error": "schematic_load_failed",
+  "flatSymbols": ["LIB:PART"],
+  "message": "Schematic load failed for ...: embedded flat lib symbols [...]"
+}
+```
+
+Affected: `find_orphaned_wires`, hierarchical net traversal, and
+`sync_schematic_to_board` among others. This is deliberate — silently
+skipping a broken sheet produced an incomplete pad-to-net map reported as
+success, which is worse than an error. `flatSymbols` names the offending
+symbols, and `repair_flat_symbols` fixes the common cause. See
+`docs/KNOWN_ISSUES.md` section 7.
+
+### New Features
+
+- **`import_pcb`**: wraps KiCad 10's native `kicad-cli pcb import` so any MCP
+  consumer can convert a vendor PCB file (PADS, Altium, Eagle, CADSTAR,
+  Fabmaster, P-CAD, SolidWorks PCB, or a binary Cadence Allegro `.brd`) into
+  a `.kicad_pcb` file, with an optional structured import report
+  (`reportFormat: "json"|"text"`). Verified against a real 10 MB binary
+  Cadence Allegro `.brd` (581 footprints, thousands of net occurrences).
+  Binary Allegro `.brd` files must use `format: "auto"` — the CLI's
+  `--format` enum has no `"allegro"` literal, auto-detection by magic is the
+  only supported path. This tool imports PCB/layout data only; kicad-cli has
+  no Concept HDL / OrCAD schematic importer.
+
+- **Hierarchical schematic tools** (#342, @rossvonfange):
+  `remove_hierarchical_sheet` (the inverse of `add_hierarchical_sheet` —
+  removes the `(sheet ...)` block and its `sheet_instances` page entry, but
+  never deletes the sub-sheet file), `set_sheet_property` /
+  `get_sheet_properties` for custom sheet metadata, and `hierarchical_place`,
+  which arranges footprints by schematic hierarchy using a vendored HierPlace.
+
+- **Schematic authoring and lint tooling** (#343, @rossvonfange):
+  `repair_flat_symbols` rewrites SnapEDA/SamacSys symbols that put pins
+  directly under the top-level `(symbol ...)` with no `_1_1` sub-unit — legal
+  for KiCad, fatal for kicad-skip. `lint_offgrid` reports and optionally snaps
+  off-grid connection geometry; a single off-grid endpoint can poison junction
+  placement for a whole sheet, because KiCad's connection grid is fixed at
+  50 mil and junction matching is exact. `lint_schematic_cosmetic` hides
+  duplicate pin names and orients labels away from symbol bodies.
+
+  Both writers default to reporting only (`fix` / `dryRun`), splice bytes
+  rather than reformatting the file, and re-parse before writing. Verified
+  against a real KiCad 10.0 install: `kicad-cli` still parses the rewritten
+  schematic, line counts are unchanged, and a second pass is a no-op.
+
+- **`set_board_origin` / `get_board_origin`** (#341, @rossvonfange) for the
+  auxiliary and grid origins.
+
+- **Global labels in batch wiring** (#343, @rossvonfange): `batch_connect` and
+  `batch_add_and_connect` take `labelType: "global_label"` for nets that span
+  sheets, instead of only sheet-local labels.
+
 ### Performance
 
 - **`sync_schematic_to_board` loads each distinct footprint once** (#248).
@@ -26,6 +89,29 @@ All notable changes to the KiCAD MCP Server project are documented here.
   the first.
 
 ### Bug Fixes
+
+- **`.kicad_pro` net settings survive a board save** (#341, @rossvonfange).
+  In a long-lived backend, pcbnew reuses a stale in-memory project model:
+  `LoadBoard` does not re-read a hand-edited `.kicad_pro`, and the next save
+  serialized that stale model over the file, reverting custom net classes and
+  `netclass_patterns` to Default-only. Board saves are now wrapped in a guard
+  that restores the on-disk `net_settings` and any dropped top-level keys.
+  Opening a project no longer rewrites the file at all — it is a read.
+
+  The guard preserves KiCad's own key order rather than alphabetising, so
+  #220's byte-faithful project file survives a restore.
+
+- **`export_schematic_svg` picks the right page** (#343, @rossvonfange).
+  kicad-cli emits one SVG per page named after the sheet, and the previous
+  code took whichever the filesystem listed first — so a multi-sheet project
+  could get an arbitrary sheet back.
+
+- **`delete_schematic_component` can clean up its labels** (#343,
+  @rossvonfange). With `deleteAttachedLabels`, net labels sitting on the
+  deleted component's pins are removed too, unless still attached to a wire or
+  another pin. Orphaned labels otherwise produce `label_dangling` ERC errors.
+  Defaults to false, since delete-then-re-add workflows rely on labels
+  surviving.
 
 - **Deleting anything from a board no longer breaks the session** (#247).
   `delete_component` worked exactly once. The next board operation — even a
@@ -186,19 +272,6 @@ both sides had green suites that never crossed it.
   interpreter rather than once per matrix entry, because `pip install black`
   resolves a different build per Python version (black >=25.12 requires
   > =3.10, so the 3.9 runner silently got 25.1.0 and disagreed on three files).
-
-### New Features
-
-- **`import_pcb`**: wraps KiCad 10's native `kicad-cli pcb import` so any MCP
-  consumer can convert a vendor PCB file (PADS, Altium, Eagle, CADSTAR,
-  Fabmaster, P-CAD, SolidWorks PCB, or a binary Cadence Allegro `.brd`) into
-  a `.kicad_pcb` file, with an optional structured import report
-  (`reportFormat: "json"|"text"`). Verified against a real 10 MB binary
-  Cadence Allegro `.brd` (581 footprints, thousands of net occurrences).
-  Binary Allegro `.brd` files must use `format: "auto"` — the CLI's
-  `--format` enum has no `"allegro"` literal, auto-detection by magic is the
-  only supported path. This tool imports PCB/layout data only; kicad-cli has
-  no Concept HDL / OrCAD schematic importer.
 
 ### Bug Fixes
 
