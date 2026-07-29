@@ -2,6 +2,33 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
+## [Unreleased]
+
+### Bug Fixes
+
+- **`add_layer` could not add inner copper layers, and corrupted an unrelated
+  layer trying** (#222). Four defects, of which the reported one — changes
+  never reaching disk — was the least damaging:
+  - `add_layer` was missing from the auto-save set, so it reported success and
+    wrote nothing.
+  - The layer was resolved as `In1_Cu + (number - 1)`, but KiCad's copper layer
+    IDs step by **2** (`F.Cu`=0, `B.Cu`=2, `In1.Cu`=4, `In2.Cu`=6). Asking for
+    a second inner layer resolved to id 5 — `F.SilkS` — and **renamed the front
+    silkscreen layer** to `In2.Cu`. Confirmed against a real KiCad 10.0 install.
+  - The copper-layer count was computed as `2 + number`, turning a request for
+    two inner layers into six, then eight.
+  - `tool_schemas.py` documented a different tool entirely (`layerName` /
+    `layerType`) from the one that exists (`name` / `type` / `position` /
+    `number`).
+
+  Inner layers are now derived from `SetCopperLayerCount`, which enables and
+  canonically names them; a custom name is stored alongside, exactly as KiCad
+  writes it (`(4 "In1.Cu" signal "PWR")`). `number` is documented as the
+  inner-layer ordinal (1 = In1.Cu) and the response echoes the resolved
+  `canonicalName` and `id`, so the interpretation is visible at the call site.
+  Non-copper `type` values are now rejected rather than silently retyping
+  `F.Cu` — KiCad's technical and user layers are a fixed set.
+
 ## [2.6.0] - 2026-07-28
 
 A minor bump: **10 new tools** take the registry from 136 to 146, and #343
