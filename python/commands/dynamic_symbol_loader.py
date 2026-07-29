@@ -14,6 +14,8 @@ import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from utils.sexpr_format import QUOTED_VALUE, QUOTED_VALUE_SKIP, unescape_sexpr_string
+
 logger = logging.getLogger("kicad_interface")
 
 # Module-level caches shared across DynamicSymbolLoader instances.
@@ -673,7 +675,10 @@ class DynamicSymbolLoader:
             search_pos = 0
             while True:
                 m = re.search(
-                    r'\(property\s+"([^"]+)"\s+"[^"]*"\s+\(at\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)',
+                    r"\(property\s+" + QUOTED_VALUE + r"\s+"
+                    # Non-capturing: the value is not needed here, and a
+                    # capturing form would shift the coordinate groups below.
+                    + QUOTED_VALUE_SKIP + r"\s+\(at\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)",
                     sym_block[search_pos:],
                 )
                 if not m:
@@ -681,7 +686,7 @@ class DynamicSymbolLoader:
                 abs_start = search_pos + m.start()
                 prop_block = self._extract_paren_block(sym_block, abs_start)
 
-                name = m.group(1)
+                name = unescape_sexpr_string(m.group(1))
                 dx = float(m.group(2))
                 dy = float(m.group(3))
                 angle = float(m.group(4))
@@ -903,8 +908,10 @@ class DynamicSymbolLoader:
             if sym_start == -1:
                 return None
             sym_block = self._extract_paren_block(content, sym_start)
-            m = re.search(r'\(property\s+"' + re.escape(prop_name) + r'"\s+"([^"]*)"', sym_block)
-            return m.group(1) if m else None
+            m = re.search(
+                r'\(property\s+"' + re.escape(prop_name) + r'"\s+' + QUOTED_VALUE, sym_block
+            )
+            return unescape_sexpr_string(m.group(1)) if m else None
         except Exception:
             return None
 

@@ -121,6 +121,23 @@ symbols, and `repair_flat_symbols` fixes the common cause. See
 
 ### Bug Fixes
 
+- **Symbol property values containing an escaped quote were silently
+  truncated** (#336). KiCad escapes a quote inside a double-quoted token as
+  `\"`. Readers using the obvious `"([^"]*)"` stop at that escaped quote, so
+  the value came back as a lone backslash — and emitting that back out escapes
+  the closing quote, running the token on and swallowing the rest of the file.
+
+  This was not theoretical: **419 of the 22,712 stock KiCad 10 symbol files**
+  across 13 libraries have a Description wrapped in escaped quotes, including
+  every `Connector_Generic` part. Reading one returned `\` rather than the
+  description.
+
+  Reading and writing now share one escape-aware implementation in
+  `utils.sexpr_format` (`QUOTED_VALUE`, `escape_sexpr_string`,
+  `unescape_sexpr_string`), replacing five ad-hoc readers and three writers.
+  The three writers escaped quotes but not backslashes, which is a no-op on
+  precisely the values that break — order matters, and they had it wrong.
+
 - **`.kicad_pro` net settings survive a board save** (#341, @rossvonfange).
   In a long-lived backend, pcbnew reuses a stale in-memory project model:
   `LoadBoard` does not re-read a hand-edited `.kicad_pro`, and the next save
