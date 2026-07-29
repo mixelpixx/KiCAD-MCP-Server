@@ -18,6 +18,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from utils.sexpr_format import escape_sexpr_string
+
 logger = logging.getLogger("kicad_interface")
 
 KICAD9_SYMBOL_LIB_VERSION = "20241209"
@@ -77,7 +79,8 @@ def _fmt(v: float) -> str:
 
 
 def _esc(s: str) -> str:
-    return s.replace('"', '\\"')
+    """Escape a value for an S-expression double-quoted token (#336)."""
+    return escape_sexpr_string(s)
 
 
 class SymbolCreator:

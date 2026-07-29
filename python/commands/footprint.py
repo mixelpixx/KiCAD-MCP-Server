@@ -15,6 +15,8 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from utils.sexpr_format import escape_sexpr_string
+
 logger = logging.getLogger("kicad_interface")
 
 KICAD9_FOOTPRINT_VERSION = "20241229"  # .kicad_mod footprint files
@@ -637,8 +639,13 @@ class FootprintCreator:
 
 
 def _esc(s: str) -> str:
-    """Escape double-quotes inside S-Expression string values."""
-    return s.replace('"', '\\"')
+    """Escape a value for an S-expression double-quoted token.
+
+    Delegates so there is one implementation: escaping quotes without
+    escaping backslashes first is a no-op on exactly the values that break
+    the file (#336).
+    """
+    return escape_sexpr_string(s)
 
 
 def _new_uuid() -> str:

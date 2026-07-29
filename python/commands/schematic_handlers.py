@@ -30,6 +30,7 @@ from utils.interactive_schematic import reload_kicad_schematic
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.project_settings_guard import preserve_project_settings
 from utils.sexpr_format import dumps as kicad_dumps
+from utils.sexpr_format import escape_sexpr_string
 
 logger = logging.getLogger("kicad_interface")
 
@@ -571,8 +572,12 @@ class SchematicHandlersMixin:
 
     @staticmethod
     def _escape_sexpr_string(value: str) -> str:
-        """Escape a string for safe insertion into an S-expression double-quoted token."""
-        return value.replace("\\", "\\\\").replace('"', '\\"')
+        """Escape a string for safe insertion into an S-expression double-quoted token.
+
+        Delegates to the shared helper so escaping and unescaping cannot drift
+        apart (#336). Kept as a method because callers use it via ``self``.
+        """
+        return escape_sexpr_string(value)
 
     @staticmethod
     def _find_matching_paren(s: str, start: int) -> int:

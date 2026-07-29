@@ -18,6 +18,7 @@ from typing import Any, Dict, List
 
 import sexpdata
 from sexpdata import Symbol
+from utils.sexpr_format import QUOTED_VALUE, unescape_sexpr_string
 
 logger = logging.getLogger("kicad_interface")
 
@@ -475,13 +476,11 @@ class SchematicHierarchyCommands:
                 block = content[start:end]
                 properties: Dict[str, str] = {}
                 for m in re.finditer(
-                    r'\(property\s+"((?:[^"\\]|\\.)*)"\s+"((?:[^"\\]|\\.)*)"', block
+                    r"\(property\s+" + QUOTED_VALUE + r"\s+" + QUOTED_VALUE, block
                 ):
-
-                    def unescape(s: str) -> str:
-                        return s.replace('\\"', '"').replace("\\\\", "\\")
-
-                    properties[unescape(m.group(1))] = unescape(m.group(2))
+                    properties[unescape_sexpr_string(m.group(1))] = unescape_sexpr_string(
+                        m.group(2)
+                    )
                 uuid_match = re.search(r'\(uuid\s+"?([0-9a-fA-F-]+)"?\)', block)
                 at_match = re.search(r"\(at\s+(-?[\d.]+)\s+(-?[\d.]+)", block)
                 sheets.append(

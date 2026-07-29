@@ -1169,6 +1169,9 @@ class KiCADInterface(SchematicHandlersMixin):
 
     # Board-mutating commands that trigger auto-save on SWIG path
     _BOARD_MUTATING_COMMANDS = {
+        # add_layer mutates the copper stackup in memory; without auto-save it
+        # reported success and wrote nothing to disk (#222).
+        "add_layer",
         "place_component",
         "move_component",
         "rotate_component",
