@@ -15,6 +15,7 @@ from typing import Dict, List, Optional
 
 from utils.kicad_roots import kicad_install_roots
 from utils.platform_helper import PlatformHelper
+from utils.sexpr_format import QUOTED_VALUE, unescape_sexpr_string
 
 logger = logging.getLogger("kicad_interface")
 
@@ -420,11 +421,11 @@ class SymbolLibraryManager:
         properties = {}
 
         # Pattern for properties: (property "KEY" "VALUE" ...)
-        prop_pattern = r'\(property\s+"([^"]+)"\s+"([^"]*)"'
+        prop_pattern = r"\(property\s+" + QUOTED_VALUE + r"\s+" + QUOTED_VALUE
 
         for match in re.finditer(prop_pattern, symbol_block):
-            key = match.group(1)
-            value = match.group(2)
+            key = unescape_sexpr_string(match.group(1))
+            value = unescape_sexpr_string(match.group(2))
             properties[key] = value
 
         return properties

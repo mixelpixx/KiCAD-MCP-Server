@@ -11,6 +11,8 @@ import re
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+from utils.sexpr_format import QUOTED_VALUE, unescape_sexpr_string
+
 _KICAD_INTERNAL_PROPS = frozenset(
     {"ki_keywords", "ki_description", "ki_fp_filters", "ki_locked", "ki_model"}
 )
@@ -71,8 +73,9 @@ def _find_placed_symbol_block(content: str, reference: str) -> Tuple[Optional[st
 def _extract_component_properties(block_text: str, exclude_internal: bool = True) -> Dict[str, str]:
     """Extract {name: value} for all (property "name" "value" ...) entries in a symbol block."""
     props = {}
-    for m in re.finditer(r'\(property\s+"([^"]*)"\s+"([^"]*)"', block_text):
-        name, value = m.group(1), m.group(2)
+    for m in re.finditer(r"\(property\s+" + QUOTED_VALUE + r"\s+" + QUOTED_VALUE, block_text):
+        name = unescape_sexpr_string(m.group(1))
+        value = unescape_sexpr_string(m.group(2))
         if exclude_internal and name in _KICAD_INTERNAL_PROPS:
             continue
         props[name] = value
