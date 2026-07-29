@@ -94,6 +94,24 @@ symbols, and `repair_flat_symbols` fixes the common cause. See
 
 ### Bug Fixes
 
+- **`add_gnd_stitching_vias` treated arcs as their chord** (#192). Since
+  `route_arc_trace` landed, `board.GetTracks()` can return `PCB_ARC` items. The
+  obstacle loop distinguished only `PCB_VIA` from everything else, so an arc
+  was recorded as the straight chord between its endpoints — under-stating the
+  region it occupies. A candidate via sitting in the bulge between chord and
+  arc passed the clearance check and could short the trace.
+
+  Measured on a 10 mm-radius quarter arc against real KiCad: a point lying
+  exactly on the arc read as **2.93 mm** from the chord, so any via within that
+  bulge was waved through.
+
+  Arcs are now sampled into a chain of chords. The sampling radius is inflated
+  so the chain circumscribes the arc rather than cutting inside it —
+  over-approximating an obstacle is safe, under-approximating is the bug.
+
+  Thanks to @NiNjA-CodE, whose analysis in the issue identified the exact
+  branch and consequence.
+
 - **`.kicad_pro` net settings survive a board save** (#341, @rossvonfange).
   In a long-lived backend, pcbnew reuses a stale in-memory project model:
   `LoadBoard` does not re-read a hand-edited `.kicad_pro`, and the next save

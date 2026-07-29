@@ -461,3 +461,162 @@ def test_point_to_segment_distance_zero_length_segment():
     # Degenerate segment (start == end) -> distance to that point
     d = _point_to_segment_distance_nm(3, 4, 0, 0, 0, 0)
     assert d == pytest.approx(5)
+
+
+# ---------------------------------------------------------------------------
+# #192 — PCB_ARC obstacles
+# ---------------------------------------------------------------------------
+
+
+def _arc(net_code, cx, cy, radius_mm, start_deg, end_deg, width_mm=0.5):
+    """A PCB_ARC on the given net, centred at (cx, cy).
+
+    Mirrors _track/_via: the routing code checks item class by GetClass()
+    string, not isinstance, so the double just sets GetClass.
+    """
+    import math as _math
+
+    def _pt(deg):
+        rad = _math.radians(deg)
+        return _vector(cx + radius_mm * _math.cos(rad), cy + radius_mm * _math.sin(rad))
+
+    a = MagicMock()
+    a.GetNetCode.return_value = net_code
+    a.GetClass.return_value = "PCB_ARC"
+    a.GetStart.return_value = _pt(start_deg)
+    a.GetEnd.return_value = _pt(end_deg)
+    a.GetMid.return_value = _pt((start_deg + end_deg) / 2.0)
+    a.GetCenter.return_value = _vector(cx, cy)
+    a.GetWidth.return_value = _mm(width_mm)
+    return a
+
+
+@pytest.mark.unit
+def test_arc_polyline_circumscribes_the_arc():
+    """Sampled points sit ON or just OUTSIDE the true arc, never inside.
+
+    Chords between points taken exactly on the arc sag inward, which
+    under-states the obstacle — the same defect as #192, just smaller. The
+    sampling radius is inflated so the chain circumscribes instead.
+    """
+    from commands.routing import _arc_polyline_points
+
+    arc = _arc(net_code=2, cx=10, cy=10, radius_mm=5, start_deg=0, end_deg=90)
+    pts = _arc_polyline_points(arc)
+
+    assert len(pts) >= 3, "an arc must be sampled into a chord chain"
+    cx, cy, r = _mm(10), _mm(10), _mm(5)
+    for x, y in pts:
+        dist = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
+        assert dist >= r - 1, f"sampled point ({x},{y}) cuts inside the arc"
+        assert dist < r * 1.02, f"sampled point ({x},{y}) is unreasonably far outside"
+
+
+@pytest.mark.unit
+def test_chord_chain_never_understates_distance_to_the_arc():
+    """For points all around the arc, the chain must never report a point as
+    FURTHER away than the true arc is — that is what lets a via through."""
+    import math as _math
+
+    from commands.routing import _arc_polyline_points
+
+    arc = _arc(net_code=2, cx=10, cy=10, radius_mm=5, start_deg=0, end_deg=90)
+    pts = _arc_polyline_points(arc)
+    cx, cy, r = _mm(10), _mm(10), _mm(5)
+
+    for deg in range(0, 91, 3):
+        rad = _math.radians(deg)
+        # A probe point 0.4mm outside the arc, i.e. within a via envelope.
+        probe_r = r + _mm(0.4)
+        px = int(cx + probe_r * _math.cos(rad))
+        py = int(cy + probe_r * _math.sin(rad))
+        true_dist = probe_r - r
+        chain_dist = min(
+            _point_to_segment_distance_nm(px, py, p1[0], p1[1], p2[0], p2[1])
+            for p1, p2 in zip(pts, pts[1:])
+        )
+        assert chain_dist <= true_dist + 1, (
+            f"at {deg} deg the chain reports {chain_dist} nm but the arc is "
+            f"only {true_dist} nm away — a via here would slip through"
+        )
+
+
+@pytest.mark.unit
+def test_straight_track_is_not_treated_as_an_arc():
+    from commands.routing import _arc_polyline_points
+
+    assert _arc_polyline_points(_track(net_code=2, x1=0, y1=0, x2=10, y2=0)) == []
+    assert _arc_polyline_points(_via(net_code=2, x=5, y=5)) == []
+
+
+@pytest.mark.unit
+def test_via_inside_the_arc_bulge_is_blocked():
+    """The #192 bug: an arc recorded as its chord under-estimates the region it
+    occupies, so a via between chord and arc passed the clearance check and
+    could short the trace.
+
+    The arc below spans 0deg->90deg at radius 5mm about (10,10). Its chord runs
+    from (15,10) to (10,15); the arc's midpoint is ~1.46mm outside that chord,
+    which is far beyond the ~0.75mm via+track+clearance envelope.
+    """
+    import math as _math
+
+    from commands.routing import _arc_polyline_points
+
+    arc = _arc(net_code=2, cx=10, cy=10, radius_mm=5, start_deg=0, end_deg=90)
+
+    # A point sitting exactly on the arc's midpoint — on the copper.
+    mid_x = _mm(10 + 5 * _math.cos(_math.radians(45)))
+    mid_y = _mm(10 + 5 * _math.sin(_math.radians(45)))
+
+    # Old behaviour: distance to the straight chord.
+    s, e = arc.GetStart(), arc.GetEnd()
+    chord_dist = _point_to_segment_distance_nm(mid_x, mid_y, s.x, s.y, e.x, e.y)
+
+    # New behaviour: distance to the nearest sampled chord.
+    pts = _arc_polyline_points(arc)
+    chain_dist = min(
+        _point_to_segment_distance_nm(mid_x, mid_y, p1[0], p1[1], p2[0], p2[1])
+        for p1, p2 in zip(pts, pts[1:])
+    )
+
+    assert chord_dist > _mm(1.0), "fixture should put the bulge well outside the chord"
+    assert chain_dist < _mm(0.05), "a point on the arc must be ~zero distance from the chain"
+    assert chain_dist < chord_dist, "the chord chain must be tighter than the chord"
+
+
+@pytest.mark.unit
+def test_arc_blocks_more_grid_points_than_its_chord_would():
+    """End-to-end: the same board with an arc must place no MORE vias than one
+    where that arc is (incorrectly) modelled as its chord."""
+    arc = _arc(net_code=2, cx=10, cy=10, radius_mm=6, start_deg=180, end_deg=360, width_mm=0.5)
+    with_arc = _cmd(_board(width_mm=20, height_mm=20, tracks=[arc])).add_gnd_stitching_vias(
+        {"strategies": ["grid"], "spacing": 2.0, "edgeMargin": 0.5, "dryRun": True}
+    )
+    clear = _cmd(_board(width_mm=20, height_mm=20)).add_gnd_stitching_vias(
+        {"strategies": ["grid"], "spacing": 2.0, "edgeMargin": 0.5, "dryRun": True}
+    )
+
+    assert len(with_arc["placed"]) < len(clear["placed"]), "the arc must block some grid points"
+
+    # No placed via may sit on the arc itself.
+    import math as _math
+
+    for p in with_arc["placed"]:
+        r = _math.hypot(p["x"] - 10, p["y"] - 10)
+        on_arc_angle = 180 <= (_math.degrees(_math.atan2(p["y"] - 10, p["x"] - 10)) % 360) <= 360
+        if on_arc_angle:
+            assert abs(r - 6) >= 0.7, f"via at ({p['x']},{p['y']}) sits on the arc (r={r:.2f})"
+
+
+@pytest.mark.unit
+def test_arc_on_gnd_does_not_block():
+    """GND-net arcs are obstacles we may touch, same as GND tracks."""
+    gnd_arc = _arc(net_code=1, cx=10, cy=10, radius_mm=6, start_deg=180, end_deg=360)
+    out = _cmd(_board(width_mm=20, height_mm=20, tracks=[gnd_arc])).add_gnd_stitching_vias(
+        {"strategies": ["grid"], "spacing": 2.0, "edgeMargin": 0.5, "dryRun": True}
+    )
+    clear = _cmd(_board(width_mm=20, height_mm=20)).add_gnd_stitching_vias(
+        {"strategies": ["grid"], "spacing": 2.0, "edgeMargin": 0.5, "dryRun": True}
+    )
+    assert len(out["placed"]) == len(clear["placed"])
