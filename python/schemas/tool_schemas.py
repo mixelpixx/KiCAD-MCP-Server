@@ -404,22 +404,47 @@ BOARD_TOOLS = [
     },
     {
         "name": "add_layer",
-        "title": "Add Custom Layer",
-        "description": "Adds a new custom layer to the board stack (e.g., User.1, User.Comments).",
+        "title": "Enable Copper Layer",
+        "description": (
+            "Enables a copper layer in the board stackup and gives it a name. "
+            "Copper layers only — KiCad's technical and user layers (silkscreen, "
+            "mask, courtyard, Dwgs.User, ...) are a fixed set that always exists "
+            "and cannot be added."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "layerName": {
+                "name": {
                     "type": "string",
-                    "description": "Name of the layer to add",
+                    "description": (
+                        "Name for the layer. Stored alongside KiCad's canonical name "
+                        "(e.g. name 'PWR' on In1.Cu is written as "
+                        '(4 "In1.Cu" signal "PWR")).'
+                    ),
                 },
-                "layerType": {
+                "type": {
                     "type": "string",
-                    "enum": ["signal", "power", "mixed", "jumper"],
-                    "description": "Type of layer (for copper layers)",
+                    "enum": ["copper", "signal", "power", "mixed", "jumper"],
+                    "description": "Copper layer type",
+                },
+                "position": {
+                    "type": "string",
+                    "enum": ["top", "bottom", "inner"],
+                    "description": "Which copper layer to target",
+                },
+                "number": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 30,
+                    "description": (
+                        "Inner-layer ORDINAL, 1-based: 1 = In1.Cu, 2 = In2.Cu. This is "
+                        "not a KiCad layer ID (In1.Cu's id is 4). Required when "
+                        "position is 'inner'. The response echoes the resolved "
+                        "canonicalName and id."
+                    ),
                 },
             },
-            "required": ["layerName"],
+            "required": ["name", "type", "position"],
         },
     },
     {
