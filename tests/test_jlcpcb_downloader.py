@@ -167,27 +167,25 @@ def _make_yaqwsx_source(path: Path) -> None:
         """)
     con.execute("INSERT INTO meta VALUES ('format', 'source-db-v2')")
 
-    def _jlc(lcsc, category, sub, mfr, pkg, manufacturer, lib_type, preferred, desc, stock, price):
+    def _jlc(lcsc, mfr, manufacturer, lib_type, preferred, desc, stock, price):
+        """Insert a 0603 Ferrite Bead; only the fields under test vary per row."""
         con.execute(
-            "INSERT INTO jlc_components VALUES (?,0,1,0,?,?,?,?,2,?,?,?,0,?,'http://ds',?,?,"
+            "INSERT INTO jlc_components VALUES "
+            "(?,0,1,0,'Filters','Ferrite Beads',?,'0603',2,?,?,?,0,?,'http://ds',?,?,"
             "'{}',NULL,'',NULL,NULL,NULL,NULL,'{}')",
-            (lcsc, category, sub, mfr, pkg, manufacturer, lib_type, preferred, desc, stock, price),
+            (lcsc, mfr, manufacturer, lib_type, preferred, desc, stock, price),
         )
 
+    prices = "1-199:0.0189,200-599:0.0163,20000-:0.0138"
     # Basic ("base") part with the v2 CSV price, incl. an open-ended last break.
-    _jlc(
-        1002, "Filters", "Ferrite Beads", "GZ1608D601TF", "0603", "Sunlord", "base", 0,
-        "ferrite bead 600R", 892564, "1-199:0.0189,200-599:0.0163,20000-:0.0138",
-    )
+    _jlc(1002, "GZ1608D601TF", "Sunlord", "base", 0, "ferrite bead 600R", 892564, prices)
     # Extended part whose jlc manufacturer is blank -> must fall back to lcsc_components.
-    _jlc(1005, "Filters", "Ferrite Beads", "CBG160808U820T", "0603", "", "expand", 0,
-         "ferrite bead 82R", 0, "1-999:0.0039")
+    _jlc(1005, "CBG160808U820T", "", "expand", 0, "ferrite bead 82R", 0, "1-999:0.0039")
     con.execute(
         "INSERT INTO lcsc_components VALUES (1005, 0, 'Fenghua Advanced', '{}', NULL, NULL)"
     )
     # Preferred part with no price at all.
-    _jlc(1006, "Filters", "Ferrite Beads", "CBG160808U600T", "0603", "FH", "expand", 1,
-         "ferrite bead 60R", 33781, "")
+    _jlc(1006, "CBG160808U600T", "FH", "expand", 1, "ferrite bead 60R", 33781, "")
     con.commit()
     con.close()
 
