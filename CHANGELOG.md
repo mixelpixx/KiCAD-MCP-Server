@@ -6,6 +6,22 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Instance property writes are now escaped too** (#324, diagnosed by
+  @PaulHubiss). The escape-aware _reading_ landed in #348, but the matching
+  write side did not: `dynamic_symbol_loader` emitted instance properties raw.
+
+  The two interact badly. Before #348 the reader truncated `power:GND`'s
+  Description to a lone backslash; afterwards it correctly returns the real
+  value — **with a live quote in it** — which the unescaped writer then emitted
+  verbatim. Reading a real stock symbol and writing it back produced **11
+  s-expression atoms where there should be 3**, and the value was lost.
+
+  `(property ...)`, `(reference ...)`, `(lib_id ...)` and `(project ...)` on
+  written instances, plus the `Sheet name` / `Sheet file` properties in
+  `schematic_hierarchy`, all escape through the shared helper now. The
+  hierarchy's sheet lookup matches the escaped form as well, so a sheet named
+  `Foo "Bar"` is still findable by its plain name.
+
 - **`add_layer` could not add inner copper layers, and corrupted an unrelated
   layer trying** (#222). Four defects, of which the reported one — changes
   never reaching disk — was the least damaging:

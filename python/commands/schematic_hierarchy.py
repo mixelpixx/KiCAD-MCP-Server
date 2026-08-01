@@ -18,7 +18,7 @@ from typing import Any, Dict, List
 
 import sexpdata
 from sexpdata import Symbol
-from utils.sexpr_format import QUOTED_VALUE, unescape_sexpr_string
+from utils.sexpr_format import QUOTED_VALUE, escape_sexpr_string, unescape_sexpr_string
 
 logger = logging.getLogger("kicad_interface")
 
@@ -64,10 +64,12 @@ class SchematicHierarchyCommands:
                 f"    (stroke (width 0.0006) (type default))\n"
                 f"    (fill (color 0 0 0 0.0000))\n"
                 f'    (uuid "{sheet_block_uuid}")\n'
-                f'    (property "Sheet name" "{sheet_name}" (at {name_x} {name_y} 0)\n'
+                f'    (property "Sheet name" "{escape_sexpr_string(sheet_name)}"'
+                f" (at {name_x} {name_y} 0)\n"
                 f"      (effects (font (size 1.27 1.27)) (justify left bottom))\n"
                 f"    )\n"
-                f'    (property "Sheet file" "{rel_str}" (at {file_x} {file_y} 0)\n'
+                f'    (property "Sheet file" "{escape_sexpr_string(rel_str)}"'
+                f" (at {file_x} {file_y} 0)\n"
                 f"      (effects (font (size 1.27 1.27)) (justify left bottom))\n"
                 f"    )\n"
                 f"  )\n"
@@ -186,8 +188,15 @@ class SchematicHierarchyCommands:
             match = None
             for start, end in self._find_sheet_blocks(content):
                 block = content[start:end]
+                # Compare against the ESCAPED form: that is what is on disk, so
+                # a sheet named `Foo "Bar"` must still be findable by its plain
+                # name. Both forms are checked because sheets written before
+                # escaping landed still hold the raw text.
+                escaped_name = escape_sexpr_string(sheet_name) if sheet_name else None
                 if sheet_name and (
-                    f'"Sheetname" "{sheet_name}"' in block
+                    f'"Sheetname" "{escaped_name}"' in block
+                    or f'"Sheet name" "{escaped_name}"' in block
+                    or f'"Sheetname" "{sheet_name}"' in block
                     or f'"Sheet name" "{sheet_name}"' in block
                 ):
                     match = (start, end, block)
