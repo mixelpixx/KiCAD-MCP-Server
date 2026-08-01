@@ -550,6 +550,358 @@ class RoutingCommands:
                 "errorDetails": str(e),
             }
 
+    # ------------------------------------------------------------------
+    # route_net — obstacle-aware pathfinding
+    #
+    # route_trace and route_pad_to_pad draw a trace where the caller says.
+    # That leaves the hard part — finding a legal path — outside the server,
+    # which is exactly the part an LLM driving the board cannot see. This
+    # builds an occupancy model of the board and searches it.
+    # ------------------------------------------------------------------
+
+    def _build_occupancy(
+        self,
+        net_name,
+        layer_ids,
+        clearance_nm,
+        width_nm,
+        via_dia_nm,
+        pitch_nm,
+        relaxed_area=None,
+        relaxed_clearance_nm=None,
+        relaxed_width_nm=None,
+    ):
+        """Rasterise the board into per-layer occupancy maps for one net."""
+        from PIL import Image, ImageDraw
+
+        from commands.net_router import OccupancyGrid
+
+        bbox = self.board.GetBoardEdgesBoundingBox()
+        origin = (bbox.GetLeft(), bbox.GetTop())
+        width = int(bbox.GetWidth() / pitch_nm) + 2
+        height = int(bbox.GetHeight() / pitch_nm) + 2
+        grid = OccupancyGrid(width, height, layer_ids, origin, pitch_nm)
+
+        trace_grow = clearance_nm + width_nm // 2
+        via_grow = clearance_nm + via_dia_nm // 2
+        relaxed_grow = None
+        if relaxed_area and relaxed_clearance_nm is not None:
+            relaxed_grow = relaxed_clearance_nm + (relaxed_width_nm or width_nm) // 2
+
+        def draw(drawer, poly, grow):
+            shape = pcbnew.SHAPE_POLY_SET(poly)
+            if grow:
+                shape.Inflate(int(grow), pcbnew.CORNER_STRATEGY_CHAMFER_ALL_CORNERS, 5000)
+            shape.Fracture()
+            for oi in range(shape.OutlineCount()):
+                outline = shape.Outline(oi)
+                pts = [
+                    (
+                        (outline.CPoint(i).x - origin[0]) / pitch_nm,
+                        (outline.CPoint(i).y - origin[1]) / pitch_nm,
+                    )
+                    for i in range(outline.PointCount())
+                ]
+                if len(pts) >= 3:
+                    drawer.polygon(pts, fill=1)
+
+        def shape_of(item, layer):
+            poly = pcbnew.SHAPE_POLY_SET()
+            item.TransformShapeToPolygon(poly, layer, 0, 5000, pcbnew.ERROR_OUTSIDE)
+            return poly
+
+        # cells inside a named rule area, where a looser clearance applies —
+        # the board's .kicad_dru does this for fine-pitch packages and the
+        # router has to agree with it or it refuses legal escapes
+        relaxed_mask = None
+        if relaxed_grow is not None:
+            acc = pcbnew.SHAPE_POLY_SET()
+            for zone in self.board.Zones():
+                if zone.GetIsRuleArea() and zone.GetZoneName() == relaxed_area:
+                    acc.BooleanAdd(pcbnew.SHAPE_POLY_SET(zone.Outline()))
+            if acc.OutlineCount():
+                img = Image.new("L", (width, height), 0)
+                draw(ImageDraw.Draw(img), acc, 0)
+                relaxed_mask = img.tobytes()
+
+        for layer in layer_ids:
+            blk = Image.new("L", (width, height), 0)
+            rlx = Image.new("L", (width, height), 0)
+            via = Image.new("L", (width, height), 0)
+            tgt = Image.new("L", (width, height), 0)
+            d_blk, d_rlx, d_via, d_tgt = (
+                ImageDraw.Draw(blk),
+                ImageDraw.Draw(rlx),
+                ImageDraw.Draw(via),
+                ImageDraw.Draw(tgt),
+            )
+
+            for footprint in self.board.Footprints():
+                for pad in footprint.Pads():
+                    if layer not in pad.GetLayerSet().Seq():
+                        continue
+                    shape = shape_of(pad, layer)
+                    if pad.GetNetname() == net_name:
+                        draw(d_tgt, shape, 0)
+                    else:
+                        draw(d_blk, shape, trace_grow)
+                        draw(d_via, shape, via_grow)
+                        if relaxed_grow is not None:
+                            draw(d_rlx, shape, relaxed_grow)
+
+            for track in self.board.GetTracks():
+                if layer not in track.GetLayerSet().Seq():
+                    continue
+                shape = shape_of(track, layer)
+                if track.GetNetname() == net_name:
+                    draw(d_tgt, shape, 0)
+                else:
+                    draw(d_blk, shape, trace_grow)
+                    draw(d_via, shape, via_grow)
+                    if relaxed_grow is not None:
+                        draw(d_rlx, shape, relaxed_grow)
+
+            for zone in self.board.Zones():
+                if layer not in zone.GetLayerSet().Seq():
+                    continue
+                if zone.GetIsRuleArea():
+                    outline = pcbnew.SHAPE_POLY_SET(zone.Outline())
+                    if zone.GetDoNotAllowTracks():
+                        draw(d_blk, outline, 0)
+                        if relaxed_grow is not None:
+                            draw(d_rlx, outline, 0)
+                    if zone.GetDoNotAllowVias():
+                        draw(d_via, outline, 0)
+                    continue
+                if zone.GetNetname() == net_name:
+                    draw(d_tgt, zone.GetFilledPolysList(layer), 0)
+
+            blocked = bytearray(blk.tobytes())
+            if relaxed_mask is not None:
+                loose = rlx.tobytes()
+                for i, relaxed_here in enumerate(relaxed_mask):
+                    if relaxed_here:
+                        blocked[i] = loose[i]
+            grid.blocked[layer] = blocked
+            grid.via_blocked[layer] = bytearray(via.tobytes())
+            grid.target[layer] = bytearray(tgt.tobytes())
+
+        # everything outside the board edge is blocked on every layer
+        edge = pcbnew.SHAPE_POLY_SET()
+        self.board.GetBoardPolygonOutlines(edge)
+        edge.Deflate(
+            int(trace_grow + 500000),
+            pcbnew.CORNER_STRATEGY_CHAMFER_ALL_CORNERS,
+            5000,
+        )
+        inside_img = Image.new("L", (width, height), 0)
+        draw(ImageDraw.Draw(inside_img), edge, 0)
+        inside = inside_img.tobytes()
+        for layer in layer_ids:
+            blocked = grid.blocked[layer]
+            via_blocked = grid.via_blocked[layer]
+            for i, is_inside in enumerate(inside):
+                if not is_inside:
+                    blocked[i] = 1
+                    via_blocked[i] = 1
+        return grid
+
+    def route_net(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Route a net around existing copper instead of straight through it.
+
+        Builds an occupancy model of the board for this net and runs an A*
+        search over it, so the caller does not have to know a legal path in
+        advance. Pads already joined to the net are left alone; each remaining
+        pad is routed to the copper the net already has.
+        """
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first",
+                }
+
+            from commands.net_router import astar, path_segments, simplify_path
+
+            net_name = params.get("net")
+            if not net_name:
+                return {
+                    "success": False,
+                    "message": "Missing parameter: net",
+                    "errorDetails": "Specify the net name to route",
+                }
+
+            mm = 1000000
+            layer_names = params.get("layers") or ["F.Cu", "B.Cu"]
+            layer_ids = []
+            for name in layer_names:
+                lid = self.board.GetLayerID(name)
+                if lid < 0:
+                    return {
+                        "success": False,
+                        "message": f"Unknown layer: {name}",
+                        "errorDetails": f"'{name}' is not enabled on this board",
+                    }
+                layer_ids.append(lid)
+
+            width_nm = int(float(params.get("width", 0.25)) * mm)
+            clearance_nm = int(float(params.get("clearance", 0.2)) * mm)
+            via_dia_nm = int(float(params.get("viaDiameter", 0.6)) * mm)
+            via_drill_nm = int(float(params.get("viaDrill", 0.3)) * mm)
+            pitch_nm = int(float(params.get("gridPitch", 0.1)) * mm)
+            via_cost = float(params.get("viaCost", 40.0))
+            dry_run = bool(params.get("dryRun", False))
+            only = params.get("pads")
+
+            layer_costs = {}
+            for name, cost in (params.get("layerCosts") or {}).items():
+                lid = self.board.GetLayerID(name)
+                if lid >= 0:
+                    layer_costs[lid] = float(cost)
+
+            relaxed_area = params.get("relaxedArea")
+            relaxed_clearance = params.get("relaxedClearance")
+            relaxed_width = params.get("relaxedWidth")
+
+            grid = self._build_occupancy(
+                net_name,
+                layer_ids,
+                clearance_nm,
+                width_nm,
+                via_dia_nm,
+                pitch_nm,
+                relaxed_area=relaxed_area,
+                relaxed_clearance_nm=(
+                    int(float(relaxed_clearance) * mm) if relaxed_clearance is not None else None
+                ),
+                relaxed_width_nm=(
+                    int(float(relaxed_width) * mm) if relaxed_width is not None else None
+                ),
+            )
+
+            net = None
+            terminals = []
+            for footprint in self.board.Footprints():
+                for pad in footprint.Pads():
+                    if pad.GetNetname() != net_name:
+                        continue
+                    net = pad.GetNet()
+                    ref = f"{footprint.GetReference()}.{pad.GetPadName()}"
+                    if only and ref not in only:
+                        continue
+                    pos = pad.GetPosition()
+                    cx, cy = grid.to_cell(pos.x, pos.y)
+                    rx = max(0, int(pad.GetSizeX() / 2 / pitch_nm))
+                    ry = max(0, int(pad.GetSizeY() / 2 / pitch_nm))
+                    cells = []
+                    for layer in pad.GetLayerSet().Seq():
+                        if layer in layer_ids:
+                            cells.extend(grid.free_cells_in(layer, cx, cy, rx, ry))
+                    if cells:
+                        terminals.append((ref, cells))
+
+            if net is None:
+                return {
+                    "success": False,
+                    "message": f"Net not found: {net_name}",
+                    "errorDetails": "No pad on the board carries that net name",
+                }
+            if len(terminals) < 1:
+                return {
+                    "success": False,
+                    "message": f"No reachable pads on {net_name}",
+                    "errorDetails": (
+                        "Every pad of this net is boxed in at the requested "
+                        "clearance. On fine-pitch parts this usually means the "
+                        "board's clearance rule is wider than the pad gap — see "
+                        "relaxedArea."
+                    ),
+                }
+
+            routed, failed, added_tracks, added_vias = [], [], 0, 0
+            for ref, cells in terminals:
+                start = set(cells)
+                xs = [c[1] for c in cells]
+                ys = [c[2] for c in cells]
+                x0, x1 = min(xs) - 12, max(xs) + 12
+                y0, y1 = min(ys) - 12, max(ys) + 12
+                goals = set()
+                for layer in layer_ids:
+                    tgt = grid.target[layer]
+                    for y in range(grid.height):
+                        row = y * grid.width
+                        if y0 <= y <= y1:
+                            for x in range(grid.width):
+                                if x0 <= x <= x1:
+                                    continue
+                                if tgt[row + x]:
+                                    goals.add((layer, x, y))
+                        else:
+                            for x in range(grid.width):
+                                if tgt[row + x]:
+                                    goals.add((layer, x, y))
+                goals -= start
+                if not goals:
+                    failed.append({"pad": ref, "reason": "no other copper on this net"})
+                    continue
+
+                path = astar(grid, start, goals, layer_costs, via_cost)
+                if path is None:
+                    failed.append({"pad": ref, "reason": "no legal path"})
+                    continue
+
+                simple = simplify_path(path)
+                segments, vias = path_segments(simple)
+                if not dry_run:
+                    for a, b in segments:
+                        track = pcbnew.PCB_TRACK(self.board)
+                        ax, ay = grid.to_nm(a[1], a[2])
+                        bx, by = grid.to_nm(b[1], b[2])
+                        track.SetStart(pcbnew.VECTOR2I(ax, ay))
+                        track.SetEnd(pcbnew.VECTOR2I(bx, by))
+                        track.SetWidth(width_nm)
+                        track.SetLayer(a[0])
+                        track.SetNet(net)
+                        self.board.Add(track)
+                    for v in vias:
+                        via = pcbnew.PCB_VIA(self.board)
+                        vx, vy = grid.to_nm(v[1], v[2])
+                        via.SetPosition(pcbnew.VECTOR2I(vx, vy))
+                        via.SetViaType(pcbnew.VIATYPE_THROUGH)
+                        via.SetLayerPair(layer_ids[0], layer_ids[-1])
+                        via.SetWidth(via_dia_nm)
+                        via.SetDrill(via_drill_nm)
+                        via.SetNet(net)
+                        self.board.Add(via)
+                added_tracks += len(segments)
+                added_vias += len(vias)
+                routed.append({"pad": ref, "segments": len(segments), "vias": len(vias)})
+                # the new copper is now a legal destination for the next pad
+                for cell in path:
+                    grid.target[cell[0]][grid.index(cell[1], cell[2])] = 1
+
+            return {
+                "success": True,
+                "message": (
+                    f"{net_name}: routed {len(routed)} of {len(terminals)} pad(s)"
+                    + (" (dry run)" if dry_run else "")
+                ),
+                "net": net_name,
+                "routed": routed,
+                "failed": failed,
+                "tracksAdded": added_tracks,
+                "viasAdded": added_vias,
+                "dryRun": dry_run,
+            }
+        except Exception as exc:
+            logger.error(f"Error in route_net: {str(exc)}")
+            return {
+                "success": False,
+                "message": "Failed to route net",
+                "errorDetails": str(exc),
+            }
+
     def route_arc_trace(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Route a copper arc trace from start/mid/end points."""
         try:

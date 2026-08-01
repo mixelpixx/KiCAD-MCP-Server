@@ -503,6 +503,71 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
     },
   );
 
+  // Obstacle-aware net router
+  server.tool(
+    "route_net",
+    "Route a net AROUND existing copper instead of straight through it. Unlike route_trace and route_pad_to_pad — which draw a trace exactly where you tell them and will happily cross other nets — this builds an occupancy model of the board (every other net's pads, tracks, zones and rule areas, grown by clearance) and runs an A* search over it. Use it when you need a connection made but do not know a legal path, when route_trace produced a short or a DRC clearance error, or when the autorouter left a net unrouted. Pads are routed to the copper the net already has, so it also works for repairing a partially routed net.",
+    {
+      net: z.string().describe("Net name to route (e.g. 'ESTOP_SENSE')"),
+      layers: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Copper layers the router may use, in stack order (default: ['F.Cu','B.Cu']). Give it an inner signal layer if the board has one.",
+        ),
+      pads: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Route only these pads, as 'REF.PAD' (e.g. ['U2.3']). Omit to route every pad of the net. Use this to repair one connection without redrawing the whole net.",
+        ),
+      width: z.number().optional().describe("Trace width in mm (default: 0.25)"),
+      clearance: z
+        .number()
+        .optional()
+        .describe("Clearance to other nets in mm (default: 0.2). Match the board's design rules."),
+      viaDiameter: z.number().optional().describe("Via diameter in mm (default: 0.6)"),
+      viaDrill: z.number().optional().describe("Via drill in mm (default: 0.3)"),
+      viaCost: z
+        .number()
+        .optional()
+        .describe(
+          "Cost of a layer change, in grid steps (default: 40). Raise it to get flatter routes with fewer vias.",
+        ),
+      layerCosts: z
+        .record(z.number())
+        .optional()
+        .describe(
+          "Per-layer cost multipliers, e.g. {'F.Cu': 3, 'In2.Cu': 1}. Make heavy outer power copper expensive and an empty inner signal layer cheap, and the router stops carving through the planes to save a via.",
+        ),
+      relaxedArea: z
+        .string()
+        .optional()
+        .describe(
+          "Name of a rule area inside which a looser clearance applies — mirror the board's .kicad_dru so the router agrees with DRC. Needed to escape fine-pitch packages, where the pad gap is narrower than the board's global clearance.",
+        ),
+      relaxedClearance: z
+        .number()
+        .optional()
+        .describe("Clearance in mm inside relaxedArea (e.g. 0.13)"),
+      relaxedWidth: z.number().optional().describe("Trace width in mm inside relaxedArea"),
+      gridPitch: z
+        .number()
+        .optional()
+        .describe("Search grid resolution in mm (default: 0.1). Finer is slower."),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe("Report what it would route without adding any copper (default: false)"),
+    },
+    async (args: any) => {
+      const result = await callKicadScript("route_net", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
   // Copy routing pattern tool
   server.tool(
     "copy_routing_pattern",

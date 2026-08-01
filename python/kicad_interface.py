@@ -517,6 +517,7 @@ class KiCADInterface(SchematicHandlersMixin):
             # Routing commands
             "add_net": self.routing_commands.add_net,
             "route_trace": self.routing_commands.route_trace,
+            "route_net": self.routing_commands.route_net,
             "route_arc_trace": self.routing_commands.route_arc_trace,
             "add_via": self.routing_commands.add_via,
             "delete_trace": self.routing_commands.delete_trace,

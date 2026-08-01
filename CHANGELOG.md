@@ -2,6 +2,47 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
+## [Unreleased]
+
+### Added
+
+- **`route_net` — obstacle-aware net routing** (new). `route_trace` and
+  `route_pad_to_pad` draw a trace exactly where they are told, so the caller
+  has to know a legal path before asking. For an LLM driving a board that is
+  the hard part: it can read the netlist and the DRC report, but it cannot see
+  the free space. `route_net` builds a per-layer occupancy model of the board —
+  every other net's pads, tracks, zones and rule areas, grown by clearance —
+  and runs an A\* search over it.
+
+  Use it when a connection has to be made but no legal path is known, when
+  `route_trace` produced a short or a clearance violation, or when the
+  autorouter left a net unrouted. Pads are routed to whatever copper the net
+  already has, so it repairs a partially routed net as well as building one.
+
+  The search encodes a few things that are wrong in the obvious implementation
+  and expensive to notice on real copper:
+  - **Vias get their own occupancy map.** A via is fatter than a trace;
+    checking a layer change against the trace map is how one ends up a tenth of
+    a millimetre from another net. A via also punches the whole stack, so it
+    must clear every layer, not the two it nominally joins.
+  - **Diagonal steps may not squeeze between two blocked cells.** On the grid
+    it looks clear; in copper it clips the corner.
+  - **A pad terminal is every free cell inside the pad, not its centre.** On a
+    0.65 mm pitch package the neighbours' clearance covers the centre cell, so
+    a centre-only terminal never enters the search even though the pad is
+    1.5 mm long and its far end is wide open.
+  - **Per-layer costs.** Make 2 oz outer copper dear and an empty inner signal
+    layer cheap and the router stops carving through power planes to save a
+    via.
+  - **`relaxedArea` mirrors a `.kicad_dru` rule area** so the router agrees
+    with DRC about local clearance. Without it, fine-pitch escapes that DRC
+    would accept are refused.
+
+  No new dependencies: the grids are `bytearray`, and Pillow (already required)
+  rasterises the polygons. The pathfinding core lives in
+  `python/commands/net_router.py` and imports no pcbnew, so it is unit-testable
+  without KiCad installed.
+
 ## [2.6.0] - 2026-07-28
 
 A minor bump: **10 new tools** take the registry from 136 to 146, and #343
