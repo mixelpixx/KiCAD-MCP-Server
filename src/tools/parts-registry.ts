@@ -15,8 +15,7 @@
  *
  * Uses Node's global fetch (Node 18+); no extra dependencies.
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { existsSync, statSync, writeFileSync } from "fs";
 import { basename, join } from "path";
@@ -196,24 +195,26 @@ export function assetUrlAllowed(url: string, base: string = apiBase()): boolean 
 
 export function registerPartsRegistryTools(server: McpServer): void {
   // ── search_parts_registry ─────────────────────────────────────────────── //
-  server.tool(
+  server.registerTool(
     "search_parts_registry",
-    `Search an open, gate-verified parts registry for existing KiCAD parts BEFORE
+    {
+      description: `Search an open, gate-verified parts registry for existing KiCAD parts BEFORE
 generating a custom footprint/symbol from scratch. Complements search_jlcpcb_parts: use that tool for JLCPCB sourcing data (price, stock, assembly tier); use this one to fetch a verified existing footprint/symbol/3D bundle.
 
 Default registry: PartReel (https://partreel.com) — 18k+ verified parts, no auth.
 Override with the PARTREEL_API_BASE environment variable to point at any
 compatible registry. Matches are case-insensitive substrings over the part
 name, keywords, family, and manufacturer.`,
-    {
-      query: z
-        .string()
-        .describe("Free-text search (e.g. 'STM32F103', 'USB-C receptacle', 'LM358')"),
-      category: z
-        .string()
-        .optional()
-        .describe("Optional category/family filter (e.g. 'Connectors', 'MCU')"),
-      limit: z.number().optional().default(10).describe("Maximum number of results to return"),
+      inputSchema: z.object({
+        query: z
+          .string()
+          .describe("Free-text search (e.g. 'STM32F103', 'USB-C receptacle', 'LM358')"),
+        category: z
+          .string()
+          .optional()
+          .describe("Optional category/family filter (e.g. 'Connectors', 'MCU')"),
+        limit: z.number().optional().default(10).describe("Maximum number of results to return"),
+      }),
     },
     async (args: { query: string; category?: string; limit?: number }) => {
       const limit = args.limit ?? 10;
@@ -309,13 +310,15 @@ name, keywords, family, and manufacturer.`,
   );
 
   // ── get_registry_part ─────────────────────────────────────────────────── //
-  server.tool(
+  server.registerTool(
     "get_registry_part",
-    `Get full details for one registry part by id: description, downloadable files
+    {
+      description: `Get full details for one registry part by id: description, downloadable files
 (footprint/symbol/3D), datasheet, license, and provenance. Use the id returned
 by search_parts_registry.`,
-    {
-      id: z.string().describe("Registry part id (from search_parts_registry)"),
+      inputSchema: z.object({
+        id: z.string().describe("Registry part id (from search_parts_registry)"),
+      }),
     },
     async (args: { id: string }) => {
       try {
@@ -375,21 +378,23 @@ by search_parts_registry.`,
   );
 
   // ── download_registry_part ────────────────────────────────────────────── //
-  server.tool(
+  server.registerTool(
     "download_registry_part",
-    `Download a registry part's KiCAD file to a local directory:
+    {
+      description: `Download a registry part's KiCAD file to a local directory:
   - format="kicad_mod" -> footprint (.kicad_mod text)
   - format="kicad_sym" -> symbol    (.kicad_sym text)
   - format="step"      -> 3D model  (.step / .glb, downloaded from the asset host)
 Files are written to dest_dir with a sensible filename; returns the saved path(s).`,
-    {
-      id: z.string().describe("Registry part id (from search_parts_registry)"),
-      format: z
-        .enum(["kicad_mod", "kicad_sym", "step"])
-        .describe("Which file to download: footprint | symbol | 3D model"),
-      dest_dir: z
-        .string()
-        .describe("Existing destination directory to write the file into (must already exist)"),
+      inputSchema: z.object({
+        id: z.string().describe("Registry part id (from search_parts_registry)"),
+        format: z
+          .enum(["kicad_mod", "kicad_sym", "step"])
+          .describe("Which file to download: footprint | symbol | 3D model"),
+        dest_dir: z
+          .string()
+          .describe("Existing destination directory to write the file into (must already exist)"),
+      }),
     },
     async (args: { id: string; format: "kicad_mod" | "kicad_sym" | "step"; dest_dir: string }) => {
       // Validate destination directory up front.

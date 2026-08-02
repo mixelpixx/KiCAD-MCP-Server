@@ -643,106 +643,28 @@ Wire everything together in your main server file.
 ```typescript
 // src/index.ts
 
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { McpServer } from "@modelcontextprotocol/server";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
+import { z } from "zod";
 
-import { directTools } from "./tools/direct.js";
-import { routerTools } from "./tools/router.js";
-import { initializeRegistry } from "./tools/registry.js";
+function createServer() {
+  const server = new McpServer({ name: "your-mcp-server", version: "1.0.0" });
 
-// Initialize the tool registry
-initializeRegistry();
-
-const server = new Server(
-  {
-    name: "your-mcp-server",
-    version: "1.0.0",
-  },
-  {
-    capabilities: {
-      tools: {},
+  server.registerTool(
+    "get_info",
+    {
+      description: "Get general information about current state",
+      inputSchema: z.object({}),
     },
-  },
-);
+    async () => ({ content: [{ type: "text", text: "Ready" }] }),
+  );
 
-// Combine all visible tools
-const allVisibleTools = [...directTools, ...Object.values(routerTools)];
-
-// Build a handler map for quick lookup
-const toolHandlers = new Map<string, (params: any) => Promise<any>>();
-
-for (const tool of directTools) {
-  toolHandlers.set(tool.name, tool.handler);
-}
-for (const tool of Object.values(routerTools)) {
-  toolHandlers.set(tool.name, tool.handler);
+  // Register the direct and router tools here with the same API.
+  return server;
 }
 
-// List tools handler - returns only direct + router tools
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return {
-    tools: allVisibleTools.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-    })),
-  };
-});
-
-// Call tool handler
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
-
-  const handler = toolHandlers.get(name);
-  if (!handler) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            error: `Unknown tool: ${name}`,
-            hint: "Use list_tool_categories and search_tools to find available tools",
-          }),
-        },
-      ],
-      isError: true,
-    };
-  }
-
-  try {
-    const result = await handler(args || {});
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(result, null, 2),
-        },
-      ],
-    };
-  } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            error: `Tool execution failed: ${(error as Error).message}`,
-          }),
-        },
-      ],
-      isError: true,
-    };
-  }
-});
-
-// Start the server
-async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("MCP Server running on stdio");
-}
-
-main().catch(console.error);
+// Negotiate MCP 2026-07-28 while continuing to serve legacy clients.
+serveStdio(createServer, { legacy: "serve" });
 ```
 
 ---

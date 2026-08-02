@@ -4,8 +4,7 @@
  * These prompts guide the LLM in providing assistance with general PCB design tasks
  * in KiCAD.
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { logger } from "../logger.js";
 
@@ -20,14 +19,16 @@ export function registerDesignPrompts(server: McpServer): void {
   // ------------------------------------------------------
   // PCB Layout Review Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "pcb_layout_review",
     {
-      pcb_design_info: z
-        .string()
-        .describe(
-          "Information about the current PCB design, including board dimensions, layer stack-up, component placement, and routing details",
-        ),
+      argsSchema: z.object({
+        pcb_design_info: z
+          .string()
+          .describe(
+            "Information about the current PCB design, including board dimensions, layer stack-up, component placement, and routing details",
+          ),
+      }),
     },
     () => ({
       messages: [
@@ -85,14 +86,16 @@ Based on the provided information, identify potential issues and suggest specifi
   // ------------------------------------------------------
   // Layer Stack-up Planning Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "layer_stackup_planning",
     {
-      design_requirements: z
-        .string()
-        .describe(
-          "Information about the PCB design requirements, including signal types, speed/frequency, power requirements, and any special considerations",
-        ),
+      argsSchema: z.object({
+        design_requirements: z
+          .string()
+          .describe(
+            "Information about the PCB design requirements, including signal types, speed/frequency, power requirements, and any special considerations",
+          ),
+      }),
     },
     () => ({
       messages: [
@@ -146,14 +149,16 @@ Based on the provided requirements, recommend an appropriate layer stack-up, inc
   // ------------------------------------------------------
   // Design Rule Development Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "design_rule_development",
     {
-      project_requirements: z
-        .string()
-        .describe(
-          "Information about the PCB project requirements, including technology, speed/frequency, manufacturing capabilities, and any special considerations",
-        ),
+      argsSchema: z.object({
+        project_requirements: z
+          .string()
+          .describe(
+            "Information about the PCB project requirements, including technology, speed/frequency, manufacturing capabilities, and any special considerations",
+          ),
+      }),
     },
     () => ({
       messages: [
@@ -207,14 +212,16 @@ Based on the provided project requirements, recommend a comprehensive set of des
   // ------------------------------------------------------
   // Component Selection Guidance Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "component_selection_guidance",
     {
-      circuit_requirements: z
-        .string()
-        .describe(
-          "Information about the circuit requirements, including functionality, performance needs, operating environment, and any special considerations",
-        ),
+      argsSchema: z.object({
+        circuit_requirements: z
+          .string()
+          .describe(
+            "Information about the circuit requirements, including functionality, performance needs, operating environment, and any special considerations",
+          ),
+      }),
     },
     () => ({
       messages: [
@@ -272,19 +279,21 @@ Based on the provided circuit requirements, recommend appropriate component type
   // ------------------------------------------------------
   // PCB Design Optimization Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "pcb_design_optimization",
     {
-      design_info: z
-        .string()
-        .describe(
-          "Information about the current PCB design, including board dimensions, layer stack-up, component placement, and routing details",
-        ),
-      optimization_goals: z
-        .string()
-        .describe(
-          "Specific goals for optimization, such as performance improvement, cost reduction, size reduction, or manufacturability enhancement",
-        ),
+      argsSchema: z.object({
+        design_info: z
+          .string()
+          .describe(
+            "Information about the current PCB design, including board dimensions, layer stack-up, component placement, and routing details",
+          ),
+        optimization_goals: z
+          .string()
+          .describe(
+            "Specific goals for optimization, such as performance improvement, cost reduction, size reduction, or manufacturability enhancement",
+          ),
+      }),
     },
     () => ({
       messages: [

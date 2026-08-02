@@ -5,8 +5,7 @@
  * edit_footprint_pad    – update size / position / drill / shape of one pad
  * list_footprint_libraries – list available .pretty libraries
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 // ---- shared sub-schemas ------------------------------------------------- //
@@ -64,43 +63,50 @@ const RectSchema = z.object({
 
 export function registerFootprintTools(server: McpServer, callKicadScript: Function) {
   // ── create_footprint ──────────────────────────────────────────────────── //
-  server.tool(
+
+  server.registerTool(
     "create_footprint",
-    "Create a new KiCAD footprint (.kicad_mod) inside a .pretty library directory. " +
-      "Supports SMD and THT pads, courtyard, silkscreen, and fab-layer rectangles.",
     {
-      libraryPath: z
-        .string()
-        .describe(
-          "Path to the .pretty library directory (created if missing). " +
-            "E.g. C:/MyProject/MyLib.pretty",
+      description:
+        "Create a new KiCAD footprint (.kicad_mod) inside a .pretty library directory. " +
+        "Supports SMD and THT pads, courtyard, silkscreen, and fab-layer rectangles.",
+      inputSchema: z.object({
+        libraryPath: z
+          .string()
+          .describe(
+            "Path to the .pretty library directory (created if missing). " +
+              "E.g. C:/MyProject/MyLib.pretty",
+          ),
+        name: z.string().describe("Footprint name, e.g. 'R_0603_Custom'"),
+        description: z.string().optional().describe("Human-readable description"),
+        tags: z
+          .string()
+          .optional()
+          .describe("Space-separated tag string, e.g. 'resistor SMD 0603'"),
+        pads: z
+          .array(PadSchema)
+          .optional()
+          .describe("List of pads to add (can be empty for outlines-only footprints)"),
+        courtyard: RectSchema.optional().describe(
+          "Courtyard rectangle on F.CrtYd (recommended: 0.25 mm clearance around pads)",
         ),
-      name: z.string().describe("Footprint name, e.g. 'R_0603_Custom'"),
-      description: z.string().optional().describe("Human-readable description"),
-      tags: z.string().optional().describe("Space-separated tag string, e.g. 'resistor SMD 0603'"),
-      pads: z
-        .array(PadSchema)
-        .optional()
-        .describe("List of pads to add (can be empty for outlines-only footprints)"),
-      courtyard: RectSchema.optional().describe(
-        "Courtyard rectangle on F.CrtYd (recommended: 0.25 mm clearance around pads)",
-      ),
-      silkscreen: RectSchema.optional().describe("Silkscreen rectangle on F.SilkS"),
-      fabLayer: RectSchema.optional().describe(
-        "Fab-layer rectangle on F.Fab (shows component body)",
-      ),
-      refPosition: z
-        .object({ x: z.number(), y: z.number() })
-        .optional()
-        .describe("Position of the REF** text (default: 0, -1.27)"),
-      valuePosition: z
-        .object({ x: z.number(), y: z.number() })
-        .optional()
-        .describe("Position of the Value text (default: 0, 1.27)"),
-      overwrite: z
-        .boolean()
-        .optional()
-        .describe("Replace existing footprint file (default: false)"),
+        silkscreen: RectSchema.optional().describe("Silkscreen rectangle on F.SilkS"),
+        fabLayer: RectSchema.optional().describe(
+          "Fab-layer rectangle on F.Fab (shows component body)",
+        ),
+        refPosition: z
+          .object({ x: z.number(), y: z.number() })
+          .optional()
+          .describe("Position of the REF** text (default: 0, -1.27)"),
+        valuePosition: z
+          .object({ x: z.number(), y: z.number() })
+          .optional()
+          .describe("Position of the Value text (default: 0, 1.27)"),
+        overwrite: z
+          .boolean()
+          .optional()
+          .describe("Replace existing footprint file (default: false)"),
+      }),
     },
     async (args: {
       libraryPath: string;
@@ -128,27 +134,31 @@ export function registerFootprintTools(server: McpServer, callKicadScript: Funct
     y: z.number(),
     z: z.number(),
   });
-  server.tool(
+
+  server.registerTool(
     "add_footprint_3d_model",
-    "Attach (or replace) a 3D model — .step/.stp/.wrl — to a .kicad_mod footprint file. " +
-      "KiCAD path variables like ${KIPRJMOD} or ${KICAD10_3DMODEL_DIR} are supported. " +
-      "Use this after create_footprint so the part shows up in the 3D viewer (Alt+3).",
     {
-      footprintPath: z
-        .string()
-        .describe("Full path to the .kicad_mod file, e.g. C:/MyLib.pretty/MyPart.kicad_mod"),
-      modelPath: z
-        .string()
-        .describe(
-          "Path to the 3D model file. Prefer ${KIPRJMOD}/MyProj.3dshapes/MyPart.step for portability.",
-        ),
-      offset: Xyz.optional().describe("Model offset in mm (default 0,0,0)"),
-      scale: Xyz.optional().describe("Model scale factor (default 1,1,1)"),
-      rotate: Xyz.optional().describe("Model rotation in degrees (default 0,0,0)"),
-      replace: z
-        .boolean()
-        .optional()
-        .describe("Replace an existing model with the same filename (default true)"),
+      description:
+        "Attach (or replace) a 3D model — .step/.stp/.wrl — to a .kicad_mod footprint file. " +
+        "KiCAD path variables like ${KIPRJMOD} or ${KICAD10_3DMODEL_DIR} are supported. " +
+        "Use this after create_footprint so the part shows up in the 3D viewer (Alt+3).",
+      inputSchema: z.object({
+        footprintPath: z
+          .string()
+          .describe("Full path to the .kicad_mod file, e.g. C:/MyLib.pretty/MyPart.kicad_mod"),
+        modelPath: z
+          .string()
+          .describe(
+            "Path to the 3D model file. Prefer ${KIPRJMOD}/MyProj.3dshapes/MyPart.step for portability.",
+          ),
+        offset: Xyz.optional().describe("Model offset in mm (default 0,0,0)"),
+        scale: Xyz.optional().describe("Model scale factor (default 1,1,1)"),
+        rotate: Xyz.optional().describe("Model rotation in degrees (default 0,0,0)"),
+        replace: z
+          .boolean()
+          .optional()
+          .describe("Replace an existing model with the same filename (default true)"),
+      }),
     },
     async (args: {
       footprintPath: string;
@@ -166,34 +176,38 @@ export function registerFootprintTools(server: McpServer, callKicadScript: Funct
   );
 
   // ── import_3d_model ──────────────────────────────────────────────────── //
-  server.tool(
+
+  server.registerTool(
     "import_3d_model",
-    "Copy a 3D model file (.step/.stp/.wrl/.x3d/.iges) into the project's *.3dshapes " +
-      "library folder and return a portable ${KIPRJMOD}/... path. Feed the returned " +
-      "'modelPath' straight into add_footprint_3d_model or add_component_3d_model.",
     {
-      modelPath: z.string().describe("Path to the source 3D model file to import"),
-      projectPath: z
-        .string()
-        .describe(
-          "Path to the .kicad_pro file or the project directory (used to locate the " +
-            ".3dshapes folder and compute ${KIPRJMOD})",
-        ),
-      libraryDir: z
-        .string()
-        .optional()
-        .describe(
-          "Target *.3dshapes directory (absolute, or relative to the project). " +
-            "Default: <project>/<project>.3dshapes",
-        ),
-      newName: z
-        .string()
-        .optional()
-        .describe("Rename the copied file (source extension kept if omitted)"),
-      overwrite: z
-        .boolean()
-        .optional()
-        .describe("Overwrite an existing destination file (default false)"),
+      description:
+        "Copy a 3D model file (.step/.stp/.wrl/.x3d/.iges) into the project's *.3dshapes " +
+        "library folder and return a portable ${KIPRJMOD}/... path. Feed the returned " +
+        "'modelPath' straight into add_footprint_3d_model or add_component_3d_model.",
+      inputSchema: z.object({
+        modelPath: z.string().describe("Path to the source 3D model file to import"),
+        projectPath: z
+          .string()
+          .describe(
+            "Path to the .kicad_pro file or the project directory (used to locate the " +
+              ".3dshapes folder and compute ${KIPRJMOD})",
+          ),
+        libraryDir: z
+          .string()
+          .optional()
+          .describe(
+            "Target *.3dshapes directory (absolute, or relative to the project). " +
+              "Default: <project>/<project>.3dshapes",
+          ),
+        newName: z
+          .string()
+          .optional()
+          .describe("Rename the copied file (source extension kept if omitted)"),
+        overwrite: z
+          .boolean()
+          .optional()
+          .describe("Overwrite an existing destination file (default false)"),
+      }),
     },
     async (args: {
       modelPath: string;
@@ -210,25 +224,29 @@ export function registerFootprintTools(server: McpServer, callKicadScript: Funct
   );
 
   // ── add_component_3d_model (LIVE / IPC) ──────────────────────────────── //
-  server.tool(
+
+  server.registerTool(
     "add_component_3d_model",
-    "Attach a 3D model to one or more PLACED footprints on the open board, live via " +
-      "the KiCAD IPC API (changes appear instantly, no file conflicts). " +
-      "Use this for components already on the PCB; for a library .kicad_mod use add_footprint_3d_model.",
     {
-      reference: z
-        .union([z.string(), z.array(z.string())])
-        .describe("Footprint reference(s), e.g. 'D1', ['D1','D2'], or '*' for all footprints"),
-      modelPath: z
-        .string()
-        .describe("Path to the 3D model, e.g. ${KIPRJMOD}/MyProj.3dshapes/MyPart.step"),
-      offset: Xyz.optional().describe("Model offset in mm (default 0,0,0)"),
-      scale: Xyz.optional().describe("Model scale factor (default 1,1,1)"),
-      rotate: Xyz.optional().describe("Model rotation in degrees (default 0,0,0)"),
-      replace: z
-        .boolean()
-        .optional()
-        .describe("Replace an existing model with the same filename (default true)"),
+      description:
+        "Attach a 3D model to one or more PLACED footprints on the open board, live via " +
+        "the KiCAD IPC API (changes appear instantly, no file conflicts). " +
+        "Use this for components already on the PCB; for a library .kicad_mod use add_footprint_3d_model.",
+      inputSchema: z.object({
+        reference: z
+          .union([z.string(), z.array(z.string())])
+          .describe("Footprint reference(s), e.g. 'D1', ['D1','D2'], or '*' for all footprints"),
+        modelPath: z
+          .string()
+          .describe("Path to the 3D model, e.g. ${KIPRJMOD}/MyProj.3dshapes/MyPart.step"),
+        offset: Xyz.optional().describe("Model offset in mm (default 0,0,0)"),
+        scale: Xyz.optional().describe("Model scale factor (default 1,1,1)"),
+        rotate: Xyz.optional().describe("Model rotation in degrees (default 0,0,0)"),
+        replace: z
+          .boolean()
+          .optional()
+          .describe("Replace an existing model with the same filename (default true)"),
+      }),
     },
     async (args: {
       reference: string | string[];
@@ -246,25 +264,29 @@ export function registerFootprintTools(server: McpServer, callKicadScript: Funct
   );
 
   // ── edit_footprint_pad ────────────────────────────────────────────────── //
-  server.tool(
+
+  server.registerTool(
     "edit_footprint_pad",
-    "Edit an existing pad inside a .kicad_mod footprint file. " +
-      "Updates size, position, drill, or shape without recreating the whole footprint.",
     {
-      footprintPath: z
-        .string()
-        .describe("Full path to the .kicad_mod file, e.g. C:/MyLib.pretty/R_Custom.kicad_mod"),
-      padNumber: z.union([z.string(), z.number()]).describe("Pad number to edit, e.g. '1' or 2"),
-      size: PadSize.optional().describe("New pad size in mm"),
-      at: PadPosition.optional().describe("New pad position in mm"),
-      drill: z
-        .union([
-          z.number().describe("Round drill diameter in mm"),
-          z.object({ w: z.number(), h: z.number() }).describe("Oval drill"),
-        ])
-        .optional()
-        .describe("New drill size (for THT pads)"),
-      shape: z.enum(["rect", "circle", "oval", "roundrect"]).optional().describe("New pad shape"),
+      description:
+        "Edit an existing pad inside a .kicad_mod footprint file. " +
+        "Updates size, position, drill, or shape without recreating the whole footprint.",
+      inputSchema: z.object({
+        footprintPath: z
+          .string()
+          .describe("Full path to the .kicad_mod file, e.g. C:/MyLib.pretty/R_Custom.kicad_mod"),
+        padNumber: z.union([z.string(), z.number()]).describe("Pad number to edit, e.g. '1' or 2"),
+        size: PadSize.optional().describe("New pad size in mm"),
+        at: PadPosition.optional().describe("New pad position in mm"),
+        drill: z
+          .union([
+            z.number().describe("Round drill diameter in mm"),
+            z.object({ w: z.number(), h: z.number() }).describe("Oval drill"),
+          ])
+          .optional()
+          .describe("New drill size (for THT pads)"),
+        shape: z.enum(["rect", "circle", "oval", "roundrect"]).optional().describe("New pad shape"),
+      }),
     },
     async (args: {
       footprintPath: string;
@@ -282,31 +304,35 @@ export function registerFootprintTools(server: McpServer, callKicadScript: Funct
   );
 
   // ── register_footprint_library ───────────────────────────────────────── //
-  server.tool(
+
+  server.registerTool(
     "register_footprint_library",
-    "Register a .pretty footprint library in KiCAD's fp-lib-table so KiCAD can find the footprints. " +
-      "Run this after create_footprint when KiCAD shows 'library not found in footprint library table'.",
     {
-      libraryPath: z.string().describe("Full path to the .pretty directory to register"),
-      libraryName: z
-        .string()
-        .optional()
-        .describe("Nickname for the library in KiCAD (default: directory name without .pretty)"),
-      description: z.string().optional().describe("Optional description"),
-      scope: z
-        .enum(["project", "global"])
-        .optional()
-        .describe(
-          "project = writes fp-lib-table next to the .kicad_pro file (default); " +
-            "global = writes to the user's global KiCAD config",
-        ),
-      projectPath: z
-        .string()
-        .optional()
-        .describe(
-          "Path to the .kicad_pro file or its directory (required for scope=project " +
-            "when the library is not in the project folder)",
-        ),
+      description:
+        "Register a .pretty footprint library in KiCAD's fp-lib-table so KiCAD can find the footprints. " +
+        "Run this after create_footprint when KiCAD shows 'library not found in footprint library table'.",
+      inputSchema: z.object({
+        libraryPath: z.string().describe("Full path to the .pretty directory to register"),
+        libraryName: z
+          .string()
+          .optional()
+          .describe("Nickname for the library in KiCAD (default: directory name without .pretty)"),
+        description: z.string().optional().describe("Optional description"),
+        scope: z
+          .enum(["project", "global"])
+          .optional()
+          .describe(
+            "project = writes fp-lib-table next to the .kicad_pro file (default); " +
+              "global = writes to the user's global KiCAD config",
+          ),
+        projectPath: z
+          .string()
+          .optional()
+          .describe(
+            "Path to the .kicad_pro file or its directory (required for scope=project " +
+              "when the library is not in the project folder)",
+          ),
+      }),
     },
     async (args: {
       libraryPath: string;
@@ -323,17 +349,21 @@ export function registerFootprintTools(server: McpServer, callKicadScript: Funct
   );
 
   // ── list_footprint_libraries ─────────────────────────────────────────── //
-  server.tool(
+
+  server.registerTool(
     "list_footprint_libraries",
-    "List available .pretty footprint libraries and their contents (first 20 footprints per library). " +
-      "Searches KiCAD standard install paths by default.",
     {
-      searchPaths: z
-        .array(z.string())
-        .optional()
-        .describe(
-          "Override default search paths. Each entry should be a directory that contains .pretty subdirs.",
-        ),
+      description:
+        "List available .pretty footprint libraries and their contents (first 20 footprints per library). " +
+        "Searches KiCAD standard install paths by default.",
+      inputSchema: z.object({
+        searchPaths: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Override default search paths. Each entry should be a directory that contains .pretty subdirs.",
+          ),
+      }),
     },
     async (args: { searchPaths?: string[] }) => {
       const result = await callKicadScript("list_footprint_libraries", args);

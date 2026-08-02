@@ -16,16 +16,16 @@ import pytest
 
 SRC_TOOLS_DIR = Path(__file__).parent.parent / "src" / "tools"
 
-# Pattern matches the tool-name argument to server.tool(
-#   server.tool(
+# Pattern matches the tool-name argument to server.registerTool(
+#   server.registerTool(
 #     "some_tool_name",
-_SERVER_TOOL_RE = re.compile(r'server\.tool\(\s*["\']([a-zA-Z0-9_]+)["\']')
+_SERVER_TOOL_RE = re.compile(r'server\.registerTool\(\s*["\']([a-zA-Z0-9_]+)["\']')
 
 
 @pytest.mark.unit
 class TestTsToolRegistry:
     def _collect_registrations(self):
-        """Return list of (tool_name, file, line_no) for every server.tool() call."""
+        """Return registrations for every server.registerTool() call."""
         registrations = []
         for ts_file in sorted(SRC_TOOLS_DIR.glob("**/*.ts")):
             text = ts_file.read_text(encoding="utf-8")
@@ -37,7 +37,7 @@ class TestTsToolRegistry:
     def test_no_duplicate_tool_names(self):
         """Every tool name must appear exactly once across all TS tool files."""
         registrations = self._collect_registrations()
-        assert registrations, "No server.tool() calls found — check SRC_TOOLS_DIR path"
+        assert registrations, "No server.registerTool() calls found — check SRC_TOOLS_DIR path"
 
         counts = Counter(name for name, _, _ in registrations)
         duplicates = {name: count for name, count in counts.items() if count > 1}

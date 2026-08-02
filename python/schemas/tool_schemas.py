@@ -1,7 +1,7 @@
 """
 Comprehensive tool schema definitions for all KiCAD MCP commands
 
-Following MCP 2025-06-18 specification for tool definitions.
+Shared by the MCP 2026-07-28 and legacy 2025 protocol adapters.
 Each tool includes:
 - name: Unique identifier
 - title: Human-readable display name

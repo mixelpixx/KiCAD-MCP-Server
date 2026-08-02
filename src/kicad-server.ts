@@ -1,7 +1,5 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
+import { Server, McpServer, type ListToolsResult, type Tool } from "@modelcontextprotocol/server";
 import { spawn, ChildProcess } from "child_process";
 import { existsSync } from "fs";
 import { fileURLToPath } from "url";
@@ -53,242 +51,251 @@ class KiCADServer {
     // We don't register TypeScript tools since we'll handle everything in Python
 
     // Register tool list handler
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: [
-        // Project tools
-        {
-          name: "create_project",
-          description: "Create a new KiCAD project",
-          inputSchema: {
-            type: "object",
-            properties: {
-              projectName: { type: "string", description: "Name of the new project" },
-              path: { type: "string", description: "Path where to create the project" },
-              template: { type: "string", description: "Optional template to use" },
-            },
-            required: ["projectName"],
-          },
-        },
-        {
-          name: "open_project",
-          description: "Open an existing KiCAD project",
-          inputSchema: {
-            type: "object",
-            properties: {
-              filename: { type: "string", description: "Path to the project file" },
-            },
-            required: ["filename"],
-          },
-        },
-        {
-          name: "save_project",
-          description: "Save the current KiCAD project",
-          inputSchema: {
-            type: "object",
-            properties: {
-              filename: { type: "string", description: "Optional path to save to" },
-            },
-          },
-        },
-        {
-          name: "get_project_info",
-          description: "Get information about the current project",
-          inputSchema: {
-            type: "object",
-            properties: {},
-          },
-        },
-
-        // Board tools
-        {
-          name: "set_board_size",
-          description: "Set the size of the PCB board",
-          inputSchema: {
-            type: "object",
-            properties: {
-              width: { type: "number", description: "Board width" },
-              height: { type: "number", description: "Board height" },
-              unit: { type: "string", description: "Unit of measurement (mm or inch)" },
-            },
-            required: ["width", "height"],
-          },
-        },
-        {
-          name: "add_board_outline",
-          description: "Add a board outline to the PCB",
-          inputSchema: {
-            type: "object",
-            properties: {
-              shape: {
-                type: "string",
-                description: "Shape of outline (rectangle, circle, polygon, rounded_rectangle)",
+    this.server.setRequestHandler(
+      "tools/list",
+      async (): Promise<ListToolsResult> => ({
+        tools: [
+          // Project tools
+          {
+            name: "create_project",
+            description: "Create a new KiCAD project",
+            inputSchema: {
+              type: "object",
+              properties: {
+                projectName: { type: "string", description: "Name of the new project" },
+                path: { type: "string", description: "Path where to create the project" },
+                template: { type: "string", description: "Optional template to use" },
               },
-              width: { type: "number", description: "Width for rectangle shapes" },
-              height: { type: "number", description: "Height for rectangle shapes" },
-              radius: { type: "number", description: "Radius for circle shapes" },
-              cornerRadius: { type: "number", description: "Corner radius for rounded rectangles" },
-              points: { type: "array", description: "Array of points for polygon shapes" },
-              centerX: { type: "number", description: "X coordinate of center" },
-              centerY: { type: "number", description: "Y coordinate of center" },
-              unit: { type: "string", description: "Unit of measurement (mm or inch)" },
+              required: ["projectName"],
             },
           },
-        },
+          {
+            name: "open_project",
+            description: "Open an existing KiCAD project",
+            inputSchema: {
+              type: "object",
+              properties: {
+                filename: { type: "string", description: "Path to the project file" },
+              },
+              required: ["filename"],
+            },
+          },
+          {
+            name: "save_project",
+            description: "Save the current KiCAD project",
+            inputSchema: {
+              type: "object",
+              properties: {
+                filename: { type: "string", description: "Optional path to save to" },
+              },
+            },
+          },
+          {
+            name: "get_project_info",
+            description: "Get information about the current project",
+            inputSchema: {
+              type: "object",
+              properties: {},
+            },
+          },
 
-        // Component tools
-        {
-          name: "place_component",
-          description: "Place a component on the PCB",
-          inputSchema: {
-            type: "object",
-            properties: {
-              componentId: { type: "string", description: "Component ID/footprint to place" },
-              position: { type: "object", description: "Position coordinates" },
-              reference: { type: "string", description: "Component reference designator" },
-              value: { type: "string", description: "Component value" },
-              rotation: { type: "number", description: "Rotation angle in degrees" },
-              layer: { type: "string", description: "Layer to place component on" },
+          // Board tools
+          {
+            name: "set_board_size",
+            description: "Set the size of the PCB board",
+            inputSchema: {
+              type: "object",
+              properties: {
+                width: { type: "number", description: "Board width" },
+                height: { type: "number", description: "Board height" },
+                unit: { type: "string", description: "Unit of measurement (mm or inch)" },
+              },
+              required: ["width", "height"],
             },
-            required: ["componentId", "position"],
           },
-        },
-
-        // Routing tools
-        {
-          name: "add_net",
-          description: "Add a new net to the PCB",
-          inputSchema: {
-            type: "object",
-            properties: {
-              name: { type: "string", description: "Net name" },
-              class: { type: "string", description: "Net class" },
-            },
-            required: ["name"],
-          },
-        },
-        {
-          name: "route_trace",
-          description: "Route a trace between two points or pads",
-          inputSchema: {
-            type: "object",
-            properties: {
-              start: { type: "object", description: "Start point or pad" },
-              end: { type: "object", description: "End point or pad" },
-              layer: { type: "string", description: "Layer to route on" },
-              width: { type: "number", description: "Track width" },
-              net: { type: "string", description: "Net name" },
-            },
-            required: ["start", "end"],
-          },
-        },
-
-        // Schematic tools
-        {
-          name: "create_schematic",
-          description: "Create a new KiCAD schematic",
-          inputSchema: {
-            type: "object",
-            properties: {
-              projectName: { type: "string", description: "Name of the schematic project" },
-              path: { type: "string", description: "Path where to create the schematic file" },
-              metadata: { type: "object", description: "Optional metadata for the schematic" },
-            },
-            required: ["projectName"],
-          },
-        },
-        {
-          name: "load_schematic",
-          description: "Load an existing KiCAD schematic",
-          inputSchema: {
-            type: "object",
-            properties: {
-              filename: { type: "string", description: "Path to the schematic file to load" },
-            },
-            required: ["filename"],
-          },
-        },
-        {
-          name: "add_schematic_component",
-          description: "Add a component to a KiCAD schematic",
-          inputSchema: {
-            type: "object",
-            properties: {
-              schematicPath: { type: "string", description: "Path to the schematic file" },
-              component: {
-                type: "object",
-                description: "Component definition",
-                properties: {
-                  type: { type: "string", description: "Component type (e.g., R, C, LED)" },
-                  reference: { type: "string", description: "Reference designator (e.g., R1, C2)" },
-                  value: { type: "string", description: "Component value (e.g., 10k, 0.1uF)" },
-                  library: { type: "string", description: "Symbol library name" },
-                  x: { type: "number", description: "X position in schematic" },
-                  y: { type: "number", description: "Y position in schematic" },
-                  rotation: { type: "number", description: "Rotation angle in degrees" },
-                  properties: { type: "object", description: "Additional properties" },
+          {
+            name: "add_board_outline",
+            description: "Add a board outline to the PCB",
+            inputSchema: {
+              type: "object",
+              properties: {
+                shape: {
+                  type: "string",
+                  description: "Shape of outline (rectangle, circle, polygon, rounded_rectangle)",
                 },
-                required: ["type", "reference"],
-              },
-            },
-            required: ["schematicPath", "component"],
-          },
-        },
-        {
-          name: "add_schematic_wire",
-          description: "Add a wire connection to a KiCAD schematic",
-          inputSchema: {
-            type: "object",
-            properties: {
-              schematicPath: { type: "string", description: "Path to the schematic file" },
-              startPoint: {
-                type: "array",
-                description: "Starting point coordinates [x, y]",
-                items: { type: "number" },
-                minItems: 2,
-                maxItems: 2,
-              },
-              endPoint: {
-                type: "array",
-                description: "Ending point coordinates [x, y]",
-                items: { type: "number" },
-                minItems: 2,
-                maxItems: 2,
-              },
-            },
-            required: ["schematicPath", "startPoint", "endPoint"],
-          },
-        },
-        {
-          name: "list_schematic_libraries",
-          description: "List available KiCAD symbol libraries",
-          inputSchema: {
-            type: "object",
-            properties: {
-              searchPaths: {
-                type: "array",
-                description: "Optional search paths for libraries",
-                items: { type: "string" },
+                width: { type: "number", description: "Width for rectangle shapes" },
+                height: { type: "number", description: "Height for rectangle shapes" },
+                radius: { type: "number", description: "Radius for circle shapes" },
+                cornerRadius: {
+                  type: "number",
+                  description: "Corner radius for rounded rectangles",
+                },
+                points: { type: "array", description: "Array of points for polygon shapes" },
+                centerX: { type: "number", description: "X coordinate of center" },
+                centerY: { type: "number", description: "Y coordinate of center" },
+                unit: { type: "string", description: "Unit of measurement (mm or inch)" },
               },
             },
           },
-        },
-        {
-          name: "export_schematic_pdf",
-          description: "Export a KiCAD schematic to PDF",
-          inputSchema: {
-            type: "object",
-            properties: {
-              schematicPath: { type: "string", description: "Path to the schematic file" },
-              outputPath: { type: "string", description: "Path for the output PDF file" },
+
+          // Component tools
+          {
+            name: "place_component",
+            description: "Place a component on the PCB",
+            inputSchema: {
+              type: "object",
+              properties: {
+                componentId: { type: "string", description: "Component ID/footprint to place" },
+                position: { type: "object", description: "Position coordinates" },
+                reference: { type: "string", description: "Component reference designator" },
+                value: { type: "string", description: "Component value" },
+                rotation: { type: "number", description: "Rotation angle in degrees" },
+                layer: { type: "string", description: "Layer to place component on" },
+              },
+              required: ["componentId", "position"],
             },
-            required: ["schematicPath", "outputPath"],
           },
-        },
-      ],
-    }));
+
+          // Routing tools
+          {
+            name: "add_net",
+            description: "Add a new net to the PCB",
+            inputSchema: {
+              type: "object",
+              properties: {
+                name: { type: "string", description: "Net name" },
+                class: { type: "string", description: "Net class" },
+              },
+              required: ["name"],
+            },
+          },
+          {
+            name: "route_trace",
+            description: "Route a trace between two points or pads",
+            inputSchema: {
+              type: "object",
+              properties: {
+                start: { type: "object", description: "Start point or pad" },
+                end: { type: "object", description: "End point or pad" },
+                layer: { type: "string", description: "Layer to route on" },
+                width: { type: "number", description: "Track width" },
+                net: { type: "string", description: "Net name" },
+              },
+              required: ["start", "end"],
+            },
+          },
+
+          // Schematic tools
+          {
+            name: "create_schematic",
+            description: "Create a new KiCAD schematic",
+            inputSchema: {
+              type: "object",
+              properties: {
+                projectName: { type: "string", description: "Name of the schematic project" },
+                path: { type: "string", description: "Path where to create the schematic file" },
+                metadata: { type: "object", description: "Optional metadata for the schematic" },
+              },
+              required: ["projectName"],
+            },
+          },
+          {
+            name: "load_schematic",
+            description: "Load an existing KiCAD schematic",
+            inputSchema: {
+              type: "object",
+              properties: {
+                filename: { type: "string", description: "Path to the schematic file to load" },
+              },
+              required: ["filename"],
+            },
+          },
+          {
+            name: "add_schematic_component",
+            description: "Add a component to a KiCAD schematic",
+            inputSchema: {
+              type: "object",
+              properties: {
+                schematicPath: { type: "string", description: "Path to the schematic file" },
+                component: {
+                  type: "object",
+                  description: "Component definition",
+                  properties: {
+                    type: { type: "string", description: "Component type (e.g., R, C, LED)" },
+                    reference: {
+                      type: "string",
+                      description: "Reference designator (e.g., R1, C2)",
+                    },
+                    value: { type: "string", description: "Component value (e.g., 10k, 0.1uF)" },
+                    library: { type: "string", description: "Symbol library name" },
+                    x: { type: "number", description: "X position in schematic" },
+                    y: { type: "number", description: "Y position in schematic" },
+                    rotation: { type: "number", description: "Rotation angle in degrees" },
+                    properties: { type: "object", description: "Additional properties" },
+                  },
+                  required: ["type", "reference"],
+                },
+              },
+              required: ["schematicPath", "component"],
+            },
+          },
+          {
+            name: "add_schematic_wire",
+            description: "Add a wire connection to a KiCAD schematic",
+            inputSchema: {
+              type: "object",
+              properties: {
+                schematicPath: { type: "string", description: "Path to the schematic file" },
+                startPoint: {
+                  type: "array",
+                  description: "Starting point coordinates [x, y]",
+                  items: { type: "number" },
+                  minItems: 2,
+                  maxItems: 2,
+                },
+                endPoint: {
+                  type: "array",
+                  description: "Ending point coordinates [x, y]",
+                  items: { type: "number" },
+                  minItems: 2,
+                  maxItems: 2,
+                },
+              },
+              required: ["schematicPath", "startPoint", "endPoint"],
+            },
+          },
+          {
+            name: "list_schematic_libraries",
+            description: "List available KiCAD symbol libraries",
+            inputSchema: {
+              type: "object",
+              properties: {
+                searchPaths: {
+                  type: "array",
+                  description: "Optional search paths for libraries",
+                  items: { type: "string" },
+                },
+              },
+            },
+          },
+          {
+            name: "export_schematic_pdf",
+            description: "Export a KiCAD schematic to PDF",
+            inputSchema: {
+              type: "object",
+              properties: {
+                schematicPath: { type: "string", description: "Path to the schematic file" },
+                outputPath: { type: "string", description: "Path for the output PDF file" },
+              },
+              required: ["schematicPath", "outputPath"],
+            },
+          },
+        ] as Tool[],
+      }),
+    );
 
     // Register tool call handler
-    this.server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
+    this.server.setRequestHandler("tools/call", async (request: any) => {
       const toolName = request.params.name;
       const args = request.params.arguments || {};
 

@@ -3,8 +3,7 @@
  *
  * These tools handle design rule checking and configuration
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { logger } from "../logger.js";
 import { formatKicadResult } from "./tool-response.js";
@@ -24,30 +23,33 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
   // ------------------------------------------------------
   // Set Design Rules Tool
   // ------------------------------------------------------
-  server.tool(
+  server.registerTool(
     "set_design_rules",
-    "Configure PCB design rules: clearance, track width, via dimensions and courtyard requirements.",
     {
-      clearance: z.number().optional().describe("Minimum clearance between copper items (mm)"),
-      trackWidth: z.number().optional().describe("Default track width (mm)"),
-      viaDiameter: z.number().optional().describe("Default via diameter (mm)"),
-      viaDrill: z.number().optional().describe("Default via drill size (mm)"),
-      microViaDiameter: z.number().optional().describe("Default micro via diameter (mm)"),
-      microViaDrill: z.number().optional().describe("Default micro via drill size (mm)"),
-      minTrackWidth: z.number().optional().describe("Minimum track width (mm)"),
-      minViaDiameter: z.number().optional().describe("Minimum via diameter (mm)"),
-      minViaDrill: z.number().optional().describe("Minimum via drill size (mm)"),
-      minMicroViaDiameter: z.number().optional().describe("Minimum micro via diameter (mm)"),
-      minMicroViaDrill: z.number().optional().describe("Minimum micro via drill size (mm)"),
-      minHoleDiameter: z.number().optional().describe("Minimum hole diameter (mm)"),
-      requireCourtyard: z
-        .boolean()
-        .optional()
-        .describe("Whether to require courtyards for all footprints"),
-      courtyardClearance: z
-        .number()
-        .optional()
-        .describe("Minimum clearance between courtyards (mm)"),
+      description:
+        "Configure PCB design rules: clearance, track width, via dimensions and courtyard requirements.",
+      inputSchema: z.object({
+        clearance: z.number().optional().describe("Minimum clearance between copper items (mm)"),
+        trackWidth: z.number().optional().describe("Default track width (mm)"),
+        viaDiameter: z.number().optional().describe("Default via diameter (mm)"),
+        viaDrill: z.number().optional().describe("Default via drill size (mm)"),
+        microViaDiameter: z.number().optional().describe("Default micro via diameter (mm)"),
+        microViaDrill: z.number().optional().describe("Default micro via drill size (mm)"),
+        minTrackWidth: z.number().optional().describe("Minimum track width (mm)"),
+        minViaDiameter: z.number().optional().describe("Minimum via diameter (mm)"),
+        minViaDrill: z.number().optional().describe("Minimum via drill size (mm)"),
+        minMicroViaDiameter: z.number().optional().describe("Minimum micro via diameter (mm)"),
+        minMicroViaDrill: z.number().optional().describe("Minimum micro via drill size (mm)"),
+        minHoleDiameter: z.number().optional().describe("Minimum hole diameter (mm)"),
+        requireCourtyard: z
+          .boolean()
+          .optional()
+          .describe("Whether to require courtyards for all footprints"),
+        courtyardClearance: z
+          .number()
+          .optional()
+          .describe("Minimum clearance between courtyards (mm)"),
+      }),
     },
     async (params) => {
       logger.debug("Setting design rules");
@@ -60,10 +62,13 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
   // ------------------------------------------------------
   // Get Design Rules Tool
   // ------------------------------------------------------
-  server.tool(
+  server.registerTool(
     "get_design_rules",
-    "Return the current PCB design rules (clearance, track width, via sizes, courtyard settings).",
-    {},
+    {
+      description:
+        "Return the current PCB design rules (clearance, track width, via sizes, courtyard settings).",
+      inputSchema: z.object({}),
+    },
     async () => {
       logger.debug("Getting design rules");
       const result = await callKicadScript("get_design_rules", {});
@@ -75,11 +80,14 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
   // ------------------------------------------------------
   // Run DRC Tool
   // ------------------------------------------------------
-  server.tool(
+  server.registerTool(
     "run_drc",
-    "Run the KiCAD Design Rule Check (DRC) on the current PCB and return violations. Optionally save the report to a file.",
     {
-      reportPath: z.string().optional().describe("Optional path to save the DRC report"),
+      description:
+        "Run the KiCAD Design Rule Check (DRC) on the current PCB and return violations. Optionally save the report to a file.",
+      inputSchema: z.object({
+        reportPath: z.string().optional().describe("Optional path to save the DRC report"),
+      }),
     },
     async ({ reportPath }) => {
       logger.debug("Running DRC check");
@@ -92,12 +100,14 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
   // ------------------------------------------------------
   // Assign Net to Class Tool
   // ------------------------------------------------------
-  server.tool(
+  server.registerTool(
     "assign_net_to_class",
-    "Assign a net to an existing net class to apply its specific design rules.",
     {
-      net: z.string().describe("Name of the net"),
-      netClass: z.string().describe("Name of the net class"),
+      description: "Assign a net to an existing net class to apply its specific design rules.",
+      inputSchema: z.object({
+        net: z.string().describe("Name of the net"),
+        netClass: z.string().describe("Name of the net class"),
+      }),
     },
     async ({ net, netClass }) => {
       logger.debug(`Assigning net ${net} to class ${netClass}`);
@@ -113,15 +123,18 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
   // ------------------------------------------------------
   // Set Layer Constraints Tool
   // ------------------------------------------------------
-  server.tool(
+  server.registerTool(
     "set_layer_constraints",
-    "Set per-layer design rule constraints (minimum track width, clearance and via dimensions).",
     {
-      layer: z.string().describe("Layer name (e.g., 'F.Cu')"),
-      minTrackWidth: z.number().optional().describe("Minimum track width for this layer (mm)"),
-      minClearance: z.number().optional().describe("Minimum clearance for this layer (mm)"),
-      minViaDiameter: z.number().optional().describe("Minimum via diameter for this layer (mm)"),
-      minViaDrill: z.number().optional().describe("Minimum via drill size for this layer (mm)"),
+      description:
+        "Set per-layer design rule constraints (minimum track width, clearance and via dimensions).",
+      inputSchema: z.object({
+        layer: z.string().describe("Layer name (e.g., 'F.Cu')"),
+        minTrackWidth: z.number().optional().describe("Minimum track width for this layer (mm)"),
+        minClearance: z.number().optional().describe("Minimum clearance for this layer (mm)"),
+        minViaDiameter: z.number().optional().describe("Minimum via diameter for this layer (mm)"),
+        minViaDrill: z.number().optional().describe("Minimum via drill size for this layer (mm)"),
+      }),
     },
     async ({ layer, minTrackWidth, minClearance, minViaDiameter, minViaDrill }) => {
       logger.debug(`Setting constraints for layer: ${layer}`);
@@ -140,44 +153,47 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
   // ------------------------------------------------------
   // Check Clearance Tool
   // ------------------------------------------------------
-  server.tool(
+  server.registerTool(
     "check_clearance",
-    "Check the actual clearance between two PCB items (track, via, pad, zone or component) and report whether it meets the design rules.",
     {
-      item1: z
-        .object({
-          type: z
-            .enum(["track", "via", "pad", "zone", "component"])
-            .describe("Type of the first item"),
-          id: z.string().optional().describe("ID of the first item (if applicable)"),
-          reference: z.string().optional().describe("Reference designator (for component)"),
-          position: z
-            .object({
-              x: z.number().optional(),
-              y: z.number().optional(),
-              unit: z.enum(["mm", "mil", "inch"]).optional(),
-            })
-            .optional()
-            .describe("Position to check (if ID not provided)"),
-        })
-        .describe("First item to check"),
-      item2: z
-        .object({
-          type: z
-            .enum(["track", "via", "pad", "zone", "component"])
-            .describe("Type of the second item"),
-          id: z.string().optional().describe("ID of the second item (if applicable)"),
-          reference: z.string().optional().describe("Reference designator (for component)"),
-          position: z
-            .object({
-              x: z.number().optional(),
-              y: z.number().optional(),
-              unit: z.enum(["mm", "mil", "inch"]).optional(),
-            })
-            .optional()
-            .describe("Position to check (if ID not provided)"),
-        })
-        .describe("Second item to check"),
+      description:
+        "Check the actual clearance between two PCB items (track, via, pad, zone or component) and report whether it meets the design rules.",
+      inputSchema: z.object({
+        item1: z
+          .object({
+            type: z
+              .enum(["track", "via", "pad", "zone", "component"])
+              .describe("Type of the first item"),
+            id: z.string().optional().describe("ID of the first item (if applicable)"),
+            reference: z.string().optional().describe("Reference designator (for component)"),
+            position: z
+              .object({
+                x: z.number().optional(),
+                y: z.number().optional(),
+                unit: z.enum(["mm", "mil", "inch"]).optional(),
+              })
+              .optional()
+              .describe("Position to check (if ID not provided)"),
+          })
+          .describe("First item to check"),
+        item2: z
+          .object({
+            type: z
+              .enum(["track", "via", "pad", "zone", "component"])
+              .describe("Type of the second item"),
+            id: z.string().optional().describe("ID of the second item (if applicable)"),
+            reference: z.string().optional().describe("Reference designator (for component)"),
+            position: z
+              .object({
+                x: z.number().optional(),
+                y: z.number().optional(),
+                unit: z.enum(["mm", "mil", "inch"]).optional(),
+              })
+              .optional()
+              .describe("Position to check (if ID not provided)"),
+          })
+          .describe("Second item to check"),
+      }),
     },
     async ({ item1, item2 }) => {
       logger.debug(`Checking clearance between ${item1.type} and ${item2.type}`);
@@ -193,14 +209,17 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
   // ------------------------------------------------------
   // Get DRC Violations Tool
   // ------------------------------------------------------
-  server.tool(
+  server.registerTool(
     "get_drc_violations",
-    "Return the list of current DRC violations on the PCB, optionally filtered by severity (error, warning).",
     {
-      severity: z
-        .enum(["error", "warning", "all"])
-        .optional()
-        .describe("Filter violations by severity"),
+      description:
+        "Return the list of current DRC violations on the PCB, optionally filtered by severity (error, warning).",
+      inputSchema: z.object({
+        severity: z
+          .enum(["error", "warning", "all"])
+          .optional()
+          .describe("Filter violations by severity"),
+      }),
     },
     async ({ severity }) => {
       logger.debug("Getting DRC violations");

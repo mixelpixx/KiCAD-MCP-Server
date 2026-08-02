@@ -4,8 +4,7 @@
  * These resources provide information about the PCB board
  * to the LLM, enabling better context-aware assistance.
  */
-
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { logger } from "../logger.js";
 import { createJsonResponse, createBinaryResponse } from "../utils/resource-helpers.js";
@@ -25,7 +24,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   // Board Information Resource
   // ------------------------------------------------------
-  server.resource("board_info", "kicad://board/info", async (uri) => {
+  server.registerResource("board_info", "kicad://board/info", {}, async (uri) => {
     logger.debug("Retrieving board information");
     const result = await callKicadScript("get_board_info", {});
 
@@ -60,7 +59,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   // Layer List Resource
   // ------------------------------------------------------
-  server.resource("layer_list", "kicad://board/layers", async (uri) => {
+  server.registerResource("layer_list", "kicad://board/layers", {}, async (uri) => {
     logger.debug("Retrieving layer list");
     const result = await callKicadScript("get_layer_list", {});
 
@@ -95,7 +94,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   // Board Extents Resource
   // ------------------------------------------------------
-  server.resource(
+  server.registerResource(
     "board_extents",
     new ResourceTemplate("kicad://board/extents/{unit?}", {
       list: async () => ({
@@ -105,6 +104,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
         ],
       }),
     }),
+    {},
     async (uri, params) => {
       const unit = params.unit || "mm";
 
@@ -143,7 +143,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   // Board 2D View Resource
   // ------------------------------------------------------
-  server.resource(
+  server.registerResource(
     "board_2d_view",
     new ResourceTemplate("kicad://board/2d-view/{format?}", {
       list: async () => ({
@@ -154,6 +154,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
         ],
       }),
     }),
+    {},
     async (uri, params) => {
       const format = (params.format || "png") as "png" | "jpg" | "svg";
       const width = params.width ? parseInt(params.width as string) : undefined;
@@ -214,7 +215,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   // Board 3D View Resource
   // ------------------------------------------------------
-  server.resource(
+  server.registerResource(
     "board_3d_view",
     new ResourceTemplate("kicad://board/3d-view/{angle?}", {
       list: async () => ({
@@ -225,6 +226,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
         ],
       }),
     }),
+    {},
     async (uri, params) => {
       const angle = params.angle || "isometric";
       const width = params.width ? parseInt(params.width as string) : undefined;
@@ -269,7 +271,7 @@ export function registerBoardResources(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   // Board Statistics Resource
   // ------------------------------------------------------
-  server.resource("board_statistics", "kicad://board/statistics", async (uri) => {
+  server.registerResource("board_statistics", "kicad://board/statistics", {}, async (uri) => {
     logger.debug("Generating board statistics");
 
     // Get board info

@@ -4,8 +4,7 @@
  * These prompts guide the LLM in providing assistance with component-related tasks
  * in KiCAD PCB design.
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { logger } from "../logger.js";
 
@@ -20,10 +19,14 @@ export function registerComponentPrompts(server: McpServer): void {
   // ------------------------------------------------------
   // Component Selection Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "component_selection",
     {
-      requirements: z.string().describe("Description of the circuit requirements and constraints"),
+      argsSchema: z.object({
+        requirements: z
+          .string()
+          .describe("Description of the circuit requirements and constraints"),
+      }),
     },
     () => ({
       messages: [
@@ -54,10 +57,12 @@ For each component type, recommend specific values and provide a brief explanati
   // ------------------------------------------------------
   // Component Placement Strategy Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "component_placement_strategy",
     {
-      components: z.string().describe("List of components to be placed on the PCB"),
+      argsSchema: z.object({
+        components: z.string().describe("List of components to be placed on the PCB"),
+      }),
     },
     () => ({
       messages: [
@@ -101,12 +106,14 @@ Group components functionally and suggest a logical arrangement. If possible, pr
   // ------------------------------------------------------
   // Component Replacement Analysis Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "component_replacement_analysis",
     {
-      component_info: z
-        .string()
-        .describe("Information about the component that needs to be replaced"),
+      argsSchema: z.object({
+        component_info: z
+          .string()
+          .describe("Information about the component that needs to be replaced"),
+      }),
     },
     () => ({
       messages: [
@@ -149,12 +156,14 @@ Suggest suitable replacement options and explain the advantages and disadvantage
   // ------------------------------------------------------
   // Component Troubleshooting Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "component_troubleshooting",
     {
-      issue_description: z
-        .string()
-        .describe("Description of the component or circuit issue being troubleshooted"),
+      argsSchema: z.object({
+        issue_description: z
+          .string()
+          .describe("Description of the component or circuit issue being troubleshooted"),
+      }),
     },
     () => ({
       messages: [
@@ -198,15 +207,17 @@ Based on the available information, suggest likely causes of the issue and recom
   // ------------------------------------------------------
   // Component Sourcing / BOM Properties Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "component_sourcing_properties",
     {
-      component_info: z
-        .string()
-        .describe(
-          "Description of the component(s) being sourced and which BOM fields need to be attached " +
-            "(MPN, distributor part numbers, manufacturer, etc.).",
-        ),
+      argsSchema: z.object({
+        component_info: z
+          .string()
+          .describe(
+            "Description of the component(s) being sourced and which BOM fields need to be attached " +
+              "(MPN, distributor part numbers, manufacturer, etc.).",
+          ),
+      }),
     },
     () => ({
       messages: [
@@ -270,12 +281,14 @@ or substitutions you propose.`,
   // ------------------------------------------------------
   // Component Value Calculation Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "component_value_calculation",
     {
-      circuit_requirements: z
-        .string()
-        .describe("Description of the circuit function and performance requirements"),
+      argsSchema: z.object({
+        circuit_requirements: z
+          .string()
+          .describe("Description of the circuit function and performance requirements"),
+      }),
     },
     () => ({
       messages: [

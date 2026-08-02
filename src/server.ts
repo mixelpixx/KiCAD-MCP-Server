@@ -1,15 +1,15 @@
 /**
  * KiCAD MCP Server implementation
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { serveStdio, type StdioServerHandle } from "@modelcontextprotocol/server/stdio";
+import { McpServer } from "@modelcontextprotocol/server";
 import express from "express";
 import { spawn, exec, execSync, ChildProcess } from "child_process";
 import { existsSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import { logger } from "./logger.js";
 import { computeCommandTimeout, DEFAULT_COMMAND_TIMEOUT_MS } from "./command-timeout.js";
+import { installProjectContextSupport, ProjectContextManager } from "./project-context.js";
 
 // Import tool registration functions
 import { registerProjectTools } from "./tools/project.js";
@@ -223,10 +223,10 @@ function findPythonExecutable(scriptPath: string): string {
  * KiCAD MCP Server class
  */
 export class KiCADMcpServer {
-  private server: McpServer;
   private pythonProcess: ChildProcess | null = null;
   private kicadScriptPath: string;
-  private stdioTransport!: StdioServerTransport;
+  private stdioHandle: StdioServerHandle | null = null;
+  private readonly projectContexts = new ProjectContextManager();
   private requestQueue: Array<{
     request: any;
     resolve: Function;
@@ -264,69 +264,87 @@ export class KiCADMcpServer {
       throw new Error(`KiCAD interface script not found: ${this.kicadScriptPath}`);
     }
 
-    // Initialize the MCP server
-    this.server = new McpServer({
-      name: "kicad-mcp-server",
-      version: "2.4.0",
-      description: "MCP server for KiCAD PCB design operations",
-    });
     // Create the ready promise (resolved when Python sends {"type":"ready"})
     this.readyPromise = new Promise((resolve, reject) => {
       this.resolveReady = resolve;
       this.rejectReady = reject;
     });
 
-    // Initialize STDIO transport
-    this.stdioTransport = new StdioServerTransport();
-    logger.info("Using STDIO transport for local communication");
+    logger.info("Using dual-era STDIO transport for local communication");
+  }
 
-    // Register tools, resources, and prompts
-    this.registerAll();
+  /**
+   * Build a fresh MCP server for the protocol era selected by serveStdio.
+   * The SDK factory pins exactly one instance for the connection lifetime,
+   * while both legacy (2025) and modern (2026-07-28) clients share the same
+   * long-lived KiCad Python backend.
+   */
+  private createMcpServer(): McpServer {
+    const server = new McpServer(
+      {
+        name: "kicad-mcp-server",
+        version: "2.6.0",
+        description: "MCP server for KiCAD PCB design operations",
+      },
+      {
+        cacheHints: {
+          "server/discover": { ttlMs: 300_000, cacheScope: "private" },
+          "tools/list": { ttlMs: 300_000, cacheScope: "private" },
+          "prompts/list": { ttlMs: 300_000, cacheScope: "private" },
+          "resources/list": { ttlMs: 5_000, cacheScope: "private" },
+          "resources/templates/list": { ttlMs: 300_000, cacheScope: "private" },
+          "resources/read": { ttlMs: 0, cacheScope: "private" },
+        },
+      },
+    );
+    installProjectContextSupport(server, this.projectContexts);
+    this.registerAll(server);
+    return server;
   }
 
   /**
    * Register all tools, resources, and prompts
    */
-  private registerAll(): void {
+  private registerAll(server: McpServer): void {
     logger.info("Registering KiCAD tools, resources, and prompts...");
 
     // Register router tools FIRST (for tool discovery and execution)
-    registerRouterTools(this.server, this.callKicadScript.bind(this));
+    registerRouterTools(server, this.callKicadScript.bind(this));
 
     // Register all tools
-    registerProjectTools(this.server, this.callKicadScript.bind(this));
-    registerBoardTools(this.server, this.callKicadScript.bind(this));
-    registerComponentTools(this.server, this.callKicadScript.bind(this));
-    registerRoutingTools(this.server, this.callKicadScript.bind(this));
-    registerDesignRuleTools(this.server, this.callKicadScript.bind(this));
-    registerExportTools(this.server, this.callKicadScript.bind(this));
-    registerSchematicTools(this.server, this.callKicadScript.bind(this));
-    registerLibraryTools(this.server, this.callKicadScript.bind(this));
-    registerSymbolLibraryTools(this.server, this.callKicadScript.bind(this));
-    registerSchematicHierarchyTools(this.server, this.callKicadScript.bind(this));
-    registerSchematicLayoutTools(this.server, this.callKicadScript.bind(this));
-    registerSchematicBatchTools(this.server, this.callKicadScript.bind(this));
-    registerJLCPCBApiTools(this.server, this.callKicadScript.bind(this));
-    registerPartsRegistryTools(this.server);
-    registerDatasheetTools(this.server, this.callKicadScript.bind(this));
-    registerFootprintTools(this.server, this.callKicadScript.bind(this));
-    registerSymbolCreatorTools(this.server, this.callKicadScript.bind(this));
-    registerUITools(this.server, this.callKicadScript.bind(this));
-    registerFreeroutingTools(this.server, this.callKicadScript.bind(this));
-    registerEagleTools(this.server, this.callKicadScript.bind(this));
-    registerPcbImportTools(this.server, this.callKicadScript.bind(this));
+    registerProjectTools(server, this.callKicadScript.bind(this));
+    registerBoardTools(server, this.callKicadScript.bind(this));
+    registerComponentTools(server, this.callKicadScript.bind(this));
+    registerRoutingTools(server, this.callKicadScript.bind(this));
+    registerDesignRuleTools(server, this.callKicadScript.bind(this));
+    registerExportTools(server, this.callKicadScript.bind(this));
+    registerSchematicTools(server, this.callKicadScript.bind(this));
+    registerLibraryTools(server, this.callKicadScript.bind(this));
+    registerSymbolLibraryTools(server, this.callKicadScript.bind(this));
+    registerSchematicHierarchyTools(server, this.callKicadScript.bind(this));
+    registerSchematicLayoutTools(server, this.callKicadScript.bind(this));
+    registerSchematicBatchTools(server, this.callKicadScript.bind(this));
+    registerJLCPCBApiTools(server, this.callKicadScript.bind(this));
+    registerPartsRegistryTools(server);
+    registerDatasheetTools(server, this.callKicadScript.bind(this));
+    registerFootprintTools(server, this.callKicadScript.bind(this));
+    registerSymbolCreatorTools(server, this.callKicadScript.bind(this));
+    registerUITools(server, this.callKicadScript.bind(this));
+    registerFreeroutingTools(server, this.callKicadScript.bind(this));
+    registerEagleTools(server, this.callKicadScript.bind(this));
+    registerPcbImportTools(server, this.callKicadScript.bind(this));
 
     // Register all resources
-    registerProjectResources(this.server, this.callKicadScript.bind(this));
-    registerBoardResources(this.server, this.callKicadScript.bind(this));
-    registerComponentResources(this.server, this.callKicadScript.bind(this));
-    registerLibraryResources(this.server, this.callKicadScript.bind(this));
+    registerProjectResources(server, this.callKicadScript.bind(this));
+    registerBoardResources(server, this.callKicadScript.bind(this));
+    registerComponentResources(server, this.callKicadScript.bind(this));
+    registerLibraryResources(server, this.callKicadScript.bind(this));
 
     // Register all prompts
-    registerComponentPrompts(this.server);
-    registerRoutingPrompts(this.server);
-    registerDesignPrompts(this.server);
-    registerFootprintPrompts(this.server);
+    registerComponentPrompts(server);
+    registerRoutingPrompts(server);
+    registerDesignPrompts(server);
+    registerFootprintPrompts(server);
 
     logger.info("All KiCAD tools, resources, and prompts registered");
   }
@@ -590,10 +608,13 @@ export class KiCADMcpServer {
       // ——— Phase 3: connect MCP transport immediately ———
       // The transport must be live before any client timeout fires,
       // regardless of how long warm-up takes.
-      logger.info("Connecting MCP server to STDIO transport...");
+      logger.info("Serving legacy and MCP 2026-07-28 over STDIO...");
       try {
-        await this.server.connect(this.stdioTransport);
-        logger.info("Successfully connected to STDIO transport");
+        this.stdioHandle = serveStdio(() => this.createMcpServer(), {
+          legacy: "serve",
+          onerror: (error) => logger.error(`STDIO protocol error: ${error.message}`),
+        });
+        logger.info("Successfully started dual-era STDIO transport");
       } catch (error) {
         logger.error(`Failed to connect to STDIO transport: ${error}`);
         throw error;
@@ -622,6 +643,11 @@ export class KiCADMcpServer {
    */
   async stop(): Promise<void> {
     logger.info("Stopping KiCAD MCP server...");
+
+    if (this.stdioHandle) {
+      await this.stdioHandle.close();
+      this.stdioHandle = null;
+    }
 
     // Kill the Python process if it's running
     if (this.pythonProcess) {
@@ -720,6 +746,14 @@ export class KiCADMcpServer {
    */
   private async callKicadScript(command: string, params: any): Promise<any> {
     return new Promise((resolve, reject) => {
+      let forwardedParams: Record<string, unknown>;
+      try {
+        forwardedParams = this.projectContexts.prepareParams(command, params);
+      } catch (error) {
+        reject(error);
+        return;
+      }
+
       // Check if Python process is running
       if (!this.pythonProcess) {
         logger.error("Python process is not running");
@@ -728,15 +762,15 @@ export class KiCADMcpServer {
       }
 
       // Determine timeout based on command type (see src/command-timeout.ts).
-      const commandTimeout = computeCommandTimeout(command, params);
+      const commandTimeout = computeCommandTimeout(command, forwardedParams);
       if (commandTimeout !== DEFAULT_COMMAND_TIMEOUT_MS) {
         logger.info(`Using extended timeout (${commandTimeout / 1000}s) for command: ${command}`);
       }
 
       // Add request to queue with timeout info
       this.requestQueue.push({
-        request: { command, params, timeout: commandTimeout },
-        resolve,
+        request: { command, params: forwardedParams, timeout: commandTimeout },
+        resolve: (result: unknown) => resolve(this.projectContexts.decorateResult(command, result)),
         reject,
       });
 

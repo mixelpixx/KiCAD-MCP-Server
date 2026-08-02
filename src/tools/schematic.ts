@@ -1,18 +1,19 @@
 /**
  * Schematic tools for KiCAD MCP server
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 export function registerSchematicTools(server: McpServer, callKicadScript: Function) {
   // Create schematic tool
-  server.tool(
+  server.registerTool(
     "create_schematic",
-    "Create a new schematic",
     {
-      name: z.string().describe("Schematic name"),
-      path: z.string().optional().describe("Optional path"),
+      description: "Create a new schematic",
+      inputSchema: z.object({
+        name: z.string().describe("Schematic name"),
+        path: z.string().optional().describe("Optional path"),
+      }),
     },
     async (args: { name: string; path?: string }) => {
       const result = await callKicadScript("create_schematic", args);
@@ -28,45 +29,48 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
   );
 
   // Add component to schematic
-  server.tool(
+  server.registerTool(
     "add_schematic_component",
-    "Add a component to the schematic. Symbol format is 'Library:SymbolName' (e.g., 'Device:R', 'EDA-MCP:ESP32-C3')",
     {
-      schematicPath: z.string().describe("Path to the schematic file"),
-      symbol: z
-        .string()
-        .describe("Symbol library:name reference (e.g., Device:R, EDA-MCP:ESP32-C3)"),
-      reference: z.string().describe("Component reference (e.g., R1, U1)"),
-      value: z.string().optional().describe("Component value"),
-      footprint: z
-        .string()
-        .optional()
-        .describe("KiCAD footprint (e.g. Resistor_SMD:R_0603_1608Metric)"),
-      position: z
-        .object({
-          x: z.number(),
-          y: z.number(),
-        })
-        .optional()
-        .describe("Position on schematic"),
-      unit: z
-        .number()
-        .int()
-        .min(1)
-        .optional()
-        .describe("Unit number for multi-unit symbols (1=A, 2=B, 3=C, …). Defaults to 1."),
-      angle: z
-        .number()
-        .optional()
-        .describe(
-          "Rotation angle in degrees (KiCad CCW). 0=vertical resistor, 90=horizontal. Defaults to 0.",
-        ),
-      mirrorY: z
-        .boolean()
-        .optional()
-        .describe(
-          "Mirror the symbol horizontally (flip left-right). Useful for transistors facing opposite direction.",
-        ),
+      description:
+        "Add a component to the schematic. Symbol format is 'Library:SymbolName' (e.g., 'Device:R', 'EDA-MCP:ESP32-C3')",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the schematic file"),
+        symbol: z
+          .string()
+          .describe("Symbol library:name reference (e.g., Device:R, EDA-MCP:ESP32-C3)"),
+        reference: z.string().describe("Component reference (e.g., R1, U1)"),
+        value: z.string().optional().describe("Component value"),
+        footprint: z
+          .string()
+          .optional()
+          .describe("KiCAD footprint (e.g. Resistor_SMD:R_0603_1608Metric)"),
+        position: z
+          .object({
+            x: z.number(),
+            y: z.number(),
+          })
+          .optional()
+          .describe("Position on schematic"),
+        unit: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe("Unit number for multi-unit symbols (1=A, 2=B, 3=C, …). Defaults to 1."),
+        angle: z
+          .number()
+          .optional()
+          .describe(
+            "Rotation angle in degrees (KiCad CCW). 0=vertical resistor, 90=horizontal. Defaults to 0.",
+          ),
+        mirrorY: z
+          .boolean()
+          .optional()
+          .describe(
+            "Mirror the symbol horizontally (flip left-right). Useful for transistors facing opposite direction.",
+          ),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -125,9 +129,10 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
   );
 
   // Delete component from schematic
-  server.tool(
+  server.registerTool(
     "delete_schematic_component",
-    `Remove a placed symbol from a KiCAD schematic (.kicad_sch).
+    {
+      description: `Remove a placed symbol from a KiCAD schematic (.kicad_sch).
 
 This removes the symbol instance (the placed component) from the schematic.
 It does NOT remove the symbol definition from lib_symbols.
@@ -141,18 +146,19 @@ workflows rely on labels surviving).
 
 Note: This tool operates on schematic files (.kicad_sch).
 To remove a footprint from a PCB, use delete_component instead.`,
-    {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      reference: z
-        .string()
-        .describe("Reference designator of the component to remove (e.g. R1, U3)"),
-      deleteAttachedLabels: z
-        .boolean()
-        .optional()
-        .describe(
-          "Also delete net labels sitting on the deleted component's pin positions, " +
-            "unless still attached to a wire or another component's pin (default false)",
-        ),
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        reference: z
+          .string()
+          .describe("Reference designator of the component to remove (e.g. R1, U3)"),
+        deleteAttachedLabels: z
+          .boolean()
+          .optional()
+          .describe(
+            "Also delete net labels sitting on the deleted component's pin positions, " +
+              "unless still attached to a wire or another component's pin (default false)",
+          ),
+      }),
     },
     async (args: { schematicPath: string; reference: string; deleteAttachedLabels?: boolean }) => {
       const result = await callKicadScript("delete_schematic_component", args);
@@ -182,9 +188,10 @@ To remove a footprint from a PCB, use delete_component instead.`,
   );
 
   // Edit component properties in schematic (footprint, value, reference, custom fields)
-  server.tool(
+  server.registerTool(
     "edit_schematic_component",
-    `Update properties of a placed symbol in a KiCAD schematic (.kicad_sch) in-place.
+    {
+      description: `Update properties of a placed symbol in a KiCAD schematic (.kicad_sch) in-place.
 
 Use this tool to:
   • assign or update the footprint, value, or reference designator,
@@ -204,79 +211,84 @@ and \`removeProperties\` together.
 This is more efficient than delete + re-add because it preserves the component's
 position and UUID. Operates on .kicad_sch files only — to modify a PCB footprint
 use edit_component instead.`,
-    {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      reference: z.string().describe("Current reference designator of the component (e.g. R1, U3)"),
-      footprint: z
-        .string()
-        .optional()
-        .describe("New KiCAD footprint string (e.g. Resistor_SMD:R_0603_1608Metric)"),
-      value: z.string().optional().describe("New value string (e.g. 10k, 100nF)"),
-      newReference: z
-        .string()
-        .optional()
-        .describe("Rename the reference designator (e.g. R1 → R10)"),
-      fieldPositions: z
-        .record(
-          z.object({
-            x: z.number(),
-            y: z.number(),
-            angle: z.number().optional().default(0),
-            justify: z
-              .union([z.string(), z.array(z.string())])
-              .optional()
-              .describe(
-                'Text justification: "left", "right", "center", "top", "bottom", or combined ' +
-                  '"left top" / "right bottom". Array form ["left", "top"] is also accepted. ' +
-                  'Omit to leave the existing justify unchanged. Pass "center" to reset to ' +
-                  "the KiCad default (removes the justify directive).",
-              ),
-          }),
-        )
-        .optional()
-        .describe(
-          "Reposition field labels: map of field name to {x, y, angle, justify?} " +
-            '(e.g. {"Reference": {"x": 12.5, "y": 17.0, "justify": "left"}})',
-        ),
-      properties: z
-        .record(
-          z.union([
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        reference: z
+          .string()
+          .describe("Current reference designator of the component (e.g. R1, U3)"),
+        footprint: z
+          .string()
+          .optional()
+          .describe("New KiCAD footprint string (e.g. Resistor_SMD:R_0603_1608Metric)"),
+        value: z.string().optional().describe("New value string (e.g. 10k, 100nF)"),
+        newReference: z
+          .string()
+          .optional()
+          .describe("Rename the reference designator (e.g. R1 → R10)"),
+        fieldPositions: z
+          .record(
             z.string(),
             z.object({
-              value: z.string().describe("Property value to write"),
-              x: z.number().optional().describe("Label X position in mm (default: component X)"),
-              y: z.number().optional().describe("Label Y position in mm (default: component Y)"),
-              angle: z.number().optional().describe("Label rotation in degrees (default: 0)"),
-              hide: z
-                .boolean()
+              x: z.number(),
+              y: z.number(),
+              angle: z.number().optional().default(0),
+              justify: z
+                .union([z.string(), z.array(z.string())])
                 .optional()
                 .describe(
-                  "Whether to hide the property text on the schematic. Defaults to true for newly-created custom properties (BOM/sourcing data is normally hidden).",
+                  'Text justification: "left", "right", "center", "top", "bottom", or combined ' +
+                    '"left top" / "right bottom". Array form ["left", "top"] is also accepted. ' +
+                    'Omit to leave the existing justify unchanged. Pass "center" to reset to ' +
+                    "the KiCad default (removes the justify directive).",
                 ),
-              fontSize: z
-                .number()
-                .optional()
-                .describe("Font size in mm for the label (default: 1.27)"),
             }),
-          ]),
-        )
-        .optional()
-        .describe(
-          "Add or update component properties. Map of property name to either a string value (sensible defaults) " +
-            "or a full spec object {value, x?, y?, angle?, hide?, fontSize?}. Use this to attach BOM and sourcing " +
-            "metadata such as MPN, Manufacturer, Distributor, DigiKey, LCSC, JLCPCB_PN, Voltage, Tolerance, " +
-            "Dielectric, Power, etc. Built-in fields (Reference, Value, Footprint, Datasheet) can also be set " +
-            "this way but the dedicated parameters above are clearer. Example: " +
-            '{"MPN": "RC0603FR-0710KL", "Manufacturer": "Yageo", "Tolerance": "1%"}',
-        ),
-      removeProperties: z
-        .array(z.string())
-        .optional()
-        .describe(
-          "List of custom property names to delete from this component. The built-in fields " +
-            "Reference, Value, Footprint, and Datasheet cannot be removed (clear them by setting " +
-            'value to "" instead). Example: ["OldMPN", "Distributor_PN"]',
-        ),
+          )
+          .optional()
+          .describe(
+            "Reposition field labels: map of field name to {x, y, angle, justify?} " +
+              '(e.g. {"Reference": {"x": 12.5, "y": 17.0, "justify": "left"}})',
+          ),
+        properties: z
+          .record(
+            z.string(),
+            z.union([
+              z.string(),
+              z.object({
+                value: z.string().describe("Property value to write"),
+                x: z.number().optional().describe("Label X position in mm (default: component X)"),
+                y: z.number().optional().describe("Label Y position in mm (default: component Y)"),
+                angle: z.number().optional().describe("Label rotation in degrees (default: 0)"),
+                hide: z
+                  .boolean()
+                  .optional()
+                  .describe(
+                    "Whether to hide the property text on the schematic. Defaults to true for newly-created custom properties (BOM/sourcing data is normally hidden).",
+                  ),
+                fontSize: z
+                  .number()
+                  .optional()
+                  .describe("Font size in mm for the label (default: 1.27)"),
+              }),
+            ]),
+          )
+          .optional()
+          .describe(
+            "Add or update component properties. Map of property name to either a string value (sensible defaults) " +
+              "or a full spec object {value, x?, y?, angle?, hide?, fontSize?}. Use this to attach BOM and sourcing " +
+              "metadata such as MPN, Manufacturer, Distributor, DigiKey, LCSC, JLCPCB_PN, Voltage, Tolerance, " +
+              "Dielectric, Power, etc. Built-in fields (Reference, Value, Footprint, Datasheet) can also be set " +
+              "this way but the dedicated parameters above are clearer. Example: " +
+              '{"MPN": "RC0603FR-0710KL", "Manufacturer": "Yageo", "Tolerance": "1%"}',
+          ),
+        removeProperties: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "List of custom property names to delete from this component. The built-in fields " +
+              "Reference, Value, Footprint, and Datasheet cannot be removed (clear them by setting " +
+              'value to "" instead). Example: ["OldMPN", "Distributor_PN"]',
+          ),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -353,9 +365,10 @@ use edit_component instead.`,
   // ------------------------------------------------------------------
 
   // Set a single custom property on a placed symbol
-  server.tool(
+  server.registerTool(
     "set_schematic_component_property",
-    `Add or update a single custom property on a placed schematic symbol.
+    {
+      description: `Add or update a single custom property on a placed schematic symbol.
 
 This is a focused convenience wrapper around edit_schematic_component for the very
 common case of attaching one BOM / sourcing field at a time. The property is
@@ -375,33 +388,34 @@ display the value on the schematic canvas.
 
 For batch updates of multiple properties at once, use edit_schematic_component
 with the \`properties\` parameter instead.`,
-    {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      reference: z.string().describe("Reference designator of the component (e.g. R1, U3)"),
-      name: z
-        .string()
-        .describe(
-          "Property name (e.g. 'MPN', 'Manufacturer', 'DigiKey_PN', 'Voltage', 'Dielectric')",
-        ),
-      value: z.string().describe("Property value to write (use empty string to clear)"),
-      x: z.number().optional().describe("Label X position in mm (default: component X)"),
-      y: z.number().optional().describe("Label Y position in mm (default: component Y)"),
-      angle: z.number().optional().describe("Label rotation in degrees (default: 0)"),
-      hide: z
-        .boolean()
-        .optional()
-        .describe(
-          "Hide the property text on the schematic canvas. Defaults to true for newly-created custom properties.",
-        ),
-      fontSize: z.number().optional().describe("Font size in mm for the label (default: 1.27)"),
-      justify: z
-        .string()
-        .optional()
-        .describe(
-          'Text justification for the property label. KiCad alignment keywords: "left", "right", ' +
-            '"center", "top", "bottom", or combined e.g. "left top". Omit to leave unchanged. ' +
-            'Pass "center" to reset to the KiCad default.',
-        ),
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        reference: z.string().describe("Reference designator of the component (e.g. R1, U3)"),
+        name: z
+          .string()
+          .describe(
+            "Property name (e.g. 'MPN', 'Manufacturer', 'DigiKey_PN', 'Voltage', 'Dielectric')",
+          ),
+        value: z.string().describe("Property value to write (use empty string to clear)"),
+        x: z.number().optional().describe("Label X position in mm (default: component X)"),
+        y: z.number().optional().describe("Label Y position in mm (default: component Y)"),
+        angle: z.number().optional().describe("Label rotation in degrees (default: 0)"),
+        hide: z
+          .boolean()
+          .optional()
+          .describe(
+            "Hide the property text on the schematic canvas. Defaults to true for newly-created custom properties.",
+          ),
+        fontSize: z.number().optional().describe("Font size in mm for the label (default: 1.27)"),
+        justify: z
+          .string()
+          .optional()
+          .describe(
+            'Text justification for the property label. KiCad alignment keywords: "left", "right", ' +
+              '"center", "top", "bottom", or combined e.g. "left top". Omit to leave unchanged. ' +
+              'Pass "center" to reset to the KiCad default.',
+          ),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -440,19 +454,21 @@ with the \`properties\` parameter instead.`,
   );
 
   // Remove a single custom property from a placed symbol
-  server.tool(
+  server.registerTool(
     "remove_schematic_component_property",
-    `Remove a single custom property from a placed schematic symbol.
+    {
+      description: `Remove a single custom property from a placed schematic symbol.
 
 Built-in fields (Reference, Value, Footprint, Datasheet) cannot be removed —
 KiCad requires them on every symbol. To clear a built-in field, use
 edit_schematic_component and set its value to an empty string.`,
-    {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      reference: z.string().describe("Reference designator of the component (e.g. R1, U3)"),
-      name: z
-        .string()
-        .describe("Custom property name to remove (e.g. 'MPN', 'Distributor_PN', 'OldField')"),
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        reference: z.string().describe("Reference designator of the component (e.g. R1, U3)"),
+        name: z
+          .string()
+          .describe("Custom property name to remove (e.g. 'MPN', 'Distributor_PN', 'OldField')"),
+      }),
     },
     async (args: { schematicPath: string; reference: string; name: string }) => {
       const result = await callKicadScript("remove_schematic_component_property", args);
@@ -489,17 +505,21 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Get component properties and field positions from schematic
-  server.tool(
+
+  server.registerTool(
     "get_schematic_component",
-    "Get full component info from a schematic: position, every field's value, and each field's " +
-      "label position (at x/y/angle). Returns ALL properties — both built-in fields " +
-      "(Reference, Value, Footprint, Datasheet) and any custom BOM/sourcing properties present " +
-      "on the symbol (MPN, Manufacturer, DigiKey_PN, LCSC, Voltage, Tolerance, Dielectric, etc.). " +
-      "Use this before edit_schematic_component / set_schematic_component_property to inspect " +
-      "what is currently set, or to plan a label repositioning.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      reference: z.string().describe("Component reference designator (e.g. R1, U1)"),
+      description:
+        "Get full component info from a schematic: position, every field's value, and each field's " +
+        "label position (at x/y/angle). Returns ALL properties — both built-in fields " +
+        "(Reference, Value, Footprint, Datasheet) and any custom BOM/sourcing properties present " +
+        "on the symbol (MPN, Manufacturer, DigiKey_PN, LCSC, Voltage, Tolerance, Dielectric, etc.). " +
+        "Use this before edit_schematic_component / set_schematic_component_property to inspect " +
+        "what is currently set, or to plan a label repositioning.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        reference: z.string().describe("Component reference designator (e.g. R1, U1)"),
+      }),
     },
     async (args: { schematicPath: string; reference: string }) => {
       const result = await callKicadScript("get_schematic_component", args);
@@ -532,20 +552,23 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Draw wire between coordinate waypoints with optional pin snapping
-  server.tool(
+  server.registerTool(
     "add_schematic_wire",
-    "Draws a wire on the schematic between two or more coordinate points. Always call get_schematic_pin_locations first to get the approximate pin coordinates, then pass them as the first and last waypoints. snapToPins (on by default) will correct any float imprecision by snapping endpoints to the exact nearest pin coordinate. To route around components, add intermediate waypoints between the start and end: e.g. [[x1,y1], [xMid,y1], [xMid,y2], [x2,y2]] routes horizontally then vertically. Intermediate waypoints are never snapped.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      waypoints: z
-        .array(z.array(z.number()).length(2))
-        .min(2)
-        .describe("Ordered list of [x, y] coordinates. Minimum 2 points."),
-      snapToPins: z
-        .boolean()
-        .optional()
-        .describe("Snap the first and last waypoints to the nearest pin (default: true)"),
-      snapTolerance: z.number().optional().describe("Maximum snap distance in mm (default: 1.0)"),
+      description:
+        "Draws a wire on the schematic between two or more coordinate points. Always call get_schematic_pin_locations first to get the approximate pin coordinates, then pass them as the first and last waypoints. snapToPins (on by default) will correct any float imprecision by snapping endpoints to the exact nearest pin coordinate. To route around components, add intermediate waypoints between the start and end: e.g. [[x1,y1], [xMid,y1], [xMid,y2], [x2,y2]] routes horizontally then vertically. Intermediate waypoints are never snapped.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        waypoints: z
+          .array(z.array(z.number()).length(2))
+          .min(2)
+          .describe("Ordered list of [x, y] coordinates. Minimum 2 points."),
+        snapToPins: z
+          .boolean()
+          .optional()
+          .describe("Snap the first and last waypoints to the nearest pin (default: true)"),
+        snapTolerance: z.number().optional().describe("Maximum snap distance in mm (default: 1.0)"),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -577,40 +600,44 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Add net label
-  server.tool(
+
+  server.registerTool(
     "add_schematic_net_label",
-    "Add a net label to the schematic. " +
-      "PREFERRED: supply componentRef + pinNumber to snap the label to the exact pin endpoint — " +
-      "this guarantees an electrical connection. " +
-      "Alternatively supply position [x, y], but the coordinates must match the pin endpoint exactly " +
-      "(even a 0.01 mm offset breaks the connection). " +
-      "The response includes actual_position (coordinates actually used) and snapped_to_pin " +
-      "(present when a pin reference was resolved).",
     {
-      schematicPath: z.string().describe("Path to the schematic file"),
-      netName: z.string().describe("Name of the net (e.g., VCC, GND, SIGNAL_1)"),
-      position: z
-        .array(z.number())
-        .length(2)
-        .optional()
-        .describe(
-          "Position [x, y] for the label. Required when componentRef/pinNumber are not given.",
-        ),
-      componentRef: z
-        .string()
-        .optional()
-        .describe("Component reference to snap label to (e.g. U1, R1). Use with pinNumber."),
-      pinNumber: z
-        .union([z.string(), z.number()])
-        .optional()
-        .describe(
-          "Pin number or name on componentRef to snap label to (e.g. '1', 'GND'). Use with componentRef.",
-        ),
-      labelType: z
-        .enum(["label", "global_label", "hierarchical_label"])
-        .optional()
-        .describe("Label type (default: label)"),
-      orientation: z.number().optional().describe("Rotation angle 0/90/180/270 (default: 0)"),
+      description:
+        "Add a net label to the schematic. " +
+        "PREFERRED: supply componentRef + pinNumber to snap the label to the exact pin endpoint — " +
+        "this guarantees an electrical connection. " +
+        "Alternatively supply position [x, y], but the coordinates must match the pin endpoint exactly " +
+        "(even a 0.01 mm offset breaks the connection). " +
+        "The response includes actual_position (coordinates actually used) and snapped_to_pin " +
+        "(present when a pin reference was resolved).",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the schematic file"),
+        netName: z.string().describe("Name of the net (e.g., VCC, GND, SIGNAL_1)"),
+        position: z
+          .array(z.number())
+          .length(2)
+          .optional()
+          .describe(
+            "Position [x, y] for the label. Required when componentRef/pinNumber are not given.",
+          ),
+        componentRef: z
+          .string()
+          .optional()
+          .describe("Component reference to snap label to (e.g. U1, R1). Use with pinNumber."),
+        pinNumber: z
+          .union([z.string(), z.number()])
+          .optional()
+          .describe(
+            "Pin number or name on componentRef to snap label to (e.g. '1', 'GND'). Use with componentRef.",
+          ),
+        labelType: z
+          .enum(["label", "global_label", "hierarchical_label"])
+          .optional()
+          .describe("Label type (default: label)"),
+        orientation: z.number().optional().describe("Rotation angle 0/90/180/270 (default: 0)"),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -645,27 +672,31 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Add no-connect flag
-  server.tool(
+
+  server.registerTool(
     "add_no_connect",
-    "Add a no-connect flag (X marker) to a pin that is intentionally left unconnected. " +
-      "This suppresses ERC 'Pin not connected' errors for unused pins. " +
-      "PREFERRED: supply componentRef + pinNumber to snap to the exact pin endpoint. " +
-      "Alternatively supply position [x, y] in mm matching the pin endpoint exactly.",
     {
-      schematicPath: z.string().describe("Path to the schematic file"),
-      position: z
-        .array(z.number())
-        .length(2)
-        .optional()
-        .describe("Position [x, y] in mm. Required when componentRef/pinNumber are not given."),
-      componentRef: z
-        .string()
-        .optional()
-        .describe("Component reference to snap to (e.g. U1, R1). Use with pinNumber."),
-      pinNumber: z
-        .union([z.string(), z.number()])
-        .optional()
-        .describe("Pin number or name on componentRef (e.g. '1', 'GND'). Use with componentRef."),
+      description:
+        "Add a no-connect flag (X marker) to a pin that is intentionally left unconnected. " +
+        "This suppresses ERC 'Pin not connected' errors for unused pins. " +
+        "PREFERRED: supply componentRef + pinNumber to snap to the exact pin endpoint. " +
+        "Alternatively supply position [x, y] in mm matching the pin endpoint exactly.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the schematic file"),
+        position: z
+          .array(z.number())
+          .length(2)
+          .optional()
+          .describe("Position [x, y] in mm. Required when componentRef/pinNumber are not given."),
+        componentRef: z
+          .string()
+          .optional()
+          .describe("Component reference to snap to (e.g. U1, R1). Use with pinNumber."),
+        pinNumber: z
+          .union([z.string(), z.number()])
+          .optional()
+          .describe("Pin number or name on componentRef (e.g. '1', 'GND'). Use with componentRef."),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -692,16 +723,20 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Connect pin to net
-  server.tool(
+
+  server.registerTool(
     "connect_to_net",
-    "Connect a component pin to a named net by adding a wire stub and net label at the exact pin endpoint. " +
-      "The response includes pin_location (exact pin coords), label_location (where the label was placed), " +
-      "and wire_stub (the wire segment added) so you can confirm the placement.",
     {
-      schematicPath: z.string().describe("Path to the schematic file"),
-      componentRef: z.string().describe("Component reference (e.g., U1, R1)"),
-      pinName: z.string().describe("Pin name/number to connect"),
-      netName: z.string().describe("Name of the net to connect to"),
+      description:
+        "Connect a component pin to a named net by adding a wire stub and net label at the exact pin endpoint. " +
+        "The response includes pin_location (exact pin coords), label_location (where the label was placed), " +
+        "and wire_stub (the wire segment added) so you can confirm the placement.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the schematic file"),
+        componentRef: z.string().describe("Component reference (e.g., U1, R1)"),
+        pinName: z.string().describe("Pin name/number to connect"),
+        netName: z.string().describe("Name of the net to connect to"),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -733,12 +768,14 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Get net connections
-  server.tool(
+  server.registerTool(
     "get_net_connections",
-    "Get all connections for a named net",
     {
-      schematicPath: z.string().describe("Path to the schematic file"),
-      netName: z.string().describe("Name of the net to query"),
+      description: "Get all connections for a named net",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the schematic file"),
+        netName: z.string().describe("Name of the net to query"),
+      }),
     },
     async (args: { schematicPath: string; netName: string }) => {
       const result = await callKicadScript("get_net_connections", args);
@@ -768,26 +805,30 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Get wire connections
-  server.tool(
+
+  server.registerTool(
     "get_wire_connections",
-    "Returns the net name and all wires and component pins connected at a given point. " +
-      "Accepts either a component reference + pin number (e.g. reference='U1', pin='3') " +
-      "or a schematic coordinate (x, y in mm). " +
-      "Returns net=null for unnamed (unlabelled) nets. " +
-      "The query point must be at a wire endpoint or junction — midpoints are not matched. " +
-      "Use get_schematic_pin_locations or list_schematic_wires to obtain exact endpoint coordinates.",
     {
-      schematicPath: z.string().describe("Path to the schematic file"),
-      reference: z
-        .string()
-        .optional()
-        .describe("Component reference (e.g. U1, R1). Pair with pin."),
-      pin: z
-        .string()
-        .optional()
-        .describe("Pin number or name (e.g. '3', 'SDA'). Pair with reference."),
-      x: z.number().optional().describe("X coordinate of a wire endpoint in mm. Pair with y."),
-      y: z.number().optional().describe("Y coordinate of a wire endpoint in mm. Pair with x."),
+      description:
+        "Returns the net name and all wires and component pins connected at a given point. " +
+        "Accepts either a component reference + pin number (e.g. reference='U1', pin='3') " +
+        "or a schematic coordinate (x, y in mm). " +
+        "Returns net=null for unnamed (unlabelled) nets. " +
+        "The query point must be at a wire endpoint or junction — midpoints are not matched. " +
+        "Use get_schematic_pin_locations or list_schematic_wires to obtain exact endpoint coordinates.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the schematic file"),
+        reference: z
+          .string()
+          .optional()
+          .describe("Component reference (e.g. U1, R1). Pair with pin."),
+        pin: z
+          .string()
+          .optional()
+          .describe("Pin number or name (e.g. '3', 'SDA'). Pair with reference."),
+        x: z.number().optional().describe("X coordinate of a wire endpoint in mm. Pair with y."),
+        y: z.number().optional().describe("Y coordinate of a wire endpoint in mm. Pair with x."),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -831,12 +872,15 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Get pin locations for a schematic component
-  server.tool(
+  server.registerTool(
     "get_schematic_pin_locations",
-    "Returns the exact x/y coordinates of every pin on a schematic component. Use this before add_schematic_net_label to place labels correctly on pin endpoints.",
     {
-      schematicPath: z.string().describe("Path to the schematic file"),
-      reference: z.string().describe("Component reference designator (e.g. U1, R1, J2)"),
+      description:
+        "Returns the exact x/y coordinates of every pin on a schematic component. Use this before add_schematic_net_label to place labels correctly on pin endpoints.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the schematic file"),
+        reference: z.string().describe("Component reference designator (e.g. U1, R1, J2)"),
+      }),
     },
     async (args: { schematicPath: string; reference: string }) => {
       const result = await callKicadScript("get_schematic_pin_locations", args);
@@ -867,21 +911,24 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Connect all pins of source connector to matching pins of target connector (passthrough)
-  server.tool(
+  server.registerTool(
     "connect_passthrough",
-    "Connects all pins of a source connector (e.g. J1) to matching pins of a target connector (e.g. J2) via shared net labels — pin N gets net '{netPrefix}_{N}'. Use this for FFC/ribbon cable passthrough adapters instead of calling connect_to_net for every pin.",
     {
-      schematicPath: z.string().describe("Path to the schematic file"),
-      sourceRef: z.string().describe("Source connector reference (e.g. J1)"),
-      targetRef: z.string().describe("Target connector reference (e.g. J2)"),
-      netPrefix: z
-        .string()
-        .optional()
-        .describe("Net name prefix, e.g. 'CSI' → CSI_1, CSI_2 (default: PIN)"),
-      pinOffset: z
-        .number()
-        .optional()
-        .describe("Add to pin number when building net name (default: 0)"),
+      description:
+        "Connects all pins of a source connector (e.g. J1) to matching pins of a target connector (e.g. J2) via shared net labels — pin N gets net '{netPrefix}_{N}'. Use this for FFC/ribbon cable passthrough adapters instead of calling connect_to_net for every pin.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the schematic file"),
+        sourceRef: z.string().describe("Source connector reference (e.g. J1)"),
+        targetRef: z.string().describe("Target connector reference (e.g. J2)"),
+        netPrefix: z
+          .string()
+          .optional()
+          .describe("Net name prefix, e.g. 'CSI' → CSI_1, CSI_2 (default: PIN)"),
+        pinOffset: z
+          .number()
+          .optional()
+          .describe("Add to pin number when building net name (default: 0)"),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -916,21 +963,24 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // List all components in schematic
-  server.tool(
+  server.registerTool(
     "list_schematic_components",
-    "List all components in a schematic with their references, values, positions, and pins. Essential for inspecting what's on the schematic before making edits.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      filter: z
-        .object({
-          libId: z.string().optional().describe("Filter by library ID (e.g., 'Device:R')"),
-          referencePrefix: z
-            .string()
-            .optional()
-            .describe("Filter by reference prefix (e.g., 'R', 'C', 'U')"),
-        })
-        .optional()
-        .describe("Optional filters"),
+      description:
+        "List all components in a schematic with their references, values, positions, and pins. Essential for inspecting what's on the schematic before making edits.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        filter: z
+          .object({
+            libId: z.string().optional().describe("Filter by library ID (e.g., 'Device:R')"),
+            referencePrefix: z
+              .string()
+              .optional()
+              .describe("Filter by reference prefix (e.g., 'R', 'C', 'U')"),
+          })
+          .optional()
+          .describe("Optional filters"),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -970,11 +1020,13 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // List all nets in schematic
-  server.tool(
+  server.registerTool(
     "list_schematic_nets",
-    "List all nets in the schematic with their connections.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      description: "List all nets in the schematic with their connections.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      }),
     },
     async (args: { schematicPath: string }) => {
       const result = await callKicadScript("list_schematic_nets", args);
@@ -1010,11 +1062,13 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // List all wires in schematic
-  server.tool(
+  server.registerTool(
     "list_schematic_wires",
-    "List all wires in the schematic with start/end coordinates.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      description: "List all wires in the schematic with start/end coordinates.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      }),
     },
     async (args: { schematicPath: string }) => {
       const result = await callKicadScript("list_schematic_wires", args);
@@ -1047,24 +1101,28 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // List all labels in schematic
-  server.tool(
+
+  server.registerTool(
     "list_schematic_labels",
-    "List all net labels, global labels, and power flags in the schematic. " +
-      "Optionally filter by label name (netName) and/or label type (labelType).",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      netName: z
-        .string()
-        .optional()
-        .describe(
-          "Filter to labels whose name exactly matches this string (case-sensitive). Omit to return all labels.",
-        ),
-      labelType: z
-        .enum(["net", "global", "power"])
-        .optional()
-        .describe(
-          "Filter by label type. 'net' = local label, 'global' = global label, 'power' = power symbol. Omit to return all types.",
-        ),
+      description:
+        "List all net labels, global labels, and power flags in the schematic. " +
+        "Optionally filter by label name (netName) and/or label type (labelType).",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        netName: z
+          .string()
+          .optional()
+          .describe(
+            "Filter to labels whose name exactly matches this string (case-sensitive). Omit to return all labels.",
+          ),
+        labelType: z
+          .enum(["net", "global", "power"])
+          .optional()
+          .describe(
+            "Filter by label type. 'net' = local label, 'global' = global label, 'power' = power symbol. Omit to return all types.",
+          ),
+      }),
     },
     async (args: { schematicPath: string; netName?: string; labelType?: string }) => {
       const result = await callKicadScript("list_schematic_labels", args);
@@ -1097,19 +1155,22 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Move a placed symbol, dragging connected wires
-  server.tool(
+  server.registerTool(
     "move_schematic_component",
-    "Move a placed symbol to a new position in the schematic. By default (preserveWires=true) wire endpoints touching the component's pins are stretched to follow the new position.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      reference: z.string().describe("Reference designator (e.g., R1, U1)"),
-      position: z
-        .object({ x: z.number(), y: z.number() })
-        .describe("New position in schematic mm coordinates"),
-      preserveWires: z
-        .boolean()
-        .optional()
-        .describe("Stretch connected wire endpoints to follow the move (default true)"),
+      description:
+        "Move a placed symbol to a new position in the schematic. By default (preserveWires=true) wire endpoints touching the component's pins are stretched to follow the new position.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        reference: z.string().describe("Reference designator (e.g., R1, U1)"),
+        position: z
+          .object({ x: z.number(), y: z.number() })
+          .describe("New position in schematic mm coordinates"),
+        preserveWires: z
+          .boolean()
+          .optional()
+          .describe("Stretch connected wire endpoints to follow the move (default true)"),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -1149,20 +1210,22 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Rotate schematic component
-  server.tool(
+  server.registerTool(
     "rotate_schematic_component",
-    "Rotate a placed symbol in the schematic.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      reference: z.string().describe("Reference designator (e.g., R1, U1)"),
-      angle: z
-        .number()
-        .describe(
-          "Absolute rotation in degrees (0, 90, 180, 270). This is the symbol's " +
-            "final orientation, not a relative increment — passing 90 sets the " +
-            "symbol to 90° regardless of its current angle (unlike KiCad's UI 'R' key).",
-        ),
-      mirror: z.enum(["x", "y"]).optional().describe("Optional mirror axis"),
+      description: "Rotate a placed symbol in the schematic.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        reference: z.string().describe("Reference designator (e.g., R1, U1)"),
+        angle: z
+          .number()
+          .describe(
+            "Absolute rotation in degrees (0, 90, 180, 270). This is the symbol's " +
+              "final orientation, not a relative increment — passing 90 sets the " +
+              "symbol to 90° regardless of its current angle (unlike KiCad's UI 'R' key).",
+          ),
+        mirror: z.enum(["x", "y"]).optional().describe("Optional mirror axis"),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -1199,11 +1262,14 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Annotate schematic
-  server.tool(
+  server.registerTool(
     "annotate_schematic",
-    "Assign reference designators to unannotated components (R? → R1, R2, ...). Must be called before tools that require known references.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      description:
+        "Assign reference designators to unannotated components (R? → R1, R2, ...). Must be called before tools that require known references.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      }),
     },
     async (args: { schematicPath: string }) => {
       const result = await callKicadScript("annotate_schematic", args);
@@ -1237,13 +1303,15 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Delete wire from schematic
-  server.tool(
+  server.registerTool(
     "delete_schematic_wire",
-    "Remove a wire from the schematic by start and end coordinates.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      start: z.object({ x: z.number(), y: z.number() }).describe("Wire start position"),
-      end: z.object({ x: z.number(), y: z.number() }).describe("Wire end position"),
+      description: "Remove a wire from the schematic by start and end coordinates.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        start: z.object({ x: z.number(), y: z.number() }).describe("Wire start position"),
+        end: z.object({ x: z.number(), y: z.number() }).describe("Wire end position"),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -1274,16 +1342,18 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Delete net label from schematic
-  server.tool(
+  server.registerTool(
     "delete_schematic_net_label",
-    "Remove a net label from the schematic.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      netName: z.string().describe("Name of the net label to remove"),
-      position: z
-        .object({ x: z.number(), y: z.number() })
-        .optional()
-        .describe("Position to disambiguate if multiple labels with same name"),
+      description: "Remove a net label from the schematic.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        netName: z.string().describe("Name of the net label to remove"),
+        position: z
+          .object({ x: z.number(), y: z.number() })
+          .optional()
+          .describe("Position to disambiguate if multiple labels with same name"),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -1314,21 +1384,24 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Move net label to a new position in the schematic
-  server.tool(
+  server.registerTool(
     "move_schematic_net_label",
-    "Move a net label (local, global, or hierarchical) to a new position in the schematic. Use currentPosition to disambiguate when multiple labels share the same name.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      netName: z.string().describe("Name of the net label to move"),
-      newPosition: z.object({ x: z.number(), y: z.number() }).describe("Target position in mm"),
-      currentPosition: z
-        .object({ x: z.number(), y: z.number() })
-        .optional()
-        .describe("Current position to disambiguate when multiple labels share the same name"),
-      labelType: z
-        .enum(["label", "global_label", "hierarchical_label"])
-        .optional()
-        .describe("Restrict search to a specific label type"),
+      description:
+        "Move a net label (local, global, or hierarchical) to a new position in the schematic. Use currentPosition to disambiguate when multiple labels share the same name.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        netName: z.string().describe("Name of the net label to move"),
+        newPosition: z.object({ x: z.number(), y: z.number() }).describe("Target position in mm"),
+        currentPosition: z
+          .object({ x: z.number(), y: z.number() })
+          .optional()
+          .describe("Current position to disambiguate when multiple labels share the same name"),
+        labelType: z
+          .enum(["label", "global_label", "hierarchical_label"])
+          .optional()
+          .describe("Restrict search to a specific label type"),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -1361,13 +1434,15 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Export schematic to SVG
-  server.tool(
+  server.registerTool(
     "export_schematic_svg",
-    "Export schematic to SVG format using kicad-cli.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      outputPath: z.string().describe("Output SVG file path"),
-      blackAndWhite: z.boolean().optional().describe("Export in black and white"),
+      description: "Export schematic to SVG format using kicad-cli.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        outputPath: z.string().describe("Output SVG file path"),
+        blackAndWhite: z.boolean().optional().describe("Export in black and white"),
+      }),
     },
     async (args: { schematicPath: string; outputPath: string; blackAndWhite?: boolean }) => {
       const result = await callKicadScript("export_schematic_svg", args);
@@ -1394,13 +1469,15 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Export schematic to PDF
-  server.tool(
+  server.registerTool(
     "export_schematic_pdf",
-    "Export schematic to PDF format using kicad-cli.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      outputPath: z.string().describe("Output PDF file path"),
-      blackAndWhite: z.boolean().optional().describe("Export in black and white"),
+      description: "Export schematic to PDF format using kicad-cli.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        outputPath: z.string().describe("Output PDF file path"),
+        blackAndWhite: z.boolean().optional().describe("Export in black and white"),
+      }),
     },
     async (args: { schematicPath: string; outputPath: string; blackAndWhite?: boolean }) => {
       const result = await callKicadScript("export_schematic_pdf", args);
@@ -1427,14 +1504,17 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Get schematic view (rasterized image)
-  server.tool(
+  server.registerTool(
     "get_schematic_view",
-    "Return a rasterized image of the schematic (PNG by default, or SVG). Uses kicad-cli to export SVG, then converts to PNG via cairosvg. Use this for visual feedback after placing or wiring components.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      format: z.enum(["png", "svg"]).optional().describe("Output format (default: png)"),
-      width: z.number().optional().describe("Image width in pixels (default: 1200)"),
-      height: z.number().optional().describe("Image height in pixels (default: 900)"),
+      description:
+        "Return a rasterized image of the schematic (PNG by default, or SVG). Uses kicad-cli to export SVG, then converts to PNG via cairosvg. Use this for visual feedback after placing or wiring components.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        format: z.enum(["png", "svg"]).optional().describe("Output format (default: png)"),
+        width: z.number().optional().describe("Image width in pixels (default: 1200)"),
+        height: z.number().optional().describe("Image height in pixels (default: 900)"),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -1479,11 +1559,14 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Run Electrical Rules Check (ERC)
-  server.tool(
+  server.registerTool(
     "run_erc",
-    "Runs the KiCAD Electrical Rules Check (ERC) on a schematic and returns all violations. Use after wiring to verify the schematic before generating a netlist.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+      description:
+        "Runs the KiCAD Electrical Rules Check (ERC) on a schematic and returns all violations. Use after wiring to verify the schematic before generating a netlist.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+      }),
     },
     async (args: { schematicPath: string }) => {
       const result = await callKicadScript("run_erc", args);
@@ -1524,11 +1607,14 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Generate netlist
-  server.tool(
+  server.registerTool(
     "generate_netlist",
-    "Return a structured JSON netlist from the schematic — component list (reference, value, footprint) and net list (net name with all connected component/pin pairs). Use this to inspect or verify connectivity within the conversation. Does not write any file. To export a netlist file in Spice, KiCad XML, Cadstar, or OrcadPCB2 format, use export_netlist instead.",
     {
-      schematicPath: z.string().describe("Absolute path to the .kicad_sch schematic file"),
+      description:
+        "Return a structured JSON netlist from the schematic — component list (reference, value, footprint) and net list (net name with all connected component/pin pairs). Use this to inspect or verify connectivity within the conversation. Does not write any file. To export a netlist file in Spice, KiCad XML, Cadstar, or OrcadPCB2 format, use export_netlist instead.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Absolute path to the .kicad_sch schematic file"),
+      }),
     },
     async (args: { schematicPath: string }) => {
       const result = await callKicadScript("generate_netlist", args);
@@ -1572,12 +1658,15 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Sync schematic to PCB board (equivalent to KiCAD F8 / "Update PCB from Schematic")
-  server.tool(
+  server.registerTool(
     "sync_schematic_to_board",
-    "Import the schematic netlist into the PCB board — equivalent to pressing F8 in KiCAD (Tools → Update PCB from Schematic). MUST be called after the schematic is complete and before placing or routing components on the PCB. Without this step, the board has no footprints and no net assignments — place_component and route_pad_to_pad will produce an empty, unroutable board.",
     {
-      schematicPath: z.string().describe("Absolute path to the .kicad_sch schematic file"),
-      boardPath: z.string().describe("Absolute path to the .kicad_pcb board file"),
+      description:
+        "Import the schematic netlist into the PCB board — equivalent to pressing F8 in KiCAD (Tools → Update PCB from Schematic). MUST be called after the schematic is complete and before placing or routing components on the PCB. Without this step, the board has no footprints and no net assignments — place_component and route_pad_to_pad will produce an empty, unroutable board.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Absolute path to the .kicad_sch schematic file"),
+        boardPath: z.string().describe("Absolute path to the .kicad_pcb board file"),
+      }),
     },
     async (args: { schematicPath: string; boardPath: string }) => {
       const result = await callKicadScript("sync_schematic_to_board", args);
@@ -1587,16 +1676,19 @@ edit_schematic_component and set its value to an empty string.`,
     },
   );
 
-  server.tool(
+  server.registerTool(
     "create_board_from_schematic",
-    "Create a new .kicad_pcb file from a schematic, then update the PCB from that schematic so footprints and nets are present.",
     {
-      schematicPath: z.string().describe("Absolute path to the .kicad_sch schematic file"),
-      boardPath: z
-        .string()
-        .optional()
-        .describe("Destination .kicad_pcb path; defaults next to schematic"),
-      overwrite: z.boolean().optional().describe("Replace boardPath if it already exists"),
+      description:
+        "Create a new .kicad_pcb file from a schematic, then update the PCB from that schematic so footprints and nets are present.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Absolute path to the .kicad_sch schematic file"),
+        boardPath: z
+          .string()
+          .optional()
+          .describe("Destination .kicad_pcb path; defaults next to schematic"),
+        overwrite: z.boolean().optional().describe("Replace boardPath if it already exists"),
+      }),
     },
     async (args: { schematicPath: string; boardPath?: string; overwrite?: boolean }) => {
       const result = await callKicadScript("create_board_from_schematic", args);
@@ -1611,18 +1703,21 @@ edit_schematic_component and set its value to an empty string.`,
   // ============================================================
 
   // Get a zoomed view of a schematic region
-  server.tool(
+  server.registerTool(
     "get_schematic_view_region",
-    "Export a cropped region of the schematic as an image (PNG or SVG). Specify bounding box coordinates in schematic mm. Useful for zooming into a specific area to inspect wiring or layout.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
-      x1: z.number().describe("Left X coordinate of the region in mm"),
-      y1: z.number().describe("Top Y coordinate of the region in mm"),
-      x2: z.number().describe("Right X coordinate of the region in mm"),
-      y2: z.number().describe("Bottom Y coordinate of the region in mm"),
-      format: z.enum(["png", "svg"]).optional().describe("Output image format (default: png)"),
-      width: z.number().optional().describe("Output image width in pixels (default: 800)"),
-      height: z.number().optional().describe("Output image height in pixels (default: 600)"),
+      description:
+        "Export a cropped region of the schematic as an image (PNG or SVG). Specify bounding box coordinates in schematic mm. Useful for zooming into a specific area to inspect wiring or layout.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+        x1: z.number().describe("Left X coordinate of the region in mm"),
+        y1: z.number().describe("Top Y coordinate of the region in mm"),
+        x2: z.number().describe("Right X coordinate of the region in mm"),
+        y2: z.number().describe("Bottom Y coordinate of the region in mm"),
+        format: z.enum(["png", "svg"]).optional().describe("Output image format (default: png)"),
+        width: z.number().optional().describe("Output image width in pixels (default: 800)"),
+        height: z.number().optional().describe("Output image height in pixels (default: 600)"),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -1656,17 +1751,20 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Find overlapping elements
-  server.tool(
+  server.registerTool(
     "find_overlapping_elements",
-    "Detect spatially overlapping symbols, wires, and labels in the schematic. Finds duplicate power symbols at the same position, collinear overlapping wires, and labels stacked on top of each other.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
-      tolerance: z
-        .number()
-        .optional()
-        .describe(
-          "Distance threshold in mm for label proximity and wire collinearity checks. Symbol overlap uses bounding-box intersection. (default: 0.5)",
-        ),
+      description:
+        "Detect spatially overlapping symbols, wires, and labels in the schematic. Finds duplicate power symbols at the same position, collinear overlapping wires, and labels stacked on top of each other.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+        tolerance: z
+          .number()
+          .optional()
+          .describe(
+            "Distance threshold in mm for label proximity and wire collinearity checks. Symbol overlap uses bounding-box intersection. (default: 0.5)",
+          ),
+      }),
     },
     async (args: { schematicPath: string; tolerance?: number }) => {
       const result = await callKicadScript("find_overlapping_elements", args);
@@ -1706,15 +1804,18 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Get elements in a region
-  server.tool(
+  server.registerTool(
     "get_elements_in_region",
-    "List all symbols, wires, and labels within a rectangular region of the schematic. Useful for understanding what is in a specific area before modifying it.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
-      x1: z.number().describe("Left X coordinate of the region in mm"),
-      y1: z.number().describe("Top Y coordinate of the region in mm"),
-      x2: z.number().describe("Right X coordinate of the region in mm"),
-      y2: z.number().describe("Bottom Y coordinate of the region in mm"),
+      description:
+        "List all symbols, wires, and labels within a rectangular region of the schematic. Useful for understanding what is in a specific area before modifying it.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+        x1: z.number().describe("Left X coordinate of the region in mm"),
+        y1: z.number().describe("Top Y coordinate of the region in mm"),
+        x2: z.number().describe("Right X coordinate of the region in mm"),
+        y2: z.number().describe("Bottom Y coordinate of the region in mm"),
+      }),
     },
     async (args: { schematicPath: string; x1: number; y1: number; x2: number; y2: number }) => {
       const result = await callKicadScript("get_elements_in_region", args);
@@ -1757,11 +1858,14 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Find wires crossing symbols
-  server.tool(
+  server.registerTool(
     "find_wires_crossing_symbols",
-    "Find all wires that cross over component symbol bodies. Wires passing over symbols are unacceptable in schematics — they indicate routing mistakes where a wire was drawn across a component instead of around it.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+      description:
+        "Find all wires that cross over component symbol bodies. Wires passing over symbols are unacceptable in schematics — they indicate routing mistakes where a wire was drawn across a component instead of around it.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+      }),
     },
     async (args: { schematicPath: string }) => {
       const result = await callKicadScript("find_wires_crossing_symbols", args);
@@ -1783,14 +1887,18 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // List floating net labels
-  server.tool(
+
+  server.registerTool(
     "list_floating_labels",
-    "Returns all net labels in the schematic that are not connected to any component pin. " +
-      "A label is 'floating' when no component pin falls on the wire-network reachable from the " +
-      "label's position. Floating labels indicate misplaced or off-grid labels that cause ERC errors. " +
-      "Does not require the KiCAD UI to be running.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+      description:
+        "Returns all net labels in the schematic that are not connected to any component pin. " +
+        "A label is 'floating' when no component pin falls on the wire-network reachable from the " +
+        "label's position. Floating labels indicate misplaced or off-grid labels that cause ERC errors. " +
+        "Does not require the KiCAD UI to be running.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+      }),
     },
     async (args: { schematicPath: string }) => {
       const result = await callKicadScript("list_floating_labels", args);
@@ -1815,13 +1923,17 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Find orphaned wires
-  server.tool(
+
+  server.registerTool(
     "find_orphaned_wires",
-    "Find wire segments with at least one dangling endpoint — not connected to a component pin, " +
-      "net label, or another wire. Orphaned wires cause ERC 'wire end unconnected' errors. " +
-      "Does not require the KiCad UI to be running.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+      description:
+        "Find wire segments with at least one dangling endpoint — not connected to a component pin, " +
+        "net label, or another wire. Orphaned wires cause ERC 'wire end unconnected' errors. " +
+        "Does not require the KiCad UI to be running.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+      }),
     },
     async (args: { schematicPath: string }) => {
       const result = await callKicadScript("find_orphaned_wires", args);
@@ -1847,29 +1959,33 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Snap schematic elements to grid
-  server.tool(
+
+  server.registerTool(
     "snap_to_grid",
-    "Snap schematic element coordinates to the nearest grid point. " +
-      "KiCAD uses exact integer matching for connectivity, so off-grid coordinates cause wires " +
-      "that look connected to fail ERC checks. " +
-      "Modifies the .kicad_sch file in place. Does not require the KiCAD UI to be running.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
-      gridSize: z
-        .number()
-        .optional()
-        .describe(
-          "Grid spacing in mm (default: 1.27 mm = 50 mil, the KiCad connection grid; " +
-            "do NOT use 2.54 — snapping to a 100 mil grid moves pins off their 50 mil " +
-            "positions and breaks connectivity)",
-        ),
-      elements: z
-        .array(z.enum(["wires", "junctions", "labels", "components"]))
-        .optional()
-        .describe(
-          'Element types to snap (default: ["wires", "junctions", "labels"]). ' +
-            '"components" is opt-in — moving a component without re-routing wires creates new mismatches.',
-        ),
+      description:
+        "Snap schematic element coordinates to the nearest grid point. " +
+        "KiCAD uses exact integer matching for connectivity, so off-grid coordinates cause wires " +
+        "that look connected to fail ERC checks. " +
+        "Modifies the .kicad_sch file in place. Does not require the KiCAD UI to be running.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+        gridSize: z
+          .number()
+          .optional()
+          .describe(
+            "Grid spacing in mm (default: 1.27 mm = 50 mil, the KiCad connection grid; " +
+              "do NOT use 2.54 — snapping to a 100 mil grid moves pins off their 50 mil " +
+              "positions and breaks connectivity)",
+          ),
+        elements: z
+          .array(z.enum(["wires", "junctions", "labels", "components"]))
+          .optional()
+          .describe(
+            'Element types to snap (default: ["wires", "junctions", "labels"]). ' +
+              '"components" is opt-in — moving a component without re-routing wires creates new mismatches.',
+          ),
+      }),
     },
     async (args: { schematicPath: string; gridSize?: number; elements?: string[] }) => {
       const result = await callKicadScript("snap_to_grid", args);
@@ -1883,23 +1999,30 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Off-grid geometry lint (report + safe surgical snap)
-  server.tool(
+
+  server.registerTool(
     "lint_offgrid",
-    "Report every off-grid connection-relevant coordinate in a schematic — wire/bus " +
-      "endpoints, symbol origins, label/junction/no_connect anchors — and optionally snap " +
-      "them to the nearest grid point (fix: true). KiCad's connection grid is fixed at " +
-      "50 mil (1.27 mm) and junction placement uses exact matching, so a single off-grid " +
-      "endpoint can poison junction placement for a whole sheet. Unlike snap_to_grid " +
-      "(whole-file rewrite), fixes here are byte-exact text splices that preserve file " +
-      "formatting; (lib_symbols) content and property field positions are never touched. " +
-      "Offenders more than 0.5 mm off-grid are reported as NEEDS HUMAN and never auto-snapped.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
-      fix: z.boolean().optional().describe("Snap offenders in place (default false: report only)"),
-      gridSize: z
-        .number()
-        .optional()
-        .describe("Grid spacing in mm (default: 1.27 mm = 50 mil, the KiCad connection grid)"),
+      description:
+        "Report every off-grid connection-relevant coordinate in a schematic — wire/bus " +
+        "endpoints, symbol origins, label/junction/no_connect anchors — and optionally snap " +
+        "them to the nearest grid point (fix: true). KiCad's connection grid is fixed at " +
+        "50 mil (1.27 mm) and junction placement uses exact matching, so a single off-grid " +
+        "endpoint can poison junction placement for a whole sheet. Unlike snap_to_grid " +
+        "(whole-file rewrite), fixes here are byte-exact text splices that preserve file " +
+        "formatting; (lib_symbols) content and property field positions are never touched. " +
+        "Offenders more than 0.5 mm off-grid are reported as NEEDS HUMAN and never auto-snapped.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
+        fix: z
+          .boolean()
+          .optional()
+          .describe("Snap offenders in place (default false: report only)"),
+        gridSize: z
+          .number()
+          .optional()
+          .describe("Grid spacing in mm (default: 1.27 mm = 50 mil, the KiCad connection grid)"),
+      }),
     },
     async (args: { schematicPath: string; fix?: boolean; gridSize?: number }) => {
       const result = await callKicadScript("lint_offgrid", args);
@@ -1928,15 +2051,18 @@ edit_schematic_component and set its value to an empty string.`,
     },
   );
 
-  server.tool(
+  server.registerTool(
     "get_net_at_point",
-    "Returns the net name at a given (x, y) coordinate in a schematic, or null if no net label " +
-      "or wire endpoint is present at that position. Faster than get_pin_net when you only need " +
-      "the net name at a known coordinate and don't need pin traversal.",
     {
-      schematicPath: z.string().describe("Path to the schematic file (.kicad_sch)"),
-      x: z.number().describe("X coordinate in mm"),
-      y: z.number().describe("Y coordinate in mm"),
+      description:
+        "Returns the net name at a given (x, y) coordinate in a schematic, or null if no net label " +
+        "or wire endpoint is present at that position. Faster than get_pin_net when you only need " +
+        "the net name at a known coordinate and don't need pin traversal.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the schematic file (.kicad_sch)"),
+        x: z.number().describe("X coordinate in mm"),
+        y: z.number().describe("Y coordinate in mm"),
+      }),
     },
     async (args: { schematicPath: string; x: number; y: number }) => {
       const result = await callKicadScript("get_net_at_point", args);
@@ -1969,23 +2095,29 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Add hierarchical label to a sub-sheet
-  server.tool(
+
+  server.registerTool(
     "add_schematic_hierarchical_label",
-    "Add a hierarchical label (sheet interface port) to a sub-sheet schematic. " +
-      "Hierarchical labels are the connection points that link a sub-sheet to its " +
-      "parent via sheet pins. The label text must exactly match the corresponding " +
-      "sheet pin name.",
     {
-      schematicPath: z.string().describe("Path to the sub-sheet .kicad_sch file"),
-      text: z.string().describe("Label text (e.g. 'SD_CLK') — must match the sheet pin name"),
-      position: z.array(z.number()).length(2).describe("Position [x, y] in mm"),
-      shape: z
-        .enum(["input", "output", "bidirectional"])
-        .describe("Signal direction from the sub-sheet's perspective"),
-      orientation: z
-        .number()
-        .optional()
-        .describe("Rotation in degrees: 0=label points right, 180=label points left (default: 0)"),
+      description:
+        "Add a hierarchical label (sheet interface port) to a sub-sheet schematic. " +
+        "Hierarchical labels are the connection points that link a sub-sheet to its " +
+        "parent via sheet pins. The label text must exactly match the corresponding " +
+        "sheet pin name.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the sub-sheet .kicad_sch file"),
+        text: z.string().describe("Label text (e.g. 'SD_CLK') — must match the sheet pin name"),
+        position: z.array(z.number()).length(2).describe("Position [x, y] in mm"),
+        shape: z
+          .enum(["input", "output", "bidirectional"])
+          .describe("Signal direction from the sub-sheet's perspective"),
+        orientation: z
+          .number()
+          .optional()
+          .describe(
+            "Rotation in degrees: 0=label points right, 180=label points left (default: 0)",
+          ),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -2017,17 +2149,21 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // List free-form text annotations in schematic
-  server.tool(
+
+  server.registerTool(
     "list_schematic_texts",
-    "List all free-form text annotations (notes, headings, documentation strings) in the schematic. " +
-      "Returns position, angle, font size, bold/italic flags, and justification for each text element. " +
-      "Optionally filter by a substring match on the text content.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      text: z
-        .string()
-        .optional()
-        .describe("Case-insensitive substring filter — only return texts containing this string"),
+      description:
+        "List all free-form text annotations (notes, headings, documentation strings) in the schematic. " +
+        "Returns position, angle, font size, bold/italic flags, and justification for each text element. " +
+        "Optionally filter by a substring match on the text content.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        text: z
+          .string()
+          .optional()
+          .describe("Case-insensitive substring filter — only return texts containing this string"),
+      }),
     },
     async (args: { schematicPath: string; text?: string }) => {
       const result = await callKicadScript("list_schematic_texts", args);
@@ -2069,27 +2205,31 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Add free-form text annotation to schematic
-  server.tool(
+
+  server.registerTool(
     "add_schematic_text",
-    "Add a free-form text annotation to the schematic. " +
-      "Use this to add notes, labels, section headings, or documentation strings " +
-      "directly on the schematic canvas. Unlike net labels, text annotations have " +
-      "no electrical significance.",
     {
-      schematicPath: z.string().describe("Path to the .kicad_sch file"),
-      text: z.string().describe("Text content to display"),
-      position: z
-        .array(z.number())
-        .length(2)
-        .describe("Position [x, y] in schematic mm coordinates"),
-      angle: z.number().optional().describe("Rotation angle in degrees (default: 0)"),
-      fontSize: z.number().optional().describe("Font size in mm (default: 1.27)"),
-      bold: z.boolean().optional().describe("Bold text (default: false)"),
-      italic: z.boolean().optional().describe("Italic text (default: false)"),
-      justify: z
-        .enum(["left", "center", "right"])
-        .optional()
-        .describe("Horizontal text justification (default: left)"),
+      description:
+        "Add a free-form text annotation to the schematic. " +
+        "Use this to add notes, labels, section headings, or documentation strings " +
+        "directly on the schematic canvas. Unlike net labels, text annotations have " +
+        "no electrical significance.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the .kicad_sch file"),
+        text: z.string().describe("Text content to display"),
+        position: z
+          .array(z.number())
+          .length(2)
+          .describe("Position [x, y] in schematic mm coordinates"),
+        angle: z.number().optional().describe("Rotation angle in degrees (default: 0)"),
+        fontSize: z.number().optional().describe("Font size in mm (default: 1.27)"),
+        bold: z.boolean().optional().describe("Bold text (default: false)"),
+        italic: z.boolean().optional().describe("Italic text (default: false)"),
+        justify: z
+          .enum(["left", "center", "right"])
+          .optional()
+          .describe("Horizontal text justification (default: left)"),
+      }),
     },
     async (args: {
       schematicPath: string;
@@ -2125,28 +2265,32 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   // Add sheet pin to a sheet block on the parent schematic
-  server.tool(
+
+  server.registerTool(
     "add_sheet_pin",
-    "Add a pin to a sheet symbol block on the parent schematic. Sheet pins are the " +
-      "parent-side connection points that correspond to hierarchical labels in the " +
-      "sub-sheet. The pinName must exactly match a hierarchical_label in the sub-sheet.",
     {
-      schematicPath: z.string().describe("Path to the PARENT .kicad_sch file"),
-      sheetName: z
-        .string()
-        .describe("Sheet name as it appears in the Sheetname property (e.g. 'Storage')"),
-      pinName: z.string().describe("Pin name — must match a hierarchical_label in the sub-sheet"),
-      pinType: z
-        .enum(["input", "output", "bidirectional"])
-        .describe("Signal direction (should match the sub-sheet hierarchical label shape)"),
-      position: z
-        .array(z.number())
-        .length(2)
-        .describe("Pin position [x, y] in mm — must be on the sheet block boundary"),
-      orientation: z
-        .number()
-        .optional()
-        .describe("Pin orientation: 0=right edge of sheet box, 180=left edge (default: 0)"),
+      description:
+        "Add a pin to a sheet symbol block on the parent schematic. Sheet pins are the " +
+        "parent-side connection points that correspond to hierarchical labels in the " +
+        "sub-sheet. The pinName must exactly match a hierarchical_label in the sub-sheet.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the PARENT .kicad_sch file"),
+        sheetName: z
+          .string()
+          .describe("Sheet name as it appears in the Sheetname property (e.g. 'Storage')"),
+        pinName: z.string().describe("Pin name — must match a hierarchical_label in the sub-sheet"),
+        pinType: z
+          .enum(["input", "output", "bidirectional"])
+          .describe("Signal direction (should match the sub-sheet hierarchical label shape)"),
+        position: z
+          .array(z.number())
+          .length(2)
+          .describe("Pin position [x, y] in mm — must be on the sheet block boundary"),
+        orientation: z
+          .number()
+          .optional()
+          .describe("Pin orientation: 0=right edge of sheet box, 180=left edge (default: 0)"),
+      }),
     },
     async (args: {
       schematicPath: string;

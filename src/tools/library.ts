@@ -2,20 +2,21 @@
  * Library tools for KiCAD MCP server
  * Provides access to KiCAD footprint libraries and symbols
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 export function registerLibraryTools(server: McpServer, callKicadScript: Function) {
   // List available footprint libraries
-  server.tool(
+  server.registerTool(
     "list_libraries",
-    "List all available KiCAD footprint libraries",
     {
-      search_paths: z
-        .array(z.string())
-        .optional()
-        .describe("Optional additional search paths for libraries"),
+      description: "List all available KiCAD footprint libraries",
+      inputSchema: z.object({
+        search_paths: z
+          .array(z.string())
+          .optional()
+          .describe("Optional additional search paths for libraries"),
+      }),
     },
     async (args: { search_paths?: string[] }) => {
       const result = await callKicadScript("list_libraries", args);
@@ -41,13 +42,15 @@ export function registerLibraryTools(server: McpServer, callKicadScript: Functio
   );
 
   // Search for footprints across all libraries
-  server.tool(
+  server.registerTool(
     "search_footprints",
-    "Search for footprints matching a pattern across all libraries",
     {
-      search_term: z.string().describe("Search term or pattern to match footprint names"),
-      library: z.string().optional().describe("Optional specific library to search in"),
-      limit: z.number().optional().default(50).describe("Maximum number of results to return"),
+      description: "Search for footprints matching a pattern across all libraries",
+      inputSchema: z.object({
+        search_term: z.string().describe("Search term or pattern to match footprint names"),
+        library: z.string().optional().describe("Optional specific library to search in"),
+        limit: z.number().optional().default(50).describe("Maximum number of results to return"),
+      }),
     },
     async (args: { search_term: string; library?: string; limit?: number }) => {
       const result = await callKicadScript("search_footprints", {
@@ -83,13 +86,15 @@ export function registerLibraryTools(server: McpServer, callKicadScript: Functio
   );
 
   // List footprints in a specific library
-  server.tool(
+  server.registerTool(
     "list_library_footprints",
-    "List all footprints in a specific KiCAD library",
     {
-      library_name: z.string().describe("Name of the library to list footprints from"),
-      filter: z.string().optional().describe("Optional filter pattern for footprint names"),
-      limit: z.number().optional().default(100).describe("Maximum number of footprints to list"),
+      description: "List all footprints in a specific KiCAD library",
+      inputSchema: z.object({
+        library_name: z.string().describe("Name of the library to list footprints from"),
+        filter: z.string().optional().describe("Optional filter pattern for footprint names"),
+        limit: z.number().optional().default(100).describe("Maximum number of footprints to list"),
+      }),
     },
     async (args: { library_name: string; filter?: string; limit?: number }) => {
       const result = await callKicadScript("list_library_footprints", args);
@@ -116,12 +121,14 @@ export function registerLibraryTools(server: McpServer, callKicadScript: Functio
   );
 
   // Get detailed information about a specific footprint
-  server.tool(
+  server.registerTool(
     "get_footprint_info",
-    "Get detailed information about a specific footprint",
     {
-      library_name: z.string().describe("Name of the library containing the footprint"),
-      footprint_name: z.string().describe("Name of the footprint to get information about"),
+      description: "Get detailed information about a specific footprint",
+      inputSchema: z.object({
+        library_name: z.string().describe("Name of the library containing the footprint"),
+        footprint_name: z.string().describe("Name of the footprint to get information about"),
+      }),
     },
     async (args: { library_name: string; footprint_name: string }) => {
       const result = await callKicadScript("get_footprint_info", args);

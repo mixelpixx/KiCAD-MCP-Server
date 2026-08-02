@@ -4,8 +4,7 @@
  * Guides Claude in creating and editing KiCAD footprints (.kicad_mod)
  * using the create_footprint, edit_footprint_pad, and list_footprint_libraries tools.
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { logger } from "../logger.js";
 
@@ -15,15 +14,17 @@ export function registerFootprintPrompts(server: McpServer): void {
   // ------------------------------------------------------
   // Create Footprint Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "create_footprint_guide",
     {
-      component: z
-        .string()
-        .describe(
-          "Component description, e.g. 'SOT-23 NPN transistor' or '2-pin JST XH 2.5mm connector'",
-        ),
-      libraryPath: z.string().optional().describe("Target .pretty library path (optional)"),
+      argsSchema: z.object({
+        component: z
+          .string()
+          .describe(
+            "Component description, e.g. 'SOT-23 NPN transistor' or '2-pin JST XH 2.5mm connector'",
+          ),
+        libraryPath: z.string().optional().describe("Target .pretty library path (optional)"),
+      }),
     },
     () => ({
       messages: [
@@ -101,10 +102,12 @@ Now create the footprint for: {{component}}`,
   // ------------------------------------------------------
   // Footprint IPC Checklist Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "footprint_ipc_checklist",
     {
-      footprintPath: z.string().describe("Path to the .kicad_mod file to review"),
+      argsSchema: z.object({
+        footprintPath: z.string().describe("Path to the .kicad_mod file to review"),
+      }),
     },
     () => ({
       messages: [

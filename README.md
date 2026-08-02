@@ -15,7 +15,7 @@ https://github.com/mixelpixx/KiCAD-MCP-Server/discussions/73
 
 # KiCAD MCP Server
 
-A Model Context Protocol (MCP) server that enables AI assistants like Claude to interact with KiCAD for PCB design automation. Built on the MCP 2025-06-18 specification, this server provides comprehensive tool schemas and real-time project state access for intelligent PCB design workflows.
+A Model Context Protocol (MCP) server that enables AI assistants like Claude to interact with KiCAD for PCB design automation. It serves both MCP 2026-07-28 and legacy 2025 clients over STDIO, with comprehensive tool schemas and real-time project state access for intelligent PCB design workflows.
 
 ## Overview
 
@@ -31,7 +31,7 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 - Custom footprint and symbol creation tools
 - JLCPCB parts integration with 2.5M+ component catalog and local library search
 - Datasheet enrichment via LCSC
-- Full MCP 2025-06-18 protocol compliance
+- MCP 2026-07-28 support with automatic legacy-client compatibility
 - Cross-platform support (Linux, Windows, macOS)
 - Real-time KiCAD UI integration via IPC API (experimental)
 - Comprehensive error handling and logging
@@ -479,10 +479,16 @@ Access project state without executing tools:
 
 ### Protocol Compliance
 
-- Updated to MCP SDK 1.21.0 (latest)
+- Updated to the split TypeScript SDK v2 packages and Zod 4
+- Supports MCP 2026-07-28 discovery plus the legacy initialization handshake
+- Cache hints for tool, prompt, and resource catalogues
+- Optional explicit `projectHandle` validation for project-bound tools
 - Full JSON-RPC 2.0 support
 - Proper capability negotiation
 - Standards-compliant error codes
+
+See [MCP 2026-07-28 Migration](docs/MCP_2026_MIGRATION.md) for compatibility,
+state-handling, and verification details.
 
 ## Available Tools
 
@@ -1360,9 +1366,11 @@ How many Basic parts are available?
 
 ### MCP Protocol Layer
 
-- **JSON-RPC 2.0 Transport:** Bi-directional communication via STDIO
-- **Protocol Version:** MCP 2025-06-18
-- **Capabilities:** Tools (122), Resources (8)
+- **JSON-RPC 2.0 Transport:** Request/response communication via STDIO
+- **Protocol Versions:** MCP 2026-07-28 plus legacy 2025 negotiation
+- **Capabilities:** Tools (221 advertised; 146 indexed), Resources (8)
+- **State Safety:** Optional opaque `projectHandle` on project-bound tools
+- **Caching:** Private cache hints on catalogue and resource responses
 - **Tool Router:** Intelligent discovery system with 13 categories
 - **Error Handling:** Standard JSON-RPC error codes
 
@@ -1530,7 +1538,7 @@ See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix a
 - Datasheet enrichment via LCSC
 - Freerouting autorouter integration (Java, Docker, Podman)
 - UI auto-launch and management
-- Full MCP 2025-06-18 protocol compliance
+- MCP 2026-07-28 support with automatic legacy-client compatibility
 
 **IPC Backend (Experimental):**
 

@@ -9,6 +9,14 @@
 
 ## Completed Milestones
 
+### Unreleased - MCP 2026 Migration (August 2026)
+
+- [x] TypeScript SDK v2 and Zod 4 migration
+- [x] MCP 2026-07-28 discovery and stateless request envelope support
+- [x] Legacy 2025 STDIO compatibility
+- [x] Cache hints for catalogue and resource responses
+- [x] Explicit, backward-compatible project handles
+
 ### v1.0.0 - Core Foundation (October 2025)
 
 - [x] MCP protocol implementation (JSON-RPC 2.0, MCP 2025-06-18)

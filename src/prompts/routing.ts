@@ -4,8 +4,7 @@
  * These prompts guide the LLM in providing assistance with routing-related tasks
  * in KiCAD PCB design.
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { logger } from "../logger.js";
 
@@ -20,14 +19,16 @@ export function registerRoutingPrompts(server: McpServer): void {
   // ------------------------------------------------------
   // Routing Strategy Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "routing_strategy",
     {
-      board_info: z
-        .string()
-        .describe(
-          "Information about the PCB board, including dimensions, layer stack-up, and components",
-        ),
+      argsSchema: z.object({
+        board_info: z
+          .string()
+          .describe(
+            "Information about the PCB board, including dimensions, layer stack-up, and components",
+          ),
+      }),
     },
     () => ({
       messages: [
@@ -77,14 +78,16 @@ Provide a comprehensive routing strategy that addresses these aspects, with spec
   // ------------------------------------------------------
   // Differential Pair Routing Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "differential_pair_routing",
     {
-      differential_pairs: z
-        .string()
-        .describe(
-          "Information about the differential pairs to be routed, including signal names, source and destination components, and speed/frequency requirements",
-        ),
+      argsSchema: z.object({
+        differential_pairs: z
+          .string()
+          .describe(
+            "Information about the differential pairs to be routed, including signal names, source and destination components, and speed/frequency requirements",
+          ),
+      }),
     },
     () => ({
       messages: [
@@ -133,14 +136,16 @@ Based on the provided information, suggest specific routing approaches for these
   // ------------------------------------------------------
   // High-Speed Routing Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "high_speed_routing",
     {
-      high_speed_signals: z
-        .string()
-        .describe(
-          "Information about the high-speed signals to be routed, including signal names, source and destination components, and speed/frequency requirements",
-        ),
+      argsSchema: z.object({
+        high_speed_signals: z
+          .string()
+          .describe(
+            "Information about the high-speed signals to be routed, including signal names, source and destination components, and speed/frequency requirements",
+          ),
+      }),
     },
     () => ({
       messages: [
@@ -190,14 +195,16 @@ Based on the provided information, suggest specific routing approaches for these
   // ------------------------------------------------------
   // Power Distribution Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "power_distribution",
     {
-      power_requirements: z
-        .string()
-        .describe(
-          "Information about the power requirements, including voltage rails, current needs, and components requiring power",
-        ),
+      argsSchema: z.object({
+        power_requirements: z
+          .string()
+          .describe(
+            "Information about the power requirements, including voltage rails, current needs, and components requiring power",
+          ),
+      }),
     },
     () => ({
       messages: [
@@ -247,14 +254,16 @@ Based on the provided information, suggest a comprehensive power distribution st
   // ------------------------------------------------------
   // Via Usage Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "via_usage",
     {
-      board_info: z
-        .string()
-        .describe(
-          "Information about the PCB board, including layer count, thickness, and design requirements",
-        ),
+      argsSchema: z.object({
+        board_info: z
+          .string()
+          .describe(
+            "Information about the PCB board, including layer count, thickness, and design requirements",
+          ),
+      }),
     },
     () => ({
       messages: [

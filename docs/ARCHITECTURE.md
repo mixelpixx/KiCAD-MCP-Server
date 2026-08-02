@@ -109,7 +109,7 @@ KiCAD-MCP-Server/
 
 ### Server Startup (`src/server.ts`)
 
-1. Creates an MCP server instance
+1. Creates an MCP server instance for the connection's negotiated protocol era
 2. Registers all tools from each tool file (registerProjectTools, registerBoardTools, etc.)
 3. Registers resources and prompts
 4. Starts the STDIO transport for MCP communication
@@ -125,10 +125,12 @@ Each tool file exports a `register*Tools(server, callKicadScript)` function that
 Example from `src/tools/project.ts`:
 
 ```typescript
-server.tool(
+server.registerTool(
   "create_project",
-  "Create a new KiCAD project",
-  { name: z.string(), path: z.string() },
+  {
+    description: "Create a new KiCAD project",
+    inputSchema: z.object({ name: z.string(), path: z.string() }),
+  },
   async (args) => {
     const result = await callKicadScript("create_project", args);
     return { content: [{ type: "text", text: JSON.stringify(result) }] };
@@ -209,15 +211,17 @@ Schematic manipulation uses a different stack than PCB operations:
 
 ### Step 1: Define the TypeScript Schema
 
-Create or edit a file in `src/tools/`. Register the tool with `server.tool()`:
+Create or edit a file in `src/tools/`. Register the tool with `server.registerTool()`:
 
 ```typescript
-server.tool(
+server.registerTool(
   "my_new_tool",
-  "Description of what the tool does",
   {
-    param1: z.string().describe("Description of param1"),
-    param2: z.number().optional().describe("Optional param2"),
+    description: "Description of what the tool does",
+    inputSchema: z.object({
+      param1: z.string().describe("Description of param1"),
+      param2: z.number().optional().describe("Optional param2"),
+    }),
   },
   async (args) => {
     const result = await callKicadScript("my_new_tool", args);

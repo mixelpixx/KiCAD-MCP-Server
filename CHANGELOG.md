@@ -4,6 +4,21 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### MCP 2026-07-28 Migration
+
+- Replaced the monolithic `@modelcontextprotocol/sdk` v1 dependency with the
+  split `@modelcontextprotocol/server` v2 package and upgraded schemas to Zod 4.
+- The STDIO entrypoint now serves MCP 2026-07-28 through `server/discover`
+  while retaining the legacy 2025 initialization path for existing clients.
+- Added private cache hints for tool, prompt, resource, and resource-template
+  catalogues. Project resources remain short-lived or uncached where their
+  contents can change after a KiCad operation.
+- Project-bound tools accept an optional opaque `projectHandle`. Open/create
+  operations mint the handle, calls validate it before dispatch, and closing a
+  project invalidates it. Omission preserves compatibility with legacy clients.
+- Added unit coverage for project-handle lifecycle and a live dual-protocol
+  verification script (`npm run test:protocol`).
+
 ### Bug Fixes
 
 - **`add_layer` could not add inner copper layers, and corrupted an unrelated
