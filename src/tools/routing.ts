@@ -115,11 +115,18 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
         .object({
           x: z.number(),
           y: z.number(),
-          unit: z.string().optional(),
+          unit: z.enum(["mm", "inch", "mil"]).optional(),
         })
         .describe("Via position"),
-      net: z.string().describe("Net name"),
-      viaType: z.string().optional().describe("Via type (through, blind, buried)"),
+      net: z.string().optional().describe("Net name; omit for an unconnected via"),
+      size: z.number().optional().describe("Via pad diameter (default 0.8 in position units)"),
+      drill: z.number().optional().describe("Via drill diameter (default 0.4 in position units)"),
+      viaType: z
+        .enum(["through", "blind", "buried", "blind_buried", "micro"])
+        .optional()
+        .describe("Via type (default through)"),
+      fromLayer: z.string().optional().describe("Drill start layer (default F.Cu)"),
+      toLayer: z.string().optional().describe("Drill end layer (default B.Cu)"),
     },
     async (args: any) => {
       const result = await callKicadScript("add_via", args);
