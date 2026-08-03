@@ -11,7 +11,9 @@ Covers:
     TestGetWireConnectionsHandlerRefPinMode)
 """
 
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -27,10 +29,32 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 from commands.wire_connectivity import (
     _build_adjacency,
     _find_connected_wires,
+    _load_wire_net_membership,
     _parse_wires,
     _to_iu,
+    check_connectivity,
     get_wire_connections,
 )
+
+# ---------------------------------------------------------------------------
+# File-based helper for functions that need a real .kicad_sch on disk
+# (_load_wire_net_membership / check_connectivity read sexpdata / kicad-skip
+# directly, so a MagicMock schematic object isn't enough for those).
+# ---------------------------------------------------------------------------
+
+_TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "python" / "templates" / "empty.kicad_sch"
+
+
+def _make_temp_schematic(extra_sexp: str = "") -> Path:
+    tmp = Path(tempfile.mkdtemp()) / "test.kicad_sch"
+    shutil.copy(_TEMPLATE_PATH, tmp)
+    if extra_sexp:
+        content = tmp.read_text(encoding="utf-8")
+        idx = content.rfind(")")
+        content = content[:idx] + "\n" + extra_sexp + "\n)"
+        tmp.write_text(content, encoding="utf-8")
+    return tmp
+
 
 # ---------------------------------------------------------------------------
 # Helpers to build minimal mock schematic objects
@@ -137,6 +161,27 @@ class TestHandlerDispatch:
 
         assert "get_wire_connections" in iface.command_routes
         assert callable(iface.command_routes["get_wire_connections"])
+
+    def test_new_schematic_tools_in_routes(self) -> None:
+        with patch("kicad_interface.USE_IPC_BACKEND", False):
+            from kicad_interface import KiCADInterface
+
+            iface = KiCADInterface.__new__(KiCADInterface)
+            iface.board = None
+            iface.project_filename = None
+            iface.use_ipc = False
+            iface.ipc_backend = MagicMock()
+            iface.ipc_board_api = None
+            iface.footprint_library = MagicMock()
+            iface.project_commands = MagicMock()
+            iface.board_commands = MagicMock()
+            iface.component_commands = MagicMock()
+            iface.routing_commands = MagicMock()
+            KiCADInterface.__init__(iface)
+
+        for name in ("get_schematic_symbol_bbox", "check_schematic_connectivity"):
+            assert name in iface.command_routes
+            assert callable(iface.command_routes[name])
 
 
 # ---------------------------------------------------------------------------
@@ -473,6 +518,126 @@ class TestGetWireConnectionsHandlerRefPinMode:
         handler = self._make_handler()
         result = handler({"schematicPath": "/fake/path.kicad_sch", "pin": "3"})
         assert result["success"] is False
+
+
+# ---------------------------------------------------------------------------
+# _load_wire_net_membership / check_connectivity — file-based integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestLoadWireNetMembership:
+    """Test the shared "classify every wire into a net in one pass" primitive."""
+
+    def test_two_separate_labeled_nets(self) -> None:
+        extra = """
+        (label "NET_A" (at 0 0 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl-a"))
+        (label "NET_B" (at 0 50 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl-b"))
+        (wire (pts (xy 0 0) (xy 20 0))
+            (stroke (width 0) (type default))
+            (uuid "w-a"))
+        (wire (pts (xy 0 50) (xy 20 50))
+            (stroke (width 0) (type default))
+            (uuid "w-b"))
+        """
+        tmp = _make_temp_schematic(extra)
+        membership = _load_wire_net_membership(str(tmp))
+        assert len(membership["all_wires"]) == 2
+        # The two wires must land in different components with the right names
+        id_a = membership["wire_net_id"][0]
+        id_b = membership["wire_net_id"][1]
+        assert id_a != id_b
+        names = set(membership["net_names"].values())
+        assert {"NET_A", "NET_B"} <= names
+
+    def test_connected_wires_share_one_net_id(self) -> None:
+        extra = """
+        (label "NET_A" (at 0 0 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl-a"))
+        (wire (pts (xy 0 0) (xy 20 0))
+            (stroke (width 0) (type default))
+            (uuid "w-a1"))
+        (wire (pts (xy 20 0) (xy 20 20))
+            (stroke (width 0) (type default))
+            (uuid "w-a2"))
+        """
+        tmp = _make_temp_schematic(extra)
+        membership = _load_wire_net_membership(str(tmp))
+        assert membership["wire_net_id"][0] == membership["wire_net_id"][1]
+
+    def test_empty_schematic_returns_empty_lists(self) -> None:
+        tmp = _make_temp_schematic()
+        membership = _load_wire_net_membership(str(tmp))
+        assert membership == {"wire_net_id": [], "net_names": {}, "all_wires": [], "wires_mm": []}
+
+
+@pytest.mark.integration
+class TestCheckConnectivity:
+    """Test the fast targeted same-net check behind check_schematic_connectivity."""
+
+    def test_same_net_points_report_true(self) -> None:
+        from commands.schematic import SchematicManager
+
+        extra = """
+        (label "NET_A" (at 0 0 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl-a"))
+        (wire (pts (xy 0 0) (xy 20 0))
+            (stroke (width 0) (type default))
+            (uuid "w-a"))
+        """
+        tmp = _make_temp_schematic(extra)
+        schematic = SchematicManager.load_schematic(str(tmp))
+        result = check_connectivity(schematic, str(tmp), (0, 0), (20, 0))
+        assert result["sameNet"] is True
+        assert result["pointA"]["net"] == "NET_A"
+        assert result["pointB"]["net"] == "NET_A"
+
+    def test_different_net_points_report_false(self) -> None:
+        from commands.schematic import SchematicManager
+
+        extra = """
+        (label "NET_A" (at 0 0 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl-a"))
+        (label "NET_B" (at 0 50 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl-b"))
+        (wire (pts (xy 0 0) (xy 20 0))
+            (stroke (width 0) (type default))
+            (uuid "w-a"))
+        (wire (pts (xy 0 50) (xy 20 50))
+            (stroke (width 0) (type default))
+            (uuid "w-b"))
+        """
+        tmp = _make_temp_schematic(extra)
+        schematic = SchematicManager.load_schematic(str(tmp))
+        result = check_connectivity(schematic, str(tmp), (0, 0), (0, 50))
+        assert result["sameNet"] is False
+        assert result["pointA"]["net"] == "NET_A"
+        assert result["pointB"]["net"] == "NET_B"
+
+    def test_unconnected_point_reports_unresolved(self) -> None:
+        from commands.schematic import SchematicManager
+
+        extra = """
+        (label "NET_A" (at 0 0 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl-a"))
+        (wire (pts (xy 0 0) (xy 20 0))
+            (stroke (width 0) (type default))
+            (uuid "w-a"))
+        """
+        tmp = _make_temp_schematic(extra)
+        schematic = SchematicManager.load_schematic(str(tmp))
+        result = check_connectivity(schematic, str(tmp), (0, 0), (500, 500))
+        assert result["sameNet"] is False
+        assert result["pointB"]["resolved"] is False
 
     def test_get_pin_net_not_in_routes(self) -> None:
         with patch("kicad_interface.USE_IPC_BACKEND", False):
