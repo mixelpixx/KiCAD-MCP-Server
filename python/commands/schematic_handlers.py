@@ -246,6 +246,11 @@ class SchematicHandlersMixin:
             x = component.get("x", 0)
             y = component.get("y", 0)
             unit = component.get("unit", 1)
+            # The TS tool layer always sends these two (defaulting to 0/False);
+            # not reading them here silently ignored the documented `angle` and
+            # `mirrorY` arguments, so every symbol was placed unrotated.
+            angle = component.get("angle", 0)
+            mirror_y = component.get("mirrorY", False)
 
             # Derive project path from schematic path for project-local library resolution.
             # Walk up from the schematic file to find the directory that owns the project
@@ -270,6 +275,8 @@ class SchematicHandlersMixin:
                 x=x,
                 y=y,
                 unit=unit,
+                angle=angle,
+                mirror_y=mirror_y,
                 project_path=derived_project_path,
             )
 
@@ -2809,11 +2816,18 @@ class SchematicHandlersMixin:
                     except Exception:
                         pass
 
-            # Power symbols (#PWR / #FLG): value property IS the net name; use pin 1 pos
+            # Power symbols (#PWR): value property IS the net name; use pin 1 pos.
+            #
+            # #FLG (PWR_FLAG) is deliberately excluded. Its Value is the literal
+            # string "PWR_FLAG" — a marker for ERC, not a net name. Treating it
+            # as one invents a bogus "PWR_FLAG" net and, worse, stamps that name
+            # onto the flag's pin, from where the BFS below can propagate it over
+            # a real net. A PWR_FLAG takes whatever net it is wired to; it never
+            # names one.
             for sym in getattr(sch, "symbol", None) or []:
                 try:
                     ref = sym.property.Reference.value
-                    if not (ref.startswith("#PWR") or ref.startswith("#FLG")):
+                    if not ref.startswith("#PWR"):
                         continue
                     net_name = sym.property.Value.value
                     if not net_name:
@@ -2865,20 +2879,89 @@ class SchematicHandlersMixin:
                         visited.add(neighbor)
                         queue.append(neighbor)
 
-            # ── 3. Match component pin positions to net names ────────────────
+            # ── 3. Collect real (non-power) symbol pins with their positions ──
+            sym_pins = []  # (ref, lib_id, pin_num, (px, py))
             for sym in getattr(sch, "symbol", None) or []:
                 try:
                     ref = sym.property.Reference.value
                     if ref.startswith("#"):
                         continue
+                    lib_id = sym.lib_id.value if hasattr(sym, "lib_id") else ""
                 except Exception:
                     continue
 
                 pin_positions = pin_locator.get_all_symbol_pins(sch_path, ref)
                 for pin_num, (px, py) in pin_positions.items():
-                    net = nearby_net((px, py), point_net)
-                    if net:
-                        pad_net_map[(ref, pin_num)] = net
+                    sym_pins.append((ref, lib_id, pin_num, (px, py)))
+
+            # ── 3b. Auto-name wire clusters that carry no label ──────────────
+            # A net formed only by a wire between two component pins — no net
+            # label, no power symbol — was named by nothing above. KiCad
+            # synthesises a name for it during F8 ("Net-(D1-A)"); without that
+            # these pads reach the board with no net at all and the connection
+            # is silently dropped from the layout, leaving pads that look placed
+            # but are unroutable.
+            #
+            # Step 2's BFS floods a name across every point of a connected wire
+            # cluster, so a cluster is either wholly named or wholly unnamed —
+            # which is why testing the seed point alone is sufficient here.
+            def _pin_label(lib_id: str, pin_num: str) -> str:
+                """KiCad-style pin token for an auto net name: pin name if the
+                symbol gives it a meaningful one, else PadN."""
+                try:
+                    pins = pin_locator.get_symbol_pins(sch_path, lib_id) or {}
+                    name = (pins.get(pin_num) or {}).get("name", "") or ""
+                    if name and name != "~":
+                        return name
+                except Exception:
+                    pass
+                return f"Pad{pin_num}"
+
+            def _pin_sort_key(item):
+                ref, pin_num, _lib = item
+                try:
+                    return (ref, 0, int(pin_num), "")
+                except (TypeError, ValueError):
+                    return (ref, 1, 0, str(pin_num))
+
+            clustered = set()
+            for seed in sorted(all_wire_pts):
+                if seed in point_net or seed in clustered:
+                    continue
+                cluster = set()
+                stack = [seed]
+                clustered.add(seed)
+                while stack:
+                    cur = stack.pop()
+                    cluster.add(cur)
+                    for neighbor in point_adj[cur]:
+                        if neighbor not in clustered:
+                            clustered.add(neighbor)
+                            stack.append(neighbor)
+
+                members = sorted(
+                    (
+                        (ref, pin_num, lib_id)
+                        for ref, lib_id, pin_num, (px, py) in sym_pins
+                        if snap(px, py) in cluster
+                    ),
+                    key=_pin_sort_key,
+                )
+                # A single pin on a wire stub is not a connection worth naming.
+                if len(members) < 2:
+                    continue
+
+                ref0, pin0, lib0 = members[0]
+                auto_name = f"Net-({ref0}-{_pin_label(lib0, pin0)})"
+                for pt in cluster:
+                    point_net[pt] = auto_name
+                all_net_names.add(auto_name)
+
+            # ── 3c. Match component pin positions to net names ───────────────
+            for ref, _lib_id, pin_num, (px, py) in sym_pins:
+                net = nearby_net((px, py), point_net)
+                if net:
+                    pad_net_map[(ref, pin_num)] = net
 
         logger.info(
             f"_build_hierarchical_pad_net_map: {len(pad_net_map)} pin→net assignments, "
