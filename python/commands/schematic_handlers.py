@@ -1139,6 +1139,26 @@ class SchematicHandlersMixin:
                     )
                     points[-1] = list(coords)
 
+            # Dry-run: report what WOULD happen (symbol crossings, collisions
+            # with wires on a different net) without writing anything. Placed
+            # after pin-snap resolution so the preview reflects the same
+            # resolved endpoints the real write would use.
+            if params.get("dryRun", False):
+                from commands.schematic_analysis import check_candidate_wire
+
+                check_result = check_candidate_wire(Path(schematic_path), points)
+                return {
+                    "success": True,
+                    "dryRun": True,
+                    "resolvedPoints": points,
+                    "snappedInfo": snapped_info,
+                    "wouldCrossSymbols": check_result["crossings"],
+                    "wouldCollideWithNet": check_result["collisions"],
+                    "netConflict": check_result["netConflict"],
+                    "ownNet": check_result["ownNet"],
+                    "wireWritten": False,
+                }
+
             # Extract wire properties
             stroke_width = properties.get("stroke_width", 0)
             stroke_type = properties.get("stroke_type", "default")
@@ -1180,6 +1200,60 @@ class SchematicHandlersMixin:
                 "message": str(e),
                 "errorDetails": traceback.format_exc(),
             }
+
+    def _handle_connect_schematic_pins(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Automatically route an orthogonal wire path connecting 2+ pins"""
+        logger.info("Auto-routing schematic pin connection")
+        try:
+            from pathlib import Path
+
+            from commands.schematic_router import RouteError, route_multi_pin
+
+            schematic_path = params.get("schematicPath")
+            targets = params.get("targets")
+            net_name = params.get("netName")
+            dry_run = params.get("dryRun", False)
+
+            if not schematic_path:
+                return {"success": False, "message": "Missing required parameter: schematicPath"}
+            if not targets or not isinstance(targets, list) or len(targets) < 2:
+                return {
+                    "success": False,
+                    "message": "Missing required parameter: targets (array of 2+ {reference, pin})",
+                }
+            for t in targets:
+                if not isinstance(t, dict) or not t.get("reference") or t.get("pin") is None:
+                    return {
+                        "success": False,
+                        "message": "Each target requires 'reference' and 'pin'",
+                    }
+
+            kwargs: Dict[str, Any] = {"net_name": net_name, "dry_run": dry_run}
+            for param_key, kwarg_key in (
+                ("routingGridMm", "routing_grid_mm"),
+                ("searchPaddingMm", "search_padding_mm"),
+                ("bendPenaltyMm", "bend_penalty_mm"),
+            ):
+                if params.get(param_key) is not None:
+                    kwargs[kwarg_key] = params[param_key]
+
+            result = route_multi_pin(Path(schematic_path), targets, **kwargs)
+
+            if result.get("success") and not dry_run:
+                self._reload_kicad_schematic()
+
+            return result
+
+        except RouteError as e:
+            return {"success": False, "message": str(e)}
+        except SchematicLoadError as e:
+            return e.to_response()
+        except Exception as e:
+            logger.error(f"Error auto-routing schematic pins: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e), "errorDetails": traceback.format_exc()}
 
     def _handle_list_schematic_libraries(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """List available symbol libraries"""
@@ -1440,6 +1514,88 @@ class SchematicHandlersMixin:
 
         except Exception as e:
             logger.error(f"Error getting pin locations: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_get_schematic_symbol_bbox(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return absolute-coordinate bounding boxes (body + pins) for reference designators"""
+        logger.info("Getting schematic symbol bounding boxes")
+        try:
+            from pathlib import Path
+
+            from commands.schematic_analysis import get_symbol_bboxes
+
+            schematic_path = params.get("schematicPath")
+            references = params.get("references")
+            margin = params.get("margin", 0.0)
+
+            if not schematic_path:
+                return {"success": False, "message": "Missing required parameter: schematicPath"}
+            if not references or not isinstance(references, list):
+                return {
+                    "success": False,
+                    "message": "Missing required parameter: references (non-empty array)",
+                }
+
+            result = get_symbol_bboxes(Path(schematic_path), references, margin=margin)
+            return {"success": True, **result}
+
+        except Exception as e:
+            logger.error(f"Error getting symbol bounding boxes: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return {"success": False, "message": str(e)}
+
+    def _handle_check_schematic_connectivity(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Fast, targeted check of whether two points/pins are on the same net right now"""
+        logger.info("Checking schematic connectivity between two points")
+        try:
+            from pathlib import Path
+
+            from commands.pin_locator import PinLocator
+            from commands.schematic import SchematicManager
+            from commands.wire_connectivity import check_connectivity
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "Missing required parameter: schematicPath"}
+
+            def _resolve_point(prefix: str):
+                ref = params.get(f"{prefix}Reference")
+                pin = params.get(f"{prefix}Pin")
+                x = params.get(f"{prefix}X")
+                y = params.get(f"{prefix}Y")
+                if ref and pin is not None:
+                    locator = PinLocator()
+                    coords = locator.get_pin_location(Path(schematic_path), ref, str(pin))
+                    if not coords:
+                        return None, f"No pin location found for {ref}/{pin}"
+                    return (coords[0], coords[1]), None
+                if x is not None and y is not None:
+                    return (float(x), float(y)), None
+                return None, (
+                    f"Point '{prefix}' requires either "
+                    f"({prefix}Reference + {prefix}Pin) or ({prefix}X + {prefix}Y)"
+                )
+
+            point_a, err_a = _resolve_point("a")
+            if err_a:
+                return {"success": False, "message": err_a}
+            point_b, err_b = _resolve_point("b")
+            if err_b:
+                return {"success": False, "message": err_b}
+
+            schematic = SchematicManager.load_schematic(str(schematic_path))
+            result = check_connectivity(schematic, str(schematic_path), point_a, point_b)
+            return {"success": True, **result}
+
+        except SchematicLoadError as e:
+            return e.to_response()
+        except Exception as e:
+            logger.error(f"Error checking schematic connectivity: {e}")
             import traceback
 
             logger.error(traceback.format_exc())

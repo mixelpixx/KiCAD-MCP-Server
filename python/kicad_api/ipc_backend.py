@@ -17,6 +17,8 @@ Key Benefits over SWIG:
 import logging
 import os
 import platform
+import re
+import sys
 import threading
 import time
 from pathlib import Path
@@ -220,9 +222,23 @@ class IPCBackend(KiCADBackend):
         if not self.is_connected():
             return None
         try:
-            for doc in self._kicad.get_open_documents():
-                if hasattr(doc, "path") and str(doc.path).endswith(".kicad_pcb"):
-                    return str(doc.path)
+            # kicad-python 0.7+ requires the document type argument and
+            # returns a DocumentSpecifier whose PCB path is split between
+            # ``project.path`` and ``board_filename``.  Older versions
+            # exposed a single ``path`` field, so retain that fallback.
+            from kipy.proto.common.types import DocumentType
+
+            for doc in self._kicad.get_open_documents(DocumentType.DOCTYPE_PCB):
+                legacy_path = getattr(doc, "path", None)
+                if legacy_path and str(legacy_path).endswith(".kicad_pcb"):
+                    return str(legacy_path)
+
+                filename = getattr(doc, "board_filename", "")
+                project = getattr(doc, "project", None)
+                project_path = getattr(project, "path", "") if project else ""
+                if filename:
+                    candidate = Path(filename)
+                    return str(candidate if candidate.is_absolute() else Path(project_path) / candidate)
         except Exception as e:
             logger.debug(f"Could not read open documents via IPC: {e}")
         return None
@@ -267,7 +283,9 @@ class IPCBackend(KiCADBackend):
 
         try:
             # Check for open documents
-            documents = self._kicad.get_open_documents()
+            from kipy.proto.common.types import DocumentType
+
+            documents = self._kicad.get_open_documents(DocumentType.DOCTYPE_PCB)
 
             # Look for matching project
             path_str = str(path)
@@ -352,6 +370,45 @@ class IPCBoardAPI(BoardAPI):
                 raise ConnectionError(f"No board open in KiCAD: {e}")
         return self._board
 
+    @staticmethod
+    def _resolve_board_layer(layer: str, default: str = "F.Cu") -> int:
+        """Resolve a KiCad layer name to its kipy enum value.
+
+        Supports every layer exposed by KiCad 10 (including all inner copper,
+        fabrication, courtyard, user, and drawing layers), plus the common
+        EasyEDA-style ``Top Layer``/``Bottom Layer`` aliases.
+        """
+        from kipy.proto.board.board_types_pb2 import BoardLayer
+
+        aliases = {
+            "top layer": "F.Cu",
+            "bottom layer": "B.Cu",
+            "top silkscreen layer": "F.SilkS",
+            "bottom silkscreen layer": "B.SilkS",
+            "top solder mask layer": "F.Mask",
+            "bottom solder mask layer": "B.Mask",
+            "top paste mask layer": "F.Paste",
+            "bottom paste mask layer": "B.Paste",
+        }
+        canonical = aliases.get(str(layer).strip().casefold(), str(layer).strip())
+        enum_name = canonical if canonical.startswith("BL_") else f"BL_{canonical}"
+        enum_name = enum_name.replace(".", "_").replace("-", "_").replace(" ", "_")
+
+        names = {name.casefold(): name for name in BoardLayer.keys()}
+        resolved = names.get(enum_name.casefold())
+        if resolved:
+            return BoardLayer.Value(resolved)
+
+        fallback_name = f"BL_{default}".replace(".", "_")
+        logger.warning("Unknown board layer '%s'; using %s", layer, default)
+        return BoardLayer.Value(fallback_name)
+
+    @staticmethod
+    def _item_id_value(item: Any) -> str:
+        """Return a plain UUID string from a kipy board item."""
+        item_id = getattr(item, "id", None)
+        return str(getattr(item_id, "value", "") or "")
+
     def begin_transaction(self, description: str = "MCP Operation") -> None:
         """Begin a transaction for grouping operations into a single undo step."""
         board = self._get_board()
@@ -396,7 +453,6 @@ class IPCBoardAPI(BoardAPI):
         try:
             from kipy.board_types import BoardRectangle
             from kipy.geometry import Vector2
-            from kipy.proto.board.board_types_pb2 import BoardLayer
             from kipy.util.units import from_mm
 
             board = self._get_board()
@@ -411,10 +467,10 @@ class IPCBoardAPI(BoardAPI):
 
             # Create board outline rectangle on Edge.Cuts layer
             rect = BoardRectangle()
-            rect.start = Vector2.from_xy(0, 0)
-            rect.end = Vector2.from_xy(w, h)
-            rect.layer = BoardLayer.BL_Edge_Cuts
-            rect.width = from_mm(0.1)  # Standard edge cut width
+            rect.top_left = Vector2.from_xy(0, 0)
+            rect.bottom_right = Vector2.from_xy(w, h)
+            rect.layer = self._resolve_board_layer("Edge.Cuts")
+            rect.attributes.stroke.width = from_mm(0.1)  # Standard edge cut width
 
             # Begin transaction for undo support
             commit = board.begin_commit()
@@ -587,7 +643,7 @@ class IPCBoardAPI(BoardAPI):
                             },
                             "rotation": fp.orientation.degrees if fp.orientation else 0,
                             "layer": str(fp.layer) if hasattr(fp, "layer") else "F.Cu",
-                            "id": str(fp.id) if hasattr(fp, "id") else "",
+                            "id": self._item_id_value(fp),
                             "boundingBox": bbox_data,
                         }
                     )
@@ -616,9 +672,10 @@ class IPCBoardAPI(BoardAPI):
 
         The component appears immediately in the KiCAD UI.
 
-        This method uses a hybrid approach:
-        1. Load the footprint definition from the library using pcbnew (SWIG)
-        2. Place it on the board via IPC for real-time UI updates
+        This method uses pcbnew only to load and serialize a library footprint.
+        The actual board mutation is performed by KiCad's
+        ParseAndCreateItemsFromString IPC command, so the item appears
+        immediately in the open editor and participates in its undo history.
 
         Args:
             reference: Component reference designator (e.g., "R1", "U1")
@@ -630,27 +687,103 @@ class IPCBoardAPI(BoardAPI):
             value: Component value (optional)
         """
         try:
-            # First, try to load the footprint from library using pcbnew SWIG
             loaded_fp = self._load_footprint_from_library(footprint)
 
             if loaded_fp:
-                # We have the footprint from the library - place it via SWIG
-                # then sync to IPC for UI update
                 return self._place_loaded_footprint(
                     loaded_fp, reference, x, y, rotation, layer, value
                 )
-            else:
-                # Fallback: Create a basic placeholder footprint via IPC
-                logger.warning(
-                    f"Could not load footprint '{footprint}' from library, creating placeholder"
-                )
-                return self._place_placeholder_footprint(
-                    reference, footprint, x, y, rotation, layer, value
-                )
+
+            # An empty placeholder is actively harmful in PCB work: it has no
+            # pads and can look like a successfully placed component.  Report
+            # the library resolution failure instead.
+            logger.error(f"Could not load footprint '{footprint}' from any configured library")
+            return False
 
         except Exception as e:
             logger.error(f"Failed to place component: {e}")
             return False
+
+    def _get_project_directory(self) -> Optional[Path]:
+        """Return the directory of the board currently attached to this IPC API."""
+        try:
+            document = self._get_board().document
+            project = getattr(document, "project", None)
+            project_path = getattr(project, "path", "") if project else ""
+            if project_path:
+                path = Path(project_path)
+                return path if path.is_dir() else path.parent
+        except Exception as e:
+            logger.debug(f"Could not determine IPC project directory: {e}")
+        return None
+
+    @staticmethod
+    def _expand_kicad_uri(uri: str, variables: Dict[str, str]) -> Path:
+        """Expand ${VAR} and $(VAR) tokens used in KiCad library tables."""
+        expanded = uri
+        for name, value in variables.items():
+            expanded = expanded.replace(f"${{{name}}}", value).replace(f"$({name})", value)
+        return Path(os.path.expandvars(os.path.expanduser(expanded)))
+
+    def _footprint_library_roots(self) -> List[Path]:
+        """Return existing roots that may contain ``*.pretty`` libraries."""
+        project_dir = self._get_project_directory()
+        install_root = Path(sys.executable).resolve().parent.parent
+        candidates: List[Path] = [
+            install_root / "share" / "kicad" / "footprints",
+            Path(os.environ.get("PROGRAMFILES", r"C:\Program Files"))
+            / "KiCad"
+            / "10.0"
+            / "share"
+            / "kicad"
+            / "footprints",
+            Path.home() / "Documents" / "KiCad" / "10.0" / "footprints",
+        ]
+        configured_root = os.environ.get("KICAD10_FOOTPRINT_DIR")
+        if configured_root:
+            candidates.insert(0, Path(configured_root))
+        if project_dir:
+            candidates.insert(0, project_dir)
+
+        roots: List[Path] = []
+        for candidate in candidates:
+            if str(candidate) and candidate.is_dir() and candidate not in roots:
+                roots.append(candidate)
+        return roots
+
+    def _library_paths_from_tables(self, nickname: str) -> List[Path]:
+        """Resolve a footprint-library nickname from project/global tables."""
+        project_dir = self._get_project_directory()
+        system_root = Path(sys.executable).resolve().parent.parent / "share" / "kicad"
+        variables = dict(os.environ)
+        variables.setdefault("KICAD10_FOOTPRINT_DIR", str(system_root / "footprints"))
+        if project_dir:
+            variables["KIPRJMOD"] = str(project_dir)
+
+        tables: List[Path] = []
+        if project_dir:
+            tables.append(project_dir / "fp-lib-table")
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            tables.append(Path(appdata) / "kicad" / "10.0" / "fp-lib-table")
+
+        resolved: List[Path] = []
+        entry_pattern = re.compile(
+            r'\(lib\s+\(name\s+"([^"]+)"\).*?\(uri\s+"([^"]+)"\)',
+            re.DOTALL,
+        )
+        for table in tables:
+            try:
+                contents = table.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for name, uri in entry_pattern.findall(contents):
+                if name != nickname:
+                    continue
+                path = self._expand_kicad_uri(uri, variables)
+                if path.is_dir() and path not in resolved:
+                    resolved.append(path)
+        return resolved
 
     def _load_footprint_from_library(self, footprint_path: str) -> Any:
         """
@@ -665,37 +798,51 @@ class IPCBoardAPI(BoardAPI):
         try:
             import pcbnew
 
-            # Parse library and footprint name
             if ":" in footprint_path:
                 lib_name, fp_name = footprint_path.split(":", 1)
             else:
-                # Try to find the footprint in all libraries
                 lib_name = None
                 fp_name = footprint_path
 
-            # Get the footprint library table
-            fp_lib_table = pcbnew.GetGlobalFootprintLib()
+            # KiCad 10 removed GetGlobalFootprintLib().  The standalone
+            # pcbnew Python module also has no initialized global library
+            # table, but its file-format plugin can load directly from a
+            # .pretty directory.
+            io = pcbnew.PCB_IO_KICAD_SEXPR()
+            candidate_libraries: List[Path] = []
 
             if lib_name:
-                # Load from specific library
+                direct = Path(lib_name)
+                if direct.is_dir():
+                    candidate_libraries.append(direct)
+                candidate_libraries.extend(self._library_paths_from_tables(lib_name))
+                for root in self._footprint_library_roots():
+                    candidate = root / f"{lib_name}.pretty"
+                    if candidate.is_dir() and candidate not in candidate_libraries:
+                        candidate_libraries.append(candidate)
+            else:
+                for root in self._footprint_library_roots():
+                    candidate_libraries.extend(
+                        path
+                        for path in root.glob("*.pretty")
+                        if (path / f"{fp_name}.kicad_mod").is_file()
+                    )
+
+            for library_path in candidate_libraries:
                 try:
-                    loaded_fp = pcbnew.FootprintLoad(fp_lib_table, lib_name, fp_name)
+                    loaded_fp = io.FootprintLoad(str(library_path), fp_name)
                     if loaded_fp:
-                        logger.info(f"Loaded footprint '{fp_name}' from library '{lib_name}'")
+                        if lib_name:
+                            try:
+                                loaded_fp.SetFPIDAsString(f"{lib_name}:{fp_name}")
+                            except Exception:
+                                pass
+                        logger.info(
+                            f"Loaded footprint '{fp_name}' from '{library_path}'"
+                        )
                         return loaded_fp
                 except Exception as e:
-                    logger.warning(f"Could not load from {lib_name}: {e}")
-            else:
-                # Search all libraries for the footprint
-                lib_names = fp_lib_table.GetLogicalLibs()
-                for lib in lib_names:
-                    try:
-                        loaded_fp = pcbnew.FootprintLoad(fp_lib_table, lib, fp_name)
-                        if loaded_fp:
-                            logger.info(f"Found footprint '{fp_name}' in library '{lib}'")
-                            return loaded_fp
-                    except:
-                        continue
+                    logger.debug(f"Could not load from {library_path}: {e}")
 
             logger.warning(f"Footprint '{footprint_path}' not found in any library")
             return None
@@ -720,41 +867,12 @@ class IPCBoardAPI(BoardAPI):
         """
         Place a loaded pcbnew footprint onto the board.
 
-        Uses SWIG to add the footprint, then notifies for IPC sync.
+        Serializes the SWIG-loaded footprint and creates it through IPC.
         """
         try:
             import pcbnew
 
-            # Get the board file path from IPC to load via pcbnew
             board = self._get_board()
-
-            # Get the pcbnew board instance
-            # We need to get the actual board file path
-            project = board.get_project()
-            board_path = None
-
-            # Try to get the board path from kipy
-            try:
-                docs = self._kicad.get_open_documents()
-                for doc in docs:
-                    if hasattr(doc, "path") and str(doc.path).endswith(".kicad_pcb"):
-                        board_path = str(doc.path)
-                        break
-            except Exception as e:
-                logger.debug(f"Could not get board path from IPC: {e}")
-
-            if board_path and os.path.exists(board_path):
-                # Load board via pcbnew
-                pcb_board = pcbnew.LoadBoard(board_path)
-            else:
-                # Try to get from pcbnew directly
-                pcb_board = pcbnew.GetBoard()
-
-            if not pcb_board:
-                logger.error("Could not get pcbnew board instance")
-                return self._place_placeholder_footprint(
-                    reference, "", x, y, rotation, layer, value
-                )
 
             # Set footprint position and properties
             scale = MM_TO_NM
@@ -773,18 +891,52 @@ class IPCBoardAPI(BoardAPI):
                 if not loaded_fp.IsFlipped():
                     loaded_fp.Flip(loaded_fp.GetPosition(), False)
 
-            # Add to board
-            pcb_board.Add(loaded_fp)
+            # Serialize just this footprint and ask the live editor to parse
+            # and create it.  This is the KiCad IPC equivalent of Paste.
+            formatter = pcbnew.PCB_IO_KICAD_SEXPR()
+            formatter.Format(loaded_fp)
+            footprint_text = formatter.GetStringOutput(True)
 
-            # Save the board so IPC can see the changes
-            with preserve_project_settings(board_path):
-                pcbnew.SaveBoard(board_path, pcb_board)
+            from kipy.proto.common.commands.editor_commands_pb2 import (
+                CreateItemsResponse,
+                ParseAndCreateItemsFromString,
+            )
 
-            # Refresh IPC view
+            command = ParseAndCreateItemsFromString()
+            command.document.CopyFrom(board.document)
+            command.contents = footprint_text
+
+            commit = board.begin_commit()
             try:
-                board.revert()  # Reload from disk to sync IPC
-            except Exception as e:
-                logger.debug(f"Could not refresh IPC board: {e}")
+                response = board.client.send(command, CreateItemsResponse)
+                created = [
+                    result
+                    for result in response.created_items
+                    if getattr(result.status, "code", 0) == 1
+                ]
+                if not created:
+                    errors = [
+                        getattr(result.status, "error_message", "")
+                        for result in response.created_items
+                    ]
+                    board.drop_commit(commit)
+                    # KiCad 10.0.x exposes this command in the protocol but its
+                    # PCB handler is a stub that returns an empty response.
+                    # Fall back to an on-disk insertion followed by a live
+                    # editor reload.  Keep the native path first so this starts
+                    # working transactionally as soon as KiCad implements it.
+                    logger.info(
+                        "ParseAndCreateItemsFromString created no items%s; "
+                        "using save/reload compatibility path",
+                        f": {'; '.join(filter(None, errors))}" if any(errors) else "",
+                    )
+                    return self._place_loaded_footprint_via_reload(
+                        loaded_fp, reference, x, y, rotation, layer, value
+                    )
+                board.push_commit(commit, f"Placed component {reference}")
+            except Exception:
+                board.drop_commit(commit)
+                raise
 
             self._notify(
                 "component_placed",
@@ -805,8 +957,94 @@ class IPCBoardAPI(BoardAPI):
 
         except Exception as e:
             logger.error(f"Error placing loaded footprint: {e}")
-            # Fall back to placeholder
-            return self._place_placeholder_footprint(reference, "", x, y, rotation, layer, value)
+            return False
+
+    def _place_loaded_footprint_via_reload(
+        self,
+        loaded_fp: Any,
+        reference: str,
+        x: float,
+        y: float,
+        rotation: float,
+        layer: str,
+        value: str,
+    ) -> bool:
+        """KiCad 10.0 compatibility path for creating a full footprint.
+
+        KiCad 10.0 advertises ParseAndCreateItemsFromString but its PCB
+        implementation returns an empty response.  Save the live board first,
+        update that exact file with pcbnew, then ask the editor to revert to
+        the just-written state.  This preserves any edits that were in memory
+        before the operation and makes the new component visible immediately.
+        """
+        try:
+            import pcbnew
+
+            board = self._get_board()
+            document = board.document
+            filename = getattr(document, "board_filename", "")
+            project = getattr(document, "project", None)
+            project_path = getattr(project, "path", "") if project else ""
+            board_path = Path(filename)
+            if not board_path.is_absolute():
+                board_path = Path(project_path) / board_path
+            board_path = board_path.resolve()
+
+            if not board_path.is_file():
+                raise FileNotFoundError(f"Open IPC board was not found on disk: {board_path}")
+
+            # Flush every live edit before the file-based insertion.
+            board.save()
+
+            pcb_board = pcbnew.LoadBoard(str(board_path))
+            if pcb_board is None:
+                raise RuntimeError(f"pcbnew could not load board: {board_path}")
+
+            existing_refs = {fp.GetReference() for fp in pcb_board.GetFootprints()}
+            if reference in existing_refs:
+                raise ValueError(f"Component reference already exists: {reference}")
+
+            pcb_board.Add(loaded_fp)
+            with preserve_project_settings(str(board_path)):
+                pcbnew.SaveBoard(str(board_path), pcb_board)
+
+            # Reload the externally updated file in the already-open editor.
+            board.revert()
+            self._board = self._kicad.get_board()
+
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline:
+                matches = [
+                    fp
+                    for fp in self._board.get_footprints()
+                    if fp.reference_field.text.value == reference
+                ]
+                if matches:
+                    self._notify(
+                        "component_placed",
+                        {
+                            "reference": reference,
+                            "footprint": loaded_fp.GetFPIDAsString(),
+                            "position": {"x": x, "y": y},
+                            "rotation": rotation,
+                            "layer": layer,
+                            "loaded_from_library": True,
+                            "compatibility_mode": "save_reload",
+                        },
+                    )
+                    logger.info(
+                        "Placed component %s through KiCad 10 save/reload compatibility path",
+                        reference,
+                    )
+                    return True
+                time.sleep(0.1)
+
+            raise RuntimeError(
+                f"KiCad reloaded the board but component {reference} was not visible through IPC"
+            )
+        except Exception as e:
+            logger.error(f"KiCad 10 footprint compatibility path failed: {e}")
+            return False
 
     def _place_placeholder_footprint(
         self,
@@ -824,7 +1062,7 @@ class IPCBoardAPI(BoardAPI):
         Creates a basic footprint via IPC with just reference/value fields.
         """
         try:
-            from kipy.board_types import Footprint
+            from kipy.board_types import FootprintInstance
             from kipy.geometry import Angle, Vector2
             from kipy.proto.board.board_types_pb2 import BoardLayer
             from kipy.util.units import from_mm
@@ -832,7 +1070,7 @@ class IPCBoardAPI(BoardAPI):
             board = self._get_board()
 
             # Create footprint
-            fp = Footprint()
+            fp = FootprintInstance()
             fp.position = Vector2.from_xy(from_mm(x), from_mm(y))
             fp.orientation = Angle.from_degrees(rotation)
 
@@ -1058,7 +1296,6 @@ class IPCBoardAPI(BoardAPI):
         try:
             from kipy.board_types import Track
             from kipy.geometry import Vector2
-            from kipy.proto.board.board_types_pb2 import BoardLayer
             from kipy.util.units import from_mm
 
             board = self._get_board()
@@ -1070,13 +1307,7 @@ class IPCBoardAPI(BoardAPI):
             track.width = from_mm(width)
 
             # Set layer
-            layer_map = {
-                "F.Cu": BoardLayer.BL_F_Cu,
-                "B.Cu": BoardLayer.BL_B_Cu,
-                "In1.Cu": BoardLayer.BL_In1_Cu,
-                "In2.Cu": BoardLayer.BL_In2_Cu,
-            }
-            track.layer = layer_map.get(layer, BoardLayer.BL_F_Cu)
+            track.layer = self._resolve_board_layer(layer, "F.Cu")
 
             # Set net if specified
             if net_name:
@@ -1125,7 +1356,6 @@ class IPCBoardAPI(BoardAPI):
         try:
             from kipy.board_types import ArcTrack
             from kipy.geometry import Vector2
-            from kipy.proto.board.board_types_pb2 import BoardLayer
             from kipy.util.units import from_mm
 
             board = self._get_board()
@@ -1136,13 +1366,7 @@ class IPCBoardAPI(BoardAPI):
             arc.end = Vector2.from_xy(from_mm(end_x), from_mm(end_y))
             arc.width = from_mm(width)
 
-            layer_map = {
-                "F.Cu": BoardLayer.BL_F_Cu,
-                "B.Cu": BoardLayer.BL_B_Cu,
-                "In1.Cu": BoardLayer.BL_In1_Cu,
-                "In2.Cu": BoardLayer.BL_In2_Cu,
-            }
-            arc.layer = layer_map.get(layer, BoardLayer.BL_F_Cu)
+            arc.layer = self._resolve_board_layer(layer, "F.Cu")
 
             if net_name:
                 nets = board.get_nets()
@@ -1182,6 +1406,8 @@ class IPCBoardAPI(BoardAPI):
         drill: float = 0.4,
         net_name: Optional[str] = None,
         via_type: str = "through",
+        from_layer: str = "F.Cu",
+        to_layer: str = "B.Cu",
     ) -> bool:
         """
         Add a via to the board.
@@ -1202,13 +1428,21 @@ class IPCBoardAPI(BoardAPI):
             via.diameter = from_mm(diameter)
             via.drill_diameter = from_mm(drill)
 
-            # Set via type (enum values: VT_THROUGH=1, VT_BLIND_BURIED=2, VT_MICRO=3)
+            # Set via type and its actual drill span.
             type_map = {
                 "through": ViaType.VT_THROUGH,
                 "blind": ViaType.VT_BLIND_BURIED,
+                "buried": ViaType.VT_BLIND_BURIED,
+                "blind_buried": ViaType.VT_BLIND_BURIED,
                 "micro": ViaType.VT_MICRO,
             }
-            via.type = type_map.get(via_type, ViaType.VT_THROUGH)
+            via.type = type_map.get(str(via_type).casefold(), ViaType.VT_THROUGH)
+            start_layer = self._resolve_board_layer(from_layer, "F.Cu")
+            end_layer = self._resolve_board_layer(to_layer, "B.Cu")
+            via.padstack.drill.start_layer = start_layer
+            via.padstack.drill.end_layer = end_layer
+            if via.padstack.copper_layers:
+                via.padstack.copper_layers[0].layer = start_layer
 
             # Set net if specified
             if net_name:
@@ -1231,6 +1465,8 @@ class IPCBoardAPI(BoardAPI):
                     "drill": drill,
                     "net": net_name,
                     "type": via_type,
+                    "from_layer": from_layer,
+                    "to_layer": to_layer,
                 },
             )
 
@@ -1249,12 +1485,13 @@ class IPCBoardAPI(BoardAPI):
         layer: str = "F.SilkS",
         size: float = 1.0,
         rotation: float = 0,
+        thickness: Optional[float] = None,
+        style: str = "normal",
     ) -> bool:
         """Add text to the board."""
         try:
             from kipy.board_types import BoardText
-            from kipy.geometry import Angle, Vector2
-            from kipy.proto.board.board_types_pb2 import BoardLayer
+            from kipy.geometry import Vector2
             from kipy.util.units import from_mm
 
             board = self._get_board()
@@ -1263,16 +1500,15 @@ class IPCBoardAPI(BoardAPI):
             board_text = BoardText()
             board_text.value = text
             board_text.position = Vector2.from_xy(from_mm(x), from_mm(y))
-            board_text.angle = Angle.from_degrees(rotation)
+            board_text.attributes.angle = rotation
+            board_text.attributes.size = Vector2.from_xy(from_mm(size), from_mm(size))
+            board_text.attributes.stroke_width = from_mm(
+                thickness if thickness is not None else max(size * 0.15, 0.05)
+            )
+            board_text.attributes.bold = str(style).casefold() == "bold"
+            board_text.attributes.italic = str(style).casefold() == "italic"
 
-            # Set layer
-            layer_map = {
-                "F.SilkS": BoardLayer.BL_F_SilkS,
-                "B.SilkS": BoardLayer.BL_B_SilkS,
-                "F.Cu": BoardLayer.BL_F_Cu,
-                "B.Cu": BoardLayer.BL_B_Cu,
-            }
-            board_text.layer = layer_map.get(layer, BoardLayer.BL_F_SilkS)
+            board_text.layer = self._resolve_board_layer(layer, "F.SilkS")
 
             # Add text with transaction
             commit = board.begin_commit()
@@ -1305,7 +1541,7 @@ class IPCBoardAPI(BoardAPI):
                             "width": to_mm(track.width),
                             "layer": str(track.layer),
                             "net": track.net.name if track.net else "",
-                            "id": str(track.id) if hasattr(track, "id") else "",
+                            "id": self._item_id_value(track),
                         }
                     )
                 except Exception as e:
@@ -1336,7 +1572,7 @@ class IPCBoardAPI(BoardAPI):
                             "drill": to_mm(via.drill_diameter),
                             "net": via.net.name if via.net else "",
                             "type": str(via.type),
-                            "id": str(via.id) if hasattr(via, "id") else "",
+                            "id": self._item_id_value(via),
                         }
                     )
                 except Exception as e:
@@ -1400,7 +1636,6 @@ class IPCBoardAPI(BoardAPI):
         try:
             from kipy.board_types import Zone, ZoneFillMode, ZoneType
             from kipy.geometry import PolyLine, PolyLineNode, Vector2
-            from kipy.proto.board.board_types_pb2 import BoardLayer
             from kipy.util.units import from_mm
 
             board = self._get_board()
@@ -1414,15 +1649,7 @@ class IPCBoardAPI(BoardAPI):
             zone.type = ZoneType.ZT_COPPER
 
             # Set layer
-            layer_map = {
-                "F.Cu": BoardLayer.BL_F_Cu,
-                "B.Cu": BoardLayer.BL_B_Cu,
-                "In1.Cu": BoardLayer.BL_In1_Cu,
-                "In2.Cu": BoardLayer.BL_In2_Cu,
-                "In3.Cu": BoardLayer.BL_In3_Cu,
-                "In4.Cu": BoardLayer.BL_In4_Cu,
-            }
-            zone.layers = [layer_map.get(layer, BoardLayer.BL_F_Cu)]
+            zone.layers = [self._resolve_board_layer(layer, "F.Cu")]
 
             # Set net if specified
             if net_name:
@@ -1501,7 +1728,7 @@ class IPCBoardAPI(BoardAPI):
                                 [str(l) for l in zone.layers] if hasattr(zone, "layers") else []
                             ),
                             "filled": zone.filled if hasattr(zone, "filled") else False,
-                            "id": str(zone.id) if hasattr(zone, "id") else "",
+                            "id": self._item_id_value(zone),
                         }
                     )
                 except Exception as e:
@@ -1534,7 +1761,7 @@ class IPCBoardAPI(BoardAPI):
             result = []
             for item in selection:
                 result.append(
-                    {"type": type(item).__name__, "id": str(item.id) if hasattr(item, "id") else ""}
+                    {"type": type(item).__name__, "id": self._item_id_value(item)}
                 )
 
             return result

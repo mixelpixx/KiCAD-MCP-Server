@@ -10,6 +10,7 @@ Covers:
   - _find_java, _docker_available, _java_version_ok helpers
 """
 
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -405,10 +406,26 @@ class TestAutoroute:
 
 
 class TestFindJava:
+    def test_prefers_explicit_freerouting_java(self) -> None:
+        java_override = "C:/tools/java25/bin/java.exe"
+        with (
+            patch.dict(os.environ, {"FREEROUTING_JAVA": java_override}),
+            patch(
+                "commands.freerouting.os.path.isfile",
+                side_effect=lambda path: path == java_override,
+            ),
+            patch("commands.freerouting.shutil.which") as mock_which,
+        ):
+            assert _find_java() == java_override
+            mock_which.assert_not_called()
+
     def test_finds_via_which(self) -> None:
-        with patch(
-            "commands.freerouting.shutil.which",
-            return_value="/usr/bin/java",
+        with (
+            patch.dict(os.environ, {"FREEROUTING_JAVA": ""}),
+            patch(
+                "commands.freerouting.shutil.which",
+                return_value="/usr/bin/java",
+            ),
         ):
             assert _find_java() == "/usr/bin/java"
 

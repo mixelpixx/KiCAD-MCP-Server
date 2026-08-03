@@ -17,6 +17,8 @@ export const LONG_COMMAND_TIMEOUT_MS = 600_000;
  * parameter the caller passes.
  */
 export const LONG_RUNNING_COMMANDS = [
+  "open_project",
+  "create_project",
   "run_drc",
   "export_gerber",
   "export_pdf",

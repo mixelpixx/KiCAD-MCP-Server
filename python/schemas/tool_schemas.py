@@ -2265,8 +2265,105 @@ SCHEMATIC_TOOLS = [
                     "description": "Maximum distance in mm to search for a nearby pin when snapToPins is enabled.",
                     "default": 1.0,
                 },
+                "dryRun": {
+                    "type": "boolean",
+                    "description": "Preview only — resolve pin-snapping and report symbol/net collisions without writing anything.",
+                    "default": False,
+                },
             },
             "required": ["schematicPath", "waypoints"],
+        },
+    },
+    {
+        "name": "connect_schematic_pins",
+        "title": "Auto-Route Wire Between Pins",
+        "description": "Automatically routes an orthogonal wire path connecting 2+ component pins, avoiding symbol bodies and wires belonging to other nets. First version: Manhattan/orthogonal only, sequential nearest-pin routing for 3+ pins.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {"type": "string", "description": "Path to the .kicad_sch file"},
+                "targets": {
+                    "type": "array",
+                    "description": "2 or more {reference, pin} targets to connect",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "reference": {"type": "string"},
+                            "pin": {"type": "string"},
+                        },
+                        "required": ["reference", "pin"],
+                    },
+                    "minItems": 2,
+                },
+                "netName": {
+                    "type": "string",
+                    "description": "Expected net name; aborts if targets already sit on a conflicting existing net.",
+                },
+                "routingGridMm": {
+                    "type": "number",
+                    "description": "Routing grid resolution in mm.",
+                    "default": 1.27,
+                },
+                "searchPaddingMm": {
+                    "type": "number",
+                    "description": "Local search bounding-box padding in mm.",
+                    "default": 15.0,
+                },
+                "bendPenaltyMm": {
+                    "type": "number",
+                    "description": "Cost penalty (mm-equivalent) added per direction change.",
+                    "default": 5.0,
+                },
+                "dryRun": {
+                    "type": "boolean",
+                    "description": "Preview the computed route without writing anything.",
+                    "default": False,
+                },
+            },
+            "required": ["schematicPath", "targets"],
+        },
+    },
+    {
+        "name": "get_schematic_symbol_bbox",
+        "title": "Get Symbol Bounding Box",
+        "description": "Returns each symbol's absolute-coordinate bounding box (component body + pins), so a wire route can be planned from real geometry instead of guessing from pin coordinates alone.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {"type": "string", "description": "Path to the .kicad_sch file"},
+                "references": {
+                    "type": "array",
+                    "description": "One or more reference designators, e.g. ['U1', 'R4']",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                },
+                "margin": {
+                    "type": "number",
+                    "description": "Shrink each bounding box by this many mm on each side.",
+                    "default": 0.0,
+                },
+            },
+            "required": ["schematicPath", "references"],
+        },
+    },
+    {
+        "name": "check_schematic_connectivity",
+        "title": "Check Same-Net Connectivity",
+        "description": "Fast, targeted check of whether two points/pins are on the same net right now. Use instead of run_erc when you just need to sanity-check one specific connection.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {"type": "string", "description": "Path to the schematic file"},
+                "aReference": {"type": "string", "description": "Component reference for point A"},
+                "aPin": {"type": "string", "description": "Pin number/name for point A"},
+                "aX": {"type": "number", "description": "X coordinate in mm for point A"},
+                "aY": {"type": "number", "description": "Y coordinate in mm for point A"},
+                "bReference": {"type": "string", "description": "Component reference for point B"},
+                "bPin": {"type": "string", "description": "Pin number/name for point B"},
+                "bX": {"type": "number", "description": "X coordinate in mm for point B"},
+                "bY": {"type": "number", "description": "Y coordinate in mm for point B"},
+            },
+            "required": ["schematicPath"],
         },
     },
     {

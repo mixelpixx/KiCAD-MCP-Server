@@ -26,18 +26,22 @@ from commands.schematic_analysis import (
     _distance,
     _extract_lib_symbols,
     _line_segment_intersects_aabb,
+    _load_obstacle_model,
     _load_sexp,
     _parse_labels,
     _parse_lib_symbol_graphics,
     _parse_symbols,
     _parse_wires,
     _point_in_rect,
+    _segment_crosses_symbols,
     _transform_local_point,
+    check_candidate_wire,
     compute_symbol_bbox,
     find_orphaned_wires,
     find_overlapping_elements,
     find_wires_crossing_symbols,
     get_elements_in_region,
+    get_symbol_bboxes,
 )
 
 # ---------------------------------------------------------------------------
@@ -1077,3 +1081,155 @@ class TestFindOrphanedWires:
         tmp = _make_temp_schematic(extra)
         result = find_orphaned_wires(tmp)
         assert result["count"] == 2
+
+
+# ===================================================================
+# Unit/integration tests — _load_obstacle_model, get_symbol_bboxes,
+# check_candidate_wire (dry-run collision checking)
+# ===================================================================
+
+
+@pytest.mark.integration
+class TestLoadObstacleModel:
+    """Test the shared obstacle-model loader used by dry-run and the router."""
+
+    def test_returns_symbol_bbox_and_wires(self) -> None:
+        extra = _make_resistor_sexp("R1", 100, 100) + """
+        (wire (pts (xy 0 0) (xy 20 0))
+            (stroke (width 0) (type default))
+            (uuid "w1"))
+        """
+        tmp = _make_temp_schematic(extra)
+        obstacle = _load_obstacle_model(tmp, margin=0.5)
+        assert len(obstacle["wires"]) == 1
+        refs = [sd["sym"]["reference"] for sd in obstacle["symbol_data"]]
+        assert "R1" in refs
+        r1 = next(sd for sd in obstacle["symbol_data"] if sd["sym"]["reference"] == "R1")
+        assert r1["bbox"] is not None
+        assert len(r1["pin_set"]) == 2
+
+    def test_reuses_preloaded_sexp_data(self) -> None:
+        """Passing sexp_data avoids re-reading the file and yields identical results."""
+        extra = _make_resistor_sexp("R1", 100, 100)
+        tmp = _make_temp_schematic(extra)
+        sexp_data = _load_sexp(tmp)
+        obstacle = _load_obstacle_model(tmp, sexp_data=sexp_data)
+        assert obstacle["sexp_data"] is sexp_data
+
+
+@pytest.mark.integration
+class TestGetSymbolBboxes:
+    """Test the get_schematic_symbol_bbox tool's core function."""
+
+    def test_known_reference_returns_bbox(self) -> None:
+        extra = _make_resistor_sexp("R1", 100, 100)
+        tmp = _make_temp_schematic(extra)
+        result = get_symbol_bboxes(tmp, ["R1"])
+        assert "R1" in result["boxes"]
+        entry = result["boxes"]["R1"][0]
+        bbox = entry["boundingBox"]
+        assert bbox is not None
+        assert bbox["minX"] < 100 < bbox["maxX"]
+        assert bbox["minY"] < 100 < bbox["maxY"]
+        assert bbox["width"] > 0 and bbox["height"] > 0
+        assert entry["pinCount"] == 2
+
+    def test_unknown_reference_reported_as_not_found(self) -> None:
+        extra = _make_resistor_sexp("R1", 100, 100)
+        tmp = _make_temp_schematic(extra)
+        result = get_symbol_bboxes(tmp, ["R1", "R99"])
+        assert "R99" in result["notFound"]
+        assert "R1" in result["boxes"]
+
+    def test_margin_shrinks_bbox(self) -> None:
+        extra = _make_resistor_sexp("R1", 100, 100)
+        tmp = _make_temp_schematic(extra)
+        loose = get_symbol_bboxes(tmp, ["R1"], margin=0.0)["boxes"]["R1"][0]["boundingBox"]
+        tight = get_symbol_bboxes(tmp, ["R1"], margin=0.5)["boxes"]["R1"][0]["boundingBox"]
+        assert tight["width"] < loose["width"]
+        assert tight["height"] < loose["height"]
+
+
+@pytest.mark.integration
+class TestCheckCandidateWire:
+    """
+    Test the offline collision check behind add_schematic_wire's dryRun mode.
+
+    test_collision_with_different_net_wire is the direct regression test for
+    the most expensive real-world bug this tool exists to catch: a candidate
+    wire silently short-circuiting two unrelated nets by physically crossing
+    an existing wire that belongs to a different net.
+    """
+
+    def test_crossing_reported_for_segment_through_symbol_body(self) -> None:
+        extra = _make_led_sexp("D1", 100, 100)
+        tmp = _make_temp_schematic(extra)
+        result = check_candidate_wire(tmp, [[100, 95], [100, 105]])
+        d1 = [c for c in result["crossings"] if c["component"]["reference"] == "D1"]
+        assert len(d1) >= 1
+
+    def test_no_crossing_for_clear_path(self) -> None:
+        extra = _make_led_sexp("D1", 100, 100)
+        tmp = _make_temp_schematic(extra)
+        result = check_candidate_wire(tmp, [[200, 200], [200, 210]])
+        assert result["crossings"] == []
+        assert result["collisions"] == []
+        assert result["netConflict"] is None
+
+    def test_collision_with_different_net_wire(self) -> None:
+        """A candidate segment that crosses an unrelated existing net's wire,
+        without touching it at either of the candidate's own endpoints, must
+        be reported as a collision — this is exactly the coordinate-reuse
+        short-circuit bug class dryRun exists to catch before it's written."""
+        extra = """
+        (label "NET_X" (at 0 0 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl-x"))
+        (wire (pts (xy 0 0) (xy 20 0))
+            (stroke (width 0) (type default))
+            (uuid "w-net-x"))
+        """
+        tmp = _make_temp_schematic(extra)
+        # Vertical candidate crossing the NET_X wire at (5,0), free-floating at
+        # both ends (not touching any existing wire endpoint).
+        result = check_candidate_wire(tmp, [[5, -5], [5, 5]])
+        assert len(result["collisions"]) >= 1
+        assert result["collisions"][0]["existingNet"] == "NET_X"
+
+    def test_no_false_collision_when_extending_own_net(self) -> None:
+        """A candidate that starts exactly at an existing wire's endpoint must
+        not report a collision against that same wire/net."""
+        extra = """
+        (label "NET_X" (at 0 0 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl-x"))
+        (wire (pts (xy 0 0) (xy 20 0))
+            (stroke (width 0) (type default))
+            (uuid "w-net-x"))
+        """
+        tmp = _make_temp_schematic(extra)
+        result = check_candidate_wire(tmp, [[0, 0], [0, 10]])
+        assert result["ownNet"] == "NET_X"
+        assert result["collisions"] == []
+
+    def test_net_conflict_when_endpoints_already_on_different_nets(self) -> None:
+        """When the candidate's two endpoints already sit on two different
+        existing named nets, that must be surfaced as netConflict — never
+        silently merged or silently excluded from collision reporting."""
+        extra = """
+        (label "NET_A" (at 0 0 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl-a"))
+        (label "NET_B" (at 0 50 0)
+            (effects (font (size 1.27 1.27)) (justify left bottom))
+            (uuid "lbl-b"))
+        (wire (pts (xy 0 0) (xy 20 0))
+            (stroke (width 0) (type default))
+            (uuid "w-net-a"))
+        (wire (pts (xy 0 50) (xy 20 50))
+            (stroke (width 0) (type default))
+            (uuid "w-net-b"))
+        """
+        tmp = _make_temp_schematic(extra)
+        result = check_candidate_wire(tmp, [[0, 0], [0, 50]])
+        assert result["netConflict"] == {"endpointA": "NET_A", "endpointB": "NET_B"}

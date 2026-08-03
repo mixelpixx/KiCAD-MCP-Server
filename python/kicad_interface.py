@@ -598,13 +598,16 @@ class KiCADInterface(SchematicHandlersMixin):
             "remove_schematic_component_property": self._handle_remove_schematic_component_property,
             "get_schematic_component": self._handle_get_schematic_component,
             "add_schematic_wire": self._handle_add_schematic_wire,
+            "connect_schematic_pins": self._handle_connect_schematic_pins,
             "add_schematic_net_label": self._handle_add_schematic_net_label,
             "add_no_connect": self._handle_add_no_connect,
             "connect_to_net": self._handle_connect_to_net,
             "connect_passthrough": self._handle_connect_passthrough,
             "get_schematic_pin_locations": self._handle_get_schematic_pin_locations,
+            "get_schematic_symbol_bbox": self._handle_get_schematic_symbol_bbox,
             "get_net_connections": self._handle_get_net_connections,
             "get_wire_connections": self._handle_get_wire_connections,
+            "check_schematic_connectivity": self._handle_check_schematic_connectivity,
             "get_net_at_point": self._handle_get_net_at_point,
             "run_erc": self._handle_run_erc,
             "export_netlist": self._handle_export_netlist,
@@ -718,6 +721,7 @@ class KiCADInterface(SchematicHandlersMixin):
         "get_nets_list": "_ipc_get_nets_list",
         # Zone commands
         "add_copper_pour": "_ipc_add_copper_pour",
+        "add_zone": "_ipc_add_copper_pour",
         "refill_zones": "_ipc_refill_zones",
         # Board commands
         "add_text": "_ipc_add_text",
@@ -1192,6 +1196,7 @@ class KiCADInterface(SchematicHandlersMixin):
         "add_board_text",
         "move_footprint_text",
         "add_copper_pour",
+        "add_zone",
         "refill_zones",
         "import_svg_logo",
         "sync_schematic_to_board",
@@ -4937,6 +4942,27 @@ print("ok")
     # These methods are called automatically when IPC is available
     # =========================================================================
 
+    @staticmethod
+    def _ipc_value_to_mm(value: float, unit: str = "mm") -> float:
+        """Convert one IPC tool coordinate/length value to millimeters."""
+        unit_name = str(unit or "mm").casefold()
+        if unit_name in ("inch", "in"):
+            return float(value) * 25.4
+        if unit_name in ("mil", "mils"):
+            return float(value) * 0.0254
+        return float(value)
+
+    @classmethod
+    def _ipc_point_to_mm(
+        cls, point: Dict[str, Any], fallback_unit: str = "mm"
+    ) -> Tuple[float, float]:
+        """Convert a tool point carrying an optional per-point unit to mm."""
+        unit = point.get("unit", fallback_unit)
+        return (
+            cls._ipc_value_to_mm(point.get("x", 0), unit),
+            cls._ipc_value_to_mm(point.get("y", 0), unit),
+        )
+
     def _ipc_route_trace(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for route_trace - adds track with real-time UI update"""
         try:
@@ -4947,11 +4973,18 @@ print("ok")
             width = params.get("width", 0.25)
             net = params.get("net")
 
-            # Handle both dict format and direct x/y
-            start_x = start.get("x", 0) if isinstance(start, dict) else params.get("startX", 0)
-            start_y = start.get("y", 0) if isinstance(start, dict) else params.get("startY", 0)
-            end_x = end.get("x", 0) if isinstance(end, dict) else params.get("endX", 0)
-            end_y = end.get("y", 0) if isinstance(end, dict) else params.get("endY", 0)
+            # Handle both point objects and the legacy direct x/y form.
+            fallback_unit = params.get("unit", "mm")
+            if isinstance(start, dict):
+                start_x, start_y = self._ipc_point_to_mm(start, fallback_unit)
+            else:
+                start_x = self._ipc_value_to_mm(params.get("startX", 0), fallback_unit)
+                start_y = self._ipc_value_to_mm(params.get("startY", 0), fallback_unit)
+            if isinstance(end, dict):
+                end_x, end_y = self._ipc_point_to_mm(end, fallback_unit)
+            else:
+                end_x = self._ipc_value_to_mm(params.get("endX", 0), fallback_unit)
+                end_y = self._ipc_value_to_mm(params.get("endY", 0), fallback_unit)
 
             success = self.ipc_board_api.add_track(
                 start_x=start_x,
@@ -4990,12 +5023,10 @@ print("ok")
             width = params.get("width", 0.25)
             net = params.get("net")
 
-            start_x = start.get("x", 0)
-            start_y = start.get("y", 0)
-            mid_x = mid.get("x", 0)
-            mid_y = mid.get("y", 0)
-            end_x = end.get("x", 0)
-            end_y = end.get("y", 0)
+            fallback_unit = params.get("unit", "mm")
+            start_x, start_y = self._ipc_point_to_mm(start, fallback_unit)
+            mid_x, mid_y = self._ipc_point_to_mm(mid, fallback_unit)
+            end_x, end_y = self._ipc_point_to_mm(end, fallback_unit)
 
             if not hasattr(self.ipc_board_api, "add_arc_track"):
                 return {
@@ -5039,17 +5070,31 @@ print("ok")
         """IPC handler for add_via - adds via with real-time UI update"""
         try:
             position = params.get("position", {})
-            x = position.get("x", 0) if isinstance(position, dict) else params.get("x", 0)
-            y = position.get("y", 0) if isinstance(position, dict) else params.get("y", 0)
+            fallback_unit = params.get("unit", "mm")
+            if isinstance(position, dict):
+                x, y = self._ipc_point_to_mm(position, fallback_unit)
+                value_unit = position.get("unit", fallback_unit)
+            else:
+                value_unit = fallback_unit
+                x = self._ipc_value_to_mm(params.get("x", 0), value_unit)
+                y = self._ipc_value_to_mm(params.get("y", 0), value_unit)
 
-            size = params.get("size", 0.8)
-            drill = params.get("drill", 0.4)
+            size = self._ipc_value_to_mm(params.get("size", 0.8), value_unit)
+            drill = self._ipc_value_to_mm(params.get("drill", 0.4), value_unit)
             net = params.get("net")
-            from_layer = params.get("from_layer", "F.Cu")
-            to_layer = params.get("to_layer", "B.Cu")
+            via_type = params.get("viaType", params.get("via_type", "through"))
+            from_layer = params.get("fromLayer", params.get("from_layer", "F.Cu"))
+            to_layer = params.get("toLayer", params.get("to_layer", "B.Cu"))
 
             success = self.ipc_board_api.add_via(
-                x=x, y=y, diameter=size, drill=drill, net_name=net, via_type="through"
+                x=x,
+                y=y,
+                diameter=size,
+                drill=drill,
+                net_name=net,
+                via_type=via_type,
+                from_layer=from_layer,
+                to_layer=to_layer,
             )
 
             return {
@@ -5062,6 +5107,7 @@ print("ok")
                     "from_layer": from_layer,
                     "to_layer": to_layer,
                     "net": net,
+                    "type": via_type,
                 },
             }
         except Exception as e:
@@ -5085,9 +5131,20 @@ print("ok")
         try:
             layer = params.get("layer", "F.Cu")
             net = params.get("net")
-            clearance = params.get("clearance", 0.5)
-            min_width = params.get("minWidth", 0.25)
-            points = params.get("points", [])
+            unit = params.get("unit", "mm")
+            clearance_param = params.get("clearance")
+            min_width_param = params.get("minWidth")
+            clearance = (
+                0.5
+                if clearance_param is None
+                else self._ipc_value_to_mm(clearance_param, unit)
+            )
+            min_width = (
+                0.25
+                if min_width_param is None
+                else self._ipc_value_to_mm(min_width_param, unit)
+            )
+            points = params.get("points") or params.get("outline") or []
             priority = params.get("priority", 0)
             fill_type = params.get("fillType", "solid")
             name = params.get("name", "")
@@ -5101,7 +5158,8 @@ print("ok")
             # Convert points format if needed (handle both {x, y} and {x, y, unit})
             formatted_points = []
             for point in points:
-                formatted_points.append({"x": point.get("x", 0), "y": point.get("y", 0)})
+                point_x, point_y = self._ipc_point_to_mm(point, unit)
+                formatted_points.append({"x": point_x, "y": point_y})
 
             success = self.ipc_board_api.add_zone(
                 points=formatted_points,
@@ -5155,14 +5213,34 @@ print("ok")
         try:
             text = params.get("text", "")
             position = params.get("position", {})
-            x = position.get("x", 0) if isinstance(position, dict) else params.get("x", 0)
-            y = position.get("y", 0) if isinstance(position, dict) else params.get("y", 0)
+            fallback_unit = params.get("unit", "mm")
+            if isinstance(position, dict):
+                x, y = self._ipc_point_to_mm(position, fallback_unit)
+                value_unit = position.get("unit", fallback_unit)
+            else:
+                value_unit = fallback_unit
+                x = self._ipc_value_to_mm(params.get("x", 0), value_unit)
+                y = self._ipc_value_to_mm(params.get("y", 0), value_unit)
             layer = params.get("layer", "F.SilkS")
-            size = params.get("size", 1.0)
+            size = self._ipc_value_to_mm(params.get("size", 1.0), value_unit)
+            thickness_param = params.get("thickness")
+            thickness = (
+                None
+                if thickness_param is None
+                else self._ipc_value_to_mm(thickness_param, value_unit)
+            )
             rotation = params.get("rotation", 0)
+            style = params.get("style", "normal")
 
             success = self.ipc_board_api.add_text(
-                text=text, x=x, y=y, layer=layer, size=size, rotation=rotation
+                text=text,
+                x=x,
+                y=y,
+                layer=layer,
+                size=size,
+                rotation=rotation,
+                thickness=thickness,
+                style=style,
             )
 
             return {
@@ -5412,11 +5490,117 @@ print("ok")
             return {"success": False, "message": str(e)}
 
     def _ipc_delete_trace(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """IPC handler for delete_trace - Note: IPC doesn't support direct trace deletion yet"""
-        # IPC API doesn't have a direct delete track method
-        # Fall back to SWIG for this operation
-        logger.info("delete_trace: Falling back to SWIG (IPC doesn't support trace deletion)")
-        return self.routing_commands.delete_trace(params)
+        """Delete tracks/vias from the live board through the KiCad IPC API."""
+        try:
+            board = self.ipc_board_api._get_board()
+            trace_uuid = params.get("traceUuid")
+            position = params.get("position")
+            net_name = params.get("net")
+            layer_filter = params.get("layer")
+            include_vias = params.get("includeVias", False)
+
+            if not trace_uuid and not position and not net_name:
+                return {
+                    "success": False,
+                    "message": "One of traceUuid, position, or net must be provided",
+                }
+
+            tracks = list(board.get_tracks())
+            vias = list(board.get_vias()) if include_vias else []
+
+            def item_uuid(item: Any) -> str:
+                item_id = getattr(item, "id", None)
+                return str(getattr(item_id, "value", "") or "")
+
+            def item_net(item: Any) -> str:
+                net = getattr(item, "net", None)
+                return getattr(net, "name", "") if net else ""
+
+            def track_layer_matches(track: Any) -> bool:
+                if not layer_filter:
+                    return True
+                layer_name = self._normalize_ipc_layer_name(str(getattr(track, "layer", "")))
+                return layer_name == layer_filter
+
+            targets: List[Any] = []
+            if net_name:
+                targets.extend(
+                    track
+                    for track in tracks
+                    if (net_name == "*" or item_net(track) == net_name)
+                    and track_layer_matches(track)
+                )
+                targets.extend(
+                    via for via in vias if net_name == "*" or item_net(via) == net_name
+                )
+            elif trace_uuid:
+                targets.extend(
+                    item for item in tracks + vias if item_uuid(item) == trace_uuid
+                )
+            elif isinstance(position, dict):
+                from kipy.util.units import to_mm
+
+                point_x, point_y = self._ipc_point_to_mm(position)
+
+                def segment_distance(track: Any) -> float:
+                    x1, y1 = to_mm(track.start.x), to_mm(track.start.y)
+                    x2, y2 = to_mm(track.end.x), to_mm(track.end.y)
+                    dx, dy = x2 - x1, y2 - y1
+                    if dx == 0 and dy == 0:
+                        return ((point_x - x1) ** 2 + (point_y - y1) ** 2) ** 0.5
+                    t = max(
+                        0.0,
+                        min(
+                            1.0,
+                            ((point_x - x1) * dx + (point_y - y1) * dy)
+                            / (dx * dx + dy * dy),
+                        ),
+                    )
+                    nearest_x, nearest_y = x1 + t * dx, y1 + t * dy
+                    return (
+                        (point_x - nearest_x) ** 2 + (point_y - nearest_y) ** 2
+                    ) ** 0.5
+
+                candidates = [
+                    (segment_distance(track), track)
+                    for track in tracks
+                    if track_layer_matches(track)
+                ]
+                candidates.extend(
+                    (
+                        (
+                            (point_x - to_mm(via.position.x)) ** 2
+                            + (point_y - to_mm(via.position.y)) ** 2
+                        )
+                        ** 0.5,
+                        via,
+                    )
+                    for via in vias
+                )
+                if candidates:
+                    distance, closest = min(candidates, key=lambda entry: entry[0])
+                    if distance <= 1.0:
+                        targets.append(closest)
+
+            if not targets:
+                return {"success": False, "message": "No matching trace or via found"}
+
+            commit = board.begin_commit()
+            try:
+                board.remove_items(targets)
+                board.push_commit(commit, f"Deleted {len(targets)} routing item(s)")
+            except Exception:
+                board.drop_commit(commit)
+                raise
+
+            return {
+                "success": True,
+                "message": f"Deleted {len(targets)} routing item(s) (visible in KiCad UI)",
+                "deletedCount": len(targets),
+            }
+        except Exception as e:
+            logger.error(f"IPC delete_trace error: {e}")
+            return {"success": False, "message": str(e)}
 
     def _ipc_query_traces(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for query_traces - reads traces from the live KiCAD board."""
@@ -5429,11 +5613,11 @@ print("ok")
             def point_in_bbox(point: Dict[str, Any]) -> bool:
                 if not bbox:
                     return True
-                unit_scale = 25.4 if bbox.get("unit", "mm") == "inch" else 1.0
-                x1 = bbox.get("x1", 0) * unit_scale
-                y1 = bbox.get("y1", 0) * unit_scale
-                x2 = bbox.get("x2", 0) * unit_scale
-                y2 = bbox.get("y2", 0) * unit_scale
+                bbox_unit = bbox.get("unit", "mm")
+                x1 = self._ipc_value_to_mm(bbox.get("x1", 0), bbox_unit)
+                y1 = self._ipc_value_to_mm(bbox.get("y1", 0), bbox_unit)
+                x2 = self._ipc_value_to_mm(bbox.get("x2", 0), bbox_unit)
+                y2 = self._ipc_value_to_mm(bbox.get("y2", 0), bbox_unit)
                 low_x, high_x = sorted((x1, x2))
                 low_y, high_y = sorted((y1, y2))
                 return low_x <= point.get("x", 0) <= high_x and low_y <= point.get("y", 0) <= high_y
@@ -5508,63 +5692,136 @@ print("ok")
             return {"success": False, "message": str(e)}
 
     def _ipc_add_board_outline(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """IPC handler for add_board_outline - adds board edge with real-time UI update.
-        Rounded rectangles are delegated to the SWIG path because the IPC BoardSegment
-        type cannot represent arcs; the SWIG path writes directly to the .kicad_pcb file
-        and correctly generates PCB_SHAPE arcs for rounded corners.
-        """
-        shape = params.get("shape", "rectangle")
-        if shape in ("rounded_rectangle", "rectangle"):
-            # IPC path only supports straight segments from a points list,
-            # but Claude sends rectangle/rounded_rectangle as shape+width+height.
-            # Fall back to the SWIG path which correctly handles both shapes.
-            logger.info(f"_ipc_add_board_outline: delegating {shape} to SWIG path")
-            return self.board_commands.add_board_outline(params)
-
+        """Add rectangle, rounded, circle, or polygon Edge.Cuts through IPC."""
         try:
-            from kipy.board_types import BoardSegment
+            from math import sqrt
+
+            from kipy.board_types import BoardArc, BoardCircle, BoardSegment
             from kipy.geometry import Vector2
-            from kipy.proto.board.board_types_pb2 import BoardLayer
             from kipy.util.units import from_mm
 
             board = self.ipc_board_api._get_board()
-
-            # Unwrap nested params (Claude sends {"shape":..., "params":{...}})
             inner = params.get("params", params)
-            points = inner.get("points", params.get("points", []))
-            width = inner.get("width", params.get("width", 0.1))
+            shape = params.get("shape", "rectangle")
+            unit = inner.get("unit", params.get("unit", "mm"))
+            x = self._ipc_value_to_mm(inner.get("x", 0), unit)
+            y = self._ipc_value_to_mm(inner.get("y", 0), unit)
+            edge_layer = self.ipc_board_api._resolve_board_layer("Edge.Cuts")
+            stroke_width = from_mm(0.1)
 
-            if len(points) < 2:
-                return {
-                    "success": False,
-                    "message": "At least 2 points required for board outline",
-                }
+            def segment(x1: float, y1: float, x2: float, y2: float) -> Any:
+                segment = BoardSegment()
+                segment.start = Vector2.from_xy(from_mm(x1), from_mm(y1))
+                segment.end = Vector2.from_xy(from_mm(x2), from_mm(y2))
+                segment.layer = edge_layer
+                segment.attributes.stroke.width = stroke_width
+                return segment
+
+            def arc(
+                start: Tuple[float, float],
+                mid: Tuple[float, float],
+                end: Tuple[float, float],
+            ) -> Any:
+                item = BoardArc()
+                item.start = Vector2.from_xy(from_mm(start[0]), from_mm(start[1]))
+                item.mid = Vector2.from_xy(from_mm(mid[0]), from_mm(mid[1]))
+                item.end = Vector2.from_xy(from_mm(end[0]), from_mm(end[1]))
+                item.layer = edge_layer
+                item.attributes.stroke.width = stroke_width
+                return item
+
+            items: List[Any] = []
+            if shape == "rectangle":
+                width = self._ipc_value_to_mm(inner.get("width", 0), unit)
+                height = self._ipc_value_to_mm(inner.get("height", 0), unit)
+                if width <= 0 or height <= 0:
+                    return {"success": False, "message": "width and height must be positive"}
+                items = [
+                    segment(x, y, x + width, y),
+                    segment(x + width, y, x + width, y + height),
+                    segment(x + width, y + height, x, y + height),
+                    segment(x, y + height, x, y),
+                ]
+            elif shape == "rounded_rectangle":
+                width = self._ipc_value_to_mm(inner.get("width", 0), unit)
+                height = self._ipc_value_to_mm(inner.get("height", 0), unit)
+                radius = self._ipc_value_to_mm(inner.get("cornerRadius", 0), unit)
+                if width <= 0 or height <= 0 or radius <= 0:
+                    return {
+                        "success": False,
+                        "message": "width, height, and cornerRadius must be positive",
+                    }
+                radius = min(radius, width / 2, height / 2)
+                diagonal = radius / sqrt(2)
+                items = [
+                    segment(x + radius, y, x + width - radius, y),
+                    arc(
+                        (x + width - radius, y),
+                        (x + width - radius + diagonal, y + radius - diagonal),
+                        (x + width, y + radius),
+                    ),
+                    segment(x + width, y + radius, x + width, y + height - radius),
+                    arc(
+                        (x + width, y + height - radius),
+                        (
+                            x + width - radius + diagonal,
+                            y + height - radius + diagonal,
+                        ),
+                        (x + width - radius, y + height),
+                    ),
+                    segment(x + width - radius, y + height, x + radius, y + height),
+                    arc(
+                        (x + radius, y + height),
+                        (x + radius - diagonal, y + height - radius + diagonal),
+                        (x, y + height - radius),
+                    ),
+                    segment(x, y + height - radius, x, y + radius),
+                    arc(
+                        (x, y + radius),
+                        (x + radius - diagonal, y + radius - diagonal),
+                        (x + radius, y),
+                    ),
+                ]
+            elif shape == "circle":
+                radius = self._ipc_value_to_mm(inner.get("radius", 0), unit)
+                if radius <= 0:
+                    return {"success": False, "message": "radius must be positive"}
+                circle = BoardCircle()
+                circle.center = Vector2.from_xy(from_mm(x), from_mm(y))
+                circle.radius_point = Vector2.from_xy(from_mm(x + radius), from_mm(y))
+                circle.layer = edge_layer
+                circle.attributes.stroke.width = stroke_width
+                items = [circle]
+            elif shape == "polygon":
+                points = inner.get("points") or params.get("points") or []
+                if len(points) < 3:
+                    return {
+                        "success": False,
+                        "message": "At least 3 points are required for a polygon",
+                    }
+                converted = [self._ipc_point_to_mm(point, unit) for point in points]
+                items = [
+                    segment(*converted[index], *converted[(index + 1) % len(converted)])
+                    for index in range(len(converted))
+                ]
+            else:
+                return {"success": False, "message": f"Unsupported outline shape: {shape}"}
 
             commit = board.begin_commit()
-            lines_created = 0
-
-            # Create line segments connecting the points
-            for i in range(len(points)):
-                start = points[i]
-                end = points[(i + 1) % len(points)]  # Wrap around to close the outline
-
-                segment = BoardSegment()
-                segment.start = Vector2.from_xy(
-                    from_mm(start.get("x", 0)), from_mm(start.get("y", 0))
-                )
-                segment.end = Vector2.from_xy(from_mm(end.get("x", 0)), from_mm(end.get("y", 0)))
-                segment.layer = BoardLayer.BL_Edge_Cuts
-                segment.attributes.stroke.width = from_mm(width)
-
-                board.create_items(segment)
-                lines_created += 1
-
-            board.push_commit(commit, "Added board outline")
+            try:
+                board.create_items(items)
+                board.push_commit(commit, f"Added {shape} board outline")
+            except Exception:
+                board.drop_commit(commit)
+                raise
 
             return {
                 "success": True,
-                "message": f"Added board outline with {lines_created} segments (visible in KiCAD UI)",
-                "segments": lines_created,
+                "message": (
+                    f"Added {shape} board outline with {len(items)} item(s) "
+                    "(visible in KiCad UI)"
+                ),
+                "segments": len(items),
             }
         except Exception as e:
             logger.error(f"IPC add_board_outline error: {e}")
@@ -5575,22 +5832,24 @@ print("ok")
         try:
             from kipy.board_types import BoardCircle
             from kipy.geometry import Vector2
-            from kipy.proto.board.board_types_pb2 import BoardLayer
             from kipy.util.units import from_mm
 
             board = self.ipc_board_api._get_board()
 
-            x = params.get("x", 0)
-            y = params.get("y", 0)
-            diameter = params.get("diameter", 3.2)  # M3 hole default
+            position = params.get("position", {})
+            if not isinstance(position, dict):
+                return {"success": False, "message": "position is required"}
+            unit = position.get("unit", "mm")
+            x, y = self._ipc_point_to_mm(position, unit)
+            diameter = self._ipc_value_to_mm(params.get("diameter", 3.2), unit)
 
             commit = board.begin_commit()
 
             # Create circle on Edge.Cuts layer for the hole
             circle = BoardCircle()
             circle.center = Vector2.from_xy(from_mm(x), from_mm(y))
-            circle.radius = from_mm(diameter / 2)  # type: ignore[assignment,method-assign]
-            circle.layer = BoardLayer.BL_Edge_Cuts
+            circle.radius_point = Vector2.from_xy(from_mm(x + diameter / 2), from_mm(y))
+            circle.layer = self.ipc_board_api._resolve_board_layer("Edge.Cuts")
             circle.attributes.stroke.width = from_mm(0.1)
 
             board.create_items(circle)

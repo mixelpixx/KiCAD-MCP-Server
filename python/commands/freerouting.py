@@ -41,13 +41,16 @@ DEFAULT_PASS_SCHEDULE = [50, 60, 65, 70, 75, 80, 85, 90, 55, 95]
 
 def _find_java() -> Optional[str]:
     """Find java executable on the system."""
+    java_override = os.environ.get("FREEROUTING_JAVA")
+    if java_override and os.path.isfile(java_override):
+        return java_override
+
     java = shutil.which("java")
     if java:
         return java
     for candidate in [
         "/usr/bin/java",
         "/usr/local/bin/java",
-        os.path.expandvars("$JAVA_HOME/bin/java"),
     ]:
         if os.path.isfile(candidate):
             return candidate

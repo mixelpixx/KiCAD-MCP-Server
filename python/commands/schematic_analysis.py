@@ -442,6 +442,278 @@ def _compute_symbol_bbox_direct(
     return (min_x, min_y, max_x, max_y)
 
 
+def _load_obstacle_model(
+    schematic_path: Path,
+    margin: float = 0.25,
+    sexp_data: Optional[list] = None,
+) -> Dict[str, Any]:
+    """
+    One-pass load of everything a collision-check or routing tool needs:
+    placed (non-power, non-template) symbols with absolute bounding boxes +
+    pin sets, and existing wire segments.
+
+    This is a refactor-for-reuse of ``find_wires_crossing_symbols``'s own
+    per-symbol precomputation (bbox via ``_compute_symbol_bbox_direct``,
+    pin_set for the pin-touching-endpoint nudge heuristic) — not new logic.
+    Default margin (0.25mm) is deliberately smaller than
+    ``find_wires_crossing_symbols``'s 0.5mm: a router or dry-run check is
+    meant to hug closer than a "did I make a mistake" detector should tolerate.
+
+    Pass an already-loaded ``sexp_data`` to avoid re-parsing the file when the
+    caller has it already (e.g. ``check_candidate_wire`` loading it once for
+    both the obstacle model and wire-net membership).
+
+    Returns:
+      {"symbol_data": [{"sym", "bbox", "pin_set"}, ...],
+       "wires": [{"start": (x_mm,y_mm), "end": (x_mm,y_mm)}, ...],
+       "sexp_data": the raw sexp tree (for callers that want to reuse it)}
+    """
+    if sexp_data is None:
+        sexp_data = _load_sexp(schematic_path)
+    symbols = _parse_symbols(sexp_data)
+    wires = _parse_wires(sexp_data)
+    lib_defs = _extract_lib_symbols(sexp_data)
+
+    symbol_data: List[Dict[str, Any]] = []
+    for sym in symbols:
+        ref = sym["reference"]
+        if sym["is_power"] or ref.startswith("_TEMPLATE") or not ref:
+            continue
+        lib_data = lib_defs.get(sym["lib_id"], {})
+        pin_defs = lib_data.get("pins", {})
+        if not pin_defs:
+            continue
+        graphics_points = lib_data.get("graphics_points", [])
+        bbox = _compute_symbol_bbox_direct(
+            sym, pin_defs, margin=margin, graphics_points=graphics_points
+        )
+        if bbox is None:
+            continue
+        pin_positions = _compute_pin_positions_direct(sym, pin_defs)
+        pin_set = {(pos[0], pos[1]) for pos in pin_positions.values()}
+        symbol_data.append({"sym": sym, "bbox": bbox, "pin_set": pin_set})
+
+    return {"symbol_data": symbol_data, "wires": wires, "sexp_data": sexp_data}
+
+
+def _segment_crosses_symbols(
+    sx: float,
+    sy: float,
+    ex: float,
+    ey: float,
+    symbol_data: List[Dict[str, Any]],
+    pin_tolerance: float = 0.05,
+) -> List[Dict[str, Any]]:
+    """
+    Test one segment against precomputed symbol bbox/pin data (from
+    ``_load_obstacle_model``), applying the same pin-touching-endpoint nudge
+    heuristic ``find_wires_crossing_symbols`` uses so a wire that legitimately
+    terminates at a pin from outside the body isn't flagged as a crossing.
+
+    Returns a list of ``{"component": {...}, "intersectionType": "passes_through"}``
+    dicts, one per symbol the segment crosses.
+    """
+    collisions: List[Dict[str, Any]] = []
+    for sd in symbol_data:
+        bx1, by1, bx2, by2 = sd["bbox"]
+        if not _line_segment_intersects_aabb(sx, sy, ex, ey, bx1, by1, bx2, by2):
+            continue
+
+        start_at_pin = any(
+            abs(sx - px) < pin_tolerance and abs(sy - py) < pin_tolerance
+            for px, py in sd["pin_set"]
+        )
+        end_at_pin = any(
+            abs(ex - px) < pin_tolerance and abs(ey - py) < pin_tolerance
+            for px, py in sd["pin_set"]
+        )
+
+        if (start_at_pin or end_at_pin) and not (start_at_pin and end_at_pin):
+            dx, dy = ex - sx, ey - sy
+            length = math.sqrt(dx * dx + dy * dy)
+            if length > 0:
+                nudge = min(0.2, length * 0.5)
+                ux, uy = dx / length, dy / length
+                if start_at_pin:
+                    nsx, nsy = sx + ux * nudge, sy + uy * nudge
+                    if not _line_segment_intersects_aabb(nsx, nsy, ex, ey, bx1, by1, bx2, by2):
+                        continue  # Wire terminates at pin from outside
+                else:
+                    nex, ney = ex - ux * nudge, ey - uy * nudge
+                    if not _line_segment_intersects_aabb(sx, sy, nex, ney, bx1, by1, bx2, by2):
+                        continue  # Wire terminates at pin from outside
+
+        sym = sd["sym"]
+        collisions.append(
+            {
+                "component": {
+                    "reference": sym["reference"],
+                    "libId": sym["lib_id"],
+                    "position": {"x": sym["x"], "y": sym["y"]},
+                },
+                "intersectionType": "passes_through",
+            }
+        )
+    return collisions
+
+
+def get_symbol_bboxes(
+    schematic_path: Path,
+    references: List[str],
+    margin: float = 0.0,
+) -> Dict[str, Any]:
+    """
+    Return absolute-coordinate bounding boxes (component body + pins) for the
+    given reference designators, so a wire route can be planned from real
+    geometry instead of guessing from pin coordinates alone.
+
+    Groups results by reference since unannotated designs can have duplicate
+    reference designators (multiple placed instances sharing one ref).
+    """
+    sexp_data = _load_sexp(schematic_path)
+    symbols = _parse_symbols(sexp_data)
+    lib_defs = _extract_lib_symbols(sexp_data)
+
+    wanted = set(references)
+    boxes: Dict[str, List[Dict[str, Any]]] = {}
+    found_refs: Set[str] = set()
+
+    for sym in symbols:
+        ref = sym["reference"]
+        if ref not in wanted:
+            continue
+        found_refs.add(ref)
+
+        lib_data = lib_defs.get(sym["lib_id"], {})
+        pin_defs = lib_data.get("pins", {})
+        graphics_points = lib_data.get("graphics_points", [])
+
+        entry: Dict[str, Any] = {
+            "libId": sym["lib_id"],
+            "position": {"x": sym["x"], "y": sym["y"]},
+            "rotation": sym["rotation"],
+            "pinCount": len(pin_defs),
+        }
+
+        if not pin_defs:
+            entry["boundingBox"] = None
+            entry["reason"] = "no pin definitions found for this lib_id in lib_symbols"
+        else:
+            bbox = _compute_symbol_bbox_direct(
+                sym, pin_defs, margin=margin, graphics_points=graphics_points
+            )
+            if bbox is None:
+                entry["boundingBox"] = None
+                entry["reason"] = "bbox computation returned no result (degenerate geometry)"
+            else:
+                min_x, min_y, max_x, max_y = bbox
+                entry["boundingBox"] = {
+                    "minX": min_x,
+                    "minY": min_y,
+                    "maxX": max_x,
+                    "maxY": max_y,
+                    "width": max_x - min_x,
+                    "height": max_y - min_y,
+                }
+
+        boxes.setdefault(ref, []).append(entry)
+
+    not_found = sorted(wanted - found_refs)
+    return {"boxes": boxes, "notFound": not_found}
+
+
+def check_candidate_wire(schematic_path: Path, points: List[List[float]]) -> Dict[str, Any]:
+    """
+    Test a candidate multi-point wire path against existing geometry WITHOUT
+    writing anything — the offline check behind ``add_schematic_wire``'s
+    ``dryRun`` mode. Reports:
+
+      - symbol-body crossings for each candidate segment (same test
+        ``find_wires_crossing_symbols`` uses)
+      - collisions with existing wires belonging to a net *different* from
+        whatever net the candidate's own two endpoints already resolve to
+      - a ``netConflict`` when the candidate's two ends already sit on two
+        different existing named nets — surfaced directly, never silently
+        excluded from the collision scan
+
+    "Own net" is resolved once, up front, purely from the file's current
+    state (exact-IU wire-endpoint match) — the candidate wire doesn't exist
+    on disk yet, so there's no chicken-and-egg problem excluding it from
+    itself.
+    """
+    from commands.wire_connectivity import _load_wire_net_membership, _to_iu
+
+    sexp_data = _load_sexp(schematic_path)
+    obstacle = _load_obstacle_model(schematic_path, margin=0.5, sexp_data=sexp_data)
+
+    crossings: List[Dict[str, Any]] = []
+    for i in range(len(points) - 1):
+        sx, sy = points[i]
+        ex, ey = points[i + 1]
+        for c in _segment_crosses_symbols(sx, sy, ex, ey, obstacle["symbol_data"]):
+            crossings.append(
+                {"segment": {"start": {"x": sx, "y": sy}, "end": {"x": ex, "y": ey}}, **c}
+            )
+
+    membership = _load_wire_net_membership(str(schematic_path), schematic=None, sexp=sexp_data)
+
+    def _resolve_point_net(point: List[float]) -> Optional[str]:
+        iu = _to_iu(point[0], point[1])
+        for wi, pts in enumerate(membership["all_wires"]):
+            if pts[0] == iu or pts[-1] == iu:
+                net_id = membership["wire_net_id"][wi]
+                return membership["net_names"].get(net_id)
+        return None
+
+    net_a = _resolve_point_net(points[0])
+    net_b = _resolve_point_net(points[-1])
+
+    net_conflict = None
+    own_net = None
+    if net_a is not None and net_b is not None:
+        if net_a != net_b:
+            net_conflict = {"endpointA": net_a, "endpointB": net_b}
+        else:
+            own_net = net_a
+    else:
+        own_net = net_a if net_a is not None else net_b
+
+    clearance = 0.15  # mm
+    collisions: List[Dict[str, Any]] = []
+    for i in range(len(points) - 1):
+        sx, sy = points[i]
+        ex, ey = points[i + 1]
+        for wi, wire_pts in enumerate(membership["all_wires"]):
+            net_id = membership["wire_net_id"][wi]
+            wire_net_name = membership["net_names"].get(net_id)
+            if wire_net_name is not None and wire_net_name == own_net:
+                continue
+            wx1, wy1 = wire_pts[0][0] / 10000.0, wire_pts[0][1] / 10000.0
+            wx2, wy2 = wire_pts[-1][0] / 10000.0, wire_pts[-1][1] / 10000.0
+            box_min_x, box_max_x = min(wx1, wx2) - clearance, max(wx1, wx2) + clearance
+            box_min_y, box_max_y = min(wy1, wy2) - clearance, max(wy1, wy2) + clearance
+            if _line_segment_intersects_aabb(
+                sx, sy, ex, ey, box_min_x, box_min_y, box_max_x, box_max_y
+            ):
+                collisions.append(
+                    {
+                        "segment": {"start": {"x": sx, "y": sy}, "end": {"x": ex, "y": ey}},
+                        "existingWire": {
+                            "start": {"x": wx1, "y": wy1},
+                            "end": {"x": wx2, "y": wy2},
+                        },
+                        "existingNet": wire_net_name,
+                    }
+                )
+
+    return {
+        "crossings": crossings,
+        "collisions": collisions,
+        "netConflict": net_conflict,
+        "ownNet": own_net,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Tool 3: find_overlapping_elements
 # ---------------------------------------------------------------------------
@@ -774,104 +1046,16 @@ def find_wires_crossing_symbols(schematic_path: Path) -> List[Dict[str, Any]]:
 
     Returns list of crossing dicts.
     """
-    sexp_data = _load_sexp(schematic_path)
-    symbols = _parse_symbols(sexp_data)
-    wires = _parse_wires(sexp_data)
+    # margin=0.5mm shrinks each symbol bbox to avoid false positives at pin tips
+    obstacle = _load_obstacle_model(schematic_path, margin=0.5)
 
-    lib_defs = _extract_lib_symbols(sexp_data)
-    margin = 0.5  # mm margin to shrink bbox (avoids false positives at pin tips)
-    pin_tolerance = 0.05  # mm
-
-    collisions = []
-
-    # Pre-compute per-symbol data
-    symbol_data: List[Dict[str, Any]] = []
-    for sym in symbols:
-        ref = sym["reference"]
-        if sym["is_power"] or ref.startswith("_TEMPLATE") or not ref:
-            continue
-
-        lib_data = lib_defs.get(sym["lib_id"], {})
-        pin_defs = lib_data.get("pins", {})
-        if not pin_defs:
-            continue
-
-        graphics_points = lib_data.get("graphics_points", [])
-        bbox = _compute_symbol_bbox_direct(
-            sym, pin_defs, margin=margin, graphics_points=graphics_points
-        )
-        if bbox is None:
-            continue
-
-        pin_positions = _compute_pin_positions_direct(sym, pin_defs)
-        pin_set = set()
-        for pos in pin_positions.values():
-            pin_set.add((pos[0], pos[1]))
-
-        symbol_data.append(
-            {
-                "sym": sym,
-                "bbox": bbox,
-                "pin_set": pin_set,
-            }
-        )
-
-    # Test each wire against each symbol bbox
-    for w in wires:
+    collisions: List[Dict[str, Any]] = []
+    for w in obstacle["wires"]:
         sx, sy = w["start"]
         ex, ey = w["end"]
-
-        for sd in symbol_data:
-            bx1, by1, bx2, by2 = sd["bbox"]
-
-            if not _line_segment_intersects_aabb(sx, sy, ex, ey, bx1, by1, bx2, by2):
-                continue
-
-            # Check which endpoints land on a pin of this symbol
-            start_at_pin = any(
-                abs(sx - px) < pin_tolerance and abs(sy - py) < pin_tolerance
-                for px, py in sd["pin_set"]
-            )
-            end_at_pin = any(
-                abs(ex - px) < pin_tolerance and abs(ey - py) < pin_tolerance
-                for px, py in sd["pin_set"]
-            )
-
-            # When exactly one endpoint is at a pin, check whether the wire
-            # just terminates at the pin (valid connection) or continues through
-            # the component body (pass-through → collision).
-            # Nudge the pin endpoint slightly toward the other end; if the
-            # shortened segment still intersects the bbox, the wire extends
-            # into/through the body.
-            if (start_at_pin or end_at_pin) and not (start_at_pin and end_at_pin):
-                dx, dy = ex - sx, ey - sy
-                length = math.sqrt(dx * dx + dy * dy)
-                if length > 0:
-                    nudge = min(0.2, length * 0.5)
-                    ux, uy = dx / length, dy / length
-                    if start_at_pin:
-                        nsx, nsy = sx + ux * nudge, sy + uy * nudge
-                        if not _line_segment_intersects_aabb(nsx, nsy, ex, ey, bx1, by1, bx2, by2):
-                            continue  # Wire terminates at pin from outside
-                    else:
-                        nex, ney = ex - ux * nudge, ey - uy * nudge
-                        if not _line_segment_intersects_aabb(sx, sy, nex, ney, bx1, by1, bx2, by2):
-                            continue  # Wire terminates at pin from outside
-
-            sym = sd["sym"]
+        for c in _segment_crosses_symbols(sx, sy, ex, ey, obstacle["symbol_data"]):
             collisions.append(
-                {
-                    "wire": {
-                        "start": {"x": sx, "y": sy},
-                        "end": {"x": ex, "y": ey},
-                    },
-                    "component": {
-                        "reference": sym["reference"],
-                        "libId": sym["lib_id"],
-                        "position": {"x": sym["x"], "y": sym["y"]},
-                    },
-                    "intersectionType": "passes_through",
-                }
+                {"wire": {"start": {"x": sx, "y": sy}, "end": {"x": ex, "y": ey}}, **c}
             )
 
     return collisions

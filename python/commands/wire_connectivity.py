@@ -567,6 +567,173 @@ def get_wire_connections(
     return {"net": net, "pins": pins, "wires": wires_out, "query_point": query_point}
 
 
+def _load_wire_net_membership(
+    schematic_path: str,
+    schematic: Any = None,
+    sexp: Optional[list] = None,
+) -> Dict[str, Any]:
+    """Classify every wire on the sheet into connected-component nets in one pass.
+
+    Unlike ``get_wire_connections``/``count_pins_on_net`` (which trace a single
+    query point or a single named net), this walks every wire exactly once —
+    BFS-ing unvisited wires via :func:`_find_connected_wires` and skipping any
+    wire already assigned to a component — so callers that need to classify
+    *all* wires (e.g. "does this candidate segment collide with a different
+    net") don't pay O(wires x queries) BFS cost.
+
+    ``schematic`` (a kicad-skip object) is optional: when omitted, power-symbol
+    net bridging is skipped but label-based bridging still works (labels are
+    parsed directly from ``sexp``, not via kicad-skip).
+
+    Returns a dict with keys:
+      - "wire_net_id": List[int] — all_wires[i] belongs to component wire_net_id[i]
+      - "net_names": Dict[int, Optional[str]] — component id -> resolved label
+        name, or None if the component has no label anchor on any of its points
+      - "all_wires": the parsed wire list (IU tuples), same order/index as wire_net_id
+      - "wires_mm": same wires as {"start": {"x","y"}, "end": {"x","y"}} in mm
+    """
+    if sexp is None:
+        sexp = _load_sexp(schematic_path)
+    all_wires = _parse_wires_sexp(sexp)
+
+    wires_mm = [
+        {
+            "start": {"x": pts[0][0] / _IU_PER_MM, "y": pts[0][1] / _IU_PER_MM},
+            "end": {"x": pts[-1][0] / _IU_PER_MM, "y": pts[-1][1] / _IU_PER_MM},
+        }
+        for pts in all_wires
+    ]
+
+    if not all_wires:
+        return {"wire_net_id": [], "net_names": {}, "all_wires": [], "wires_mm": []}
+
+    adjacency, iu_to_wires = _build_adjacency(all_wires)
+    point_to_label, label_to_points = _parse_virtual_connections(
+        schematic, schematic_path, sexp=sexp
+    )
+
+    wire_net_id: List[int] = [-1] * len(all_wires)
+    net_names: Dict[int, Optional[str]] = {}
+    next_net_id = 0
+
+    for i in range(len(all_wires)):
+        if wire_net_id[i] != -1:
+            continue
+        seed_x = all_wires[i][0][0] / _IU_PER_MM
+        seed_y = all_wires[i][0][1] / _IU_PER_MM
+        visited, net_points = _find_connected_wires(
+            seed_x,
+            seed_y,
+            all_wires,
+            iu_to_wires,
+            adjacency,
+            point_to_label=point_to_label,
+            label_to_points=label_to_points,
+        )
+        if not visited:
+            visited = {i}
+        name: Optional[str] = None
+        for pt in net_points or all_wires[i]:
+            label = point_to_label.get(pt)
+            if label:
+                name = label
+                break
+        for w in visited:
+            wire_net_id[w] = next_net_id
+        net_names[next_net_id] = name
+        next_net_id += 1
+
+    return {
+        "wire_net_id": wire_net_id,
+        "net_names": net_names,
+        "all_wires": all_wires,
+        "wires_mm": wires_mm,
+    }
+
+
+def check_connectivity(
+    schematic: Any,
+    schematic_path: str,
+    point_a: Tuple[float, float],
+    point_b: Tuple[float, float],
+) -> Dict[str, Any]:
+    """Strict, exact-IU check: are point_a and point_b on the same net right now?
+
+    Builds the wire adjacency / label graph once and runs BFS from each point
+    against the shared graph — same vertex/junction-exact semantics as
+    ``get_wire_connections`` (a point must land exactly on a wire endpoint,
+    junction, or T-junction to resolve), but answering a targeted same-net
+    question in a single pass instead of two independent whole-file calls.
+    Intended as a fast replacement for "run full ERC just to check one
+    connection."
+
+    Each point is an (x_mm, y_mm) tuple. Returns:
+      {"sameNet": bool,
+       "pointA": {"net": str|None, "resolved": bool, "wireCount": int, "point": {"x","y"}},
+       "pointB": {...}}
+    """
+
+    def _empty(pt: Tuple[float, float]) -> Dict[str, Any]:
+        return {"net": None, "resolved": False, "wireCount": 0, "point": {"x": pt[0], "y": pt[1]}}
+
+    all_wires = _parse_wires(schematic)
+    if not all_wires:
+        return {"sameNet": False, "pointA": _empty(point_a), "pointB": _empty(point_b)}
+
+    adjacency, iu_to_wires = _build_adjacency(all_wires)
+    point_to_label, label_to_points = _parse_virtual_connections(schematic, schematic_path)
+
+    def _resolve(pt: Tuple[float, float]) -> Dict[str, Any]:
+        visited, net_points = _find_connected_wires(
+            pt[0],
+            pt[1],
+            all_wires,
+            iu_to_wires,
+            adjacency,
+            point_to_label=point_to_label,
+            label_to_points=label_to_points,
+        )
+        if visited is None:
+            # Not on any wire — check whether it's a bare label anchor instead.
+            iu = _to_iu(pt[0], pt[1])
+            name = point_to_label.get(iu)
+            return {
+                "net": name,
+                "resolved": name is not None,
+                "wireCount": 0,
+                "wireIndices": set(),
+                "point": {"x": pt[0], "y": pt[1]},
+            }
+        name = None
+        for p in net_points:
+            label = point_to_label.get(p)
+            if label:
+                name = label
+                break
+        return {
+            "net": name,
+            "resolved": True,
+            "wireCount": len(visited),
+            "wireIndices": visited,
+            "point": {"x": pt[0], "y": pt[1]},
+        }
+
+    result_a = _resolve(point_a)
+    result_b = _resolve(point_b)
+
+    if result_a["wireIndices"] and result_b["wireIndices"]:
+        same = bool(result_a["wireIndices"] & result_b["wireIndices"])
+    elif result_a["net"] is not None and result_b["net"] is not None:
+        same = result_a["net"] == result_b["net"]
+    else:
+        same = False
+
+    for r in (result_a, result_b):
+        r.pop("wireIndices", None)
+
+    return {"sameNet": same, "pointA": result_a, "pointB": result_b}
+
+
 def count_pins_on_net(
     schematic: Any,
     schematic_path: str,

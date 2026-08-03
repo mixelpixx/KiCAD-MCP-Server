@@ -534,7 +534,8 @@ edit_schematic_component and set its value to an empty string.`,
   // Draw wire between coordinate waypoints with optional pin snapping
   server.tool(
     "add_schematic_wire",
-    "Draws a wire on the schematic between two or more coordinate points. Always call get_schematic_pin_locations first to get the approximate pin coordinates, then pass them as the first and last waypoints. snapToPins (on by default) will correct any float imprecision by snapping endpoints to the exact nearest pin coordinate. To route around components, add intermediate waypoints between the start and end: e.g. [[x1,y1], [xMid,y1], [xMid,y2], [x2,y2]] routes horizontally then vertically. Intermediate waypoints are never snapped.",
+    "Draws a wire on the schematic between two or more coordinate points. Always call get_schematic_pin_locations first to get the approximate pin coordinates, then pass them as the first and last waypoints. snapToPins (on by default) will correct any float imprecision by snapping endpoints to the exact nearest pin coordinate. To route around components, add intermediate waypoints between the start and end: e.g. [[x1,y1], [xMid,y1], [xMid,y2], [x2,y2]] routes horizontally then vertically. Intermediate waypoints are never snapped. " +
+      "Set dryRun:true to preview — resolves pin-snapping and reports symbol crossings / collisions with wires on a different net WITHOUT writing anything. Use this before committing a manually-computed route, and especially before reusing an x or y value you've already used elsewhere on the sheet — reusing a coordinate across two different nets silently short-circuits them together, which dryRun's wouldCollideWithNet/netConflict fields catch before it happens instead of after.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       waypoints: z
@@ -546,24 +547,22 @@ edit_schematic_component and set its value to an empty string.`,
         .optional()
         .describe("Snap the first and last waypoints to the nearest pin (default: true)"),
       snapTolerance: z.number().optional().describe("Maximum snap distance in mm (default: 1.0)"),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe(
+          "Preview only — resolve pin-snapping and report symbol/net collisions without writing anything (default: false)",
+        ),
     },
     async (args: {
       schematicPath: string;
       waypoints: number[][];
       snapToPins?: boolean;
       snapTolerance?: number;
+      dryRun?: boolean;
     }) => {
       const result = await callKicadScript("add_schematic_wire", args);
-      if (result.success) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: result.message || "Wire added successfully",
-            },
-          ],
-        };
-      } else {
+      if (!result.success) {
         return {
           content: [
             {
@@ -573,6 +572,117 @@ edit_schematic_component and set its value to an empty string.`,
           ],
         };
       }
+      if (result.dryRun) {
+        const lines = [
+          `Dry run — nothing written. Resolved points: ${JSON.stringify(result.resolvedPoints)}`,
+        ];
+        if (result.snappedInfo?.length) lines.push(...result.snappedInfo.map((s: string) => `  ${s}`));
+        if (result.netConflict) {
+          lines.push(
+            `NET CONFLICT: endpoints already sit on two different nets — ` +
+              `${result.netConflict.endpointA} vs ${result.netConflict.endpointB}`,
+          );
+        } else if (result.ownNet) {
+          lines.push(`Own net (existing): ${result.ownNet}`);
+        }
+        if (result.wouldCrossSymbols?.length) {
+          lines.push(`Would cross ${result.wouldCrossSymbols.length} symbol(s):`);
+          lines.push(
+            ...result.wouldCrossSymbols.map(
+              (c: any) => `  - ${c.component.reference} at (${c.component.position.x},${c.component.position.y})`,
+            ),
+          );
+        }
+        if (result.wouldCollideWithNet?.length) {
+          lines.push(`Would collide with ${result.wouldCollideWithNet.length} wire(s) on a different net:`);
+          lines.push(
+            ...result.wouldCollideWithNet.map((c: any) => `  - net "${c.existingNet}"`),
+          );
+        }
+        if (!result.wouldCrossSymbols?.length && !result.wouldCollideWithNet?.length && !result.netConflict) {
+          lines.push("Clean — no crossings, no collisions.");
+        }
+        return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: result.message || "Wire added successfully",
+          },
+        ],
+      };
+    },
+  );
+
+  // Auto-route an orthogonal wire path connecting 2+ pins
+  server.tool(
+    "connect_schematic_pins",
+    "Automatically routes an orthogonal wire path connecting 2+ component pins, avoiding symbol " +
+      "bodies and wires belonging to other nets — use this instead of manually computing waypoints " +
+      "with add_schematic_wire, especially for 3+ pin nets. First version: Manhattan/orthogonal only, " +
+      "sequential nearest-pin routing for 3+ pins (not a full Steiner-tree optimization). " +
+      "Very long single-hop routes across a whole large sheet may exceed the search budget — for those, " +
+      "decompose via an intermediate net label rather than expecting one unbounded search. " +
+      "Set dryRun:true to preview the computed route (as {legs: [...]}) without writing anything.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      targets: z
+        .array(z.object({ reference: z.string(), pin: z.string() }))
+        .min(2)
+        .describe("2 or more {reference, pin} targets to connect"),
+      netName: z
+        .string()
+        .optional()
+        .describe("Expected net name; aborts if targets already sit on a conflicting existing net"),
+      routingGridMm: z.number().optional().describe("Routing grid resolution in mm (default 1.27)"),
+      searchPaddingMm: z
+        .number()
+        .optional()
+        .describe("Local search bounding-box padding in mm (default 15)"),
+      bendPenaltyMm: z
+        .number()
+        .optional()
+        .describe("Cost penalty (mm-equivalent) added per direction change (default 5)"),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe("Preview the computed route without writing anything (default false)"),
+    },
+    async (args: {
+      schematicPath: string;
+      targets: { reference: string; pin: string }[];
+      netName?: string;
+      routingGridMm?: number;
+      searchPaddingMm?: number;
+      bendPenaltyMm?: number;
+      dryRun?: boolean;
+    }) => {
+      const result = await callKicadScript("connect_schematic_pins", args);
+      if (!result.success) {
+        const lines = [`Failed to auto-route: ${result.message || "Unknown error"}`];
+        if (result.netConflict) {
+          lines.push(`Net conflict: ${result.netConflict.pointA} vs ${result.netConflict.pointB}`);
+        }
+        if (result.legsCompleted?.length) {
+          lines.push(`${result.legsCompleted.length} leg(s) completed before failure.`);
+        }
+        return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+      }
+      const legLines = (result.legs ?? []).map(
+        (leg: any) =>
+          `  ${leg.from.reference}/${leg.from.pin} -> ${leg.to.reference}/${leg.to.pin} ` +
+          `(${leg.waypoints.length} waypoints)`,
+      );
+      const prefix = result.dryRun ? "Dry run — nothing written." : "Routed and written.";
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `${prefix} Own net: ${result.ownNet ?? "(new)"}\n${legLines.join("\n")}`,
+          },
+        ],
+      };
     },
   );
 
@@ -830,6 +940,59 @@ edit_schematic_component and set its value to an empty string.`,
     },
   );
 
+  // Fast same-net check between two points/pins
+  server.tool(
+    "check_schematic_connectivity",
+    "Fast, targeted check of whether two points/pins are on the same net right now. " +
+      "Use this instead of run_erc when you just need to sanity-check one specific connection — " +
+      "it's exact-vertex-graph based (same semantics as get_wire_connections) and doesn't shell out " +
+      "to kicad-cli or report hundreds of unrelated pre-existing violations.",
+    {
+      schematicPath: z.string().describe("Path to the schematic file"),
+      aReference: z.string().optional().describe("Component reference for point A. Pair with aPin."),
+      aPin: z.string().optional().describe("Pin number/name for point A. Pair with aReference."),
+      aX: z.number().optional().describe("X coordinate in mm for point A. Pair with aY."),
+      aY: z.number().optional().describe("Y coordinate in mm for point A. Pair with aX."),
+      bReference: z.string().optional().describe("Component reference for point B. Pair with bPin."),
+      bPin: z.string().optional().describe("Pin number/name for point B. Pair with bReference."),
+      bX: z.number().optional().describe("X coordinate in mm for point B. Pair with bY."),
+      bY: z.number().optional().describe("Y coordinate in mm for point B. Pair with bX."),
+    },
+    async (args: {
+      schematicPath: string;
+      aReference?: string;
+      aPin?: string;
+      aX?: number;
+      aY?: number;
+      bReference?: string;
+      bPin?: string;
+      bX?: number;
+      bY?: number;
+    }) => {
+      const result = await callKicadScript("check_schematic_connectivity", args);
+      if (!result.success) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to check connectivity: ${result.message || "Unknown error"}`,
+            },
+          ],
+        };
+      }
+      const fmt = (label: string, p: any) =>
+        `  ${label}: net=${p.net ?? "(unresolved)"}, resolved=${p.resolved}, wireCount=${p.wireCount}`;
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `sameNet: ${result.sameNet}\n${fmt("Point A", result.pointA)}\n${fmt("Point B", result.pointB)}`,
+          },
+        ],
+      };
+    },
+  );
+
   // Get pin locations for a schematic component
   server.tool(
     "get_schematic_pin_locations",
@@ -863,6 +1026,56 @@ edit_schematic_component and set its value to an empty string.`,
           ],
         };
       }
+    },
+  );
+
+  // Get absolute bounding box (body + pins) for one or more symbols
+  server.tool(
+    "get_schematic_symbol_bbox",
+    "Returns each symbol's absolute-coordinate bounding box (component body + pins), " +
+      "so you can plan a wire route or check clearances before drawing anything, instead of " +
+      "guessing where a component's body extends from pin coordinates alone.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      references: z
+        .array(z.string())
+        .min(1)
+        .describe("One or more reference designators, e.g. ['U1', 'R4']"),
+      margin: z
+        .number()
+        .optional()
+        .describe("Shrink each bounding box by this many mm on each side (default 0)"),
+    },
+    async (args: { schematicPath: string; references: string[]; margin?: number }) => {
+      const result = await callKicadScript("get_schematic_symbol_bbox", args);
+      if (!result.success) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to get symbol bounding boxes: ${result.message || "Unknown error"}`,
+            },
+          ],
+        };
+      }
+      const lines: string[] = [];
+      for (const [ref, entries] of Object.entries(result.boxes as Record<string, any[]>)) {
+        for (const e of entries) {
+          if (e.boundingBox) {
+            const b = e.boundingBox;
+            lines.push(
+              `${ref} (${e.libId}) @ (${e.position.x},${e.position.y}): ` +
+                `bbox [${b.minX},${b.minY}] → [${b.maxX},${b.maxY}] (${b.width}×${b.height}mm)`,
+            );
+          } else {
+            lines.push(`${ref} (${e.libId}): no bounding box — ${e.reason}`);
+          }
+        }
+      }
+      if (result.notFound?.length) {
+        lines.push(`Not found: ${result.notFound.join(", ")}`);
+      }
+      return { content: [{ type: "text" as const, text: lines.join("\n") || "No symbols found" }] };
     },
   );
 
