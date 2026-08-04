@@ -146,17 +146,30 @@ export const toolCategories: ToolCategory[] = [
   },
   {
     name: "library",
+    description: "Footprint library access: search, browse, get footprint information",
+    tools: ["list_libraries", "search_footprints", "list_library_footprints", "get_footprint_info"],
+  },
+  {
+    name: "symbol_library",
     description:
-      "Footprint library access: search, browse, get footprint information; plus symbol-library repair",
+      "Symbol library access and maintenance: search/browse sym-lib-table libraries, create/edit/rename/import/export symbols in a .kicad_sym file, repair malformed vendor symbols, and sync placed schematic instances to their library definitions",
     tools: [
-      "list_libraries",
-      "search_footprints",
-      "list_library_footprints",
-      "get_footprint_info",
-      // Symbol-library maintenance. Sits here for now because there is no
-      // symbol-library category yet -- see #345, which tracks giving the
-      // ~13 unregistered symbol tools a proper home.
+      "list_symbol_libraries",
+      "search_symbols",
+      "list_library_symbols",
+      "get_symbol_info",
+      "create_symbol",
+      "delete_symbol",
+      "rename_symbol",
+      "import_symbol",
+      "export_symbol",
+      "list_symbols_in_library",
+      "register_symbol_library",
+      "add_symbol_property",
       "repair_flat_symbols",
+      "update_symbol_from_library",
+      "add_library_symbol_property",
+      "replace_instance_lib_ids",
     ],
   },
   {
