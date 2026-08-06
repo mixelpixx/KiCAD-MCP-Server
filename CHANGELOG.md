@@ -4,6 +4,36 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Tools
+
+- **`backannotate_footprints`** — copy footprint assignments from a `.kicad_pcb`
+  back into the schematic's `Footprint` fields. The server had
+  `sync_schematic_to_board` (F8) but nothing in the reverse direction, so after
+  a layout pass — where footprints get swapped in pcbnew — the schematic kept
+  stale values, and every ECO run pushed them back onto the board. Imported
+  projects have the same problem from day one: the schematic-side fields never
+  matched the placed parts.
+
+  Matches by reference designator across every `.kicad_sch` beside the board (or
+  one named sheet), updates all units of a multi-unit symbol, and skips virtual
+  references starting with `#` (power and ground symbols carry no footprint).
+  Instances with no `Footprint` field get one added unless `addMissing` is
+  false; `dryRun` reports the diff without writing. Position and `hide` are
+  carried over from the existing field, so back-annotating does not move or
+  reveal a field the user had placed. The `lib_symbols` cache is left alone —
+  instance fields override it, and rewriting the cache is a different tool.
+
+  Parsing is structural rather than regex-based, which matters for two real
+  cases: footprint names containing parentheses (`HRS_U.FL-R-SMT-1(10)` is a
+  stock Hirose connector) and board files whose indentation does not track
+  nesting. Verified end to end on a 71-footprint board: it found two genuine
+  mismatches (`0402S` where the board had `0402HF`), `kicad-cli sch upgrade`
+  accepted the result, and a second pass was a no-op.
+
+  The s-expression walkers this needed (`match_paren`, `iter_child_offsets`)
+  moved into `utils/sexpr_format.py`, replacing private copies in
+  `add_symbol_property` and `library_tables`.
+
 ### Bug Fixes
 
 - **`add_layer` could not add inner copper layers, and corrupted an unrelated

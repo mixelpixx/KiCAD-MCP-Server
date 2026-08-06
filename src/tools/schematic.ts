@@ -1588,6 +1588,47 @@ edit_schematic_component and set its value to an empty string.`,
   );
 
   server.tool(
+    "backannotate_footprints",
+    "Copy footprint assignments from a .kicad_pcb back into the schematic's Footprint " +
+      "fields — the reverse of sync_schematic_to_board. After a layout pass the board is " +
+      "the side that is right: footprints get swapped in pcbnew, and imported projects land " +
+      "with schematic-side fields that never matched the placed parts. Matching is by " +
+      "reference designator; virtual references starting with '#' (power, ground) are " +
+      "skipped, and every unit of a multi-unit symbol is updated.",
+    {
+      boardPath: z.string().describe("Absolute path to the .kicad_pcb board file"),
+      schematicPath: z
+        .string()
+        .optional()
+        .describe(
+          "Single sheet to update. Omit to update every .kicad_sch beside the board, " +
+            "which is what a hierarchical design needs.",
+        ),
+      references: z
+        .array(z.string())
+        .optional()
+        .describe("Limit the update to these reference designators"),
+      addMissing: z
+        .boolean()
+        .optional()
+        .describe("Add a Footprint field to instances that have none (default true)"),
+      dryRun: z.boolean().optional().describe("Report the changes without writing them"),
+    },
+    async (args: {
+      boardPath: string;
+      schematicPath?: string;
+      references?: string[];
+      addMissing?: boolean;
+      dryRun?: boolean;
+    }) => {
+      const result = await callKicadScript("backannotate_footprints", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
+  server.tool(
     "create_board_from_schematic",
     "Create a new .kicad_pcb file from a schematic, then update the PCB from that schematic so footprints and nets are present.",
     {
