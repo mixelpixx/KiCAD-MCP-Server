@@ -7,10 +7,28 @@ fields that never matched the placed parts. Recovering meant parsing
 ``.kicad_pcb`` by hand and editing each ``(property "Footprint" ...)``.
 
 Matching is by reference designator, the same key ``sync_schematic_to_board``
-uses. References beginning with ``#`` are power and other virtual symbols; they
-carry no footprint and are skipped. Multi-unit symbols appear as several
-instance blocks sharing one reference and all of them are updated, because
-KiCad treats a disagreement between units as a conflict.
+uses. From KiCad 7 on the designators a symbol actually carries live in its
+``(instances ...)`` block, one per sheet instance -- the ``(property
+"Reference" ...)`` holds only one of them -- so the candidates for a symbol come
+from there, falling back to the property when the block is absent. That matters
+for a sub-sheet instantiated more than once: its single ``Footprint`` field is
+shared by every instance, so if the board disagrees between them nothing is
+written and a ``conflicts`` entry names the references and the footprints.
+
+References beginning with ``#`` are power and other virtual symbols; they carry
+no footprint and are skipped. Multi-unit symbols appear as several instance
+blocks sharing one reference and all of them are updated, because KiCad treats a
+disagreement between units as a conflict.
+
+Updating an existing field replaces only the quoted value token, so ``hide``,
+``show_name``, ``unlocked``, justification, font and the field's exact layout
+survive untouched -- the file stays byte-identical to what eeschema would write
+apart from the value. Only the ``addMissing`` insertion path builds a field from
+scratch, because there is no existing state to keep.
+
+Sheets are found by walking the real sheet tree from the root schematic beside
+the board, so local history, backup copies and unrelated projects under the same
+directory are never rewritten.
 
 Nesting is tracked structurally rather than by indentation: KiCad's writers
 emit board files whose indentation does not always match depth.
@@ -22,9 +40,10 @@ Tools:
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple
 
 from utils.sexpr_format import (
     QUOTED_VALUE,
@@ -46,22 +65,58 @@ _FOOTPRINT_HEAD = re.compile(rf"\(footprint\s+{QUOTED_VALUE}")
 
 _INSTANCE_HEAD = re.compile(r"\(symbol[\s(]")
 
+# '(sheet ' only -- '(sheet_instances' is a different list at the same depth.
+_SHEET_HEAD = re.compile(r"\(sheet[\s(]")
+
+_REFERENCE_TOKEN = re.compile(rf"\(reference\s+{QUOTED_VALUE}")
+
 # KiCad 6+ stores a footprint's designator as a property; KiCad 5 used fp_text.
 _FP_TEXT_REFERENCE = re.compile(rf"\(fp_text\s+reference\s+{QUOTED_VALUE}")
 
 
-def _read(path: Path, kind: str) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+def _read_text(path: Path) -> Tuple[str, str]:
+    """File text with LF newlines, plus the newline style to write back."""
+    with open(path, "r", encoding="utf-8", newline="") as fh:
+        raw = fh.read()
+    return raw.replace("\r\n", "\n"), ("\r\n" if "\r\n" in raw else "\n")
+
+
+def _write_text(path: Path, text: str, newline: str) -> None:
+    """Atomic write that keeps the file's original newline style."""
+    tmp = path.with_name(path.name + ".mcp-tmp")
+    with open(tmp, "w", encoding="utf-8", newline=newline) as fh:
+        fh.write(text)
+    os.replace(tmp, path)
+
+
+def _read(path: Path, kind: str) -> Tuple[Optional[str], str, Optional[Dict[str, Any]]]:
+    """Text and newline style of *path*, or an error payload."""
     if not path.exists():
-        return None, {"success": False, "message": f"{kind} not found: {path}"}
+        return None, "\n", {"success": False, "message": f"{kind} not found: {path}"}
     try:
-        return path.read_text(encoding="utf-8"), None
+        text, newline = _read_text(path)
     except (OSError, UnicodeDecodeError) as exc:
-        return None, {"success": False, "message": f"Could not read {path}: {exc}"}
+        return None, "\n", {"success": False, "message": f"Could not read {path}: {exc}"}
+    return text, newline, None
 
 
-def _properties(block: str) -> Dict[str, Tuple[str, int, int]]:
-    """Direct-child properties of a block: name -> (value, start, end)."""
-    found: Dict[str, Tuple[str, int, int]] = {}
+class _Property(NamedTuple):
+    """One ``(property "name" "value" ...)`` list located inside a block.
+
+    ``value_start``/``value_end`` bound the escaped value *between* its quotes,
+    which is the only span an update is allowed to touch.
+    """
+
+    value: str
+    start: int
+    end: int
+    value_start: int
+    value_end: int
+
+
+def _properties(block: str) -> Dict[str, _Property]:
+    """Direct-child properties of a block, by name."""
+    found: Dict[str, _Property] = {}
     for offset in iter_child_offsets(block):
         m = _PROPERTY_HEAD.match(block, offset)
         if not m:
@@ -70,13 +125,27 @@ def _properties(block: str) -> Dict[str, Tuple[str, int, int]]:
         if end == -1:
             continue
         name = unescape_sexpr_string(m.group(1))
-        found.setdefault(name, (unescape_sexpr_string(m.group(2)), offset, end + 1))
+        found.setdefault(
+            name,
+            _Property(
+                value=unescape_sexpr_string(m.group(2)),
+                start=offset,
+                end=end + 1,
+                value_start=m.start(2),
+                value_end=m.end(2),
+            ),
+        )
     return found
 
 
-def read_board_footprints(board_text: str) -> Dict[str, str]:
-    """Reference designator -> footprint lib id, as placed on the board."""
-    placed: Dict[str, str] = {}
+def read_board_placements(board_text: str) -> Dict[str, List[str]]:
+    """Reference designator -> every footprint the board gives it, in file order.
+
+    A reference should appear once. When it appears twice the board is what is
+    ambiguous, so both are kept for the caller to refuse rather than one of them
+    silently overwriting the other.
+    """
+    placements: Dict[str, List[str]] = {}
     for offset in iter_child_offsets(board_text):
         m = _FOOTPRINT_HEAD.match(board_text, offset)
         if not m:
@@ -87,15 +156,24 @@ def read_board_footprints(board_text: str) -> Dict[str, str]:
         block = board_text[offset : end + 1]
         props = _properties(block)
         if "Reference" in props:
-            reference = props["Reference"][0]
+            reference = props["Reference"].value
         else:
             legacy = _FP_TEXT_REFERENCE.search(block)
             if not legacy:
                 continue
             reference = unescape_sexpr_string(legacy.group(1))
         if reference:
-            placed[reference] = unescape_sexpr_string(m.group(1))
-    return placed
+            placements.setdefault(reference, []).append(unescape_sexpr_string(m.group(1)))
+    return placements
+
+
+def read_board_footprints(board_text: str) -> Dict[str, str]:
+    """Reference designator -> footprint lib id, as placed on the board.
+
+    Duplicated references keep the first placement; use
+    :func:`read_board_placements` to see the ambiguity.
+    """
+    return {reference: values[0] for reference, values in read_board_placements(board_text).items()}
 
 
 def _indent_of(block: str, offset: int) -> str:
@@ -105,6 +183,7 @@ def _indent_of(block: str, offset: int) -> str:
 
 
 def _build_footprint_property(value: str, at_text: str, indent: str) -> str:
+    """A brand-new Footprint field. Only for insertion -- never for an update."""
     inner = indent + ("\t" if "\t" in indent else "  ")
     return "\n".join(
         [
@@ -128,12 +207,146 @@ def _at_token(block: str, prop_span: Tuple[int, int]) -> str:
     return "(at 0 0 0)"
 
 
+def _instance_references(block: str) -> List[str]:
+    """Reference designators from a symbol's ``(instances ...)``, in file order.
+
+    KiCad 7+ keeps one per sheet instance here; the ``Reference`` property is
+    only ever one of them, so a sub-sheet placed twice has a second designator
+    that exists nowhere else.
+    """
+    references: List[str] = []
+    for offset in iter_child_offsets(block):
+        if not block.startswith("(instances", offset):
+            continue
+        end = match_paren(block, offset)
+        if end == -1:
+            continue
+        instances = block[offset : end + 1]
+        for project_offset in iter_child_offsets(instances):
+            project_end = match_paren(instances, project_offset)
+            if project_end == -1:
+                continue
+            project = instances[project_offset : project_end + 1]
+            for path_offset in iter_child_offsets(project):
+                if not project.startswith("(path", path_offset):
+                    continue
+                path_end = match_paren(project, path_offset)
+                if path_end == -1:
+                    continue
+                path_block = project[path_offset : path_end + 1]
+                for token_offset in iter_child_offsets(path_block):
+                    m = _REFERENCE_TOKEN.match(path_block, token_offset)
+                    if m:
+                        references.append(unescape_sexpr_string(m.group(1)))
+    return references
+
+
+def _candidate_references(block: str, props: Dict[str, _Property]) -> List[str]:
+    """Every designator the symbol's shared Footprint field speaks for."""
+    found = _instance_references(block)
+    if not found and "Reference" in props:
+        found = [props["Reference"].value]
+    ordered: List[str] = []
+    for reference in found:
+        if reference and reference not in ordered:
+            ordered.append(reference)
+    return ordered
+
+
+def _sub_sheet_files(text: str) -> List[str]:
+    """The ``Sheetfile`` of every ``(sheet ...)`` in one schematic."""
+    files: List[str] = []
+    for offset in iter_child_offsets(text):
+        if not _SHEET_HEAD.match(text, offset):
+            continue
+        end = match_paren(text, offset)
+        if end == -1:
+            continue
+        props = _properties(text[offset : end + 1])
+        prop = props.get("Sheetfile") or props.get("Sheet file")
+        if prop is not None and prop.value:
+            files.append(prop.value)
+    return files
+
+
+def _real_key(path: Path) -> str:
+    """Identity of a file on disk, so the same sheet is never visited twice."""
+    return os.path.normcase(os.path.realpath(str(path)))
+
+
+def _sheet_tree(root: Path) -> List[Path]:
+    """Sheets reachable from *root*, root first, one entry per file on disk.
+
+    Walking the tree is what bounds the edit to the design. Globbing the board's
+    directory also picks up ``.history`` snapshots, backup copies and unrelated
+    projects -- and rewriting a backup destroys the fallback at the same moment
+    as the risky edit.
+    """
+    order: List[Path] = []
+    seen: Set[str] = set()
+    queue: List[Path] = [root]
+    while queue:
+        sheet = queue.pop(0)
+        key = _real_key(sheet)
+        if key in seen:
+            continue
+        seen.add(key)
+        if not sheet.is_file():
+            continue
+        order.append(sheet)
+        try:
+            text, _newline = _read_text(sheet)
+        except (OSError, UnicodeDecodeError):
+            continue
+        for name in _sub_sheet_files(text):
+            queue.append(sheet.parent / name)
+    return order
+
+
+def _sheets_beside(board_path: Path) -> List[Path]:
+    """Fallback when no root schematic is named after the board.
+
+    Non-recursive, which puts ``.history`` and backup directories out of reach by
+    construction -- the ``.history``/``backup`` path filter
+    ``update_symbol_from_library`` needs for its recursive walk would only ever
+    match an ancestor here, and would then exclude the whole project. KiCad's
+    autosave copies do sit in the project directory, so those are named out.
+    """
+    return sorted(
+        p
+        for p in board_path.parent.glob("*.kicad_sch")
+        if not p.name.startswith(("_autosave-", "#auto_saved_"))
+    )
+
+
+def _display(sheet: Path, root_dir: Path) -> str:
+    """Project-relative path, so two sheets named ``s.kicad_sch`` differ."""
+    try:
+        return sheet.relative_to(root_dir).as_posix()
+    except ValueError:
+        return str(sheet)
+
+
+class _SheetPlan(NamedTuple):
+    sheet: Path
+    label: str
+    text: str
+    newline: str
+    edits: List[Dict[str, Any]]
+
+
 def _plan_sheet(
-    text: str, placed: Dict[str, str], wanted: Optional[set], add_missing: bool
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    text: str,
+    placed: Dict[str, str],
+    ambiguous: Dict[str, List[str]],
+    wanted: Optional[Set[str]],
+    add_missing: bool,
+    seen: Set[str],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Work out the edits for one sheet without applying them."""
     edits: List[Dict[str, Any]] = []
     skipped: List[Dict[str, Any]] = []
+    conflicts: List[Dict[str, Any]] = []
 
     # Depth 2 is a direct child of (kicad_sch ...), which is where placed
     # instances live. The lib_symbols cache is a sibling, so its symbol
@@ -146,34 +359,72 @@ def _plan_sheet(
             continue
         block = text[offset : end + 1]
         props = _properties(block)
-        if "Reference" not in props:
+        references = [
+            r for r in _candidate_references(block, props) if not _VIRTUAL_REFERENCE.match(r)
+        ]
+        if not references:
             continue
-        reference = props["Reference"][0]
-        if _VIRTUAL_REFERENCE.match(reference):
-            continue
-        if wanted is not None and reference not in wanted:
-            continue
-        if reference not in placed:
-            skipped.append({"reference": reference, "reason": "not on the board"})
+        # Recorded before the filter: what the board has that the schematic does
+        # not is a fact about the design, not about this invocation's filter.
+        seen.update(references)
+        if wanted is not None and not wanted.intersection(references):
             continue
 
-        board_footprint = placed[reference]
+        resolvable: Dict[str, str] = {}
+        for reference in references:
+            if reference in ambiguous:
+                skipped.append(
+                    {
+                        "reference": reference,
+                        "reason": "the board assigns more than one footprint to this reference",
+                    }
+                )
+            elif reference in placed:
+                resolvable[reference] = placed[reference]
+            elif reference.endswith("?"):
+                skipped.append(
+                    {"reference": reference, "reason": "not annotated yet -- annotate first"}
+                )
+            else:
+                skipped.append({"reference": reference, "reason": "not on the board"})
+        if not resolvable:
+            continue
+
+        # One Footprint field serves every instance of the symbol, so the board
+        # has to agree about them before anything may be written.
+        if len(set(resolvable.values())) > 1:
+            conflicts.append(
+                {
+                    "references": sorted(resolvable),
+                    "footprints": sorted(set(resolvable.values())),
+                    "reason": (
+                        "instances sharing one Footprint field are assigned "
+                        "different footprints on the board"
+                    ),
+                }
+            )
+            continue
+        board_footprint = next(iter(resolvable.values()))
+        # Name the change after a designator the board actually knows about, not
+        # merely the first one the symbol carries.
+        reference = next(iter(resolvable))
+
         if "Footprint" in props:
-            current, prop_start, prop_end = props["Footprint"]
-            if current == board_footprint:
+            existing = props["Footprint"]
+            if existing.value == board_footprint:
                 continue
-            indent = _indent_of(block, prop_start)
-            at_text = _at_token(block, (prop_start, prop_end))
+            # Only the quoted value token moves. Rebuilding the field would
+            # discard hide, show_name, unlocked, justify and the font the user
+            # set, and reflow what eeschema wrote.
             edits.append(
                 {
                     "reference": reference,
-                    "from": current,
+                    "references": sorted(resolvable),
+                    "from": existing.value,
                     "to": board_footprint,
-                    "start": offset + prop_start,
-                    "end": offset + prop_end,
-                    "text": _build_footprint_property(board_footprint, at_text, indent).lstrip(
-                        "\t "
-                    ),
+                    "start": offset + existing.value_start,
+                    "end": offset + existing.value_end,
+                    "text": escape_sexpr_string(board_footprint),
                 }
             )
         elif add_missing:
@@ -183,23 +434,23 @@ def _plan_sheet(
                     {"reference": reference, "reason": "no anchor field to insert after"}
                 )
                 continue
-            _, anchor_start, anchor_end = anchor
-            indent = _indent_of(block, anchor_start)
-            at_text = _at_token(block, (anchor_start, anchor_end))
+            indent = _indent_of(block, anchor.start)
+            at_text = _at_token(block, (anchor.start, anchor.end))
             edits.append(
                 {
                     "reference": reference,
+                    "references": sorted(resolvable),
                     "from": None,
                     "to": board_footprint,
-                    "start": offset + anchor_end,
-                    "end": offset + anchor_end,
+                    "start": offset + anchor.end,
+                    "end": offset + anchor.end,
                     "text": "\n" + _build_footprint_property(board_footprint, at_text, indent),
                 }
             )
         else:
             skipped.append({"reference": reference, "reason": "no Footprint field"})
 
-    return edits, skipped
+    return edits, skipped, conflicts
 
 
 def _apply(text: str, edits: List[Dict[str, Any]]) -> str:
@@ -217,63 +468,106 @@ def backannotate_footprints(params: Dict[str, Any]) -> Dict[str, Any]:
     references = params.get("references")
     wanted = set(references) if references else None
 
-    board_text, error = _read(board_path, "Board")
+    board_text, _newline, error = _read(board_path, "Board")
     if error:
         return error
     assert board_text is not None
 
-    placed = read_board_footprints(board_text)
-    if not placed:
+    placements = read_board_placements(board_text)
+    if not placements:
         return {
             "success": False,
             "message": f"No placed footprints found in {board_path.name}",
         }
 
+    # A reference the board uses twice cannot be back-annotated: there is no
+    # single right answer, and picking one writes a possibly-wrong footprint.
+    ambiguous = {ref: values for ref, values in placements.items() if len(values) > 1}
+    placed = {ref: values[0] for ref, values in placements.items() if ref not in ambiguous}
+
+    conflicts: List[Dict[str, Any]] = [
+        {
+            "references": [ref],
+            "footprints": sorted(set(ambiguous[ref])),
+            "reason": "the board has more than one footprint carrying this reference",
+        }
+        for ref in sorted(ambiguous)
+    ]
+
+    warnings: List[str] = []
+    root_sheet = board_path.with_suffix(".kicad_sch")
+    tree = _sheet_tree(root_sheet) if root_sheet.is_file() else []
+
     sheet_param = params.get("schematicPath")
     if sheet_param:
         sheets = [Path(sheet_param)]
+        if tree and _real_key(sheets[0]) not in {_real_key(p) for p in tree}:
+            warnings.append(
+                f"{sheet_param} is not part of {root_sheet.name}'s sheet tree; "
+                "updating it anyway because it was named explicitly"
+            )
     else:
-        sheets = sorted(board_path.parent.rglob("*.kicad_sch"))
+        sheets = tree or _sheets_beside(board_path)
     if not sheets:
         return {
             "success": False,
             "message": f"No .kicad_sch files found next to {board_path.name}",
         }
 
+    root_dir = board_path.parent
     changes: List[Dict[str, Any]] = []
     skipped: List[Dict[str, Any]] = []
+    failures: List[Dict[str, Any]] = []
     updated_files: List[str] = []
+    seen: Set[str] = set()
 
+    # Plan every sheet before touching any of them: a write that fails halfway
+    # through used to leave the earlier sheets edited and drop the report.
+    plans: List[_SheetPlan] = []
     for sheet in sheets:
-        text, error = _read(sheet, "Schematic")
+        label = _display(sheet, root_dir)
+        text, newline, error = _read(sheet, "Schematic")
         if error:
-            return error
+            failures.append({"sheet": label, "path": str(sheet), "error": error["message"]})
+            continue
         assert text is not None
 
-        edits, sheet_skipped = _plan_sheet(text, placed, wanted, add_missing)
+        edits, sheet_skipped, sheet_conflicts = _plan_sheet(
+            text, placed, ambiguous, wanted, add_missing, seen
+        )
         for item in sheet_skipped:
-            item["sheet"] = sheet.name
+            item["sheet"] = label
         skipped.extend(sheet_skipped)
+        for item in sheet_conflicts:
+            item["sheet"] = label
+        conflicts.extend(sheet_conflicts)
         if not edits:
             continue
-
+        plans.append(_SheetPlan(sheet, label, text, newline, edits))
         for edit in edits:
             changes.append(
                 {
-                    "sheet": sheet.name,
+                    "sheet": label,
                     "reference": edit["reference"],
+                    "references": edit["references"],
                     "from": edit["from"],
                     "to": edit["to"],
                     "action": "added" if edit["from"] is None else "updated",
                 }
             )
 
-        if not dry_run:
+    if not dry_run:
+        for plan in plans:
             try:
-                sheet.write_text(_apply(text, edits), encoding="utf-8")
+                _write_text(plan.sheet, _apply(plan.text, plan.edits), plan.newline)
             except OSError as exc:
-                return {"success": False, "message": f"Could not write {sheet}: {exc}"}
-            updated_files.append(str(sheet))
+                logger.error("backannotate_footprints could not write %s: %s", plan.sheet, exc)
+                failures.append({"sheet": plan.label, "path": str(plan.sheet), "error": str(exc)})
+                continue
+            updated_files.append(str(plan.sheet))
+
+    on_board = set(placed) & wanted if wanted is not None else set(placed)
+    not_in_schematic = sorted(on_board - seen)
 
     verb = "Would update" if dry_run else "Updated"
     if changes:
@@ -283,16 +577,24 @@ def backannotate_footprints(params: Dict[str, Any]) -> Dict[str, Any]:
         )
     else:
         message = "Every schematic footprint field already matches the board"
+    if conflicts:
+        message += f"; {len(conflicts)} conflict(s) left untouched"
+    if failures:
+        message += f"; {len(failures)} sheet(s) failed"
 
     return {
-        "success": True,
+        "success": not failures,
         "message": message,
         "dryRun": dry_run,
         "boardPath": str(board_path),
-        "boardFootprintCount": len(placed),
-        "sheetsScanned": [s.name for s in sheets],
+        "boardFootprintCount": len(placements),
+        "sheetsScanned": [_display(s, root_dir) for s in sheets],
         "updatedFiles": updated_files,
         "changeCount": len(changes),
         "changes": changes,
         "skipped": skipped,
+        "conflicts": conflicts,
+        "notInSchematic": not_in_schematic,
+        "warnings": warnings,
+        "failures": failures,
     }
