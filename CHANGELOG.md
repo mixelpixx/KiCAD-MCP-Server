@@ -4,6 +4,34 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Tools
+
+- **`set_symbol_pin_type`** — set the electrical type, and optionally the
+  graphic style, of pins in a `.kicad_sym` library, filtered by symbol, pin
+  number, pin name, or current type. The server could read pins
+  (`list_symbol_pins`, `batch_list_symbol_pins`) but not write them, so bulk
+  fixes were done with `sed` over the library file.
+
+  That is unsafe in ways that are easy to miss. A blind substitution also
+  rewrites the words it matches inside symbol names, `Description` properties
+  and `(alternate "SPI_CLK" output line)` pin functions; it cannot tell which
+  symbol it is standing on, so "only the shield pins" is not expressible; and
+  nothing validates the replacement token, which matters because KiCad refuses
+  to load a library containing a pin type it does not recognise and reports the
+  file rather than the pin. This tool checks the token against KiCad's sets
+  before touching the file, and rewrites only the pin head.
+
+  The usual reason to need it: symbols converted from Eagle or pulled from
+  SnapEDA arrive with every pin `unspecified` or `bidirectional`, and ERC then
+  reports conflicts on nets that are electrically fine, burying the real errors.
+  `fromType` makes that a one-liner. A misspelled symbol name is reported in
+  `missingSymbols` rather than silently matching nothing, and `dryRun` shows
+  the list first.
+
+  Verified on a 2.2 MB library: 2279 pins across 472 symbols walked correctly,
+  32 pins changed, paren balance unmoved, `kicad-cli sym upgrade` accepted the
+  result, and a second pass was a no-op.
+
 ### Bug Fixes
 
 - **`add_layer` could not add inner copper layers, and corrupted an unrelated

@@ -76,6 +76,77 @@ QUOTED_VALUE = r'"((?:[^"\\]|\\.)*)"'
 QUOTED_VALUE_SKIP = r'"(?:[^"\\]|\\.)*"'
 
 
+# ---------------------------------------------------------------------------
+# String-aware structure walking
+# ---------------------------------------------------------------------------
+#
+# Tools that edit KiCad files as text need to know where a list ends without
+# re-serializing the file. Counting parens is not enough: a Description of
+# ``"Ceramic (X7R) 50V"`` or a footprint named ``HRS_U.FL-R-SMT-1(10)`` puts
+# unbalanced parens inside quoted tokens, and real libraries contain both.
+#
+# These two helpers skip quoted text, so callers can slice a block out of a
+# file and splice a new one back without a parser.
+
+
+def match_paren(content: str, open_idx: int) -> int:
+    """Index of the ``)`` closing the ``(`` at *open_idx*, or -1 if unbalanced.
+
+    Parens inside quoted tokens are literal text, not structure.
+    """
+    depth = 0
+    in_string = False
+    i = open_idx
+    while i < len(content):
+        ch = content[i]
+        if in_string:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return -1
+
+
+def iter_child_offsets(block: str, depth: int = 2):
+    """Yield the offset of every list nested *depth* levels inside *block*.
+
+    *block* starts at its own ``(``, which is depth 1, so the default yields
+    its direct children. Depth is counted structurally rather than from
+    indentation: KiCad's own writers emit files whose indentation does not
+    always match nesting.
+    """
+    current = 0
+    in_string = False
+    i = 0
+    while i < len(block):
+        ch = block[i]
+        if in_string:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch == "(":
+            current += 1
+            if current == depth:
+                yield i
+        elif ch == ")":
+            current -= 1
+        i += 1
+
+
 def escape_sexpr_string(value: str) -> str:
     """Escape a string for insertion into a KiCad double-quoted token.
 

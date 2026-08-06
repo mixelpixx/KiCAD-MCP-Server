@@ -15,7 +15,7 @@ PYTHON_DIR = Path(__file__).parent.parent / "python"
 sys.path.insert(0, str(PYTHON_DIR))
 
 from commands.wire_dragger import WireDragger  # noqa: E402
-from utils.sexpr_format import dumps, prettify  # noqa: E402
+from utils.sexpr_format import dumps, iter_child_offsets, match_paren, prettify  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -179,6 +179,40 @@ class TestWriteToolIntegration:
         assert sexpdata.loads(out) is not None  # still parses
         # Writing again is stable (idempotent formatting).
         assert prettify(out) == out
+
+
+class TestStructureWalking:
+    """match_paren / iter_child_offsets let text tools slice a block out safely."""
+
+    def test_match_paren_finds_the_closing_paren(self):
+        s = "(a (b) (c))"
+        assert match_paren(s, 0) == len(s) - 1
+        assert match_paren(s, 3) == 5
+
+    def test_match_paren_ignores_parens_inside_strings(self):
+        # A real footprint name: HRS_U.FL-R-SMT-1(10).
+        s = '(footprint "Lib:HRS_U.FL-R-SMT-1(10)" (layer "F.Cu"))'
+        assert match_paren(s, 0) == len(s) - 1
+
+    def test_match_paren_ignores_an_escaped_quote(self):
+        s = '(property "he said \\"hi (x)\\"" (at 0 0))'
+        assert match_paren(s, 0) == len(s) - 1
+
+    def test_match_paren_returns_minus_one_when_unbalanced(self):
+        assert match_paren("(a (b)", 0) == -1
+
+    def test_iter_child_offsets_yields_direct_children(self):
+        s = '(symbol (lib_id "X") (at 0 0) (property "a" "b" (at 1 1)))'
+        assert [s[i : i + 5] for i in iter_child_offsets(s)] == ["(lib_", "(at 0", "(prop"]
+
+    def test_iter_child_offsets_depth_is_configurable(self):
+        s = "(root (mid (leaf)))"
+        assert [s[i : i + 5] for i in iter_child_offsets(s, depth=3)] == ["(leaf"]
+
+    def test_iter_child_offsets_ignores_indentation(self):
+        """Board files from KiCad indent inconsistently; only nesting counts."""
+        s = '(kicad_pcb\n\t\t\t(footprint "A")\n\t(footprint "B")\n)'
+        assert len(list(iter_child_offsets(s))) == 2
 
 
 class TestIntegerRotationAngle:
