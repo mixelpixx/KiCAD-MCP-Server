@@ -2960,8 +2960,10 @@ SCHEMATIC_TOOLS = [
         "title": "Add Property to Library Symbol",
         "description": (
             "Add or update a custom property on a symbol in a .kicad_sym library file. "
-            "This makes permanent library-wide changes. After adding properties, use "
-            "update_symbol_from_library to refresh schematics that reference the updated symbol."
+            "The property is written on the symbol itself, not on one of its units, so "
+            "multi-unit symbols are handled correctly. This makes permanent library-wide "
+            "changes. After adding properties, use update_symbol_from_library to refresh "
+            "schematics that reference the updated symbol."
         ),
         "inputSchema": {
             "type": "object",
@@ -2973,8 +2975,18 @@ SCHEMATIC_TOOLS = [
                 "position": {
                     "type": "object",
                     "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
+                    "description": (
+                        "Placement in mm. Omit to keep an existing property where it is "
+                        "(new properties default to 0, 0)."
+                    ),
                 },
-                "hide": {"type": "boolean", "default": False},
+                "hide": {
+                    "type": "boolean",
+                    "description": (
+                        "Hide the property. Omit to keep an existing property's current "
+                        "visibility (new properties default to visible)."
+                    ),
+                },
             },
             "required": ["libraryPath", "symbolName", "propertyName", "propertyValue"],
         },

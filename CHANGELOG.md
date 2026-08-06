@@ -6,6 +6,34 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`add_symbol_property` corrupted `.kicad_sym` libraries**. Every call dropped
+  one closing paren, so the library stopped loading in eeschema. Four defects,
+  all in the same write path:
+  - The rewritten symbol was spliced back as
+    `content[:start] + block + content[end + 1:]`, but `block` was sliced
+    `[start:end]` — excluding the symbol's closing paren that `end + 1` then
+    skipped over. One `)` disappeared per call.
+  - The insertion point was matched with `\n\t\t\t(symbol "`, a nesting level
+    that does not occur in a `.kicad_sym` file (units sit at two tabs, not
+    three). The match never fired, so every new property took the fallback path
+    and landed **inside the last unit** instead of on the symbol.
+  - Updating an existing property matched `\(property "Name".*?\)` non-greedily,
+    which stops at the first `)`. On the multi-line layout eeschema writes, that
+    is the `(at ...)` line — the old `(hide yes)` and `(effects ...)` lines were
+    left behind as orphans under the symbol.
+  - Parens inside quoted values (`"Ceramic (X7R) 50V"`) were counted as
+    structure, mis-locating the end of the block.
+
+  Block boundaries are now found by string-aware paren matching, properties are
+  resolved and inserted at the symbol's own nesting level (so a unit's
+  `Reference` is never mistaken for the symbol's), and values are escaped with
+  `escape_sexpr_string`. Indentation is copied from the file being edited rather
+  than hardcoded to tabs. Rewriting a property now inherits its current position
+  and visibility unless `position`/`hide` are passed, so updating a value no
+  longer un-hides a BOM field. Verified against a 487-symbol library: before the
+  fix, 25 calls left a paren balance of +12 and `kicad-cli sym upgrade` reported
+  `Unable to load library`; after, the balance is 0 and the library loads.
+
 - **`add_layer` could not add inner copper layers, and corrupted an unrelated
   layer trying** (#222). Four defects, of which the reported one — changes
   never reaching disk — was the least damaging:

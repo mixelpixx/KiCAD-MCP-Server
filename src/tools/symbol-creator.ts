@@ -215,7 +215,9 @@ export function registerSymbolCreatorTools(server: McpServer, callKicadScript: F
   // ── add_symbol_property ───────────────────────────────────────────────── //
   server.tool(
     "add_symbol_property",
-    "Add or update a custom property (Manufacturer, MPN, LCSC, etc.) on a symbol in a .kicad_sym library file.",
+    "Add or update a custom property (Manufacturer, MPN, LCSC, etc.) on a symbol in a .kicad_sym " +
+      "library file. The property is written on the symbol itself rather than on one of its " +
+      "units, so multi-unit symbols are handled correctly.",
     {
       libraryPath: z.string().describe("Path to the .kicad_sym file"),
       symbolName: z.string().describe("Symbol name"),
@@ -224,8 +226,13 @@ export function registerSymbolCreatorTools(server: McpServer, callKicadScript: F
       position: z
         .object({ x: z.number(), y: z.number() })
         .optional()
-        .describe("Position {x, y} in mm (default: 0, 0)"),
-      hide: z.boolean().optional().describe("Hide the property (default false)"),
+        .describe(
+          "Position {x, y} in mm. Omit to leave an existing property where it is (new: 0, 0)",
+        ),
+      hide: z
+        .boolean()
+        .optional()
+        .describe("Hide the property. Omit to keep an existing property's visibility (new: false)"),
     },
     async (args: any) => {
       const r = await callKicadScript("add_symbol_property", args);
