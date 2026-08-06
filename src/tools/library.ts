@@ -195,13 +195,20 @@ export function registerLibraryTools(server: McpServer, callKicadScript: Functio
     .string()
     .optional()
     .describe("Path to the table file itself, bypassing scope/projectPath resolution");
+  const dryRun = z
+    .boolean()
+    .optional()
+    .describe("Report what the edit would do without writing the table");
 
   server.tool(
     "list_library_table",
     "Read a sym-lib-table or fp-lib-table: nickname, type, URI and description of every " +
-      "registered library. Each URI is resolved through ${KIPRJMOD}, KiCad's configured path " +
-      "variables and the environment, and reported with whether the file is actually there — " +
-      "which is how a stale row left over from a library migration shows itself.",
+      "registered library. Each URI is resolved through ${KIPRJMOD}, KiCad's built-in library " +
+      "directories (KICAD*_SYMBOL_DIR and friends), the path variables configured in " +
+      "kicad_common.json and the environment, and reported with whether the file is actually " +
+      "there — which is how a stale row left over from a library migration shows itself. A " +
+      '(type "Table") row is flagged as an indirection, with a count of the libraries it ' +
+      "stands for.",
     { tableType, scope, projectPath, tablePath },
     async (args: any) => {
       const result = await callKicadScript("list_library_table", args);
@@ -214,12 +221,16 @@ export function registerLibraryTools(server: McpServer, callKicadScript: Functio
     "Remove one or more entries from a sym-lib-table or fp-lib-table by nickname — the " +
       "counterpart to register_symbol_library / register_footprint_library. The table is " +
       "re-parsed before it is written, so an edit that would leave it unbalanced is refused " +
-      "rather than saved.",
+      "rather than saved; the write is atomic and the previous contents are kept in a sibling " +
+      ".mcp-backups/ directory. Use dryRun first when the target is scope='global', which " +
+      'every project on the machine loads. Removing a (type "Table") row unregisters every ' +
+      "library in the table it points at, and the result says so.",
     {
       tableType,
       scope,
       projectPath,
       tablePath,
+      dryRun,
       libraryName: z.string().optional().describe("Nickname to remove"),
       libraryNames: z
         .array(z.string())
@@ -242,6 +253,7 @@ export function registerLibraryTools(server: McpServer, callKicadScript: Functio
       scope,
       projectPath,
       tablePath,
+      dryRun,
       libraryName: z.string().describe("Nickname of the entry to repoint"),
       uri: z
         .string()

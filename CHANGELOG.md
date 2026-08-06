@@ -14,18 +14,42 @@ All notable changes to the KiCAD MCP Server project are documented here.
   a script — `content.replace(")", ...)` on the closing paren — corrupts a
   table whose last entry ends on the same line.
 
-  These work on parsed `(lib ...)` spans: entries are found by nickname, the
-  edit slices exactly that span, and **the result is re-parsed before it is
-  written**. A rewrite that would leave the table unbalanced is refused and the
-  file is left alone. Multi-line rows (which newer KiCad writes) are handled,
-  and batch removal cuts from the back so earlier offsets stay valid.
+  These work on parsed `(lib ...)` spans: rows are located as the direct
+  children of the table — never by scanning raw text for `(lib`, so an ordinary
+  Eagle-import description like `(descr "Caps (X7R), see (lib old)")` cannot
+  invent a phantom row — the edit slices exactly that span, and **the result is
+  re-parsed before it is written**. A rewrite that would leave the table
+  unbalanced is refused and the file is left alone. Multi-line rows (which newer
+  KiCad writes) are handled, and batch removal cuts from the back so earlier
+  offsets stay valid.
+
+  `scope="global"` resolves to the machine-wide table in KiCad's user config,
+  which every project on the machine loads, so writes are made through a
+  temporary file and `os.replace` rather than truncating in place, keep the
+  file's existing newline style instead of rewriting all 200-odd lines to CRLF,
+  and copy the previous contents into a sibling `.mcp-backups/` directory first.
+  Both mutating tools accept `dryRun` to report the edit without performing it.
+  `tablePath` is checked against the table's root element, so it cannot be aimed
+  at an unrelated `.kicad_pcb` that happens to contain a matching `(lib ...)`.
 
   `list_library_table` also resolves each URI through `${KIPRJMOD}`, KiCad's
-  configured path variables from `kicad_common.json`, and the environment, then
-  reports whether the file is actually there. An unresolved variable is
-  reported as missing rather than being silently treated as a literal path.
-  This is what turns "ERC reports hundreds of `footprint_link_issues`" into
-  "this one row points at a library that moved".
+  built-in library directories, the path variables configured in
+  `kicad_common.json`, and the environment, then reports whether the file is
+  actually there. The built-in directories matter: KiCad defines
+  `KICAD10_SYMBOL_DIR` and its siblings internally, so they appear in neither
+  `kicad_common.json` nor the environment, and resolving from those two sources
+  alone reports every row of a stock table as pointing at a missing file — 225
+  of 226 on a default install. They are resolved against the discovered KiCad
+  install, reusing the same finders `commands.library_symbol` and
+  `commands.library` already use. A variable that genuinely nothing defines is
+  still reported as missing rather than treated as a literal path. This is what
+  turns "ERC reports hundreds of `footprint_link_issues`" into "this one row
+  points at a library that moved".
+
+  KiCad 10's `(type "Table")` rows are recognised as indirections rather than
+  libraries: the stock global table is a single row named `KiCad` standing for
+  200+ libraries, so listing reports how many each one covers and removing one
+  says how many libraries that unregisters.
 
 ### Bug Fixes
 

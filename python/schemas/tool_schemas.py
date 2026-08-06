@@ -1907,9 +1907,11 @@ LIBRARY_TOOLS = [
         "description": (
             "Read a sym-lib-table or fp-lib-table: nickname, type, URI and description of "
             "every registered library. Each URI is resolved through ${KIPRJMOD}, KiCad's "
-            "configured path variables and the environment, and reported alongside whether "
-            "the file is actually there -- which is how a stale row left over from a library "
-            "migration shows itself."
+            "built-in library directories (KICAD*_SYMBOL_DIR and friends), the path "
+            "variables configured in kicad_common.json and the environment, and reported "
+            "alongside whether the file is actually there -- which is how a stale row left "
+            'over from a library migration shows itself. A (type "Table") row is flagged '
+            "as an indirection, with a count of the libraries it stands for."
         ),
         "inputSchema": {
             "type": "object",
@@ -1944,7 +1946,11 @@ LIBRARY_TOOLS = [
             "Remove one or more entries from a sym-lib-table or fp-lib-table by nickname -- "
             "the counterpart to register_symbol_library / register_footprint_library. The "
             "table is re-parsed before it is written, so an edit that would leave it "
-            "unbalanced is refused rather than saved."
+            "unbalanced is refused rather than saved; the write is atomic and the previous "
+            "contents are kept in a sibling .mcp-backups/ directory. Use dryRun first when "
+            "the target is scope='global', which every project on the machine loads. "
+            'Removing a (type "Table") row unregisters every library in the table it '
+            "points at, and the result says so."
         ),
         "inputSchema": {
             "type": "object",
@@ -1975,7 +1981,15 @@ LIBRARY_TOOLS = [
                     "items": {"type": "string"},
                     "description": "Several nicknames to remove in one pass",
                 },
+                "dryRun": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Report what would be removed without writing the table",
+                },
             },
+            # A destructive tool with no required argument can be fired with none
+            # at all; at least one nickname has to be named.
+            "anyOf": [{"required": ["libraryName"]}, {"required": ["libraryNames"]}],
         },
     },
     {
@@ -2020,6 +2034,11 @@ LIBRARY_TOOLS = [
                         "New URI, e.g. ${KIPRJMOD}/../FOG_components.kicad_sym. Path variables "
                         "are stored verbatim and only expanded to check the file exists."
                     ),
+                },
+                "dryRun": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Report the new URI without writing the table",
                 },
             },
             "required": ["libraryName", "uri"],
