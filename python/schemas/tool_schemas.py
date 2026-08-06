@@ -3068,9 +3068,13 @@ VALIDATION_TOOLS = [
             "column of every fault. kicad-cli only says whether a file loads; this says "
             "where it broke. Catches unbalanced parens, unterminated strings, trailing "
             "content, and property/effects fragments orphaned directly under (kicad_sch), "
-            "which is what a truncated property rewrite leaves behind. kicad-cli is then "
-            "run on a throwaway copy as the authoritative answer, so the file being "
-            "validated is never modified. Run this after any tool that edits a schematic."
+            "which is what a truncated property rewrite leaves behind. A paren fault that "
+            "nets to zero is caught too, by the first line whose indentation stops "
+            "agreeing with its nesting depth. kicad-cli is then run on a throwaway copy "
+            "as the authoritative answer, so the file being validated is never modified. "
+            "'column' counts characters, so a tab counts once and the number will be "
+            "lower than an editor's ruler shows on indented lines. Run this after any "
+            "tool that edits a schematic."
         ),
         "inputSchema": {
             "type": "object",
@@ -3096,9 +3100,13 @@ VALIDATION_TOOLS = [
             "the line and column of every fault instead of a bare 'Unable to load "
             "library'. Beyond paren/string structure it reports units whose names no "
             "longer match their symbol (a rename that missed the NAME_0_1 sub-symbols "
-            "makes the whole library unloadable) and duplicate symbol names. kicad-cli is "
-            "run on a throwaway copy, so the library is never modified. Run this after "
-            "any tool that edits a library."
+            "makes the whole library unloadable), (effects ...)/(at ...) fragments a "
+            "truncated property rewrite left inside a (symbol ...), units that escaped "
+            "their parent to the top level, and duplicate symbol names. kicad-cli is "
+            "run on a throwaway copy, so the library is never modified. 'column' counts "
+            "characters, so a tab counts once and the number will be lower than an "
+            "editor's ruler shows on indented lines. Run this after any tool that edits "
+            "a library."
         ),
         "inputSchema": {
             "type": "object",

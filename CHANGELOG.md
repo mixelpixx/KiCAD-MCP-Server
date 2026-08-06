@@ -18,21 +18,36 @@ All notable changes to the KiCAD MCP Server project are documented here.
   `"Ceramic (X7R) 50V"` are text, so the naive `count("(") - count(")")` check
   that gives false positives on real libraries is not used. On top of that:
   - **Orphaned fragments.** A `(property ...)`, `(effects ...)` or `(at ...)`
-    sitting directly under `(kicad_sch ...)` is what a truncated property
-    rewrite leaves behind. It is balanced, so nothing else notices, and
-    eeschema refuses to open the file.
+    sitting directly under `(kicad_sch ...)` — or, in a `.kicad_sym`, an
+    `(effects ...)`, `(at ...)`, `(hide ...)`, `(font ...)` or `(justify ...)`
+    directly inside a `(symbol ...)` — is what a truncated property rewrite
+    leaves behind. It is balanced, so nothing that counts parens notices, and
+    KiCad refuses to open the file — kicad-cli 10.0.4 answers
+    `Unable to load library` for a perfectly balanced library with either
+    fragment misplaced. The `.kicad_sym` rule is deliberately not applied to
+    `.kicad_sch`, where `(at ...)` is a legal child of a placed `(symbol ...)`.
   - **Stale unit names.** Renaming a symbol without renaming its `NAME_0_1`
     sub-symbols makes the _whole library_ unloadable — confirmed against
     kicad-cli 10.0, which is why this is graded an error rather than a warning.
+  - **Escaped units.** A dropped paren promotes a unit to the top level, where
+    its name still says which symbol it came from. Graded a _warning_, because
+    the library does still load (kicad-cli returns 0) — it just loads wrong:
+    KiCad reads the unit as a symbol of its own, so the parent keeps none of
+    those graphics or pins and `symbolCount` comes out too high.
   - **Duplicate symbol names**, where KiCad silently keeps one.
 
-  When the paren structure is broken, every node past the break nests one level
-  too deep, so the name checks are skipped rather than reporting hundreds of
-  consequences of the one real problem: on a real 487-symbol library a single
-  deleted `)` went from 489 reported errors to 2. Since `unclosed_form` can
-  only ever blame the outermost form (line 1), an indentation heuristic — KiCad
-  writes one tab per level — points at the first line where nesting stops
-  matching indentation, which is where the paren actually went missing.
+  When the paren structure is _unbalanced_, every node past the break nests one
+  level too deep, so the name checks are skipped rather than reporting hundreds
+  of consequences of the one real problem: on a real 487-symbol library a single
+  deleted `)` went from 489 reported errors to 2. Since `unclosed_form` can only
+  ever blame the outermost form (line 1), an indentation heuristic — KiCad writes
+  one tab per level — points at the first line where nesting stops matching
+  indentation, which is where the paren actually went missing. That heuristic
+  runs on every tab-indented file, not only when something else already failed,
+  because the case it is needed for most is a paren fault that _nets to zero_ —
+  one dropped and a later one spare, which is what a bad slice-and-splice edit
+  produces. Nothing counts its way to that fault and kicad-cli reports no
+  position for it, so the indentation is the only evidence there is.
 
   `kicad-cli` then runs on a throwaway copy as the authoritative answer, so a
   file that passes the scan but not KiCad is still reported. The copy is not

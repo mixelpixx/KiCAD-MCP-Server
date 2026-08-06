@@ -17,7 +17,10 @@ export function registerValidationTools(server: McpServer, callKicadScript: Func
       "every fault. kicad-cli only says whether a file loads; this says where it broke. " +
       "Catches unbalanced parens, unterminated strings, trailing content, and property or " +
       "effects fragments orphaned directly under (kicad_sch ...), which is what a truncated " +
-      "property rewrite leaves behind. Run it after any tool that edits a schematic.",
+      "property rewrite leaves behind. A paren fault that nets to zero is caught too, by " +
+      "the first line whose indentation stops agreeing with its nesting depth. Note that " +
+      "column counts characters, so a tab counts once and the number reads lower than an " +
+      "editor's ruler on indented lines. Run it after any tool that edits a schematic.",
     {
       schematicPath: z.string().describe("Absolute path to the .kicad_sch file"),
       runKicadCli,
@@ -35,8 +38,12 @@ export function registerValidationTools(server: McpServer, callKicadScript: Func
     "Check that a .kicad_sym file is structurally sound and will load, reporting the line " +
       "and column of every fault instead of a bare 'Unable to load library'. Beyond paren " +
       "and string structure it reports units whose names no longer match their symbol (a " +
-      "rename that missed the NAME_0_1 sub-symbols makes the whole library unloadable) and " +
-      "duplicate symbol names. Run it after any tool that edits a library.",
+      "rename that missed the NAME_0_1 sub-symbols makes the whole library unloadable), " +
+      "(effects ...) or (at ...) fragments a truncated property rewrite left inside a " +
+      "(symbol ...), units that escaped their parent to the top level, and duplicate " +
+      "symbol names. Note that column counts characters, so a tab counts once and the " +
+      "number reads lower than an editor's ruler on indented lines. Run it after any tool " +
+      "that edits a library.",
     {
       libraryPath: z.string().describe("Absolute path to the .kicad_sym file"),
       runKicadCli,
