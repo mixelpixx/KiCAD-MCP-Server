@@ -7,7 +7,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
 ### Bug Fixes
 
 - **`add_symbol_property` corrupted `.kicad_sym` libraries**. Every call dropped
-  one closing paren, so the library stopped loading in eeschema. Four defects,
+  one closing paren, so the library stopped loading in eeschema. Eight defects,
   all in the same write path:
   - The rewritten symbol was spliced back as
     `content[:start] + block + content[end + 1:]`, but `block` was sliced
@@ -23,16 +23,50 @@ All notable changes to the KiCAD MCP Server project are documented here.
     left behind as orphans under the symbol.
   - Parens inside quoted values (`"Ceramic (X7R) 50V"`) were counted as
     structure, mis-locating the end of the block.
+  - Rewriting a property regenerated a template
+    `(effects (font (size 1.27 1.27)))`, discarding the field's real font size,
+    thickness, bold/italic and `(justify ...)`. Worse, KiCad 8 and 9 write
+    `(hide yes)` _inside_ `(effects ...)`, and only the property's direct
+    children were searched — so every hidden field in a KiCad 8/9 library was
+    reported visible and un-hidden on the next value edit. On the bundled
+    `Simulation_SPICE_minimal.kicad_sym`, updating `Footprint` took the file
+    from 16 `(hide yes)` to 15 and updating `Reference` from 5 `(justify ...)`
+    to 4.
+  - A new property was written _outside_ the symbol when the insertion anchor
+    sat on the line that opens the symbol — a compact
+    `(symbol "R" (symbol "R_0_1" ...))` or a bare `(symbol "EMPTY")`. The line
+    start was computed with `block.rfind("\n", 0, anchor) + 1`, which is 0 when
+    there is no preceding newline, and index 0 is the symbol's own `(`. The
+    property became a sibling of the symbol; the call reported success and
+    `kicad-cli sym upgrade` then exited 2 with `Unable to load library`.
+  - An existing property was silently moved to the origin when its `(at ...)`
+    used a tab or newline separator (`(at\t5 6 90)`). The test was for the
+    literal string `"(at "`, but any whitespace is legal there.
+  - The library was read with `Path.read_text` and written with
+    `write_text`. Both apply universal-newline translation, so on Windows a
+    one-property edit rewrote every line ending in the file; and `write_text`
+    truncates in place, so a failure part-way through a multi-megabyte library
+    destroyed it.
 
   Block boundaries are now found by string-aware paren matching, properties are
   resolved and inserted at the symbol's own nesting level (so a unit's
   `Reference` is never mistaken for the symbol's), and values are escaped with
   `escape_sexpr_string`. Indentation is copied from the file being edited rather
-  than hardcoded to tabs. Rewriting a property now inherits its current position
-  and visibility unless `position`/`hide` are passed, so updating a value no
-  longer un-hides a BOM field. Verified against a 487-symbol library: before the
-  fix, 25 calls left a paren balance of +12 and `kicad-cli sym upgrade` reported
-  `Unable to load library`; after, the balance is 0 and the library loads.
+  than hardcoded to tabs. Rewriting a property keeps every child it already had
+  — its `(at ...)` verbatim, its whole `(effects ...)` block, and its hidden
+  state whether that was spelled on the property, nested in `(effects ...)` as
+  KiCad 8/9 do, or written as KiCad 7's bare `hide` token — unless `position` or
+  `hide` is passed to override it. Writes go to a temporary file that is then
+  renamed over the original, preserving the file's existing line-ending style.
+  Two guards run before anything reaches disk: the file's paren balance may not
+  move, and the property must re-locate as a direct child of the intended symbol
+  (balance alone is blind to a well-formed insert at the wrong nesting depth).
+  Verified against a 487-symbol library: before the fix, 25 calls left a paren
+  balance of +12 and `kicad-cli sym upgrade` reported `Unable to load library`;
+  after, the balance is 0 and the library loads. Verified per-property against
+  KiCad 10.0.4: round-tripping `Simulation_SPICE_minimal.kicad_sym` through
+  `kicad-cli sym upgrade` before and after an edit now yields byte-identical
+  output apart from the changed value.
 
 - **`add_layer` could not add inner copper layers, and corrupted an unrelated
   layer trying** (#222). Four defects, of which the reported one — changes
