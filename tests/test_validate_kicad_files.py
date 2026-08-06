@@ -534,9 +534,11 @@ def test_run_kicad_cli_honours_a_string_false(tmp_path):
     for value in ("false", "False", "FALSE", "no", "0", "off", ""):
         r = validate_symbol_library({"libraryPath": path, "runKicadCli": value})
         assert r["kicadCli"] == {"ran": False, "reason": "not requested"}, value
+    # "was the CLI attempted", not "did it run": this suite must pass on a
+    # machine with no KiCad, where the attempt reports "kicad-cli not found".
     for value in ("true", "yes", "1"):
         r = validate_symbol_library({"libraryPath": path, "runKicadCli": value})
-        assert r["kicadCli"]["ran"] is True, value
+        assert r["kicadCli"].get("reason") != "not requested", value
 
 
 # --- no false positives on real files ---------------------------------------- #
