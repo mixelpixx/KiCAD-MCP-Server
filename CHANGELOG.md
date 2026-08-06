@@ -15,23 +15,41 @@ All notable changes to the KiCAD MCP Server project are documented here.
   for the name does not find it.
 
   Matches on manufacturer part number, distributor part number, Value +
-  Footprint, an identical drawn body, or near-identical names. The MPN match
-  normalises property names first, because a real library holds that field as
-  `MPN`, `MP`, `MANUFACTURER PART NUMBER` and `PART NUMBER` depending on which
-  importer wrote it, and a plain group-by therefore finds nothing. Each group
-  reports which strategy and which property produced it.
+  Footprint, an identical drawn body, or names differing only in separators. The
+  MPN match normalises property names first, because a real library holds that
+  field as `MPN`, `MP`, `MANUFACTURER PART NUMBER` and `PART NUMBER` depending on
+  which importer wrote it, and a plain group-by therefore finds nothing. A value
+  that only marks a field as unfilled — `N/A`, `TBD`, `-`, KiCad's `~` — is never
+  a key, since grouping on one collects every part the importer knew nothing
+  about. Each group reports which strategy and which property produced it, and
+  groups are merged by connected component, so no symbol is reported twice and
+  the redundant-symbol count cannot exceed what the library holds.
 
   `schematicPaths` counts instances per symbol across the project's sheets,
   which turns the report into a decision: the duplicate nothing places is the
-  one to retire. `suggestedKeep` names it and says why.
+  one to retire. `suggestedKeep` names it and says why. Counting is attributed
+  to _this_ library by lib_id nickname — resolved from the file name and from
+  the `sym-lib-table` beside each scanned sheet, overridable with
+  `libraryNicknames` — because a bare `R` or `LED` collides with `Device:` and
+  `power:` constantly, and crediting another library's placements here
+  recommends keeping the copy nothing uses. A sub-sheet instantiated four times
+  counts four times, autosave sheets and backup/history folders are skipped
+  because they duplicate sheets already being counted, and a `schematicPaths`
+  entry that does not exist is reported in `missingPaths` instead of leaving the
+  report to claim that nothing is used.
 
   `graphics` is off by default. Verified against a 489-symbol library: matching
-  on the drawn body alone put 78 different resistor values in one group, because
-  every resistor shares one drawing. It stays available for hunting a custom
-  part copied under a new name, and is documented as evidence rather than
-  verdict. With the defaults the same library reported 86 real groups covering
-  116 redundant symbols, 69 of which no schematic places — including five
-  symbols for one TI transceiver, of which one is in use.
+  on the drawn body alone put 78 resistor symbols spanning 53 distinct values
+  into one group, because every resistor shares one drawing. It stays available
+  for hunting a custom part copied under a new name, and is documented as
+  evidence rather than verdict. With the defaults, and 20 sheets of the same
+  project scanned, that library reports 78 groups covering 107 redundant
+  symbols, 61 of which no schematic places — including five symbols for one TI
+  transceiver, of which one is in use. Nickname attribution changed the advice
+  for three of those groups: each recommended keeping a symbol this library
+  never places, because a same-named symbol in an Eagle-import library was being
+  counted towards it, and for one of them the symbol it proposed to retire had
+  the only two real placements.
 
 ### Bug Fixes
 

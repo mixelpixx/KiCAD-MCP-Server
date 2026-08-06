@@ -3007,7 +3007,10 @@ SCHEMATIC_TOOLS = [
                     "description": (
                         "How to decide two symbols are the same part. 'graphics' is off by "
                         "default: every resistor in a library shares one body, so on "
-                        "passives it groups the whole family."
+                        "passives it groups the whole family. 'name' is off by default "
+                        "because matching names that differ only in separators is the "
+                        "weakest signal here. Values that only mark a field as unfilled "
+                        "(N/A, TBD, -, ~) are never used as a key."
                     ),
                 },
                 "schematicPaths": {
@@ -3015,7 +3018,24 @@ SCHEMATIC_TOOLS = [
                     "items": {"type": "string"},
                     "description": (
                         ".kicad_sch files or directories to scan for usage counts. "
-                        "Directories are searched recursively."
+                        "Directories are searched recursively, skipping autosave sheets "
+                        "and backup/history folders, which are copies of sheets already "
+                        "being counted. Only placements of THIS library are counted (see "
+                        "libraryNicknames), and a sub-sheet instantiated more than once "
+                        "counts once per instantiation. Paths that do not exist come back "
+                        "in missingPaths rather than being silently ignored."
+                    ),
+                },
+                "libraryNicknames": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "The nickname(s) this library is registered under in a lib_id, if "
+                        "the file stem and the sym-lib-table entries beside the scanned "
+                        "sheets do not cover it. Placements naming another library are not "
+                        "counted: a bare 'R' here is not Device:R. The result reports the "
+                        "nicknames used (libraryNicknames) and the ones actually found in "
+                        "the sheets (nicknamesSeen)."
                     ),
                 },
                 "minGroupSize": {

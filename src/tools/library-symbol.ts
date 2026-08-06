@@ -387,7 +387,20 @@ Returns symbol references that can be used directly in schematics.`,
       schematicPaths: z
         .array(z.string())
         .optional()
-        .describe(".kicad_sch files or directories to scan for usage counts (recursive)"),
+        .describe(
+          ".kicad_sch files or directories to scan for usage counts (recursive, skipping " +
+            "autosave sheets and backup/history folders). Only placements of this library " +
+            "count, and a sub-sheet instantiated more than once counts once per instantiation.",
+        ),
+      libraryNicknames: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "The nickname(s) this library is registered under in a lib_id, if the file stem " +
+            "and the sym-lib-table entries beside the scanned sheets do not cover it. A " +
+            "bare 'R' in this library is not Device:R, so placements naming another " +
+            "library are not counted towards it.",
+        ),
       minGroupSize: z
         .number()
         .optional()
@@ -401,6 +414,7 @@ Returns symbol references that can be used directly in schematics.`,
       libraryPath: string;
       matchBy?: string[];
       schematicPaths?: string[];
+      libraryNicknames?: string[];
       minGroupSize?: number;
       ignoreCase?: boolean;
     }) => {
