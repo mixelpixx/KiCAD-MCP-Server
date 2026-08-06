@@ -17,13 +17,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   and trailing content — parens inside quoted values such as
   `"Ceramic (X7R) 50V"` are text, so the naive `count("(") - count(")")` check
   that gives false positives on real libraries is not used. On top of that:
-
   - **Orphaned fragments.** A `(property ...)`, `(effects ...)` or `(at ...)`
     sitting directly under `(kicad_sch ...)` is what a truncated property
     rewrite leaves behind. It is balanced, so nothing else notices, and
     eeschema refuses to open the file.
   - **Stale unit names.** Renaming a symbol without renaming its `NAME_0_1`
-    sub-symbols makes the *whole library* unloadable — confirmed against
+    sub-symbols makes the _whole library_ unloadable — confirmed against
     kicad-cli 10.0, which is why this is graded an error rather than a warning.
   - **Duplicate symbol names**, where KiCad silently keeps one.
 
