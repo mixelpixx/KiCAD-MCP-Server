@@ -153,6 +153,11 @@ export const toolCategories: ToolCategory[] = [
       "search_footprints",
       "list_library_footprints",
       "get_footprint_info",
+      // Library table maintenance: the read/remove/repoint counterparts to
+      // register_symbol_library and register_footprint_library.
+      "list_library_table",
+      "remove_library_table_entry",
+      "set_library_table_uri",
       // Symbol-library maintenance. Sits here for now because there is no
       // symbol-library category yet -- see #345, which tracks giving the
       // ~13 unregistered symbol tools a proper home.

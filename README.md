@@ -23,7 +23,7 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 146 tools across 13 categories with JSON Schema validation
+- 149 tools across 13 categories with JSON Schema validation
 - Keyword tool discovery via `search_tools` / `get_category_tools`
 - 8 dynamic resources exposing project state
 - Complete schematic workflow with 27 tools and dynamic symbol loading (~10,000 symbols)

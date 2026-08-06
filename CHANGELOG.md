@@ -4,6 +4,29 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Features
+
+- **`list_library_table`, `remove_library_table_entry`, `set_library_table_uri`**
+  — the read, delete and repoint counterparts to `register_symbol_library` and
+  `register_footprint_library`. Registering a library was the only table
+  operation the server could do, so cleaning up after a library migration meant
+  hand-editing `sym-lib-table` / `fp-lib-table`. The obvious way to do that in
+  a script — `content.replace(")", ...)` on the closing paren — corrupts a
+  table whose last entry ends on the same line.
+
+  These work on parsed `(lib ...)` spans: entries are found by nickname, the
+  edit slices exactly that span, and **the result is re-parsed before it is
+  written**. A rewrite that would leave the table unbalanced is refused and the
+  file is left alone. Multi-line rows (which newer KiCad writes) are handled,
+  and batch removal cuts from the back so earlier offsets stay valid.
+
+  `list_library_table` also resolves each URI through `${KIPRJMOD}`, KiCad's
+  configured path variables from `kicad_common.json`, and the environment, then
+  reports whether the file is actually there. An unresolved variable is
+  reported as missing rather than being silently treated as a literal path.
+  This is what turns "ERC reports hundreds of `footprint_link_issues`" into
+  "this one row points at a library that moved".
+
 ### Bug Fixes
 
 - **`add_layer` could not add inner copper layers, and corrupted an unrelated

@@ -176,4 +176,83 @@ export function registerLibraryTools(server: McpServer, callKicadScript: Functio
       };
     },
   );
+
+  // ── Library table maintenance (sym-lib-table / fp-lib-table) ──────────── //
+
+  const tableType = z
+    .enum(["symbol", "footprint"])
+    .optional()
+    .describe("Which table to edit: 'symbol' (sym-lib-table, default) or 'footprint'");
+  const scope = z
+    .enum(["project", "global"])
+    .optional()
+    .describe("'project' (default, needs projectPath) or 'global' (KiCad's user config)");
+  const projectPath = z
+    .string()
+    .optional()
+    .describe("Path to the .kicad_pro or its directory, for scope='project'");
+  const tablePath = z
+    .string()
+    .optional()
+    .describe("Path to the table file itself, bypassing scope/projectPath resolution");
+
+  server.tool(
+    "list_library_table",
+    "Read a sym-lib-table or fp-lib-table: nickname, type, URI and description of every " +
+      "registered library. Each URI is resolved through ${KIPRJMOD}, KiCad's configured path " +
+      "variables and the environment, and reported with whether the file is actually there — " +
+      "which is how a stale row left over from a library migration shows itself.",
+    { tableType, scope, projectPath, tablePath },
+    async (args: any) => {
+      const result = await callKicadScript("list_library_table", args);
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    "remove_library_table_entry",
+    "Remove one or more entries from a sym-lib-table or fp-lib-table by nickname — the " +
+      "counterpart to register_symbol_library / register_footprint_library. The table is " +
+      "re-parsed before it is written, so an edit that would leave it unbalanced is refused " +
+      "rather than saved.",
+    {
+      tableType,
+      scope,
+      projectPath,
+      tablePath,
+      libraryName: z.string().optional().describe("Nickname to remove"),
+      libraryNames: z
+        .array(z.string())
+        .optional()
+        .describe("Several nicknames to remove in one pass"),
+    },
+    async (args: any) => {
+      const result = await callKicadScript("remove_library_table_entry", args);
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    "set_library_table_uri",
+    "Repoint an existing library-table entry at a different file, keeping its nickname, type " +
+      "and description. Use it to move a project onto ${KIPRJMOD}-relative paths, or to follow " +
+      "a library that was relocated, without unregistering and re-registering it.",
+    {
+      tableType,
+      scope,
+      projectPath,
+      tablePath,
+      libraryName: z.string().describe("Nickname of the entry to repoint"),
+      uri: z
+        .string()
+        .describe(
+          "New URI, e.g. ${KIPRJMOD}/../FOG_components.kicad_sym. Path variables are kept " +
+            "verbatim in the table and only expanded when reporting whether the file exists.",
+        ),
+    },
+    async (args: any) => {
+      const result = await callKicadScript("set_library_table_uri", args);
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    },
+  );
 }

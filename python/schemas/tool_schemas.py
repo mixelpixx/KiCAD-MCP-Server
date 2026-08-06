@@ -1902,6 +1902,130 @@ LIBRARY_TOOLS = [
         },
     },
     {
+        "name": "list_library_table",
+        "title": "List Library Table Entries",
+        "description": (
+            "Read a sym-lib-table or fp-lib-table: nickname, type, URI and description of "
+            "every registered library. Each URI is resolved through ${KIPRJMOD}, KiCad's "
+            "configured path variables and the environment, and reported alongside whether "
+            "the file is actually there -- which is how a stale row left over from a library "
+            "migration shows itself."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tableType": {
+                    "type": "string",
+                    "enum": ["symbol", "footprint"],
+                    "default": "symbol",
+                    "description": "sym-lib-table ('symbol') or fp-lib-table ('footprint')",
+                },
+                "scope": {
+                    "type": "string",
+                    "enum": ["project", "global"],
+                    "default": "project",
+                    "description": "Project table (needs projectPath) or KiCad's user config",
+                },
+                "projectPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_pro or its directory, for scope=project",
+                },
+                "tablePath": {
+                    "type": "string",
+                    "description": "Path to the table file itself, bypassing scope resolution",
+                },
+            },
+        },
+    },
+    {
+        "name": "remove_library_table_entry",
+        "title": "Remove Library Table Entry",
+        "description": (
+            "Remove one or more entries from a sym-lib-table or fp-lib-table by nickname -- "
+            "the counterpart to register_symbol_library / register_footprint_library. The "
+            "table is re-parsed before it is written, so an edit that would leave it "
+            "unbalanced is refused rather than saved."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tableType": {
+                    "type": "string",
+                    "enum": ["symbol", "footprint"],
+                    "default": "symbol",
+                    "description": "sym-lib-table ('symbol') or fp-lib-table ('footprint')",
+                },
+                "scope": {
+                    "type": "string",
+                    "enum": ["project", "global"],
+                    "default": "project",
+                    "description": "Project table (needs projectPath) or KiCad's user config",
+                },
+                "projectPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_pro or its directory, for scope=project",
+                },
+                "tablePath": {
+                    "type": "string",
+                    "description": "Path to the table file itself, bypassing scope resolution",
+                },
+                "libraryName": {"type": "string", "description": "Nickname to remove"},
+                "libraryNames": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Several nicknames to remove in one pass",
+                },
+            },
+        },
+    },
+    {
+        "name": "set_library_table_uri",
+        "title": "Repoint Library Table Entry",
+        "description": (
+            "Repoint an existing library-table entry at a different file, keeping its "
+            "nickname, type and description. Use it to move a project onto "
+            "${KIPRJMOD}-relative paths, or to follow a library that was relocated, without "
+            "unregistering and re-registering it."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tableType": {
+                    "type": "string",
+                    "enum": ["symbol", "footprint"],
+                    "default": "symbol",
+                    "description": "sym-lib-table ('symbol') or fp-lib-table ('footprint')",
+                },
+                "scope": {
+                    "type": "string",
+                    "enum": ["project", "global"],
+                    "default": "project",
+                    "description": "Project table (needs projectPath) or KiCad's user config",
+                },
+                "projectPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_pro or its directory, for scope=project",
+                },
+                "tablePath": {
+                    "type": "string",
+                    "description": "Path to the table file itself, bypassing scope resolution",
+                },
+                "libraryName": {
+                    "type": "string",
+                    "description": "Nickname of the entry to repoint",
+                },
+                "uri": {
+                    "type": "string",
+                    "description": (
+                        "New URI, e.g. ${KIPRJMOD}/../FOG_components.kicad_sym. Path variables "
+                        "are stored verbatim and only expanded to check the file exists."
+                    ),
+                },
+            },
+            "required": ["libraryName", "uri"],
+        },
+    },
+    {
         "name": "get_footprint_info",
         "title": "Get Footprint Details",
         "description": "Retrieves detailed information about a specific footprint including pad layout, dimensions, and description.",
