@@ -2533,9 +2533,15 @@ SCHEMATIC_TOOLS = [
             "Footprint fields -- the reverse of sync_schematic_to_board. After a layout "
             "pass the board is the side that is right: footprints get swapped in pcbnew, "
             "and imported projects land with schematic-side fields that never matched the "
-            "placed parts. Matching is by reference designator; virtual references "
-            "starting with '#' (power, ground) are skipped, and every unit of a multi-unit "
-            "symbol is updated. Instances missing a Footprint field get one added unless "
+            "placed parts. Matching is by reference designator, taken from each symbol's "
+            "(instances ...) block so a sheet placed more than once contributes all of its "
+            "designators; virtual references starting with '#' (power, ground) are skipped, "
+            "and every unit of a multi-unit symbol is updated. Only the quoted value is "
+            "rewritten, so field visibility, font and position survive. Nothing is written "
+            "for a reference the board uses twice, or for instances that share one Footprint "
+            "field but disagree on the board -- those are listed under 'conflicts'. "
+            "Footprints on the board with no matching symbol are listed under "
+            "'notInSchematic'. Instances missing a Footprint field get one added unless "
             "addMissing is false. Use dryRun to see the diff first."
         ),
         "inputSchema": {
@@ -2545,8 +2551,10 @@ SCHEMATIC_TOOLS = [
                 "schematicPath": {
                     "type": "string",
                     "description": (
-                        "Single sheet to update. Omit to update every .kicad_sch beside "
-                        "the board, which is what a hierarchical design needs."
+                        "Single sheet to update. Omit to walk the sheet tree from the root "
+                        "schematic named after the board, which is what a hierarchical "
+                        "design needs; local history, backup copies and other projects "
+                        "under the same directory are left alone."
                     ),
                 },
                 "references": {

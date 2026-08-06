@@ -14,25 +14,51 @@ All notable changes to the KiCAD MCP Server project are documented here.
   projects have the same problem from day one: the schematic-side fields never
   matched the placed parts.
 
-  Matches by reference designator across every `.kicad_sch` beside the board (or
-  one named sheet), updates all units of a multi-unit symbol, and skips virtual
-  references starting with `#` (power and ground symbols carry no footprint).
-  Instances with no `Footprint` field get one added unless `addMissing` is
-  false; `dryRun` reports the diff without writing. Position and `hide` are
-  carried over from the existing field, so back-annotating does not move or
-  reveal a field the user had placed. The `lib_symbols` cache is left alone —
-  instance fields override it, and rewriting the cache is a different tool.
+  Matches by reference designator, updates all units of a multi-unit symbol, and
+  skips virtual references starting with `#` (power and ground symbols carry no
+  footprint). Instances with no `Footprint` field get one added unless
+  `addMissing` is false; `dryRun` reports the diff without writing. The
+  `lib_symbols` cache is left alone — instance fields override it, and rewriting
+  the cache is a different tool.
+
+  The designators come from each symbol's `(instances ...)` block, which is
+  where KiCad 7+ keeps one per sheet instance; the `(property "Reference" ...)`
+  holds only one of them. A sub-sheet placed twice therefore contributes both
+  designators, and because those instances share a single `Footprint` field,
+  nothing is written when the board disagrees between them — the references and
+  the differing footprints go into `conflicts` instead. A reference the board
+  carries on two footprints is refused the same way. Footprints placed on the
+  board with no matching symbol — the mounting holes and test points added
+  directly in pcbnew — are listed under `notInSchematic` rather than dropped.
+
+  Updating a field rewrites _only_ the quoted value token, so `hide`,
+  `show_name`, `unlocked`, justification, font and the field's exact layout are
+  left byte-for-byte alone: the file stays what eeschema would have written. Only
+  the `addMissing` insertion path builds a field from scratch, because there is
+  no existing state to keep. Writes are atomic and preserve each file's existing
+  line endings, so a one-field edit is a one-line diff on an LF checkout.
+
+  Sheets are found by walking the real sheet tree from the root schematic beside
+  the board, so `.history` snapshots, backup copies, unrelated projects in the
+  same directory and orphaned sheets are never rewritten. Every sheet is planned
+  before any is written, and a write that fails lands in `failures` with the rest
+  of the report intact instead of leaving earlier sheets edited.
 
   Parsing is structural rather than regex-based, which matters for two real
   cases: footprint names containing parentheses (`HRS_U.FL-R-SMT-1(10)` is a
   stock Hirose connector) and board files whose indentation does not track
-  nesting. Verified end to end on a 71-footprint board: it found two genuine
-  mismatches (`0402S` where the board had `0402HF`), `kicad-cli sch upgrade`
-  accepted the result, and a second pass was a no-op.
+  nesting. Verified end to end on copies of two real projects: on a 251-footprint
+  board it rewrote 263 stale fields in the one sheet of the design, left the
+  `.history` copy and a second project in the same directory untouched, reported
+  four board-only mounting holes, and `kicad-cli sch upgrade` accepted the
+  result; on a 244-footprint hierarchical board already in sync it reported no
+  changes, walked 9 of the 10 `.kicad_sch` files (the tenth is referenced by
+  nothing) and flagged one genuine duplicate board reference. Both second passes
+  were byte-for-byte no-ops.
 
-  The s-expression walkers this needed (`match_paren`, `iter_child_offsets`)
-  moved into `utils/sexpr_format.py`, replacing private copies in
-  `add_symbol_property` and `library_tables`.
+  The s-expression walkers this needed (`match_paren`, `iter_child_offsets`) live
+  in `utils/sexpr_format.py` so later tools can share them instead of carrying
+  another private paren counter.
 
 ### Bug Fixes
 

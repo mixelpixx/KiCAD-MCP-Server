@@ -1593,16 +1593,21 @@ edit_schematic_component and set its value to an empty string.`,
       "fields — the reverse of sync_schematic_to_board. After a layout pass the board is " +
       "the side that is right: footprints get swapped in pcbnew, and imported projects land " +
       "with schematic-side fields that never matched the placed parts. Matching is by " +
-      "reference designator; virtual references starting with '#' (power, ground) are " +
-      "skipped, and every unit of a multi-unit symbol is updated.",
+      "reference designator, taken from each symbol's (instances ...) block so a sheet " +
+      "placed more than once contributes all of its designators; virtual references " +
+      "starting with '#' (power, ground) are skipped, and every unit of a multi-unit " +
+      "symbol is updated. Only the quoted value is rewritten, so field visibility, font " +
+      "and position survive. Ambiguous cases are reported under 'conflicts' and left " +
+      "unwritten; footprints with no matching symbol under 'notInSchematic'.",
     {
       boardPath: z.string().describe("Absolute path to the .kicad_pcb board file"),
       schematicPath: z
         .string()
         .optional()
         .describe(
-          "Single sheet to update. Omit to update every .kicad_sch beside the board, " +
-            "which is what a hierarchical design needs.",
+          "Single sheet to update. Omit to walk the sheet tree from the root schematic " +
+            "named after the board, which is what a hierarchical design needs; local " +
+            "history, backup copies and other projects under the same directory are left alone.",
         ),
       references: z
         .array(z.string())
