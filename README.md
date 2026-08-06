@@ -417,7 +417,7 @@ configuration command and backend options.
 We've implemented an intelligent tool router to keep AI context efficient while maintaining full functionality:
 
 - **22 direct tools** always visible for high-frequency operations
-- **111 routed tools** organized into 13 categories (board, component, export, drc, schematic, library, symbol_pins, schematic_hierarchy, schematic_layout, schematic_batch, routing, autoroute, parts-registry)
+- **114 routed tools** organized into 13 categories (board, component, export, drc, schematic, library, symbol_pins, schematic_hierarchy, schematic_layout, schematic_batch, routing, autoroute, parts-registry)
 - **4 router tools** for discovery and execution:
   - `list_tool_categories` - Browse all available categories
   - `get_category_tools` - View tools in a specific category
@@ -486,7 +486,7 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. **146 tools** are additionally indexed into 13 functional categories, so `search_tools` and `get_category_tools` can find one by keyword.
+The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. **149 tools** are additionally indexed into 13 functional categories, so `search_tools` and `get_category_tools` can find one by keyword.
 
 For the complete tool reference with access types (direct/routed/additional), see [Tool Inventory](docs/TOOL_INVENTORY.md).
 
@@ -1513,7 +1513,7 @@ npm run format
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-**Working Features (146 tools):**
+**Working Features (149 tools):**
 
 - Project management with snapshot checkpointing
 - Complete board design (outline, layers, zones, mounting holes, text, SVG logos)
@@ -1526,6 +1526,7 @@ See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix a
 - Design rule checking (DRC and ERC)
 - Export to Gerber, PDF, SVG, 3D, BOM, netlist, position file
 - Custom footprint and symbol creation
+- Library table maintenance (list, remove and repoint symbol/footprint entries)
 - JLCPCB parts integration (2.5M+ parts catalog)
 - Datasheet enrichment via LCSC
 - Freerouting autorouter integration (Java, Docker, Podman)
