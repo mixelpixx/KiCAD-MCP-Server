@@ -16,12 +16,38 @@ Imported libraries are the usual reason to need this. Parts converted from
 Eagle or pulled from SnapEDA arrive with every pin marked ``unspecified`` or
 ``bidirectional``; ERC then reports conflicts on nets that are electrically
 fine, and the noise hides the real errors.
+
+Two properties of the write matter as much as the parsing, because this is a
+bulk edit over a file that may be megabytes of a user's part library:
+
+* It is atomic. ``sed -i`` -- the thing being replaced -- writes a temporary
+  file and renames it, so an interrupted run leaves either the old library or
+  the new one. Anything that opens the target for truncation empties it before
+  the first replacement byte is written, and then has nothing to restore.
+* It preserves the file's newline style. Rewriting a library checked out with
+  LF endings on a Windows host would turn a 32-pin edit into a diff touching
+  every line of the file, which is unreviewable.
+
+A timestamped copy of the library is kept in a sibling ``.mcp-backups/``
+directory before it is rewritten, following the convention
+``kicad_interface._auto_save_board`` already uses for boards (``.gitignore``
+covers ``*-backups/``). Atomicity and the backup guard different failures:
+the rename means a crash cannot leave a truncated library, but it does nothing
+about an edit that succeeds and was not what the caller meant. Omitting
+``symbols`` is the natural way to call this tool and flattens every pin in the
+library, so that is the likely mistake, and a library that is not in git has no
+other undo. The copy is best effort -- a library that cannot be backed up is
+still edited, because refusing the requested edit over a failed backup helps
+nobody.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import re
+import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
@@ -31,7 +57,81 @@ from utils.sexpr_format import match_paren
 logger = logging.getLogger("kicad_interface")
 
 _HEAD = re.compile(r"\(\s*([A-Za-z_][\w]*)")
-_PIN_HEAD = re.compile(r"\(pin\s+([A-Za-z_][\w]*)\s+([A-Za-z_][\w]*)")
+# Whitespace after "(" is allowed here for the same reason _HEAD allows it: the
+# walker finds these pins either way, and a stricter head regex would make them
+# fall out of the loop silently -- neither changed nor reported.
+_PIN_HEAD = re.compile(r"\(\s*pin\s+([A-Za-z_][\w]*)\s+([A-Za-z_][\w]*)")
+
+#: Upper bound on the per-pin records returned in ``changes``. A whole-library
+#: pass changes thousands of pins, and this is an MCP tool -- the response is
+#: spent from the model's context window, so an uncapped list costs the caller
+#: ~100k tokens on precisely the bulk operation the tool exists for.
+#: ``changeCount`` always carries the true total and ``changesTruncated`` says
+#: when the list was cut.
+_MAX_REPORTED_CHANGES = 200
+
+#: Timestamped copies kept per library in ``.mcp-backups/``, matching
+#: ``kicad_interface._auto_save_backup_keep``.
+_BACKUP_KEEP = 20
+
+
+def _prune_backups(backup_dir: Path, base_name: str) -> None:
+    """Keep only the most recent ``_BACKUP_KEEP`` copies of *base_name*."""
+    try:
+        entries = [p for p in backup_dir.iterdir() if p.name.startswith(base_name + ".")]
+        entries.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        for old in entries[_BACKUP_KEEP:]:
+            try:
+                old.unlink()
+            except OSError:
+                pass
+    except OSError as e:
+        logger.debug("Backup pruning skipped: %s", e)
+
+
+def _backup(path: Path) -> Optional[Path]:
+    """Copy *path* into a sibling ``.mcp-backups/``; return the copy, or None.
+
+    Best effort by design: a system library in a read-only directory should
+    still be editable by a caller who has permission to write it.
+    """
+    try:
+        backup_dir = path.parent / ".mcp-backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
+        dest = backup_dir / f"{path.name}.{stamp}"
+        shutil.copy2(path, dest)
+    except OSError as e:
+        logger.warning("Could not back up %s before editing it: %s", path, e)
+        return None
+    _prune_backups(backup_dir, path.name)
+    return dest
+
+
+def _read_text(path: Path) -> Tuple[str, str]:
+    """File text with LF newlines, plus the newline style to write back."""
+    with open(path, "r", encoding="utf-8", newline="") as fh:
+        raw = fh.read()
+    return raw.replace("\r\n", "\n"), ("\r\n" if "\r\n" in raw else "\n")
+
+
+def _write_text(path: Path, text: str, newline: str) -> None:
+    """Atomic write that keeps the file's original newline style.
+
+    The temporary file is removed on failure so a full disk does not leave a
+    second copy of the library beside the first.
+    """
+    tmp = path.with_name(path.name + ".mcp-tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8", newline=newline) as fh:
+            fh.write(text)
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _read_string(text: str, i: int) -> Tuple[Optional[str], int]:
@@ -134,6 +234,98 @@ def iter_library_pins(text: str) -> Iterator[Dict[str, Any]]:
         i += 1
 
 
+def iter_library_symbols(text: str) -> Iterator[Dict[str, Optional[str]]]:
+    """Yield ``{"name", "extends"}`` for every top-level symbol in a .kicad_sym.
+
+    Which symbols a library contains and which symbols have pins are different
+    questions, and the pin walk can only answer the second. A derived symbol --
+    ``(symbol "R_Small_US" (extends "R_Small") ...)`` -- has no pins of its own
+    by design, so learning names from the pins alone reports it as a name that
+    is not in the library, which sends the caller hunting for a typo instead of
+    telling them to edit the parent.
+    """
+    depth = 0
+    in_string = False
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if in_string:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+            i += 1
+            continue
+        if ch == ")":
+            depth -= 1
+            i += 1
+            continue
+        if ch != "(":
+            i += 1
+            continue
+        depth += 1
+        m = _HEAD.match(text, i)
+        if depth == 2 and m and m.group(1) == "symbol":
+            name, _ = _read_string(text, m.end())
+            end = match_paren(text, i)
+            if end == -1:
+                yield {"name": name, "extends": None}
+                i += 1
+                continue
+            yield {"name": name, "extends": _child_string(text[i : end + 1], "extends")}
+            # Skip the body: its sub-symbols are units, not top-level symbols.
+            depth -= 1
+            i = end + 1
+            continue
+        i += 1
+
+
+def _pin_structure(text: str) -> List[Tuple[Optional[str], Optional[str]]]:
+    """The (symbol, unit) of every pin, in file order."""
+    return [(p["symbol"], p["unit"]) for p in iter_library_pins(text)]
+
+
+def _splice(text: str, edits: List[Tuple[int, int, str]]) -> str:
+    """Apply *edits* -- ascending, non-overlapping ``(start, stop, text)`` -- at once.
+
+    Rebuilding the string once instead of slicing it per edit is what makes a
+    whole-library pass finish. ``text[:start] + new + text[stop:]`` in a loop
+    copies the entire file for every pin, so the cost grows with pins times file
+    size: on KiCad's 16 MB MCU_ST_STM32H7 (28191 pins) that is ~440 GB of
+    copying, measured at 169 s, against ~8 s for a single join.
+    """
+    parts: List[str] = []
+    cursor = 0
+    for start, stop, replacement in edits:
+        parts.append(text[cursor:start])
+        parts.append(replacement)
+        cursor = stop
+    parts.append(text[cursor:])
+    return "".join(parts)
+
+
+def _edits_landed(updated: str, edits: List[Tuple[int, int, str]]) -> bool:
+    """True if every replacement sits where splicing should have put it.
+
+    ``edits`` is in ascending offset order, so each replacement ends up at its
+    own offset displaced by the total length change of the edits before it --
+    ``(pin unspecified line`` is four characters longer than
+    ``(pin passive line``. If the offsets are not ascending they slide under
+    each other and the replacements land inside neighbouring tokens.
+    """
+    shift = 0
+    for start, stop, replacement in edits:
+        if not updated.startswith(replacement, start + shift):
+            return False
+        shift += len(replacement) - (stop - start)
+    return True
+
+
 def _root_token(text: str) -> Optional[str]:
     m = _HEAD.search(text)
     return m.group(1) if m else None
@@ -147,11 +339,19 @@ def _as_set(value: Any) -> Optional[Set[str]]:
     return {str(v) for v in value}
 
 
+def _pinless_advice(name: str, extends: Optional[str]) -> str:
+    """Why a symbol that exists contributed no pins, and what to do about it."""
+    if extends:
+        return f"{name} extends {extends} and has no pins of its own -- edit {extends} instead"
+    return f"{name} is in this library but has no pins"
+
+
 def set_symbol_pin_type(params: Dict[str, Any]) -> Dict[str, Any]:
     """Set the electrical type and/or graphic style of pins in a symbol library."""
     lib_path = Path(params.get("libraryPath", ""))
     new_type = params.get("type")
     new_style = params.get("style")
+    from_type = params.get("fromType")
     dry_run = bool(params.get("dryRun", False))
 
     if new_type is None and new_style is None:
@@ -177,12 +377,24 @@ def set_symbol_pin_type(params: Dict[str, Any]) -> Dict[str, Any]:
             ),
             "validStyles": list(PIN_STYLES),
         }
+    if from_type is not None and from_type not in PIN_TYPES:
+        # Unvalidated, a transposed fromType ("unspecfied") matches no pin and
+        # the call reports success having changed nothing -- the silent no-op
+        # this tool exists to replace.
+        return {
+            "success": False,
+            "message": (
+                f"'{from_type}' is not a KiCad pin type, so fromType would match no pin "
+                f"and report success having changed nothing. Valid: {', '.join(PIN_TYPES)}"
+            ),
+            "validTypes": list(PIN_TYPES),
+        }
 
     if not lib_path.is_file():
         return {"success": False, "message": f"Library not found: {lib_path}"}
 
     try:
-        text = lib_path.read_text(encoding="utf-8")
+        text, newline = _read_text(lib_path)
     except OSError as e:
         return {"success": False, "message": f"Could not read {lib_path}: {e}"}
 
@@ -199,13 +411,21 @@ def set_symbol_pin_type(params: Dict[str, Any]) -> Dict[str, Any]:
     want_symbols = _as_set(params.get("symbols"))
     want_numbers = _as_set(params.get("pinNumbers"))
     want_names = _as_set(params.get("pinNames"))
-    from_type = params.get("fromType")
+
+    library_symbols: Dict[str, Optional[str]] = {}
+    for entry in iter_library_symbols(text):
+        entry_name = entry["name"]
+        if entry_name is not None:
+            library_symbols.setdefault(entry_name, entry["extends"])
 
     seen_symbols: Set[str] = set()
     seen_numbers: Set[str] = set()
+    seen_names: Set[str] = set()
+    touched_symbols: Set[str] = set()
     changes: List[Dict[str, Any]] = []
     edits: List[Tuple[int, int, str]] = []
     unchanged = 0
+    backup_path: Optional[Path] = None
 
     for pin in iter_library_pins(text):
         symbol = pin["symbol"]
@@ -216,6 +436,11 @@ def set_symbol_pin_type(params: Dict[str, Any]) -> Dict[str, Any]:
 
         head = _PIN_HEAD.match(text, pin["offset"])
         if not head:
+            logger.warning(
+                "%s: the pin at offset %d has no '(pin <type> <style>' head; leaving it alone",
+                lib_path.name,
+                pin["offset"],
+            )
             continue
         cur_type, cur_style = head.group(1), head.group(2)
 
@@ -234,6 +459,8 @@ def set_symbol_pin_type(params: Dict[str, Any]) -> Dict[str, Any]:
 
         if number:
             seen_numbers.add(number)
+        if name:
+            seen_names.add(name)
         if want_numbers is not None and number not in want_numbers:
             continue
         if want_names is not None and name not in want_names:
@@ -248,35 +475,55 @@ def set_symbol_pin_type(params: Dict[str, Any]) -> Dict[str, Any]:
             continue
 
         edits.append((head.start(), head.end(), f"(pin {to_type} {to_style}"))
-        changes.append(
-            {
-                "symbol": symbol,
-                "unit": pin["unit"],
-                "number": number,
-                "name": name,
-                "fromType": cur_type,
-                "toType": to_type,
-                "fromStyle": cur_style,
-                "toStyle": to_style,
-            }
-        )
+        if symbol:
+            touched_symbols.add(symbol)
+        if len(changes) < _MAX_REPORTED_CHANGES:
+            changes.append(
+                {
+                    "symbol": symbol,
+                    "unit": pin["unit"],
+                    "number": number,
+                    "name": name,
+                    "fromType": cur_type,
+                    "toType": to_type,
+                    "fromStyle": cur_style,
+                    "toStyle": to_style,
+                }
+            )
 
-    missing_symbols = sorted(want_symbols - seen_symbols) if want_symbols else []
+    if want_symbols:
+        missing_symbols = sorted(want_symbols - set(library_symbols))
+        pinless_symbols = sorted((want_symbols & set(library_symbols)) - seen_symbols)
+    else:
+        missing_symbols = []
+        pinless_symbols = []
     missing_numbers = sorted(want_numbers - seen_numbers) if want_numbers else []
+    missing_names = sorted(want_names - seen_names) if want_names else []
 
     if edits and not dry_run:
-        updated = text
-        for start, stop, replacement in reversed(edits):
-            updated = updated[:start] + replacement + updated[stop:]
-        if updated.count("(") != text.count("(") or updated.count(")") != text.count(")"):
+        updated = _splice(text, edits)
+        # A paren count cannot move here -- the replacement is always
+        # "(pin <token> <token>" and neither token can contain one -- so counting
+        # them proves nothing. These two check the post-condition that actually
+        # matters: each splice sits where its offset said, and the file still
+        # holds the same pins under the same symbols.
+        if not _edits_landed(updated, edits) or _pin_structure(updated) != _pin_structure(text):
             return {
                 "success": False,
                 "message": "Internal error: the edit changed the file structure. Nothing written.",
             }
+        backup_path = _backup(lib_path)
         try:
-            lib_path.write_text(updated, encoding="utf-8")
+            _write_text(lib_path, updated, newline)
         except OSError as e:
-            return {"success": False, "message": f"Could not write {lib_path}: {e}"}
+            return {
+                "success": False,
+                "message": (
+                    f"Could not write {lib_path}: {e}. The library is unchanged -- the new "
+                    "text is built in a temporary file that only replaces the original once "
+                    "it is complete."
+                ),
+            }
 
         # The file is already on disk, so a cache that refuses to clear must not
         # turn a successful write into a reported failure -- the caller would
@@ -288,14 +535,26 @@ def set_symbol_pin_type(params: Dict[str, Any]) -> Dict[str, Any]:
         except Exception as e:  # pragma: no cover - defensive
             logger.warning("Symbol caches not invalidated after pin edit: %s", e)
 
-    touched = sorted({c["symbol"] for c in changes if c["symbol"]})
-    if changes:
+    total_changes = len(edits)
+    touched = sorted(touched_symbols)
+    if total_changes:
         verb = "Would change" if dry_run else "Changed"
-        message = f"{verb} {len(changes)} pin(s) across {len(touched)} symbol(s)"
+        message = f"{verb} {total_changes} pin(s) across {len(touched)} symbol(s)"
     elif missing_symbols:
         message = f"No pins changed: symbol(s) not in this library: {', '.join(missing_symbols)}"
+    elif pinless_symbols:
+        message = "No pins changed: " + "; ".join(
+            _pinless_advice(name, library_symbols.get(name)) for name in pinless_symbols
+        )
     elif unchanged:
         message = f"No pins changed: all {unchanged} matching pin(s) already have that type"
+    elif missing_numbers or missing_names:
+        absent = []
+        if missing_numbers:
+            absent.append(f"pin number(s) {', '.join(missing_numbers)}")
+        if missing_names:
+            absent.append(f"pin name(s) {', '.join(missing_names)}")
+        message = f"No pins changed: no {' or '.join(absent)} in the symbols searched"
     else:
         message = "No pins matched the given filters"
 
@@ -304,10 +563,14 @@ def set_symbol_pin_type(params: Dict[str, Any]) -> Dict[str, Any]:
         "message": message,
         "libraryPath": str(lib_path),
         "dryRun": dry_run,
-        "changeCount": len(changes),
+        "changeCount": total_changes,
         "alreadyCorrect": unchanged,
         "symbolsChanged": touched,
+        "backupPath": str(backup_path) if backup_path else None,
         "changes": changes,
+        "changesTruncated": total_changes > len(changes),
         "missingSymbols": missing_symbols,
+        "symbolsWithoutOwnPins": pinless_symbols,
         "missingPinNumbers": missing_numbers,
+        "missingPinNames": missing_names,
     }

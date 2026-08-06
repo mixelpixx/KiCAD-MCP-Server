@@ -2993,7 +2993,11 @@ SCHEMATIC_TOOLS = [
             "token is validated first -- KiCAD refuses to load a library containing a pin "
             "type it does not know. Typical use: imported or SnapEDA symbols arrive with "
             "every pin 'unspecified' or 'bidirectional', flooding ERC with conflicts on nets "
-            "that are electrically fine."
+            "that are electrically fine. The library is replaced atomically, keeps its "
+            "existing line endings, and is copied to a sibling '.mcp-backups/' first "
+            "(path returned in 'backupPath'). 'changes' lists at most 200 per-pin records "
+            "with 'changesTruncated' saying when it was cut; 'changeCount' always carries "
+            "the true total."
         ),
         "inputSchema": {
             "type": "object",

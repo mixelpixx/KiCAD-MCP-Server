@@ -6,6 +6,37 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+// KiCAD's pin electrical types and graphic styles, mirroring
+// python/utils/pin_types.py (and the enums python/schemas/tool_schemas.py
+// declares). Kept as z.enum rather than z.string so a client rejects a bad
+// token locally instead of learning about it from a round trip.
+const PIN_TYPES = [
+  "input",
+  "output",
+  "bidirectional",
+  "tri_state",
+  "passive",
+  "free",
+  "unspecified",
+  "power_in",
+  "power_out",
+  "open_collector",
+  "open_emitter",
+  "no_connect",
+] as const;
+
+const PIN_STYLES = [
+  "line",
+  "inverted",
+  "clock",
+  "inverted_clock",
+  "input_low",
+  "clock_low",
+  "output_low",
+  "edge_clock_high",
+  "non_logic",
+] as const;
+
 export function registerSymbolLibraryTools(server: McpServer, callKicadScript: Function) {
   // List available symbol libraries
   server.tool(
@@ -373,23 +404,14 @@ Returns symbol references that can be used directly in schematics.`,
       "KiCAD's pin types first — an unknown one makes the whole library fail to load. " +
       "Typical use: imported or SnapEDA symbols arrive with every pin 'unspecified' or " +
       "'bidirectional', which floods ERC with conflicts on nets that are electrically fine. " +
-      "Run with dryRun first to see what matches.",
+      "Run with dryRun first to see what matches. The library is replaced atomically, keeps " +
+      "its existing line endings, and is copied to a sibling '.mcp-backups/' first (path " +
+      "returned in 'backupPath'). 'changes' lists at most 200 per-pin records, with " +
+      "'changesTruncated' saying when it was cut; 'changeCount' always carries the true total.",
     {
       libraryPath: z.string().describe("Absolute path to the .kicad_sym library file"),
-      type: z
-        .string()
-        .optional()
-        .describe(
-          "New electrical type: input, output, bidirectional, tri_state, passive, free, " +
-            "unspecified, power_in, power_out, open_collector, open_emitter, no_connect",
-        ),
-      style: z
-        .string()
-        .optional()
-        .describe(
-          "New graphic style: line, inverted, clock, inverted_clock, input_low, clock_low, " +
-            "output_low, edge_clock_high, non_logic",
-        ),
+      type: z.enum(PIN_TYPES).optional().describe("New electrical type"),
+      style: z.enum(PIN_STYLES).optional().describe("New graphic style"),
       symbols: z
         .array(z.string())
         .optional()
@@ -400,21 +422,12 @@ Returns symbol references that can be used directly in schematics.`,
       pinNumbers: z.array(z.string()).optional().describe("Only pins with these numbers"),
       pinNames: z.array(z.string()).optional().describe("Only pins with these names"),
       fromType: z
-        .string()
+        .enum(PIN_TYPES)
         .optional()
         .describe("Only pins currently of this electrical type — the safe way to do a bulk fix"),
       dryRun: z.boolean().optional().describe("Report what would change without writing"),
     },
-    async (args: {
-      libraryPath: string;
-      type?: string;
-      style?: string;
-      symbols?: string[];
-      pinNumbers?: string[];
-      pinNames?: string[];
-      fromType?: string;
-      dryRun?: boolean;
-    }) => {
+    async (args) => {
       const result = await callKicadScript("set_symbol_pin_type", args);
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
