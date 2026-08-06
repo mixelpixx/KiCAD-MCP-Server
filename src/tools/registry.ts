@@ -212,6 +212,12 @@ export const toolCategories: ToolCategory[] = [
     tools: ["autoroute", "export_dsn", "import_ses", "check_freerouting"],
   },
   {
+    name: "validation",
+    description:
+      "File integrity checks: locate structural damage in schematics and symbol libraries before KiCad refuses to open them",
+    tools: ["validate_schematic", "validate_symbol_library"],
+  },
+  {
     name: "parts-registry",
     description:
       "Open gate-verified parts registry (PartReel by default, no auth): search existing KiCAD parts and download footprint/symbol/3D files before generating custom ones",

@@ -4,6 +4,43 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Features
+
+- **`validate_schematic` and `validate_symbol_library`** — locate structural
+  damage in `.kicad_sch` / `.kicad_sym` files. `kicad-cli` answers whether a
+  file loads, but not why: one misplaced paren in a 40 000-line library
+  produces `Unable to load library` and nothing else, leaving a manual bisect
+  as the only way forward. These tools report the line and column of each
+  fault.
+
+  A single string-aware pass catches unbalanced parens, unterminated strings
+  and trailing content — parens inside quoted values such as
+  `"Ceramic (X7R) 50V"` are text, so the naive `count("(") - count(")")` check
+  that gives false positives on real libraries is not used. On top of that:
+
+  - **Orphaned fragments.** A `(property ...)`, `(effects ...)` or `(at ...)`
+    sitting directly under `(kicad_sch ...)` is what a truncated property
+    rewrite leaves behind. It is balanced, so nothing else notices, and
+    eeschema refuses to open the file.
+  - **Stale unit names.** Renaming a symbol without renaming its `NAME_0_1`
+    sub-symbols makes the *whole library* unloadable — confirmed against
+    kicad-cli 10.0, which is why this is graded an error rather than a warning.
+  - **Duplicate symbol names**, where KiCad silently keeps one.
+
+  When the paren structure is broken, every node past the break nests one level
+  too deep, so the name checks are skipped rather than reporting hundreds of
+  consequences of the one real problem: on a real 487-symbol library a single
+  deleted `)` went from 489 reported errors to 2. Since `unclosed_form` can
+  only ever blame the outermost form (line 1), an indentation heuristic — KiCad
+  writes one tab per level — points at the first line where nesting stops
+  matching indentation, which is where the paren actually went missing.
+
+  `kicad-cli` then runs on a throwaway copy as the authoritative answer, so a
+  file that passes the scan but not KiCad is still reported. The copy is not
+  optional: `upgrade` rewrites in place, and a validator must not modify the
+  file it is validating. Pass `runKicadCli: false` for a structure-only check
+  or when KiCad is not installed.
+
 ### Bug Fixes
 
 - **`add_layer` could not add inner copper layers, and corrupted an unrelated
