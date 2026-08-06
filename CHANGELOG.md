@@ -4,6 +4,35 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Tools
+
+- **`find_duplicate_symbols`** — group symbols in a `.kicad_sym` that are the
+  same part stored twice under different names. Libraries collect these the
+  moment more than one source feeds them: an Eagle import lands a part the
+  curated library already had, a SnapEDA download arrives under the vendor's
+  naming, someone re-adds a part because search did not find the existing name.
+  KiCad reports nothing, because the names differ — which is also why grepping
+  for the name does not find it.
+
+  Matches on manufacturer part number, distributor part number, Value +
+  Footprint, an identical drawn body, or near-identical names. The MPN match
+  normalises property names first, because a real library holds that field as
+  `MPN`, `MP`, `MANUFACTURER PART NUMBER` and `PART NUMBER` depending on which
+  importer wrote it, and a plain group-by therefore finds nothing. Each group
+  reports which strategy and which property produced it.
+
+  `schematicPaths` counts instances per symbol across the project's sheets,
+  which turns the report into a decision: the duplicate nothing places is the
+  one to retire. `suggestedKeep` names it and says why.
+
+  `graphics` is off by default. Verified against a 489-symbol library: matching
+  on the drawn body alone put 78 different resistor values in one group, because
+  every resistor shares one drawing. It stays available for hunting a custom
+  part copied under a new name, and is documented as evidence rather than
+  verdict. With the defaults the same library reported 86 real groups covering
+  116 redundant symbols, 69 of which no schematic places — including five
+  symbols for one TI transceiver, of which one is in use.
+
 ### Bug Fixes
 
 - **`add_layer` could not add inner copper layers, and corrupted an unrelated

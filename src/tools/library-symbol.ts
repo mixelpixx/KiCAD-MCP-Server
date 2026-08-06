@@ -361,4 +361,53 @@ Returns symbol references that can be used directly in schematics.`,
       };
     },
   );
+
+  // Find the same part stored twice under different names
+  server.tool(
+    "find_duplicate_symbols",
+    "Group symbols in a .kicad_sym that are the same part stored twice under different " +
+      "names — the residue of Eagle imports, SnapEDA downloads, and parts re-added because " +
+      "search did not find the existing name. KiCAD reports nothing here because the names " +
+      "differ, which is also why grepping does not find it. Matches on manufacturer part " +
+      "number (tolerating the inconsistent property naming real libraries have: MPN, MP, " +
+      "'MANUFACTURER PART NUMBER', 'PART NUMBER'), on distributor part number, on " +
+      "Value+Footprint, on an identical drawn body, or on near-identical names. Pass " +
+      "schematicPaths to count how many instances each duplicate actually has — that turns " +
+      "the report into a decision, because the one nothing places is the one to retire.",
+    {
+      libraryPath: z.string().describe("Absolute path to the .kicad_sym library file"),
+      matchBy: z
+        .array(z.enum(["mpn", "supplier", "value_footprint", "graphics", "name"]))
+        .optional()
+        .describe(
+          "How to decide two symbols are the same part (default: mpn, value_footprint). " +
+            "'graphics' is off by default: every resistor in a library shares one body, so " +
+            "on passives it groups the whole family.",
+        ),
+      schematicPaths: z
+        .array(z.string())
+        .optional()
+        .describe(".kicad_sch files or directories to scan for usage counts (recursive)"),
+      minGroupSize: z
+        .number()
+        .optional()
+        .describe("Only report groups with at least this many symbols (default 2)"),
+      ignoreCase: z
+        .boolean()
+        .optional()
+        .describe("Compare part numbers and values case-insensitively (default true)"),
+    },
+    async (args: {
+      libraryPath: string;
+      matchBy?: string[];
+      schematicPaths?: string[];
+      minGroupSize?: number;
+      ignoreCase?: boolean;
+    }) => {
+      const result = await callKicadScript("find_duplicate_symbols", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
 }

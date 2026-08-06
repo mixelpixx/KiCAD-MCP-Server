@@ -157,6 +157,7 @@ export const toolCategories: ToolCategory[] = [
       // symbol-library category yet -- see #345, which tracks giving the
       // ~13 unregistered symbol tools a proper home.
       "repair_flat_symbols",
+      "find_duplicate_symbols",
     ],
   },
   {

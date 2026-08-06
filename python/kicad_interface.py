@@ -331,6 +331,7 @@ try:
     from commands.design_rules import DesignRuleCommands
     from commands.eagle import EagleCommands
     from commands.export import ExportCommands
+    from commands.find_duplicate_symbols import find_duplicate_symbols
     from commands.footprint import FootprintCreator
     from commands.freerouting import FreeroutingCommands
     from commands.hierarchical_place import HierarchicalPlaceCommands
@@ -557,6 +558,7 @@ class KiCADInterface(SchematicHandlersMixin):
             # Symbol pin discovery commands (read pins straight from symbol libraries)
             "list_symbol_pins": self.symbol_pin_commands.list_symbol_pins,
             "batch_list_symbol_pins": self.symbol_pin_commands.batch_list_symbol_pins,
+            "find_duplicate_symbols": find_duplicate_symbols,
             "repair_flat_symbols": self.symbol_repair_commands.repair_flat_symbols,
             # Schematic hierarchy commands (sheet insertion + subsheet scaffolding)
             "add_hierarchical_sheet": self.hierarchy_commands.add_hierarchical_sheet,

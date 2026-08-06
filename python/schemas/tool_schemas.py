@@ -12,6 +12,8 @@ Each tool includes:
 
 from typing import Any, Dict
 
+from utils.duplicate_strategies import DEFAULT_DUPLICATE_STRATEGIES, DUPLICATE_STRATEGIES
+
 # =============================================================================
 # PROJECT TOOLS
 # =============================================================================
@@ -2977,6 +2979,57 @@ SCHEMATIC_TOOLS = [
                 "hide": {"type": "boolean", "default": False},
             },
             "required": ["libraryPath", "symbolName", "propertyName", "propertyValue"],
+        },
+    },
+    {
+        "name": "find_duplicate_symbols",
+        "title": "Find Duplicate Symbols in a Library",
+        "description": (
+            "Group symbols in a .kicad_sym that are the same part stored twice under "
+            "different names -- the residue of Eagle imports, SnapEDA downloads and parts "
+            "re-added because search did not find the existing name. KiCad reports nothing "
+            "here, because the names differ, which is also why grepping does not find it. "
+            "Matches on manufacturer part number (tolerating the inconsistent property "
+            "naming real libraries have: MPN, MP, 'MANUFACTURER PART NUMBER', 'PART "
+            "NUMBER'), on distributor part number, on Value+Footprint, on an identical "
+            "drawn body, or on near-identical names. Pass schematicPaths to count how many "
+            "instances each duplicate actually has, which turns the report into a decision: "
+            "the one nothing places is the one to retire."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "libraryPath": {"type": "string", "description": "Path to the .kicad_sym file"},
+                "matchBy": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": list(DUPLICATE_STRATEGIES)},
+                    "default": list(DEFAULT_DUPLICATE_STRATEGIES),
+                    "description": (
+                        "How to decide two symbols are the same part. 'graphics' is off by "
+                        "default: every resistor in a library shares one body, so on "
+                        "passives it groups the whole family."
+                    ),
+                },
+                "schematicPaths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        ".kicad_sch files or directories to scan for usage counts. "
+                        "Directories are searched recursively."
+                    ),
+                },
+                "minGroupSize": {
+                    "type": "integer",
+                    "default": 2,
+                    "description": "Only report groups with at least this many symbols",
+                },
+                "ignoreCase": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Compare part numbers and values case-insensitively",
+                },
+            },
+            "required": ["libraryPath"],
         },
     },
     {
