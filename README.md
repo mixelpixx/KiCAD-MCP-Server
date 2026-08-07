@@ -776,6 +776,13 @@ npm run build
 
 **Note:** The `--system-site-packages` flag is required to access KiCAD's `pcbnew` module from the virtual environment.
 
+**Note:** If you skip the virtual environment, install the requirements with KiCAD's bundled interpreter — a plain `pip3 install -r requirements.txt` goes to system Python, which the server never uses, and the server then fails to start (the MCP client times out after 30s with no visible error):
+
+```bash
+/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 \
+  -m pip install --user -r requirements.txt
+```
+
 #### Automated Setup
 
 To simplify configuration with Claude Desktop, this repository provides a macOS setup script:
@@ -996,7 +1003,20 @@ Use the same configuration format as Claude Desktop above.
 
 ### Claude Code
 
-Claude Code automatically detects MCP servers in the current directory. No additional configuration needed.
+Claude Code does **not** read the Claude Desktop configuration file, and it only auto-detects servers listed in a project's `.mcp.json` (this repository does not ship one). Register the server explicitly with `claude mcp add`:
+
+```bash
+# macOS example — adjust KICAD_PYTHON/PYTHONPATH per platform (see table above)
+claude mcp add --scope user kicad \
+  --env KICAD_PYTHON=/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 \
+  --env PYTHONPATH=/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.9/lib/python3.9/site-packages \
+  --env LOG_LEVEL=info \
+  -- node /path/to/KiCAD-MCP-Server/dist/index.js
+```
+
+With `--scope user` the server is available in every project; use `--scope project` to write a shareable `.mcp.json` instead. On macOS, `setup-macos.sh` prints this command with the detected paths filled in.
+
+Verify with `claude mcp list` — the server should report ✔ Connected.
 
 ### OpenCode (Windows)
 

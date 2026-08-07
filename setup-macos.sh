@@ -18,8 +18,10 @@ Usage:
 Options:
   --verify               Check prerequisites and print detected paths
   --dry-run              Show config and merged Claude Desktop config without writing
-  --apply                Write/update Claude Desktop config
-  --yes                  Do not prompt before writing (only with --apply)
+  --apply                Write/update Claude Desktop config; offers to install
+                         missing Python dependencies first
+  --yes                  Do not prompt before writing or installing dependencies
+                         (only with --apply)
   --name NAME            MCP server name (default: kicad)
   --claude-config PATH   Path to Claude Desktop config file
                          (default: ~/Library/Application Support/Claude/claude_desktop_config.json)
@@ -117,6 +119,13 @@ fi
 DIST_JS="$REPO_ROOT/dist/index.js"
 
 DEFAULT_KICAD_PYTHON="/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3"
+
+# Prefer a repo-local venv (created per the README's manual macOS setup) so the
+# generated config points at the interpreter that has the requirements
+# installed. An explicit KICAD_PYTHON env var still wins.
+if [[ -z "${KICAD_PYTHON:-}" && -x "$REPO_ROOT/venv/bin/python3" ]]; then
+  KICAD_PYTHON="$REPO_ROOT/venv/bin/python3"
+fi
 KICAD_PYTHON="${KICAD_PYTHON:-$DEFAULT_KICAD_PYTHON}"
 
 command -v python3 >/dev/null 2>&1 || fail "python3 not found"
@@ -132,6 +141,7 @@ result = {
     "python_executable": sys.executable,
     "python_version": sys.version.split()[0],
     "purelib": sysconfig.get_paths().get("purelib"),
+    "in_venv": sys.prefix != getattr(sys, "base_prefix", sys.prefix),
     "pcbnew_ok": False,
     "pcbnew_version": None,
     "pcbnew_error": None,
@@ -158,6 +168,43 @@ if [[ "$PCBNEW_OK" != "true" ]]; then
   fail "KiCad Python could not import pcbnew. Details: $PCBNEW_ERROR"
 fi
 
+IN_VENV="$(python3 -c 'import json,sys; print("true" if json.loads(sys.argv[1])["in_venv"] else "false")' "$DETECT_JSON")"
+
+# Runtime requirements as "import-name:pip-package" pairs. The Python bridge
+# imports several of these at startup; if one is missing the server dies
+# before answering the MCP handshake and the client just times out after 30s
+# with no visible error (issue #350).
+REQUIRED_PY_MODULES="sexpdata:sexpdata skip:kicad-skip PIL:Pillow colorlog:colorlog pydantic:pydantic requests:requests dotenv:python-dotenv cairosvg:cairosvg kipy:kicad-python"
+
+check_missing_packages() {
+  "$KICAD_PYTHON" - "$REQUIRED_PY_MODULES" <<'PY'
+import importlib, sys
+missing = []
+for pair in sys.argv[1].split():
+    module_name, package_name = pair.split(":", 1)
+    try:
+        importlib.import_module(module_name)
+    except Exception:
+        missing.append(package_name)
+print(" ".join(missing))
+PY
+}
+
+MISSING_PACKAGES="$(check_missing_packages)"
+
+REQUIREMENTS_FILE="$REPO_ROOT/requirements.txt"
+if [[ "$IN_VENV" == "true" ]]; then
+  PIP_INSTALL_CMD=("$KICAD_PYTHON" -m pip install -r "$REQUIREMENTS_FILE")
+else
+  PIP_INSTALL_CMD=("$KICAD_PYTHON" -m pip install --user -r "$REQUIREMENTS_FILE")
+fi
+
+missing_deps_message() {
+  warn "The KiCAD MCP server will not start until the missing Python packages are installed:"
+  echo "    ${BOLD}${PIP_INSTALL_CMD[*]}${RESET}"
+  echo "  ${DIM}Without them the MCP client times out after 30s with no visible error.${RESET}"
+}
+
 CONFIG_FRAGMENT_JSON="$(python3 - "$NODE_PATH" "$DIST_JS" "$KICAD_PYTHON" "$PYTHONPATH_VALUE" <<'PY'
 import json, sys
 fragment = {
@@ -180,6 +227,11 @@ show_detected() {
   echo "  ${SYM_OK} build artifact   $DIST_JS"
   echo "  ${SYM_OK} KiCad Python     $KICAD_PYTHON"
   echo "  ${SYM_OK} pcbnew import    $PCBNEW_VERSION"
+  if [[ -z "$MISSING_PACKAGES" ]]; then
+    echo "  ${SYM_OK} python deps      all requirements importable"
+  else
+    echo "  ${SYM_FAIL} python deps      missing: $MISSING_PACKAGES"
+  fi
 
   section "Configuration"
   echo "  Server name:       ${BOLD}$SERVER_NAME${RESET}"
@@ -236,10 +288,28 @@ print(json.dumps({"status": status, "merged": existing}, indent=2))
 PY
 }
 
+show_claude_code_hint() {
+  section "Claude Code (optional)"
+  echo "  Claude Code (the CLI) does not read the Claude Desktop config."
+  echo "  To register the server there as well, run:"
+  echo
+  echo "  claude mcp add --scope user $SERVER_NAME \\"
+  echo "    --env KICAD_PYTHON=\"$KICAD_PYTHON\" \\"
+  echo "    --env PYTHONPATH=\"$PYTHONPATH_VALUE\" \\"
+  echo "    --env LOG_LEVEL=info \\"
+  echo "    -- \"$NODE_PATH\" \"$DIST_JS\""
+}
+
 if [[ "$MODE" == "verify" ]]; then
   show_detected
   section "Proposed Claude Desktop entry ('$SERVER_NAME')"
   echo "$CONFIG_FRAGMENT_JSON"
+  show_claude_code_hint
+  if [[ -n "$MISSING_PACKAGES" ]]; then
+    echo
+    missing_deps_message
+    exit 1
+  fi
   exit 0
 fi
 
@@ -272,7 +342,32 @@ echo "${DIM}Merged config preview:${RESET}"
 echo "$MERGED_JSON"
 
 if [[ "$MODE" == "dry-run" ]]; then
+  if [[ -n "$MISSING_PACKAGES" ]]; then
+    echo
+    missing_deps_message
+  fi
   exit 0
+fi
+
+if [[ -n "$MISSING_PACKAGES" ]]; then
+  section "Python dependencies"
+  warn "Missing for $KICAD_PYTHON: $MISSING_PACKAGES"
+  DO_INSTALL=$ASSUME_YES
+  if [[ $ASSUME_YES -ne 1 ]]; then
+    echo
+    read -r -p "Install them now with '${PIP_INSTALL_CMD[*]}' ? [y/N] " REPLY
+    case "$REPLY" in
+      y|Y|yes|YES) DO_INSTALL=1 ;;
+    esac
+  fi
+  if [[ $DO_INSTALL -eq 1 ]]; then
+    "${PIP_INSTALL_CMD[@]}"
+    STILL_MISSING="$(check_missing_packages)"
+    [[ -z "$STILL_MISSING" ]] || fail "Still missing after install: $STILL_MISSING"
+    info "Python dependencies installed."
+  else
+    missing_deps_message
+  fi
 fi
 
 mkdir -p "$CLAUDE_CONFIG_DIR"
@@ -314,4 +409,6 @@ echo "  2. Reopen Claude Desktop"
 echo "  3. In a new chat, check: + → Connectors"
 echo "  4. Verify with:"
 echo "     Use the ${BOLD}$SERVER_NAME${RESET} MCP server to run ${BOLD}check_kicad_ui${RESET}."
+
+show_claude_code_hint
 echo

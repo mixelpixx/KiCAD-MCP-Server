@@ -276,6 +276,9 @@ echo 'export PYTHONPATH=/usr/lib/kicad/lib/python3/dist-packages' >> ~/.bashrc
 # Verify pcbnew module
 /Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"
 
+# Install project dependencies using KiCAD's bundled Python
+/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 -m pip install --user -r requirements.txt
+
 # Or use the setup script to verify everything at once
 bash setup-macos.sh --verify
 ```
