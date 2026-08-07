@@ -4,8 +4,7 @@
  * These resources provide information about components on the PCB
  * to the LLM, enabling better context-aware assistance.
  */
-
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/server";
 import { logger } from "../logger.js";
 
 // Command function type for KiCAD script calls
@@ -26,7 +25,7 @@ export function registerComponentResources(
   // ------------------------------------------------------
   // Component List Resource
   // ------------------------------------------------------
-  server.resource("component_list", "kicad://components", async (uri) => {
+  server.registerResource("component_list", "kicad://components", {}, async (uri) => {
     logger.debug("Retrieving component list");
     const result = await callKicadScript("get_component_list", {});
 
@@ -61,11 +60,12 @@ export function registerComponentResources(
   // ------------------------------------------------------
   // Component Details Resource
   // ------------------------------------------------------
-  server.resource(
+  server.registerResource(
     "component_details",
     new ResourceTemplate("kicad://component/{reference}/details", {
       list: undefined,
     }),
+    {},
     async (uri, params) => {
       const { reference } = params;
       logger.debug(`Retrieving details for component: ${reference}`);
@@ -105,11 +105,12 @@ export function registerComponentResources(
   // ------------------------------------------------------
   // Component Connections Resource
   // ------------------------------------------------------
-  server.resource(
+  server.registerResource(
     "component_connections",
     new ResourceTemplate("kicad://component/{reference}/connections", {
       list: undefined,
     }),
+    {},
     async (uri, params) => {
       const { reference } = params;
       logger.debug(`Retrieving connections for component: ${reference}`);
@@ -149,42 +150,47 @@ export function registerComponentResources(
   // ------------------------------------------------------
   // Component Placement Resource
   // ------------------------------------------------------
-  server.resource("component_placement", "kicad://components/placement", async (uri) => {
-    logger.debug("Retrieving component placement information");
-    const result = await callKicadScript("get_component_placement", {});
+  server.registerResource(
+    "component_placement",
+    "kicad://components/placement",
+    {},
+    async (uri) => {
+      logger.debug("Retrieving component placement information");
+      const result = await callKicadScript("get_component_placement", {});
 
-    if (!result.success) {
-      logger.error(`Failed to retrieve component placement: ${result.errorDetails}`);
+      if (!result.success) {
+        logger.error(`Failed to retrieve component placement: ${result.errorDetails}`);
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              text: JSON.stringify({
+                error: "Failed to retrieve component placement information",
+                details: result.errorDetails,
+              }),
+              mimeType: "application/json",
+            },
+          ],
+        };
+      }
+
+      logger.debug("Successfully retrieved component placement information");
       return {
         contents: [
           {
             uri: uri.href,
-            text: JSON.stringify({
-              error: "Failed to retrieve component placement information",
-              details: result.errorDetails,
-            }),
+            text: JSON.stringify(result),
             mimeType: "application/json",
           },
         ],
       };
-    }
-
-    logger.debug("Successfully retrieved component placement information");
-    return {
-      contents: [
-        {
-          uri: uri.href,
-          text: JSON.stringify(result),
-          mimeType: "application/json",
-        },
-      ],
-    };
-  });
+    },
+  );
 
   // ------------------------------------------------------
   // Component Groups Resource
   // ------------------------------------------------------
-  server.resource("component_groups", "kicad://components/groups", async (uri) => {
+  server.registerResource("component_groups", "kicad://components/groups", {}, async (uri) => {
     logger.debug("Retrieving component groups");
     const result = await callKicadScript("get_component_groups", {});
 
@@ -219,11 +225,12 @@ export function registerComponentResources(
   // ------------------------------------------------------
   // Component Visualization Resource
   // ------------------------------------------------------
-  server.resource(
+  server.registerResource(
     "component_visualization",
     new ResourceTemplate("kicad://component/{reference}/visualization", {
       list: undefined,
     }),
+    {},
     async (uri, params) => {
       const { reference } = params;
       logger.debug(`Generating visualization for component: ${reference}`);

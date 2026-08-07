@@ -52,6 +52,36 @@ command_exists() {
     command -v "$1" &> /dev/null
 }
 
+NODE_REQUIRED="^20.19.0, ^22.13.0, or >=24.0.0"
+
+node_version_supported() {
+    local version="${1#v}"
+    if [[ ! "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
+        return 1
+    fi
+
+    local major="${BASH_REMATCH[1]}"
+    local minor="${BASH_REMATCH[2]}"
+
+    (( (major == 20 && minor >= 19) ||
+       (major == 22 && minor >= 13) ||
+       major >= 24 ))
+}
+
+install_supported_node() {
+    print_info "Installing Node.js 20.x..."
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+
+    local installed_version
+    installed_version=$(node --version)
+    if ! node_version_supported "$installed_version"; then
+        print_error "Installed Node.js $installed_version is unsupported. Required: $NODE_REQUIRED."
+        exit 1
+    fi
+    print_success "Supported Node.js installed: $installed_version"
+}
+
 # Step 1: Install KiCAD 9.0
 print_info "Step 1/5: Installing KiCAD 9.0..."
 if command_exists kicad; then
@@ -79,21 +109,14 @@ fi
 print_info "Step 2/5: Installing Node.js 20.x..."
 if command_exists node; then
     NODE_VERSION=$(node --version)
-    MAJOR_VERSION=$(echo $NODE_VERSION | cut -d'.' -f1 | sed 's/v//')
-    if [ "$MAJOR_VERSION" -ge 18 ]; then
-        print_success "Node.js is already installed: $NODE_VERSION"
+    if node_version_supported "$NODE_VERSION"; then
+        print_success "Supported Node.js is already installed: $NODE_VERSION"
     else
-        print_warning "Node.js version is too old: $NODE_VERSION (need 18+)"
-        print_info "Installing Node.js 20.x..."
-        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-        sudo apt-get install -y nodejs
-        print_success "Node.js updated"
+        print_warning "Node.js $NODE_VERSION is unsupported. Required: $NODE_REQUIRED."
+        install_supported_node
     fi
 else
-    print_info "Installing Node.js 20.x..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-    sudo apt-get install -y nodejs
-    print_success "Node.js installed: $(node --version)"
+    install_supported_node
 fi
 
 # Step 3: Install Python dependencies

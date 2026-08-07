@@ -118,7 +118,7 @@ type ToolHandler = (args: any) => Promise<ToolResult>;
 function captureTools(): Map<string, ToolHandler> {
   const tools = new Map<string, ToolHandler>();
   const fakeServer = {
-    tool: (name: string, _desc: string, _schema: unknown, handler: ToolHandler) => {
+    registerTool: (name: string, _config: unknown, handler: ToolHandler) => {
       tools.set(name, handler);
     },
   };

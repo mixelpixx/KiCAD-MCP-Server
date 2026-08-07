@@ -3,8 +3,7 @@
  *
  * Provides discovery and execution of routed tools
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { logger } from "../logger.js";
 import {
@@ -26,11 +25,14 @@ export function registerRouterTools(server: McpServer, _callKicadScript: Command
   // ============================================================================
   // list_tool_categories
   // ============================================================================
-  server.tool(
+  server.registerTool(
     "list_tool_categories",
-    "List all available KiCAD tool categories with their descriptions and tool counts. Use this to discover which tools are available via the router.",
     {
-      // No parameters
+      description:
+        "List all available KiCAD tool categories with their descriptions and tool counts. Use this to discover which tools are available via the router.",
+      inputSchema: z.object({
+        // No parameters
+      }),
     },
     async () => {
       logger.debug("Listing tool categories");
@@ -64,11 +66,14 @@ export function registerRouterTools(server: McpServer, _callKicadScript: Command
   // ============================================================================
   // get_category_tools
   // ============================================================================
-  server.tool(
+  server.registerTool(
     "get_category_tools",
-    "Return all tools available in a specific category. Use list_tool_categories first to find valid category names.",
     {
-      category: z.string().describe("Category name from list_tool_categories"),
+      description:
+        "Return all tools available in a specific category. Use list_tool_categories first to find valid category names.",
+      inputSchema: z.object({
+        category: z.string().describe("Category name from list_tool_categories"),
+      }),
     },
     async ({ category }) => {
       logger.debug(`Getting tools for category: ${category}`);
@@ -121,11 +126,14 @@ export function registerRouterTools(server: McpServer, _callKicadScript: Command
   // ============================================================================
   // search_tools
   // ============================================================================
-  server.tool(
+  server.registerTool(
     "search_tools",
-    "Search all available KiCAD tools by keyword. Returns matching tool names and their categories.",
     {
-      query: z.string().describe("Search term (e.g., 'gerber', 'zone', 'export', 'drc')"),
+      description:
+        "Search all available KiCAD tools by keyword. Returns matching tool names and their categories.",
+      inputSchema: z.object({
+        query: z.string().describe("Search term (e.g., 'gerber', 'zone', 'export', 'drc')"),
+      }),
     },
     async ({ query }) => {
       logger.debug(`Searching tools for: ${query}`);

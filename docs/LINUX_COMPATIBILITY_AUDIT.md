@@ -231,7 +231,7 @@ const DEFAULT_LOG_DIR = join(os.homedir(), ".kicad-mcp", "logs");
 ### Ubuntu 24.04 LTS Testing
 
 - [ ] Install KiCAD 9.0 from official PPA
-- [ ] Install Node.js 18+ from NodeSource
+- [ ] Install Node.js `^20.19.0`, `^22.13.0`, or `>=24.0.0` from NodeSource
 - [ ] Clone repository
 - [ ] Run `npm install`
 - [ ] Run `npm run build`

@@ -45,7 +45,7 @@ class TestMcpErrorWrapping:
             command_index = source.find(marker)
             assert command_index != -1, f"{command} wrapper not found"
 
-            next_tool_index = source.find("server.tool(", command_index + len(marker))
+            next_tool_index = source.find("server.registerTool(", command_index + len(marker))
             wrapper_body = source[
                 command_index : next_tool_index if next_tool_index != -1 else None
             ]

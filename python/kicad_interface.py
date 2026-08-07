@@ -6277,6 +6277,13 @@ def _write_response(response_fd: Any, response: Any) -> None:
     os.write(response_fd, payload.encode("utf-8"))
 
 
+def _attach_internal_request_id(response: Any, request_id: Any) -> Any:
+    """Echo the TypeScript bridge ID without mutating command results."""
+    if request_id is None or not isinstance(response, dict):
+        return response
+    return {**response, "_requestId": request_id}
+
+
 def main() -> None:
     """Main entry point"""
     # --- Redirect stdout so pcbnew C++ noise never reaches the TS host ---
@@ -6430,6 +6437,7 @@ def main() -> None:
                     logger.info("Detected custom format message")
                     command = command_data.get("command")
                     params = command_data.get("params", {})
+                    internal_request_id = command_data.get("requestId")
 
                     if not command:
                         logger.error("Missing command field")
@@ -6441,6 +6449,8 @@ def main() -> None:
                     else:
                         # Handle command
                         response = interface.handle_command(command, params)
+
+                    response = _attach_internal_request_id(response, internal_request_id)
 
                 # Send response via the clean fd (immune to pcbnew stdout noise)
                 logger.debug(f"Sending response: {response}")

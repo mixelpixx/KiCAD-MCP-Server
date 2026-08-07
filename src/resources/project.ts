@@ -4,8 +4,7 @@
  * These resources provide information about the KiCAD project
  * to the LLM, enabling better context-aware assistance.
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { logger } from "../logger.js";
 
 // Command function type for KiCAD script calls
@@ -26,7 +25,7 @@ export function registerProjectResources(
   // ------------------------------------------------------
   // Project Information Resource
   // ------------------------------------------------------
-  server.resource("project_info", "kicad://project/info", async (uri) => {
+  server.registerResource("project_info", "kicad://project/info", {}, async (uri) => {
     logger.debug("Retrieving project information");
     const result = await callKicadScript("get_project_info", {});
 
@@ -61,7 +60,7 @@ export function registerProjectResources(
   // ------------------------------------------------------
   // Project Properties Resource
   // ------------------------------------------------------
-  server.resource("project_properties", "kicad://project/properties", async (uri) => {
+  server.registerResource("project_properties", "kicad://project/properties", {}, async (uri) => {
     logger.debug("Retrieving project properties");
     const result = await callKicadScript("get_project_properties", {});
 
@@ -96,7 +95,7 @@ export function registerProjectResources(
   // ------------------------------------------------------
   // Project Files Resource
   // ------------------------------------------------------
-  server.resource("project_files", "kicad://project/files", async (uri) => {
+  server.registerResource("project_files", "kicad://project/files", {}, async (uri) => {
     logger.debug("Retrieving project files");
     const result = await callKicadScript("get_project_files", {});
 
@@ -131,7 +130,7 @@ export function registerProjectResources(
   // ------------------------------------------------------
   // Project Status Resource
   // ------------------------------------------------------
-  server.resource("project_status", "kicad://project/status", async (uri) => {
+  server.registerResource("project_status", "kicad://project/status", {}, async (uri) => {
     logger.debug("Retrieving project status");
     const result = await callKicadScript("get_project_status", {});
 
@@ -166,7 +165,7 @@ export function registerProjectResources(
   // ------------------------------------------------------
   // Project Summary Resource
   // ------------------------------------------------------
-  server.resource("project_summary", "kicad://project/summary", async (uri) => {
+  server.registerResource("project_summary", "kicad://project/summary", {}, async (uri) => {
     logger.debug("Generating project summary");
 
     // Get project info

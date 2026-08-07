@@ -125,7 +125,7 @@ and per-user KiCAD installs:
    ```
 
 2. **If not installed:**
-   - Download Node.js 18+ from https://nodejs.org/
+   - Download Node.js `^20.19.0`, `^22.13.0`, or `>=24.0.0` from https://nodejs.org/
    - Install with default options
    - Restart PowerShell after installation
 
@@ -155,7 +155,7 @@ and per-user KiCAD installs:
 2. **Check Node.js version:**
 
    ```powershell
-   node --version  # Should be v18.0.0 or higher
+   node --version  # Required: ^20.19.0, ^22.13.0, or >=24.0.0
    ```
 
 3. **If still failing:**
@@ -352,7 +352,7 @@ SUCCESS!
 ### Test 2: Verify Node.js
 
 ```powershell
-node --version  # Should be v18.0.0+
+node --version  # Required: ^20.19.0, ^22.13.0, or >=24.0.0
 npm --version   # Should be 9.0.0+
 ```
 
@@ -491,7 +491,7 @@ When everything works, you should have:
 
 - [ ] KiCAD 9.0 or higher installed under a versioned KiCAD directory such as
       `C:\Program Files\KiCad\10.0` or `%LOCALAPPDATA%\Programs\KiCad\10.0`
-- [ ] Node.js 18+ installed and in PATH
+- [ ] Node.js `^20.19.0`, `^22.13.0`, or `>=24.0.0` installed and in PATH
 - [ ] Python can import pcbnew successfully
 - [ ] `npm run build` completes without errors
 - [ ] `dist\index.js` file exists

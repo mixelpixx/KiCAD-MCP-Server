@@ -18,7 +18,7 @@
 | Symbol Access        | ~10,000 via dynamic loading |
 | Footprint Libraries  | 153+ auto-discovered        |
 | Contributors         | 10+                         |
-| MCP Protocol Version | 2025-06-18                  |
+| MCP Protocol Version | 2026-07-28 + legacy 2025    |
 
 ---
 

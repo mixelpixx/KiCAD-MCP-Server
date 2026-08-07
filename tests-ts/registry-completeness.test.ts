@@ -9,7 +9,7 @@ import {
   toolCategories,
 } from "../src/tools/registry.js";
 
-// Every tool registered with server.tool() should also appear in the registry.
+// Every tool registered with server.registerTool() should also appear in the registry.
 // If it does not, it is callable only by a client that already knows the name:
 // search_tools cannot find it, and getRegistryStats() does not count it.
 //
@@ -118,7 +118,7 @@ function serverToolNames(): Map<string, string> {
   for (const file of readdirSync(TOOLS_DIR)) {
     if (!file.endsWith(".ts")) continue;
     const src = readFileSync(join(TOOLS_DIR, file), "utf-8");
-    const re = /server\.tool\(\s*"([a-z0-9_]+)"/g;
+    const re = /server\.registerTool\(\s*"([a-z0-9_]+)"/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(src)) !== null) {
       if (!found.has(m[1])) found.set(m[1], file);
@@ -128,7 +128,7 @@ function serverToolNames(): Map<string, string> {
 }
 
 describe("registry completeness", () => {
-  it("finds the server.tool registrations at all", () => {
+  it("finds the server.registerTool registrations at all", () => {
     // Guards the regex itself: a refactor that changes the call shape must
     // fail loudly here rather than silently making the checks below vacuous.
     expect(serverToolNames().size).toBeGreaterThan(150);
@@ -161,7 +161,7 @@ describe("registry completeness", () => {
   });
 
   it("every registry entry is actually registered on the server", () => {
-    // The reverse direction: a registry entry with no server.tool() would be
+    // The reverse direction: a registry entry with no server.registerTool() would be
     // advertised by search_tools and then fail when called.
     const onServer = serverToolNames();
     const ghosts = [...registeredToolNames()].filter((n) => !onServer.has(n));

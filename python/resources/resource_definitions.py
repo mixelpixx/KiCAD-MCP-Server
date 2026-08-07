@@ -1,8 +1,8 @@
 """
 Resource definitions for exposing KiCAD project state via MCP
 
-Resources follow the MCP 2025-06-18 specification, providing
-read-only access to project data for LLM context.
+Resources are exposed through the MCP 2026-07-28 and legacy 2025 protocol
+adapters, providing read-only access to project data for LLM context.
 """
 
 import base64

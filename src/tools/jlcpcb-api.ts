@@ -2,15 +2,15 @@
  * JLCPCB API tools for KiCAD MCP server
  * Provides access to JLCPCB's complete parts catalog via their API
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 export function registerJLCPCBApiTools(server: McpServer, callKicadScript: Function) {
   // Download JLCPCB parts database
-  server.tool(
+  server.registerTool(
     "download_jlcpcb_database",
-    `Download the JLCPCB parts catalog to a local SQLite database for fast offline search.
+    {
+      description: `Download the JLCPCB parts catalog to a local SQLite database for fast offline search.
 
 Sources (no API credentials required by default):
   - cdfer (default): in-stock subset (~600k parts, ~1.5 GB download). Single file,
@@ -22,19 +22,20 @@ Sources (no API credentials required by default):
 
 One-time setup; downloads resume automatically if interrupted. Re-run with
 force=true to refresh.`,
-    {
-      force: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe("Force re-download even if database exists"),
-      source: z
-        .enum(["cdfer", "yaqwsx", "official"])
-        .optional()
-        .describe(
-          'Force one source. "cdfer" (default) = in-stock subset, no 7z needed. ' +
-            '"yaqwsx" = FULL ~10GB catalog (needs a 7z CLI). "official" = JLCPCB API (needs creds).',
-        ),
+      inputSchema: z.object({
+        force: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("Force re-download even if database exists"),
+        source: z
+          .enum(["cdfer", "yaqwsx", "official"])
+          .optional()
+          .describe(
+            'Force one source. "cdfer" (default) = in-stock subset, no 7z needed. ' +
+              '"yaqwsx" = FULL ~10GB catalog (needs a 7z CLI). "official" = JLCPCB API (needs creds).',
+          ),
+      }),
     },
     async (args: { force?: boolean; source?: "cdfer" | "yaqwsx" | "official" }) => {
       const result = await callKicadScript("download_jlcpcb_database", args);
@@ -75,9 +76,10 @@ force=true to refresh.`,
   );
 
   // Search JLCPCB parts
-  server.tool(
+  server.registerTool(
     "search_jlcpcb_parts",
-    `Search JLCPCB parts catalog by specifications.
+    {
+      description: `Search JLCPCB parts catalog by specifications.
 
 Searches the local JLCPCB database (must be downloaded first with download_jlcpcb_database).
 Provides real pricing, stock info, and library type (Basic parts = free assembly).
@@ -85,31 +87,32 @@ Provides real pricing, stock info, and library type (Basic parts = free assembly
 Use this to find components with exact specifications and cost optimization.
 
 For a verified, ready-to-use KiCAD footprint/symbol/3D bundle (rather than sourcing/stock data), use search_parts_registry instead.`,
-    {
-      query: z
-        .string()
-        .optional()
-        .describe("Free-text search (e.g., '10k resistor 0603', 'ESP32', 'STM32F103')"),
-      category: z
-        .string()
-        .optional()
-        .describe("Filter by category (e.g., 'Resistors', 'Capacitors', 'Microcontrollers')"),
-      package: z
-        .string()
-        .optional()
-        .describe("Filter by package type (e.g., '0603', 'SOT-23', 'QFN-32')"),
-      library_type: z
-        .enum(["Basic", "Extended", "Preferred", "All"])
-        .optional()
-        .default("All")
-        .describe("Filter by library type (Basic = free assembly at JLCPCB)"),
-      manufacturer: z.string().optional().describe("Filter by manufacturer name"),
-      in_stock: z
-        .boolean()
-        .optional()
-        .default(true)
-        .describe("Only show parts with available stock"),
-      limit: z.number().optional().default(20).describe("Maximum number of results to return"),
+      inputSchema: z.object({
+        query: z
+          .string()
+          .optional()
+          .describe("Free-text search (e.g., '10k resistor 0603', 'ESP32', 'STM32F103')"),
+        category: z
+          .string()
+          .optional()
+          .describe("Filter by category (e.g., 'Resistors', 'Capacitors', 'Microcontrollers')"),
+        package: z
+          .string()
+          .optional()
+          .describe("Filter by package type (e.g., '0603', 'SOT-23', 'QFN-32')"),
+        library_type: z
+          .enum(["Basic", "Extended", "Preferred", "All"])
+          .optional()
+          .default("All")
+          .describe("Filter by library type (Basic = free assembly at JLCPCB)"),
+        manufacturer: z.string().optional().describe("Filter by manufacturer name"),
+        in_stock: z
+          .boolean()
+          .optional()
+          .default(true)
+          .describe("Only show parts with available stock"),
+        limit: z.number().optional().default(20).describe("Maximum number of results to return"),
+      }),
     },
     async (args: any) => {
       const result = await callKicadScript("search_jlcpcb_parts", args);
@@ -163,17 +166,19 @@ For a verified, ready-to-use KiCAD footprint/symbol/3D bundle (rather than sourc
   );
 
   // Get JLCPCB part details
-  server.tool(
+  server.registerTool(
     "get_jlcpcb_part",
-    `Get detailed information about a specific JLCPCB part by LCSC number.
+    {
+      description: `Get detailed information about a specific JLCPCB part by LCSC number.
 
 When JLCPCB Open Platform credentials are configured (JLCPCB_APP_ID / JLCPCB_API_KEY /
 JLCPCB_API_SECRET, e.g. in a project-root .env), this performs a REAL-TIME lookup — live
 stock, tiered pricing, parameters and library type — and falls back to the local snapshot
 database if the API call fails or no credentials are set. The response reports which backend
 answered via "source" ("live-api" vs "local-db").`,
-    {
-      lcsc_number: z.string().describe("LCSC part number (e.g., 'C25804', 'C2286')"),
+      inputSchema: z.object({
+        lcsc_number: z.string().describe("LCSC part number (e.g., 'C25804', 'C2286')"),
+      }),
     },
     async (args: { lcsc_number: string }) => {
       const result = await callKicadScript("get_jlcpcb_part", args);
@@ -233,10 +238,12 @@ answered via "source" ("live-api" vs "local-db").`,
   );
 
   // Get JLCPCB database statistics
-  server.tool(
+  server.registerTool(
     "get_jlcpcb_database_stats",
-    "Get statistics about the local JLCPCB parts database",
-    {},
+    {
+      description: "Get statistics about the local JLCPCB parts database",
+      inputSchema: z.object({}),
+    },
     async () => {
       const result = await callKicadScript("get_jlcpcb_database_stats", {});
       if (result.success) {
@@ -270,15 +277,21 @@ answered via "source" ("live-api" vs "local-db").`,
   );
 
   // Suggest alternative parts
-  server.tool(
+  server.registerTool(
     "suggest_jlcpcb_alternatives",
-    `Suggest alternative JLCPCB parts for a given component.
+    {
+      description: `Suggest alternative JLCPCB parts for a given component.
 
 Finds similar parts that may be cheaper, have more stock, or are Basic library type.
 Useful for cost optimization and finding alternatives when parts are out of stock.`,
-    {
-      lcsc_number: z.string().describe("Reference LCSC part number to find alternatives for"),
-      limit: z.number().optional().default(5).describe("Maximum number of alternatives to return"),
+      inputSchema: z.object({
+        lcsc_number: z.string().describe("Reference LCSC part number to find alternatives for"),
+        limit: z
+          .number()
+          .optional()
+          .default(5)
+          .describe("Maximum number of alternatives to return"),
+      }),
     },
     async (args: { lcsc_number: string; limit?: number }) => {
       const result = await callKicadScript("suggest_jlcpcb_alternatives", args);

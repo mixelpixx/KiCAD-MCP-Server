@@ -4,8 +4,7 @@
  * These resources provide information about KiCAD component libraries
  * to the LLM, enabling better context-aware assistance.
  */
-
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { logger } from "../logger.js";
 
@@ -27,13 +26,14 @@ export function registerLibraryResources(
   // ------------------------------------------------------
   // Component Library Resource
   // ------------------------------------------------------
-  server.resource(
+  server.registerResource(
     "component_library",
     new ResourceTemplate("kicad://components/{filter?}/{library?}", {
       list: async () => ({
         resources: [{ uri: "kicad://components", name: "All Components" }],
       }),
     }),
+    {},
     async (uri, params) => {
       const filter = params.filter || "";
       const library = params.library || "";
@@ -83,7 +83,7 @@ export function registerLibraryResources(
   // ------------------------------------------------------
   // Library List Resource
   // ------------------------------------------------------
-  server.resource("library_list", "kicad://libraries", async (uri) => {
+  server.registerResource("library_list", "kicad://libraries", {}, async (uri) => {
     logger.debug("Retrieving library list");
     const result = await callKicadScript("get_library_list", {});
 
@@ -118,11 +118,12 @@ export function registerLibraryResources(
   // ------------------------------------------------------
   // Library Component Details Resource
   // ------------------------------------------------------
-  server.resource(
+  server.registerResource(
     "library_component_details",
     new ResourceTemplate("kicad://library/component/{componentId}/{library?}", {
       list: undefined,
     }),
+    {},
     async (uri, params) => {
       const { componentId, library } = params;
       logger.debug(
@@ -166,11 +167,12 @@ export function registerLibraryResources(
   // ------------------------------------------------------
   // Component Footprint Resource
   // ------------------------------------------------------
-  server.resource(
+  server.registerResource(
     "component_footprint",
     new ResourceTemplate("kicad://footprint/{componentId}/{footprint?}", {
       list: undefined,
     }),
+    {},
     async (uri, params) => {
       const { componentId, footprint } = params;
       logger.debug(
@@ -214,11 +216,12 @@ export function registerLibraryResources(
   // ------------------------------------------------------
   // Component Symbol Resource
   // ------------------------------------------------------
-  server.resource(
+  server.registerResource(
     "component_symbol",
     new ResourceTemplate("kicad://symbol/{componentId}", {
       list: undefined,
     }),
+    {},
     async (uri, params) => {
       const { componentId } = params;
       logger.debug(`Retrieving symbol for component: ${componentId}`);
@@ -274,11 +277,12 @@ export function registerLibraryResources(
   // ------------------------------------------------------
   // Component 3D Model Resource
   // ------------------------------------------------------
-  server.resource(
+  server.registerResource(
     "component_3d_model",
     new ResourceTemplate("kicad://3d-model/{componentId}/{footprint?}", {
       list: undefined,
     }),
+    {},
     async (uri, params) => {
       const { componentId, footprint } = params;
       logger.debug(

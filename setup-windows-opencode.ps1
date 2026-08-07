@@ -105,6 +105,19 @@ function Write-Warning-Custom { param([string]$Message) Write-Host "[WARN] $Mess
 function Write-Info { param([string]$Message) Write-Host "[INFO] $Message" -ForegroundColor Cyan }
 function Write-Step { param([string]$Message) Write-Host "`n=== $Message ===" -ForegroundColor Magenta }
 
+function Test-SupportedNodeVersion {
+    param([string]$Version)
+
+    if ($Version -notmatch '^v?(\d+)\.(\d+)\.(\d+)') {
+        return $false
+    }
+
+    $parsedVersion = [version]"$($Matches[1]).$($Matches[2]).$($Matches[3])"
+    return (($parsedVersion.Major -eq 20 -and $parsedVersion -ge [version]'20.19.0') -or
+            ($parsedVersion.Major -eq 22 -and $parsedVersion -ge [version]'22.13.0') -or
+            $parsedVersion -ge [version]'24.0.0')
+}
+
 function ConvertTo-HashtableDeep {
     param([Parameter(ValueFromPipeline = $true)]$InputObject)
 
@@ -500,17 +513,20 @@ Write-Step 'Step 4: Checking Node.js'
 try {
     $nodeVersion = node --version 2>$null
     if ($LASTEXITCODE -eq 0) {
-        $script:Results.NodeFound = $true
-        Write-Success "Node.js found: $nodeVersion"
-        $major = [int]($nodeVersion -replace '^v(\d+)\..*$', '$1')
-        if ($major -lt 18) {
-            Write-Warning-Custom "Node.js 18+ is recommended. Found $nodeVersion."
+        if (Test-SupportedNodeVersion -Version $nodeVersion) {
+            $script:Results.NodeFound = $true
+            Write-Success "Supported Node.js found: $nodeVersion"
+        } else {
+            $requiredNode = '^20.19.0, ^22.13.0, or >=24.0.0'
+            Write-Error-Custom "Unsupported Node.js version $nodeVersion. Required: $requiredNode."
+            Write-Warning-Custom 'Install a supported version from https://nodejs.org/ and restart PowerShell.'
+            $script:Results.Errors += "Unsupported Node.js version: $nodeVersion (required $requiredNode)"
         }
     } else {
         throw 'node command failed'
     }
 } catch {
-    Write-Error-Custom 'Node.js was not found. Install Node.js 18+ from https://nodejs.org/.'
+    Write-Error-Custom 'Node.js was not found. Install Node.js ^20.19.0, ^22.13.0, or >=24.0.0 from https://nodejs.org/.'
     $script:Results.Errors += 'Node.js not found'
 }
 

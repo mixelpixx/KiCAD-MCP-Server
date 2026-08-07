@@ -6,7 +6,7 @@
 
 ## How Tools Are Organized
 
-Tools are registered directly via `server.tool()`
+Tools are registered directly via `server.registerTool()`.
 
 The `Access` column below uses legacy labels from when a router pattern was planned:
 

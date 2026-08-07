@@ -15,6 +15,7 @@
     "test:ts": "vitest run",
     "test:ts:watch": "vitest",
     "test:py": "pytest tests/ -v",
+    "test:protocol": "npm run build && node scripts/verify-mcp-protocol.mjs",
     "test:coverage": "pytest tests/ --cov=python --cov-report=html --cov-report=term",
     "lint": "npm run lint:ts && npm run lint:py",
     "lint:ts": "eslint src/",
@@ -35,15 +36,19 @@
   ],
   "author": "",
   "license": "MIT",
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24.0.0"
+  },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.21.0",
+    "@modelcontextprotocol/server": "^2.0.0",
     "dotenv": "^17.0.0",
     "express": "^5.1.0",
-    "zod": "^3.25.0"
+    "zod": "^4.2.0"
   },
   "devDependencies": {
     "@cfworker/json-schema": "^4.1.1",
     "@eslint/js": "^10.0.1",
+    "@modelcontextprotocol/client": "^2.0.0",
     "@types/express": "^5.0.5",
     "@types/glob": "^8.1.0",
     "@types/node": "^20.19.0",
@@ -52,6 +57,6 @@
     "prettier": "^3.8.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.57.2",
-    "vitest": "^2.1.9"
+    "vitest": "^3.2.7"
   }
 }
