@@ -12,6 +12,11 @@ export const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 /** Blanket allowance for operations that are slow but not caller-tunable. */
 export const LONG_COMMAND_TIMEOUT_MS = 600_000;
 
+/** Project open/create may refresh KiCad project-specific symbol libraries. */
+export const PROJECT_LIFECYCLE_TIMEOUT_MS = 120_000;
+
+export const PROJECT_LIFECYCLE_COMMANDS = ["create_project", "open_project", "open_board"] as const;
+
 /**
  * Commands whose cost scales with board/schematic size rather than with any
  * parameter the caller passes.
@@ -58,6 +63,10 @@ export function computeCommandTimeout(command: string, params?: unknown): number
 
   if ((LONG_RUNNING_COMMANDS as readonly string[]).includes(command)) {
     return LONG_COMMAND_TIMEOUT_MS;
+  }
+
+  if ((PROJECT_LIFECYCLE_COMMANDS as readonly string[]).includes(command)) {
+    return PROJECT_LIFECYCLE_TIMEOUT_MS;
   }
 
   return DEFAULT_COMMAND_TIMEOUT_MS;

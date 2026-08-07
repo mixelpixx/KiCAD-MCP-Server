@@ -671,7 +671,7 @@ See [Freerouting Guide](docs/FREEROUTING_GUIDE.md) for setup and usage.
   python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"
   ```
 
-**Node.js 18 or Higher**
+**Node.js `^20.19.0`, `^22.13.0`, or `>=24.0.0`**
 
 - Download from [nodejs.org](https://nodejs.org/)
 - Verify: `node --version` and `npm --version`

@@ -45,7 +45,7 @@ Beschreibe was du bauen möchtest — und lass die KI die EDA-Arbeit übernehmen
 ### Schnellstart
 
 1. [KiCAD 9.0+](https://www.kicad.org/download/) installieren
-2. [Node.js 18+](https://nodejs.org/) und [Python 3.11+](https://www.python.org/) installieren
+2. [Node.js](https://nodejs.org/) `^20.19.0`, `^22.13.0` oder `>=24.0.0` und [Python 3.11+](https://www.python.org/) installieren
 3. Klonen und bauen:
 
 ```bash

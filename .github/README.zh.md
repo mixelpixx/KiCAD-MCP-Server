@@ -45,7 +45,7 @@
 ### 快速开始
 
 1. 安装 [KiCAD 9.0+](https://www.kicad.org/download/)
-2. 安装 [Node.js 18+](https://nodejs.org/) 和 [Python 3.11+](https://www.python.org/)
+2. 安装 [Node.js](https://nodejs.org/) `^20.19.0`、`^22.13.0` 或 `>=24.0.0`，以及 [Python 3.11+](https://www.python.org/)
 3. 克隆并构建：
 
 ```bash

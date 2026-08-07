@@ -4,13 +4,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from kicad_api.ipc_backend import IPCBackend
+from kipy.proto.common.types import DocumentSpecifier, DocumentType
 
 pytestmark = pytest.mark.unit
-kipy_types = pytest.importorskip("kipy.proto.common.types")
-DocumentSpecifier = kipy_types.DocumentSpecifier
-DocumentType = kipy_types.DocumentType
 
 
 class FakeKiCad:
@@ -24,6 +21,25 @@ class FakeKiCad:
 
     def ping(self):
         return None
+
+
+class LegacyFakeKiCad:
+    def __init__(self, documents):
+        self.documents = documents
+        self.calls = 0
+
+    def get_open_documents(self):
+        self.calls += 1
+        return self.documents
+
+
+class FailingTypedKiCad:
+    def __init__(self):
+        self.requested_types = []
+
+    def get_open_documents(self, document_type):
+        self.requested_types.append(document_type)
+        raise TypeError("internal protobuf conversion failed")
 
 
 def connected_backend(documents):
@@ -42,6 +58,22 @@ def test_get_open_board_path_uses_filtered_document_api(tmp_path):
 
     assert backend.get_open_board_path() == str(tmp_path / "board.kicad_pcb")
     assert backend._kicad.requested_types == [DocumentType.DOCTYPE_PCB]
+
+
+def test_get_open_documents_supports_legacy_zero_argument_adapter():
+    kicad = LegacyFakeKiCad(["legacy-document"])
+
+    assert IPCBackend._get_open_pcb_documents(kicad) == ["legacy-document"]
+    assert kicad.calls == 1
+
+
+def test_get_open_documents_preserves_internal_type_error():
+    kicad = FailingTypedKiCad()
+
+    with pytest.raises(TypeError, match="internal protobuf conversion failed"):
+        IPCBackend._get_open_pcb_documents(kicad)
+
+    assert kicad.requested_types == [DocumentType.DOCTYPE_PCB]
 
 
 def test_get_open_board_path_supports_legacy_path_field(tmp_path):
@@ -66,3 +98,46 @@ def test_document_path_preserves_absolute_board_filename(tmp_path):
     )
 
     assert IPCBackend._document_path(document) == str(expected)
+
+
+def project_document(project_dir: Path, project_name: str = "demo") -> DocumentSpecifier:
+    document = DocumentSpecifier()
+    document.type = DocumentType.DOCTYPE_PCB
+    document.board_filename = f"{project_name}.kicad_pcb"
+    document.project.name = project_name
+    document.project.path = str(project_dir)
+    return document
+
+
+@pytest.mark.parametrize("requested_kind", ["project", "board", "directory"])
+def test_open_project_matches_structured_document_paths(tmp_path, requested_kind):
+    document = project_document(tmp_path)
+    backend = connected_backend([document])
+    requested_paths = {
+        "project": tmp_path / "demo.kicad_pro",
+        "board": tmp_path / "demo.kicad_pcb",
+        "directory": tmp_path,
+    }
+
+    result = backend.open_project(requested_paths[requested_kind])
+
+    assert result["success"] is True
+
+
+def test_open_project_does_not_use_partial_or_formatted_protobuf_matches(tmp_path):
+    document = project_document(tmp_path / "demo-project")
+    backend = connected_backend([document])
+
+    result = backend.open_project(tmp_path / "demo")
+
+    assert result["success"] is False
+
+
+def test_open_project_derives_project_filename_when_project_name_is_missing(tmp_path):
+    document = project_document(tmp_path)
+    document.project.name = ""
+    backend = connected_backend([document])
+
+    result = backend.open_project(tmp_path / "demo.kicad_pro")
+
+    assert result["success"] is True

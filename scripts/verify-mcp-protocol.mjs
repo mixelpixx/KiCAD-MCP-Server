@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
@@ -14,9 +14,20 @@ const localPython =
     ? join(projectRoot, ".venv", "Scripts", "python.exe")
     : join(projectRoot, ".venv", "bin", "python");
 const configuredPython = process.env.KICAD_PYTHON || localPython;
+const useFixtureBackend = process.env.KICAD_MCP_PROTOCOL_FAKE === "true";
+const fixtureBackend = join(projectRoot, "python", "protocol_test_backend.py");
+const fixturePythonPath = join(projectRoot, "scripts", "protocol-fixtures");
 
 assert.ok(existsSync(serverPath), `Built server not found: ${serverPath}`);
-assert.ok(existsSync(configuredPython), `KiCad Python environment not found: ${configuredPython}`);
+if (isAbsolute(configuredPython)) {
+  assert.ok(
+    existsSync(configuredPython),
+    `KiCad Python environment not found: ${configuredPython}`,
+  );
+}
+if (useFixtureBackend) {
+  assert.ok(existsSync(fixtureBackend), `Protocol fixture backend not found: ${fixtureBackend}`);
+}
 
 const serverEnvironment = Object.fromEntries(
   Object.entries(process.env).filter((entry) => typeof entry[1] === "string"),
@@ -24,6 +35,12 @@ const serverEnvironment = Object.fromEntries(
 serverEnvironment.KICAD_AUTO_LAUNCH = "false";
 serverEnvironment.KICAD_PYTHON = configuredPython;
 serverEnvironment.KICAD_MCP_LOG_LEVEL = "error";
+if (useFixtureBackend) {
+  serverEnvironment.KICAD_SCRIPT_PATH = fixtureBackend;
+  serverEnvironment.PYTHONPATH = [fixturePythonPath, serverEnvironment.PYTHONPATH]
+    .filter(Boolean)
+    .join(delimiter);
+}
 
 function textContent(result) {
   const text = result.content?.find((item) => item.type === "text")?.text;
@@ -32,7 +49,15 @@ function textContent(result) {
 }
 
 function textPayload(result) {
-  return JSON.parse(textContent(result));
+  const text = textContent(result);
+  if (result.isError) {
+    throw new Error(`Tool returned an MCP error: ${text}`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(`Tool returned non-JSON text: ${text}`, { cause: error });
+  }
 }
 
 async function verifyProjectHandle(client) {

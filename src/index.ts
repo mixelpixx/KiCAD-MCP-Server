@@ -26,7 +26,8 @@ async function main() {
     const config = await loadConfig(options.configPath);
 
     // Path to the Python script that interfaces with KiCAD
-    const kicadScriptPath = join(dirname(__dirname), "python", "kicad_interface.py");
+    const kicadScriptPath =
+      process.env.KICAD_SCRIPT_PATH || join(dirname(__dirname), "python", "kicad_interface.py");
 
     // Create the server
     const server = new KiCADMcpServer(kicadScriptPath, config.logLevel);

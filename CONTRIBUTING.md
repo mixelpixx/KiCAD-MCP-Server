@@ -20,7 +20,7 @@ Thank you for your interest in contributing to the KiCAD MCP Server! This guide 
 ### Prerequisites
 
 - **KiCAD 9.0 or higher** - [Download here](https://www.kicad.org/download/)
-- **Node.js v18+** - [Download here](https://nodejs.org/)
+- **Node.js `^20.19.0`, `^22.13.0`, or `>=24.0.0`** - [Download here](https://nodejs.org/)
 - **Python 3.9+** - Comes bundled with KiCAD (macOS builds ship Python 3.9; Linux/Windows builds ship Python 3.11)
 - **Git** - For version control
 

@@ -13,7 +13,7 @@
  *   GET <base>/parts.json          -> { parts: [ { id, name, ... } ] }
  *   GET <base>/parts/{id}.json     -> { files: {...}, datasheet, license, ... }
  *
- * Uses Node's global fetch (Node 18+); no extra dependencies.
+ * Uses Node's global fetch; no extra dependencies.
  */
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";

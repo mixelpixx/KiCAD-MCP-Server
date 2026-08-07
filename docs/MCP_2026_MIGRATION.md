@@ -17,6 +17,10 @@ selected per connection by the TypeScript SDK v2 STDIO server factory.
 - Modern list and resource results include `ttlMs` and `cacheScope` hints.
 - A fresh `McpServer` is created after the connection's protocol era is known.
 - Project-bound tools advertise an optional `projectHandle` argument.
+- The Node/Python bridge correlates every request and response so a late result
+  from a timed-out operation cannot be delivered to the next MCP call.
+- The historical `dist/kicad-server.js` executable delegates to the canonical
+  entry point instead of publishing a second, divergent server implementation.
 
 This server does not use sampling, roots, elicitation, or the deprecated
 HTTP+SSE transport, so no Multi Round-Trip Request conversion was required.
@@ -47,10 +51,12 @@ Modern clients should return that handle on later project-bound calls:
 }
 ```
 
-The server validates and removes the handle before sending the original
-arguments to Python. A stale or incorrect handle fails before touching KiCad,
-and `close_project` invalidates the current handle. Omitting the handle keeps
-the old implicit-current-project behavior for existing clients.
+The server serializes project-bound operations, validates and removes the
+handle, then keeps the project lock until the Python operation finishes. A
+stale or incorrect handle therefore fails before touching KiCad even when a
+project switch was queued concurrently. `close_project` invalidates the
+current handle. Omitting the handle keeps the old implicit-current-project
+behavior for existing clients.
 
 Handles are deliberately local to the running process. They prevent a stale
 client from silently operating on a different loaded board; they are not a
@@ -81,3 +87,5 @@ npm run test:protocol
 once in default legacy mode and once pinned to `2026-07-28`. It verifies the
 negotiated era, full tool catalogue, `projectHandle` schema, and modern cache
 hints. It expects the repository-local `.venv` created with KiCad's Python.
+CI runs the same test with a hermetic Python fixture; local runs use the real
+KiCad backend by default and additionally exercise project-handle lifecycle.

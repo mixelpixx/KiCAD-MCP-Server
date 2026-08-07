@@ -382,6 +382,12 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
+      - name: Run hermetic MCP protocol smoke test
+        run: npm run test:protocol
+        env:
+          KICAD_MCP_PROTOCOL_FAKE: "true"
+          KICAD_PYTHON: python3
+
       - name: Install pre-commit
         run: python -m pip install --upgrade pip pre-commit
 

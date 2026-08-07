@@ -4,6 +4,8 @@ import {
   DEFAULT_COMMAND_TIMEOUT_MS,
   LONG_COMMAND_TIMEOUT_MS,
   LONG_RUNNING_COMMANDS,
+  PROJECT_LIFECYCLE_COMMANDS,
+  PROJECT_LIFECYCLE_TIMEOUT_MS,
   AUTOROUTE_OVERHEAD_MS,
 } from "../src/command-timeout.js";
 
@@ -16,6 +18,12 @@ describe("computeCommandTimeout", () => {
   it("gives size-bound commands the blanket long allowance", () => {
     for (const command of LONG_RUNNING_COMMANDS) {
       expect(computeCommandTimeout(command, {})).toBe(LONG_COMMAND_TIMEOUT_MS);
+    }
+  });
+
+  it("allows project lifecycle commands to refresh project libraries", () => {
+    for (const command of PROJECT_LIFECYCLE_COMMANDS) {
+      expect(computeCommandTimeout(command, {})).toBe(PROJECT_LIFECYCLE_TIMEOUT_MS);
     }
   });
 

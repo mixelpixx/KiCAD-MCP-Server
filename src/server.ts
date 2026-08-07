@@ -228,13 +228,20 @@ export class KiCADMcpServer {
   private stdioHandle: StdioServerHandle | null = null;
   private readonly projectContexts = new ProjectContextManager();
   private requestQueue: Array<{
-    request: any;
+    request: {
+      command: string;
+      params: Record<string, unknown>;
+      timeout: number;
+      requestId: number;
+    };
     resolve: Function;
     reject: Function;
   }> = [];
   private processingRequest = false;
   private responseBuffer: string = "";
+  private nextInternalRequestId = 1;
   private currentRequestHandler: {
+    requestId: number;
     resolve: Function;
     reject: Function;
     timeoutHandle: NodeJS.Timeout;
@@ -694,28 +701,28 @@ export class KiCADMcpServer {
         return;
       }
 
-      const requestStr = JSON.stringify({ command: "_warmup", params: {} });
-      this.responseBuffer = "";
+      const requestId = this.allocateInternalRequestId();
+      const requestStr = JSON.stringify({ command: "_warmup", params: {}, requestId });
 
       const timeoutHandle = setTimeout(() => {
+        if (this.currentRequestHandler?.requestId !== requestId) return;
         logger.warn(
           `Warm-up timed out after ${timeoutMs / 1000} s — ` +
             "continuing without full initialisation",
         );
-        this.responseBuffer = "";
         this.processingRequest = false;
         this.currentRequestHandler = null;
         resolve();
+        setTimeout(() => this.processNextRequest(), 0);
       }, timeoutMs);
 
       // Use the existing request infrastructure to avoid race conditions
       // with the persistent stdout handler.
       this.processingRequest = true;
       this.currentRequestHandler = {
+        requestId,
         resolve: (result: any) => {
           clearTimeout(timeoutHandle);
-          this.processingRequest = false;
-          this.currentRequestHandler = null;
           if (result?.success) {
             logger.info(`Warm-up succeeded: pcbnew ${result.version} (${result.elapsed_s}s)`);
           } else {
@@ -725,8 +732,6 @@ export class KiCADMcpServer {
         },
         reject: (err: Error) => {
           clearTimeout(timeoutHandle);
-          this.processingRequest = false;
-          this.currentRequestHandler = null;
           logger.warn(`Warm-up failed: ${err.message} — continuing`);
           resolve(); // don't fail the whole server
         },
@@ -769,7 +774,12 @@ export class KiCADMcpServer {
 
       // Add request to queue with timeout info
       this.requestQueue.push({
-        request: { command, params: forwardedParams, timeout: commandTimeout },
+        request: {
+          command,
+          params: forwardedParams,
+          timeout: commandTimeout,
+          requestId: this.allocateInternalRequestId(),
+        },
         resolve: (result: unknown) => resolve(this.projectContexts.decorateResult(command, result)),
         reject,
       });
@@ -802,104 +812,63 @@ export class KiCADMcpServer {
    * preamble lines (e.g. C-level warnings from pcbnew that leaked to the
    * response fd before the redirect took effect).
    *
-   * Strategy:
-   *  1. Fast path: JSON.parse(buffer) — works for clean, complete responses
-   *     (JSON.parse tolerates trailing whitespace/newlines).
-   *  2. If that fails and the buffer has no '\n' yet, the response line is
-   *     still arriving in chunks — keep collecting.
-   *  3. If the buffer has '\n', split into lines and search from the END for
-   *     a parseable JSON line.  This avoids prematurely resolving with a
-   *     truncated JSON object when a large response is still chunking in.
+   * Consume only newline-delimited frames. Each custom bridge request carries
+   * a process-local request ID which Python echoes as `_requestId`; late
+   * responses from timed-out commands are therefore discarded instead of
+   * being delivered to whichever command happens to be pending next.
    */
   private tryParseResponse(): void {
-    if (!this.currentRequestHandler) {
-      // No pending request, clear buffer if it has data (shouldn't happen)
-      if (this.responseBuffer.trim()) {
-        logger.warn(
-          `Received data with no pending request: ${this.responseBuffer.substring(0, 100)}...`,
-        );
-        this.responseBuffer = "";
+    while (true) {
+      const newlineIndex = this.responseBuffer.indexOf("\n");
+      if (newlineIndex < 0) return;
+
+      const line = this.responseBuffer.slice(0, newlineIndex).trim();
+      this.responseBuffer = this.responseBuffer.slice(newlineIndex + 1);
+      if (!line) continue;
+
+      let result: any;
+      try {
+        result = JSON.parse(line);
+      } catch {
+        logger.warn(`Stripped non-JSON preamble from Python response: ${line}`);
+        continue;
       }
+
+      const responseRequestId =
+        result && typeof result === "object" ? result._requestId : undefined;
+      const handler = this.currentRequestHandler;
+      if (!handler) {
+        logger.warn(
+          `Discarding Python response ${String(responseRequestId)} with no pending request`,
+        );
+        continue;
+      }
+
+      if (responseRequestId !== handler.requestId) {
+        logger.warn(
+          `Discarding stale Python response ${String(responseRequestId)}; ` +
+            `waiting for ${handler.requestId}`,
+        );
+        continue;
+      }
+
+      delete result._requestId;
+      logger.debug(
+        `Completed KiCAD command ${handler.requestId} with result: ` +
+          `${result.success ? "success" : "failure"}`,
+      );
+
+      clearTimeout(handler.timeoutHandle);
+      this.currentRequestHandler = null;
+      this.processingRequest = false;
+      handler.resolve(result);
+      setTimeout(() => this.processNextRequest(), 0);
       return;
     }
+  }
 
-    let result: any;
-
-    // Fast path: try to parse the response as JSON.  Handles the common
-    // case of a clean, complete JSON response (possibly with trailing \n).
-    try {
-      result = JSON.parse(this.responseBuffer);
-    } catch {
-      // Direct parse failed.  Either the response is still arriving in
-      // chunks, or the buffer has non-JSON preamble from pcbnew.
-      //
-      // The Python side writes each response as a single line of JSON
-      // terminated by \n.  We use the newline as the completion signal:
-      // if there is no \n in the buffer yet, the JSON line is still
-      // being assembled from chunks — keep collecting.
-      if (!this.responseBuffer.includes("\n")) {
-        return;
-      }
-
-      // Buffer contains newline(s).  Split into lines and look for a
-      // complete JSON object, searching from the END so that preamble
-      // lines (which may themselves contain '{') are skipped.
-      const lines = this.responseBuffer.split("\n");
-      let jsonLineIndex = -1;
-
-      for (let i = lines.length - 1; i >= 0; i--) {
-        const line = lines[i].trim();
-        if (line.length === 0) continue;
-        if (!line.startsWith("{")) continue;
-
-        try {
-          result = JSON.parse(line);
-          jsonLineIndex = i;
-          break;
-        } catch {
-          // Looks like JSON but doesn't parse — could be an incomplete
-          // final line still being chunked.  Keep collecting.
-          continue;
-        }
-      }
-
-      if (jsonLineIndex < 0) {
-        // No parseable JSON line found yet.  Either only preamble has
-        // arrived, or the JSON line is split across the last \n boundary
-        // and is still incomplete.  Keep collecting.
-        return;
-      }
-
-      // Log any preceding non-JSON lines as preamble
-      const preambleLines = lines.slice(0, jsonLineIndex).filter((l) => l.trim().length > 0);
-      if (preambleLines.length > 0) {
-        logger.warn(
-          `Stripped non-JSON preamble from Python response: ${preambleLines.join(" | ")}`,
-        );
-      }
-    }
-
-    // If we get here, we have a valid JSON response
-    logger.debug(`Completed KiCAD command with result: ${result.success ? "success" : "failure"}`);
-
-    // Clear the timeout since we got a response
-    if (this.currentRequestHandler.timeoutHandle) {
-      clearTimeout(this.currentRequestHandler.timeoutHandle);
-    }
-
-    // Get the handler before clearing
-    const handler = this.currentRequestHandler;
-
-    // Clear state
-    this.responseBuffer = "";
-    this.currentRequestHandler = null;
-    this.processingRequest = false;
-
-    // Resolve the promise with the result
-    handler.resolve(result);
-
-    // Process next request if any
-    setTimeout(() => this.processNextRequest(), 0);
+  private allocateInternalRequestId(): number {
+    return this.nextInternalRequestId++;
   }
 
   /**
@@ -923,17 +892,14 @@ export class KiCADMcpServer {
       // Format the command and parameters as JSON
       const requestStr = JSON.stringify(request);
 
-      // Clear response buffer for new request
-      this.responseBuffer = "";
-
       // Set a timeout (use command-specific timeout or default)
       const timeoutDuration = request.timeout || 30000;
       const timeoutHandle = setTimeout(() => {
+        if (this.currentRequestHandler?.requestId !== request.requestId) return;
         logger.error(`Command timeout after ${timeoutDuration / 1000}s: ${request.command}`);
         logger.error(`Buffer contents: ${this.responseBuffer.substring(0, 200)}...`);
 
         // Clear state
-        this.responseBuffer = "";
         this.currentRequestHandler = null;
         this.processingRequest = false;
 
@@ -945,15 +911,24 @@ export class KiCADMcpServer {
       }, timeoutDuration);
 
       // Store the current request handler
-      this.currentRequestHandler = { resolve, reject, timeoutHandle };
+      this.currentRequestHandler = {
+        requestId: request.requestId,
+        resolve,
+        reject,
+        timeoutHandle,
+      };
 
       // Write the request to the Python process
       logger.debug(`Sending request: ${requestStr}`);
       this.pythonProcess?.stdin?.write(requestStr + "\n");
+      this.tryParseResponse();
     } catch (error) {
       logger.error(`Error processing request: ${error}`);
 
       // Reset processing flag
+      if (this.currentRequestHandler) {
+        clearTimeout(this.currentRequestHandler.timeoutHandle);
+      }
       this.processingRequest = false;
       this.currentRequestHandler = null;
 

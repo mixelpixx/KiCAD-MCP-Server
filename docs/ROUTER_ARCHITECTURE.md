@@ -292,7 +292,7 @@ Advanced routing operations beyond basic trace routing.
 
 ### Modified Files
 
-1. **`src/server.ts`** or **`src/kicad-server.ts`**
+1. **`src/server.ts`** (with `src/kicad-server.ts` retained only as a compatibility shim)
    - Register only direct tools + router tools
    - Remove registration of routed tools
    - Tools still callable via `execute_tool`

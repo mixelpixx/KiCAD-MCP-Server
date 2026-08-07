@@ -57,7 +57,7 @@ Describe what you want to build — and let AI handle the EDA work. Place compon
 ### Quick Start
 
 1. Install [KiCAD 9.0+](https://www.kicad.org/download/)
-2. Install [Node.js 18+](https://nodejs.org/) and [Python 3.11+](https://www.python.org/)
+2. Install [Node.js](https://nodejs.org/) `^20.19.0`, `^22.13.0`, or `>=24.0.0`, and [Python 3.11+](https://www.python.org/)
 3. Clone and build:
 
 ```bash

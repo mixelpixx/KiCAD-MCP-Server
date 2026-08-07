@@ -14,6 +14,7 @@ Key Benefits over SWIG:
 - Multi-language support
 """
 
+import inspect
 import logging
 import os
 import platform
@@ -23,7 +24,6 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from kicad_api.base import APINotAvailableError, BoardAPI, ConnectionError, KiCADBackend
-from utils.project_settings_guard import preserve_project_settings
 
 logger = logging.getLogger(__name__)
 
@@ -219,12 +219,33 @@ class IPCBackend(KiCADBackend):
         zero-argument fallback preserves compatibility with older adapters and
         test doubles that exposed the earlier shape used by this server.
         """
-        try:
-            from kipy.proto.common.types import DocumentType
+        from kipy.proto.common.types import DocumentType
 
-            return list(kicad.get_open_documents(DocumentType.DOCTYPE_PCB))
-        except (ImportError, TypeError):
-            return list(kicad.get_open_documents())
+        get_open_documents = kicad.get_open_documents
+        try:
+            signature = inspect.signature(get_open_documents)
+        except (TypeError, ValueError):
+            # Some extension callables do not expose an inspectable signature.
+            # Prefer the current typed API in that case and preserve any error
+            # raised by the implementation itself.
+            return list(get_open_documents(DocumentType.DOCTYPE_PCB))
+
+        try:
+            signature.bind(DocumentType.DOCTYPE_PCB)
+        except TypeError:
+            # The callable itself cannot accept the document-type argument, so
+            # it has the legacy zero-argument adapter shape.  Detect this before
+            # invocation rather than catching an internal TypeError from kipy.
+            return list(get_open_documents())
+
+        return list(get_open_documents(DocumentType.DOCTYPE_PCB))
+
+    @staticmethod
+    def _normalize_document_path(path: Any) -> Optional[str]:
+        """Normalize a project or board path for platform-native comparison."""
+        if not path:
+            return None
+        return os.path.normcase(str(Path(str(path)).expanduser().resolve()))
 
     @staticmethod
     def _document_path(document: Any) -> Optional[str]:
@@ -250,6 +271,29 @@ class IPCBackend(KiCADBackend):
             if board_path and board_path.lower().endswith(".kicad_pcb"):
                 return board_path
         return None
+
+    @staticmethod
+    def _document_matches_path(document: Any, path: Any) -> bool:
+        """Whether a PCB document represents the requested project or board path."""
+        target = IPCBackend._normalize_document_path(path)
+        if not target:
+            return False
+
+        board_path = IPCBackend._document_path(document)
+        candidates: List[Any] = [board_path]
+        if board_path:
+            candidates.append(Path(board_path).with_suffix(".kicad_pro"))
+        project = getattr(document, "project", None)
+        project_path = getattr(project, "path", None)
+        project_name = getattr(project, "name", None)
+        if project_path:
+            candidates.append(project_path)
+            if project_name:
+                candidates.append(Path(str(project_path)) / f"{project_name}.kicad_pro")
+
+        return any(
+            IPCBackend._normalize_document_path(candidate) == target for candidate in candidates
+        )
 
     def get_open_board_path(self) -> Optional[str]:
         """Path of the .kicad_pcb currently open in the live KiCad GUI, if any.
@@ -307,10 +351,11 @@ class IPCBackend(KiCADBackend):
             # Check for open documents
             documents = self._get_open_pcb_documents(self._kicad)
 
-            # Look for matching project
-            path_str = str(path)
+            # Match structured document fields rather than protobuf's display
+            # string, which escapes Windows separators and omits the .kicad_pro
+            # filename.
             for doc in documents:
-                if path_str in str(doc):
+                if self._document_matches_path(doc, path):
                     return {
                         "success": True,
                         "message": f"Project already open: {path}",
@@ -654,9 +699,9 @@ class IPCBoardAPI(BoardAPI):
 
         The component appears immediately in the KiCAD UI.
 
-        This method uses a hybrid approach:
-        1. Load the footprint definition from the library using pcbnew (SWIG)
-        2. Place it on the board via IPC for real-time UI updates
+        The footprint definition is resolved through pcbnew (SWIG).  Full
+        SWIG-loaded footprints are currently refused because synchronizing one
+        through a disk rewrite would risk discarding unsaved GUI changes.
 
         Args:
             reference: Component reference designator (e.g., "R1", "U1")
@@ -672,8 +717,8 @@ class IPCBoardAPI(BoardAPI):
             loaded_fp = self._load_footprint_from_library(footprint)
 
             if loaded_fp:
-                # We have the footprint from the library - place it via SWIG
-                # then sync to IPC for UI update
+                # A full library footprint cannot yet be transferred safely
+                # from SWIG into the live IPC board.
                 return self._place_loaded_footprint(
                     loaded_fp, reference, x, y, rotation, layer, value
                 )
@@ -755,92 +800,19 @@ class IPCBoardAPI(BoardAPI):
         layer: str,
         value: str,
     ) -> bool:
+        """Refuse an unsafe SWIG-to-IPC footprint transfer.
+
+        A SWIG footprint cannot currently be inserted into the live IPC board
+        without loading the last-saved board from disk and reverting KiCad to
+        that copy.  Doing so can silently discard unsaved GUI changes, so this
+        path must fail closed until an IPC-native library import is available.
         """
-        Place a loaded pcbnew footprint onto the board.
-
-        Uses SWIG to add the footprint, then notifies for IPC sync.
-        """
-        try:
-            import pcbnew
-
-            # Get the board file path from IPC to load via pcbnew
-            board = self._get_board()
-
-            # Get the pcbnew board instance
-            # We need to get the actual board file path
-            project = board.get_project()
-            board_path = None
-
-            # Resolve the board path from the live IPC document specifier.
-            try:
-                board_path = IPCBackend._find_open_board_path(self._kicad)
-            except Exception as e:
-                logger.debug(f"Could not get board path from IPC: {e}")
-
-            if board_path and os.path.exists(board_path):
-                # Load board via pcbnew
-                pcb_board = pcbnew.LoadBoard(board_path)
-            else:
-                # Try to get from pcbnew directly
-                pcb_board = pcbnew.GetBoard()
-
-            if not pcb_board:
-                logger.error("Could not get pcbnew board instance")
-                return self._place_placeholder_footprint(
-                    reference, "", x, y, rotation, layer, value
-                )
-
-            # Set footprint position and properties
-            scale = MM_TO_NM
-            loaded_fp.SetPosition(pcbnew.VECTOR2I(int(x * scale), int(y * scale)))
-            loaded_fp.SetOrientationDegrees(rotation)
-
-            # Set reference
-            loaded_fp.SetReference(reference)
-
-            # Set value if provided
-            if value:
-                loaded_fp.SetValue(value)
-
-            # Set layer (flip if bottom)
-            if layer == "B.Cu":
-                if not loaded_fp.IsFlipped():
-                    loaded_fp.Flip(loaded_fp.GetPosition(), False)
-
-            # Add to board
-            pcb_board.Add(loaded_fp)
-
-            # Save the board so IPC can see the changes
-            with preserve_project_settings(board_path):
-                pcbnew.SaveBoard(board_path, pcb_board)
-
-            # Refresh IPC view
-            try:
-                board.revert()  # Reload from disk to sync IPC
-            except Exception as e:
-                logger.debug(f"Could not refresh IPC board: {e}")
-
-            self._notify(
-                "component_placed",
-                {
-                    "reference": reference,
-                    "footprint": loaded_fp.GetFPIDAsString(),
-                    "position": {"x": x, "y": y},
-                    "rotation": rotation,
-                    "layer": layer,
-                    "loaded_from_library": True,
-                },
-            )
-
-            logger.info(
-                f"Placed component {reference} ({loaded_fp.GetFPIDAsString()}) at ({x}, {y}) mm"
-            )
-            return True
-
-        except Exception as e:
-            logger.error(f"Error placing loaded footprint: {e}")
-            # Fall back to placeholder
-            return self._place_placeholder_footprint(reference, "", x, y, rotation, layer, value)
+        logger.error(
+            "Cannot safely place a SWIG-loaded library footprint for %s through IPC; "
+            "refusing to rewrite and revert the live board",
+            reference,
+        )
+        return False
 
     def _place_placeholder_footprint(
         self,

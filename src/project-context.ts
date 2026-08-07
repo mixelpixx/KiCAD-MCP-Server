@@ -25,10 +25,13 @@ const DIRECT_CONTEXT_EXCLUSIONS = new Set([
 ]);
 
 const EXTRA_CONTEXT_TOOLS = [
+  "add_component_3d_model",
+  "add_gnd_stitching_vias",
   "save_as",
   "align_components",
   "check_courtyard_overlaps",
   "copy_routing_pattern",
+  "create_netclass",
   "delete_trace",
   "duplicate_component",
   "get_component_list",
@@ -45,6 +48,7 @@ const EXTRA_CONTEXT_TOOLS = [
   "route_arc_trace",
   "route_differential_pair",
   "route_pad_to_pad",
+  "set_footprint_type",
   "snap_to_grid",
   "suggest_placement",
 ];
@@ -81,6 +85,7 @@ export interface ProjectContextSnapshot {
 export class ProjectContextManager {
   private activeHandle: string | null = null;
   private activePath: string | null = null;
+  private operationTail: Promise<void> = Promise.resolve();
 
   snapshot(): ProjectContextSnapshot {
     return { projectHandle: this.activeHandle, projectPath: this.activePath };
@@ -88,6 +93,31 @@ export class ProjectContextManager {
 
   isContextAware(command: string): boolean {
     return PROJECT_CONTEXT_TOOL_NAMES.has(command);
+  }
+
+  isContextLifecycle(command: string): boolean {
+    return OPEN_CONTEXT_COMMANDS.has(command);
+  }
+
+  /**
+   * Serialize operations that depend on, or replace, the Python backend's
+   * single active project.  The lock spans handle validation through handler
+   * completion so another open/create request cannot switch projects after a
+   * handle was accepted but before the command reaches Python.
+   */
+  async runExclusive<T>(operation: () => Promise<T> | T): Promise<T> {
+    const previous = this.operationTail;
+    let release!: () => void;
+    this.operationTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
   }
 
   assertHandle(projectHandle: unknown, command: string): void {
@@ -128,6 +158,12 @@ export class ProjectContextManager {
     if (OPEN_CONTEXT_COMMANDS.has(command) && succeeded) {
       this.activeHandle = `kicad-project:${randomUUID()}`;
       this.activePath = this.resultPath(value);
+    } else if (command === "get_project_info" && succeeded && !this.activeHandle) {
+      const path = this.resultPath(value);
+      if (path) {
+        this.activeHandle = `kicad-project:${randomUUID()}`;
+        this.activePath = path;
+      }
     } else if (command === "close_project" && succeeded) {
       const closedHandle = this.activeHandle;
       const decorated = {
@@ -182,7 +218,16 @@ export function installProjectContextSupport(
   const registerTool = server.registerTool.bind(server) as (...args: any[]) => any;
 
   (server as any).registerTool = (name: string, config: any, handler: any) => {
-    if (!contexts.isContextAware(name)) return registerTool(name, config, handler);
+    const contextAware = contexts.isContextAware(name);
+    const serialized = contextAware || contexts.isContextLifecycle(name);
+    if (!serialized) return registerTool(name, config, handler);
+
+    if (!contextAware) {
+      return registerTool(name, config, (args: unknown, context: unknown) =>
+        contexts.runExclusive(() => handler(args, context)),
+      );
+    }
+
     if (!(config?.inputSchema instanceof z.ZodObject)) {
       throw new Error(`Project-aware tool ${name} must use a Zod object input schema`);
     }
@@ -199,12 +244,13 @@ export function installProjectContextSupport(
     return registerTool(
       name,
       { ...config, inputSchema },
-      async (args: Record<string, unknown>, context: unknown) => {
-        contexts.assertHandle(args.projectHandle, name);
-        const legacyArgs = { ...args };
-        delete legacyArgs.projectHandle;
-        return handler(legacyArgs, context);
-      },
+      (args: Record<string, unknown>, context: unknown) =>
+        contexts.runExclusive(async () => {
+          contexts.assertHandle(args.projectHandle, name);
+          const legacyArgs = { ...args };
+          delete legacyArgs.projectHandle;
+          return handler(legacyArgs, context);
+        }),
     );
   };
 }
