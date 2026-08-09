@@ -220,9 +220,15 @@ class IPCBackend(KiCADBackend):
         if not self.is_connected():
             return None
         try:
-            for doc in self._kicad.get_open_documents():
-                if hasattr(doc, "path") and str(doc.path).endswith(".kicad_pcb"):
-                    return str(doc.path)
+            # kipy requires an explicit doc_type; a no-arg call raises TypeError.
+            # DocumentSpecifier exposes board_filename + project.path, not .path.
+            from kipy.proto.common.types import DocumentType
+
+            for doc in self._kicad.get_open_documents(DocumentType.DOCTYPE_PCB):
+                name = str(getattr(doc, "board_filename", "") or "")
+                if name.endswith(".kicad_pcb"):
+                    root = str(getattr(getattr(doc, "project", None), "path", "") or "")
+                    return os.path.join(root, name) if root else name
         except Exception as e:
             logger.debug(f"Could not read open documents via IPC: {e}")
         return None
