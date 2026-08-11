@@ -1,3 +1,5 @@
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fmixelpixx%2FKiCAD-MCP-Server.svg)](https://mcptoplist.com/server/glama%2Fmixelpixx%2FKiCAD-MCP-Server)
+
 ﻿<a name="top"></a>
 
 <div align="center">
