@@ -3,7 +3,7 @@
     "KiCAD-MCP-Server": {
       "type": "stdio",
       "command": "node",
-      "args": ["${workspaceFolder}/dist/index.js"],
+      "args": ["${workspaceFolder}/dist/cli.js", "serve"],
       "env": {
         "NODE_ENV": "production",
         "PYTHONPATH": "C:\\Program Files\\KiCad\\9.0\\bin\\Lib\\site-packages",

@@ -5,6 +5,7 @@ Best-of-N support is ported from morningfire-pcb-automation
 scripts/routing/freeroute_runner.py::score_ses). These tests pin the
 scoring contract so future changes don't silently shift the ranking.
 """
+
 import sys
 from pathlib import Path
 
@@ -72,18 +73,25 @@ def test_target_bonus_dominates_when_all_targets_routed():
     )
     # `without_targets` has more nets but is missing one target.
     without_targets = _score_ses(
-        _ses([
-            ("CRITICAL_A", 10),
-            ("OTHER1", 10), ("OTHER2", 10), ("OTHER3", 10),
-            ("OTHER4", 10), ("OTHER5", 10), ("OTHER6", 10),
-        ], segments=70),
+        _ses(
+            [
+                ("CRITICAL_A", 10),
+                ("OTHER1", 10),
+                ("OTHER2", 10),
+                ("OTHER3", 10),
+                ("OTHER4", 10),
+                ("OTHER5", 10),
+                ("OTHER6", 10),
+            ],
+            segments=70,
+        ),
         target_nets=["CRITICAL_A", "CRITICAL_B"],
     )
     assert without_targets["targets_missing"] == ["CRITICAL_B"]
     assert with_targets["targets_missing"] == []
-    assert with_targets["score"] > without_targets["score"], (
-        "all-targets bonus must beat marginal net-count gain"
-    )
+    assert (
+        with_targets["score"] > without_targets["score"]
+    ), "all-targets bonus must beat marginal net-count gain"
 
 
 @pytest.mark.unit

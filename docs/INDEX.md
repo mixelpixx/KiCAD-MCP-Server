@@ -1,8 +1,10 @@
 # Documentation Index
 
+- [MCP 2026-07-28 migration](MCP_2026_MIGRATION.md) - implemented protocol features, compatibility posture, and extension decisions
+
 KiCAD MCP Server -- AI-assisted PCB design via Model Context Protocol
 
-**Version:** 2.2.3 | **Tools:** 122 | **Last Updated:** 2026-03-21
+**Version:** 2.7.0 | **Tools:** 183 first-class | **Last Updated:** 2026-08-11
 
 ---
 
@@ -19,15 +21,15 @@ KiCAD MCP Server -- AI-assisted PCB design via Model Context Protocol
 
 ## Tool References
 
-| Document                                                                | Description                                                 |
-| ----------------------------------------------------------------------- | ----------------------------------------------------------- |
-| [Tool Inventory](TOOL_INVENTORY.md)                                     | Complete list of all 122 tools with access types            |
-| [Schematic Tools Reference](SCHEMATIC_TOOLS_REFERENCE.md)               | 27 schematic tools -- components, wiring, analysis, export  |
-| [Routing Tools Reference](ROUTING_TOOLS_REFERENCE.md)                   | 13 routing tools -- traces, vias, differential pairs, zones |
-| [Footprint and Symbol Creator Guide](FOOTPRINT_SYMBOL_CREATOR_GUIDE.md) | 8 tools for creating custom footprints and symbols          |
-| [Freerouting Guide](FREEROUTING_GUIDE.md)                               | 4 autorouter tools -- setup, usage, Docker support          |
-| [SVG Import Guide](SVG_IMPORT_GUIDE.md)                                 | Import SVG logos onto PCB layers                            |
-| [Datasheet Tools Guide](DATASHEET_TOOLS_GUIDE.md)                       | Datasheet enrichment via LCSC                               |
+| Document                                                                | Description                                        |
+| ----------------------------------------------------------------------- | -------------------------------------------------- |
+| [Tool Inventory](TOOL_INVENTORY.md)                                     | Runtime-verified category counts for all 183 tools |
+| [Schematic Tools Reference](SCHEMATIC_TOOLS_REFERENCE.md)               | Schematic components, wiring, analysis, and export |
+| [Routing Tools Reference](ROUTING_TOOLS_REFERENCE.md)                   | Traces, vias, differential pairs, nets, and zones  |
+| [Footprint and Symbol Creator Guide](FOOTPRINT_SYMBOL_CREATOR_GUIDE.md) | 8 tools for creating custom footprints and symbols |
+| [Freerouting Guide](FREEROUTING_GUIDE.md)                               | 4 autorouter tools -- setup, usage, Docker support |
+| [SVG Import Guide](SVG_IMPORT_GUIDE.md)                                 | Import SVG logos onto PCB layers                   |
+| [Datasheet Tools Guide](DATASHEET_TOOLS_GUIDE.md)                       | Datasheet enrichment via LCSC                      |
 
 ---
 
@@ -44,14 +46,14 @@ KiCAD MCP Server -- AI-assisted PCB design via Model Context Protocol
 
 ## Workflows
 
-| Document                                      | Description                               |
-| --------------------------------------------- | ----------------------------------------- |
-| [Realtime Workflow](REALTIME_WORKFLOW.md)     | Working with IPC backend for live updates |
-| [Visual Feedback](VISUAL_FEEDBACK.md)         | UI visual feedback guide                  |
-| [UI Auto Launch](UI_AUTO_LAUNCH.md)           | Automatic KiCAD UI launch feature         |
-| [Router Guide](mcp-router-guide.md)           | Tool router pattern usage                 |
-| [Router Architecture](ROUTER_ARCHITECTURE.md) | Router pattern design                     |
-| [Router Quick Start](ROUTER_QUICK_START.md)   | Quick start for the router pattern        |
+| Document                                              | Description                                 |
+| ----------------------------------------------------- | ------------------------------------------- |
+| [Realtime Workflow](REALTIME_WORKFLOW.md)             | Working with IPC backend for live updates   |
+| [Visual Feedback](VISUAL_FEEDBACK.md)                 | UI visual feedback guide                    |
+| [UI Auto Launch](UI_AUTO_LAUNCH.md)                   | Automatic KiCAD UI launch feature           |
+| [Tool Discovery Guide](mcp-router-guide.md)           | First-class catalog and supplemental search |
+| [Tool Discovery Architecture](ROUTER_ARCHITECTURE.md) | First-class catalog and discovery design    |
+| [Discovery Quick Start](ROUTER_QUICK_START.md)        | Find and call first-class tools directly    |
 
 ---
 

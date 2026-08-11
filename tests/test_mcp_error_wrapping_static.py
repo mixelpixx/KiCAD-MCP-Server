@@ -36,16 +36,15 @@ class TestMcpErrorWrapping:
             "set_design_rules",
             "get_design_rules",
             "run_drc",
-            "add_net_class",
-            "assign_net_to_class",
-            "set_layer_constraints",
-            "check_clearance",
+            "create_netclass",
             "get_drc_violations",
         ):
             marker = f'callKicadScript("{command}"'
             command_index = source.find(marker)
             assert command_index != -1, f"{command} wrapper not found"
 
-            next_tool_index = source.find("server.tool(", command_index + len(marker))
-            wrapper_body = source[command_index : next_tool_index if next_tool_index != -1 else None]
+            next_tool_index = source.find("registerKiCadTool(", command_index + len(marker))
+            wrapper_body = source[
+                command_index : next_tool_index if next_tool_index != -1 else None
+            ]
             assert "return formatKicadResult(result);" in wrapper_body

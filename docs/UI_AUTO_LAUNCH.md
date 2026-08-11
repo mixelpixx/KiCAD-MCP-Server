@@ -26,7 +26,7 @@ Add to your MCP configuration:
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/path/to/KiCAD-MCP-Server/dist/index.js"],
+      "args": ["/path/to/KiCAD-MCP-Server/dist/cli.js", "serve"],
       "env": {
         "KICAD_AUTO_LAUNCH": "true"
       }
@@ -182,11 +182,11 @@ Claude:
 
 ### Environment Variables
 
-| Variable            | Default     | Description                    |
-| ------------------- | ----------- | ------------------------------ |
-| `KICAD_AUTO_LAUNCH` | `false`     | Auto-launch KiCAD when needed  |
-| `KICAD_INTERACTIVE_SCHEMATIC` | `false` | Windows only: after MCP schematic edits, send Revert to reload from disk (PID-scoped; never auto-confirms discard dialogs) |
-| `KICAD_EXECUTABLE`  | auto-detect | Override KiCAD executable path |
+| Variable                      | Default     | Description                                                                                                                |
+| ----------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `KICAD_AUTO_LAUNCH`           | `false`     | Auto-launch KiCAD when needed                                                                                              |
+| `KICAD_INTERACTIVE_SCHEMATIC` | `false`     | Windows only: after MCP schematic edits, send Revert to reload from disk (PID-scoped; never auto-confirms discard dialogs) |
+| `KICAD_EXECUTABLE`            | auto-detect | Override KiCAD executable path                                                                                             |
 
 ### Custom Executable Path
 

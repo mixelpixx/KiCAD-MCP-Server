@@ -18,18 +18,22 @@ const DEFAULT_CONFIG_PATH = join(dirname(__dirname), "config", "default-config.j
 
 const LOG_LEVEL_VALUES = ["error", "warn", "info", "debug"] as const;
 const LogLevelSchema = z.enum(LOG_LEVEL_VALUES);
+const OptionalPathSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().min(1).optional(),
+);
 
 /**
  * Server configuration schema
  */
 const ConfigSchema = z.object({
   name: z.string().default("kicad-mcp-server"),
-  version: z.string().default("2.4.0"),
+  version: z.string().default("2.7.0"),
   description: z.string().default("MCP server for KiCAD PCB design operations"),
-  pythonPath: z.string().optional(),
-  kicadPath: z.string().optional(),
+  pythonPath: OptionalPathSchema,
+  kicadPath: OptionalPathSchema,
   logLevel: LogLevelSchema.default("info"),
-  logDir: z.string().optional(),
+  logDir: OptionalPathSchema,
 });
 
 /**
@@ -90,9 +94,13 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     // Determine which config file to load
     const filePath = configPath || DEFAULT_CONFIG_PATH;
 
-    // Check if file exists
+    // An explicitly requested config must exist. The packaged default may be
+    // absent in embedded/programmatic use, in which case schema defaults apply.
     if (!existsSync(filePath)) {
-      logger.warn(`Configuration file not found: ${filePath}, using defaults`);
+      if (configPath) {
+        throw new Error(`Configuration file not found: ${filePath}`);
+      }
+      logger.warn(`Default configuration file not found: ${filePath}; using defaults`);
       return applyEnvironmentOverrides(ConfigSchema.parse({}));
     }
 
@@ -103,9 +111,9 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     // Validate configuration
     return applyEnvironmentOverrides(ConfigSchema.parse(config));
   } catch (error) {
-    logger.error(`Error loading configuration: ${error}`);
-
-    // Return default configuration
-    return applyEnvironmentOverrides(ConfigSchema.parse({}));
+    throw new Error(
+      `Could not load KiCad MCP configuration${configPath ? ` ${configPath}` : ""}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
   }
 }

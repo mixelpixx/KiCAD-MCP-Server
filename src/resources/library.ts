@@ -1,323 +1,153 @@
-/**
- * Library resources for KiCAD MCP server
- *
- * These resources provide information about KiCAD component libraries
- * to the LLM, enabling better context-aware assistance.
- */
+/** Read-only resources for installed KiCad footprint and symbol libraries. */
 
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/server";
 import { logger } from "../logger.js";
+import {
+  jsonContents,
+  optionalPositiveInteger,
+  PUBLIC_LIBRARY_JSON,
+  requireBackendSuccess,
+  templateString,
+  type CommandFunction,
+} from "./shared.js";
 
-// Command function type for KiCAD script calls
-type CommandFunction = (command: string, params: Record<string, unknown>) => Promise<any>;
-
-/**
- * Register library resources with the MCP server
- *
- * @param server MCP server instance
- * @param callKicadScript Function to call KiCAD script commands
- */
 export function registerLibraryResources(
   server: McpServer,
   callKicadScript: CommandFunction,
 ): void {
   logger.info("Registering library resources");
 
-  // ------------------------------------------------------
-  // Component Library Resource
-  // ------------------------------------------------------
-  server.resource(
+  // Optional values belong in an RFC 6570 query expansion. Patterns such as
+  // {filter?} are not RFC 6570 and were treated as a variable literally named
+  // "filter?" by compliant URI-template implementations.
+  server.registerResource(
     "component_library",
-    new ResourceTemplate("kicad://components/{filter?}/{library?}", {
+    new ResourceTemplate("kicad://library/footprints{?filter,library,limit}", {
       list: async () => ({
-        resources: [{ uri: "kicad://components", name: "All Components" }],
+        resources: [{ uri: "kicad://library/footprints", name: "All footprint libraries" }],
       }),
     }),
-    async (uri, params) => {
-      const filter = params.filter || "";
-      const library = params.library || "";
-      const limit = Number(params.limit) || undefined;
-
-      logger.debug(
-        `Retrieving component library${filter ? ` with filter: ${filter}` : ""}${library ? ` from library: ${library}` : ""}`,
-      );
-
-      const result = await callKicadScript("get_component_library", {
-        filter,
-        library,
-        limit,
-      });
-
-      if (!result.success) {
-        logger.error(`Failed to retrieve component library: ${result.errorDetails}`);
-        return {
-          contents: [
-            {
-              uri: uri.href,
-              text: JSON.stringify({
-                error: "Failed to retrieve component library",
-                details: result.errorDetails,
-              }),
-              mimeType: "application/json",
-            },
-          ],
-        };
-      }
-
-      logger.debug(
-        `Successfully retrieved ${result.components?.length || 0} components from library`,
-      );
-      return {
-        contents: [
+    {
+      ...PUBLIC_LIBRARY_JSON,
+      title: "KiCad footprint library search",
+      description: "Search installed footprint libraries by name and optional library filter",
+    },
+    async (uri, variables, ctx) => {
+      const filter = templateString(variables, "filter", uri) ?? "*";
+      const library = templateString(variables, "library", uri);
+      const limit = optionalPositiveInteger(variables, "limit", uri);
+      const result = requireBackendSuccess(
+        await callKicadScript(
+          "search_footprints",
           {
-            uri: uri.href,
-            text: JSON.stringify(result),
-            mimeType: "application/json",
+            pattern: filter,
+            library,
+            limit,
           },
-        ],
-      };
+          ctx.mcpReq.signal,
+        ),
+        "Failed to search the footprint library",
+        uri,
+      );
+      return jsonContents(uri, result);
     },
   );
 
-  // ------------------------------------------------------
-  // Library List Resource
-  // ------------------------------------------------------
-  server.resource("library_list", "kicad://libraries", async (uri) => {
-    logger.debug("Retrieving library list");
-    const result = await callKicadScript("get_library_list", {});
+  server.registerResource(
+    "library_list",
+    "kicad://libraries",
+    {
+      ...PUBLIC_LIBRARY_JSON,
+      title: "Installed KiCad footprint libraries",
+      description: "Names of all installed footprint libraries",
+    },
+    async (uri, ctx) => {
+      const result = requireBackendSuccess(
+        await callKicadScript("list_libraries", {}, ctx.mcpReq.signal),
+        "Failed to retrieve the footprint library list",
+        uri,
+      );
+      return jsonContents(uri, result);
+    },
+  );
 
-    if (!result.success) {
-      logger.error(`Failed to retrieve library list: ${result.errorDetails}`);
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            text: JSON.stringify({
-              error: "Failed to retrieve library list",
-              details: result.errorDetails,
-            }),
-            mimeType: "application/json",
-          },
-        ],
-      };
-    }
-
-    logger.debug(`Successfully retrieved ${result.libraries?.length || 0} libraries`);
-    return {
-      contents: [
-        {
-          uri: uri.href,
-          text: JSON.stringify(result),
-          mimeType: "application/json",
-        },
-      ],
-    };
-  });
-
-  // ------------------------------------------------------
-  // Library Component Details Resource
-  // ------------------------------------------------------
-  server.resource(
+  // get_footprint_info is the implemented backend equivalent for library
+  // component details. Supplying library makes the lookup unambiguous.
+  server.registerResource(
     "library_component_details",
-    new ResourceTemplate("kicad://library/component/{componentId}/{library?}", {
+    new ResourceTemplate("kicad://library/component/{componentId}{?library}", {
       list: undefined,
     }),
-    async (uri, params) => {
-      const { componentId, library } = params;
-      logger.debug(
-        `Retrieving details for component: ${componentId}${library ? ` from library: ${library}` : ""}`,
-      );
-
-      const result = await callKicadScript("get_component_details", {
-        componentId,
-        library,
-      });
-
-      if (!result.success) {
-        logger.error(`Failed to retrieve component details: ${result.errorDetails}`);
-        return {
-          contents: [
-            {
-              uri: uri.href,
-              text: JSON.stringify({
-                error: `Failed to retrieve details for component ${componentId}`,
-                details: result.errorDetails,
-              }),
-              mimeType: "application/json",
-            },
-          ],
-        };
-      }
-
-      logger.debug(`Successfully retrieved details for component: ${componentId}`);
-      return {
-        contents: [
+    {
+      ...PUBLIC_LIBRARY_JSON,
+      title: "KiCad library footprint details",
+      description: "Parsed metadata and pad information for a library footprint",
+    },
+    async (uri, variables, ctx) => {
+      const componentId = templateString(variables, "componentId", uri, { required: true });
+      const library = templateString(variables, "library", uri);
+      const footprintName = library ? `${library}:${componentId}` : componentId;
+      const result = requireBackendSuccess(
+        await callKicadScript(
+          "get_footprint_info",
           {
-            uri: uri.href,
-            text: JSON.stringify(result),
-            mimeType: "application/json",
+            footprint_name: footprintName,
+            library_name: library,
           },
-        ],
-      };
+          ctx.mcpReq.signal,
+        ),
+        `Failed to retrieve footprint details for ${footprintName}`,
+        uri,
+      );
+      return jsonContents(uri, result);
     },
   );
 
-  // ------------------------------------------------------
-  // Component Footprint Resource
-  // ------------------------------------------------------
-  server.resource(
+  server.registerResource(
     "component_footprint",
-    new ResourceTemplate("kicad://footprint/{componentId}/{footprint?}", {
-      list: undefined,
-    }),
-    async (uri, params) => {
-      const { componentId, footprint } = params;
-      logger.debug(
-        `Retrieving footprint for component: ${componentId}${footprint ? ` (${footprint})` : ""}`,
+    new ResourceTemplate("kicad://footprint/{componentId}{?footprint}", { list: undefined }),
+    {
+      ...PUBLIC_LIBRARY_JSON,
+      title: "KiCad component footprint",
+      description: "Footprint metadata for an explicit footprint name or component identifier",
+    },
+    async (uri, variables, ctx) => {
+      const componentId = templateString(variables, "componentId", uri, { required: true });
+      const footprint = templateString(variables, "footprint", uri);
+      const footprintName = footprint ?? componentId;
+      const result = requireBackendSuccess(
+        await callKicadScript(
+          "get_footprint_info",
+          { footprint_name: footprintName },
+          ctx.mcpReq.signal,
+        ),
+        `Failed to retrieve footprint ${footprintName}`,
+        uri,
       );
-
-      const result = await callKicadScript("get_component_footprint", {
-        componentId,
-        footprint,
-      });
-
-      if (!result.success) {
-        logger.error(`Failed to retrieve component footprint: ${result.errorDetails}`);
-        return {
-          contents: [
-            {
-              uri: uri.href,
-              text: JSON.stringify({
-                error: `Failed to retrieve footprint for component ${componentId}`,
-                details: result.errorDetails,
-              }),
-              mimeType: "application/json",
-            },
-          ],
-        };
-      }
-
-      logger.debug(`Successfully retrieved footprint for component: ${componentId}`);
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            text: JSON.stringify(result),
-            mimeType: "application/json",
-          },
-        ],
-      };
+      return jsonContents(uri, result);
     },
   );
 
-  // ------------------------------------------------------
-  // Component Symbol Resource
-  // ------------------------------------------------------
-  server.resource(
+  server.registerResource(
     "component_symbol",
-    new ResourceTemplate("kicad://symbol/{componentId}", {
-      list: undefined,
-    }),
-    async (uri, params) => {
-      const { componentId } = params;
-      logger.debug(`Retrieving symbol for component: ${componentId}`);
-
-      const result = await callKicadScript("get_component_symbol", {
-        componentId,
-      });
-
-      if (!result.success) {
-        logger.error(`Failed to retrieve component symbol: ${result.errorDetails}`);
-        return {
-          contents: [
-            {
-              uri: uri.href,
-              text: JSON.stringify({
-                error: `Failed to retrieve symbol for component ${componentId}`,
-                details: result.errorDetails,
-              }),
-              mimeType: "application/json",
-            },
-          ],
-        };
-      }
-
-      logger.debug(`Successfully retrieved symbol for component: ${componentId}`);
-
-      // If the result includes SVG data, return it as SVG
-      if (result.svgData) {
-        return {
-          contents: [
-            {
-              uri: uri.href,
-              text: result.svgData,
-              mimeType: "image/svg+xml",
-            },
-          ],
-        };
-      }
-
-      // Otherwise return the JSON result
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            text: JSON.stringify(result),
-            mimeType: "application/json",
-          },
-        ],
-      };
+    new ResourceTemplate("kicad://symbol/{componentId}", { list: undefined }),
+    {
+      ...PUBLIC_LIBRARY_JSON,
+      title: "KiCad library symbol",
+      description: "Metadata for a symbol in Library:Symbol form",
     },
-  );
-
-  // ------------------------------------------------------
-  // Component 3D Model Resource
-  // ------------------------------------------------------
-  server.resource(
-    "component_3d_model",
-    new ResourceTemplate("kicad://3d-model/{componentId}/{footprint?}", {
-      list: undefined,
-    }),
-    async (uri, params) => {
-      const { componentId, footprint } = params;
-      logger.debug(
-        `Retrieving 3D model for component: ${componentId}${footprint ? ` (${footprint})` : ""}`,
+    async (uri, variables, ctx) => {
+      const componentId = templateString(variables, "componentId", uri, { required: true });
+      const result = requireBackendSuccess(
+        await callKicadScript("get_symbol_info", { symbol: componentId }, ctx.mcpReq.signal),
+        `Failed to retrieve symbol ${componentId}`,
+        uri,
       );
-
-      const result = await callKicadScript("get_component_3d_model", {
-        componentId,
-        footprint,
-      });
-
-      if (!result.success) {
-        logger.error(`Failed to retrieve component 3D model: ${result.errorDetails}`);
-        return {
-          contents: [
-            {
-              uri: uri.href,
-              text: JSON.stringify({
-                error: `Failed to retrieve 3D model for component ${componentId}`,
-                details: result.errorDetails,
-              }),
-              mimeType: "application/json",
-            },
-          ],
-        };
-      }
-
-      logger.debug(`Successfully retrieved 3D model for component: ${componentId}`);
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            text: JSON.stringify(result),
-            mimeType: "application/json",
-          },
-        ],
-      };
+      return jsonContents(uri, result);
     },
   );
 
+  // component_3d_model is intentionally not registered: no backend command
+  // can read or render an individual component's 3D model.
   logger.info("Library resources registered");
 }

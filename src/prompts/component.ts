@@ -5,7 +5,7 @@
  * in KiCAD PCB design.
  */
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { logger } from "../logger.js";
 
@@ -20,12 +20,18 @@ export function registerComponentPrompts(server: McpServer): void {
   // ------------------------------------------------------
   // Component Selection Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "component_selection",
     {
-      requirements: z.string().describe("Description of the circuit requirements and constraints"),
+      description:
+        "Recommend components that satisfy a circuit's electrical and physical requirements",
+      argsSchema: z.object({
+        requirements: z
+          .string()
+          .describe("Description of the circuit requirements and constraints"),
+      }),
     },
-    () => ({
+    ({ requirements }) => ({
       messages: [
         {
           role: "user",
@@ -33,7 +39,7 @@ export function registerComponentPrompts(server: McpServer): void {
             type: "text",
             text: `You're helping to select components for a circuit design. Given the following requirements:
 
-{{requirements}}
+${requirements}
 
 Suggest appropriate components with their values, ratings, and footprints. Consider factors like:
 - Power and voltage ratings
@@ -54,12 +60,15 @@ For each component type, recommend specific values and provide a brief explanati
   // ------------------------------------------------------
   // Component Placement Strategy Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "component_placement_strategy",
     {
-      components: z.string().describe("List of components to be placed on the PCB"),
+      description: "Develop a placement strategy for a supplied set of PCB components",
+      argsSchema: z.object({
+        components: z.string().describe("List of components to be placed on the PCB"),
+      }),
     },
-    () => ({
+    ({ components }) => ({
       messages: [
         {
           role: "user",
@@ -67,7 +76,7 @@ For each component type, recommend specific values and provide a brief explanati
             type: "text",
             text: `You're helping with component placement for a PCB layout. Here are the components to place:
 
-{{components}}
+${components}
 
 Provide a strategy for optimal placement considering:
 
@@ -101,14 +110,17 @@ Group components functionally and suggest a logical arrangement. If possible, pr
   // ------------------------------------------------------
   // Component Replacement Analysis Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "component_replacement_analysis",
     {
-      component_info: z
-        .string()
-        .describe("Information about the component that needs to be replaced"),
+      description: "Evaluate electrically and mechanically compatible component replacements",
+      argsSchema: z.object({
+        component_info: z
+          .string()
+          .describe("Information about the component that needs to be replaced"),
+      }),
     },
-    () => ({
+    ({ component_info }) => ({
       messages: [
         {
           role: "user",
@@ -116,7 +128,7 @@ Group components functionally and suggest a logical arrangement. If possible, pr
             type: "text",
             text: `You're helping to find a replacement for a component that is unavailable or needs to be updated. Here's the original component information:
 
-{{component_info}}
+${component_info}
 
 Consider these factors when suggesting replacements:
 
@@ -149,14 +161,17 @@ Suggest suitable replacement options and explain the advantages and disadvantage
   // ------------------------------------------------------
   // Component Troubleshooting Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "component_troubleshooting",
     {
-      issue_description: z
-        .string()
-        .describe("Description of the component or circuit issue being troubleshooted"),
+      description: "Diagnose a component or circuit issue systematically",
+      argsSchema: z.object({
+        issue_description: z
+          .string()
+          .describe("Description of the component or circuit issue being troubleshooted"),
+      }),
     },
-    () => ({
+    ({ issue_description }) => ({
       messages: [
         {
           role: "user",
@@ -164,7 +179,7 @@ Suggest suitable replacement options and explain the advantages and disadvantage
             type: "text",
             text: `You're helping to troubleshoot an issue with a component or circuit section in a PCB design. Here's the issue description:
 
-{{issue_description}}
+${issue_description}
 
 Use the following systematic approach to diagnose the problem:
 
@@ -198,17 +213,20 @@ Based on the available information, suggest likely causes of the issue and recom
   // ------------------------------------------------------
   // Component Sourcing / BOM Properties Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "component_sourcing_properties",
     {
-      component_info: z
-        .string()
-        .describe(
-          "Description of the component(s) being sourced and which BOM fields need to be attached " +
-            "(MPN, distributor part numbers, manufacturer, etc.).",
-        ),
+      description: "Plan KiCad sourcing and BOM properties for supplied components",
+      argsSchema: z.object({
+        component_info: z
+          .string()
+          .describe(
+            "Description of the component(s) being sourced and which BOM fields need to be attached " +
+              "(MPN, distributor part numbers, manufacturer, etc.).",
+          ),
+      }),
     },
-    () => ({
+    ({ component_info }) => ({
       messages: [
         {
           role: "user",
@@ -216,7 +234,7 @@ Based on the available information, suggest likely causes of the issue and recom
             type: "text",
             text: `You are attaching sourcing and BOM metadata to schematic components. Here is the situation:
 
-{{component_info}}
+${component_info}
 
 KiCad symbols carry arbitrary key/value properties on top of the four built-in fields
 (Reference, Value, Footprint, Datasheet). These custom properties are written into
@@ -270,14 +288,17 @@ or substitutions you propose.`,
   // ------------------------------------------------------
   // Component Value Calculation Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "component_value_calculation",
     {
-      circuit_requirements: z
-        .string()
-        .describe("Description of the circuit function and performance requirements"),
+      description: "Calculate practical component values from circuit requirements",
+      argsSchema: z.object({
+        circuit_requirements: z
+          .string()
+          .describe("Description of the circuit function and performance requirements"),
+      }),
     },
-    () => ({
+    ({ circuit_requirements }) => ({
       messages: [
         {
           role: "user",
@@ -285,7 +306,7 @@ or substitutions you propose.`,
             type: "text",
             text: `You're helping to calculate appropriate component values for a specific circuit function. Here's the circuit description and requirements:
 
-{{circuit_requirements}}
+${circuit_requirements}
 
 Follow these steps to determine the optimal component values:
 

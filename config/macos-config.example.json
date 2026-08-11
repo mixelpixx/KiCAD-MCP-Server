@@ -2,7 +2,7 @@
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/Users/YOUR_USERNAME/MCP/KiCAD-MCP-Server/dist/index.js"],
+      "args": ["/Users/YOUR_USERNAME/MCP/KiCAD-MCP-Server/dist/cli.js", "serve"],
       "env": {
         "NODE_ENV": "production",
         "PYTHONPATH": "/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/lib/python3.9/site-packages",

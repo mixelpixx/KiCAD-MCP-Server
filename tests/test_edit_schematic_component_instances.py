@@ -130,11 +130,11 @@ def _write_schematic(tmp_path: Path, placed_block: str) -> Path:
     sch = tmp_path / "test.kicad_sch"
     sch.write_text(
         "(kicad_sch\n"
-        '  (version 20260101)\n'
+        "  (version 20260101)\n"
         '  (generator "eeschema")\n'
         '  (uuid "abcdef12-3456-7890-abcd-ef1234567890")\n'
         '  (paper "A4")\n'
-        '  (lib_symbols)\n'
+        "  (lib_symbols)\n"
         f"{placed_block}"
         ")\n",
         encoding="utf-8",
@@ -245,9 +245,7 @@ class TestEditSchematicComponentInstancesReference:
         # instances leaf uses (reference "X") form.
         assert '(reference "R42")' in content
 
-    def test_other_edits_still_work_when_only_newReference_provided(
-        self, tmp_path: Any
-    ) -> None:
+    def test_other_edits_still_work_when_only_newReference_provided(self, tmp_path: Any) -> None:
         """Verify the rename leaves other field values intact."""
         sch = _write_schematic(tmp_path, PLACED_RESISTOR_WITH_INSTANCES)
 

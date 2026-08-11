@@ -26,7 +26,7 @@
 
 #
 
-**KiCAD MCP Server** 是一个模型上下文协议（MCP）服务器，使 Claude 等 AI 助手能够与 KiCAD 交互，实现 PCB 设计自动化。本服务器基于 MCP 2025-06-18 规范构建，为智能 PCB 设计工作流提供全面的工具模式和实时项目状态访问。
+**KiCAD MCP Server** 是一个模型上下文协议（MCP）服务器，使 Claude 等 AI 助手能够与 KiCAD 交互，实现 PCB 设计自动化。本服务器基于 MCP 2026-07-28 规范构建，并兼容 2025 代客户端，为智能 PCB 设计工作流提供 183 个 KiCAD 工具和实时项目状态访问。
 
 ### 用自然语言设计 PCB
 
@@ -45,7 +45,7 @@
 ### 快速开始
 
 1. 安装 [KiCAD 9.0+](https://www.kicad.org/download/)
-2. 安装 [Node.js 18+](https://nodejs.org/) 和 [Python 3.11+](https://www.python.org/)
+2. 安装 [Node.js 20+](https://nodejs.org/) 和 [Python 3.11+](https://www.python.org/)
 3. 克隆并构建：
 
 ```bash
@@ -79,7 +79,7 @@ VS Code 会自动检测 `.vscode/mcp.json` 并注册服务器。模板使用 `${
 ### 文档
 
 - [**完整 README**](../README.md) — 完整文档
-- [快速开始（路由工具）](../docs/ROUTER_QUICK_START.md) — 入门指引
+- [工具发现快速开始](../docs/ROUTER_QUICK_START.md) — 查找并直接调用工具
 - [工具清单](../docs/TOOL_INVENTORY.md) — 所有可用工具
 - [原理图工具参考](../docs/SCHEMATIC_TOOLS_REFERENCE.md)
 - [布线工具参考](../docs/ROUTING_TOOLS_REFERENCE.md)

@@ -86,10 +86,12 @@ IPC-capable tools can reconnect and use IPC without restarting the MCP server.
    - Preferences → Plugins → Enable IPC API Server
    - Restart KiCAD if required
 
-2. Install `kicad-python`:
+2. Prepare the private runtime (which includes the pinned `kicad-python`):
 
    ```bash
-   pip install kicad-python
+   npm ci
+   npm run build
+   node dist/cli.js setup
    ```
 
 3. **Configure MCP Server**

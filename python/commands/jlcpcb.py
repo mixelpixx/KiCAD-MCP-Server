@@ -124,11 +124,10 @@ class JLCPCBClient:
         signature_string = self._build_signature_string(method, path, timestamp, nonce, body)
         signature = self._sign(signature_string)
 
-        logger.debug(f"Signature string:\n{repr(signature_string)}")
-        logger.debug(f"Signature: {signature}")
-        logger.debug(
-            f'Auth header: JOP appid="{self.app_id}",accesskey="{self.access_key}",nonce="{nonce}",timestamp="{timestamp}",signature="{signature}"'
-        )
+        # Never log the signature input, signature, access key, or assembled
+        # Authorization header. Debug logs commonly end up in support bundles,
+        # and each of those values is credential material or can aid replay.
+        logger.debug("Generated JLCPCB authorization header")
 
         return f'JOP appid="{self.app_id}",accesskey="{self.access_key}",nonce="{nonce}",timestamp="{timestamp}",signature="{signature}"'
 
@@ -159,19 +158,26 @@ class JLCPCBClient:
 
         try:
             response = requests.post(
-                f"{self.BASE_URL}{path}", headers=headers, json=payload, timeout=60
+                f"{self.BASE_URL}{path}",
+                headers=headers,
+                json=payload,
+                timeout=60,
+                allow_redirects=False,
             )
 
-            logger.debug(f"Response status: {response.status_code}")
-            logger.debug(f"Response headers: {response.headers}")
-            logger.debug(f"Response text: {response.text}")
+            # Response bodies may contain catalog cursors or account-specific
+            # API details. Record only the status needed for diagnostics.
+            logger.debug("JLCPCB response status: %s", response.status_code)
 
+            if response.is_redirect:
+                raise requests.RequestException("JLCPCB API unexpectedly returned a redirect")
             response.raise_for_status()
             data = response.json()
 
             if data.get("code") != 200:
                 raise Exception(
-                    f"API request failed (code {data.get('code')}): {data.get('msg', 'Unknown error')} - Full response: {data}"
+                    f"API request failed (code {data.get('code')}): "
+                    f"{data.get('msg', 'Unknown error')}"
                 )
 
             return data["data"]
@@ -223,11 +229,10 @@ class JLCPCBClient:
 
             except Exception as e:
                 logger.error(f"Error downloading parts at page {page}: {e}")
-                if len(all_parts) > 0:
-                    logger.warning(f"Partial download available: {len(all_parts)} parts")
-                    return all_parts
-                else:
-                    raise
+                raise RuntimeError(
+                    f"JLCPCB catalog download failed at page {page} after "
+                    f"{len(all_parts)} parts; partial data was discarded"
+                ) from e
 
         logger.info(f"Download complete: {len(all_parts)} parts retrieved")
         return all_parts

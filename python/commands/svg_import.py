@@ -228,9 +228,10 @@ def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
                 y2 += cy
                 x += cx
                 y += cy
-            if last_ctrl and last_cmd in ("C", "c", "S", "s"):
-                x1 = 2 * cx - last_ctrl[0]
-                y1 = 2 * cy - last_ctrl[1]
+            if last_ctrl is not None and last_cmd in ("C", "c", "S", "s"):
+                ctrl_x, ctrl_y = last_ctrl
+                x1 = 2 * cx - ctrl_x
+                y1 = 2 * cy - ctrl_y
             else:
                 x1, y1 = cx, cy
             pts = cubic_bezier_points((cx, cy), (x1, y1), (x2, y2), (x, y))
@@ -255,9 +256,10 @@ def _parse_path_tokens(tokens: List[str]) -> List[Polygon]:
             if rel:
                 x += cx
                 y += cy
-            if last_ctrl and last_cmd in ("Q", "q", "T", "t"):
-                x1 = 2 * cx - last_ctrl[0]
-                y1 = 2 * cy - last_ctrl[1]
+            if last_ctrl is not None and last_cmd in ("Q", "q", "T", "t"):
+                ctrl_x, ctrl_y = last_ctrl
+                x1 = 2 * cx - ctrl_x
+                y1 = 2 * cy - ctrl_y
             else:
                 x1, y1 = cx, cy
             pts = quad_bezier_points((cx, cy), (x1, y1), (x, y))

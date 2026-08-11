@@ -173,28 +173,23 @@ Assign reference designators to unannotated components (R? → R1, R2, ...). Mus
 | ------------- | ------ | -------- | --------------------------- |
 | schematicPath | string | Yes      | Path to the .kicad_sch file |
 
-## Wiring and Connections (8 tools)
+## Wiring and Connections
 
-### add_wire
+### add_schematic_wire
 
-Add a wire connection in the schematic.
+Draw a schematic wire through two or more coordinate waypoints. Call
+`get_schematic_pin_locations` first; endpoint snapping is enabled by default.
 
-| Parameter | Type   | Required | Description                             |
-| --------- | ------ | -------- | --------------------------------------- |
-| start     | object | Yes      | Start position with x and y coordinates |
-| end       | object | Yes      | End position with x and y coordinates   |
+| Parameter     | Type             | Required | Description                                   |
+| ------------- | ---------------- | -------- | --------------------------------------------- |
+| schematicPath | string           | Yes      | Path to the `.kicad_sch` file                 |
+| waypoints     | array of `[x,y]` | Yes      | Ordered route points; requires at least two   |
+| snapToPins    | boolean          | No       | Snap first and last point to nearby pins      |
+| snapTolerance | number           | No       | Maximum endpoint snap distance in millimeters |
 
-### add_schematic_connection
-
-Connect two component pins with a wire. Use this for individual connections between components with different pin roles (e.g. U1.SDA → J3.2). WARNING: Do NOT use this in a loop to wire N passthrough pins — use connect_passthrough instead (single call, cleaner layout, far fewer tokens).
-
-| Parameter     | Type   | Required | Description                              |
-| ------------- | ------ | -------- | ---------------------------------------- |
-| schematicPath | string | Yes      | Path to the schematic file               |
-| sourceRef     | string | Yes      | Source component reference (e.g., R1)    |
-| sourcePin     | string | Yes      | Source pin name/number (e.g., 1, 2, GND) |
-| targetRef     | string | Yes      | Target component reference (e.g., C1)    |
-| targetPin     | string | Yes      | Target pin name/number (e.g., 1, 2, VCC) |
+For logical connections, prefer `connect_to_net` or `batch_connect`. For a
+connector passthrough, use `connect_passthrough` rather than issuing repeated
+wire calls.
 
 ### add_schematic_net_label
 
@@ -528,8 +523,8 @@ Import the schematic netlist into the PCB board — equivalent to pressing F8 in
 1. **Create project:** Use `create_schematic` to initialize a new schematic file
 2. **Add components:** Use `add_schematic_component` to place resistors, capacitors, ICs, etc.
    - Example: Add a resistor with `symbol: "Device:R"`, `reference: "R1"`, `value: "10k"`
-3. **Wire components:** Use `add_schematic_connection` to connect component pins
-   - Or use `connect_to_net` to connect pins to named nets (VCC, GND, etc.)
+3. **Wire components:** Use `connect_to_net` or `batch_connect` to connect pins to named nets
+   - Use `add_schematic_wire` when explicit geometric waypoints are required
 4. **Add net labels:** Use `add_schematic_net_label` to label important signals
 5. **Validate:** Run `run_erc` to check for electrical rule violations
 6. **Review:** Use `list_schematic_components` and `get_schematic_view` to verify the design
@@ -549,7 +544,7 @@ Import the schematic netlist into the PCB board — equivalent to pressing F8 in
 The schematic tools are implemented across the following source files:
 
 - **TypeScript (Tool Definitions):**
-  - `/home/chris/MCP/KiCAD-MCP-Server/src/tools/schematic.ts` - All 27 schematic tool definitions with parameter schemas and handlers
+  - `src/tools/schematic.ts` - Core schematic tool definitions with parameter schemas and handlers
 
 - **Python (Backend Implementation):**
   - `/home/chris/MCP/KiCAD-MCP-Server/python/commands/component_schematic.py` - ComponentManager class (add, delete, edit, list components with dynamic symbol loading)

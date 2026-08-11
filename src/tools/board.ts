@@ -3,13 +3,12 @@
  *
  * These tools handle board setup, layer management, and board properties
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { logger } from "../logger.js";
+import { registerKiCadTool, type CommandFunction, withToolSignal } from "./tool-registration.js";
 
 // Command function type for KiCAD script calls
-type CommandFunction = (command: string, params: Record<string, unknown>) => Promise<any>;
 
 /**
  * Register board management tools with the MCP server
@@ -18,18 +17,23 @@ type CommandFunction = (command: string, params: Record<string, unknown>) => Pro
  * @param callKicadScript Function to call KiCAD script commands
  */
 export function registerBoardTools(server: McpServer, callKicadScript: CommandFunction): void {
+  callKicadScript = withToolSignal(callKicadScript);
   logger.info("Registering board management tools");
 
   // ------------------------------------------------------
   // Set Board Size Tool
   // ------------------------------------------------------
-  server.tool(
+  registerKiCadTool(
+    server,
+    "board",
     "set_board_size",
-    "Set the PCB board dimensions (width and height) in the specified unit.",
     {
-      width: z.number().describe("Board width"),
-      height: z.number().describe("Board height"),
-      unit: z.enum(["mm", "mil", "inch"]).describe("Unit of measurement"),
+      description: "Set the PCB board dimensions (width and height) in the specified unit.",
+      inputSchema: z.object({
+        width: z.number().describe("Board width"),
+        height: z.number().describe("Board height"),
+        unit: z.enum(["mm", "mil", "inch"]).describe("Unit of measurement"),
+      }),
     },
     async ({ width, height, unit }) => {
       logger.debug(`Setting board size to ${width}x${height} ${unit}`);
@@ -53,14 +57,18 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   // Add Layer Tool
   // ------------------------------------------------------
-  server.tool(
+  registerKiCadTool(
+    server,
+    "board",
     "add_layer",
-    "Add a new copper or technical layer to the PCB stackup.",
     {
-      name: z.string().describe("Layer name"),
-      type: z.enum(["copper", "technical", "user", "signal"]).describe("Layer type"),
-      position: z.enum(["top", "bottom", "inner"]).describe("Layer position"),
-      number: z.number().optional().describe("Layer number (for inner layers)"),
+      description: "Add a new copper or technical layer to the PCB stackup.",
+      inputSchema: z.object({
+        name: z.string().describe("Layer name"),
+        type: z.enum(["copper", "technical", "user", "signal"]).describe("Layer type"),
+        position: z.enum(["top", "bottom", "inner"]).describe("Layer position"),
+        number: z.number().optional().describe("Layer number (for inner layers)"),
+      }),
     },
     async ({ name, type, position, number }) => {
       logger.debug(`Adding ${type} layer: ${name}`);
@@ -85,11 +93,15 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   // Set Active Layer Tool
   // ------------------------------------------------------
-  server.tool(
+  registerKiCadTool(
+    server,
+    "board",
     "set_active_layer",
-    "Set the currently active PCB layer by name (e.g. F.Cu, B.Cu).",
     {
-      layer: z.string().describe("Layer name to set as active"),
+      description: "Set the currently active PCB layer by name (e.g. F.Cu, B.Cu).",
+      inputSchema: z.object({
+        layer: z.string().describe("Layer name to set as active"),
+      }),
     },
     async ({ layer }) => {
       logger.debug(`Setting active layer to: ${layer}`);
@@ -109,10 +121,15 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   // Get Board Info Tool
   // ------------------------------------------------------
-  server.tool(
+  registerKiCadTool(
+    server,
+    "board",
     "get_board_info",
-    "Retrieve general information about the current PCB board (dimensions, layer count, DRC status).",
-    {},
+    {
+      description:
+        "Retrieve general information about the current PCB board (dimensions, layer count, DRC status).",
+      inputSchema: z.object({}),
+    },
     async () => {
       logger.debug("Getting board information");
       const result = await callKicadScript("get_board_info", {});
@@ -131,10 +148,14 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   // Get Layer List Tool
   // ------------------------------------------------------
-  server.tool(
+  registerKiCadTool(
+    server,
+    "board",
     "get_layer_list",
-    "Return the list of all layers defined in the current PCB board.",
-    {},
+    {
+      description: "Return the list of all layers defined in the current PCB board.",
+      inputSchema: z.object({}),
+    },
     async () => {
       logger.debug("Getting layer list");
       const result = await callKicadScript("get_layer_list", {});
@@ -153,37 +174,45 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   // Add Board Outline Tool
   // ------------------------------------------------------
-  server.tool(
+  registerKiCadTool(
+    server,
+    "board",
     "add_board_outline",
-    "Draw the PCB board outline (Edge.Cuts layer) as a rectangle, rounded rectangle, circle or polygon.",
     {
-      shape: z
-        .enum(["rectangle", "circle", "polygon", "rounded_rectangle"])
-        .describe("Shape of the outline"),
-      params: z
-        .object({
-          // For rectangle / rounded_rectangle
-          width: z.number().optional().describe("Width of rectangle"),
-          height: z.number().optional().describe("Height of rectangle"),
-          cornerRadius: z.number().optional().describe("Corner radius for rounded_rectangle (mm)"),
-          // For circle
-          radius: z.number().optional().describe("Radius of circle"),
-          // For polygon
-          points: z
-            .array(
-              z.object({
-                x: z.number().describe("X coordinate"),
-                y: z.number().describe("Y coordinate"),
-              }),
-            )
-            .optional()
-            .describe("Points of polygon"),
-          // Position: top-left corner for rectangles/rounded_rectangle, center for circle
-          x: z.number().describe("X coordinate of top-left corner for rectangles (default: 0)"),
-          y: z.number().describe("Y coordinate of top-left corner for rectangles (default: 0)"),
-          unit: z.enum(["mm", "mil", "inch"]).describe("Unit of measurement"),
-        })
-        .describe("Parameters for the outline shape"),
+      description:
+        "Draw the PCB board outline (Edge.Cuts layer) as a rectangle, rounded rectangle, circle or polygon.",
+      inputSchema: z.object({
+        shape: z
+          .enum(["rectangle", "circle", "polygon", "rounded_rectangle"])
+          .describe("Shape of the outline"),
+        params: z
+          .object({
+            // For rectangle / rounded_rectangle
+            width: z.number().optional().describe("Width of rectangle"),
+            height: z.number().optional().describe("Height of rectangle"),
+            cornerRadius: z
+              .number()
+              .optional()
+              .describe("Corner radius for rounded_rectangle (mm)"),
+            // For circle
+            radius: z.number().optional().describe("Radius of circle"),
+            // For polygon
+            points: z
+              .array(
+                z.object({
+                  x: z.number().describe("X coordinate"),
+                  y: z.number().describe("Y coordinate"),
+                }),
+              )
+              .optional()
+              .describe("Points of polygon"),
+            // Position: top-left corner for rectangles/rounded_rectangle, center for circle
+            x: z.number().describe("X coordinate of top-left corner for rectangles (default: 0)"),
+            y: z.number().describe("Y coordinate of top-left corner for rectangles (default: 0)"),
+            unit: z.enum(["mm", "mil", "inch"]).describe("Unit of measurement"),
+          })
+          .describe("Parameters for the outline shape"),
+      }),
     },
     async ({ shape, params }) => {
       logger.debug(`Adding ${shape} board outline`);
@@ -208,19 +237,23 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   // Add Mounting Hole Tool
   // ------------------------------------------------------
-  server.tool(
+  registerKiCadTool(
+    server,
+    "board",
     "add_mounting_hole",
-    "Place a mounting hole (NPTH or PTH) at the specified position on the PCB.",
     {
-      position: z
-        .object({
-          x: z.number().describe("X coordinate"),
-          y: z.number().describe("Y coordinate"),
-          unit: z.enum(["mm", "mil", "inch"]).describe("Unit of measurement"),
-        })
-        .describe("Position of the mounting hole"),
-      diameter: z.number().describe("Diameter of the hole"),
-      padDiameter: z.number().optional().describe("Optional diameter of the pad around the hole"),
+      description: "Place a mounting hole (NPTH or PTH) at the specified position on the PCB.",
+      inputSchema: z.object({
+        position: z
+          .object({
+            x: z.number().describe("X coordinate"),
+            y: z.number().describe("Y coordinate"),
+            unit: z.enum(["mm", "mil", "inch"]).describe("Unit of measurement"),
+          })
+          .describe("Position of the mounting hole"),
+        diameter: z.number().describe("Diameter of the hole"),
+        padDiameter: z.number().optional().describe("Optional diameter of the pad around the hole"),
+      }),
     },
     async ({ position, diameter, padDiameter }) => {
       logger.debug(`Adding mounting hole at (${position.x},${position.y}) ${position.unit}`);
@@ -244,23 +277,27 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   // Add Text Tool
   // ------------------------------------------------------
-  server.tool(
+  registerKiCadTool(
+    server,
+    "board",
     "add_board_text",
-    "Add a text label to a PCB layer (e.g. silkscreen, fab, courtyard).",
     {
-      text: z.string().describe("Text content"),
-      position: z
-        .object({
-          x: z.number().describe("X coordinate"),
-          y: z.number().describe("Y coordinate"),
-          unit: z.enum(["mm", "mil", "inch"]).describe("Unit of measurement"),
-        })
-        .describe("Position of the text"),
-      layer: z.string().describe("Layer to place the text on"),
-      size: z.number().describe("Text size"),
-      thickness: z.number().optional().describe("Line thickness"),
-      rotation: z.number().optional().describe("Rotation angle in degrees"),
-      style: z.enum(["normal", "italic", "bold"]).optional().describe("Text style"),
+      description: "Add a text label to a PCB layer (e.g. silkscreen, fab, courtyard).",
+      inputSchema: z.object({
+        text: z.string().describe("Text content"),
+        position: z
+          .object({
+            x: z.number().describe("X coordinate"),
+            y: z.number().describe("Y coordinate"),
+            unit: z.enum(["mm", "mil", "inch"]).describe("Unit of measurement"),
+          })
+          .describe("Position of the text"),
+        layer: z.string().describe("Layer to place the text on"),
+        size: z.number().describe("Text size"),
+        thickness: z.number().optional().describe("Line thickness"),
+        rotation: z.number().optional().describe("Rotation angle in degrees"),
+        style: z.enum(["normal", "italic", "bold"]).optional().describe("Text style"),
+      }),
     },
     async ({ text, position, layer, size, thickness, rotation, style }) => {
       logger.debug(`Adding text "${text}" at (${position.x},${position.y}) ${position.unit}`);
@@ -288,38 +325,36 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   // Add Zone Tool
   // ------------------------------------------------------
-  server.tool(
+  registerKiCadTool(
+    server,
+    "board",
     "add_zone",
-    "Create a copper fill zone (pour) on a PCB layer for a specified net.",
     {
-      layer: z.string().describe("Layer for the zone"),
-      net: z.string().describe("Net name for the zone"),
-      points: z
-        .array(
-          z.object({
-            x: z.number().describe("X coordinate"),
-            y: z.number().describe("Y coordinate"),
-          }),
-        )
-        .describe("Points defining the zone outline"),
-      unit: z.enum(["mm", "mil", "inch"]).describe("Unit of measurement"),
-      clearance: z.number().optional().describe("Clearance value"),
-      minWidth: z.number().optional().describe("Minimum width"),
-      padConnection: z
-        .enum(["thermal", "solid", "none"])
-        .optional()
-        .describe("Pad connection type"),
+      description: "Create a copper fill zone (pour) on a PCB layer for a specified net.",
+      inputSchema: z.object({
+        layer: z.string().describe("Layer for the zone"),
+        net: z.string().describe("Net name for the zone"),
+        points: z
+          .array(
+            z.object({
+              x: z.number().describe("X coordinate"),
+              y: z.number().describe("Y coordinate"),
+            }),
+          )
+          .describe("Points defining the zone outline"),
+        unit: z.enum(["mm", "mil", "inch"]).describe("Unit of measurement"),
+        clearance: z.number().optional().describe("Clearance value"),
+        minWidth: z.number().optional().describe("Minimum width"),
+      }),
     },
-    async ({ layer, net, points, unit, clearance, minWidth, padConnection }) => {
+    async ({ layer, net, points, unit, clearance, minWidth }) => {
       logger.debug(`Adding zone on layer ${layer} for net ${net}`);
-      const result = await callKicadScript("add_zone", {
+      const result = await callKicadScript("add_copper_pour", {
         layer,
         net,
-        points,
-        unit,
+        points: points.map((point) => ({ ...point, unit })),
         clearance,
         minWidth,
-        padConnection,
       });
 
       return {
@@ -336,11 +371,19 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   // Get Board Extents Tool
   // ------------------------------------------------------
-  server.tool(
+  registerKiCadTool(
+    server,
+    "board",
     "get_board_extents",
-    "Return the bounding box (min/max X and Y) of all objects on the current PCB board.",
     {
-      unit: z.enum(["mm", "mil", "inch"]).optional().describe("Unit of measurement for the result"),
+      description:
+        "Return the bounding box (min/max X and Y) of all objects on the current PCB board.",
+      inputSchema: z.object({
+        unit: z
+          .enum(["mm", "mil", "inch"])
+          .optional()
+          .describe("Unit of measurement for the result"),
+      }),
     },
     async ({ unit }) => {
       logger.debug("Getting board extents");
@@ -360,28 +403,42 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   // ------------------------------------------------------
   // Get Board 2D View Tool
   // ------------------------------------------------------
-  server.tool(
+  registerKiCadTool(
+    server,
+    "board",
     "get_board_2d_view",
-    [
-      "Render a 2D image of the PCB using kicad-cli. Returns PNG, JPG, or SVG.",
-      "Use layers to filter — e.g. [\"F.Cu\",\"B.Cu\",\"Edge.Cuts\"] for copper + outline only.",
-      "Use responseMode to choose delivery:",
-      '  "inline" (default) — PNG/JPG rendered as an image visible to Claude; SVG returned as text.',
-      '  "file" — image written next to the .kicad_pcb as <board>_2d_view.<ext>; filePath is returned.',
-      "Use file mode for large boards to avoid MCP message-size limits.",
-    ].join(" "),
     {
-      pcbPath: z.string().optional().describe("Absolute path to the .kicad_pcb file. Falls back to the currently loaded board if omitted."),
-      layers: z.array(z.string()).optional().describe("Layer names to include, e.g. [\"F.Cu\",\"B.Cu\",\"Edge.Cuts\"]. Omit for all layers."),
-      width: z.number().optional().describe("Output image width in pixels (default: 1600)"),
-      height: z.number().optional().describe("Output image height in pixels (default: 1200)"),
-      format: z.enum(["png", "jpg", "svg"]).optional().describe("Output format (default: png)"),
-      responseMode: z
-        .enum(["inline", "file"])
-        .optional()
-        .describe(
-          '"inline" (default): image returned directly; "file": written to disk, filePath returned',
-        ),
+      description: [
+        "Render a 2D image of the PCB using kicad-cli. Returns PNG, JPG, or SVG.",
+        'Use layers to filter — e.g. ["F.Cu","B.Cu","Edge.Cuts"] for copper + outline only.',
+        "Use responseMode to choose delivery:",
+        '  "inline" (default) — PNG/JPG rendered as an image visible to Claude; SVG returned as text.',
+        '  "file" — image written next to the .kicad_pcb as <board>_2d_view.<ext>; filePath is returned.',
+        "Use file mode for large boards to avoid MCP message-size limits.",
+      ].join(" "),
+      inputSchema: z.object({
+        pcbPath: z
+          .string()
+          .optional()
+          .describe(
+            "Absolute path to the .kicad_pcb file. Falls back to the currently loaded board if omitted.",
+          ),
+        layers: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Layer names to include, e.g. ["F.Cu","B.Cu","Edge.Cuts"]. Omit for all layers.',
+          ),
+        width: z.number().optional().describe("Output image width in pixels (default: 1600)"),
+        height: z.number().optional().describe("Output image height in pixels (default: 1200)"),
+        format: z.enum(["png", "jpg", "svg"]).optional().describe("Output format (default: png)"),
+        responseMode: z
+          .enum(["inline", "file"])
+          .optional()
+          .describe(
+            '"inline" (default): image returned directly; "file": written to disk, filePath returned',
+          ),
+      }),
     },
     async ({ pcbPath, layers, width, height, format, responseMode }) => {
       logger.debug("Getting 2D board view");
@@ -405,7 +462,10 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
         if (result.format === "svg") {
           const parts: { type: "text"; text: string }[] = [];
           if (result.message) parts.push({ type: "text" as const, text: result.message });
-          parts.push({ type: "text" as const, text: Buffer.from(result.imageData, "base64").toString("utf-8") });
+          parts.push({
+            type: "text" as const,
+            text: Buffer.from(result.imageData, "base64").toString("utf-8"),
+          });
           return { content: parts };
         }
         // inline png/jpg — return as renderable image
@@ -434,26 +494,31 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   logger.info("Board management tools registered");
 
   // Import SVG logo onto PCB layer (silkscreen)
-  server.tool(
+  registerKiCadTool(
+    server,
+    "board",
     "import_svg_logo",
-    "Imports an SVG file as filled graphic polygons onto a KiCAD PCB layer (default F.SilkS / front silkscreen). Curves are linearised automatically. Ideal for placing a company or project logo on the board.",
     {
-      pcbPath: z.string().describe("Path to the .kicad_pcb file"),
-      svgPath: z.string().describe("Path to the SVG logo file"),
-      x: z.number().describe("X position of the logo top-left corner in mm"),
-      y: z.number().describe("Y position of the logo top-left corner in mm"),
-      width: z
-        .number()
-        .describe("Target width of the logo in mm (height is scaled to preserve aspect ratio)"),
-      layer: z
-        .string()
-        .optional()
-        .describe("PCB layer name, e.g. F.SilkS or B.SilkS (default: F.SilkS)"),
-      strokeWidth: z
-        .number()
-        .optional()
-        .describe("Outline stroke width in mm (0 = no outline, default 0)"),
-      filled: z.boolean().optional().describe("Fill polygons with solid colour (default true)"),
+      description:
+        "Imports an SVG file as filled graphic polygons onto a KiCAD PCB layer (default F.SilkS / front silkscreen). Curves are linearised automatically. Ideal for placing a company or project logo on the board.",
+      inputSchema: z.object({
+        pcbPath: z.string().describe("Path to the .kicad_pcb file"),
+        svgPath: z.string().describe("Path to the SVG logo file"),
+        x: z.number().describe("X position of the logo top-left corner in mm"),
+        y: z.number().describe("Y position of the logo top-left corner in mm"),
+        width: z
+          .number()
+          .describe("Target width of the logo in mm (height is scaled to preserve aspect ratio)"),
+        layer: z
+          .string()
+          .optional()
+          .describe("PCB layer name, e.g. F.SilkS or B.SilkS (default: F.SilkS)"),
+        strokeWidth: z
+          .number()
+          .optional()
+          .describe("Outline stroke width in mm (0 = no outline, default 0)"),
+        filled: z.boolean().optional().describe("Fill polygons with solid colour (default true)"),
+      }),
     },
     async (args: {
       pcbPath: string;

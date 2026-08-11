@@ -1,14 +1,19 @@
 # Linux Compatibility Audit Report
 
-**Date:** 2025-10-25
+**Audit Date:** 2025-10-25 (historical snapshot)
 **Target Platform:** Ubuntu 24.04 LTS (primary), Fedora, Arch (secondary)
-**Current Status:** Windows-optimized, partial Linux support
+**Status at Audit Time:** Windows-optimized, partial Linux support
+
+> This report is retained as historical remediation context. Its status labels
+> do not describe the current release; see [PLATFORM_GUIDE.md](./PLATFORM_GUIDE.md)
+> and [STATUS_SUMMARY.md](./STATUS_SUMMARY.md) for current support.
 
 ---
 
 ## Executive Summary
 
-The KiCAD MCP Server was originally developed for Windows and has several compatibility issues preventing smooth operation on Linux. This audit identifies all platform-specific issues and provides remediation priorities.
+At the time of this audit, the KiCAD MCP Server had several Linux compatibility
+gaps. The sections below record the original findings and remediation priorities.
 
 **Overall Status:** 🟡 **PARTIAL COMPATIBILITY**
 
@@ -231,7 +236,7 @@ const DEFAULT_LOG_DIR = join(os.homedir(), ".kicad-mcp", "logs");
 ### Ubuntu 24.04 LTS Testing
 
 - [ ] Install KiCAD 9.0 from official PPA
-- [ ] Install Node.js 18+ from NodeSource
+- [ ] Install Node.js 20+ from NodeSource
 - [ ] Clone repository
 - [ ] Run `npm install`
 - [ ] Run `npm run build`

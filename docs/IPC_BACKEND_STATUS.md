@@ -125,8 +125,13 @@ The following MCP commands have IPC handlers:
 ### Installation
 
 ```bash
-pip install kicad-python
+npm ci
+npm run build
+node dist/cli.js setup
 ```
+
+The setup command installs the pinned `kicad-python` release into the server's
+private, hash-locked runtime.
 
 ### Runtime Backend Selection
 
@@ -148,7 +153,7 @@ When the reconnect succeeds, tool responses include `_backend: "ipc"` and
 `_realtime: true`. If IPC is still unavailable or no board API can be opened,
 the server continues to use SWIG and reports `_backend: "swig"` for the result.
 
-Use `check_kicad_ui`, `launch_kicad_ui`, or `get_backend_info` to inspect the
+Use `check_kicad_ui`, `launch_kicad_ui`, or `get_backend_state` to inspect the
 current live backend status. These responses include `backend`,
 `realtime_sync`, and `ipc_connected`.
 
@@ -158,7 +163,7 @@ Once a project is loaded, its entire lifecycle is **pinned to one backend**
 until it is reopened:
 
 - `open_project` pins the session to **ipc** only when the live KiCad GUI
-  provably has the *same* `.kicad_pcb` open (path comparison via the IPC
+  provably has the _same_ `.kicad_pcb` open (path comparison via the IPC
   open-documents list). Otherwise — including every `create_project`, since
   the GUI cannot have a brand-new board open — the session pins to **swig**.
 - A **swig-pinned session never silently upgrades to IPC**, even if KiCad
@@ -241,12 +246,14 @@ Run the test script to verify IPC functionality:
 ### "kicad-python not found"
 
 ```bash
-pip install kicad-python
+node dist/cli.js setup
+node dist/cli.js doctor
 ```
 
 ### "Version mismatch"
 
-- Update kicad-python: `pip install --upgrade kicad-python`
+- Update the checkout with `npm ci`, rebuild, and rerun `node dist/cli.js setup`
+  so the private runtime matches `requirements-lock.txt`
 - Ensure KiCAD 9.0+ is installed
 
 ### "No board open"
@@ -278,7 +285,7 @@ python/
 ## Related Documentation
 
 - [ROADMAP.md](./ROADMAP.md) - Project roadmap
-- [IPC_API_MIGRATION_PLAN.md](./IPC_API_MIGRATION_PLAN.md) - Migration details
+- [ARCHITECTURE.md](./ARCHITECTURE.md) - Backend and protocol architecture
 - [REALTIME_WORKFLOW.md](./REALTIME_WORKFLOW.md) - Collaboration workflows
 - [kicad-python docs](https://docs.kicad.org/kicad-python-main/) - Official API docs
 

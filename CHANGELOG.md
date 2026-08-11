@@ -2,6 +2,42 @@
 
 All notable changes to the KiCAD MCP Server project are documented here.
 
+## [2.7.0] - 2026-08-11
+
+This release migrates the server to the MCP 2026-07-28 protocol and the
+TypeScript SDK v2 while preserving compatibility with legacy 2025 clients.
+
+### Protocol and catalog
+
+- Replaced direct legacy stdio wiring with SDK v2 `serveStdio` negotiation.
+- Added deterministic discovery and cache hints, structured tool results,
+  output schemas, safety annotations, request cancellation, and confirmation
+  for destructive operations.
+- Reconciled the TypeScript and Python command catalogs. The server now
+  exposes 180 KiCad capabilities plus three supplemental discovery tools.
+- Migrated all resources and prompts to SDK v2 and removed unsupported or
+  phantom registrations.
+
+### Runtime and reliability
+
+- Added correlated TypeScript-to-Python request IDs, cancellation handling,
+  bounded drain/restart behavior, and process-group termination.
+- Added a private per-user Python runtime installed from hash-locked
+  requirements without modifying KiCad's bundled Python.
+- Added `setup`, `doctor`, and `serve` CLI commands with cross-platform KiCad
+  discovery and macOS-safe import probes.
+- Normalized backend failures into MCP errors and structured content.
+
+### Distribution, security, and CI
+
+- Added repository marketplaces and an installable `kicad` plugin for Codex
+  and Claude Code, backed by the public `@theavi/kicad-mcp` npm package.
+- Redacted credentials from runtime and JLCPCB logs and removed unsafe
+  installer patterns.
+- Added protocol contracts, bridge lifecycle regressions, package-content
+  validation, Node 20/22/24 coverage, cross-platform Python smoke tests, and
+  hash-locked runtime installation.
+
 ## [2.4.0] - 2026-07-22
 
 Eighteen merges since v2.3.1. Four new tool families land — symbol library

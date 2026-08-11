@@ -1,8 +1,9 @@
-"""
-Comprehensive tool schema definitions for all KiCAD MCP commands
+"""Legacy Python-side command schema reference.
 
-Following MCP 2025-06-18 specification for tool definitions.
-Each tool includes:
+The live MCP 2026-07-28 catalog is registered and validated in TypeScript
+under ``src/tools``.  This partial dictionary remains only for command-level
+Python tests and compatibility checks; it is not used to answer ``tools/list``.
+Each retained entry includes:
 - name: Unique identifier
 - title: Human-readable display name
 - description: Detailed explanation of what the tool does

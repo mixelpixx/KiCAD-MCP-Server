@@ -25,7 +25,7 @@ This guide shows how to configure the KiCAD MCP Server with various MCP-compatib
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/home/YOUR_USERNAME/MCP/KiCAD-MCP-Server/dist/index.js"],
+      "args": ["/home/YOUR_USERNAME/MCP/KiCAD-MCP-Server/dist/cli.js", "serve"],
       "env": {
         "PYTHONPATH": "/usr/lib/kicad/lib/python3/dist-packages",
         "NODE_ENV": "production"
@@ -46,7 +46,7 @@ This guide shows how to configure the KiCAD MCP Server with various MCP-compatib
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/Users/YOUR_USERNAME/MCP/KiCAD-MCP-Server/dist/index.js"]
+      "args": ["/Users/YOUR_USERNAME/MCP/KiCAD-MCP-Server/dist/cli.js", "serve"]
     }
   }
 }
@@ -61,7 +61,7 @@ If KiCad is installed in a non-standard location, you can override the Python pa
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/Users/YOUR_USERNAME/MCP/KiCAD-MCP-Server/dist/index.js"],
+      "args": ["/Users/YOUR_USERNAME/MCP/KiCAD-MCP-Server/dist/cli.js", "serve"],
       "env": {
         "KICAD_PYTHON": "/custom/path/to/python3"
       }
@@ -79,7 +79,7 @@ If KiCad is installed in a non-standard location, you can override the Python pa
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["C:\\Users\\YOUR_USERNAME\\MCP\\KiCAD-MCP-Server\\dist\\index.js"],
+      "args": ["C:\\Users\\YOUR_USERNAME\\MCP\\KiCAD-MCP-Server\\dist\\cli.js", "serve"],
       "env": {
         "PYTHONPATH": "C:\\Program Files\\KiCad\\9.0\\bin\\Lib\\site-packages",
         "NODE_ENV": "production"
@@ -110,7 +110,7 @@ If KiCad is installed in a non-standard location, you can override the Python pa
   "cline.mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/home/YOUR_USERNAME/MCP/KiCAD-MCP-Server/dist/index.js"],
+      "args": ["/home/YOUR_USERNAME/MCP/KiCAD-MCP-Server/dist/cli.js", "serve"],
       "env": {
         "PYTHONPATH": "/usr/lib/kicad/lib/python3/dist-packages"
       }
@@ -128,7 +128,7 @@ Create `.vscode/settings.json` in your project:
   "cline.mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["${workspaceFolder}/../KiCAD-MCP-Server/dist/index.js"],
+      "args": ["${workspaceFolder}/../KiCAD-MCP-Server/dist/cli.js", "serve"],
       "env": {
         "PYTHONPATH": "/usr/lib/kicad/lib/python3/dist-packages"
       }
@@ -150,7 +150,7 @@ Create `.vscode/settings.json` in your project:
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/home/YOUR_USERNAME/MCP/KiCAD-MCP-Server/dist/index.js"],
+      "args": ["/home/YOUR_USERNAME/MCP/KiCAD-MCP-Server/dist/cli.js", "serve"],
       "env": {
         "PYTHONPATH": "/usr/lib/kicad/lib/python3/dist-packages",
         "LOG_LEVEL": "info"
@@ -181,7 +181,7 @@ For any MCP-compatible client that supports STDIO transport:
 ```json
 {
   "command": "node",
-  "args": ["/path/to/KiCAD-MCP-Server/dist/index.js"],
+  "args": ["/path/to/KiCAD-MCP-Server/dist/cli.js", "serve"],
   "transport": "stdio",
   "env": {
     "PYTHONPATH": "/path/to/kicad/python/packages"
@@ -194,7 +194,12 @@ For any MCP-compatible client that supports STDIO transport:
 ```json
 {
   "command": "node",
-  "args": ["/path/to/KiCAD-MCP-Server/dist/index.js", "--config", "/path/to/custom-config.json"],
+  "args": [
+    "/path/to/KiCAD-MCP-Server/dist/cli.js",
+    "serve",
+    "--config",
+    "/path/to/custom-config.json"
+  ],
   "transport": "stdio"
 }
 ```
@@ -265,7 +270,7 @@ where /r "C:\Program Files\KiCad" pcbnew.py
 
 ```bash
 # Start server manually
-node dist/index.js
+node dist/cli.js serve
 
 # Should see output like:
 # [INFO] Using STDIO transport for local communication
@@ -315,12 +320,12 @@ python3 -c "import sys; sys.path.append('/usr/lib/kicad/lib/python3/dist-package
 
 **Error:** `ENOENT: no such file or directory`
 
-**Solution:** Check that `dist/index.js` exists:
+**Solution:** Check that `dist/cli.js` exists:
 
 ```bash
 cd /path/to/KiCAD-MCP-Server
 npm run build
-ls -lh dist/index.js
+ls -lh dist/cli.js
 ```
 
 ### Client Can't Connect
@@ -363,14 +368,14 @@ If you have multiple KiCAD versions installed:
   "mcpServers": {
     "kicad-9": {
       "command": "node",
-      "args": ["/path/to/KiCAD-MCP-Server/dist/index.js"],
+      "args": ["/path/to/KiCAD-MCP-Server/dist/cli.js", "serve"],
       "env": {
         "PYTHONPATH": "/usr/lib/kicad-9/lib/python3/dist-packages"
       }
     },
     "kicad-8": {
       "command": "node",
-      "args": ["/path/to/KiCAD-MCP-Server/dist/index.js"],
+      "args": ["/path/to/KiCAD-MCP-Server/dist/cli.js", "serve"],
       "env": {
         "PYTHONPATH": "/usr/lib/kicad-8/lib/python3/dist-packages"
       }
@@ -398,7 +403,12 @@ Then use it:
 ```json
 {
   "command": "node",
-  "args": ["/path/to/dist/index.js", "--config", "/path/to/config/production.json"]
+  "args": [
+    "/path/to/KiCAD-MCP-Server/dist/cli.js",
+    "serve",
+    "--config",
+    "/path/to/config/production.json"
+  ]
 }
 ```
 
@@ -437,7 +447,7 @@ Production (minimal logging):
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/home/chris/MCP/KiCAD-MCP-Server/dist/index.js"],
+      "args": ["/home/chris/MCP/KiCAD-MCP-Server/dist/cli.js", "serve"],
       "env": {
         "PYTHONPATH": "/usr/share/kicad/scripting/plugins:/usr/lib/kicad/lib/python3/dist-packages"
       }
@@ -453,7 +463,7 @@ Production (minimal logging):
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/home/user/KiCAD-MCP-Server/dist/index.js"],
+      "args": ["/home/user/KiCAD-MCP-Server/dist/cli.js", "serve"],
       "env": {
         "PYTHONPATH": "/usr/lib/python3.12/site-packages"
       }
@@ -471,7 +481,7 @@ Running server in WSL2, client on Windows:
   "mcpServers": {
     "kicad": {
       "command": "wsl",
-      "args": ["node", "/home/user/KiCAD-MCP-Server/dist/index.js"],
+      "args": ["node", "/home/user/KiCAD-MCP-Server/dist/cli.js", "serve"],
       "env": {
         "PYTHONPATH": "/usr/lib/kicad/lib/python3/dist-packages"
       }
@@ -527,7 +537,7 @@ If you encounter issues:
 1. Check logs in `~/.kicad-mcp/logs/` (if logging is enabled)
 2. Verify KiCAD installation: `kicad-cli version`
 3. Test Python modules: `python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"`
-4. Review server startup logs (manual start with `node dist/index.js`)
+4. Review server startup logs (manual start with `node dist/cli.js serve`)
 5. Check client-specific logs (see Troubleshooting section)
 
 For bugs or feature requests, open an issue on GitHub.

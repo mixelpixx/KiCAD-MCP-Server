@@ -1,0 +1,47 @@
+{
+  "name": "kicad",
+  "version": "2.7.0+codex.20260811170011",
+  "description": "Design, inspect, validate, and export KiCad schematics and PCBs from natural-language prompts.",
+  "author": {
+    "name": "KiCad MCP contributors",
+    "url": "https://github.com/mixelpixx/KiCAD-MCP-Server"
+  },
+  "homepage": "https://github.com/mixelpixx/KiCAD-MCP-Server",
+  "repository": "https://github.com/mixelpixx/KiCAD-MCP-Server",
+  "license": "MIT",
+  "keywords": [
+    "kicad",
+    "pcb",
+    "schematic",
+    "electronics",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "KiCad PCB Designer",
+    "shortDescription": "Create and review KiCad circuit boards from prompts.",
+    "longDescription": "Connects Codex to a local KiCad installation and adds an engineering workflow for requirements, schematic capture, PCB layout, ERC/DRC, and manufacturing outputs.",
+    "developerName": "KiCad MCP contributors",
+    "category": "DeveloperTools",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": "Design a KiCad circuit board from my requirements, verify it with ERC and DRC, and clearly report assumptions and remaining engineering risks."
+  },
+  "mcpServers": {
+    "kicad": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@theavi/kicad-mcp@2.7.0",
+        "serve"
+      ],
+      "startup_timeout_sec": 300,
+      "tool_timeout_sec": 3900,
+      "env": {
+        "KICAD_MCP_LOG_LEVEL": "info"
+      }
+    }
+  }
+}

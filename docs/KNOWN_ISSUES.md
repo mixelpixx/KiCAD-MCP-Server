@@ -134,7 +134,7 @@ AttributeError: 'BOARD' object has no attribute 'LT_USER'
 
 If you encounter an issue not listed here:
 
-1. **Check MCP logs:** `~/.kicad-mcp/logs/kicad_interface.log`
+1. **Check MCP logs:** `~/.kicad-mcp/logs/kicad-mcp-YYYY-MM-DD.log`
 2. **Enable developer mode:** Set `KICAD_MCP_DEV=1` to capture session logs
 3. **Check KiCAD version:** `python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"` (must be 9.0+)
 4. **Try the operation in KiCAD directly** -- is it a KiCAD issue?
@@ -187,5 +187,5 @@ python3 python/utils/platform_helper.py
 **Need Help?**
 
 - Check [IPC_BACKEND_STATUS.md](IPC_BACKEND_STATUS.md) for IPC details
-- Check logs: `~/.kicad-mcp/logs/kicad_interface.log`
+- Check logs: `~/.kicad-mcp/logs/kicad-mcp-YYYY-MM-DD.log`
 - Open an issue on GitHub

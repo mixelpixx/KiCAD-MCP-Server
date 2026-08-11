@@ -147,12 +147,12 @@ Claude: [uses get_board_info MCP tool]
 
 - `get_board_info` - Get all components and their positions
 - `get_project_info` - Get project metadata
-- `list_components` - List all components (if implemented)
+- `get_component_list` - List components with optional filters
 
 **Modifying board:**
 
 - `place_component` - Add new components
-- `add_trace` - Add copper traces
+- `route_trace` - Add copper trace segments
 - `add_via` - Add vias
 - `add_copper_pour` - Add copper zones
 - `add_mounting_hole` - Add mounting holes
@@ -429,7 +429,7 @@ The KiCAD MCP Server successfully enables paired circuit board design between AI
 - [LIBRARY_INTEGRATION.md](./LIBRARY_INTEGRATION.md) - Component library system
 - [STATUS_SUMMARY.md](./STATUS_SUMMARY.md) - Current implementation status
 - [ROADMAP.md](./ROADMAP.md) - Future development plans
-- [API.md](./API.md) - Full MCP API reference
+- [TOOL_INVENTORY.md](./TOOL_INVENTORY.md) - Current MCP tool inventory
 
 ## Changelog
 

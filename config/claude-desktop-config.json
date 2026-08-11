@@ -2,7 +2,7 @@
   "mcpServers": {
     "kicad_helper": {
       "command": "node",
-      "args": ["dist/index.js"],
+      "args": ["dist/cli.js", "serve"],
       "cwd": "c:/repo/KiCAD-MCP",
       "env": {
         "NODE_ENV": "production",

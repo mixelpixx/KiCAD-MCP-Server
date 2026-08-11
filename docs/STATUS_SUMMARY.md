@@ -1,47 +1,52 @@
 # KiCAD MCP - Current Status Summary
 
-**Date:** 2026-03-21
-**Version:** 2.2.3 (package.json shows 2.1.0-alpha -- CHANGELOG is authoritative)
+**Date:** 2026-08-11
+**Version:** 2.7.0
 **Phase:** Active development with community contributions
 
 ---
 
 ## Quick Stats
 
-| Metric               | Value                       |
-| -------------------- | --------------------------- |
-| Total MCP Tools      | 122                         |
-| Tool Categories      | 16                          |
-| KiCAD 9.0 Compatible | Yes (verified)              |
-| Platforms            | Linux, Windows, macOS       |
-| JLCPCB Parts Catalog | 2.5M+ components            |
-| Symbol Access        | ~10,000 via dynamic loading |
-| Footprint Libraries  | 153+ auto-discovered        |
-| Contributors         | 10+                         |
-| MCP Protocol Version | 2025-06-18                  |
+| Metric                      | Value                                     |
+| --------------------------- | ----------------------------------------- |
+| Total MCP Tools             | 183 first-class                           |
+| KiCad Capability Categories | 18                                        |
+| MCP Resources               | 18 registrations                          |
+| MCP Prompts                 | 18                                        |
+| KiCAD 9.0 Compatible        | Yes (verified)                            |
+| Platforms                   | Linux, Windows, macOS                     |
+| JLCPCB Parts Catalog        | 2.5M+ components                          |
+| Symbol Access               | ~10,000 via dynamic loading               |
+| Footprint Libraries         | 153+ auto-discovered                      |
+| Contributors                | 10+                                       |
+| MCP Protocol Version        | 2026-07-28 plus legacy 2025 compatibility |
 
 ---
 
 ## Feature Completion Matrix
 
-| Feature Category    | Status   | Tool Count | Details                                                                 |
-| ------------------- | -------- | ---------- | ----------------------------------------------------------------------- |
-| Project Management  | Complete | 5          | Create, open, save, info, snapshot                                      |
-| Board Setup         | Complete | 12         | Size, outline, layers, mounting holes, zones, text, 2D view, SVG import |
-| Component Placement | Complete | 16         | Place, move, rotate, delete, edit, find, pads, arrays, align, duplicate |
-| Routing             | Complete | 13         | Traces, vias, pad-to-pad, differential pairs, netclasses, copy pattern  |
-| Design Rules / DRC  | Complete | 8          | Set/get rules, DRC, net classes, clearance checks                       |
-| Export              | Complete | 8          | Gerber, PDF, SVG, 3D, BOM, netlist, position file, VRML                 |
-| Schematic           | Complete | 27         | Components, wiring, net labels, connections, ERC, export, sync to board |
-| Footprint Libraries | Complete | 4          | List, search, browse, info                                              |
-| Symbol Libraries    | Complete | 4          | List, search, browse, info                                              |
-| Footprint Creator   | Complete | 4          | Create custom footprints, edit pads, register libraries                 |
-| Symbol Creator      | Complete | 4          | Create custom symbols, register libraries                               |
-| Datasheet Tools     | Complete | 2          | LCSC datasheet enrichment                                               |
-| JLCPCB Integration  | Complete | 5          | Local DB, search, part details, stats, alternatives                     |
-| Freerouting         | Complete | 4          | Autoroute, DSN export, SES import, availability check                   |
-| UI Management       | Complete | 2          | Check/launch KiCAD                                                      |
-| Router Tools        | Complete | 4          | Category browsing, tool search, execute                                 |
+| Feature Category         | Status   | Tool Count | Details                                                      |
+| ------------------------ | -------- | ---------: | ------------------------------------------------------------ |
+| Project Management       | Complete |          6 | Create, open, close, save, inspect, snapshot                 |
+| Board Setup              | Complete |         12 | Size, outline, layers, mounting, zones, text, rendering      |
+| Component Placement      | Complete |         16 | Place, move, inspect, edit, delete, arrays, alignment        |
+| Routing                  | Complete |         16 | Traces, vias, pad routing, differential pairs, nets, zones   |
+| Design Rules / DRC       | Complete |          5 | Rules, net classes, DRC execution and findings               |
+| Export and Manufacturing | Complete |         27 | Gerber, drill, BOM, position, drawings, 3D and interchange   |
+| Schematic                | Complete |         43 | Components, wiring, labels, ERC, inspection, export and sync |
+| Schematic Batch          | Complete |          9 | Batched placement, wiring, labels and edits                  |
+| Schematic Hierarchy      | Complete |          2 | Sheet creation and listing                                   |
+| Schematic Layout         | Complete |          4 | Field layout, snapping and decluttering                      |
+| Libraries                | Complete |         10 | Footprint and symbol library discovery                       |
+| Footprints               | Complete |          7 | Creation, pads, libraries and 3D models                      |
+| Symbols                  | Complete |          8 | Creation, properties, import, export and updates             |
+| Datasheets               | Complete |          2 | Datasheet lookup and enrichment                              |
+| JLCPCB                   | Complete |          5 | Local DB, search, part details, stats, alternatives          |
+| Freerouting              | Complete |          4 | Autoroute, DSN export, SES import, availability              |
+| EAGLE Import             | Complete |          1 | Project import                                               |
+| UI and Backend State     | Complete |          3 | Check, launch and inspect backend state                      |
+| Supplemental Discovery   | Complete |          3 | Category listing, category lookup and search                 |
 
 ---
 
@@ -101,6 +106,14 @@ The server automatically selects the best backend:
 
 ## Recent Development Highlights
 
+### v2.7.0 (2026-08-11)
+
+- MCP TypeScript SDK v2, Node.js 20+, and Zod 4
+- MCP 2026-07-28 negotiation with legacy 2025 compatibility through `serveStdio`
+- Deterministic cache hints, structured results, annotations, and destructive-operation confirmation
+- 183 first-class tools with runtime-derived catalog metadata
+- Correlated and cancellable Python worker bridge
+
 ### v2.2.3 (2026-03-11)
 
 - FFC/ribbon cable passthrough workflow (connect_passthrough, sync_schematic_to_board)
@@ -132,7 +145,7 @@ The server automatically selects the best backend:
 - Complete schematic wiring system
 - Dynamic symbol loading (~10,000 symbols)
 - JLCPCB parts integration
-- Router pattern (70% context reduction)
+- Historical router prototype (superseded by the first-class catalog)
 
 ---
 
@@ -158,7 +171,7 @@ The server automatically selects the best backend:
 
 1. Check [README.md](../README.md) for installation
 2. Review [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for common problems
-3. Check logs: `~/.kicad-mcp/logs/kicad_interface.log`
+3. Check logs: `~/.kicad-mcp/logs/kicad-mcp-YYYY-MM-DD.log`
 
 **For Contributors:**
 
@@ -172,4 +185,4 @@ The server automatically selects the best backend:
 
 ---
 
-_Last Updated: 2026-04-11_
+_Last Updated: 2026-08-11_

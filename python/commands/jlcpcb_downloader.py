@@ -28,6 +28,7 @@ import logging
 import os
 import shutil
 import sqlite3
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -55,6 +56,24 @@ def _progress(progress: ProgressFn, message: str) -> None:
         except Exception:  # pragma: no cover - progress must never break a download
             pass
     logger.info(message)
+
+
+def _validate_sqlite(path: Path, minimum_size: int = 1) -> None:
+    """Reject truncated, non-SQLite, or internally corrupt catalog downloads."""
+    if not path.is_file() or path.stat().st_size < minimum_size:
+        raise RuntimeError(f"Downloaded catalog is too small to be valid: {path}")
+    with path.open("rb") as fh:
+        if fh.read(16) != b"SQLite format 3\x00":
+            raise RuntimeError(f"Downloaded catalog is not a SQLite database: {path}")
+
+    connection = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+    try:
+        result = connection.execute("PRAGMA quick_check(1)").fetchone()
+    finally:
+        connection.close()
+    if not result or result[0] != "ok":
+        detail = result[0] if result else "no result"
+        raise RuntimeError(f"Downloaded catalog failed SQLite integrity checking: {detail}")
 
 
 # ---------------------------------------------------------------------------
@@ -178,14 +197,35 @@ def convert_source_sqlite(
 ) -> Dict[str, int]:
     """Convert a prebuilt source SQLite (CDFER or yaqwsx) into the MCP schema.
 
-    Writes a fresh ``target_path`` (deleting any existing file) with the
-    ``components`` table + FTS index that ``JLCPCBPartsManager`` expects.
+    Builds and validates a temporary database before atomically replacing
+    ``target_path``, so a failed conversion preserves the previous catalog.
     Returns ``{"total","basic","extended"}`` counts.
     """
     source_path = Path(source_path)
     target_path = Path(target_path)
     if not source_path.exists():
         raise FileNotFoundError(f"source database not found: {source_path}")
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{target_path.name}.", suffix=".tmp", dir=str(target_path.parent)
+    )
+    os.close(temporary_fd)
+    temporary_target = Path(temporary_name)
+
+    try:
+        return _convert_source_sqlite(source_path, target_path, temporary_target, progress)
+    finally:
+        temporary_target.unlink(missing_ok=True)
+
+
+def _convert_source_sqlite(
+    source_path: Path,
+    target_path: Path,
+    temporary_target: Path,
+    progress: ProgressFn,
+) -> Dict[str, int]:
+    """Implementation for :func:`convert_source_sqlite`."""
 
     src = sqlite3.connect(str(source_path))
     src.row_factory = sqlite3.Row
@@ -194,10 +234,7 @@ def convert_source_sqlite(
         relation = _pick_source_relation(src)
         _progress(progress, f"Converting from source relation '{relation}'...")
 
-        if target_path.exists():
-            target_path.unlink()
-
-        dst = sqlite3.connect(str(target_path))
+        dst = sqlite3.connect(str(temporary_target))
         try:
             dst.execute("""
                 CREATE TABLE components (
@@ -312,6 +349,15 @@ def convert_source_sqlite(
     finally:
         src.close()
 
+    try:
+        _validate_sqlite(temporary_target)
+        # Publish only a complete, validated database. os.replace is atomic on
+        # the supported local filesystems and preserves an existing good DB if
+        # conversion fails before this point.
+        os.replace(temporary_target, target_path)
+    finally:
+        temporary_target.unlink(missing_ok=True)
+
     return {"total": total, "basic": basic, "extended": extended}
 
 
@@ -334,6 +380,8 @@ def download_cdfer(
 
     cache_dir.mkdir(parents=True, exist_ok=True)
     dest = cache_dir / "cdfer.sqlite3"
+    if dest.is_symlink() or (dest.exists() and not dest.is_file()):
+        raise RuntimeError(f"Refusing to download through a non-regular path: {dest}")
 
     # HEAD once for the freshness date AND the total size, so we can detect a
     # cache file that is already complete (e.g. a prior run downloaded it but
@@ -342,18 +390,31 @@ def download_cdfer(
     # answers with HTTP 416, and the retry loop would spin on it until failure.
     last_modified: Optional[str] = None
     total_size: Optional[int] = None
+    entity_validator: Optional[str] = None
     try:
-        head = requests.head(CDFER_SQLITE_URL, allow_redirects=True, timeout=30)
+        head = requests.head(
+            CDFER_SQLITE_URL,
+            allow_redirects=True,
+            timeout=30,
+            headers={"Accept-Encoding": "identity"},
+        )
         if head.ok:
             last_modified = head.headers.get("Last-Modified")
+            entity_validator = head.headers.get("ETag") or last_modified
             cl = head.headers.get("Content-Length")
             total_size = int(cl) if cl and cl.isdigit() else None
     except requests.RequestException as exc:
         logger.debug(f"HEAD {CDFER_SQLITE_URL} failed: {exc}")
 
     if total_size and dest.exists() and dest.stat().st_size == total_size:
-        _progress(progress, "CDFER SQLite already fully downloaded; skipping download.")
-        return dest, last_modified
+        try:
+            _validate_sqlite(dest, minimum_size=1_000_000)
+        except (OSError, RuntimeError, sqlite3.Error) as exc:
+            _progress(progress, f"Cached CDFER catalog is invalid ({exc}); restarting.")
+            dest.unlink(missing_ok=True)
+        else:
+            _progress(progress, "CDFER SQLite already fully downloaded; skipping download.")
+            return dest, last_modified
 
     _progress(
         progress,
@@ -366,7 +427,11 @@ def download_cdfer(
     while True:
         attempt += 1
         resume_from = dest.stat().st_size if dest.exists() else 0
-        headers = {"Range": f"bytes={resume_from}-"} if resume_from else {}
+        headers = {"Accept-Encoding": "identity"}
+        if resume_from:
+            headers["Range"] = f"bytes={resume_from}-"
+            if entity_validator:
+                headers["If-Range"] = entity_validator
         try:
             # (connect timeout, read timeout): a stalled socket raises after 120s
             # of no data, so we can resume rather than hang forever.
@@ -388,6 +453,14 @@ def download_cdfer(
                 if resume_from and resp.status_code == 200:
                     resume_from = 0
                 resp.raise_for_status()
+                if resume_from and resp.status_code == 206:
+                    content_range = resp.headers.get("Content-Range", "")
+                    expected_prefix = f"bytes {resume_from}-"
+                    if not content_range.startswith(expected_prefix):
+                        dest.unlink(missing_ok=True)
+                        raise RuntimeError(
+                            "CDFER server returned a mismatched byte range while resuming"
+                        )
                 last_modified = last_modified or resp.headers.get("Last-Modified")
                 mode = "ab" if resume_from else "wb"
                 written = resume_from
@@ -401,9 +474,19 @@ def download_cdfer(
                         if written >= next_mark:
                             _progress(progress, f"Downloaded {written // (1024 * 1024)} MB...")
                             next_mark += 50 * 1024 * 1024
+            actual_size = dest.stat().st_size
+            if total_size and actual_size != total_size:
+                if actual_size > total_size:
+                    dest.unlink(missing_ok=True)
+                    raise RuntimeError(
+                        "CDFER server returned more bytes than its advertised content length"
+                    )
+                raise requests.RequestException(
+                    f"download ended at {actual_size} of {total_size} bytes"
+                )
             break  # clean end of stream
         except requests.RequestException as exc:
-            if attempt > max_retries:
+            if attempt >= max_retries:
                 raise RuntimeError(
                     f"CDFER download failed after {max_retries} retries: {exc}"
                 ) from exc
@@ -415,8 +498,11 @@ def download_cdfer(
             )
             time.sleep(min(2 * attempt, 10))
 
-    if dest.stat().st_size < 1_000_000:
-        raise RuntimeError("CDFER download too small to be valid")
+    try:
+        _validate_sqlite(dest, minimum_size=1_000_000)
+    except (OSError, RuntimeError, sqlite3.Error):
+        dest.unlink(missing_ok=True)
+        raise
     return dest, last_modified
 
 
@@ -445,12 +531,19 @@ def download_yaqwsx(cache_dir: Path, progress: ProgressFn = None) -> Path:
 
     def _curl(url: str, dst: Path) -> bool:
         # -C - resumes a partial file; --retry handles transient stalls/drops.
+        if dst.is_symlink() or (dst.exists() and not dst.is_file()):
+            raise RuntimeError(f"Refusing to download through a non-regular path: {dst}")
         return (
             subprocess.run(
                 [
                     "curl",
                     "-L",
                     "-f",
+                    "--proto",
+                    "=https",
+                    "--proto-redir",
+                    "=https",
+                    "--tlsv1.2",
                     "-C",
                     "-",
                     "--retry",
@@ -492,18 +585,40 @@ def download_yaqwsx(cache_dir: Path, progress: ProgressFn = None) -> Path:
         if not _curl(f"{YAQWSX_BASE_URL}/cache.zip", zip_dst):
             raise RuntimeError("failed to download yaqwsx cache.zip")
 
+    _progress(progress, "Testing yaqwsx archive integrity...")
+    test_result = subprocess.run([seven_zip, "t", str(zip_dst)], capture_output=True, text=True)
+    if test_result.returncode != 0:
+        for archive_part in [zip_dst, *cache_dir.glob("cache.z*")]:
+            if archive_part.is_file() or archive_part.is_symlink():
+                archive_part.unlink(missing_ok=True)
+        raise RuntimeError(f"7z archive integrity test failed: {test_result.stderr[:300]}")
+
+    extract_dir = cache_dir / "yaqwsx-extract"
+    _safe_rmtree(extract_dir)
+    extract_dir.mkdir(parents=True)
     _progress(progress, f"Extracting archive with {seven_zip}...")
     result = subprocess.run(
-        [seven_zip, "x", "-y", "-o" + str(cache_dir), str(zip_dst)],
+        [seven_zip, "x", "-y", "-o" + str(extract_dir), str(zip_dst)],
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
+        _safe_rmtree(extract_dir)
         raise RuntimeError(f"7z extraction failed: {result.stderr[:300]}")
 
-    sqlite_path = cache_dir / "cache.sqlite3"
-    if not sqlite_path.exists():
+    extracted_candidates = list(extract_dir.rglob("cache.sqlite3"))
+    if len(extracted_candidates) != 1:
+        _safe_rmtree(extract_dir)
         raise RuntimeError("yaqwsx archive did not yield cache.sqlite3")
+    extracted_sqlite = extracted_candidates[0]
+    try:
+        if extract_dir.resolve() not in extracted_sqlite.resolve().parents:
+            raise RuntimeError("yaqwsx archive resolved outside its extraction directory")
+        _validate_sqlite(extracted_sqlite)
+        sqlite_path = cache_dir / "cache.sqlite3"
+        os.replace(extracted_sqlite, sqlite_path)
+    finally:
+        _safe_rmtree(extract_dir)
     return sqlite_path
 
 
@@ -520,23 +635,40 @@ def _download_official(target: Path, force: bool, progress: ProgressFn) -> Dict[
     parts = client.download_full_database(
         callback=lambda page, total, msg: _progress(progress, msg)
     )
-    if force and target.exists():
-        target.unlink()
+    if not parts:
+        raise RuntimeError("official JLCPCB API returned an empty catalog")
 
-    mgr = JLCPCBPartsManager(db_path=str(target))
-    try:
-        mgr.import_parts(parts, progress_callback=lambda c, t, m: _progress(progress, m))
-        stats = mgr.get_database_stats()
-    finally:
-        mgr.close()
-    return _result(
-        "official-api",
-        target,
-        stats["total_parts"],
-        stats["basic_parts"],
-        stats["extended_parts"],
-        None,
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary_fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{target.name}.", suffix=".tmp", dir=str(target.parent)
     )
+    os.close(temporary_fd)
+    temporary_target = Path(temporary_name)
+    try:
+        mgr = JLCPCBPartsManager(db_path=str(temporary_target))
+        try:
+            mgr.import_parts(parts, progress_callback=lambda c, t, m: _progress(progress, m))
+            stats = mgr.get_database_stats()
+        finally:
+            mgr.close()
+
+        if stats["total_parts"] != len(parts):
+            raise RuntimeError(
+                "official JLCPCB catalog import was incomplete: "
+                f"expected {len(parts)} parts, imported {stats['total_parts']}"
+            )
+        _validate_sqlite(temporary_target)
+        os.replace(temporary_target, target)
+        return _result(
+            "official-api",
+            target,
+            stats["total_parts"],
+            stats["basic_parts"],
+            stats["extended_parts"],
+            None,
+        )
+    finally:
+        temporary_target.unlink(missing_ok=True)
 
 
 # Warn if the catalog is older than this (CDFER's pipeline has stalled for

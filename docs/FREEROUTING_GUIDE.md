@@ -174,7 +174,7 @@ Set `FREEROUTING_JAR` in your MCP client configuration to avoid specifying the p
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/path/to/KiCAD-MCP-Server/dist/index.js"],
+      "args": ["/path/to/KiCAD-MCP-Server/dist/cli.js", "serve"],
       "env": {
         "FREEROUTING_JAR": "/path/to/freerouting.jar"
       }

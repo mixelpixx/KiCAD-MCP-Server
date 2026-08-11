@@ -5,7 +5,7 @@
  * using the create_footprint, edit_footprint_pad, and list_footprint_libraries tools.
  */
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { logger } from "../logger.js";
 
@@ -15,17 +15,20 @@ export function registerFootprintPrompts(server: McpServer): void {
   // ------------------------------------------------------
   // Create Footprint Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "create_footprint_guide",
     {
-      component: z
-        .string()
-        .describe(
-          "Component description, e.g. 'SOT-23 NPN transistor' or '2-pin JST XH 2.5mm connector'",
-        ),
-      libraryPath: z.string().optional().describe("Target .pretty library path (optional)"),
+      description: "Guide creation of a KiCad 9 footprint from a component description",
+      argsSchema: z.object({
+        component: z
+          .string()
+          .describe(
+            "Component description, e.g. 'SOT-23 NPN transistor' or '2-pin JST XH 2.5mm connector'",
+          ),
+        libraryPath: z.string().optional().describe("Target .pretty library path (optional)"),
+      }),
     },
-    () => ({
+    ({ component, libraryPath }) => ({
       messages: [
         {
           role: "user",
@@ -34,10 +37,10 @@ export function registerFootprintPrompts(server: McpServer): void {
             text: `You are a KiCAD footprint expert. Create a correct KiCAD 9 footprint using the create_footprint tool.
 
 ## Component to footprint
-{{component}}
+${component}
 
 ## Library path
-{{libraryPath}}
+${libraryPath ?? "Not specified; ask for or select an appropriate .pretty library path."}
 
 ## Rules for correct footprints
 
@@ -91,7 +94,7 @@ export function registerFootprintPrompts(server: McpServer): void {
 | SOIC-8    | 1.27 mm| 1.6 × 0.6 mm     | 4 pins each side             |
 | DIP-8     | 2.54 mm| dia 1.6, drill 0.8| THT, 100 mil grid            |
 
-Now create the footprint for: {{component}}`,
+Now create the footprint for: ${component}`,
           },
         },
       ],
@@ -101,18 +104,21 @@ Now create the footprint for: {{component}}`,
   // ------------------------------------------------------
   // Footprint IPC Checklist Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "footprint_ipc_checklist",
     {
-      footprintPath: z.string().describe("Path to the .kicad_mod file to review"),
+      description: "Review a KiCad footprint against an IPC-7351-oriented checklist",
+      argsSchema: z.object({
+        footprintPath: z.string().describe("Path to the .kicad_mod file to review"),
+      }),
     },
-    () => ({
+    ({ footprintPath }) => ({
       messages: [
         {
           role: "user",
           content: {
             type: "text",
-            text: `Review the footprint at {{footprintPath}} against IPC-7351 land pattern guidelines.
+            text: `Review the footprint at ${footprintPath} against IPC-7351 land pattern guidelines.
 
 Check:
 1. **Pad size** – is the copper area sufficient for soldering (not undersized)?

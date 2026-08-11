@@ -352,7 +352,7 @@ To use the official API instead of JLCSearch:
 ```python
 from commands.jlcpcb import JLCPCBClient
 
-# Set credentials in .env file:
+# Set all three credentials in the process environment before launching MCP:
 # JLCPCB_APP_ID=<your_app_id>
 # JLCPCB_API_KEY=<your_access_key>
 # JLCPCB_API_SECRET=<your_secret_key>

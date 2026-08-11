@@ -386,9 +386,8 @@ class IPCBoardAPI(BoardAPI):
         the board outline.
         """
         try:
-            from kipy.board_types import BoardRectangle
+            from kipy.board_types import BoardLayer, BoardRectangle
             from kipy.geometry import Vector2
-            from kipy.proto.board.board_types_pb2 import BoardLayer
             from kipy.util.units import from_mm
 
             board = self._get_board()
@@ -815,15 +814,14 @@ class IPCBoardAPI(BoardAPI):
         Creates a basic footprint via IPC with just reference/value fields.
         """
         try:
-            from kipy.board_types import Footprint
+            from kipy.board_types import BoardLayer, FootprintInstance
             from kipy.geometry import Angle, Vector2
-            from kipy.proto.board.board_types_pb2 import BoardLayer
             from kipy.util.units import from_mm
 
             board = self._get_board()
 
             # Create footprint
-            fp = Footprint()
+            fp = FootprintInstance()
             fp.position = Vector2.from_xy(from_mm(x), from_mm(y))
             fp.orientation = Angle.from_degrees(rotation)
 
@@ -834,10 +832,8 @@ class IPCBoardAPI(BoardAPI):
                 fp.layer = BoardLayer.BL_F_Cu
 
             # Set reference and value
-            if fp.reference_field:
-                fp.reference_field.text.value = reference
-            if fp.value_field:
-                fp.value_field.text.value = value if value else footprint
+            fp.reference_field.text.value = reference
+            fp.value_field.text.value = value if value else footprint
 
             # Begin transaction
             commit = board.begin_commit()
@@ -1047,9 +1043,8 @@ class IPCBoardAPI(BoardAPI):
         The track appears immediately in the KiCAD UI.
         """
         try:
-            from kipy.board_types import Track
+            from kipy.board_types import BoardLayer, Track
             from kipy.geometry import Vector2
-            from kipy.proto.board.board_types_pb2 import BoardLayer
             from kipy.util.units import from_mm
 
             board = self._get_board()
@@ -1114,9 +1109,8 @@ class IPCBoardAPI(BoardAPI):
     ) -> bool:
         """Add a copper arc track to the board."""
         try:
-            from kipy.board_types import ArcTrack
+            from kipy.board_types import ArcTrack, BoardLayer
             from kipy.geometry import Vector2
-            from kipy.proto.board.board_types_pb2 import BoardLayer
             from kipy.util.units import from_mm
 
             board = self._get_board()
@@ -1180,9 +1174,8 @@ class IPCBoardAPI(BoardAPI):
         The via appears immediately in the KiCAD UI.
         """
         try:
-            from kipy.board_types import Via
+            from kipy.board_types import Via, ViaType
             from kipy.geometry import Vector2
-            from kipy.proto.board.board_types_pb2 import ViaType
             from kipy.util.units import from_mm
 
             board = self._get_board()
@@ -1243,9 +1236,8 @@ class IPCBoardAPI(BoardAPI):
     ) -> bool:
         """Add text to the board."""
         try:
-            from kipy.board_types import BoardText
+            from kipy.board_types import BoardLayer, BoardText
             from kipy.geometry import Angle, Vector2
-            from kipy.proto.board.board_types_pb2 import BoardLayer
             from kipy.util.units import from_mm
 
             board = self._get_board()
@@ -1389,9 +1381,8 @@ class IPCBoardAPI(BoardAPI):
             name: Optional zone name
         """
         try:
-            from kipy.board_types import Zone, ZoneFillMode, ZoneType
+            from kipy.board_types import BoardLayer, Zone, ZoneFillMode, ZoneType
             from kipy.geometry import PolyLine, PolyLineNode, Vector2
-            from kipy.proto.board.board_types_pb2 import BoardLayer
             from kipy.util.units import from_mm
 
             board = self._get_board()
@@ -1433,9 +1424,9 @@ class IPCBoardAPI(BoardAPI):
 
             # Set fill mode
             if fill_mode == "hatched":
-                zone.fill_mode = ZoneFillMode.ZFM_HATCHED
+                zone.proto.copper_settings.fill_mode = ZoneFillMode.ZFM_HATCHED
             else:
-                zone.fill_mode = ZoneFillMode.ZFM_SOLID
+                zone.proto.copper_settings.fill_mode = ZoneFillMode.ZFM_SOLID
 
             # Create outline polyline
             outline = PolyLine()

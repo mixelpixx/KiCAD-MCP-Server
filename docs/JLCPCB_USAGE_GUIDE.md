@@ -165,23 +165,21 @@ Visit [JLCPCB](https://jlcpcb.com/) and get your API credentials:
 1. Log in to your JLCPCB account
 2. Go to: **Account → API Management**
 3. Click "Create API Key"
-4. Save your `appKey` and `appSecret`
+4. Save your app ID, access key, and secret key
 
 #### 2. Configure Environment Variables
 
 Add to your shell profile (`~/.bashrc`, `~/.zshrc`, or `~/.profile`):
 
 ```bash
-export JLCPCB_API_KEY="your_app_key_here"
-export JLCPCB_API_SECRET="your_app_secret_here"
+export JLCPCB_APP_ID="your_app_id_here"
+export JLCPCB_API_KEY="your_access_key_here"
+export JLCPCB_API_SECRET="your_secret_key_here"
 ```
 
-Or create a `.env` file in the project root:
-
-```
-JLCPCB_API_KEY=your_app_key_here
-JLCPCB_API_SECRET=your_app_secret_here
-```
+If your MCP launcher does not inherit the shell profile, put the same three
+values in that launcher's `env` configuration. Project-root `.env` files are
+not loaded automatically.
 
 #### 3. Download the Parts Database
 
@@ -447,8 +445,9 @@ Future versions will support incremental updates that only fetch new/changed par
 **Solution:** Set environment variables:
 
 ```bash
-export JLCPCB_API_KEY="your_key"
-export JLCPCB_API_SECRET="your_secret"
+export JLCPCB_APP_ID="your_app_id"
+export JLCPCB_API_KEY="your_access_key"
+export JLCPCB_API_SECRET="your_secret_key"
 ```
 
 ### "Database not found or empty"

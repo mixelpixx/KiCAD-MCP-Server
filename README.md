@@ -15,23 +15,32 @@ https://github.com/mixelpixx/KiCAD-MCP-Server/discussions/73
 
 # KiCAD MCP Server
 
-A Model Context Protocol (MCP) server that enables AI assistants like Claude to interact with KiCAD for PCB design automation. Built on the MCP 2025-06-18 specification, this server provides comprehensive tool schemas and real-time project state access for intelligent PCB design workflows.
+A Model Context Protocol (MCP) server that enables AI assistants to automate KiCad PCB design. It uses the MCP 2026-07-28 stateless protocol core while retaining the SDK's legacy 2025 compatibility path for existing desktop clients.
+
+## Install without cloning the repository
+
+The repository now contains a publishable npm runtime plus a universal Codex/Claude Code plugin. After the `@theavi/kicad-mcp` npm release is published, users can install the plugin from the GitHub marketplace and start designing without cloning, building, creating a virtual environment, or editing MCP configuration files.
+
+- Codex: `codex plugin marketplace add mixelpixx/KiCAD-MCP-Server`, then install **KiCad PCB Designer** from `/plugins`.
+- Claude Code: `/plugin marketplace add mixelpixx/KiCAD-MCP-Server`, then `/plugin install kicad@kicad-mcp`.
+
+KiCad 9+ and Node.js 20+ are local prerequisites. The first launch automatically creates a private Python runtime. See [Plugin distribution and installation](docs/PLUGIN_DISTRIBUTION.md) for the complete user and publisher workflow.
 
 ## Overview
 
-The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standard from Anthropic that allows AI assistants to securely connect to external tools and data sources. This implementation provides a standardized bridge between AI assistants and KiCAD, enabling natural language control of PCB design operations.
+The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standard for connecting AI assistants to external tools and data sources. This implementation provides a standardized bridge between MCP clients and KiCad, enabling natural-language control of PCB design operations.
 
 **Key Capabilities:**
 
-- 122 tools across 12 categories with JSON Schema validation
-- Smart tool discovery with router pattern (reduces AI context by 70%)
-- 8 dynamic resources exposing project state
+- 180 KiCad tools across 18 categories, plus 3 supplemental discovery tools
+- Structured tool results, cancellation propagation, annotations, and MRTR confirmation for destructive operations
+- 18 live resources and 18 reusable prompts
 - Complete schematic workflow with 27 tools and dynamic symbol loading (~10,000 symbols)
 - Freerouting autorouter integration (Java, Docker, or Podman)
 - Custom footprint and symbol creation tools
 - JLCPCB parts integration with 2.5M+ component catalog and local library search
 - Datasheet enrichment via LCSC
-- Full MCP 2025-06-18 protocol compliance
+- MCP 2026-07-28 discovery, deterministic cacheable catalogs, and legacy 2025 client compatibility
 - Cross-platform support (Linux, Windows, macOS)
 - Real-time KiCAD UI integration via IPC API (experimental)
 - Comprehensive error handling and logging
@@ -39,6 +48,16 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 ## Try out Arduino MCP - now you can get Claude to help in the IDE, real time!:
 
 https://github.com/mixelpixx/arduino-ide
+
+## What's New in v2.7.0
+
+### MCP 2026-07-28 migration
+
+- Migrated the server to the MCP TypeScript SDK v2, Node.js 20+, and Zod 4.
+- Added modern stateless protocol negotiation while retaining legacy 2025 client compatibility.
+- Added structured tool results, output schemas, safety annotations, cacheable discovery, cancellation propagation, and confirmation for destructive operations.
+- Reconciled the complete TypeScript/Python command catalog and now exposes 183 first-class tools.
+- Added an installable Codex/Claude plugin and a private, hash-locked Python runtime for zero-clone installation from npm.
 
 ## What's New in v2.4.0
 
@@ -82,14 +101,13 @@ Full details in the [CHANGELOG](CHANGELOG.md).
 
 ### Eagle schematic import
 
-- `import_eagle_schematic` converts Eagle `.sch` XML designs to KiCad format
+- `import_eagle_project` converts Eagle `.sch` XML designs to KiCad format
   with symbol mapping, net wires, multi-gate parts, dangling-wire pruning,
   and ground-truth ERC reporting via `kicad-cli`.
 
 ### 3D model tools and interactive reload
 
-- `add_component_3d_model` / `remove_component_3d_model` for attaching
-  STEP/WRL models to footprints.
+- `add_component_3d_model` attaches STEP/WRL models to footprints.
 - Opt-in `KICAD_INTERACTIVE_SCHEMATIC=1` auto-confirms KiCad's reload dialog
   on Windows after schematic writes.
 
@@ -305,21 +323,15 @@ For OpenCode on Windows, the backend can be configured as `auto`, `ipc`, or
 `swig` during setup. See [OpenCode (Windows)](#opencode-windows) for the
 configuration command and backend options.
 
-### Tool Discovery & Router Pattern
+### Tool Discovery
 
-We've implemented an intelligent tool router to keep AI context efficient while maintaining full functionality:
+All 180 KiCad capabilities are first-class MCP tools with published input and output schemas. Three additional, backend-free tools provide a convenient catalog without inventing a second execution path:
 
-- **22 direct tools** always visible for high-frequency operations
-- **100 routed tools** organized into 12 categories (board, component, export, drc, schematic, library, symbol_pins, schematic_hierarchy, schematic_layout, schematic_batch, routing, autoroute)
-- **4 router tools** for discovery and execution:
-  - `list_tool_categories` - Browse all available categories
-  - `get_category_tools` - View tools in a specific category
-  - `search_tools` - Find tools by keyword
-  - `execute_tool` - Run any tool with parameters
+- `list_tool_categories` - Browse all 18 capability categories
+- `get_category_tools` - View the tools in one category
+- `search_tools` - Search names and descriptions by keyword
 
-**Why this matters:** By organizing tools into discoverable categories, Claude can intelligently find and use the right tool for your task without loading all 122 tool schemas into every conversation. This reduces context consumption while maintaining full access to all functionality.
-
-**Usage is seamless:** Just ask naturally - "export gerber files" or "add mounting holes" - and Claude will discover and execute the appropriate tools automatically.
+The catalog is populated by the same registrations used for `tools/list`, so it cannot drift from the callable tool set. Clients may call every returned tool directly by name.
 
 ### NEEDS TESTING - REPORT ISSUES
 
@@ -359,34 +371,36 @@ Every tool now includes complete JSON Schema definitions with:
 
 ### Resources Capability
 
-Access project state without executing tools:
+The server publishes 18 read-only resources and templates for project, board, component, footprint, and symbol state. Stable examples include:
 
-- `kicad://project/current/info` - Project metadata
-- `kicad://project/current/board` - Board properties
-- `kicad://project/current/components` - Component list (JSON)
-- `kicad://project/current/nets` - Electrical nets
-- `kicad://project/current/layers` - Layer stack configuration
-- `kicad://project/current/design-rules` - Current DRC settings
-- `kicad://project/current/drc-report` - Design rule violations
-- `kicad://board/preview.png` - Board visualization (PNG)
+- `kicad://project/info`, `kicad://project/properties`, `kicad://project/status`
+- `kicad://board/info`, `kicad://board/layers`, `kicad://board/statistics`
+- `kicad://components` and `kicad://components/placement`
+- `kicad://board/extents{?unit}` and `kicad://board/2d-view{?format,width,height,layers}`
+- `kicad://component/{reference}/details` and `/connections`
+- library, footprint, and symbol lookup templates
+
+Backend failures are returned as MCP errors rather than successful error documents.
 
 ### Protocol Compliance
 
-- Updated to MCP SDK 1.21.0 (latest)
-- Full JSON-RPC 2.0 support
-- Proper capability negotiation
-- Standards-compliant error codes
+- TypeScript MCP SDK v2 (`@modelcontextprotocol/server`)
+- Native MCP 2026-07-28 stateless requests and optional `server/discover`
+- Legacy 2025 initialization compatibility on the same stdio entrypoint
+- Deterministic catalogs with `ttlMs` and `cacheScope` hints
+- Structured tool results, error signaling, cancellation, and MRTR confirmations
 
 ## Available Tools
 
-The server provides **122 tools** organized into 12 functional categories. With the router pattern, tools are automatically discovered as needed -- just ask Claude what you want to accomplish.
+The server publishes **183 first-class tools**: 180 KiCad capabilities in 18 functional categories and 3 supplemental catalog tools. The list below highlights common operations; use `list_tool_categories`, `get_category_tools`, or `search_tools` for the live authoritative catalog.
 
-For the complete tool reference with access types (direct/routed/additional), see [Tool Inventory](docs/TOOL_INVENTORY.md).
+For the complete category inventory, see [Tool Inventory](docs/TOOL_INVENTORY.md). Every listed tool is directly callable through MCP.
 
-### Project Management (5 tools)
+### Project Management (6 tools)
 
 - `create_project` - Initialize new KiCAD projects
 - `open_project` - Load existing project files
+- `close_project` - Release the active project and its backend state
 - `save_project` - Save current project state
 - `get_project_info` - Retrieve project metadata
 - `snapshot_project` - Save named checkpoint snapshot
@@ -415,24 +429,27 @@ For the complete tool reference with access types (direct/routed/additional), se
 - `edit_component` - Modify component properties
 - `find_component` - Search by reference or value
 - `get_component_properties` - Query component details
-- `add_component_annotation` - Add annotation/comment
-- `group_components` - Group multiple components
-- `replace_component` - Replace with different footprint
+- `set_footprint_type` - Change through-hole/SMD footprint type
 - `get_component_pads` - Get all pad information
 - `get_component_list` - List all placed components
 - `get_pad_position` - Get precise pad position
 - `place_component_array` - Create component grids/patterns
 - `align_components` - Align multiple components
+- `check_courtyard_overlaps` - Detect footprint courtyard collisions
+- `suggest_placement` - Generate a deterministic placement suggestion
 - `duplicate_component` - Copy existing component
 
-### Routing (13 tools)
+### Routing (16 tools)
 
 - `add_net` - Create electrical net
 - `route_trace` - Route copper traces between XY points
+- `route_arc_trace` - Route an arc-shaped trace
 - `route_pad_to_pad` - Route between pads with auto-via insertion
 - `add_via` - Place vias for layer transitions
 - `delete_trace` - Remove traces (by UUID, position, or net)
 - `query_traces` - Query/filter traces
+- `query_zones` - Query/filter copper zones
+- `add_gnd_stitching_vias` - Place ground stitching vias
 - `get_nets_list` - List all nets with statistics
 - `modify_trace` - Change trace width, layer, or net
 - `create_netclass` - Define net class with rules
@@ -441,7 +458,7 @@ For the complete tool reference with access types (direct/routed/additional), se
 - `refill_zones` - Refill all copper zones
 - `copy_routing_pattern` - Replicate routing between component groups
 
-### Schematic (27 tools)
+### Schematic (43 tools)
 
 Complete schematic workflow with dynamic symbol loading (~10,000 symbols) and intelligent wiring.
 
@@ -460,9 +477,9 @@ Complete schematic workflow with dynamic symbol loading (~10,000 symbols) and in
 
 **Wiring and Connections:**
 
-- `add_wire` - Create wire between points
+- `add_schematic_wire` - Create wire between points
 - `delete_schematic_wire` - Remove wire segment
-- `add_schematic_connection` - Auto-connect pins with routing
+- `batch_connect` / `batch_add_and_connect` - Connect multiple pins in one operation
 - `add_schematic_net_label` - Add net labels (VCC, GND, signals)
 - `delete_schematic_net_label` - Remove net label
 - `connect_to_net` - Connect pin to named net
@@ -482,15 +499,14 @@ Complete schematic workflow with dynamic symbol loading (~10,000 symbols) and in
 
 See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for details and examples.
 
-### Design Rules / DRC (8 tools)
+### Design Rules / DRC (5 tools)
 
 - `set_design_rules` / `get_design_rules` - Configure and inspect rules
 - `run_drc` - Execute design rule check
 - `get_drc_violations` - Get violation list by severity
-- `add_net_class` / `assign_net_to_class` - Net class management
-- `set_layer_constraints` / `check_clearance` - Layer and clearance rules
+- `add_net_class` / `create_netclass` - Net class management (compatibility and canonical names)
 
-### Export (8 tools)
+### Export (27 tools; selected examples)
 
 - `export_gerber` - Gerber fabrication files
 - `export_pdf` / `export_svg` - Documentation and vector graphics
@@ -540,8 +556,9 @@ See [Footprint and Symbol Creator Guide](docs/FOOTPRINT_SYMBOL_CREATOR_GUIDE.md)
 
 See [Freerouting Guide](docs/FREEROUTING_GUIDE.md) for setup and usage.
 
-### UI Management (2 tools)
+### UI Management (3 tools)
 
+- `get_backend_state` - Inspect the active KiCad backend
 - `check_kicad_ui` - Check if KiCAD is running
 - `launch_kicad_ui` - Launch KiCAD application
 
@@ -558,7 +575,7 @@ See [Freerouting Guide](docs/FREEROUTING_GUIDE.md) for setup and usage.
   python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"
   ```
 
-**Node.js 18 or Higher**
+**Node.js 20 or Higher**
 
 - Download from [nodejs.org](https://nodejs.org/)
 - Verify: `node --version` and `npm --version`
@@ -600,16 +617,16 @@ sudo add-apt-repository --yes ppa:kicad/kicad-9.0-releases
 sudo apt-get update
 sudo apt-get install -y kicad kicad-libraries
 
-# Install Node.js
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt-get install -y nodejs
+# Install Node.js 20+ using your distribution package manager or the
+# instructions at https://nodejs.org/en/download, then verify the version
+node --version
 
 # Clone and build
 git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd KiCAD-MCP-Server
-npm install
-pip3 install -r requirements.txt
+npm ci
 npm run build
+node dist/cli.js setup
 
 # Verify
 python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"
@@ -637,11 +654,13 @@ The script will:
 - Run diagnostics
 
 **Manual Setup:**
-See [Windows Installation Guide](docs/WINDOWS_SETUP.md) for detailed instructions.
+See [Windows Troubleshooting](docs/WINDOWS_TROUBLESHOOTING.md) for detailed setup and diagnostics.
 
 ### macOS
 
-**Important:** On macOS, use KiCAD's bundled Python to ensure proper access to the `pcbnew` module.
+**Important:** On macOS, let the setup command create a private runtime that can
+access KiCAD's bundled `pcbnew` module. Do not install packages into KiCAD's
+bundled Python.
 
 #### Manual Setup
 
@@ -655,19 +674,18 @@ brew install node@20
 git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd KiCAD-MCP-Server
 
-# Create virtual environment using KiCAD's bundled Python
-/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 -m venv venv --system-site-packages
-
-# Activate virtual environment
-source venv/bin/activate
-
-# Install dependencies
-npm install
-pip install -r requirements.txt
+# Install the locked Node.js tree and build the private-runtime CLI
+npm ci
 npm run build
+
+# Create the private, hash-locked Python runtime
+KICAD_PYTHON=/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 \
+  node dist/cli.js setup
 ```
 
-**Note:** The `--system-site-packages` flag is required to access KiCAD's `pcbnew` module from the virtual environment.
+The setup command creates and maintains the isolated runtime under the user's
+KiCAD MCP data directory while retaining read-only access to KiCAD's `pcbnew`
+module.
 
 #### Automated Setup
 
@@ -814,7 +832,7 @@ Edit configuration file:
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/path/to/KiCAD-MCP-Server/dist/index.js"],
+      "args": ["/path/to/KiCAD-MCP-Server/dist/cli.js", "serve"],
       "env": {
         "PYTHONPATH": "/path/to/kicad/python",
         "LOG_LEVEL": "info"
@@ -835,8 +853,8 @@ Edit configuration file:
 
 The server automatically detects Python on Linux in this priority order:
 
-1. **Virtual environment** - `venv/bin/python` or `.venv/bin/python` (highest priority)
-2. **KICAD_PYTHON env var** - User override for non-standard installations
+1. **KICAD_PYTHON env var** - Explicit user or packaged-launcher override (highest priority)
+2. **Virtual environment** - `venv/bin/python` or `.venv/bin/python`
 3. **KiCad bundled Python** - `/usr/lib/kicad/bin/python3`, `/usr/local/lib/kicad/bin/python3`, `/opt/kicad/bin/python3`
 4. **System Python via which** - Resolves `which python3` to absolute path (e.g., `/usr/bin/python3`)
 5. **Common system paths** - `/usr/bin/python3`, `/bin/python3`
@@ -852,7 +870,7 @@ If you see "Python executable not found: python3", you can manually specify the 
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/path/to/KiCAD-MCP-Server/dist/index.js"],
+      "args": ["/path/to/KiCAD-MCP-Server/dist/cli.js", "serve"],
       "env": {
         "KICAD_PYTHON": "/usr/bin/python3",
         "PYTHONPATH": "/usr/lib/kicad/lib/python3/dist-packages"
@@ -901,7 +919,7 @@ OpenCode project configuration is written to `opencode.json` in the target
 project root. The script keeps the KiCAD MCP server repository separate from the
 target project:
 
-- `McpServerPath` is this repository, where `dist/index.js` is built
+- `McpServerPath` is this repository, where `dist/cli.js` is built
 - `ProjectPath` is the project that should receive `opencode.json`
 
 **When this is useful:**
@@ -909,7 +927,7 @@ target project:
 - You use [OpenCode](https://opencode.ai/) as your MCP client on Windows
 - You want a project-local MCP server available only in one project
 - You want a global OpenCode MCP server available from any workspace
-- You need to verify KiCAD Python (`pcbnew`), Node.js, and `dist/index.js`
+- You need to verify KiCAD Python (`pcbnew`), Node.js, and `dist/cli.js`
   before changing OpenCode configuration
 
 #### Backend selection
@@ -955,7 +973,7 @@ Example generated OpenCode shape:
   "mcp": {
     "kicad": {
       "type": "local",
-      "command": ["node", "C:\\path\\to\\KiCAD-MCP-Server\\dist\\index.js"],
+      "command": ["node", "C:\\path\\to\\KiCAD-MCP-Server\\dist\\cli.js", "serve"],
       "environment": {
         "NODE_ENV": "production",
         "LOG_LEVEL": "info",
@@ -965,7 +983,7 @@ Example generated OpenCode shape:
         "PYTHONPATH": "C:\\Program Files\\KiCad\\10.0\\bin\\Lib\\site-packages"
       },
       "enabled": true,
-      "timeout": 30000
+      "timeout": 3900000
     }
   }
 }
@@ -993,7 +1011,7 @@ To configure another project, pass `-ProjectPath`:
 ```
 
 If the setup script is not located in the KiCAD MCP Server repository, pass
-`-McpServerPath` so the generated config points to the correct `dist/index.js`:
+`-McpServerPath` so the generated config points to the correct `dist/cli.js serve` entrypoint:
 
 ```powershell
 .\setup-windows-opencode.ps1 `
@@ -1100,7 +1118,7 @@ For users with JLCPCB enterprise accounts and order history:
 1. **Get API Credentials**
    - Log in to [JLCPCB](https://jlcpcb.com/)
    - Navigate to Account > API Management (requires enterprise approval)
-   - Create API Key and save your `appKey` and `appSecret`
+   - Create API credentials and save the app ID, access key, and secret key
    - Note: This requires prior order history and enterprise account approval
 
 2. **Configure Environment Variables**
@@ -1108,16 +1126,14 @@ For users with JLCPCB enterprise accounts and order history:
    Add to your shell profile (`~/.bashrc`, `~/.zshrc`, or `~/.profile`):
 
    ```bash
-   export JLCPCB_API_KEY="your_app_key_here"
-   export JLCPCB_API_SECRET="your_app_secret_here"
+   export JLCPCB_APP_ID="your_app_id_here"
+   export JLCPCB_API_KEY="your_access_key_here"
+   export JLCPCB_API_SECRET="your_secret_key_here"
    ```
 
-   Or create a `.env` file in the project root:
-
-   ```
-   JLCPCB_API_KEY=your_app_key_here
-   JLCPCB_API_SECRET=your_app_secret_here
-   ```
+   Set the same three values in the MCP launcher's `env` configuration when it
+   does not inherit your shell profile. The server does not automatically load
+   project-root `.env` files.
 
 See [JLCPCB Usage Guide](docs/JLCPCB_USAGE_GUIDE.md) for detailed documentation.
 
@@ -1253,33 +1269,29 @@ How many Basic parts are available?
 
 ### MCP Protocol Layer
 
-- **JSON-RPC 2.0 Transport:** Bi-directional communication via STDIO
-- **Protocol Version:** MCP 2025-06-18
-- **Capabilities:** Tools (122), Resources (8)
-- **Tool Router:** Intelligent discovery system with 12 categories
-- **Error Handling:** Standard JSON-RPC error codes
+- **Transport:** Local stdio with SDK-managed JSON-RPC framing
+- **Protocol:** MCP 2026-07-28 stateless core plus legacy 2025 initialization compatibility
+- **Capabilities:** 183 tools, 18 resources/templates, and 18 prompts
+- **Discovery:** Deterministic `tools/list` plus 3 supplemental catalog tools
+- **Results:** Structured output, standard MCP errors, cancellation propagation, cache hints, and MRTR confirmations
 
 ### TypeScript Server (`src/`)
 
-- Implements MCP protocol specification
-- Manages Python subprocess lifecycle
-- Handles message routing and validation
-- Provides logging and error recovery
-- **Router System:**
-  - `src/tools/registry.ts` - Tool categorization and lookup
-  - `src/tools/router.ts` - Discovery and execution tools
-  - Reduces AI context usage by 70% while maintaining full functionality
+- Uses `@modelcontextprotocol/server` v2 and `serveStdio()` for protocol-era negotiation
+- Manages Python subprocess readiness, bounded restart, request correlation, timeout, and cancellation
+- Registers Zod 4 input/output schemas, resources, prompts, annotations, and structured results
+- Builds `src/tools/registry.ts` from the same first-class tool registrations used by MCP
+- Provides `src/tools/router.ts` only for catalog browsing and search; it is not a second execution layer
 
 ### Python Interface (`python/`)
 
-- **kicad_interface.py:** Main entry point, MCP message handler, command routing
+- **kicad_interface.py:** Private newline-JSON command worker used only by the TypeScript MCP server
 - **kicad_api/:** Backend implementations
   - `base.py` - Abstract base classes for backends
   - `ipc_backend.py` - KiCAD 9.0 IPC API backend (real-time UI sync)
   - `swig_backend.py` - pcbnew SWIG API backend (file-based operations)
   - `factory.py` - Backend auto-detection and instantiation
-- **schemas/tool_schemas.py:** JSON Schema definitions for all tools
-- **resources/resource_definitions.py:** Resource handlers and URIs
+- **schemas/tool_schemas.py:** Legacy/internal Python validation schemas (not the MCP catalog)
 - **commands/:** Modular command implementations
   - `project.py` - Project operations
   - `board.py` - Board manipulation
@@ -1307,12 +1319,19 @@ How many Basic parts are available?
 ### Building from Source
 
 ```bash
-# Install dependencies
-npm install
-pip3 install -r requirements.txt
+# Install the locked Node.js dependency tree
+npm ci
 
 # Build TypeScript
 npm run build
+
+# Create the private runtime from requirements-lock.txt
+node dist/cli.js setup
+
+# Optional: install hash-locked Python development tools in a separate venv
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --require-hashes -r requirements-dev-lock.txt
 
 # Watch mode for development
 npm run dev
@@ -1349,7 +1368,7 @@ npm run format
 
 **Solutions:**
 
-1. Verify build completed: `ls dist/index.js`
+1. Verify build completed: `ls dist/cli.js`
 2. Check configuration paths are absolute
 3. Restart MCP client completely
 4. Check client logs for error messages
@@ -1370,7 +1389,7 @@ npm run format
 
 **Solutions:**
 
-1. Check server logs: `~/.kicad-mcp/logs/kicad_interface.log`
+1. Check the current server log: `~/.kicad-mcp/logs/kicad-mcp-YYYY-MM-DD.log`
 2. Verify a project is loaded before running board operations
 3. Ensure file paths are absolute, not relative
 4. Check tool parameter types match schema requirements
@@ -1389,7 +1408,7 @@ npm run format
 ### Getting Help
 
 1. Check the [GitHub Issues](https://github.com/mixelpixx/KiCAD-MCP-Server/issues)
-2. Review server logs: `~/.kicad-mcp/logs/kicad_interface.log`
+2. Review the current server log: `~/.kicad-mcp/logs/kicad-mcp-YYYY-MM-DD.log`
 3. Open a new issue with:
    - Operating system and version
    - KiCAD version (`python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"`)
@@ -1399,11 +1418,11 @@ npm run format
 
 ## Project Status
 
-**Current Version:** 2.4.0
+**Current Version:** 2.7.0
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-**Working Features (122 tools):**
+**Working Features (180 KiCad tools + 3 discovery tools):**
 
 - Project management with snapshot checkpointing
 - Complete board design (outline, layers, zones, mounting holes, text, SVG logos)
@@ -1420,7 +1439,7 @@ See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix a
 - Datasheet enrichment via LCSC
 - Freerouting autorouter integration (Java, Docker, Podman)
 - UI auto-launch and management
-- Full MCP 2025-06-18 protocol compliance
+- MCP 2026-07-28 support with legacy 2025 client compatibility
 
 **IPC Backend (Experimental):**
 

@@ -44,8 +44,12 @@ def test_interface_constructs_and_all_routes_are_callable(iface) -> None:
 
 
 def test_every_schema_listed_tool_has_a_route(iface) -> None:
-    """tools/list is built from TOOL_SCHEMAS; a schema without a route is a
-    tool that advertises itself and then fails on call."""
+    """Every retained legacy schema must still describe a real worker route.
+
+    The authoritative MCP catalog lives in the TypeScript registrations; this
+    assertion only prevents the compatibility dictionary from drifting toward
+    nonexistent Python commands.
+    """
     from schemas.tool_schemas import TOOL_SCHEMAS
 
     missing = sorted(set(TOOL_SCHEMAS) - set(iface.command_routes))

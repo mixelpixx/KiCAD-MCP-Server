@@ -26,7 +26,7 @@
 
 #
 
-**KiCAD MCP Server** ist ein Model Context Protocol (MCP) Server, der KI-Assistenten wie Claude ermöglicht, mit KiCAD für die PCB-Design-Automatisierung zu interagieren. Aufgebaut auf der MCP-Spezifikation 2025-06-18, bietet dieser Server umfassende Tool-Schemas und Echtzeit-Projektzugriff für intelligente PCB-Design-Workflows.
+**KiCAD MCP Server** ist ein Model Context Protocol (MCP) Server, der KI-Assistenten wie Claude ermöglicht, mit KiCAD für die PCB-Design-Automatisierung zu interagieren. Aufgebaut auf MCP 2026-07-28 mit Dual-Era-Kompatibilität für Clients der 2025-Generation, stellt dieser Server 183 KiCAD-Werkzeuge sowie Echtzeit-Projektzugriff für intelligente PCB-Design-Workflows bereit.
 
 ### PCBs mit natürlicher Sprache designen
 
@@ -45,7 +45,7 @@ Beschreibe was du bauen möchtest — und lass die KI die EDA-Arbeit übernehmen
 ### Schnellstart
 
 1. [KiCAD 9.0+](https://www.kicad.org/download/) installieren
-2. [Node.js 18+](https://nodejs.org/) und [Python 3.11+](https://www.python.org/) installieren
+2. [Node.js 20+](https://nodejs.org/) und [Python 3.11+](https://www.python.org/) installieren
 3. Klonen und bauen:
 
 ```bash
@@ -79,7 +79,7 @@ Beispielkonfiguration: `config/windows-config.example.json` oder `config/macos-c
 ### Dokumentation
 
 - [**Vollständige README**](../README.md) — komplette Dokumentation
-- [Schnellstart (Router Tools)](../docs/ROUTER_QUICK_START.md) — erste Schritte
+- [Schnellstart zur Tool-Suche](../docs/ROUTER_QUICK_START.md) — Werkzeuge finden und direkt aufrufen
 - [Werkzeug-Übersicht](../docs/TOOL_INVENTORY.md) — alle verfügbaren Werkzeuge
 - [Schaltplan-Werkzeuge](../docs/SCHEMATIC_TOOLS_REFERENCE.md)
 - [Routing-Werkzeuge](../docs/ROUTING_TOOLS_REFERENCE.md)

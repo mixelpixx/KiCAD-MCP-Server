@@ -114,7 +114,8 @@ else
   REPO_ROOT="$(pwd)"
 fi
 
-DIST_JS="$REPO_ROOT/dist/index.js"
+DIST_CLI="$REPO_ROOT/dist/cli.js"
+REQUIREMENTS_LOCK="$REPO_ROOT/requirements-lock.txt"
 
 DEFAULT_KICAD_PYTHON="/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3"
 KICAD_PYTHON="${KICAD_PYTHON:-$DEFAULT_KICAD_PYTHON}"
@@ -122,8 +123,12 @@ KICAD_PYTHON="${KICAD_PYTHON:-$DEFAULT_KICAD_PYTHON}"
 command -v python3 >/dev/null 2>&1 || fail "python3 not found"
 NODE_PATH="$(command -v node || true)"
 [[ -n "$NODE_PATH" ]] || fail "node not found in PATH"
+NODE_MAJOR="$(node -p 'Number(process.versions.node.split(".")[0])')"
+[[ "$NODE_MAJOR" =~ ^[0-9]+$ ]] || fail "Could not determine the Node.js version"
+(( NODE_MAJOR >= 20 )) || fail "Node.js 20 or newer is required (found $(node --version))"
 
-[[ -f "$DIST_JS" ]] || fail "Missing build artifact: $DIST_JS. Run 'npm install && npm run build' first."
+[[ -f "$DIST_CLI" ]] || fail "Missing build artifact: $DIST_CLI. Run 'npm install && npm run build' first."
+[[ -f "$REQUIREMENTS_LOCK" ]] || fail "Missing pinned Python dependencies: $REQUIREMENTS_LOCK"
 [[ -x "$KICAD_PYTHON" ]] || fail "KiCad Python not found or not executable: $KICAD_PYTHON"
 
 DETECT_JSON="$("$KICAD_PYTHON" - <<'PY'
@@ -158,11 +163,11 @@ if [[ "$PCBNEW_OK" != "true" ]]; then
   fail "KiCad Python could not import pcbnew. Details: $PCBNEW_ERROR"
 fi
 
-CONFIG_FRAGMENT_JSON="$(python3 - "$NODE_PATH" "$DIST_JS" "$KICAD_PYTHON" "$PYTHONPATH_VALUE" <<'PY'
+CONFIG_FRAGMENT_JSON="$(python3 - "$NODE_PATH" "$DIST_CLI" "$KICAD_PYTHON" "$PYTHONPATH_VALUE" <<'PY'
 import json, sys
 fragment = {
     "command": sys.argv[1],
-    "args": [sys.argv[2]],
+    "args": [sys.argv[2], "serve"],
     "env": {
         "KICAD_PYTHON": sys.argv[3],
         "PYTHONPATH": sys.argv[4],
@@ -176,8 +181,9 @@ PY
 show_detected() {
   section "Prerequisites"
   echo "  ${SYM_OK} python3          $(command -v python3)"
-  echo "  ${SYM_OK} node             $NODE_PATH"
-  echo "  ${SYM_OK} build artifact   $DIST_JS"
+  echo "  ${SYM_OK} node             $NODE_PATH ($(node --version))"
+  echo "  ${SYM_OK} build artifact   $DIST_CLI"
+  echo "  ${SYM_OK} dependency lock  $REQUIREMENTS_LOCK"
   echo "  ${SYM_OK} KiCad Python     $KICAD_PYTHON"
   echo "  ${SYM_OK} pcbnew import    $PCBNEW_VERSION"
 
@@ -275,8 +281,6 @@ if [[ "$MODE" == "dry-run" ]]; then
   exit 0
 fi
 
-mkdir -p "$CLAUDE_CONFIG_DIR"
-
 if [[ $ASSUME_YES -ne 1 ]]; then
   echo
   read -r -p "Write this configuration to $CLAUDE_CONFIG_PATH ? [y/N] " REPLY
@@ -288,6 +292,14 @@ if [[ $ASSUME_YES -ne 1 ]]; then
       ;;
   esac
 fi
+
+section "Private Python runtime"
+info "Installing and validating the pinned KiCad MCP runtime..."
+KICAD_PYTHON="$KICAD_PYTHON" "$NODE_PATH" "$DIST_CLI" setup || \
+  fail "Private Python runtime setup failed; the Claude configuration was not changed."
+info "Private Python runtime is ready."
+
+mkdir -p "$CLAUDE_CONFIG_DIR"
 
 ORIG_MODE=""
 if [[ -f "$CLAUDE_CONFIG_PATH" ]]; then

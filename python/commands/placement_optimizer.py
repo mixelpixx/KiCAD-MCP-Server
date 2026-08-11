@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pcbnew
 
@@ -70,6 +70,9 @@ class PlacementOptimizerCommands:
       - self._footprint_courtyard_bbox  : bbox in mm for a footprint
     so it composes with the existing component handlers.
     """
+
+    board: Any
+    _footprint_courtyard_bbox: Callable[[Any, Any], Optional[Tuple[float, float, float, float]]]
 
     # ------------------------------------------------------------------ #
     #  Public command                                                    #

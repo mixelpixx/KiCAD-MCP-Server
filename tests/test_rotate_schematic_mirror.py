@@ -212,9 +212,7 @@ def test_rotate_handler_no_crash(tmp_path):
     _stub_modnames = (
         "pcbnew",
         "skip",
-        "resources",
         "schemas",
-        "resources.resource_definitions",
         "schemas.tool_schemas",
         "annotations",
     )
@@ -223,8 +221,6 @@ def test_rotate_handler_no_crash(tmp_path):
     try:
         for modname in _stub_modnames:
             sys.modules[modname] = MagicMock()
-        sys.modules["resources.resource_definitions"].RESOURCE_DEFINITIONS = {}
-        sys.modules["resources.resource_definitions"].handle_resource_read = MagicMock()
         sys.modules["schemas.tool_schemas"].TOOL_SCHEMAS = []
 
         _pcbnew = sys.modules["pcbnew"]

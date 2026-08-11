@@ -1,264 +1,100 @@
-/**
- * Component resources for KiCAD MCP server
- *
- * These resources provide information about components on the PCB
- * to the LLM, enabling better context-aware assistance.
- */
+/** Read-only resources describing footprints placed on the current PCB. */
 
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/server";
 import { logger } from "../logger.js";
+import {
+  jsonContents,
+  PRIVATE_LIVE_JSON,
+  requireBackendSuccess,
+  templateString,
+  type CommandFunction,
+} from "./shared.js";
 
-// Command function type for KiCAD script calls
-type CommandFunction = (command: string, params: Record<string, unknown>) => Promise<any>;
-
-/**
- * Register component resources with the MCP server
- *
- * @param server MCP server instance
- * @param callKicadScript Function to call KiCAD script commands
- */
 export function registerComponentResources(
   server: McpServer,
   callKicadScript: CommandFunction,
 ): void {
   logger.info("Registering component resources");
 
-  // ------------------------------------------------------
-  // Component List Resource
-  // ------------------------------------------------------
-  server.resource("component_list", "kicad://components", async (uri) => {
-    logger.debug("Retrieving component list");
-    const result = await callKicadScript("get_component_list", {});
+  server.registerResource(
+    "component_list",
+    "kicad://components",
+    {
+      ...PRIVATE_LIVE_JSON,
+      title: "Placed PCB components",
+      description: "All footprints placed on the currently loaded PCB",
+    },
+    async (uri, ctx) => {
+      const result = requireBackendSuccess(
+        await callKicadScript("get_component_list", {}, ctx.mcpReq.signal),
+        "Failed to retrieve component list",
+        uri,
+      );
+      return jsonContents(uri, result);
+    },
+  );
 
-    if (!result.success) {
-      logger.error(`Failed to retrieve component list: ${result.errorDetails}`);
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            text: JSON.stringify({
-              error: "Failed to retrieve component list",
-              details: result.errorDetails,
-            }),
-            mimeType: "application/json",
-          },
-        ],
-      };
-    }
-
-    logger.debug(`Successfully retrieved ${result.components?.length || 0} components`);
-    return {
-      contents: [
-        {
-          uri: uri.href,
-          text: JSON.stringify(result),
-          mimeType: "application/json",
-        },
-      ],
-    };
-  });
-
-  // ------------------------------------------------------
-  // Component Details Resource
-  // ------------------------------------------------------
-  server.resource(
+  server.registerResource(
     "component_details",
-    new ResourceTemplate("kicad://component/{reference}/details", {
-      list: undefined,
-    }),
-    async (uri, params) => {
-      const { reference } = params;
-      logger.debug(`Retrieving details for component: ${reference}`);
-      const result = await callKicadScript("get_component_properties", {
-        reference,
-      });
-
-      if (!result.success) {
-        logger.error(`Failed to retrieve component details: ${result.errorDetails}`);
-        return {
-          contents: [
-            {
-              uri: uri.href,
-              text: JSON.stringify({
-                error: `Failed to retrieve details for component ${reference}`,
-                details: result.errorDetails,
-              }),
-              mimeType: "application/json",
-            },
-          ],
-        };
-      }
-
-      logger.debug(`Successfully retrieved details for component: ${reference}`);
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            text: JSON.stringify(result),
-            mimeType: "application/json",
-          },
-        ],
-      };
+    new ResourceTemplate("kicad://component/{reference}/details", { list: undefined }),
+    {
+      ...PRIVATE_LIVE_JSON,
+      title: "PCB component details",
+      description: "Properties of a placed PCB footprint selected by reference",
+    },
+    async (uri, variables, ctx) => {
+      const reference = templateString(variables, "reference", uri, { required: true });
+      const result = requireBackendSuccess(
+        await callKicadScript("get_component_properties", { reference }, ctx.mcpReq.signal),
+        `Failed to retrieve details for component ${reference}`,
+        uri,
+      );
+      return jsonContents(uri, result);
     },
   );
 
-  // ------------------------------------------------------
-  // Component Connections Resource
-  // ------------------------------------------------------
-  server.resource(
+  // get_component_pads is the implemented backend operation that returns pad
+  // numbers, positions, and net connections for a placed component.
+  server.registerResource(
     "component_connections",
-    new ResourceTemplate("kicad://component/{reference}/connections", {
-      list: undefined,
-    }),
-    async (uri, params) => {
-      const { reference } = params;
-      logger.debug(`Retrieving connections for component: ${reference}`);
-      const result = await callKicadScript("get_component_connections", {
-        reference,
-      });
-
-      if (!result.success) {
-        logger.error(`Failed to retrieve component connections: ${result.errorDetails}`);
-        return {
-          contents: [
-            {
-              uri: uri.href,
-              text: JSON.stringify({
-                error: `Failed to retrieve connections for component ${reference}`,
-                details: result.errorDetails,
-              }),
-              mimeType: "application/json",
-            },
-          ],
-        };
-      }
-
-      logger.debug(`Successfully retrieved connections for component: ${reference}`);
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            text: JSON.stringify(result),
-            mimeType: "application/json",
-          },
-        ],
-      };
+    new ResourceTemplate("kicad://component/{reference}/connections", { list: undefined }),
+    {
+      ...PRIVATE_LIVE_JSON,
+      title: "PCB component connections",
+      description: "Pad and net connections for a placed PCB footprint",
+    },
+    async (uri, variables, ctx) => {
+      const reference = templateString(variables, "reference", uri, { required: true });
+      const result = requireBackendSuccess(
+        await callKicadScript("get_component_pads", { reference }, ctx.mcpReq.signal),
+        `Failed to retrieve connections for component ${reference}`,
+        uri,
+      );
+      return jsonContents(uri, result);
     },
   );
 
-  // ------------------------------------------------------
-  // Component Placement Resource
-  // ------------------------------------------------------
-  server.resource("component_placement", "kicad://components/placement", async (uri) => {
-    logger.debug("Retrieving component placement information");
-    const result = await callKicadScript("get_component_placement", {});
-
-    if (!result.success) {
-      logger.error(`Failed to retrieve component placement: ${result.errorDetails}`);
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            text: JSON.stringify({
-              error: "Failed to retrieve component placement information",
-              details: result.errorDetails,
-            }),
-            mimeType: "application/json",
-          },
-        ],
-      };
-    }
-
-    logger.debug("Successfully retrieved component placement information");
-    return {
-      contents: [
-        {
-          uri: uri.href,
-          text: JSON.stringify(result),
-          mimeType: "application/json",
-        },
-      ],
-    };
-  });
-
-  // ------------------------------------------------------
-  // Component Groups Resource
-  // ------------------------------------------------------
-  server.resource("component_groups", "kicad://components/groups", async (uri) => {
-    logger.debug("Retrieving component groups");
-    const result = await callKicadScript("get_component_groups", {});
-
-    if (!result.success) {
-      logger.error(`Failed to retrieve component groups: ${result.errorDetails}`);
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            text: JSON.stringify({
-              error: "Failed to retrieve component groups",
-              details: result.errorDetails,
-            }),
-            mimeType: "application/json",
-          },
-        ],
-      };
-    }
-
-    logger.debug(`Successfully retrieved ${result.groups?.length || 0} component groups`);
-    return {
-      contents: [
-        {
-          uri: uri.href,
-          text: JSON.stringify(result),
-          mimeType: "application/json",
-        },
-      ],
-    };
-  });
-
-  // ------------------------------------------------------
-  // Component Visualization Resource
-  // ------------------------------------------------------
-  server.resource(
-    "component_visualization",
-    new ResourceTemplate("kicad://component/{reference}/visualization", {
-      list: undefined,
-    }),
-    async (uri, params) => {
-      const { reference } = params;
-      logger.debug(`Generating visualization for component: ${reference}`);
-      const result = await callKicadScript("get_component_visualization", {
-        reference,
-      });
-
-      if (!result.success) {
-        logger.error(`Failed to generate component visualization: ${result.errorDetails}`);
-        return {
-          contents: [
-            {
-              uri: uri.href,
-              text: JSON.stringify({
-                error: `Failed to generate visualization for component ${reference}`,
-                details: result.errorDetails,
-              }),
-              mimeType: "application/json",
-            },
-          ],
-        };
-      }
-
-      logger.debug(`Successfully generated visualization for component: ${reference}`);
-      return {
-        contents: [
-          {
-            uri: uri.href,
-            blob: result.imageData, // Base64 encoded image data
-            mimeType: "image/png",
-          },
-        ],
-      };
+  // The canonical component list already includes each footprint's position
+  // and orientation. The former get_component_placement command did not exist.
+  server.registerResource(
+    "component_placement",
+    "kicad://components/placement",
+    {
+      ...PRIVATE_LIVE_JSON,
+      title: "PCB component placement",
+      description: "Placement and orientation data for all footprints on the current PCB",
+    },
+    async (uri, ctx) => {
+      const result = requireBackendSuccess(
+        await callKicadScript("get_component_list", {}, ctx.mcpReq.signal),
+        "Failed to retrieve component placement",
+        uri,
+      );
+      return jsonContents(uri, result);
     },
   );
 
+  // component_groups and component_visualization are intentionally absent:
+  // neither has a read-only backend command with the advertised behavior.
   logger.info("Component resources registered");
 }

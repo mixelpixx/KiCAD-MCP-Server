@@ -1,5 +1,8 @@
 # KiCAD MCP Server - Python Dependencies
 # Production dependencies only
+#
+# This is the human-maintained input file. Packaged runtime and CI installs use
+# requirements-lock.txt, which pins a universal CPython 3.9+ resolution.
 
 # KiCAD Python API (IPC / real-time UI sync)
 kicad-python>=0.5.0

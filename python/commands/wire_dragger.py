@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import sexpdata
 from sexpdata import Symbol
 
+from commands.symbol_pin_parser import parse_symbol_definition
+
 logger = logging.getLogger("kicad_interface")
 
 # Module-level Symbol constants
@@ -123,11 +125,9 @@ class WireDragger:
         """
         Get pin definitions from lib_symbols for the given lib_id.
 
-        Returns the same dict format as PinLocator.parse_symbol_definition:
+        Returns the same dict format as ``parse_symbol_definition``:
         {pin_num: {"x": ..., "y": ..., ...}}.
         """
-        from commands.pin_locator import PinLocator
-
         lib_sym_k = _K["lib_symbols"]
         symbol_k = _K["symbol"]
 
@@ -141,7 +141,7 @@ class WireDragger:
                     continue
                 name = str(sym_def[1]).strip('"')
                 if name == lib_id:
-                    return PinLocator.parse_symbol_definition(sym_def)
+                    return parse_symbol_definition(sym_def)
             break  # only one lib_symbols section
         return {}
 

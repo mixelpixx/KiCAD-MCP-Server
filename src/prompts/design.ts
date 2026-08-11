@@ -5,7 +5,7 @@
  * in KiCAD.
  */
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { logger } from "../logger.js";
 
@@ -20,16 +20,19 @@ export function registerDesignPrompts(server: McpServer): void {
   // ------------------------------------------------------
   // PCB Layout Review Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "pcb_layout_review",
     {
-      pcb_design_info: z
-        .string()
-        .describe(
-          "Information about the current PCB design, including board dimensions, layer stack-up, component placement, and routing details",
-        ),
+      description: "Review a PCB layout for electrical, thermal, mechanical, and DFM issues",
+      argsSchema: z.object({
+        pcb_design_info: z
+          .string()
+          .describe(
+            "Information about the current PCB design, including board dimensions, layer stack-up, component placement, and routing details",
+          ),
+      }),
     },
-    () => ({
+    ({ pcb_design_info }) => ({
       messages: [
         {
           role: "user",
@@ -37,7 +40,7 @@ export function registerDesignPrompts(server: McpServer): void {
             type: "text",
             text: `You're helping to review a PCB layout for potential issues and improvements. Here's information about the current PCB design:
 
-{{pcb_design_info}}
+${pcb_design_info}
 
 When reviewing the PCB layout, consider these key areas:
 
@@ -85,16 +88,19 @@ Based on the provided information, identify potential issues and suggest specifi
   // ------------------------------------------------------
   // Layer Stack-up Planning Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "layer_stackup_planning",
     {
-      design_requirements: z
-        .string()
-        .describe(
-          "Information about the PCB design requirements, including signal types, speed/frequency, power requirements, and any special considerations",
-        ),
+      description: "Plan a PCB layer stack-up from signal, power, and fabrication requirements",
+      argsSchema: z.object({
+        design_requirements: z
+          .string()
+          .describe(
+            "Information about the PCB design requirements, including signal types, speed/frequency, power requirements, and any special considerations",
+          ),
+      }),
     },
-    () => ({
+    ({ design_requirements }) => ({
       messages: [
         {
           role: "user",
@@ -102,7 +108,7 @@ Based on the provided information, identify potential issues and suggest specifi
             type: "text",
             text: `You're helping to plan an appropriate layer stack-up for a PCB design. Here's information about the design requirements:
 
-{{design_requirements}}
+${design_requirements}
 
 When planning a PCB layer stack-up, consider these important factors:
 
@@ -146,16 +152,19 @@ Based on the provided requirements, recommend an appropriate layer stack-up, inc
   // ------------------------------------------------------
   // Design Rule Development Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "design_rule_development",
     {
-      project_requirements: z
-        .string()
-        .describe(
-          "Information about the PCB project requirements, including technology, speed/frequency, manufacturing capabilities, and any special considerations",
-        ),
+      description: "Develop concrete PCB design rules from project and fabrication requirements",
+      argsSchema: z.object({
+        project_requirements: z
+          .string()
+          .describe(
+            "Information about the PCB project requirements, including technology, speed/frequency, manufacturing capabilities, and any special considerations",
+          ),
+      }),
     },
-    () => ({
+    ({ project_requirements }) => ({
       messages: [
         {
           role: "user",
@@ -163,7 +172,7 @@ Based on the provided requirements, recommend an appropriate layer stack-up, inc
             type: "text",
             text: `You're helping to develop appropriate design rules for a PCB project. Here's information about the project requirements:
 
-{{project_requirements}}
+${project_requirements}
 
 When developing PCB design rules, consider these key areas:
 
@@ -207,16 +216,19 @@ Based on the provided project requirements, recommend a comprehensive set of des
   // ------------------------------------------------------
   // Component Selection Guidance Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "component_selection_guidance",
     {
-      circuit_requirements: z
-        .string()
-        .describe(
-          "Information about the circuit requirements, including functionality, performance needs, operating environment, and any special considerations",
-        ),
+      description: "Guide component and package selection from circuit requirements",
+      argsSchema: z.object({
+        circuit_requirements: z
+          .string()
+          .describe(
+            "Information about the circuit requirements, including functionality, performance needs, operating environment, and any special considerations",
+          ),
+      }),
     },
-    () => ({
+    ({ circuit_requirements }) => ({
       messages: [
         {
           role: "user",
@@ -224,7 +236,7 @@ Based on the provided project requirements, recommend a comprehensive set of des
             type: "text",
             text: `You're helping with component selection for a PCB design. Here's information about the circuit requirements:
 
-{{circuit_requirements}}
+${circuit_requirements}
 
 When selecting components for a PCB design, consider these important factors:
 
@@ -272,21 +284,24 @@ Based on the provided circuit requirements, recommend appropriate component type
   // ------------------------------------------------------
   // PCB Design Optimization Prompt
   // ------------------------------------------------------
-  server.prompt(
+  server.registerPrompt(
     "pcb_design_optimization",
     {
-      design_info: z
-        .string()
-        .describe(
-          "Information about the current PCB design, including board dimensions, layer stack-up, component placement, and routing details",
-        ),
-      optimization_goals: z
-        .string()
-        .describe(
-          "Specific goals for optimization, such as performance improvement, cost reduction, size reduction, or manufacturability enhancement",
-        ),
+      description: "Prioritize PCB improvements against explicit optimization goals",
+      argsSchema: z.object({
+        design_info: z
+          .string()
+          .describe(
+            "Information about the current PCB design, including board dimensions, layer stack-up, component placement, and routing details",
+          ),
+        optimization_goals: z
+          .string()
+          .describe(
+            "Specific goals for optimization, such as performance improvement, cost reduction, size reduction, or manufacturability enhancement",
+          ),
+      }),
     },
-    () => ({
+    ({ design_info, optimization_goals }) => ({
       messages: [
         {
           role: "user",
@@ -294,8 +309,11 @@ Based on the provided circuit requirements, recommend appropriate component type
             type: "text",
             text: `You're helping to optimize a PCB design. Here's information about the current design and optimization goals:
 
-{{design_info}}
-{{optimization_goals}}
+Current design:
+${design_info}
+
+Optimization goals:
+${optimization_goals}
 
 When optimizing a PCB design, consider these key areas based on the stated goals:
 

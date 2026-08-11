@@ -1,0 +1,25 @@
+{
+  "name": "kicad-mcp",
+  "interface": {
+    "displayName": "KiCad MCP"
+  },
+  "plugins": [
+    {
+      "name": "kicad",
+      "version": "2.7.0",
+      "description": "Prompt-driven KiCad schematic and PCB design with an engineering workflow.",
+      "source": {
+        "source": "local",
+        "path": "./plugins/kicad"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "DeveloperTools",
+      "interface": {
+        "displayName": "KiCad PCB Designer"
+      }
+    }
+  ]
+}

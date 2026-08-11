@@ -56,7 +56,7 @@ Python: /usr/bin/python3
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/home/username/KiCAD-MCP-Server/dist/index.js"],
+      "args": ["/home/username/KiCAD-MCP-Server/dist/cli.js", "serve"],
       "env": {
         "PYTHONPATH": "/usr/lib/kicad/lib/python3/dist-packages"
       }
@@ -79,7 +79,7 @@ Python: /usr/bin/python3
 1. Install KiCAD 9.0 from the official `.dmg` installer
 2. Install Node.js (e.g. via Homebrew or nvm)
 3. Clone repository
-4. Run `npm install && npm run build`
+4. Run `npm ci && npm run build`
 5. Run `setup-macos.sh`:
    - `bash setup-macos.sh --verify` — check prerequisites and detected paths
    - `bash setup-macos.sh --dry-run` — preview the merged Claude Desktop config
@@ -100,7 +100,7 @@ Node.js: /usr/local/bin/node  # or via nvm
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/Users/username/KiCAD-MCP-Server/dist/index.js"],
+      "args": ["/Users/username/KiCAD-MCP-Server/dist/cli.js", "serve"],
       "env": {
         "KICAD_PYTHON": "/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3",
         "PYTHONPATH": "/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.9/lib/python3.9/site-packages"
@@ -147,7 +147,7 @@ Node.js: C:\Program Files\nodejs\node.exe
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["C:\\Users\\username\\KiCAD-MCP-Server\\dist\\index.js"],
+      "args": ["C:\\Users\\username\\KiCAD-MCP-Server\\dist\\cli.js", "serve"],
       "env": {
         "PYTHONPATH": "C:\\Program Files\\KiCad\\9.0\\lib\\python3\\dist-packages"
       }
@@ -229,7 +229,8 @@ $env:PYTHONPATH = "C:\Program Files\KiCad\9.0\lib\python3\dist-packages"
 
 - Usually Python 3.10+ available system-wide
 - KiCAD uses system Python with additional modules
-- Virtual environments recommended for isolation
+- The CLI manages an isolated, hash-locked runtime; do not install packages
+  into KiCAD's Python environment
 
 **Setup:**
 
@@ -240,13 +241,10 @@ python3 --version
 # Verify pcbnew module
 python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"
 
-# Install project dependencies
-pip3 install -r requirements.txt
-
-# Or use virtual environment (recommended)
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+# From the repository root, build the CLI and prepare its private runtime
+npm ci
+npm run build
+node dist/cli.js setup
 ```
 
 **PYTHONPATH:**
@@ -266,6 +264,8 @@ echo 'export PYTHONPATH=/usr/lib/kicad/lib/python3/dist-packages' >> ~/.bashrc
 - KiCAD bundles Python inside the `.app` framework (versions 3.9–3.12)
 - No system Python installation needed for pcbnew
 - `setup-macos.sh` detects the correct path automatically
+- Do not install MCP packages into the bundled interpreter; the setup script
+  creates a separate, hash-locked runtime
 
 **Setup:**
 
@@ -276,8 +276,10 @@ echo 'export PYTHONPATH=/usr/lib/kicad/lib/python3/dist-packages' >> ~/.bashrc
 # Verify pcbnew module
 /Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"
 
-# Or use the setup script to verify everything at once
-bash setup-macos.sh --verify
+# Build and create the private runtime, or use setup-macos.sh to do both
+npm ci
+npm run build
+node dist/cli.js setup
 ```
 
 ### Windows
@@ -286,7 +288,8 @@ bash setup-macos.sh --verify
 
 - KiCAD 9.0 includes Python 3.11
 - No system Python installation needed
-- Use KiCAD's Python for all MCP operations
+- Point the CLI at KiCAD's Python so it can create a separate private runtime
+- Do not install packages into KiCAD's bundled interpreter
 
 **Setup:**
 
@@ -297,8 +300,11 @@ bash setup-macos.sh --verify
 # Verify pcbnew module
 & "C:\Program Files\KiCad\9.0\bin\python.exe" -c "import pcbnew; print(pcbnew.GetBuildVersion())"
 
-# Install project dependencies using KiCAD Python
-& "C:\Program Files\KiCad\9.0\bin\python.exe" -m pip install -r requirements.txt
+# Build the CLI and create the private, hash-locked runtime
+npm ci
+npm run build
+$env:KICAD_PYTHON = "C:\Program Files\KiCad\9.0\bin\python.exe"
+node .\dist\cli.js setup
 ```
 
 **PYTHONPATH:**
@@ -346,14 +352,14 @@ pytest tests/
 **View logs:**
 
 ```bash
-tail -f ~/.kicad-mcp/logs/kicad_interface.log
+tail -f "$(ls -t ~/.kicad-mcp/logs/kicad-mcp-*.log | head -1)"
 ```
 
 **Start server manually:**
 
 ```bash
 export PYTHONPATH=/usr/lib/kicad/lib/python3/dist-packages
-node dist/index.js
+node dist/cli.js serve
 ```
 
 ### macOS
@@ -373,13 +379,13 @@ bash setup-macos.sh --verify
 **View logs:**
 
 ```bash
-tail -f ~/.kicad-mcp/logs/kicad_interface.log
+tail -f "$(ls -t ~/.kicad-mcp/logs/kicad-mcp-*.log | head -1)"
 ```
 
 **Start server manually:**
 
 ```bash
-node dist/index.js
+node dist/cli.js serve
 ```
 
 ### Windows
@@ -407,14 +413,15 @@ Test-Path "C:\Program Files\KiCad\9.0"
 **View logs:**
 
 ```powershell
-Get-Content "$env:USERPROFILE\.kicad-mcp\logs\kicad_interface.log" -Tail 50 -Wait
+$log = Get-ChildItem "$env:USERPROFILE\.kicad-mcp\logs\kicad-mcp-*.log" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+Get-Content $log.FullName -Tail 50 -Wait
 ```
 
 **Start server manually:**
 
 ```powershell
 $env:PYTHONPATH = "C:\Program Files\KiCad\9.0\lib\python3\dist-packages"
-node dist\index.js
+node dist\cli.js serve
 ```
 
 ---
@@ -426,8 +433,8 @@ node dist\index.js
 **1. Permission Errors**
 
 ```bash
-# Fix file permissions
-chmod +x python/kicad_interface.py
+# Make the repository setup launchers executable
+chmod +x scripts/install-linux.sh setup-macos.sh
 
 # Fix directory permissions
 chmod -R 755 ~/KiCAD-MCP-Server
@@ -499,7 +506,7 @@ bash setup-macos.sh --verify
 
 ```powershell
 # Test path accessibility
-Test-Path "C:\Users\name\KiCAD-MCP-Server\dist\index.js"
+Test-Path "C:\Users\name\KiCAD-MCP-Server\dist\cli.js"
 
 # Use Tab completion in PowerShell to get correct paths
 cd C:\Users\[TAB]
@@ -556,13 +563,13 @@ cd ~/KiCAD-MCP-Server
 code .  # Open in VSCode
 
 # Watch mode for TypeScript
-npm run watch
+npm run build:watch
 
 # Run tests in another terminal
 npm test
 
-# Test Python changes
-python3 python/kicad_interface.py
+# Test Python changes through the command-worker test suite
+npm run test:py
 ```
 
 **Recommended tools:**
@@ -582,13 +589,13 @@ cd C:\Users\username\KiCAD-MCP-Server
 code .  # Open in VSCode
 
 # Watch mode for TypeScript
-npm run watch
+npm run build:watch
 
 # Run tests in another PowerShell window
 npm test
 
-# Test Python changes
-& "C:\Program Files\KiCad\9.0\bin\python.exe" python\kicad_interface.py
+# Test Python changes through the command-worker test suite
+npm run test:py
 ```
 
 **Recommended tools:**
@@ -604,7 +611,7 @@ npm test
 
 ### Linux
 
-1. **Use virtual environments** for Python dependencies
+1. **Use `node dist/cli.js setup`** for the private, hash-locked runtime
 2. **Set PYTHONPATH** in your shell profile for persistence
 3. **Use absolute paths** in MCP configuration
 4. **Check file permissions** if encountering access errors
@@ -614,14 +621,16 @@ npm test
 
 1. **Run `setup-macos.sh --verify` first** — confirms all prerequisites
 2. **Use `--dry-run` before `--apply`** — review the merged config before writing
-3. **Use KiCAD's bundled Python** — don't rely on system or Homebrew Python for pcbnew
+3. **Use KiCAD's bundled Python as `KICAD_PYTHON`** — dependencies remain in
+   the separate private runtime
 4. **Override with `KICAD_PYTHON` env var** if KiCAD is in a non-standard location
 5. **Check logs** in `~/.kicad-mcp/logs/` when debugging
 
 ### Windows
 
 1. **Run setup-windows.ps1 first** - saves time troubleshooting
-2. **Use KiCAD's bundled Python** - don't install system Python
+2. **Point `KICAD_PYTHON` at KiCAD's bundled interpreter** - keep dependencies
+   in the separate private runtime
 3. **Use forward slashes** in JSON configs to avoid escaping
 4. **Check log file** when debugging - it has detailed errors
 5. **Keep paths short** - avoid deeply nested directories
@@ -644,12 +653,12 @@ npm test
 2. Follow Linux installation steps
 3. Update config file path separators (\\ to /)
 4. Update PYTHONPATH to Linux format
-5. Set file permissions: `chmod +x python/kicad_interface.py`
+5. Set installer permissions: `chmod +x scripts/install-linux.sh`
 
 ### Moving to/from macOS
 
 1. Clone repository on the target machine
-2. Run `npm install && npm run build`
+2. Run `npm ci && npm run build`
 3. Run `bash setup-macos.sh --apply` (to macOS) or follow the target platform's setup
 4. No project file changes needed
 

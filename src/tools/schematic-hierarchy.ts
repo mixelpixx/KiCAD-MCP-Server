@@ -1,26 +1,36 @@
 /**
  * Schematic hierarchy tools: insert a hierarchical sheet, scaffold a sub-sheet.
  */
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { registerKiCadTool, type CommandFunction, withToolSignal } from "./tool-registration.js";
 
-export function registerSchematicHierarchyTools(server: McpServer, callKicadScript: Function) {
+export function registerSchematicHierarchyTools(
+  server: McpServer,
+  callKicadScript: CommandFunction,
+) {
+  callKicadScript = withToolSignal(callKicadScript);
   // Link an existing sub-sheet into a parent
-  server.tool(
+  registerKiCadTool(
+    server,
+    "schematic_hierarchy",
     "add_hierarchical_sheet",
-    "Insert a hierarchical-sheet reference block into a parent schematic, pointing at an existing sub-sheet file. Adds the sheet box, name/file fields, a sheet_instances path entry on the next page number, and fixes sub-sheet component instance paths so ERC resolves references.",
     {
-      schematicPath: z.string().describe("Path to the parent .kicad_sch"),
-      subsheetPath: z.string().describe("Path to the existing sub-sheet .kicad_sch to reference"),
-      sheetName: z.string().optional().default("Sheet").describe("Display name for the sheet"),
-      position: z
-        .object({ x: z.number(), y: z.number() })
-        .optional()
-        .describe("Top-left of the sheet box in mm (default 50,50)"),
-      size: z
-        .object({ width: z.number(), height: z.number() })
-        .optional()
-        .describe("Sheet box size in mm (default 80x50)"),
+      description:
+        "Insert a hierarchical-sheet reference block into a parent schematic, pointing at an existing sub-sheet file. Adds the sheet box, name/file fields, a sheet_instances path entry on the next page number, and fixes sub-sheet component instance paths so ERC resolves references.",
+      inputSchema: z.object({
+        schematicPath: z.string().describe("Path to the parent .kicad_sch"),
+        subsheetPath: z.string().describe("Path to the existing sub-sheet .kicad_sch to reference"),
+        sheetName: z.string().optional().default("Sheet").describe("Display name for the sheet"),
+        position: z
+          .object({ x: z.number(), y: z.number() })
+          .optional()
+          .describe("Top-left of the sheet box in mm (default 50,50)"),
+        size: z
+          .object({ width: z.number(), height: z.number() })
+          .optional()
+          .describe("Sheet box size in mm (default 80x50)"),
+      }),
     },
     async (args: any) => {
       const r = await callKicadScript("add_hierarchical_sheet", args);
@@ -38,19 +48,24 @@ export function registerSchematicHierarchyTools(server: McpServer, callKicadScri
   );
 
   // Create a sub-sheet file AND link it in one call
-  server.tool(
+  registerKiCadTool(
+    server,
+    "schematic_hierarchy",
     "create_hierarchical_subsheet",
-    "Create a new sub-sheet .kicad_sch file and link it into a parent schematic in a single call (create_schematic + add_hierarchical_sheet). The fastest way to grow a hierarchical design.",
     {
-      parentSchematicPath: z.string().describe("Path to the parent .kicad_sch"),
-      subsheetPath: z.string().describe("Path for the new sub-sheet .kicad_sch to create"),
-      sheetName: z.string().optional().default("Sheet").describe("Display name for the sheet"),
-      position: z.object({ x: z.number(), y: z.number() }).optional(),
-      size: z.object({ width: z.number(), height: z.number() }).optional(),
-      metadata: z
-        .record(z.string(), z.any())
-        .optional()
-        .describe("Optional metadata for the new sub-sheet (title, etc.)"),
+      description:
+        "Create a new sub-sheet .kicad_sch file and link it into a parent schematic in a single call (create_schematic + add_hierarchical_sheet). The fastest way to grow a hierarchical design.",
+      inputSchema: z.object({
+        parentSchematicPath: z.string().describe("Path to the parent .kicad_sch"),
+        subsheetPath: z.string().describe("Path for the new sub-sheet .kicad_sch to create"),
+        sheetName: z.string().optional().default("Sheet").describe("Display name for the sheet"),
+        position: z.object({ x: z.number(), y: z.number() }).optional(),
+        size: z.object({ width: z.number(), height: z.number() }).optional(),
+        metadata: z
+          .record(z.string(), z.any())
+          .optional()
+          .describe("Optional metadata for the new sub-sheet (title, etc.)"),
+      }),
     },
     async (args: any) => {
       const r = await callKicadScript("create_hierarchical_subsheet", args);

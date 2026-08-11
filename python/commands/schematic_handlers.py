@@ -906,7 +906,7 @@ class SchematicHandlersMixin:
 
                 # Collect all pin locations: list of (ref, pin_num, [x, y])
                 all_pins = []
-                for symbol in sch.symbol:
+                for symbol in getattr(sch, "symbol", ()):
                     if not hasattr(symbol.property, "Reference"):
                         continue
                     ref = symbol.property.Reference.value
@@ -1372,7 +1372,7 @@ class SchematicHandlersMixin:
             locator = PinLocator()
             components = []
 
-            for symbol in schematic.symbol:
+            for symbol in getattr(schematic, "symbol", ()):
                 if not hasattr(symbol.property, "Reference"):
                     continue
                 ref = symbol.property.Reference.value
@@ -1852,7 +1852,7 @@ class SchematicHandlersMixin:
             existing_refs = {}  # prefix -> set of numbers
             unannotated = []  # (symbol, prefix)
 
-            for symbol in schematic.symbol:
+            for symbol in getattr(schematic, "symbol", ()):
                 if not hasattr(symbol.property, "Reference"):
                     continue
                 ref = symbol.property.Reference.value

@@ -22,6 +22,7 @@ if str(PYTHON_DIR) not in sys.path:
     sys.path.insert(0, str(PYTHON_DIR))
 
 from commands import jlcpcb_downloader  # noqa: E402
+from commands import jlcpcb, jlcpcb_parts  # noqa: E402
 
 
 def _make_cdfer_like_source(path: Path) -> None:
@@ -72,6 +73,16 @@ def _make_cdfer_like_source(path: Path) -> None:
         "INSERT INTO components VALUES (11111, 1, 'EXT-PART', '0402', 2, 1, 0, 0, "
         "'extended resistor', '', 12, '[]')"
     )
+    con.commit()
+    con.close()
+
+
+def _make_valid_sqlite(path: Path, payload_bytes: int = 0) -> None:
+    """Create a minimal valid SQLite file, optionally padded with a blob."""
+    con = sqlite3.connect(str(path))
+    con.execute("CREATE TABLE integrity_probe (payload BLOB)")
+    if payload_bytes:
+        con.execute("INSERT INTO integrity_probe VALUES (zeroblob(?))", (payload_bytes,))
     con.commit()
     con.close()
 
@@ -177,6 +188,18 @@ def test_convert_yaqwsx_schema_populates_category_and_manufacturer(tmp_path):
     assert json.loads(row["price_json"]) == [{"qty": 1, "price": 0.12}]
 
 
+def test_conversion_preserves_existing_database_when_source_is_invalid(tmp_path):
+    source = tmp_path / "invalid-source.sqlite3"
+    target = tmp_path / "jlcpcb_parts.db"
+    sqlite3.connect(str(source)).close()
+    target.write_bytes(b"known-good-existing-database")
+
+    with pytest.raises(RuntimeError, match="No usable table"):
+        jlcpcb_downloader.convert_source_sqlite(source, target)
+
+    assert target.read_bytes() == b"known-good-existing-database"
+
+
 def test_normalize_price_json_handles_scalar_and_array_and_empty():
     assert json.loads(jlcpcb_downloader.normalize_price_json(None)) == []
     assert json.loads(jlcpcb_downloader.normalize_price_json("")) == []
@@ -232,6 +255,33 @@ def test_download_database_prefer_cdfer_converts(tmp_path, monkeypatch):
     assert (tmp_path / "jlcpcb_parts.db").exists()
 
 
+def test_official_import_failure_preserves_existing_database(tmp_path, monkeypatch):
+    target = tmp_path / "jlcpcb_parts.db"
+    target.write_bytes(b"known-good-existing-database")
+    for name, value in {
+        "JLCPCB_APP_ID": "app",
+        "JLCPCB_API_KEY": "access",
+        "JLCPCB_API_SECRET": "secret",
+    }.items():
+        monkeypatch.setenv(name, value)
+
+    monkeypatch.setattr(
+        jlcpcb.JLCPCBClient,
+        "download_full_database",
+        lambda self, callback=None: [{"componentCode": "C1"}],
+    )
+
+    def fail_import(self, parts, progress_callback=None):
+        raise RuntimeError("import failed")
+
+    monkeypatch.setattr(jlcpcb_parts.JLCPCBPartsManager, "import_parts", fail_import)
+
+    with pytest.raises(RuntimeError, match="import failed"):
+        jlcpcb_downloader._download_official(target, True, None)
+
+    assert target.read_bytes() == b"known-good-existing-database"
+
+
 def _http_date(days_ago: int) -> str:
     from datetime import datetime, timedelta, timezone
     from email.utils import format_datetime
@@ -282,13 +332,13 @@ def test_download_cdfer_skips_when_file_already_complete(tmp_path, monkeypatch):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
     dest = cache_dir / "cdfer.sqlite3"
-    payload = b"x" * 4096
-    dest.write_bytes(payload)
+    _make_valid_sqlite(dest, payload_bytes=1_100_000)
+    expected_size = dest.stat().st_size
 
     class _Head:
         ok = True
         headers = {
-            "Content-Length": str(len(payload)),
+            "Content-Length": str(expected_size),
             "Last-Modified": "Wed, 01 Apr 2026 00:00:00 GMT",
         }
 
@@ -301,8 +351,52 @@ def test_download_cdfer_skips_when_file_already_complete(tmp_path, monkeypatch):
 
     path, last_mod = jlcpcb_downloader.download_cdfer(cache_dir)
     assert path == dest
-    assert path.stat().st_size == len(payload)  # untouched
+    assert path.stat().st_size == expected_size  # untouched
     assert last_mod.startswith("Wed, 01 Apr 2026")
+
+
+def test_download_cdfer_replaces_same_size_corrupt_cache(tmp_path, monkeypatch):
+    """Matching Content-Length alone must not make a corrupt cache trusted."""
+    import requests
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    valid = tmp_path / "valid.sqlite3"
+    _make_valid_sqlite(valid, payload_bytes=1_100_000)
+    payload = valid.read_bytes()
+    dest = cache_dir / "cdfer.sqlite3"
+    dest.write_bytes(b"x" * len(payload))
+
+    class _Head:
+        ok = True
+        headers = {"Content-Length": str(len(payload))}
+
+    class _Response:
+        status_code = 200
+        headers = {"Content-Length": str(len(payload))}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def iter_content(chunk_size):
+            yield from (
+                payload[index : index + chunk_size] for index in range(0, len(payload), chunk_size)
+            )
+
+    monkeypatch.setattr(requests, "head", lambda *args, **kwargs: _Head())
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: _Response())
+
+    path, _ = jlcpcb_downloader.download_cdfer(cache_dir)
+
+    assert path.read_bytes() == payload
 
 
 # --------------------------------------------------------------------------- #
@@ -340,9 +434,11 @@ def _fake_run_factory(num_volumes, calls=None):
                 return res
             res.returncode = 22  # curl -f exits 22 on HTTP 4xx (the 404 past last volume)
             return res
+        if len(cmd) > 1 and cmd[1] == "t":
+            return res
         # Otherwise it's the 7z extraction call: produce cache.sqlite3.
         out_dir = next(c[2:] for c in cmd if isinstance(c, str) and c.startswith("-o"))
-        (Path(out_dir) / "cache.sqlite3").write_bytes(b"db")
+        _make_valid_sqlite(Path(out_dir) / "cache.sqlite3")
         return res
 
     return _run
@@ -396,6 +492,43 @@ def test_yaqwsx_skips_existing_volumes_on_rerun(tmp_path, monkeypatch):
     assert out.exists()
     # No existing volume re-downloaded and cache.zip skipped — only the z41 404 probe.
     assert calls == [f"{jlcpcb_downloader.YAQWSX_BASE_URL}/cache.z41"]
+
+
+def test_yaqwsx_removes_corrupt_archive_parts(tmp_path, monkeypatch):
+    """A failed 7-Zip integrity test must not poison every later retry."""
+    import subprocess
+
+    cache = tmp_path / "cache"
+    monkeypatch.setattr(jlcpcb_downloader, "_find_7z", lambda: "7z")
+    monkeypatch.setattr(jlcpcb_downloader.shutil, "which", lambda name: "/usr/bin/" + name)
+
+    def _run(cmd, *args, **kwargs):
+        class _Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        result = _Result()
+        if cmd[0] == "curl":
+            destination = Path(cmd[cmd.index("-o") + 1])
+            name = cmd[-1].rsplit("/", 1)[-1]
+            if name in {"cache.z01", "cache.zip"}:
+                destination.write_bytes(b"corrupt" * 300)
+            else:
+                result.returncode = 22
+            return result
+        if cmd[1] == "t":
+            result.returncode = 2
+            result.stderr = "CRC Failed"
+        return result
+
+    monkeypatch.setattr(subprocess, "run", _run)
+
+    with pytest.raises(RuntimeError, match="integrity test failed"):
+        jlcpcb_downloader.download_yaqwsx(cache)
+
+    assert not (cache / "cache.zip").exists()
+    assert list(cache.glob("cache.z*")) == []
 
 
 def test_yaqwsx_max_volumes_is_a_high_safety_guard():
@@ -453,10 +586,12 @@ def test_download_yaqwsx_uses_resolved_absolute_7z_path(tmp_path, monkeypatch):
                 return r
             r.returncode = 22  # 404 past last volume
             return r
+        if len(cmd) > 1 and cmd[1] == "t":
+            return r
         # 7-Zip extraction call.
         extract_cmds.append(cmd[0])
         out_dir = next(c[2:] for c in cmd if isinstance(c, str) and c.startswith("-o"))
-        (Path(out_dir) / "cache.sqlite3").write_bytes(b"db")
+        _make_valid_sqlite(Path(out_dir) / "cache.sqlite3")
         return r
 
     monkeypatch.setattr(subprocess, "run", _run)

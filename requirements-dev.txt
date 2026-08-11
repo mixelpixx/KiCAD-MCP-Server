@@ -1,5 +1,8 @@
 # KiCAD MCP Server - Development Dependencies
 # Testing, linting, and development tools
+#
+# This is the human-maintained input file. CI installs the fully resolved
+# requirements-dev-lock.txt so tool upgrades cannot change a build implicitly.
 
 # Include production dependencies
 -r requirements.txt

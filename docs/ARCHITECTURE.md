@@ -9,11 +9,11 @@ This document describes the system architecture for contributors who want to und
 ```
 AI Assistant (Claude, etc.)
         |
-        | MCP Protocol (JSON-RPC 2.0 over STDIO)
+        | MCP 2026-07-28 or legacy 2025 over stdio
         v
   TypeScript MCP Server (src/)
         |
-        | Spawn Python subprocess, pass JSON commands
+        | Correlated private JSON command envelopes
         v
   Python KiCAD Interface (python/)
         |
@@ -24,8 +24,8 @@ AI Assistant (Claude, etc.)
 
 The server has two layers:
 
-1. **TypeScript layer** -- implements the MCP protocol, registers tools with schemas, validates input, manages the Python subprocess
-2. **Python layer** -- interfaces with KiCAD's pcbnew API (SWIG bindings) or IPC API for actual PCB/schematic operations
+1. **TypeScript layer** -- implements MCP with SDK v2, registers and validates the first-class protocol surface, and manages the Python subprocess
+2. **Python layer** -- executes private KiCad commands through pcbnew (SWIG bindings) or the IPC API; it is not a second MCP server
 
 ---
 
@@ -37,8 +37,9 @@ KiCAD-MCP-Server/
     server.ts                 # Main server, tool registration, Python subprocess
     logger.ts                 # Logging configuration
     tools/                    # Tool definitions (one file per category)
-      registry.ts             # Tool category definitions and lookup
-      router.ts               # Router tools (list/search/execute)
+      tool-registration.ts    # Canonical registration/result/annotation wrapper
+      registry.ts             # Runtime-derived tool categories and lookup
+      router.ts               # Supplemental discovery tools (list/get/search)
       project.ts              # Project management tools
       board.ts                # Board operations tools
       component.ts            # Component tools
@@ -92,9 +93,8 @@ KiCAD-MCP-Server/
       factory.py              # Backend auto-detection
       swig_backend.py         # pcbnew SWIG API backend
       ipc_backend.py          # KiCAD 9.0 IPC API backend
-    schemas/                  # JSON Schema definitions
-      tool_schemas.py         # Tool parameter schemas
-    resources/                # Resource handlers
+    schemas/                  # Legacy/internal Python schema checks; not tools/list
+    resources/                # Legacy resource helpers; not the live MCP catalog
     templates/                # Schematic/project templates
     tests/                    # Python test suite
     utils/                    # Platform detection, helpers
@@ -109,26 +109,31 @@ KiCAD-MCP-Server/
 
 ### Server Startup (`src/server.ts`)
 
-1. Creates an MCP server instance
-2. Registers all tools from each tool file (registerProjectTools, registerBoardTools, etc.)
-3. Registers resources and prompts
-4. Starts the STDIO transport for MCP communication
-5. On first tool call, spawns the Python subprocess
+1. Calls SDK v2 `serveStdio` with a fresh-server factory.
+2. Negotiates MCP 2026-07-28 through `server/discover`, with the legacy 2025 `initialize` path enabled for compatibility.
+3. Creates an MCP server instance and registers all tools, resources, and prompts for the selected connection.
+4. Starts Python initialization in the background so protocol discovery is available immediately.
+5. Makes KiCad-dependent calls wait for backend readiness and restarts the worker after recoverable failures.
 
 ### Tool Registration
 
 Each tool file exports a `register*Tools(server, callKicadScript)` function that:
 
 - Defines tool name, description, and Zod schema for parameters
-- Registers a handler that calls `callKicadScript(command, args)`
+- Registers through `registerKiCadTool`, which also records runtime catalog metadata and attaches annotations/output handling
+- Calls `callKicadScript(command, args)` when a Python backend operation is required
 
 Example from `src/tools/project.ts`:
 
 ```typescript
-server.tool(
+registerKiCadTool(
+  server,
+  "project",
   "create_project",
-  "Create a new KiCAD project",
-  { name: z.string(), path: z.string() },
+  {
+    description: "Create a new KiCad project",
+    inputSchema: z.object({ name: z.string(), path: z.string() }),
+  },
   async (args) => {
     const result = await callKicadScript("create_project", args);
     return { content: [{ type: "text", text: JSON.stringify(result) }] };
@@ -136,22 +141,25 @@ server.tool(
 );
 ```
 
-### Tool Router (`src/tools/router.ts` and `src/tools/registry.ts`)
+### Tool Discovery (`src/tools/router.ts` and `src/tools/registry.ts`)
 
-The router pattern reduces AI context usage:
+All 183 tools are first-class MCP tools returned by `tools/list`. The runtime
+registry is populated from the same `registerKiCadTool` calls, preventing a
+second catalog from drifting.
 
-- `registry.ts` defines tool categories and which tools are "direct" (always visible) vs "routed" (discoverable)
-- `router.ts` provides 4 meta-tools: `list_tool_categories`, `get_category_tools`, `search_tools`, `execute_tool`
-- Routed tools are not registered as individual MCP tools -- they are invoked through `execute_tool`
+`router.ts` provides three supplemental read-only tools:
+`list_tool_categories`, `get_category_tools`, and `search_tools`. They help a
+model find a tool, but the selected tool is called directly. There is no
+`execute_tool` or hidden routed subset.
 
 ### Python Subprocess Communication
 
 `callKicadScript(command, args)` in `server.ts`:
 
-1. Spawns `python3 python/kicad_interface.py` (if not already running)
-2. Sends a JSON message: `{"command": "...", "params": {...}}`
-3. Reads the JSON response
-4. Returns the result to the MCP tool handler
+1. Waits for the background Python worker to become ready.
+2. Sends a correlated JSON envelope containing `requestId`, `command`, and `params`.
+3. Matches the response by `requestId`, enforcing timeout and cancellation semantics.
+4. Returns the result to the MCP tool handler or restarts the worker when its state is no longer trustworthy.
 
 ---
 
@@ -209,15 +217,19 @@ Schematic manipulation uses a different stack than PCB operations:
 
 ### Step 1: Define the TypeScript Schema
 
-Create or edit a file in `src/tools/`. Register the tool with `server.tool()`:
+Create or edit a file in `src/tools/`. Register the tool through the canonical wrapper:
 
 ```typescript
-server.tool(
+registerKiCadTool(
+  server,
+  "category_name",
   "my_new_tool",
-  "Description of what the tool does",
   {
-    param1: z.string().describe("Description of param1"),
-    param2: z.number().optional().describe("Optional param2"),
+    description: "Description of what the tool does",
+    inputSchema: z.object({
+      param1: z.string().describe("Description of param1"),
+      param2: z.number().optional().describe("Optional param2"),
+    }),
   },
   async (args) => {
     const result = await callKicadScript("my_new_tool", args);
@@ -226,20 +238,10 @@ server.tool(
 );
 ```
 
-### Step 2: Add to Registry (if routed)
+The registration automatically adds the first-class MCP tool and its runtime
+category metadata. There is no manual routed/direct registry step.
 
-If the tool should be discoverable via the router (not always visible), add it to a category in `src/tools/registry.ts`:
-
-```typescript
-{
-  name: "category_name",
-  tools: ["existing_tool", "my_new_tool"]
-}
-```
-
-If the tool should always be visible, add it to `directToolNames` instead.
-
-### Step 3: Import in server.ts
+### Step 2: Import a New Module in `server.ts`
 
 Import and call the registration function in `src/server.ts`:
 
@@ -248,7 +250,9 @@ import { registerMyTools } from "./tools/my-tools.js";
 registerMyTools(server, callKicadScript);
 ```
 
-### Step 4: Implement the Python Handler
+Skip this step when adding to an existing registered module.
+
+### Step 3: Implement the Python Handler
 
 Add a handler in `python/kicad_interface.py` or create a new command module in `python/commands/`:
 
@@ -258,17 +262,17 @@ def handle_my_new_tool(self, params):
     return {"success": True, "message": "Done", "data": result}
 ```
 
-Route the command in the main handler:
+Add the command to `KiCADInterface.command_routes`:
 
 ```python
-elif command == "my_new_tool":
-    return self.handle_my_new_tool(params)
+self.command_routes["my_new_tool"] = self.handle_my_new_tool
 ```
 
-### Step 5: Build and Test
+### Step 4: Build and Test
 
 ```bash
 npm run build          # Compile TypeScript
+npm run test:ts        # Run TypeScript protocol/catalog tests
 npm run test:py        # Run Python tests
 ```
 
@@ -278,10 +282,10 @@ npm run test:py        # Run Python tests
 
 ### Python Tests
 
-Located in `python/tests/`. Run with:
+Located in `tests/`. Run with:
 
 ```bash
-pytest python/tests/ -v
+pytest tests/ -v
 ```
 
 Key test files:
@@ -303,7 +307,8 @@ Key test files:
 ## Key Design Decisions
 
 - **TypeScript + Python split**: TypeScript handles MCP protocol (well-supported SDK), Python handles KiCAD (only available API)
-- **Router pattern**: Reduces AI context from ~80K tokens (122 tools) to manageable size
+- **First-class catalog**: All 183 tools retain individual schemas and annotations; three supplemental discovery tools provide category and keyword lookup
+- **Dual-era stdio**: SDK v2 `serveStdio` negotiates MCP 2026-07-28 while retaining the legacy 2025 path
 - **Auto-save**: Every board-modifying SWIG operation auto-saves to prevent data loss
 - **Dynamic symbol loading**: Works around kicad-skip's inability to create symbols from scratch
 - **S-expression wire injection**: Works around kicad-skip's inability to create wires
@@ -315,8 +320,9 @@ Key test files:
 | File                                       | Purpose                             |
 | ------------------------------------------ | ----------------------------------- |
 | `src/server.ts`                            | MCP server, subprocess management   |
-| `src/tools/registry.ts`                    | Tool categories and organization    |
-| `src/tools/router.ts`                      | Router meta-tools                   |
+| `src/tools/tool-registration.ts`           | Canonical tool registration wrapper |
+| `src/tools/registry.ts`                    | Runtime-derived tool catalog        |
+| `src/tools/router.ts`                      | Supplemental discovery tools        |
 | `python/kicad_interface.py`                | Python entry point, command routing |
 | `python/kicad_api/factory.py`              | Backend selection                   |
 | `python/commands/dynamic_symbol_loader.py` | Symbol injection system             |

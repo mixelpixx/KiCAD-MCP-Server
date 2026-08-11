@@ -28,7 +28,7 @@
 >
 > **[Konnect](https://github.com/mixelpixx/Konnect)** is this project rebuilt from
 > scratch in Rust as a native KiCAD 10 plugin: a single binary with no runtime
-> dependencies, built on KiCAD's official IPC API instead of SWIG, with 171 tools,
+> dependencies, built on KiCAD's official IPC API instead of SWIG, with 183 tools,
 > bundled Claude skills and agents, design-review audits, and a manufacturing
 > pipeline. It's where new development happens — licensed AGPL-3.0 (free for
 > individuals and open source; commercial licenses available for businesses).
@@ -38,7 +38,7 @@
 
 #
 
-**KiCAD MCP Server** is a Model Context Protocol (MCP) server that enables AI assistants like Claude to interact with KiCAD for PCB design automation. Built on the MCP 2025-06-18 specification, this server provides comprehensive tool schemas and real-time project state access for intelligent PCB design workflows.
+**KiCAD MCP Server** is a Model Context Protocol (MCP) server that enables AI assistants like Claude to interact with KiCAD for PCB design automation. Built on MCP 2026-07-28 with dual-era compatibility for 2025-era clients, this server exposes 183 KiCAD tools and real-time project state access for intelligent PCB design workflows.
 
 ### Design PCBs with natural language
 
@@ -57,7 +57,7 @@ Describe what you want to build — and let AI handle the EDA work. Place compon
 ### Quick Start
 
 1. Install [KiCAD 9.0+](https://www.kicad.org/download/)
-2. Install [Node.js 18+](https://nodejs.org/) and [Python 3.11+](https://www.python.org/)
+2. Install [Node.js 20+](https://nodejs.org/) and [Python 3.11+](https://www.python.org/)
 3. Clone and build:
 
 ```bash
@@ -85,7 +85,7 @@ Example configs: `config/windows-config.example.json` or `config/macos-config.ex
 ### Documentation
 
 - [**Full README**](../README.md) — complete documentation
-- [Quick Start (Router Tools)](../docs/ROUTER_QUICK_START.md) — first steps
+- [Tool Discovery Quick Start](../docs/ROUTER_QUICK_START.md) — find and call tools
 - [Tool Inventory](../docs/TOOL_INVENTORY.md) — all available tools
 - [Schematic Tools Reference](../docs/SCHEMATIC_TOOLS_REFERENCE.md)
 - [Routing Tools Reference](../docs/ROUTING_TOOLS_REFERENCE.md)

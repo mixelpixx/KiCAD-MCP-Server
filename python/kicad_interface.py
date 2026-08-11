@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""
-KiCAD Python Interface Script for Model Context Protocol
+"""Private KiCad command worker for the TypeScript MCP server.
 
-This script handles communication between the MCP TypeScript server
-and KiCAD's Python API (pcbnew). It receives commands via stdin as
-JSON and returns responses via stdout also as JSON.
+The worker receives newline-delimited command envelopes on stdin and returns
+correlated JSON responses on stdout. It is deliberately not an MCP server.
 """
 
 import hashlib
@@ -15,7 +13,6 @@ import shutil
 import sys
 import traceback
 from datetime import datetime
-from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -35,15 +32,8 @@ if sys.platform == "win32":
             break
 
 import sexpdata
-from annotations import AnnotationLoader
 from commands.schematic_handlers import SchematicHandlersMixin
 from commands.wire_manager import WireManager
-from resources.resource_definitions import RESOURCE_DEFINITIONS, handle_resource_read
-
-# Import tool schemas, resource definitions, and IPC API annotations
-from schemas.tool_schemas import TOOL_SCHEMAS
-
-_annotation_loader = AnnotationLoader()
 
 
 def _parse_log_level() -> int:
@@ -74,15 +64,6 @@ def _parse_log_level() -> int:
     }.get(normalized, logging.INFO)
 
 
-def _parse_positive_int_env(name: str, default: int) -> int:
-    """Return a non-negative int from env var ``name``, or ``default``."""
-    try:
-        value = int(os.environ.get(name, str(default)))
-    except ValueError:
-        return default
-    return value if value >= 0 else default
-
-
 def _env_flag_enabled(name: str) -> bool:
     """Return True when env var ``name`` is a truthy flag (1/true/yes/on)."""
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
@@ -90,39 +71,15 @@ def _env_flag_enabled(name: str) -> bool:
 
 _LOG_LEVEL = _parse_log_level()
 
-# Configure logging.
-# The file handler rotates (default 10 MB x 3 backups) so the log can never
-# grow without bound (issue #181); the level honors the environment instead of
-# being hardcoded to DEBUG. If ~/.kicad-mcp/logs isn't writable (sandboxed test
-# envs, restricted CI runners) we fall back to console-only logging so importing
-# this module never crashes.
-try:
-    log_dir = Path.home() / ".kicad-mcp" / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = str(log_dir / "kicad_interface.log")
-    max_log_bytes = _parse_positive_int_env("KICAD_MCP_LOG_MAX_BYTES", 10 * 1024 * 1024)
-    backup_count = _parse_positive_int_env("KICAD_MCP_LOG_BACKUP_COUNT", 3)
-    if max_log_bytes:
-        log_handler: logging.Handler = RotatingFileHandler(
-            log_file,
-            maxBytes=max_log_bytes,
-            backupCount=backup_count,
-            encoding="utf-8",
-        )
-    else:
-        log_handler = logging.FileHandler(log_file, encoding="utf-8")
-    logging.basicConfig(
-        level=_LOG_LEVEL,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[log_handler],
-        force=True,
-    )
-except (OSError, PermissionError):
-    logging.basicConfig(
-        level=_LOG_LEVEL,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        force=True,
-    )
+# The TypeScript parent captures stderr and is the single bounded file-log
+# writer. Keeping the worker on stderr avoids duplicate logs and prevents two
+# local MCP processes from racing a file rotation over the same path.
+logging.basicConfig(
+    level=_LOG_LEVEL,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    stream=sys.stderr,
+    force=True,
+)
 logger = logging.getLogger("kicad_interface")
 
 # kicad-skip's S-expression parser emits per-node DEBUG logs that can fill disks
@@ -260,7 +217,7 @@ Windows Troubleshooting:
 2. Check PYTHONPATH environment variable points to:
    C:\\Program Files\\KiCad\\9.0\\lib\\python3\\dist-packages
 3. Test with: "C:\\Program Files\\KiCad\\9.0\\bin\\python.exe" -c "import pcbnew"
-4. Log file location: %USERPROFILE%\\.kicad-mcp\\logs\\kicad_interface.log
+4. Log file location: %USERPROFILE%\\.kicad-mcp\\logs\\kicad-mcp-YYYY-MM-DD.log
 5. Run setup-windows.ps1 for automatic configuration
 """
         elif sys.platform == "darwin":
@@ -912,7 +869,6 @@ class KiCADInterface(SchematicHandlersMixin):
     def handle_command(self, command: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Route command to appropriate handler, preferring IPC when available"""
         logger.info(f"Handling command: {command}")
-        logger.debug(f"Command parameters: {params}")
 
         try:
             if command in self.IPC_CAPABLE_COMMANDS and self._session_allows_ipc():
@@ -964,7 +920,7 @@ class KiCADInterface(SchematicHandlersMixin):
                             result["_backend"] = "ipc"
                             result["_realtime"] = True
 
-                        logger.debug(f"IPC command result: {result}")
+                        logger.debug("IPC command completed: command=%s", command)
                         return result
 
             # Fall back to SWIG-based handler
@@ -979,7 +935,7 @@ class KiCADInterface(SchematicHandlersMixin):
             if handler:
                 # Execute the command
                 result = handler(params)
-                logger.debug(f"Command result: {result}")
+                logger.debug("Command completed: command=%s", command)
 
                 # Add backend indicator
                 if isinstance(result, dict):
@@ -1226,7 +1182,7 @@ class KiCADInterface(SchematicHandlersMixin):
                 "diskChangedExternally": bool(last_auto_save.get("diskChangedExternally")),
             }
 
-        expected = getattr(self, "_board_disk_signature", None)
+        expected = self._board_disk_signature
         current = self._disk_signature(board_path)
 
         if expected is None:
@@ -5090,9 +5046,8 @@ print("ok")
             return self.board_commands.add_board_outline(params)
 
         try:
-            from kipy.board_types import BoardSegment
+            from kipy.board_types import BoardLayer, BoardSegment
             from kipy.geometry import Vector2
-            from kipy.proto.board.board_types_pb2 import BoardLayer
             from kipy.util.units import from_mm
 
             board = self.ipc_board_api._get_board()
@@ -5141,9 +5096,8 @@ print("ok")
     def _ipc_add_mounting_hole(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for add_mounting_hole - adds mounting hole with real-time UI update"""
         try:
-            from kipy.board_types import BoardCircle
+            from kipy.board_types import BoardCircle, BoardLayer
             from kipy.geometry import Vector2
-            from kipy.proto.board.board_types_pb2 import BoardLayer
             from kipy.util.units import from_mm
 
             board = self.ipc_board_api._get_board()
@@ -5301,14 +5255,18 @@ print("ok")
                 return {"success": False, "message": f"Component {reference} not found"}
 
             try:
-                from kipy.proto.board.board_types_pb2 import FootprintMountingStyle
-
-                style_map = {
-                    "through_hole": FootprintMountingStyle.FMS_THROUGH_HOLE,
-                    "smd": FootprintMountingStyle.FMS_SMD,
-                    "unspecified": FootprintMountingStyle.FMS_UNSPECIFIED,
+                style_names = {
+                    "through_hole": "FMS_THROUGH_HOLE",
+                    "smd": "FMS_SMD",
+                    "unspecified": "FMS_UNSPECIFIED",
                 }
-                target_fp.proto.attributes.mounting_style = style_map[fp_type]
+                attributes = target_fp.attributes
+                mounting_style_enum = attributes.proto.DESCRIPTOR.fields_by_name[
+                    "mounting_style"
+                ].enum_type
+                attributes.mounting_style = mounting_style_enum.values_by_name[
+                    style_names[fp_type]
+                ].number
 
                 if "exclude_from_pos_files" in params:
                     target_fp.proto.attributes.exclude_from_position_files = bool(
@@ -5810,8 +5768,62 @@ def _write_response(response_fd: Any, response: Any) -> None:
     writes from pcbnew (warnings, diagnostics) never corrupt the JSON
     framing seen by the TypeScript host.
     """
-    payload = json.dumps(response) + "\n"
-    os.write(response_fd, payload.encode("utf-8"))
+    payload = memoryview((json.dumps(response) + "\n").encode("utf-8"))
+    while payload:
+        written = os.write(response_fd, payload)
+        if written <= 0:
+            raise OSError("Could not write the command response to the TypeScript host")
+        payload = payload[written:]
+
+
+def _process_command_envelope(interface: Any, command_data: Any) -> Dict[str, Any]:
+    """Validate and execute one private TypeScript-to-Python command envelope."""
+    request_id = command_data.get("requestId") if isinstance(command_data, dict) else None
+
+    if not isinstance(command_data, dict):
+        response: Dict[str, Any] = {
+            "success": False,
+            "message": "Invalid command envelope",
+            "errorDetails": "Expected a JSON object",
+        }
+    elif not isinstance(request_id, str) or not request_id:
+        response = {
+            "success": False,
+            "message": "Invalid request ID",
+            "errorDetails": "The requestId field must be a non-empty string",
+        }
+    elif command_data.get("jsonrpc") == "2.0":
+        response = {
+            "success": False,
+            "message": "Direct MCP JSON-RPC is not supported by the Python worker",
+            "errorDetails": "Connect to the TypeScript MCP server instead",
+        }
+    elif not command_data.get("command"):
+        response = {
+            "success": False,
+            "message": "Missing command",
+            "errorDetails": "The command field is required",
+        }
+    elif not isinstance(command_data.get("params", {}), dict):
+        response = {
+            "success": False,
+            "message": "Invalid command parameters",
+            "errorDetails": "The params field must be a JSON object",
+        }
+    else:
+        response_value = interface.handle_command(
+            command_data["command"], command_data.get("params", {})
+        )
+        response = (
+            response_value
+            if isinstance(response_value, dict)
+            else {"success": True, "result": response_value}
+        )
+
+    # Always override a handler-provided value: correlation belongs to the
+    # transport envelope, never to an individual KiCad command implementation.
+    response["requestId"] = request_id
+    return response
 
 
 def main() -> None:
@@ -5833,164 +5845,52 @@ def main() -> None:
 
     try:
         logger.info("Processing commands from stdin...")
-        # Process commands from stdin
+        # Process the private command envelope used by the TypeScript MCP host.
+        # This worker is deliberately not an MCP server itself; keeping a single
+        # protocol layer prevents tool/schema drift between TypeScript and Python.
         for line in sys.stdin:
+            request_id = None
             try:
-                # Parse command
-                logger.debug(f"Received input: {line.strip()}")
                 command_data = json.loads(line)
-
-                # Check if this is JSON-RPC 2.0 format
-                if "jsonrpc" in command_data and command_data["jsonrpc"] == "2.0":
-                    logger.info("Detected JSON-RPC 2.0 format message")
-                    method = command_data.get("method")
-                    params = command_data.get("params", {})
-                    request_id = command_data.get("id")
-
-                    # Handle MCP protocol methods
-                    if method == "initialize":
-                        logger.info("Handling MCP initialize")
-                        response = {
-                            "jsonrpc": "2.0",
-                            "id": request_id,
-                            "result": {
-                                "protocolVersion": "2025-06-18",
-                                "capabilities": {
-                                    "tools": {"listChanged": True},
-                                    "resources": {
-                                        "subscribe": False,
-                                        "listChanged": True,
-                                    },
-                                },
-                                "serverInfo": {
-                                    "name": "kicad-mcp-server",
-                                    "title": "KiCAD PCB Design Assistant",
-                                    "version": "2.1.0-alpha",
-                                },
-                                "instructions": "AI-assisted PCB design with KiCAD. Use tools to create projects, design boards, place components, route traces, and export manufacturing files.",
-                            },
-                        }
-                    elif method == "tools/list":
-                        logger.info("Handling MCP tools/list")
-                        # Return list of available tools with proper schemas
-                        tools = []
-                        for cmd_name in interface.command_routes.keys():
-                            if cmd_name in TOOL_SCHEMAS:
-                                # Enrich the existing schema with IPC annotation data
-                                # (adds description/blocking hints where the schema lacks them)
-                                tool_def = _annotation_loader.enrich_schema(
-                                    cmd_name, TOOL_SCHEMAS[cmd_name]
-                                )
-                                tools.append(tool_def)
-                            else:
-                                # Build a best-effort schema from IPC annotations
-                                ann_desc = _annotation_loader.description(cmd_name)
-                                if ann_desc:
-                                    logger.debug(f"Using IPC annotation for tool: {cmd_name}")
-                                else:
-                                    logger.warning(f"No schema or annotation for tool: {cmd_name}")
-                                tools.append(
-                                    _annotation_loader.enrich_schema(
-                                        cmd_name,
-                                        {
-                                            "name": cmd_name,
-                                            "description": ann_desc or f"KiCAD command: {cmd_name}",
-                                            "inputSchema": {
-                                                "type": "object",
-                                                "properties": {},
-                                            },
-                                        },
-                                    )
-                                )
-
-                        logger.info(f"Returning {len(tools)} tools")
-                        response = {
-                            "jsonrpc": "2.0",
-                            "id": request_id,
-                            "result": {"tools": tools},
-                        }
-                    elif method == "tools/call":
-                        logger.info("Handling MCP tools/call")
-                        tool_name = params.get("name")
-                        tool_params = params.get("arguments", {})
-
-                        # Execute the command
-                        result = interface.handle_command(tool_name, tool_params)
-
-                        response = {
-                            "jsonrpc": "2.0",
-                            "id": request_id,
-                            "result": {"content": [{"type": "text", "text": json.dumps(result)}]},
-                        }
-                    elif method == "resources/list":
-                        logger.info("Handling MCP resources/list")
-                        # Return list of available resources
-                        response = {
-                            "jsonrpc": "2.0",
-                            "id": request_id,
-                            "result": {"resources": RESOURCE_DEFINITIONS},
-                        }
-                    elif method == "resources/read":
-                        logger.info("Handling MCP resources/read")
-                        resource_uri = params.get("uri")
-
-                        if not resource_uri:
-                            response = {
-                                "jsonrpc": "2.0",
-                                "id": request_id,
-                                "error": {
-                                    "code": -32602,
-                                    "message": "Missing required parameter: uri",
-                                },
-                            }
-                        else:
-                            # Read the resource
-                            resource_data = handle_resource_read(resource_uri, interface)
-
-                            response = {
-                                "jsonrpc": "2.0",
-                                "id": request_id,
-                                "result": resource_data,
-                            }
-                    else:
-                        logger.error(f"Unknown JSON-RPC method: {method}")
-                        response = {
-                            "jsonrpc": "2.0",
-                            "id": request_id,
-                            "error": {
-                                "code": -32601,
-                                "message": f"Method not found: {method}",
-                            },
-                        }
-                else:
-                    # Handle legacy custom format
-                    logger.info("Detected custom format message")
-                    command = command_data.get("command")
-                    params = command_data.get("params", {})
-
-                    if not command:
-                        logger.error("Missing command field")
-                        response = {
-                            "success": False,
-                            "message": "Missing command",
-                            "errorDetails": "The command field is required",
-                        }
-                    else:
-                        # Handle command
-                        response = interface.handle_command(command, params)
-
-                # Send response via the clean fd (immune to pcbnew stdout noise)
-                logger.debug(f"Sending response: {response}")
+                request_id = (
+                    command_data.get("requestId") if isinstance(command_data, dict) else None
+                )
+                command_name = (
+                    command_data.get("command") if isinstance(command_data, dict) else None
+                )
+                logger.debug(
+                    "Received command envelope: command=%r requestId=%r",
+                    command_name,
+                    request_id,
+                )
+                response = _process_command_envelope(interface, command_data)
+                logger.debug(
+                    "Sending command response: command=%r requestId=%r",
+                    command_name,
+                    request_id,
+                )
                 _write_response(_response_fd, response)
 
             except json.JSONDecodeError as e:
                 logger.error(f"Invalid JSON input: {str(e)}")
                 response = {
+                    "requestId": request_id,
                     "success": False,
                     "message": "Invalid JSON input",
                     "errorDetails": str(e),
                 }
                 _write_response(_response_fd, response)
+            except Exception as e:
+                logger.error(f"Command processing failed: {e}", exc_info=True)
+                _write_response(
+                    _response_fd,
+                    {
+                        "requestId": request_id,
+                        "success": False,
+                        "message": "Command processing failed",
+                        "errorDetails": str(e),
+                    },
+                )
 
     except KeyboardInterrupt:
         logger.info("KiCAD interface stopped")

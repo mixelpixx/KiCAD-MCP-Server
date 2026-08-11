@@ -1,68 +1,101 @@
-"""
-Regression test: no MCP tool name is registered more than once across all
-TypeScript tool files in src/tools/.
+"""Static parity checks for TypeScript MCP tools and Python command routes."""
 
-This caught a real bug where move_schematic_component was registered twice
-(once in the original code and once in the PR adding wire-preservation),
-causing the server to fail on startup with:
-  Error: Tool move_schematic_component is already registered
-"""
-
+import ast
 import re
 from collections import Counter
 from pathlib import Path
 
 import pytest
 
-SRC_TOOLS_DIR = Path(__file__).parent.parent / "src" / "tools"
+ROOT = Path(__file__).parent.parent
+SRC_TOOLS_DIR = ROOT / "src" / "tools"
+PYTHON_INTERFACE = ROOT / "python" / "kicad_interface.py"
 
-# Pattern matches the tool-name argument to server.tool(
-#   server.tool(
-#     "some_tool_name",
-_SERVER_TOOL_RE = re.compile(r'server\.tool\(\s*["\']([a-zA-Z0-9_]+)["\']')
+_REGISTER_TOOL_RE = re.compile(
+    r'registerKiCadTool\(\s*server,\s*["\'](?P<category>[a-z0-9_]+)["\']\s*,\s*'
+    r'["\'](?P<name>[a-zA-Z0-9_]+)["\']'
+)
+_BACKEND_CALL_RE = re.compile(r'callKicadScript\(\s*["\']([a-zA-Z0-9_]+)["\']')
+
+
+def _command_routes() -> set[str]:
+    tree = ast.parse(PYTHON_INTERFACE.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(
+            isinstance(target, ast.Attribute) and target.attr == "command_routes"
+            for target in node.targets
+        ):
+            continue
+        if not isinstance(node.value, ast.Dict):
+            continue
+        return {
+            key.value
+            for key in node.value.keys
+            if isinstance(key, ast.Constant) and isinstance(key.value, str)
+        }
+    raise AssertionError("KiCADInterface.command_routes dictionary was not found")
 
 
 @pytest.mark.unit
 class TestTsToolRegistry:
     def _collect_registrations(self):
-        """Return list of (tool_name, file, line_no) for every server.tool() call."""
         registrations = []
-        for ts_file in sorted(SRC_TOOLS_DIR.glob("**/*.ts")):
+        for ts_file in sorted(SRC_TOOLS_DIR.glob("*.ts")):
             text = ts_file.read_text(encoding="utf-8")
-            for m in _SERVER_TOOL_RE.finditer(text):
-                line_no = text[: m.start()].count("\n") + 1
-                registrations.append((m.group(1), ts_file.name, line_no))
+            for match in _REGISTER_TOOL_RE.finditer(text):
+                line_no = text[: match.start()].count("\n") + 1
+                registrations.append(
+                    (match.group("name"), match.group("category"), ts_file.name, line_no)
+                )
         return registrations
 
     def test_no_duplicate_tool_names(self):
-        """Every tool name must appear exactly once across all TS tool files."""
         registrations = self._collect_registrations()
-        assert registrations, "No server.tool() calls found — check SRC_TOOLS_DIR path"
+        assert registrations, "No registerKiCadTool() calls found"
 
-        counts = Counter(name for name, _, _ in registrations)
+        counts = Counter(name for name, _, _, _ in registrations)
         duplicates = {name: count for name, count in counts.items() if count > 1}
+        assert not duplicates, f"Duplicate MCP tool registrations found: {duplicates}"
 
-        if duplicates:
-            details = []
-            for dup_name in sorted(duplicates):
-                locations = [
-                    f"  {fname}:{line}" for name, fname, line in registrations if name == dup_name
-                ]
-                details.append(f"{dup_name} ({duplicates[dup_name]}x):\n" + "\n".join(locations))
-            pytest.fail(
-                "Duplicate MCP tool registrations found — server will fail to start:\n\n"
-                + "\n\n".join(details)
-            )
+    def test_all_tool_modules_use_the_catalog_registration_wrapper(self):
+        offenders = []
+        for ts_file in sorted(SRC_TOOLS_DIR.glob("*.ts")):
+            if ts_file.name == "tool-registration.ts":
+                continue
+            if "server.registerTool(" in ts_file.read_text(encoding="utf-8"):
+                offenders.append(ts_file.name)
+        assert offenders == []
 
-    def test_tool_files_exist(self):
-        """Sanity check: src/tools/ directory must be present and contain TS files."""
-        assert SRC_TOOLS_DIR.is_dir(), f"src/tools/ not found at {SRC_TOOLS_DIR}"
-        ts_files = list(SRC_TOOLS_DIR.glob("**/*.ts"))
-        assert ts_files, "No .ts files found in src/tools/"
+    def test_every_typescript_backend_command_has_a_python_route(self):
+        routes = _command_routes()
+        calls: dict[str, list[str]] = {}
+        for ts_file in sorted(SRC_TOOLS_DIR.glob("*.ts")):
+            text = ts_file.read_text(encoding="utf-8")
+            for command in _BACKEND_CALL_RE.findall(text):
+                calls.setdefault(command, []).append(ts_file.name)
+
+        missing = {command: files for command, files in calls.items() if command not in routes}
+        assert missing == {}
+
+    def test_removed_phantom_tools_are_not_advertised(self):
+        names = {name for name, _, _, _ in self._collect_registrations()}
+        assert names.isdisjoint(
+            {
+                "add_component_annotation",
+                "group_components",
+                "replace_component",
+                "assign_net_to_class",
+                "set_layer_constraints",
+                "check_clearance",
+            }
+        )
+
+    def test_supported_compatibility_aliases_remain_advertised(self):
+        names = {name for name, _, _, _ in self._collect_registrations()}
+        assert {"add_zone", "add_net_class", "export_position_file", "export_vrml"} <= names
 
     def test_backend_state_tool_is_registered(self):
-        """Backend observability must be exposed as a first-class MCP tool."""
-        registrations = self._collect_registrations()
-        tool_names = {name for name, _, _ in registrations}
-
-        assert "get_backend_state" in tool_names
+        names = {name for name, _, _, _ in self._collect_registrations()}
+        assert "get_backend_state" in names

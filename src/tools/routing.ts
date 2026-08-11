@@ -1,18 +1,23 @@
 /**
  * Routing tools for KiCAD MCP server
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { registerKiCadTool, type CommandFunction, withToolSignal } from "./tool-registration.js";
 
-export function registerRoutingTools(server: McpServer, callKicadScript: Function) {
+export function registerRoutingTools(server: McpServer, callKicadScript: CommandFunction) {
+  callKicadScript = withToolSignal(callKicadScript);
   // Add net tool
-  server.tool(
+  registerKiCadTool(
+    server,
+    "routing",
     "add_net",
-    "Create a new net on the PCB",
     {
-      name: z.string().describe("Net name"),
-      netClass: z.string().optional().describe("Net class name"),
+      description: "Create a new net on the PCB",
+      inputSchema: z.object({
+        name: z.string().describe("Net name"),
+        netClass: z.string().optional().describe("Net class name"),
+      }),
     },
     async (args: { name: string; netClass?: string }) => {
       const result = await callKicadScript("add_net", args);
@@ -28,27 +33,32 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   );
 
   // Route trace tool
-  server.tool(
+  registerKiCadTool(
+    server,
+    "routing",
     "route_trace",
-    "Route a trace segment between two XY points on a fixed layer. WARNING: Does NOT handle layer changes — if start and end are on different copper layers, use route_pad_to_pad instead, which automatically inserts a via.",
     {
-      start: z
-        .object({
-          x: z.number(),
-          y: z.number(),
-          unit: z.string().optional(),
-        })
-        .describe("Start position"),
-      end: z
-        .object({
-          x: z.number(),
-          y: z.number(),
-          unit: z.string().optional(),
-        })
-        .describe("End position"),
-      layer: z.string().describe("PCB layer"),
-      width: z.number().describe("Trace width in mm"),
-      net: z.string().describe("Net name"),
+      description:
+        "Route a trace segment between two XY points on a fixed layer. WARNING: Does NOT handle layer changes — if start and end are on different copper layers, use route_pad_to_pad instead, which automatically inserts a via.",
+      inputSchema: z.object({
+        start: z
+          .object({
+            x: z.number(),
+            y: z.number(),
+            unit: z.string().optional(),
+          })
+          .describe("Start position"),
+        end: z
+          .object({
+            x: z.number(),
+            y: z.number(),
+            unit: z.string().optional(),
+          })
+          .describe("End position"),
+        layer: z.string().describe("PCB layer"),
+        width: z.number().describe("Trace width in mm"),
+        net: z.string().describe("Net name"),
+      }),
     },
     async (args: any) => {
       const result = await callKicadScript("route_trace", args);
@@ -64,34 +74,39 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   );
 
   // Route arc trace tool
-  server.tool(
+  registerKiCadTool(
+    server,
+    "routing",
     "route_arc_trace",
-    "Route a copper arc trace defined by start/mid/end points. Uses true PCB arc primitives when available.",
     {
-      start: z
-        .object({
-          x: z.number(),
-          y: z.number(),
-          unit: z.string().optional(),
-        })
-        .describe("Arc start position"),
-      mid: z
-        .object({
-          x: z.number(),
-          y: z.number(),
-          unit: z.string().optional(),
-        })
-        .describe("A point on arc midpoint"),
-      end: z
-        .object({
-          x: z.number(),
-          y: z.number(),
-          unit: z.string().optional(),
-        })
-        .describe("Arc end position"),
-      layer: z.string().describe("PCB layer"),
-      width: z.number().describe("Trace width in mm"),
-      net: z.string().optional().describe("Net name"),
+      description:
+        "Route a copper arc trace defined by start/mid/end points. Uses true PCB arc primitives when available.",
+      inputSchema: z.object({
+        start: z
+          .object({
+            x: z.number(),
+            y: z.number(),
+            unit: z.string().optional(),
+          })
+          .describe("Arc start position"),
+        mid: z
+          .object({
+            x: z.number(),
+            y: z.number(),
+            unit: z.string().optional(),
+          })
+          .describe("A point on arc midpoint"),
+        end: z
+          .object({
+            x: z.number(),
+            y: z.number(),
+            unit: z.string().optional(),
+          })
+          .describe("Arc end position"),
+        layer: z.string().describe("PCB layer"),
+        width: z.number().describe("Trace width in mm"),
+        net: z.string().optional().describe("Net name"),
+      }),
     },
     async (args: any) => {
       const result = await callKicadScript("route_arc_trace", args);
@@ -107,19 +122,23 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   );
 
   // Add via tool
-  server.tool(
+  registerKiCadTool(
+    server,
+    "routing",
     "add_via",
-    "Add a via to the PCB",
     {
-      position: z
-        .object({
-          x: z.number(),
-          y: z.number(),
-          unit: z.string().optional(),
-        })
-        .describe("Via position"),
-      net: z.string().describe("Net name"),
-      viaType: z.string().optional().describe("Via type (through, blind, buried)"),
+      description: "Add a via to the PCB",
+      inputSchema: z.object({
+        position: z
+          .object({
+            x: z.number(),
+            y: z.number(),
+            unit: z.string().optional(),
+          })
+          .describe("Via position"),
+        net: z.string().describe("Net name"),
+        viaType: z.string().optional().describe("Via type (through, blind, buried)"),
+      }),
     },
     async (args: any) => {
       const result = await callKicadScript("add_via", args);
@@ -135,19 +154,23 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   );
 
   // Add copper pour tool
-  server.tool(
+  registerKiCadTool(
+    server,
+    "routing",
     "add_copper_pour",
-    "Add a copper pour (ground/power plane) to the PCB",
     {
-      layer: z.string().describe("PCB layer"),
-      net: z.string().describe("Net name"),
-      clearance: z.number().optional().describe("Clearance in mm"),
-      outline: z
-        .array(z.object({ x: z.number(), y: z.number() }))
-        .optional()
-        .describe(
-          "Array of {x, y} points defining the pour boundary. If omitted, the board outline is used.",
-        ),
+      description: "Add a copper pour (ground/power plane) to the PCB",
+      inputSchema: z.object({
+        layer: z.string().describe("PCB layer"),
+        net: z.string().describe("Net name"),
+        clearance: z.number().optional().describe("Clearance in mm"),
+        outline: z
+          .array(z.object({ x: z.number(), y: z.number() }))
+          .optional()
+          .describe(
+            "Array of {x, y} points defining the pour boundary. If omitted, the board outline is used.",
+          ),
+      }),
     },
     async (args: any) => {
       const result = await callKicadScript("add_copper_pour", args);
@@ -163,22 +186,27 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   );
 
   // Delete trace tool
-  server.tool(
+  registerKiCadTool(
+    server,
+    "routing",
     "delete_trace",
-    "Delete traces from the PCB. Can delete by UUID, position, or bulk-delete all traces on a net.",
     {
-      traceUuid: z.string().optional().describe("UUID of a specific trace to delete"),
-      position: z
-        .object({
-          x: z.number(),
-          y: z.number(),
-          unit: z.enum(["mm", "inch", "mil"]).optional(),
-        })
-        .optional()
-        .describe("Delete trace nearest to this position"),
-      net: z.string().optional().describe("Delete all traces on this net (bulk delete)"),
-      layer: z.string().optional().describe("Filter by layer when using net-based deletion"),
-      includeVias: z.boolean().optional().describe("Include vias in net-based deletion"),
+      description:
+        "Delete traces from the PCB. Can delete by UUID, position, or bulk-delete all traces on a net.",
+      inputSchema: z.object({
+        traceUuid: z.string().optional().describe("UUID of a specific trace to delete"),
+        position: z
+          .object({
+            x: z.number(),
+            y: z.number(),
+            unit: z.enum(["mm", "inch", "mil"]).optional(),
+          })
+          .optional()
+          .describe("Delete trace nearest to this position"),
+        net: z.string().optional().describe("Delete all traces on this net (bulk delete)"),
+        layer: z.string().optional().describe("Filter by layer when using net-based deletion"),
+        includeVias: z.boolean().optional().describe("Include vias in net-based deletion"),
+      }),
     },
     async (args: any) => {
       const result = await callKicadScript("delete_trace", args);
@@ -194,23 +222,28 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   );
 
   // Query traces tool
-  server.tool(
+  registerKiCadTool(
+    server,
+    "routing",
     "query_traces",
-    "Query traces on the board with optional filters by net, layer, or bounding box.",
     {
-      net: z.string().optional().describe("Filter by net name"),
-      layer: z.string().optional().describe("Filter by layer name"),
-      boundingBox: z
-        .object({
-          x1: z.number(),
-          y1: z.number(),
-          x2: z.number(),
-          y2: z.number(),
-          unit: z.enum(["mm", "inch", "mil"]).optional(),
-        })
-        .optional()
-        .describe("Filter by bounding box region"),
-      unit: z.enum(["mm", "inch", "mil"]).optional().describe("Unit for coordinates"),
+      description:
+        "Query traces on the board with optional filters by net, layer, or bounding box.",
+      inputSchema: z.object({
+        net: z.string().optional().describe("Filter by net name"),
+        layer: z.string().optional().describe("Filter by layer name"),
+        boundingBox: z
+          .object({
+            x1: z.number(),
+            y1: z.number(),
+            x2: z.number(),
+            y2: z.number(),
+            unit: z.enum(["mm", "inch", "mil"]).optional(),
+          })
+          .optional()
+          .describe("Filter by bounding box region"),
+        unit: z.enum(["mm", "inch", "mil"]).optional().describe("Unit for coordinates"),
+      }),
     },
     async (args: any) => {
       const result = await callKicadScript("query_traces", args);
@@ -226,25 +259,30 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   );
 
   // Query zones tool
-  server.tool(
+  registerKiCadTool(
+    server,
+    "routing",
     "query_zones",
-    "Query copper zones (filled pours) on the board with optional filters by net, layer, or bounding box. Returns zone net, layers, priority, fill state, and bounding box. Useful for auditing power planes and GND pours that query_traces does not include.",
     {
-      net: z.string().optional().describe("Filter by net name"),
-      layer: z
-        .string()
-        .optional()
-        .describe("Filter by layer name (matches zones that include this layer)"),
-      boundingBox: z
-        .object({
-          x1: z.number(),
-          y1: z.number(),
-          x2: z.number(),
-          y2: z.number(),
-          unit: z.enum(["mm", "inch"]).optional(),
-        })
-        .optional()
-        .describe("Filter to zones whose bounding box overlaps this region"),
+      description:
+        "Query copper zones (filled pours) on the board with optional filters by net, layer, or bounding box. Returns zone net, layers, priority, fill state, and bounding box. Useful for auditing power planes and GND pours that query_traces does not include.",
+      inputSchema: z.object({
+        net: z.string().optional().describe("Filter by net name"),
+        layer: z
+          .string()
+          .optional()
+          .describe("Filter by layer name (matches zones that include this layer)"),
+        boundingBox: z
+          .object({
+            x1: z.number(),
+            y1: z.number(),
+            x2: z.number(),
+            y2: z.number(),
+            unit: z.enum(["mm", "inch"]).optional(),
+          })
+          .optional()
+          .describe("Filter to zones whose bounding box overlaps this region"),
+      }),
     },
     async (args: any) => {
       const result = await callKicadScript("query_zones", args);
@@ -274,67 +312,68 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   //   https://github.com/NiNjA-CodE/morningfire-pcb-automation
   //   (scripts/ground/add_gnd_vias.py)
   // ------------------------------------------------------
-  server.tool(
+  registerKiCadTool(
+    server,
+    "routing",
     "add_gnd_stitching_vias",
-    "Drop GND stitching vias across the board with collision checking against every non-GND segment, via, and pad on every copper layer (PTH vias penetrate the full stackup, so missing any one layer is the classic silent-short failure mode). Three combinable strategies: `grid` (regular grid across the interior), `around_refs` (densify around named ICs), and `in_zones` (only place vias inside an actual GND copper zone). Supports `dryRun` to preview placements without writing.",
     {
-      gndNet: z
-        .string()
-        .optional()
-        .describe(
-          "Name of the ground net (default: auto-detect GND / GROUND / VSS / /GND).",
-        ),
-      strategies: z
-        .array(z.enum(["grid", "around_refs", "in_zones"]))
-        .optional()
-        .describe(
-          "Which placement strategies to combine (default: ['grid']). Pass ['grid', 'around_refs', 'in_zones'] for full coverage.",
-        ),
-      viaSize: z.number().optional().describe("Via pad diameter in mm (default 0.6)."),
-      viaDrill: z
-        .number()
-        .optional()
-        .describe("Via drill diameter in mm (default 0.3). Must be smaller than viaSize."),
-      clearance: z
-        .number()
-        .optional()
-        .describe(
-          "Extra clearance beyond required between each new via and existing copper, in mm (default 0.2).",
-        ),
-      spacing: z
-        .number()
-        .optional()
-        .describe(
-          "Grid spacing in mm for `grid` and `around_refs` strategies (default 5.0).",
-        ),
-      densifyRefs: z
-        .array(z.string())
-        .optional()
-        .describe(
-          "Reference designators to densify ground around (used by `around_refs`). Targets: MCUs, switching regulators, RF parts.",
-        ),
-      densifyRadius: z
-        .number()
-        .int()
-        .optional()
-        .describe(
-          "How many grid cells around each ref to try (default 2 = 5x5 candidate field per ref).",
-        ),
-      edgeMargin: z
-        .number()
-        .optional()
-        .describe("Keep-out from the board edge in mm (default 0.5)."),
-      maxVias: z
-        .number()
-        .int()
-        .optional()
-        .describe("Cap on total placements across all strategies (default unlimited)."),
-      dryRun: z
-        .boolean()
-        .optional()
-        .describe(
-          "If true, return the placements that would be made but don't modify the board (default false).",
-        ),
+      description:
+        "Drop GND stitching vias across the board with collision checking against every non-GND segment, via, and pad on every copper layer (PTH vias penetrate the full stackup, so missing any one layer is the classic silent-short failure mode). Three combinable strategies: `grid` (regular grid across the interior), `around_refs` (densify around named ICs), and `in_zones` (only place vias inside an actual GND copper zone). Supports `dryRun` to preview placements without writing.",
+      inputSchema: z.object({
+        gndNet: z
+          .string()
+          .optional()
+          .describe("Name of the ground net (default: auto-detect GND / GROUND / VSS / /GND)."),
+        strategies: z
+          .array(z.enum(["grid", "around_refs", "in_zones"]))
+          .optional()
+          .describe(
+            "Which placement strategies to combine (default: ['grid']). Pass ['grid', 'around_refs', 'in_zones'] for full coverage.",
+          ),
+        viaSize: z.number().optional().describe("Via pad diameter in mm (default 0.6)."),
+        viaDrill: z
+          .number()
+          .optional()
+          .describe("Via drill diameter in mm (default 0.3). Must be smaller than viaSize."),
+        clearance: z
+          .number()
+          .optional()
+          .describe(
+            "Extra clearance beyond required between each new via and existing copper, in mm (default 0.2).",
+          ),
+        spacing: z
+          .number()
+          .optional()
+          .describe("Grid spacing in mm for `grid` and `around_refs` strategies (default 5.0)."),
+        densifyRefs: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Reference designators to densify ground around (used by `around_refs`). Targets: MCUs, switching regulators, RF parts.",
+          ),
+        densifyRadius: z
+          .number()
+          .int()
+          .optional()
+          .describe(
+            "How many grid cells around each ref to try (default 2 = 5x5 candidate field per ref).",
+          ),
+        edgeMargin: z
+          .number()
+          .optional()
+          .describe("Keep-out from the board edge in mm (default 0.5)."),
+        maxVias: z
+          .number()
+          .int()
+          .optional()
+          .describe("Cap on total placements across all strategies (default unlimited)."),
+        dryRun: z
+          .boolean()
+          .optional()
+          .describe(
+            "If true, return the placements that would be made but don't modify the board (default false).",
+          ),
+      }),
     },
     async (args: any) => {
       const result = await callKicadScript("add_gnd_stitching_vias", args);
@@ -350,15 +389,19 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   );
 
   // Get nets list tool
-  server.tool(
+  registerKiCadTool(
+    server,
+    "routing",
     "get_nets_list",
-    "Get a list of all nets in the PCB with optional statistics.",
     {
-      includeStats: z
-        .boolean()
-        .optional()
-        .describe("Include statistics (track count, total length, etc.)"),
-      unit: z.enum(["mm", "mil", "inch"]).optional().describe("Unit for length measurements"),
+      description: "Get a list of all nets in the PCB with optional statistics.",
+      inputSchema: z.object({
+        includeStats: z
+          .boolean()
+          .optional()
+          .describe("Include statistics (track count, total length, etc.)"),
+        unit: z.enum(["mm", "mil", "inch"]).optional().describe("Unit for length measurements"),
+      }),
     },
     async (args: any) => {
       const result = await callKicadScript("get_nets_list", args);
@@ -374,14 +417,18 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   );
 
   // Modify trace tool
-  server.tool(
+  registerKiCadTool(
+    server,
+    "routing",
     "modify_trace",
-    "Modify an existing trace (change width, layer, or net).",
     {
-      traceUuid: z.string().describe("UUID of the trace to modify"),
-      width: z.number().optional().describe("New trace width in mm"),
-      layer: z.string().optional().describe("New layer name"),
-      net: z.string().optional().describe("New net name"),
+      description: "Modify an existing trace (change width, layer, or net).",
+      inputSchema: z.object({
+        traceUuid: z.string().describe("UUID of the trace to modify"),
+        width: z.number().optional().describe("New trace width in mm"),
+        layer: z.string().optional().describe("New layer name"),
+        net: z.string().optional().describe("New net name"),
+      }),
     },
     async (args: any) => {
       const result = await callKicadScript("modify_trace", args);
@@ -397,15 +444,19 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   );
 
   // Create netclass tool
-  server.tool(
+  registerKiCadTool(
+    server,
+    "routing",
     "create_netclass",
-    "Create a new net class with custom design rules.",
     {
-      name: z.string().describe("Net class name"),
-      traceWidth: z.number().optional().describe("Default trace width in mm"),
-      clearance: z.number().optional().describe("Clearance in mm"),
-      viaDiameter: z.number().optional().describe("Via diameter in mm"),
-      viaDrill: z.number().optional().describe("Via drill size in mm"),
+      description: "Create a new net class with custom design rules.",
+      inputSchema: z.object({
+        name: z.string().describe("Net class name"),
+        traceWidth: z.number().optional().describe("Default trace width in mm"),
+        clearance: z.number().optional().describe("Clearance in mm"),
+        viaDiameter: z.number().optional().describe("Via diameter in mm"),
+        viaDrill: z.number().optional().describe("Via drill size in mm"),
+      }),
     },
     async (args: any) => {
       const result = await callKicadScript("create_netclass", args);
@@ -421,27 +472,31 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   );
 
   // Route differential pair tool
-  server.tool(
+  registerKiCadTool(
+    server,
+    "routing",
     "route_differential_pair",
-    "Route a differential pair between two sets of points.",
     {
-      positivePad: z
-        .object({
-          reference: z.string(),
-          pad: z.string(),
-        })
-        .describe("Positive pad (component and pad number)"),
-      negativePad: z
-        .object({
-          reference: z.string(),
-          pad: z.string(),
-        })
-        .describe("Negative pad (component and pad number)"),
-      layer: z.string().describe("PCB layer"),
-      width: z.number().describe("Trace width in mm"),
-      gap: z.number().describe("Gap between traces in mm"),
-      positiveNet: z.string().describe("Positive net name"),
-      negativeNet: z.string().describe("Negative net name"),
+      description: "Route a differential pair between two sets of points.",
+      inputSchema: z.object({
+        positivePad: z
+          .object({
+            reference: z.string(),
+            pad: z.string(),
+          })
+          .describe("Positive pad (component and pad number)"),
+        negativePad: z
+          .object({
+            reference: z.string(),
+            pad: z.string(),
+          })
+          .describe("Negative pad (component and pad number)"),
+        layer: z.string().describe("PCB layer"),
+        width: z.number().describe("Trace width in mm"),
+        gap: z.number().describe("Gap between traces in mm"),
+        positiveNet: z.string().describe("Positive net name"),
+        negativeNet: z.string().describe("Negative net name"),
+      }),
     },
     async (args: any) => {
       const result = await callKicadScript("route_differential_pair", args);
@@ -457,10 +512,15 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   );
 
   // Refill zones tool
-  server.tool(
+  registerKiCadTool(
+    server,
+    "routing",
     "refill_zones",
-    "Refill all copper zones on the board. WARNING: SWIG path has known segfault risk (see KNOWN_ISSUES.md). Prefer using IPC backend (KiCAD open) or triggering zone fill via KiCAD UI instead.",
-    {},
+    {
+      description:
+        "Refill all copper zones on the board. WARNING: SWIG path has known segfault risk (see KNOWN_ISSUES.md). Prefer using IPC backend (KiCAD open) or triggering zone fill via KiCAD UI instead.",
+      inputSchema: z.object({}),
+    },
     async (args: any) => {
       const result = await callKicadScript("refill_zones", args);
       return {
@@ -475,21 +535,26 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   );
 
   // Route pad to pad tool
-  server.tool(
+  registerKiCadTool(
+    server,
+    "routing",
     "route_pad_to_pad",
-    "PREFERRED tool for pad-to-pad routing. Looks up pad positions automatically, detects the net from the pad, and — critically — if the two pads are on different copper layers (e.g. J1 on F.Cu and J2 on B.Cu) automatically inserts a via at the midpoint so the connection is complete. Always use this instead of route_trace when routing between named component pads.",
     {
-      fromRef: z.string().describe("Reference of the source component (e.g. 'U2')"),
-      fromPad: z
-        .union([z.string(), z.number()])
-        .describe("Pad number on the source component (e.g. '6' or 6)"),
-      toRef: z.string().describe("Reference of the target component (e.g. 'U1')"),
-      toPad: z
-        .union([z.string(), z.number()])
-        .describe("Pad number on the target component (e.g. '15' or 15)"),
-      layer: z.string().optional().describe("PCB layer (default: F.Cu)"),
-      width: z.number().optional().describe("Trace width in mm (default: board default)"),
-      net: z.string().optional().describe("Net name override (default: auto-detected from pad)"),
+      description:
+        "PREFERRED tool for pad-to-pad routing. Looks up pad positions automatically, detects the net from the pad, and — critically — if the two pads are on different copper layers (e.g. J1 on F.Cu and J2 on B.Cu) automatically inserts a via at the midpoint so the connection is complete. Always use this instead of route_trace when routing between named component pads.",
+      inputSchema: z.object({
+        fromRef: z.string().describe("Reference of the source component (e.g. 'U2')"),
+        fromPad: z
+          .union([z.string(), z.number()])
+          .describe("Pad number on the source component (e.g. '6' or 6)"),
+        toRef: z.string().describe("Reference of the target component (e.g. 'U1')"),
+        toPad: z
+          .union([z.string(), z.number()])
+          .describe("Pad number on the target component (e.g. '15' or 15)"),
+        layer: z.string().optional().describe("PCB layer (default: F.Cu)"),
+        width: z.number().optional().describe("Trace width in mm (default: board default)"),
+        net: z.string().optional().describe("Net name override (default: auto-detected from pad)"),
+      }),
     },
     async (args: any) => {
       const result = await callKicadScript("route_pad_to_pad", args);
@@ -500,23 +565,28 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   );
 
   // Copy routing pattern tool
-  server.tool(
+  registerKiCadTool(
+    server,
+    "routing",
     "copy_routing_pattern",
-    "Copy routing pattern (traces and vias) from a group of source components to a matching group of target components. The offset is calculated automatically from the position difference between the first source and first target component. Useful for replicating routing between identical circuit blocks.",
     {
-      sourceRefs: z
-        .array(z.string())
-        .describe("References of the source components (e.g. ['U1', 'R1', 'C1'])"),
-      targetRefs: z
-        .array(z.string())
-        .describe(
-          "References of the target components in same order as sourceRefs (e.g. ['U2', 'R2', 'C2'])",
-        ),
-      includeVias: z.boolean().optional().describe("Also copy vias (default: true)"),
-      traceWidth: z
-        .number()
-        .optional()
-        .describe("Override trace width in mm (default: keep original width)"),
+      description:
+        "Copy routing pattern (traces and vias) from a group of source components to a matching group of target components. The offset is calculated automatically from the position difference between the first source and first target component. Useful for replicating routing between identical circuit blocks.",
+      inputSchema: z.object({
+        sourceRefs: z
+          .array(z.string())
+          .describe("References of the source components (e.g. ['U1', 'R1', 'C1'])"),
+        targetRefs: z
+          .array(z.string())
+          .describe(
+            "References of the target components in same order as sourceRefs (e.g. ['U2', 'R2', 'C2'])",
+          ),
+        includeVias: z.boolean().optional().describe("Also copy vias (default: true)"),
+        traceWidth: z
+          .number()
+          .optional()
+          .describe("Override trace width in mm (default: keep original width)"),
+      }),
     },
     async (args: any) => {
       const result = await callKicadScript("copy_routing_pattern", args);

@@ -1,26 +1,47 @@
 {
-  "name": "kicad-mcp",
-  "version": "2.4.0",
+  "name": "@theavi/kicad-mcp",
+  "version": "2.7.0",
   "description": "AI-assisted PCB design with KiCAD via Model Context Protocol",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "kicad-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist/**/*.js",
+    "python/**/*.py",
+    "python/**/*.json",
+    "python/**/*.kicad_sch",
+    "python/**/*.txt",
+    "!python/test_ipc_backend.py",
+    "!python/requirements.txt",
+    "config/default-config.json",
+    "requirements.txt",
+    "requirements-lock.txt",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
-    "start": "node dist/index.js",
-    "dev": "npm run build:watch & nodemon dist/index.js",
-    "clean": "rm -rf dist",
+    "start": "node dist/cli.js serve",
+    "dev": "nodemon --watch src --ext ts --exec \"npm run build && node dist/cli.js serve\"",
+    "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
     "rebuild": "npm run clean && npm run build",
     "test": "npm run test:ts && npm run test:py",
     "test:ts": "vitest run",
     "test:ts:watch": "vitest",
-    "test:py": "pytest tests/ -v",
-    "test:coverage": "pytest tests/ --cov=python --cov-report=html --cov-report=term",
+    "test:py": "python -m pytest tests/ -v",
+    "test:coverage": "python -m pytest tests/ --cov=python --cov-report=html --cov-report=term",
     "lint": "npm run lint:ts && npm run lint:py",
     "lint:ts": "eslint src/",
-    "lint:py": "cd python && black . && mypy . && flake8 .",
-    "format": "prettier --write 'src/**/*.ts' && black python/",
+    "lint:py": "python -m black --check python/ tests/ && python -m mypy python/ && python -m pylint --errors-only python/",
+    "format": "prettier --write \"src/**/*.ts\" \"tests-ts/**/*.ts\" && python -m black python/ tests/",
     "prepare": "npm run build",
+    "prepack": "npm run rebuild",
     "pretest": "npm run build"
   },
   "keywords": [
@@ -31,25 +52,34 @@
     "ai",
     "claude"
   ],
-  "author": "",
+  "author": "KiCad MCP contributors",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mixelpixx/KiCAD-MCP-Server.git"
+  },
+  "homepage": "https://github.com/mixelpixx/KiCAD-MCP-Server#readme",
+  "bugs": {
+    "url": "https://github.com/mixelpixx/KiCAD-MCP-Server/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.21.0",
-    "dotenv": "^17.0.0",
-    "express": "^5.1.0",
-    "zod": "^3.25.0"
+    "@modelcontextprotocol/server": "2.0.0",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@cfworker/json-schema": "^4.1.1",
     "@eslint/js": "^10.0.1",
-    "@types/express": "^5.0.5",
-    "@types/glob": "^8.1.0",
+    "@modelcontextprotocol/client": "2.0.0",
     "@types/node": "^20.19.0",
     "eslint": "^10.1.0",
     "nodemon": "^3.0.1",
     "prettier": "^3.8.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.57.2",
-    "vitest": "^2.1.9"
+    "vite": "^6.4.3",
+    "vitest": "^3.2.6"
   }
 }

@@ -2,7 +2,7 @@
  * Logger for KiCAD MCP server
  */
 
-import { existsSync, mkdirSync, appendFileSync, statSync, renameSync, rmSync } from "fs";
+import { existsSync, mkdirSync, appendFileSync, statSync, renameSync, rmSync, chmodSync } from "fs";
 import { join } from "path";
 import * as os from "os";
 
@@ -26,8 +26,8 @@ function envInt(name: string, fallback: number): number {
 class Logger {
   private logLevel: LogLevel = "info";
   private logDir: string = DEFAULT_LOG_DIR;
-  // Size cap for the per-day log files (issue #181). Same env knobs as the
-  // Python side; KICAD_MCP_LOG_MAX_BYTES=0 disables rotation.
+  // Size cap for the per-day log files (issue #181).
+  // KICAD_MCP_LOG_MAX_BYTES=0 disables rotation.
   private maxBytes: number = envInt("KICAD_MCP_LOG_MAX_BYTES", 10 * 1024 * 1024);
   private backupCount: number = envInt("KICAD_MCP_LOG_BACKUP_COUNT", 3);
 
@@ -56,6 +56,13 @@ class Logger {
     }
   }
 
+  private ensurePrivateLogDir(): void {
+    if (!existsSync(this.logDir)) {
+      mkdirSync(this.logDir, { recursive: true, mode: 0o700 });
+    }
+    if (process.platform !== "win32") chmodSync(this.logDir, 0o700);
+  }
+
   /**
    * Set the log level
    * @param level Log level to set
@@ -72,9 +79,7 @@ class Logger {
     this.logDir = dir;
 
     // Ensure log directory exists
-    if (!existsSync(this.logDir)) {
-      mkdirSync(this.logDir, { recursive: true });
-    }
+    this.ensurePrivateLogDir();
   }
 
   /**
@@ -90,7 +95,7 @@ class Logger {
    * @param message Message to log
    */
   warn(message: string): void {
-    if (["error", "warn", "info", "debug"].includes(this.logLevel)) {
+    if (["warn", "info", "debug"].includes(this.logLevel)) {
       this.log("warn", message);
     }
   }
@@ -135,13 +140,12 @@ class Logger {
     // Log to file
     try {
       // Ensure log directory exists
-      if (!existsSync(this.logDir)) {
-        mkdirSync(this.logDir, { recursive: true });
-      }
+      this.ensurePrivateLogDir();
 
       const logFile = join(this.logDir, `kicad-mcp-${new Date().toISOString().split("T")[0]}.log`);
       this.rotateIfNeeded(logFile);
-      appendFileSync(logFile, formattedMessage + "\n");
+      appendFileSync(logFile, formattedMessage + "\n", { encoding: "utf8", mode: 0o600 });
+      if (process.platform !== "win32") chmodSync(logFile, 0o600);
     } catch (error) {
       console.error(`Failed to write to log file: ${error}`);
     }

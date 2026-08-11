@@ -327,8 +327,11 @@ def _snap_wire_endpoints(
             best: Optional[Tuple[float, float, float]] = None
             for cx, cy in conn_list:
                 d2 = (x - cx) ** 2 + (y - cy) ** 2
-                if d2 <= max_d2 and (best is None or d2 < best[0]):
-                    best = (d2, cx, cy)
+                if d2 <= max_d2:
+                    if best is None:
+                        best = (d2, cx, cy)
+                    elif d2 < best[0]:
+                        best = (d2, cx, cy)
             if best is not None:
                 if idx == 0:
                     x1, y1 = best[1], best[2]
@@ -1606,7 +1609,9 @@ def generate_kicad_sch(
         best_fe = None
         for (ex, ey), (ox, oy) in _free_ends_by_net.get(name, []):
             d2 = (lx - ex) ** 2 + (ly - ey) ** 2
-            if best_fe is None or d2 < best_fe[0]:
+            if best_fe is None:
+                best_fe = (d2, ex, ey, ox, oy)
+            elif d2 < best_fe[0]:
                 best_fe = (d2, ex, ey, ox, oy)
         if best_fe is not None and best_fe[0] <= (_LABEL_FE_STEPS * _GRID_MM) ** 2:
             _, ex, ey, ox, oy = best_fe
@@ -1623,7 +1628,9 @@ def generate_kicad_sch(
                 t = max(0.0, min(1.0, t))
                 qx, qy = x1 + t * dx, y1 + t * dy
             d2 = (lx - qx) ** 2 + (ly - qy) ** 2
-            if best is None or d2 < best[0]:
+            if best is None:
+                best = (d2, qx, qy, dx, dy)
+            elif d2 < best[0]:
                 best = (d2, qx, qy, dx, dy)
         if best is not None and best[0] <= (_LABEL_SEG_STEPS * _GRID_MM) ** 2:
             _, qx, qy, dx, dy = best

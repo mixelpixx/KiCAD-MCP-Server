@@ -2,8 +2,8 @@
 
 **Vision:** Enable anyone to design professional PCBs through natural conversation with AI
 
-**Current Version:** 2.4.0
-**Last Updated:** 2026-07-22
+**Current Version:** 2.7.0
+**Last Updated:** 2026-08-11
 
 ---
 
@@ -11,7 +11,7 @@
 
 ### v1.0.0 - Core Foundation (October 2025)
 
-- [x] MCP protocol implementation (JSON-RPC 2.0, MCP 2025-06-18)
+- [x] Initial legacy MCP 2025 protocol implementation
 - [x] Project management (create, open, save)
 - [x] Board operations (size, outline, layers, mounting holes, text)
 - [x] Component placement with 153+ footprint libraries
@@ -23,7 +23,7 @@
 
 ### v2.0.0-alpha - Router and IPC (November-December 2025)
 
-- [x] Tool router pattern -- 70% AI context reduction
+- [x] Initial tool-router prototype (later replaced by the first-class catalog)
 - [x] IPC backend for real-time KiCAD UI synchronization (21 commands)
 - [x] Hybrid SWIG/IPC backend with automatic fallback
 - [x] Comprehensive Windows support with automated setup
@@ -56,16 +56,26 @@
 - [x] Project-local library resolution
 - [x] Developer mode (KICAD_MCP_DEV=1)
 
+### v2.7.0 - MCP 2026-07-28 Migration (August 2026)
+
+- [x] TypeScript SDK v2 with Node.js 20+ and Zod 4
+- [x] MCP 2026-07-28 `server/discover` negotiation
+- [x] Dual-era `serveStdio` compatibility for legacy 2025 clients
+- [x] Deterministic catalog caching and structured tool results
+- [x] First-class schemas and safety annotations for all 183 tools
+- [x] Runtime-derived catalog with three supplemental discovery tools
+- [x] Correlated, cancellable TypeScript-to-Python command bridge
+
 ---
 
-## Current Focus: v2.3+
+## Current Focus: v2.7+
 
 ### Documentation Overhaul (In Progress)
 
-- [ ] Per-feature documentation for all 122 tools
-- [ ] Architecture guide for contributors
+- [ ] Per-feature documentation for all 183 tools
+- [x] Architecture guide for contributors
 - [ ] End-to-end PCB design workflow guide
-- [ ] Documentation index
+- [x] Documentation index
 
 ### Quality and Stability
 

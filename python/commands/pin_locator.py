@@ -7,7 +7,6 @@ Uses S-expression parsing to extract pin data from symbol definitions.
 
 import logging
 import math
-import re
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -15,6 +14,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import sexpdata
 from sexpdata import Symbol
 from skip import Schematic
+
+from commands.symbol_pin_parser import parse_symbol_definition
 
 logger = logging.getLogger("kicad_interface")
 
@@ -43,85 +44,7 @@ class PinLocator:
                 "2": {"x": 0, "y": -3.81, "angle": 90, "length": 1.27, "name": "~", "type": "passive"}
             }
         """
-        pins: Dict[str, Dict[str, Any]] = {}
-
-        # Sub-symbols in lib_symbols are named "<name>_<unit>_<bodystyle>", e.g.
-        # "NE5532_1_1" (unit 1), "NE5532_2_1" (unit 2), "NE5532_0_1" (unit 0 =
-        # common to every unit). Pins live inside these sub-symbols, so the pin's
-        # owning unit is the first index in the enclosing sub-symbol name. We track
-        # it while recursing so each pin can later be matched to the placed
-        # instance for that unit — without this, every pin inherits the first
-        # instance's position (issue #239).
-        unit_name_re = re.compile(r"_(\d+)_(\d+)$")
-
-        def extract_pins_recursive(sexp: Any, current_unit: int) -> None:
-            """Recursively search for pin definitions, tracking the enclosing unit."""
-            if not isinstance(sexp, list):
-                return
-
-            # Descend into a unit sub-symbol: update the unit context for its pins.
-            if len(sexp) > 1 and sexp[0] == Symbol("symbol") and isinstance(sexp[1], (str, Symbol)):
-                m = unit_name_re.search(str(sexp[1]).strip('"'))
-                if m:
-                    current_unit = int(m.group(1))
-
-            # Check if this is a pin definition
-            if len(sexp) > 0 and sexp[0] == Symbol("pin"):
-                # Pin format: (pin type shape (at x y angle) (length len) (name "name") (number "num"))
-                pin_data = {
-                    "x": 0,
-                    "y": 0,
-                    "angle": 0,
-                    "length": 0,
-                    "name": "",
-                    "number": "",
-                    "unit": current_unit,
-                    "type": str(sexp[1]) if len(sexp) > 1 else "passive",
-                }
-
-                # Extract pin attributes
-                for item in sexp:
-                    if isinstance(item, list) and len(item) > 0:
-                        if item[0] == Symbol("at") and len(item) >= 3:
-                            pin_data["x"] = float(item[1])
-                            pin_data["y"] = float(item[2])
-                            if len(item) >= 4:
-                                pin_data["angle"] = float(item[3])
-
-                        elif item[0] == Symbol("length") and len(item) >= 2:
-                            pin_data["length"] = float(item[1])
-
-                        elif item[0] == Symbol("name") and len(item) >= 2:
-                            pin_data["name"] = str(item[1]).strip('"')
-
-                        elif item[0] == Symbol("number") and len(item) >= 2:
-                            pin_data["number"] = str(item[1]).strip('"')
-
-                # Store by pin number. When the same pin number is defined
-                # more than once in a single symbol — which happens in some
-                # community-generated symbols (e.g.,
-                # ``PCM_Diode_Schottky_AKL:MBRS130``) where an inner
-                # zero-length "ghost" pin overlaps the real outer pin — keep
-                # the definition with the greater ``length``. That is the pin
-                # with a visible stub; its ``at`` coordinate is the wire-
-                # connection endpoint that matches where labels and wires
-                # are actually placed. Ties resolve to first-encountered, so
-                # legitimate same-length duplicates (e.g., per-unit
-                # repetitions in multi-unit symbols) retain stable ordering.
-                if pin_data["number"]:
-                    existing = pins.get(str(pin_data["number"]))
-                    if existing is None or pin_data["length"] > existing["length"]:
-                        pins[pin_data["number"]] = pin_data
-
-            # Recurse into sublists, propagating the current unit context.
-            for item in sexp:
-                if isinstance(item, list):
-                    extract_pins_recursive(item, current_unit)
-
-        # Unit 0 = "common to all units"; used as the starting context so pins in
-        # symbols without a unit suffix (single-unit parts) fall back sensibly.
-        extract_pins_recursive(symbol_def, 0)
-        return pins
+        return parse_symbol_definition(symbol_def)
 
     def get_symbol_pins(self, schematic_path: Path, lib_id: str) -> Dict[str, Dict]:
         """

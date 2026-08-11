@@ -922,7 +922,7 @@ def find_orphaned_wires(schematic_path: Path) -> Dict[str, Any]:
     try:
         locator = PinLocator()
         sch = Schematic(str(schematic_path))
-        for symbol in sch.symbol:
+        for symbol in getattr(sch, "symbol", ()):
             try:
                 if not hasattr(symbol, "property") or not hasattr(symbol.property, "Reference"):
                     continue

@@ -2,22 +2,28 @@
  * Symbol Library tools for KiCAD MCP server
  * Provides search/browse access to local KiCad symbol libraries
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { registerKiCadTool, type CommandFunction, withToolSignal } from "./tool-registration.js";
 
-export function registerSymbolLibraryTools(server: McpServer, callKicadScript: Function) {
+export function registerSymbolLibraryTools(server: McpServer, callKicadScript: CommandFunction) {
+  callKicadScript = withToolSignal(callKicadScript);
   // List available symbol libraries
-  server.tool(
+  registerKiCadTool(
+    server,
+    "library",
     "list_symbol_libraries",
-    "List all available KiCAD symbol libraries from global sym-lib-table, plus the project's sym-lib-table when projectPath (or any related file) is supplied or a project has been opened.",
     {
-      projectPath: z
-        .string()
-        .optional()
-        .describe(
-          "Optional: project directory or .kicad_pro/.kicad_pcb/.kicad_sch path. Including this exposes project-scope sym-lib-table libraries.",
-        ),
+      description:
+        "List all available KiCAD symbol libraries from global sym-lib-table, plus the project's sym-lib-table when projectPath (or any related file) is supplied or a project has been opened.",
+      inputSchema: z.object({
+        projectPath: z
+          .string()
+          .optional()
+          .describe(
+            "Optional: project directory or .kicad_pro/.kicad_pcb/.kicad_sch path. Including this exposes project-scope sym-lib-table libraries.",
+          ),
+      }),
     },
     async (args: { projectPath?: string }) => {
       const result = await callKicadScript("list_symbol_libraries", args);
@@ -43,27 +49,33 @@ export function registerSymbolLibraryTools(server: McpServer, callKicadScript: F
   );
 
   // Search for symbols across all libraries
-  server.tool(
+  registerKiCadTool(
+    server,
+    "library",
     "search_symbols",
-    `Search for symbols in local KiCAD symbol libraries.
+    {
+      description: `Search for symbols in local KiCAD symbol libraries.
 
 Searches by: symbol name, LCSC ID, description, manufacturer, MPN, category.
 Use this to find components already in your local libraries (e.g., JLCPCB-KiCad-Library).
 
 Returns symbol references that can be used directly in schematics.`,
-    {
-      query: z.string().describe("Search query (e.g., 'ESP32', 'STM32F103', 'C8734' for LCSC ID)"),
-      library: z
-        .string()
-        .optional()
-        .describe("Optional: filter to specific library name pattern (e.g., 'JLCPCB')"),
-      limit: z.number().optional().default(20).describe("Maximum number of results to return"),
-      projectPath: z
-        .string()
-        .optional()
-        .describe(
-          "Optional: project directory or .kicad_pro/.kicad_pcb/.kicad_sch path so project-scope sym-lib-table libraries are searched too.",
-        ),
+      inputSchema: z.object({
+        query: z
+          .string()
+          .describe("Search query (e.g., 'ESP32', 'STM32F103', 'C8734' for LCSC ID)"),
+        library: z
+          .string()
+          .optional()
+          .describe("Optional: filter to specific library name pattern (e.g., 'JLCPCB')"),
+        limit: z.number().optional().default(20).describe("Maximum number of results to return"),
+        projectPath: z
+          .string()
+          .optional()
+          .describe(
+            "Optional: project directory or .kicad_pro/.kicad_pcb/.kicad_sch path so project-scope sym-lib-table libraries are searched too.",
+          ),
+      }),
     },
     async (args: { query: string; library?: string; limit?: number; projectPath?: string }) => {
       const result = await callKicadScript("search_symbols", args);
@@ -110,17 +122,22 @@ Returns symbol references that can be used directly in schematics.`,
   );
 
   // List symbols in a specific library
-  server.tool(
+  registerKiCadTool(
+    server,
+    "library",
     "list_library_symbols",
-    "List all symbols in a specific KiCAD symbol library (global or project-scope when projectPath is supplied or a project has been opened).",
     {
-      library: z.string().describe("Library name (e.g., 'Device', 'PCM_JLCPCB-MCUs')"),
-      projectPath: z
-        .string()
-        .optional()
-        .describe(
-          "Optional: project directory or .kicad_pro/.kicad_pcb/.kicad_sch path to resolve project-scope libraries.",
-        ),
+      description:
+        "List all symbols in a specific KiCAD symbol library (global or project-scope when projectPath is supplied or a project has been opened).",
+      inputSchema: z.object({
+        library: z.string().describe("Library name (e.g., 'Device', 'PCM_JLCPCB-MCUs')"),
+        projectPath: z
+          .string()
+          .optional()
+          .describe(
+            "Optional: project directory or .kicad_pro/.kicad_pcb/.kicad_sch path to resolve project-scope libraries.",
+          ),
+      }),
     },
     async (args: { library: string; projectPath?: string }) => {
       const result = await callKicadScript("list_library_symbols", args);
@@ -154,19 +171,24 @@ Returns symbol references that can be used directly in schematics.`,
   );
 
   // Get detailed information about a specific symbol
-  server.tool(
+  registerKiCadTool(
+    server,
+    "library",
     "get_symbol_info",
-    "Get detailed information about a specific symbol (global or project-scope when projectPath is supplied or a project has been opened).",
     {
-      symbol: z
-        .string()
-        .describe("Symbol specification (e.g., 'Device:R' or 'PCM_JLCPCB-MCUs:STM32F103C8T6')"),
-      projectPath: z
-        .string()
-        .optional()
-        .describe(
-          "Optional: project directory or .kicad_pro/.kicad_pcb/.kicad_sch path so project-scope libraries are searched.",
-        ),
+      description:
+        "Get detailed information about a specific symbol (global or project-scope when projectPath is supplied or a project has been opened).",
+      inputSchema: z.object({
+        symbol: z
+          .string()
+          .describe("Symbol specification (e.g., 'Device:R' or 'PCM_JLCPCB-MCUs:STM32F103C8T6')"),
+        projectPath: z
+          .string()
+          .optional()
+          .describe(
+            "Optional: project directory or .kicad_pro/.kicad_pcb/.kicad_sch path so project-scope libraries are searched.",
+          ),
+      }),
     },
     async (args: { symbol: string; projectPath?: string }) => {
       const result = await callKicadScript("get_symbol_info", args);
@@ -209,17 +231,22 @@ Returns symbol references that can be used directly in schematics.`,
   );
 
   // List pins for a symbol from the library (no schematic needed)
-  server.tool(
+  registerKiCadTool(
+    server,
+    "library",
     "list_symbol_pins",
-    "Return pin names, numbers, and types for a symbol directly from the library — no schematic required. Use this before add_schematic_component to discover pins for connect_to_net calls. Each pin has 'number' (e.g. '1', 'A5') and 'name' (e.g. 'FB', 'GND') — connect_to_net accepts either. Pass schematicPath to resolve project-local symbols. Returns close-match suggestions if the symbol name is slightly wrong.",
     {
-      symbol: z
-        .string()
-        .describe("Symbol in 'Library:SymbolName' format (e.g., Device:R, Connector:Conn_01x04)"),
-      schematicPath: z
-        .string()
-        .optional()
-        .describe("Path to .kicad_sch — enables project-local sym-lib-table lookup"),
+      description:
+        "Return pin names, numbers, and types for a symbol directly from the library — no schematic required. Use this before add_schematic_component to discover pins for connect_to_net calls. Each pin has 'number' (e.g. '1', 'A5') and 'name' (e.g. 'FB', 'GND') — connect_to_net accepts either. Pass schematicPath to resolve project-local symbols. Returns close-match suggestions if the symbol name is slightly wrong.",
+      inputSchema: z.object({
+        symbol: z
+          .string()
+          .describe("Symbol in 'Library:SymbolName' format (e.g., Device:R, Connector:Conn_01x04)"),
+        schematicPath: z
+          .string()
+          .optional()
+          .describe("Path to .kicad_sch — enables project-local sym-lib-table lookup"),
+      }),
     },
     async (args: { symbol: string; schematicPath?: string }) => {
       const result = await callKicadScript("list_symbol_pins", args);
@@ -256,23 +283,28 @@ Returns symbol references that can be used directly in schematics.`,
   );
 
   // List pins for multiple symbols in one call
-  server.tool(
+  registerKiCadTool(
+    server,
+    "library",
     "batch_list_symbol_pins",
-    "Return pin names, numbers, types, and symbol-local coordinates for multiple symbols in a single call. Use instead of calling list_symbol_pins repeatedly when placing a subcircuit — saves 5–10 round-trips. Each result includes pins (with x/y/angle in symbol-local coords, Y-up per KiCAD lib convention) and body_bbox (bounding box of pin envelope ±1.27mm, symbol-local coords). IMPORTANT: coordinates are symbol-local (Y-up, pre-rotation); after placement use get_schematic_pin_locations for post-rotation schematic coordinates. Set compact=true for simple 2-pin passives (Device:R/C/L) to get just pin_count, body_bbox, and is_symmetric.",
     {
-      symbols: z
-        .array(z.string())
-        .describe(
-          "Array of symbols in 'Library:SymbolName' format (e.g., ['Device:R', 'Device:C'])",
-        ),
-      schematicPath: z
-        .string()
-        .optional()
-        .describe("Path to .kicad_sch — enables project-local sym-lib-table lookup"),
-      compact: z
-        .boolean()
-        .optional()
-        .describe("If true, omit per-pin detail for standard 2-pin symmetric passives."),
+      description:
+        "Return pin names, numbers, types, and symbol-local coordinates for multiple symbols in a single call. Use instead of calling list_symbol_pins repeatedly when placing a subcircuit — saves 5–10 round-trips. Each result includes pins (with x/y/angle in symbol-local coords, Y-up per KiCAD lib convention) and body_bbox (bounding box of pin envelope ±1.27mm, symbol-local coords). IMPORTANT: coordinates are symbol-local (Y-up, pre-rotation); after placement use get_schematic_pin_locations for post-rotation schematic coordinates. Set compact=true for simple 2-pin passives (Device:R/C/L) to get just pin_count, body_bbox, and is_symmetric.",
+      inputSchema: z.object({
+        symbols: z
+          .array(z.string())
+          .describe(
+            "Array of symbols in 'Library:SymbolName' format (e.g., ['Device:R', 'Device:C'])",
+          ),
+        schematicPath: z
+          .string()
+          .optional()
+          .describe("Path to .kicad_sch — enables project-local sym-lib-table lookup"),
+        compact: z
+          .boolean()
+          .optional()
+          .describe("If true, omit per-pin detail for standard 2-pin symmetric passives."),
+      }),
     },
     async (args: { symbols: string[]; schematicPath?: string; compact?: boolean }) => {
       const result = await callKicadScript("batch_list_symbol_pins", args);

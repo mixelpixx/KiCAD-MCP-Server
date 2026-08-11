@@ -367,7 +367,7 @@ rotation = module.GetOrientation().AsDegrees()
 
 - [ROADMAP.md](./ROADMAP.md) - Week 2 planning
 - [STATUS_SUMMARY.md](./STATUS_SUMMARY.md) - Current implementation status
-- [API.md](./API.md) - Full MCP API reference
+- [TOOL_INVENTORY.md](./TOOL_INVENTORY.md) - Current MCP tool inventory
 - [KiCAD Documentation](https://docs.kicad.org/9.0/en/pcbnew/pcbnew.html) - Official KiCAD docs
 
 ## Changelog

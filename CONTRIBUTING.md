@@ -20,7 +20,7 @@ Thank you for your interest in contributing to the KiCAD MCP Server! This guide 
 ### Prerequisites
 
 - **KiCAD 9.0 or higher** - [Download here](https://www.kicad.org/download/)
-- **Node.js v18+** - [Download here](https://nodejs.org/)
+- **Node.js v20+** - [Download here](https://nodejs.org/)
 - **Python 3.9+** - Comes bundled with KiCAD (macOS builds ship Python 3.9; Linux/Windows builds ship Python 3.11)
 - **Git** - For version control
 
@@ -34,26 +34,28 @@ sudo add-apt-repository --yes ppa:kicad/kicad-9.0-releases
 sudo apt-get update
 sudo apt-get install -y kicad kicad-libraries
 
-# Install Node.js (if not already installed)
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt-get install -y nodejs
+# Install Node.js 20+ using your distribution package manager or the
+# instructions at https://nodejs.org/en/download, then verify the version
+node --version
 
 # Clone the repository
 git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd kicad-mcp-server
 
 # Install Node.js dependencies
-npm install
+npm ci
 
-# Install Python dependencies
-pip3 install -r requirements-dev.txt
+# Install hash-locked Python development dependencies in an isolated venv
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --require-hashes -r requirements-dev-lock.txt
 
-# Build TypeScript
+# Build TypeScript and prepare the private runtime
 npm run build
+node dist/cli.js setup
 
 # Run tests
 npm test
-pytest
 ```
 
 #### Windows
@@ -68,17 +70,19 @@ git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd kicad-mcp-server
 
 # Install Node.js dependencies
-npm install
+npm ci
 
-# Install Python dependencies
-pip install -r requirements-dev.txt
+# Install hash-locked Python development dependencies in an isolated venv
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --require-hashes -r requirements-dev-lock.txt
 
-# Build TypeScript
+# Build TypeScript and prepare the private runtime
 npm run build
+node .\dist\cli.js setup
 
 # Run tests
 npm test
-pytest
 ```
 
 #### macOS
@@ -94,17 +98,19 @@ git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd kicad-mcp-server
 
 # Install Node.js dependencies
-npm install
+npm ci
 
-# Install Python dependencies
-pip3 install -r requirements-dev.txt
+# Install hash-locked Python development dependencies in an isolated venv
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --require-hashes -r requirements-dev-lock.txt
 
-# Build TypeScript
+# Build TypeScript and prepare the private runtime
 npm run build
+node dist/cli.js setup
 
 # Run tests
 npm test
-pytest
 ```
 
 ### Pre-commit Hooks
@@ -114,8 +120,8 @@ This project uses [pre-commit](https://pre-commit.com/) to run linters and forma
 **All contributors must install pre-commit hooks after cloning the repo:**
 
 ```bash
-# Install pre-commit (if not already installed)
-pip install pre-commit
+# pre-commit is provided by the hash-locked requirements-dev-lock.txt install
+pre-commit --version
 
 # Install the git hooks
 pre-commit install
@@ -158,8 +164,10 @@ kicad-mcp-server/
 ├── package.json          # Node.js configuration
 ├── tsconfig.json         # TypeScript configuration
 ├── pytest.ini            # Pytest configuration
-├── requirements.txt      # Python production dependencies
-└── requirements-dev.txt  # Python dev dependencies
+├── requirements.txt           # Python production dependency inputs
+├── requirements-lock.txt      # Hash-locked private runtime
+├── requirements-dev.txt       # Python development dependency inputs
+└── requirements-dev-lock.txt  # Hash-locked development environment
 ```
 
 ---
@@ -168,13 +176,14 @@ kicad-mcp-server/
 
 The KiCAD MCP Server is organized into several key components:
 
-- **TypeScript MCP Server** (`src/`) - Handles MCP protocol communication and tool routing
-- **Python KiCAD Interface** (`python/`) - Interfaces with KiCAD's Python API (pcbnew)
-- **Tool Router** - Organizes 122+ tools into 8 discoverable categories
+- **TypeScript MCP Server** (`src/`) - Serves MCP 2026-07-28 and legacy clients through SDK v2
+- **Python KiCAD Interface** (`python/`) - Private command worker for KiCAD's Python and IPC APIs
+- **Runtime Tool Catalog** - Derives 18 capability categories from first-class registrations
+- **Supplemental Discovery** - Three tools provide category browsing and keyword search
 - **Resource System** - Provides dynamic project/board state information
 - **Prompt System** - Offers context-aware design prompts
 
-**Current Tool Count:** 122+ tools across 8 categories (direct + routed)
+**Current Tool Count:** 183 first-class tools: 180 KiCad capabilities plus 3 discovery tools
 
 For detailed architecture information, see `docs/ROUTER_ARCHITECTURE.md`.
 
@@ -426,7 +435,7 @@ We track work using GitHub Projects and Issues:
 5. ⏳ Add JLCPCB integration
 6. ⏳ Add Digikey integration
 
-See [docs/REBUILD_PLAN.md](docs/REBUILD_PLAN.md) for the complete 12-week roadmap.
+See the current [project roadmap](docs/ROADMAP.md) for planned work.
 
 ---
 

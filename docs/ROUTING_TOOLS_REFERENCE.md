@@ -2,7 +2,9 @@
 
 Added in: v1.0.0, major expansion in v2.2.0-v2.2.3 (PR #44, @Kletternaut)
 
-This document provides comprehensive documentation for the 13 routing tools available in the KiCAD MCP Server. These tools cover basic trace routing, advanced operations like differential pairs, net management, trace operations, and copper zone management.
+This document covers the routing tool category in the KiCAD MCP Server,
+including basic traces, differential pairs, net management, trace operations,
+and copper zones. Use `tools/list` for the complete current schemas.
 
 ## Basic Routing (3 tools)
 

@@ -1,165 +1,117 @@
-#!/bin/bash
-# KiCAD MCP Server - Linux Installation Script
-# Supports Ubuntu/Debian-based distributions
+#!/usr/bin/env bash
+# KiCad MCP Server installer for Ubuntu/Debian systems.
 
-set -e  # Exit on error
+set -euo pipefail
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+readonly MIN_NODE_MAJOR=20
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+readonly REQUIREMENTS_LOCK="$REPO_ROOT/requirements-lock.txt"
+readonly DIST_CLI="$REPO_ROOT/dist/cli.js"
 
-# Print colored messages
-print_info() { echo -e "${BLUE}ℹ${NC} $1"; }
-print_success() { echo -e "${GREEN}✓${NC} $1"; }
-print_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
-print_error() { echo -e "${RED}✗${NC} $1"; }
+info() { printf '[INFO] %s\n' "$1"; }
+success() { printf '[OK] %s\n' "$1"; }
+warn() { printf '[WARN] %s\n' "$1" >&2; }
+fail() { printf '[ERROR] %s\n' "$1" >&2; exit 1; }
+command_exists() { command -v "$1" >/dev/null 2>&1; }
 
-# Header
-echo ""
-echo "╔═══════════════════════════════════════════════════════════════╗"
-echo "║          KiCAD MCP Server - Linux Installation                ║"
-echo "║                                                                ║"
-echo "║  This script will install:                                     ║"
-echo "║  - KiCAD 9.0                                                   ║"
-echo "║  - Node.js 20.x                                                ║"
-echo "║  - Python dependencies                                         ║"
-echo "║  - Build the TypeScript server                                 ║"
-echo "╚═══════════════════════════════════════════════════════════════╝"
-echo ""
+[[ "${OSTYPE:-}" == linux-gnu* ]] || fail "This installer only supports Linux."
+command_exists apt-get || fail "This installer requires an Ubuntu/Debian system with apt-get."
+[[ -f "$REQUIREMENTS_LOCK" ]] || fail "Pinned dependency lock not found: $REQUIREMENTS_LOCK"
+[[ -f "$REPO_ROOT/package-lock.json" ]] || fail "npm lockfile not found: $REPO_ROOT/package-lock.json"
 
-# Check if running on Linux
-if [[ "$OSTYPE" != "linux-gnu"* ]]; then
-    print_error "This script is for Linux only. Detected: $OSTYPE"
-    exit 1
-fi
+install_node_20() {
+  info "Installing Node.js 20 from the signed NodeSource apt repository..."
+  sudo apt-get update
+  sudo apt-get install -y ca-certificates curl gnupg
 
-# Check for Ubuntu/Debian
-if ! command -v apt-get &> /dev/null; then
-    print_warning "This script is optimized for Ubuntu/Debian"
-    print_warning "For other distributions, please install manually"
-    read -p "Continue anyway? (y/N) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
-    fi
-fi
+  local key_tmp keyring_tmp
+  key_tmp="$(mktemp)"
+  keyring_tmp="$(mktemp)"
 
-# Function to check if command exists
-command_exists() {
-    command -v "$1" &> /dev/null
+  # Download data only. Never execute a mutable remote setup script as root.
+  curl --fail --silent --show-error --location \
+    https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+    --output "$key_tmp"
+  gpg --batch --yes --dearmor --output "$keyring_tmp" "$key_tmp"
+  sudo install -o root -g root -m 0644 "$keyring_tmp" /usr/share/keyrings/nodesource.gpg
+  printf '%s\n' \
+    'deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main' |
+    sudo tee /etc/apt/sources.list.d/nodesource.list >/dev/null
+  sudo apt-get update
+  sudo apt-get install -y nodejs
+  rm -f -- "$key_tmp" "$keyring_tmp"
 }
 
-# Step 1: Install KiCAD 9.0
-print_info "Step 1/5: Installing KiCAD 9.0..."
-if command_exists kicad; then
-    KICAD_VERSION=$(kicad-cli version 2>/dev/null | head -n 1 || echo "unknown")
-    print_success "KiCAD is already installed: $KICAD_VERSION"
+info "Checking KiCad..."
+if ! command_exists kicad-cli; then
+  info "Installing KiCad 9 and its libraries..."
+  sudo apt-get update
+  sudo apt-get install -y software-properties-common
+  sudo add-apt-repository --yes ppa:kicad/kicad-9.0-releases
+  sudo apt-get update
+  sudo apt-get install -y kicad kicad-libraries
+fi
+success "KiCad detected: $(kicad-cli version 2>/dev/null | head -n 1)"
+
+command_exists python3 || fail "python3 was not installed with KiCad."
+if ! python3 -c 'import pcbnew; print(pcbnew.GetBuildVersion())' >/dev/null 2>&1; then
+  fail "python3 cannot import pcbnew. Install KiCad's Python bindings before continuing."
+fi
+success "KiCad Python bindings are available."
+
+if ! command_exists node; then
+  install_node_20
 else
-    print_info "Adding KiCAD PPA and installing..."
-    sudo add-apt-repository --yes ppa:kicad/kicad-9.0-releases
-    sudo apt-get update
-    sudo apt-get install -y kicad kicad-libraries
-    print_success "KiCAD 9.0 installed"
+  node_major="$(node -p 'Number(process.versions.node.split(".")[0])')"
+  if [[ ! "$node_major" =~ ^[0-9]+$ ]] || (( node_major < MIN_NODE_MAJOR )); then
+    warn "Node.js $(node --version) is too old; Node.js 20 or newer is required."
+    install_node_20
+  fi
 fi
 
-# Verify KiCAD Python module
-print_info "Verifying KiCAD Python module..."
-if python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())" 2>/dev/null; then
-    PCBNEW_VERSION=$(python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())")
-    print_success "KiCAD Python module (pcbnew) found: $PCBNEW_VERSION"
-else
-    print_warning "KiCAD Python module (pcbnew) not found in default Python path"
-    print_warning "You may need to set PYTHONPATH manually"
-fi
+node_major="$(node -p 'Number(process.versions.node.split(".")[0])')"
+[[ "$node_major" =~ ^[0-9]+$ ]] && (( node_major >= MIN_NODE_MAJOR )) ||
+  fail "Node.js 20 or newer is required; found $(node --version 2>/dev/null || echo unknown)."
+success "Node.js detected: $(node --version)"
 
-# Step 2: Install Node.js
-print_info "Step 2/5: Installing Node.js 20.x..."
-if command_exists node; then
-    NODE_VERSION=$(node --version)
-    MAJOR_VERSION=$(echo $NODE_VERSION | cut -d'.' -f1 | sed 's/v//')
-    if [ "$MAJOR_VERSION" -ge 18 ]; then
-        print_success "Node.js is already installed: $NODE_VERSION"
-    else
-        print_warning "Node.js version is too old: $NODE_VERSION (need 18+)"
-        print_info "Installing Node.js 20.x..."
-        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-        sudo apt-get install -y nodejs
-        print_success "Node.js updated"
-    fi
-else
-    print_info "Installing Node.js 20.x..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-    sudo apt-get install -y nodejs
-    print_success "Node.js installed: $(node --version)"
-fi
+info "Installing the locked Node.js dependency tree..."
+cd "$REPO_ROOT"
+npm ci
 
-# Step 3: Install Python dependencies
-print_info "Step 3/5: Installing Python dependencies..."
-if [ -f "requirements.txt" ]; then
-    pip3 install --user -r requirements.txt
-    print_success "Python dependencies installed"
-else
-    print_warning "requirements.txt not found - skipping Python dependencies"
-fi
-
-# Step 4: Install Node.js dependencies
-print_info "Step 4/5: Installing Node.js dependencies..."
-if [ -f "package.json" ]; then
-    npm install
-    print_success "Node.js dependencies installed"
-else
-    print_error "package.json not found! Are you in the correct directory?"
-    exit 1
-fi
-
-# Step 5: Build TypeScript
-print_info "Step 5/5: Building TypeScript..."
+info "Building the TypeScript CLI..."
 npm run build
-print_success "TypeScript build complete"
+[[ -f "$DIST_CLI" ]] || fail "Build completed without the expected entrypoint: $DIST_CLI"
 
-# Final checks
-echo ""
-print_info "Running final checks..."
+info "Creating and validating the private Python runtime from requirements-lock.txt..."
+kicad_python="$(command -v python3)"
+KICAD_PYTHON="$kicad_python" node "$DIST_CLI" setup
+success "The private KiCad MCP Python runtime is ready."
 
-# Check if dist directory was created
-if [ -d "dist" ]; then
-    print_success "dist/ directory created"
-else
-    print_error "dist/ directory not found - build may have failed"
-    exit 1
-fi
+node_path="$(command -v node)"
+config_path="$REPO_ROOT/linux-mcp-config.json"
+python3 - "$node_path" "$DIST_CLI" "$config_path" "$kicad_python" <<'PY'
+import json
+import pathlib
+import sys
 
-# Test platform helper
-print_info "Testing platform detection..."
-if python3 python/utils/platform_helper.py > /dev/null 2>&1; then
-    print_success "Platform helper working"
-else
-    print_warning "Platform helper test failed"
-fi
+node, cli, output, kicad_python = sys.argv[1:]
+config = {
+    "mcpServers": {
+        "kicad": {
+            "command": node,
+            "args": [cli, "serve"],
+            "env": {
+                "KICAD_PYTHON": kicad_python,
+                "NODE_ENV": "production",
+                "KICAD_MCP_LOG_LEVEL": "info",
+            },
+        }
+    }
+}
+pathlib.Path(output).write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+PY
 
-# Installation complete
-echo ""
-echo "╔═══════════════════════════════════════════════════════════════╗"
-echo "║                 🎉 Installation Complete! 🎉                   ║"
-echo "╚═══════════════════════════════════════════════════════════════╝"
-echo ""
-print_success "KiCAD MCP Server is ready to use!"
-echo ""
-print_info "Next steps:"
-echo "  1. Configure Cline in VSCode with the path to dist/index.js"
-echo "  2. Set PYTHONPATH in Cline config (see README.md)"
-echo "  3. Restart VSCode"
-echo "  4. Test with: 'Create a new KiCAD project named TestProject'"
-echo ""
-print_info "For detailed configuration, see:"
-echo "  - README.md (Linux section)"
-echo "  - config/linux-config.example.json"
-echo ""
-print_info "To run tests:"
-echo "  pytest tests/"
-echo ""
-print_info "Need help? Check docs/LINUX_COMPATIBILITY_AUDIT.md"
-echo ""
+success "Installation complete."
+info "MCP configuration example: $config_path"
+info "Server command: $node_path $DIST_CLI serve"

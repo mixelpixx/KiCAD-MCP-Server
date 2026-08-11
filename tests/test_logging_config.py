@@ -1,17 +1,17 @@
 """
-Regression tests for env-driven, bounded logging (issue #181).
+Regression tests for env-driven, single-writer logging (issue #181).
 
 Before this fix kicad_interface.py hardcoded the log level to DEBUG and used a
 plain (unbounded) FileHandler, and the noisy kicad-skip loggers were never
 muted — so ~/.kicad-mcp/logs grew to gigabytes and LOG_LEVEL was ignored.
 
-These tests exercise the env-parsing helpers, the skip-logger muting, and that
-no unbounded file handler is installed. No real KiCAD required.
+These tests exercise level parsing, skip-logger muting, and the rule that the
+Python worker logs only to stderr while the TypeScript parent owns bounded
+file logging. No real KiCAD required.
 """
 
 import logging
 import sys
-from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import pytest
@@ -21,7 +21,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 from kicad_interface import (  # noqa: E402
     _env_flag_enabled,
     _parse_log_level,
-    _parse_positive_int_env,
 )
 
 
@@ -67,20 +66,6 @@ class TestParseLogLevel:
 
 @pytest.mark.unit
 class TestEnvHelpers:
-    def test_positive_int_valid(self, monkeypatch):
-        monkeypatch.setenv("X_BYTES", "2048")
-        assert _parse_positive_int_env("X_BYTES", 10) == 2048
-
-    def test_positive_int_negative_and_garbage_use_default(self, monkeypatch):
-        monkeypatch.setenv("X_BYTES", "-5")
-        assert _parse_positive_int_env("X_BYTES", 10) == 10
-        monkeypatch.setenv("X_BYTES", "lots")
-        assert _parse_positive_int_env("X_BYTES", 10) == 10
-
-    def test_positive_int_unset_uses_default(self, monkeypatch):
-        monkeypatch.delenv("X_BYTES", raising=False)
-        assert _parse_positive_int_env("X_BYTES", 7) == 7
-
     def test_flag_truthy_values(self, monkeypatch):
         for raw in ("1", "true", "YES", "On"):
             monkeypatch.setenv("X_FLAG", raw)
@@ -102,12 +87,8 @@ class TestLoggingSideEffects:
         for name in ("skip", "skip.sexp", "skip.sexp.parser", "skip.sexp.sourcefile"):
             assert logging.getLogger(name).level == logging.WARNING
 
-    def test_no_unbounded_handler_for_kicad_log(self):
-        # The regression was a plain logging.FileHandler on kicad_interface.log
-        # that grows forever. Any handler targeting that file must rotate.
-        # (Unrelated handlers, e.g. a NUL-device sink from the test harness,
-        # are ignored — they can't grow.)
-        for handler in logging.getLogger().handlers:
-            base = getattr(handler, "baseFilename", "")
-            if base and base.endswith("kicad_interface.log"):
-                assert isinstance(handler, RotatingFileHandler)
+    def test_python_worker_does_not_install_a_file_handler(self):
+        assert all(
+            "kicad_interface" not in str(getattr(handler, "baseFilename", ""))
+            for handler in logging.getLogger().handlers
+        )

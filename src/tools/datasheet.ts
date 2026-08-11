@@ -4,15 +4,19 @@
  * Enriches KiCAD schematic symbols with LCSC datasheet URLs.
  * URL schema: https://www.lcsc.com/datasheet/<LCSC#>.pdf (no API key required)
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { registerKiCadTool, type CommandFunction, withToolSignal } from "./tool-registration.js";
 
-export function registerDatasheetTools(server: McpServer, callKicadScript: Function) {
+export function registerDatasheetTools(server: McpServer, callKicadScript: CommandFunction) {
+  callKicadScript = withToolSignal(callKicadScript);
   // ── enrich_datasheets ──────────────────────────────────────────────────────
-  server.tool(
+  registerKiCadTool(
+    server,
+    "datasheet",
     "enrich_datasheets",
-    `Fill in missing Datasheet URLs in a KiCAD schematic using LCSC part numbers.
+    {
+      description: `Fill in missing Datasheet URLs in a KiCAD schematic using LCSC part numbers.
 
 For every placed symbol that has:
   • (property "LCSC" "C123456") set
@@ -26,13 +30,14 @@ and any tool that reads the standard KiCAD Datasheet field.
 No API key or internet lookup required – the URL is constructed directly.
 
 Use dry_run=true to preview changes without writing.`,
-    {
-      schematic_path: z.string().describe("Path to the .kicad_sch file to enrich"),
-      dry_run: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe("If true, show what would be changed without writing to disk (default: false)"),
+      inputSchema: z.object({
+        schematic_path: z.string().describe("Path to the .kicad_sch file to enrich"),
+        dry_run: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("If true, show what would be changed without writing to disk (default: false)"),
+      }),
     },
     async (args: { schematic_path: string; dry_run?: boolean }) => {
       const result = await callKicadScript("enrich_datasheets", args);
@@ -75,19 +80,23 @@ Use dry_run=true to preview changes without writing.`,
   );
 
   // ── get_datasheet_url ──────────────────────────────────────────────────────
-  server.tool(
+  registerKiCadTool(
+    server,
+    "datasheet",
     "get_datasheet_url",
-    `Get the LCSC datasheet URL for a component by LCSC number.
+    {
+      description: `Get the LCSC datasheet URL for a component by LCSC number.
 
 Returns the direct PDF URL and product page URL.
 No network request – URL is constructed from the LCSC number alone.
 
 Example: get_datasheet_url("C179739")
 → https://www.lcsc.com/datasheet/C179739.pdf`,
-    {
-      lcsc: z
-        .string()
-        .describe('LCSC part number, with or without "C" prefix (e.g. "C179739" or "179739")'),
+      inputSchema: z.object({
+        lcsc: z
+          .string()
+          .describe('LCSC part number, with or without "C" prefix (e.g. "C179739" or "179739")'),
+      }),
     },
     async (args: { lcsc: string }) => {
       const result = await callKicadScript("get_datasheet_url", { lcsc: args.lcsc });

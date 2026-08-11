@@ -37,7 +37,7 @@ If the automated setup fails, continue with the manual troubleshooting below.
 1. **Check the log file** (this has the actual error):
 
    ```
-   %USERPROFILE%\.kicad-mcp\logs\kicad_interface.log
+   %USERPROFILE%\.kicad-mcp\logs\kicad-mcp-YYYY-MM-DD.log
    ```
 
    Open in Notepad and look at the last 50-100 lines.
@@ -113,7 +113,7 @@ and per-user KiCAD installs:
 
 ### Issue 3: Node.js Not Found
 
-**Symptom:** Cannot run `npm install` or `npm run build`
+**Symptom:** Cannot run `npm ci` or `npm run build`
 
 **Solution:**
 
@@ -125,7 +125,7 @@ and per-user KiCAD installs:
    ```
 
 2. **If not installed:**
-   - Download Node.js 18+ from https://nodejs.org/
+   - Download Node.js 20+ from https://nodejs.org/
    - Install with default options
    - Restart PowerShell after installation
 
@@ -143,25 +143,23 @@ and per-user KiCAD installs:
 
 **Solution:**
 
-1. **Clean and reinstall dependencies:**
+1. **Restore the locked dependency tree and rebuild:**
 
    ```powershell
-   Remove-Item node_modules -Recurse -Force
-   Remove-Item package-lock.json -Force
-   npm install
+   npm ci
    npm run build
    ```
 
 2. **Check Node.js version:**
 
    ```powershell
-   node --version  # Should be v18.0.0 or higher
+   node --version  # Should be v20.0.0 or higher
    ```
 
-3. **If still failing:**
+3. **If still failing, verify the npm cache and retry the lockfile install:**
    ```powershell
-   # Try with legacy peer deps
-   npm install --legacy-peer-deps
+   npm cache verify
+   npm ci
    npm run build
    ```
 
@@ -173,24 +171,25 @@ and per-user KiCAD installs:
 
 **Solution:**
 
-1. **Install with KiCAD's Python:**
+1. **Rebuild and prepare the private runtime from the repository root:**
 
    ```powershell
-   & "C:\Program Files\KiCad\10.0\bin\python.exe" -m pip install -r requirements.txt
+   npm ci
+   npm run build
+   $env:KICAD_PYTHON = "C:\Program Files\KiCad\10.0\bin\python.exe"
+   node .\dist\cli.js setup
    ```
 
-2. **If pip is not available:**
+2. **If setup still fails, inspect the detected runtime:**
 
    ```powershell
-   # Download get-pip.py
-   Invoke-WebRequest -Uri https://bootstrap.pypa.io/get-pip.py -OutFile get-pip.py
-
-   # Install pip
-   & "C:\Program Files\KiCad\10.0\bin\python.exe" get-pip.py
-
-   # Then install requirements
-   & "C:\Program Files\KiCad\10.0\bin\python.exe" -m pip install -r requirements.txt
+   node .\dist\cli.js doctor
    ```
+
+   The CLI creates a separate, hash-locked environment under your user data
+   directory. Never bootstrap pip or install MCP packages into KiCAD's bundled
+   Python. If that interpreter itself is incomplete, repair the KiCAD
+   installation and rerun setup.
 
 ---
 
@@ -224,16 +223,16 @@ and per-user KiCAD installs:
 
 ```json
 // ❌ Wrong - single backslashes
-"args": ["C:\Users\Name\KiCAD-MCP-Server\dist\index.js"]
+"args": ["C:\Users\Name\KiCAD-MCP-Server\dist\cli.js", "serve"]
 
 // ❌ Wrong - mixed slashes
-"args": ["C:\Users/Name\KiCAD-MCP-Server/dist\index.js"]
+"args": ["C:\Users/Name\KiCAD-MCP-Server/dist\cli.js", "serve"]
 
 // ✅ Correct - double backslashes
-"args": ["C:\\Users\\Name\\KiCAD-MCP-Server\\dist\\index.js"]
+"args": ["C:\\Users\\Name\\KiCAD-MCP-Server\\dist\\cli.js", "serve"]
 
 // ✅ Also correct - forward slashes
-"args": ["C:/Users/Name/KiCAD-MCP-Server/dist/index.js"]
+"args": ["C:/Users/Name/KiCAD-MCP-Server/dist/cli.js", "serve"]
 ```
 
 **Solution:** Use either double backslashes `\\` or forward slashes `/` consistently.
@@ -249,20 +248,25 @@ and per-user KiCAD installs:
 KiCAD MCP requires Python 3.10+. KiCAD 10.0 includes a compatible bundled Python,
 and KiCAD 9.0+ is supported.
 
-**Always use KiCAD's bundled Python:**
+**Always launch the TypeScript MCP server and point it to KiCAD's bundled Python:**
 
 ```json
 {
   "mcpServers": {
     "kicad": {
-      "command": "C:\\Program Files\\KiCad\\10.0\\bin\\python.exe",
-      "args": ["C:\\Users\\YourName\\KiCAD-MCP-Server\\python\\kicad_interface.py"]
+      "command": "node",
+      "args": ["C:\\Users\\YourName\\KiCAD-MCP-Server\\dist\\cli.js", "serve"],
+      "env": {
+        "KICAD_PYTHON": "C:\\Program Files\\KiCad\\10.0\\bin\\python.exe",
+        "PYTHONPATH": "C:\\Program Files\\KiCad\\10.0\\lib\\python3\\dist-packages"
+      }
     }
   }
 }
 ```
 
-This bypasses Node.js and runs Python directly.
+The TypeScript entry point is the MCP server. `python/kicad_interface.py` is its
+internal worker and does not accept MCP client JSON-RPC directly.
 
 ---
 
@@ -277,7 +281,7 @@ Config location: `%APPDATA%\Claude\claude_desktop_config.json`
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["C:\\Users\\YourName\\KiCAD-MCP-Server\\dist\\index.js"],
+      "args": ["C:\\Users\\YourName\\KiCAD-MCP-Server\\dist\\cli.js", "serve"],
       "env": {
         "PYTHONPATH": "C:\\Program Files\\KiCad\\10.0\\lib\\python3\\dist-packages",
         "NODE_ENV": "production",
@@ -297,7 +301,7 @@ Config location: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\setti
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["C:\\Users\\YourName\\KiCAD-MCP-Server\\dist\\index.js"],
+      "args": ["C:\\Users\\YourName\\KiCAD-MCP-Server\\dist\\cli.js", "serve"],
       "env": {
         "PYTHONPATH": "C:\\Program Files\\KiCad\\10.0\\lib\\python3\\dist-packages"
       },
@@ -307,17 +311,19 @@ Config location: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\setti
 }
 ```
 
-### Alternative: Python Direct Mode
+### Alternative: npm package after publication
 
-If Node.js issues persist, run Python directly:
+After the selected version is public on npm, a local checkout or build can be
+replaced with the published package on Node.js 20+:
 
 ```json
 {
   "mcpServers": {
     "kicad": {
-      "command": "C:\\Program Files\\KiCad\\10.0\\bin\\python.exe",
-      "args": ["C:\\Users\\YourName\\KiCAD-MCP-Server\\python\\kicad_interface.py"],
+      "command": "npx",
+      "args": ["-y", "@theavi/kicad-mcp@2.7.0", "serve"],
       "env": {
+        "KICAD_PYTHON": "C:\\Program Files\\KiCad\\10.0\\bin\\python.exe",
         "PYTHONPATH": "C:\\Program Files\\KiCad\\10.0\\lib\\python3\\dist-packages"
       }
     }
@@ -352,7 +358,7 @@ SUCCESS!
 ### Test 2: Verify Node.js
 
 ```powershell
-node --version  # Should be v18.0.0+
+node --version  # Should be v20.0.0+
 npm --version   # Should be 9.0.0+
 ```
 
@@ -360,16 +366,16 @@ npm --version   # Should be 9.0.0+
 
 ```powershell
 cd C:\Users\YourName\KiCAD-MCP-Server
-npm install
+npm ci
 npm run build
-Test-Path .\dist\index.js  # Should output: True
+Test-Path .\dist\cli.js  # Should output: True
 ```
 
 ### Test 4: Run Server Manually
 
 ```powershell
 $env:PYTHONPATH = "C:\Program Files\KiCad\10.0\lib\python3\dist-packages"
-node .\dist\index.js
+node .\dist\cli.js serve
 ```
 
 Expected: Server should start and wait for input (doesn't exit immediately)
@@ -380,7 +386,8 @@ Expected: Server should start and wait for input (doesn't exit immediately)
 
 ```powershell
 # View log file
-Get-Content "$env:USERPROFILE\.kicad-mcp\logs\kicad_interface.log" -Tail 50
+$log = Get-ChildItem "$env:USERPROFILE\.kicad-mcp\logs\kicad-mcp-*.log" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+Get-Content $log.FullName -Tail 50
 ```
 
 Should show successful initialization with no errors.
@@ -419,7 +426,7 @@ Should include: `C:\Program Files\KiCad\10.0\lib\python3\dist-packages`
 ```powershell
 # Start server
 $env:PYTHONPATH = "C:\Program Files\KiCad\10.0\lib\python3\dist-packages"
-$process = Start-Process -FilePath "node" -ArgumentList ".\dist\index.js" -NoNewWindow -PassThru
+$process = Start-Process -FilePath "node" -ArgumentList ".\dist\cli.js", "serve" -NoNewWindow -PassThru
 
 # Wait 3 seconds
 Start-Sleep -Seconds 3
@@ -449,7 +456,7 @@ If none of the above solutions work:
    Copy the entire output.
 
 2. **Collect log files:**
-   - MCP log: `%USERPROFILE%\.kicad-mcp\logs\kicad_interface.log`
+   - MCP log: `%USERPROFILE%\.kicad-mcp\logs\kicad-mcp-YYYY-MM-DD.log`
    - Claude Desktop log: `%APPDATA%\Claude\logs\mcp*.log`
 
 3. **Open a GitHub issue:**
@@ -491,10 +498,10 @@ When everything works, you should have:
 
 - [ ] KiCAD 9.0 or higher installed under a versioned KiCAD directory such as
       `C:\Program Files\KiCad\10.0` or `%LOCALAPPDATA%\Programs\KiCad\10.0`
-- [ ] Node.js 18+ installed and in PATH
+- [ ] Node.js 20+ installed and in PATH
 - [ ] Python can import pcbnew successfully
 - [ ] `npm run build` completes without errors
-- [ ] `dist\index.js` file exists
+- [ ] `dist\cli.js` file exists
 - [ ] MCP config file created with correct paths
 - [ ] Server starts without immediate crash
 - [ ] Log file shows successful initialization

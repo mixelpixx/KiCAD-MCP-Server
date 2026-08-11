@@ -291,6 +291,17 @@ def _make_kipy_fp_mock(reference: str):
     """Return a MagicMock that looks enough like a kipy Footprint proto wrapper."""
     fp = MagicMock()
     fp.reference_field.text.value = reference
+    style_values = {
+        "FMS_THROUGH_HOLE": types.SimpleNamespace(number=1),
+        "FMS_SMD": types.SimpleNamespace(number=2),
+        "FMS_UNSPECIFIED": types.SimpleNamespace(number=3),
+    }
+    fp.attributes.mounting_style = 0
+    fp.attributes.proto.DESCRIPTOR.fields_by_name = {
+        "mounting_style": types.SimpleNamespace(
+            enum_type=types.SimpleNamespace(values_by_name=style_values)
+        )
+    }
     fp.proto.attributes.mounting_style = 0
     fp.proto.attributes.exclude_from_position_files = False
     fp.proto.attributes.exclude_from_bill_of_materials = False
@@ -316,7 +327,7 @@ class TestSetFootprintTypeIpc:
             result = iface._ipc_set_footprint_type({"reference": "U1", "type": "smd"})
 
         assert result["success"] is True
-        assert target_fp.proto.attributes.mounting_style == fms.FMS_SMD
+        assert target_fp.attributes.mounting_style == fms.FMS_SMD
         board_mock.update_items.assert_called_once_with([target_fp])
 
     def test_ipc_sets_mounting_style_through_hole(self):
@@ -332,7 +343,7 @@ class TestSetFootprintTypeIpc:
             result = iface._ipc_set_footprint_type({"reference": "J1", "type": "through_hole"})
 
         assert result["success"] is True
-        assert target_fp.proto.attributes.mounting_style == fms.FMS_THROUGH_HOLE
+        assert target_fp.attributes.mounting_style == fms.FMS_THROUGH_HOLE
 
     def test_ipc_sets_exclude_from_pos_when_provided(self):
         iface = _make_ipc_iface()
@@ -405,7 +416,7 @@ class TestSetFootprintTypeIpc:
         assert result["success"] is False
 
     def test_ipc_fallback_to_swig_on_proto_error(self):
-        """When kipy proto import fails, the handler must fall back to the SWIG path."""
+        """When kipy attribute metadata is invalid, fall back to the SWIG path."""
         iface = _make_ipc_iface()
         target_fp = _make_kipy_fp_mock("R1")
         board_mock = iface.ipc_board_api._get_board.return_value
@@ -414,9 +425,9 @@ class TestSetFootprintTypeIpc:
 
         swig_result = {"success": True, "component": {"reference": "R1", "type": "smd"}}
         iface.component_commands.set_footprint_type.return_value = swig_result
+        target_fp.attributes.proto.DESCRIPTOR.fields_by_name = {}
 
-        with patch.dict(sys.modules, {"kipy.proto.board.board_types_pb2": None}):
-            result = iface._ipc_set_footprint_type({"reference": "R1", "type": "smd"})
+        result = iface._ipc_set_footprint_type({"reference": "R1", "type": "smd"})
 
         iface.component_commands.set_footprint_type.assert_called_once()
         assert result["success"] is True
