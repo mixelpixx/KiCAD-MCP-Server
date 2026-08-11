@@ -19,7 +19,7 @@ A Model Context Protocol (MCP) server that enables AI assistants to automate KiC
 
 ## Install without cloning the repository
 
-The repository now contains a publishable npm runtime plus a universal Codex/Claude Code plugin. After the `@theavi/kicad-mcp` npm release is published, users can install the plugin from the GitHub marketplace and start designing without cloning, building, creating a virtual environment, or editing MCP configuration files.
+The published `@theavi/kicad-mcp` npm runtime and universal Codex/Claude Code plugin let users install KiCad MCP from the GitHub marketplace and start designing without cloning, building, creating a virtual environment, or editing MCP configuration files.
 
 - Codex: `codex plugin marketplace add mixelpixx/KiCAD-MCP-Server`, then install **KiCad PCB Designer** from `/plugins`.
 - Claude Code: `/plugin marketplace add mixelpixx/KiCAD-MCP-Server`, then `/plugin install kicad@kicad-mcp`.

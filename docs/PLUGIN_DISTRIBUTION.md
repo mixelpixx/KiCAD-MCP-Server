@@ -1,6 +1,6 @@
 # Install KiCad MCP without cloning the repository
 
-> **Pre-release status:** `@theavi/kicad-mcp@2.7.0` is not yet published on npm, so the plugin installation commands below currently return `E404`. Use the source installers in the repository until the maintainer release checklist is complete. Release-tag CI now verifies the real published launcher before a release can pass.
+The current public runtime release is `@theavi/kicad-mcp@2.7.0`. Release-tag CI verifies the published launcher before a GitHub release can pass.
 
 KiCad MCP is distributed as two layers:
 
@@ -85,7 +85,7 @@ Bootstrap messages go to stderr so they cannot corrupt the MCP JSON-RPC stream o
 
 ## Maintainer release checklist
 
-The repository artifacts do not make the public installation commands work until version `2.7.0` (or the selected release version) is published to npm and the marketplace repository is publicly reachable.
+Use this checklist for each release; publish npm before creating the matching Git tag so public launchers never point at a missing package version.
 
 1. Update the version consistently in `package.json`, both plugin manifests, both MCP configuration files, and both marketplace files.
 2. Run `npm ci`, `npm test`, and `npm pack --dry-run`.
