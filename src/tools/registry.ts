@@ -38,6 +38,8 @@ const CATEGORY_DESCRIPTIONS: Readonly<Record<string, string>> = {
   ui: "KiCad UI process and backend status",
   autoroute: "Freerouting DSN/SES autorouting",
   eagle: "EAGLE project import",
+  parts_registry: "Verified open-parts registry search, inspection, and asset download",
+  pcb_import: "Vendor PCB layout import and conversion",
 };
 
 const definitions = new Map<string, ToolDefinition>();

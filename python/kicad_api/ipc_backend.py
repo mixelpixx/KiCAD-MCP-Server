@@ -19,10 +19,11 @@ import os
 import platform
 import threading
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Callable, Dict, List, Optional
 
 from kicad_api.base import APINotAvailableError, BoardAPI, ConnectionError, KiCADBackend
+from utils.project_settings_guard import preserve_project_settings
 
 logger = logging.getLogger(__name__)
 
@@ -219,9 +220,32 @@ class IPCBackend(KiCADBackend):
         if not self.is_connected():
             return None
         try:
-            for doc in self._kicad.get_open_documents():
-                if hasattr(doc, "path") and str(doc.path).endswith(".kicad_pcb"):
-                    return str(doc.path)
+            # kipy requires an explicit doc_type; a no-arg call raises TypeError.
+            # DocumentSpecifier exposes board_filename + project.path, not .path.
+            from importlib import import_module
+
+            common_types = import_module("kipy.proto.common.types")
+            document_type = getattr(common_types, "DocumentType", None)
+            pcb_document_type = getattr(document_type, "DOCTYPE_PCB", None)
+            if pcb_document_type is None:
+                # Some protobuf generators expose enum values only at module level.
+                pcb_document_type = getattr(common_types, "DOCTYPE_PCB")
+
+            for doc in self._kicad.get_open_documents(pcb_document_type):
+                name = str(getattr(doc, "board_filename", "") or "")
+                if name.endswith(".kicad_pcb"):
+                    root = str(getattr(getattr(doc, "project", None), "path", "") or "")
+                    if not root:
+                        return name
+                    # The document path comes from KiCad and can use a path
+                    # flavor different from the Python host running this MCP.
+                    # Do not let os.path.join() rewrite a remote POSIX path with
+                    # Windows separators (or vice versa).
+                    is_windows_path = "\\" in root or (
+                        len(root) >= 2 and root[0].isalpha() and root[1] == ":"
+                    )
+                    path_type = PureWindowsPath if is_windows_path else PurePosixPath
+                    return str(path_type(root) / name)
         except Exception as e:
             logger.debug(f"Could not read open documents via IPC: {e}")
         return None
@@ -288,7 +312,7 @@ class IPCBackend(KiCADBackend):
             logger.error(f"Failed to check project: {e}")
             return {"success": False, "message": "Failed to check project", "errorDetails": str(e)}
 
-    def save_project(self, path: Optional[Path] = None) -> Dict[str, Any]:
+    def save_project(self, path: Optional[Path] = None, overwrite: bool = False) -> Dict[str, Any]:
         """Save current project via IPC."""
         if not self.is_connected():
             raise ConnectionError("Not connected to KiCAD")
@@ -296,9 +320,16 @@ class IPCBackend(KiCADBackend):
         try:
             board = self._kicad.get_board()
             if path:
-                board.save_as(str(path))
+                saved = board.save_as(str(path), overwrite=overwrite)
             else:
-                board.save()
+                saved = board.save()
+
+            if saved is False:
+                return {
+                    "success": False,
+                    "message": "Failed to save project",
+                    "errorDetails": "KiCad IPC save returned false",
+                }
 
             self._notify_change("save", {"path": str(path) if path else "current"})
 
@@ -768,7 +799,8 @@ class IPCBoardAPI(BoardAPI):
             pcb_board.Add(loaded_fp)
 
             # Save the board so IPC can see the changes
-            pcbnew.SaveBoard(board_path, pcb_board)
+            with preserve_project_settings(board_path):
+                pcbnew.SaveBoard(board_path, pcb_board)
 
             # Refresh IPC view
             try:
@@ -1422,11 +1454,12 @@ class IPCBoardAPI(BoardAPI):
             if name:
                 zone.name = name
 
-            # Set fill mode
-            if fill_mode == "hatched":
-                zone.proto.copper_settings.fill_mode = ZoneFillMode.ZFM_HATCHED
-            else:
-                zone.proto.copper_settings.fill_mode = ZoneFillMode.ZFM_SOLID
+            # Set fill mode. kipy's Zone.fill_mode is a read-only property
+            # and assigning to it raises AttributeError at runtime. Write
+            # through the public proto property instead.
+            zone.proto.copper_settings.fill_mode = (
+                ZoneFillMode.ZFM_HATCHED if fill_mode == "hatched" else ZoneFillMode.ZFM_SOLID
+            )
 
             # Create outline polyline
             outline = PolyLine()

@@ -177,6 +177,53 @@ class TestBatchConnect:
         assert len(r["placed"]) == 1
         assert labels == [("SDA", 180)]  # pin angle 0 -> label orientation 180
 
+    def test_places_global_label(self, monkeypatch, tmp_path):
+        f = tmp_path / "x.kicad_sch"
+        f.write_text("(kicad_sch)")
+        fake_loc = types.SimpleNamespace(
+            get_pin_location=lambda p, ref, pin: [10.0, 20.0],
+            get_pin_angle=lambda p, ref, pin: 0,
+            get_all_symbol_pins=lambda p, ref: {"1": [10.0, 20.0]},
+        )
+        kinds = []
+        fake_wm = types.SimpleNamespace(
+            add_label=lambda p, net, pos, label_type="label", orientation=0: kinds.append(
+                label_type
+            )
+            or True,
+            add_wire=lambda *a: True,
+            delete_label=lambda *a, **k: True,
+        )
+
+        # _find_facing_label must NOT be consulted for global labels; make it raise if called.
+        def _boom(*a, **k):
+            raise AssertionError("facing-label lookup should be skipped for global labels")
+
+        monkeypatch.setattr(sb, "PinLocator", lambda: fake_loc)
+        monkeypatch.setattr(sb, "WireManager", fake_wm)
+        monkeypatch.setattr(sb, "_find_facing_label", _boom)
+
+        c = SchematicBatchCommands(types.SimpleNamespace())
+        r = c.batch_connect(
+            {
+                "schematicPath": str(f),
+                "connections": {"U1": {"9": "GND"}},
+                "labelType": "global_label",
+            }
+        )
+        assert r["success"] is True
+        assert kinds == ["global_label"]
+
+    def test_rejects_invalid_label_type(self, tmp_path):
+        f = tmp_path / "x.kicad_sch"
+        f.write_text("(kicad_sch)")
+        c = SchematicBatchCommands(types.SimpleNamespace())
+        r = c.batch_connect(
+            {"schematicPath": str(f), "connections": {"R1": {"1": "X"}}, "labelType": "bogus"}
+        )
+        assert r["success"] is False
+        assert "labelType" in r["message"]
+
 
 class TestBatchAddAndConnect:
     def test_splits_nets_and_orchestrates(self):
@@ -204,6 +251,7 @@ class TestBatchAddAndConnect:
             {
                 "schematicPath": "/x.kicad_sch",
                 "components": [{"symbol": "Device:R", "reference": "R1", "nets": {"1": "VCC"}}],
+                "labelType": "global_label",
             }
         )
         assert r["success"] is True
@@ -213,3 +261,108 @@ class TestBatchAddAndConnect:
         assert "nets" not in add_args["components"][0]
         # nets routed to batch_connect keyed by reference
         assert conn_args["connections"] == {"R1": {"1": "VCC"}}
+        # labelType threaded through to batch_connect
+        assert conn_args["labelType"] == "global_label"
+
+
+class TestReplaceFieldRestore:
+    """Regression: field restore after replace must be block-scoped.
+
+    The old implementation regex-substituted the first matching
+    (property "<name>" ...) in the WHOLE file, which for names like
+    "Description" lives inside lib_symbols — corrupting an unrelated
+    library symbol definition.
+    """
+
+    _SCH = """\
+(kicad_sch (version 20250114) (generator "test")
+  (uuid aaaaaaaa-0000-0000-0000-000000000020)
+  (paper "A4")
+  (lib_symbols
+    (symbol "Connector_Generic:Conn_01x04"
+      (property "Description" "LIBRARY TEXT"
+        (at 0 0 0)
+      )
+    )
+  )
+  (symbol (lib_id "Device:D_TVS") (at 44.45 57.15 0)
+    (uuid dddddddd-0000-0000-0000-000000000021)
+    (property "Reference" "D1" (at 0 0 0))
+    (property "Value" "SMBJ15A" (at 0 0 0))
+    (property "Description" "OLD DESC" (at 0 0 0))
+  )
+  (sheet_instances (path "/" (page "1")))
+)
+"""
+
+    _NEW_BLOCK = """  (symbol (lib_id "Device:D_Zener") (at 44.45 57.15 0)
+    (uuid dddddddd-0000-0000-0000-000000000022)
+    (property "Reference" "D1" (at 0 0 0))
+    (property "Value" "SMBJ15A" (at 0 0 0))
+    (property "Description" "" (at 0 0 0))
+  )
+"""
+
+    def test_restore_delegates_to_block_scoped_editor(self, tmp_path, monkeypatch):
+        sch = tmp_path / "board.kicad_sch"
+        sch.write_text(self._SCH, encoding="utf-8")
+
+        def fake_get_component(params):
+            return {
+                "success": True,
+                "position": {"x": 44.45, "y": 57.15, "angle": 0},
+                "fields": {
+                    "Reference": {"value": "D1"},
+                    "Value": {"value": "SMBJ15A"},
+                    "Footprint": {"value": "Diode_SMD:D_SMB"},
+                    "Description": {"value": "OLD DESC"},
+                },
+            }
+
+        edit_calls = []
+
+        def fake_edit(params):
+            edit_calls.append(params)
+            return {"success": True}
+
+        def fake_add_component(self_loader, sch_file, *a, **kw):
+            content = sch_file.read_text(encoding="utf-8")
+            idx = content.rindex("  (sheet_instances")
+            sch_file.write_text(
+                content[:idx] + TestReplaceFieldRestore._NEW_BLOCK + content[idx:],
+                encoding="utf-8",
+            )
+            return {"success": True}
+
+        fake_loader_cls = type(
+            "FakeLoader",
+            (),
+            {"__init__": lambda self, **kw: None, "add_component": fake_add_component},
+        )
+        monkeypatch.setattr(sb, "DynamicSymbolLoader", fake_loader_cls)
+        fake_pins = types.SimpleNamespace(
+            get_all_symbol_pins=lambda p, ref: {},
+            get_symbol_pins=lambda p, sym: {},
+        )
+        monkeypatch.setattr(sb, "PinLocator", lambda: fake_pins)
+
+        iface = types.SimpleNamespace(
+            _handle_get_schematic_component=fake_get_component,
+            _handle_edit_schematic_component=fake_edit,
+        )
+        c = SchematicBatchCommands(iface)
+        r = c.replace_schematic_component(
+            {
+                "schematicPath": str(sch),
+                "reference": "D1",
+                "newSymbol": "Device:D_Zener",
+            }
+        )
+
+        assert r["success"] is True
+        # the library symbol definition must be untouched
+        assert '"LIBRARY TEXT"' in sch.read_text(encoding="utf-8")
+        # restoration went through the block-scoped editor with the old value
+        assert len(edit_calls) == 1
+        assert edit_calls[0]["reference"] == "D1"
+        assert edit_calls[0]["properties"]["Description"] == {"value": "OLD DESC"}

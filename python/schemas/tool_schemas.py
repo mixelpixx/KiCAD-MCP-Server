@@ -67,7 +67,17 @@ PROJECT_TOOLS = [
                 "save": {
                     "type": "boolean",
                     "description": "Save the board to disk before closing (default true). If false and there are unsaved changes, the close proceeds but the response warns they were discarded.",
-                }
+                },
+                "forceExternalChanges": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Save despite external changes to the loaded SWIG board file",
+                },
+                "force": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Backward-compatible alias for forceExternalChanges",
+                },
             },
         },
     },
@@ -87,6 +97,10 @@ PROJECT_TOOLS = [
                     "type": "string",
                     "description": "Optional new path to save the board (if not provided, saves to current location)",
                 },
+                "path": {
+                    "type": "string",
+                    "description": "Alias for filename",
+                },
                 "force": {
                     "type": "boolean",
                     "default": False,
@@ -95,8 +109,75 @@ PROJECT_TOOLS = [
                         "changed externally since this session loaded it"
                     ),
                 },
+                "forceExternalChanges": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Explicit alias for force; takes precedence when both are provided",
+                },
+                "overwrite": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Replace an existing destination when saving to a different path",
+                },
             },
         },
+    },
+    {
+        "name": "open_board",
+        "title": "Open PCB Board",
+        "description": "Opens a specific .kicad_pcb file and refreshes MCP's in-memory board state.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"boardPath": {"type": "string"}},
+            "required": ["boardPath"],
+        },
+    },
+    {
+        "name": "reload_board",
+        "title": "Reload PCB Board",
+        "description": "Reloads the current or specified .kicad_pcb from disk, discarding stale in-memory state.",
+        "inputSchema": {"type": "object", "properties": {"boardPath": {"type": "string"}}},
+    },
+    {
+        "name": "save_board",
+        "title": "Save PCB Board",
+        "description": "Saves the loaded board with the external disk-change guard.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "boardPath": {"type": "string"},
+                "force": {"type": "boolean", "default": False},
+                "forceExternalChanges": {"type": "boolean", "default": False},
+                "overwrite": {"type": "boolean", "default": False},
+            },
+        },
+    },
+    {
+        "name": "save_as",
+        "title": "Save Board As",
+        "description": "Saves the loaded board to a new .kicad_pcb path.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "boardPath": {"type": "string"},
+                "overwrite": {"type": "boolean", "default": False},
+                "force": {"type": "boolean", "default": False},
+                "forceExternalChanges": {"type": "boolean", "default": False},
+            },
+            "required": ["boardPath"],
+        },
+    },
+    {
+        "name": "is_dirty",
+        "title": "Board Dirty State",
+        "description": "Reports whether MCP knows the loaded board has unsaved memory changes or external disk changes.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "discard_or_reload",
+        "title": "Discard or Reload Board",
+        "description": "Discards the in-memory board and reloads it from disk.",
+        "inputSchema": {"type": "object", "properties": {"boardPath": {"type": "string"}}},
     },
     {
         "name": "snapshot_project",
@@ -155,6 +236,57 @@ BOARD_TOOLS = [
         },
     },
     {
+        "name": "set_board_origin",
+        "title": "Set Board Aux/Grid Origin",
+        "description": (
+            "Set the auxiliary (drill/place) origin and/or grid origin of a "
+            ".kicad_pcb. The aux origin is the datum used by export_drill's "
+            "drillOrigin:'plot' option and by pick-and-place / plot exports "
+            "with useAuxOrigin."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "boardPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_pcb file",
+                },
+                "type": {
+                    "type": "string",
+                    "enum": ["aux", "grid", "both"],
+                    "description": "Which origin to set (default: aux)",
+                    "default": "aux",
+                },
+                "x": {"type": "number", "description": "Origin X coordinate"},
+                "y": {"type": "number", "description": "Origin Y coordinate"},
+                "unit": {
+                    "type": "string",
+                    "enum": ["mm", "mil", "inch"],
+                    "description": "Coordinate unit (default: mm)",
+                    "default": "mm",
+                },
+            },
+            "required": ["boardPath", "x", "y"],
+        },
+    },
+    {
+        "name": "get_board_origin",
+        "title": "Get Board Aux/Grid Origin",
+        "description": (
+            "Read back the auxiliary (drill/place) origin and grid origin of a " ".kicad_pcb in mm."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "boardPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_pcb file",
+                },
+            },
+            "required": ["boardPath"],
+        },
+    },
+    {
         "name": "add_board_outline",
         "title": "Add Board Outline",
         "description": "Adds a board outline shape (rectangle, rounded_rectangle, circle, or polygon) on the Edge.Cuts layer. By default the board top-left corner is placed at (0, 0) so all coordinates are positive. Use x/y to set a different top-left corner position.",
@@ -207,23 +339,113 @@ BOARD_TOOLS = [
         },
     },
     {
-        "name": "add_layer",
-        "title": "Add Custom Layer",
-        "description": "Adds a new custom layer to the board stack (e.g., User.1, User.Comments).",
+        "name": "clear_board_outline",
+        "title": "Clear Board Outline",
+        "description": "Deletes all Edge.Cuts graphic items from the current PCB.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "replace_board_outline",
+        "title": "Replace Board Outline",
+        "description": "Clears existing Edge.Cuts items and adds a new board outline.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "layerName": {
+                "shape": {
                     "type": "string",
-                    "description": "Name of the layer to add",
+                    "enum": ["rectangle", "rounded_rectangle", "circle", "polygon"],
                 },
-                "layerType": {
+                "width": {"type": "number"},
+                "height": {"type": "number"},
+                "x": {"type": "number"},
+                "y": {"type": "number"},
+                "radius": {"type": "number"},
+                "cornerRadius": {"type": "number"},
+                "points": {"type": "array"},
+                "unit": {"type": "string", "enum": ["mm", "mil", "inch"], "default": "mm"},
+            },
+            "required": ["shape"],
+        },
+    },
+    {
+        "name": "list_graphics",
+        "title": "List PCB Graphics",
+        "description": "Lists board drawing items, optionally filtered by layer.",
+        "inputSchema": {"type": "object", "properties": {"layer": {"type": "string"}}},
+    },
+    {
+        "name": "delete_graphic",
+        "title": "Delete PCB Graphic",
+        "description": "Deletes a board drawing item by KiCad UUID.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"uuid": {"type": "string"}},
+            "required": ["uuid"],
+        },
+    },
+    {
+        "name": "update_graphic",
+        "title": "Update PCB Graphic",
+        "description": "Updates common board graphic properties by KiCad UUID.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "uuid": {"type": "string"},
+                "layer": {"type": "string"},
+                "width": {"type": "number"},
+                "start": {"type": "object"},
+                "end": {"type": "object"},
+                "center": {"type": "object"},
+                "position": {"type": "object"},
+                "text": {"type": "string"},
+                "unit": {"type": "string", "enum": ["mm", "mil", "inch"], "default": "mm"},
+            },
+            "required": ["uuid"],
+        },
+    },
+    {
+        "name": "add_layer",
+        "title": "Enable Copper Layer",
+        "description": (
+            "Enables a copper layer in the board stackup and gives it a name. "
+            "Copper layers only — KiCad's technical and user layers (silkscreen, "
+            "mask, courtyard, Dwgs.User, ...) are a fixed set that always exists "
+            "and cannot be added."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
                     "type": "string",
-                    "enum": ["signal", "power", "mixed", "jumper"],
-                    "description": "Type of layer (for copper layers)",
+                    "description": (
+                        "Name for the layer. Stored alongside KiCad's canonical name "
+                        "(e.g. name 'PWR' on In1.Cu is written as "
+                        '(4 "In1.Cu" signal "PWR")).'
+                    ),
+                },
+                "type": {
+                    "type": "string",
+                    "enum": ["copper", "signal", "power", "mixed", "jumper"],
+                    "description": "Copper layer type",
+                },
+                "position": {
+                    "type": "string",
+                    "enum": ["top", "bottom", "inner"],
+                    "description": "Which copper layer to target",
+                },
+                "number": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 30,
+                    "description": (
+                        "Inner-layer ORDINAL, 1-based: 1 = In1.Cu, 2 = In2.Cu. This is "
+                        "not a KiCad layer ID (In1.Cu's id is 4). Required when "
+                        "position is 'inner'. The response echoes the resolved "
+                        "canonicalName and id."
+                    ),
                 },
             },
-            "required": ["layerName"],
+            "required": ["name", "type", "position"],
         },
     },
     {
@@ -516,6 +738,20 @@ COMPONENT_TOOLS = [
         },
     },
     {
+        "name": "batch_move_components",
+        "title": "Batch Move Components",
+        "description": "Moves multiple PCB components transactionally and saves by default.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "moves": {"type": "object"},
+                "save": {"type": "boolean", "default": True},
+                "dryRun": {"type": "boolean", "default": False},
+            },
+            "required": ["moves"],
+        },
+    },
+    {
         "name": "rotate_component",
         "title": "Rotate Component",
         "description": "Rotates a component by specified angle. Rotation is cumulative with existing rotation.",
@@ -591,6 +827,18 @@ COMPONENT_TOOLS = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "get_component_geometry",
+        "title": "Get Component Geometry",
+        "description": "Returns separated footprint bboxes for body, pads, courtyard, keepout, fab, silk and text.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "reference": {"type": "string"},
+                "refs": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+    },
+    {
         "name": "find_component",
         "title": "Find Components",
         "description": "Searches for components matching specified criteria. Supports partial matching on reference, value, or footprint patterns.",
@@ -628,6 +876,27 @@ COMPONENT_TOOLS = [
         },
     },
     {
+        "name": "get_pads",
+        "title": "Get Pads",
+        "description": "Returns pads for one component, selected refs, or all components.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "reference": {"type": "string"},
+                "refs": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+    },
+    {
+        "name": "get_net_pads",
+        "title": "Get Net Pads",
+        "description": "Returns every pad attached to a net name or net code.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"net": {"type": "string"}, "netCode": {"type": "number"}},
+        },
+    },
+    {
         "name": "get_pad_position",
         "title": "Get Pad Position",
         "description": "Returns the position and properties of a specific pad on a component.",
@@ -648,6 +917,61 @@ COMPONENT_TOOLS = [
                 },
             },
             "required": ["reference"],
+        },
+    },
+    {
+        "name": "get_ratsnest",
+        "title": "Get Ratsnest",
+        "description": "Estimates ratsnest/airwire segments and lengths from current pad positions grouped by net.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "nets": {"type": "array", "items": {"type": "string"}},
+                "maxPadsPerNet": {"type": "number", "default": 128},
+            },
+        },
+    },
+    {
+        "name": "estimate_airwire_lengths",
+        "title": "Estimate Airwire Lengths",
+        "description": "Alias for get_ratsnest.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "nets": {"type": "array", "items": {"type": "string"}},
+                "maxPadsPerNet": {"type": "number", "default": 128},
+            },
+        },
+    },
+    {
+        "name": "check_placement_clearance",
+        "title": "Check Placement Clearance",
+        "description": "Classifies placement conflicts as body, courtyard, keepout, silk/text, or pad-clearance issues.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "refs": {"type": "array", "items": {"type": "string"}},
+                "margin": {"type": "number", "default": 0},
+                "padClearance": {"type": "number", "default": 0},
+            },
+        },
+    },
+    {
+        "name": "move_footprint_text",
+        "title": "Move Footprint Text",
+        "description": "Moves a footprint Reference/Value/user text field without moving the footprint.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "reference": {"type": "string"},
+                "field": {"type": "string"},
+                "x": {"type": "number"},
+                "y": {"type": "number"},
+                "rotation": {"type": "number"},
+                "layer": {"type": "string"},
+                "visible": {"type": "boolean"},
+            },
+            "required": ["reference", "field"],
         },
     },
     {
@@ -1657,6 +1981,66 @@ DESIGN_RULE_TOOLS = [
         "description": "Returns a list of design rule violations from the most recent DRC run.",
         "inputSchema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "assign_net_to_class",
+        "title": "Assign Net to Class",
+        "description": "Assigns an existing net to an existing net class to apply its design rules.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {"type": "string", "description": "Name of the net"},
+                "netClass": {"type": "string", "description": "Name of the net class"},
+            },
+            "required": ["net", "netClass"],
+        },
+    },
+    {
+        "name": "check_clearance",
+        "title": "Check Clearance",
+        "description": "Checks the measured clearance between two PCB items against the board's minimum clearance design rule.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "item1": {
+                    "type": "object",
+                    "description": "First item: {type, id?, reference?}",
+                },
+                "item2": {
+                    "type": "object",
+                    "description": "Second item: {type, id?, reference?}",
+                },
+            },
+            "required": ["item1", "item2"],
+        },
+    },
+    {
+        "name": "set_layer_constraints",
+        "title": "Set Layer Constraints",
+        "description": "Sets per-layer minimum track width, clearance, and via dimensions via a .kicad_dru custom rule.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "layer": {"type": "string", "description": "Layer name (e.g. 'F.Cu')"},
+                "minTrackWidth": {
+                    "type": "number",
+                    "description": "Minimum track width for this layer (mm)",
+                },
+                "minClearance": {
+                    "type": "number",
+                    "description": "Minimum clearance for this layer (mm)",
+                },
+                "minViaDiameter": {
+                    "type": "number",
+                    "description": "Minimum via diameter for this layer (mm)",
+                },
+                "minViaDrill": {
+                    "type": "number",
+                    "description": "Minimum via drill size for this layer (mm)",
+                },
+            },
+            "required": ["layer"],
+        },
+    },
 ]
 
 # =============================================================================
@@ -2143,6 +2527,20 @@ SCHEMATIC_TOOLS = [
         },
     },
     {
+        "name": "create_board_from_schematic",
+        "title": "Create Board From Schematic",
+        "description": "Creates a fresh .kicad_pcb file, then updates it from the schematic so footprints and nets are present.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {"type": "string"},
+                "boardPath": {"type": "string"},
+                "overwrite": {"type": "boolean", "default": False},
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
         "name": "generate_netlist",
         "title": "Generate Netlist (JSON)",
         "description": (
@@ -2386,6 +2784,43 @@ SCHEMATIC_TOOLS = [
                         "type": "string",
                         "enum": ["wires", "junctions", "labels", "components"],
                     },
+                },
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
+        "name": "lint_offgrid",
+        "title": "Lint Off-Grid Schematic Geometry",
+        "description": (
+            "Report every off-grid connection-relevant coordinate in a schematic — "
+            "wire/bus endpoints, symbol origins, label/junction/no_connect anchors — "
+            "and optionally snap them to the nearest grid point (fix=true). "
+            "KiCad's connection grid is fixed at 50 mil (1.27 mm) and junction "
+            "placement uses exact matching, so a single off-grid endpoint can poison "
+            "junction placement for a whole sheet. Fixes are byte-exact text splices "
+            "that preserve file formatting; (lib_symbols) content and property field "
+            "positions are never touched. Offenders more than 0.5 mm off-grid are "
+            "reported as needsHuman and never auto-snapped."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                },
+                "fix": {
+                    "type": "boolean",
+                    "description": "Snap offenders in place (default false: report only)",
+                    "default": False,
+                },
+                "gridSize": {
+                    "type": "number",
+                    "description": (
+                        "Grid spacing in mm (default: 1.27 = 50 mil, the KiCad " "connection grid)"
+                    ),
+                    "default": 1.27,
                 },
             },
             "required": ["schematicPath"],

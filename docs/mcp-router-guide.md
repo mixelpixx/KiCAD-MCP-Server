@@ -1,7 +1,7 @@
 # MCP Tool Discovery Guide
 
 KiCAD MCP exposes every supported operation as a first-class MCP tool. The
-current catalog contains 183 tools: 180 KiCad capabilities and three
+current catalog contains 219 tools: 216 KiCad capabilities and three
 supplemental discovery tools. Clients call the selected capability directly;
 there is no generic `execute_tool` dispatcher and no hidden "routed" subset.
 

@@ -10,7 +10,7 @@
 
 | Metric                      | Value                                     |
 | --------------------------- | ----------------------------------------- |
-| Total MCP Tools             | 183 first-class                           |
+| Total MCP Tools             | 219 first-class                           |
 | KiCad Capability Categories | 18                                        |
 | MCP Resources               | 18 registrations                          |
 | MCP Prompts                 | 18                                        |
@@ -111,8 +111,27 @@ The server automatically selects the best backend:
 - MCP TypeScript SDK v2, Node.js 20+, and Zod 4
 - MCP 2026-07-28 negotiation with legacy 2025 compatibility through `serveStdio`
 - Deterministic cache hints, structured results, annotations, and destructive-operation confirmation
-- 183 first-class tools with runtime-derived catalog metadata
+- 219 first-class tools with runtime-derived catalog metadata
 - Correlated and cancellable Python worker bridge
+
+### v2.6.0 (2026-07-28)
+
+- Vendor PCB import, board origins, hierarchical placement, and sheet metadata
+- Schematic repair, off-grid and cosmetic lint, and global batch labels
+- Safe board-item deletion and project net-setting preservation
+- Structured failures for unparseable schematics
+
+### v2.5.0 (2026-07-26)
+
+- Board lifecycle, graphics editing, geometry, and placement-clearance tools
+- Backend session pinning across save, reload, and save-as operations
+- Formatting and full test execution enforced in CI
+
+### v2.4.1 (2026-07-26)
+
+- Working net-class assignment, clearance checks, and layer constraints
+- Parts-registry search/download and live JLCPCB part details
+- Correct autorouter timeouts, board-view exports, and IPC zone creation
 
 ### v2.2.3 (2026-03-11)
 

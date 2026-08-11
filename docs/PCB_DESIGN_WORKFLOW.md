@@ -304,7 +304,7 @@ See [SVG Import Guide](SVG_IMPORT_GUIDE.md) for requirements and tips.
 
 ## Related Documentation
 
-- [Tool Inventory](TOOL_INVENTORY.md) -- runtime-verified category counts for all 183 first-class tools
+- [Tool Inventory](TOOL_INVENTORY.md) -- runtime-verified category counts for all 219 first-class tools
 - [Schematic Tools Reference](SCHEMATIC_TOOLS_REFERENCE.md) -- detailed schematic tool docs
 - [Routing Tools Reference](ROUTING_TOOLS_REFERENCE.md) -- detailed routing tool docs
 - [Freerouting Guide](FREEROUTING_GUIDE.md) -- autorouter setup and usage

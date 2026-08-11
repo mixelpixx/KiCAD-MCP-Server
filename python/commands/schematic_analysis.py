@@ -15,7 +15,6 @@ import sexpdata
 from commands.pin_locator import PinLocator
 from commands.wire_connectivity import _parse_virtual_connections, _to_iu
 from sexpdata import Symbol
-from skip import Schematic
 
 logger = logging.getLogger("kicad_interface")
 
@@ -920,8 +919,10 @@ def find_orphaned_wires(schematic_path: Path) -> Dict[str, Any]:
     # --- anchors: component pins ---
     pin_iu: Set[Tuple[int, int]] = set()
     try:
+        from commands.schematic import SchematicLoadError, SchematicManager
+
         locator = PinLocator()
-        sch = Schematic(str(schematic_path))
+        sch = SchematicManager.load_schematic(str(schematic_path))
         for symbol in getattr(sch, "symbol", ()):
             try:
                 if not hasattr(symbol, "property") or not hasattr(symbol.property, "Reference"):
@@ -934,6 +935,10 @@ def find_orphaned_wires(schematic_path: Path) -> Dict[str, Any]:
                     pin_iu.add(_to_iu(float(coords[0]), float(coords[1])))
             except Exception as e:
                 logger.warning(f"Error reading pins for symbol: {e}")
+    except SchematicLoadError:
+        # An unparseable schematic must error, not misreport every wire as
+        # orphaned because no pin anchors could be extracted.
+        raise
     except Exception as e:
         logger.warning(f"Could not load schematic via skip for pin extraction: {e}")
         sch = None

@@ -79,22 +79,27 @@ class TestTsToolRegistry:
         missing = {command: files for command, files in calls.items() if command not in routes}
         assert missing == {}
 
-    def test_removed_phantom_tools_are_not_advertised(self):
+    def test_unimplemented_phantom_tools_are_not_advertised(self):
         names = {name for name, _, _, _ in self._collect_registrations()}
         assert names.isdisjoint(
             {
                 "add_component_annotation",
                 "group_components",
                 "replace_component",
-                "assign_net_to_class",
-                "set_layer_constraints",
-                "check_clearance",
             }
         )
 
     def test_supported_compatibility_aliases_remain_advertised(self):
         names = {name for name, _, _, _ in self._collect_registrations()}
-        assert {"add_zone", "add_net_class", "export_position_file", "export_vrml"} <= names
+        assert {
+            "add_zone",
+            "add_net_class",
+            "assign_net_to_class",
+            "check_clearance",
+            "export_position_file",
+            "export_vrml",
+            "set_layer_constraints",
+        } <= names
 
     def test_backend_state_tool_is_registered(self):
         names = {name for name, _, _, _ in self._collect_registrations()}

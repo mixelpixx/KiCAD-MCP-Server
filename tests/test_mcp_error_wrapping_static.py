@@ -37,6 +37,9 @@ class TestMcpErrorWrapping:
             "get_design_rules",
             "run_drc",
             "create_netclass",
+            "assign_net_to_class",
+            "set_layer_constraints",
+            "check_clearance",
             "get_drc_violations",
         ):
             marker = f'callKicadScript("{command}"'

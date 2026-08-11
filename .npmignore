@@ -4,4 +4,3 @@ python/test_*.py
 python/test_ipc_backend.py
 python/requirements.txt
 dist/**/*.map
-dist/**/*.d.ts

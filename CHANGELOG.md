@@ -14,7 +14,7 @@ TypeScript SDK v2 while preserving compatibility with legacy 2025 clients.
   output schemas, safety annotations, request cancellation, and confirmation
   for destructive operations.
 - Reconciled the TypeScript and Python command catalogs. The server now
-  exposes 180 KiCad capabilities plus three supplemental discovery tools.
+  exposes 216 KiCad capabilities across 20 categories plus three supplemental discovery tools.
 - Migrated all resources and prompts to SDK v2 and removed unsupported or
   phantom registrations.
 
@@ -37,6 +37,463 @@ TypeScript SDK v2 while preserving compatibility with legacy 2025 clients.
 - Added protocol contracts, bridge lifecycle regressions, package-content
   validation, Node 20/22/24 coverage, cross-platform Python smoke tests, and
   hash-locked runtime installation.
+
+### Additional bug fixes
+
+- **`add_layer` could not add inner copper layers, and corrupted an unrelated
+  layer trying** (#222). Four defects, of which the reported one — changes
+  never reaching disk — was the least damaging:
+  - `add_layer` was missing from the auto-save set, so it reported success and
+    wrote nothing.
+  - The layer was resolved as `In1_Cu + (number - 1)`, but KiCad's copper layer
+    IDs step by **2** (`F.Cu`=0, `B.Cu`=2, `In1.Cu`=4, `In2.Cu`=6). Asking for
+    a second inner layer resolved to id 5 — `F.SilkS` — and **renamed the front
+    silkscreen layer** to `In2.Cu`. Confirmed against a real KiCad 10.0 install.
+  - The copper-layer count was computed as `2 + number`, turning a request for
+    two inner layers into six, then eight.
+  - `tool_schemas.py` documented a different tool entirely (`layerName` /
+    `layerType`) from the one that exists (`name` / `type` / `position` /
+    `number`).
+
+  Inner layers are now derived from `SetCopperLayerCount`, which enables and
+  canonically names them; a custom name is stored alongside, exactly as KiCad
+  writes it (`(4 "In1.Cu" signal "PWR")`). `number` is documented as the
+  inner-layer ordinal (1 = In1.Cu) and the response echoes the resolved
+  `canonicalName` and `id`, so the interpretation is visible at the call site.
+  Non-copper `type` values are now rejected rather than silently retyping
+  `F.Cu` — KiCad's technical and user layers are a fixed set.
+
+## [2.6.0] - 2026-07-28
+
+A minor bump: **10 new tools** take the registry from 136 to 146, and #343
+changes how schematic tools report an unparseable sheet. The headline fix is
+#247 — deleting anything from a board used to break the session.
+
+### Breaking Changes
+
+- **Schematic tools now fail loudly on an unparseable schematic** (#343,
+  @rossvonfange). Tools that previously returned partial or empty results
+  when kicad-skip could not parse a sheet now return a structured error:
+
+```json
+{
+  "success": false,
+  "error": "schematic_load_failed",
+  "flatSymbols": ["LIB:PART"],
+  "message": "Schematic load failed for ...: embedded flat lib symbols [...]"
+}
+```
+
+Affected: `find_orphaned_wires`, hierarchical net traversal, and
+`sync_schematic_to_board` among others. This is deliberate — silently
+skipping a broken sheet produced an incomplete pad-to-net map reported as
+success, which is worse than an error. `flatSymbols` names the offending
+symbols, and `repair_flat_symbols` fixes the common cause. See
+`docs/KNOWN_ISSUES.md` section 7.
+
+### New Features
+
+- **`import_pcb`**: wraps KiCad 10's native `kicad-cli pcb import` so any MCP
+  consumer can convert a vendor PCB file (PADS, Altium, Eagle, CADSTAR,
+  Fabmaster, P-CAD, SolidWorks PCB, or a binary Cadence Allegro `.brd`) into
+  a `.kicad_pcb` file, with an optional structured import report
+  (`reportFormat: "json"|"text"`). Verified against a real 10 MB binary
+  Cadence Allegro `.brd` (581 footprints, thousands of net occurrences).
+  Binary Allegro `.brd` files must use `format: "auto"` — the CLI's
+  `--format` enum has no `"allegro"` literal, auto-detection by magic is the
+  only supported path. This tool imports PCB/layout data only; kicad-cli has
+  no Concept HDL / OrCAD schematic importer.
+
+- **Hierarchical schematic tools** (#342, @rossvonfange):
+  `remove_hierarchical_sheet` (the inverse of `add_hierarchical_sheet` —
+  removes the `(sheet ...)` block and its `sheet_instances` page entry, but
+  never deletes the sub-sheet file), `set_sheet_property` /
+  `get_sheet_properties` for custom sheet metadata, and `hierarchical_place`,
+  which arranges footprints by schematic hierarchy using a vendored HierPlace.
+
+- **Schematic authoring and lint tooling** (#343, @rossvonfange):
+  `repair_flat_symbols` rewrites SnapEDA/SamacSys symbols that put pins
+  directly under the top-level `(symbol ...)` with no `_1_1` sub-unit — legal
+  for KiCad, fatal for kicad-skip. `lint_offgrid` reports and optionally snaps
+  off-grid connection geometry; a single off-grid endpoint can poison junction
+  placement for a whole sheet, because KiCad's connection grid is fixed at
+  50 mil and junction matching is exact. `lint_schematic_cosmetic` hides
+  duplicate pin names and orients labels away from symbol bodies.
+
+  Both writers default to reporting only (`fix` / `dryRun`), splice bytes
+  rather than reformatting the file, and re-parse before writing. Verified
+  against a real KiCad 10.0 install: `kicad-cli` still parses the rewritten
+  schematic, line counts are unchanged, and a second pass is a no-op.
+
+- **`set_board_origin` / `get_board_origin`** (#341, @rossvonfange) for the
+  auxiliary and grid origins.
+
+- **Global labels in batch wiring** (#343, @rossvonfange): `batch_connect` and
+  `batch_add_and_connect` take `labelType: "global_label"` for nets that span
+  sheets, instead of only sheet-local labels.
+
+### Performance
+
+- **`sync_schematic_to_board` loads each distinct footprint once** (#248).
+  The footprint loop called `pcbnew.FootprintLoad` per component with no
+  memoization anywhere downstream, so a board with thirteen identical
+  resistors paid for thirteen identical disk reads. Each distinct
+  `(library, footprint)` is now loaded once and cloned per component.
+
+  On the reporter's measured component mix, warm cache: 29 loads to 6, and
+  the loop runs roughly twice as fast. The saving is larger cold, where a
+  first read of an untouched `.pretty` dominated everything else.
+
+  Cloning is version-tolerant: `Duplicate()` gained a required argument in
+  KiCad 10, and it returns a `BOARD_ITEM` that SWIG does not down-cast, so
+  the result is passed through `Cast_to_FOOTPRINT`. Verified against a real
+  KiCad 10.0 install.
+
+  Thanks to @Dewieinns for the instrumented per-library timing table, which
+  is what showed repeated loads into the same library costing the same as
+  the first.
+
+### Bug Fixes
+
+- **Symbol property values containing an escaped quote were silently
+  truncated** (#336). KiCad escapes a quote inside a double-quoted token as
+  `\"`. Readers using the obvious `"([^"]*)"` stop at that escaped quote, so
+  the value came back as a lone backslash — and emitting that back out escapes
+  the closing quote, running the token on and swallowing the rest of the file.
+
+  This was not theoretical: **419 of the 22,712 stock KiCad 10 symbol files**
+  across 13 libraries have a Description wrapped in escaped quotes, including
+  every `Connector_Generic` part. Reading one returned `\` rather than the
+  description.
+
+  Reading and writing now share one escape-aware implementation in
+  `utils.sexpr_format` (`QUOTED_VALUE`, `escape_sexpr_string`,
+  `unescape_sexpr_string`), replacing five ad-hoc readers and three writers.
+  The three writers escaped quotes but not backslashes, which is a no-op on
+  precisely the values that break — order matters, and they had it wrong.
+
+- **`add_gnd_stitching_vias` treated arcs as their chord** (#192). Since
+  `route_arc_trace` landed, `board.GetTracks()` can return `PCB_ARC` items. The
+  obstacle loop distinguished only `PCB_VIA` from everything else, so an arc
+  was recorded as the straight chord between its endpoints — under-stating the
+  region it occupies. A candidate via sitting in the bulge between chord and
+  arc passed the clearance check and could short the trace.
+
+  Measured on a 10 mm-radius quarter arc against real KiCad: a point lying
+  exactly on the arc read as **2.93 mm** from the chord, so any via within that
+  bulge was waved through.
+
+  Arcs are now sampled into a chain of chords. The sampling radius is inflated
+  so the chain circumscribes the arc rather than cutting inside it —
+  over-approximating an obstacle is safe, under-approximating is the bug.
+
+  Thanks to @NiNjA-CodE, whose analysis in the issue identified the exact
+  branch and consequence.
+
+- **`.kicad_pro` net settings survive a board save** (#341, @rossvonfange).
+  In a long-lived backend, pcbnew reuses a stale in-memory project model:
+  `LoadBoard` does not re-read a hand-edited `.kicad_pro`, and the next save
+  serialized that stale model over the file, reverting custom net classes and
+  `netclass_patterns` to Default-only. Board saves are now wrapped in a guard
+  that restores the on-disk `net_settings` and any dropped top-level keys.
+  Opening a project no longer rewrites the file at all — it is a read.
+
+  The guard preserves KiCad's own key order rather than alphabetising, so
+  #220's byte-faithful project file survives a restore.
+
+- **`export_schematic_svg` picks the right page** (#343, @rossvonfange).
+  kicad-cli emits one SVG per page named after the sheet, and the previous
+  code took whichever the filesystem listed first — so a multi-sheet project
+  could get an arbitrary sheet back.
+
+- **`delete_schematic_component` can clean up its labels** (#343,
+  @rossvonfange). With `deleteAttachedLabels`, net labels sitting on the
+  deleted component's pins are removed too, unless still attached to a wire or
+  another pin. Orphaned labels otherwise produce `label_dangling` ERC errors.
+  Defaults to false, since delete-then-re-add workflows rely on labels
+  surviving.
+
+- **Deleting anything from a board no longer breaks the session** (#247).
+  `delete_component` worked exactly once. The next board operation — even a
+  pure read like `get_component_list` — failed with an `AttributeError`
+  naming a raw `SwigPyObject`, and recovery needed a full `close_project`
+  then `open_project` cycle.
+
+  The cause was an ownership bug, not a lifetime one. KiCad's SWIG wrapper
+  documents that `BOARD.Remove()` _transfers C++ ownership to the Python
+  wrapper_ (`item.thisown = 1`) — it is for detaching an item you intend to
+  keep or re-add. Six handlers called it to delete and then dropped the
+  reference, so the interpreter ran the C++ destructor on an object KiCad
+  still pointed at. Reproduced against a real KiCad 10.0 install: the damage
+  is **process-wide**, corrupting SWIG's type registry so that even
+  `pcbnew.FootprintLoad` degrades to a raw `SwigPyObject` — and on some
+  builds the process segfaults outright.
+
+  All deletion now goes through `utils.board_items.delete_board_item()`,
+  which uses `BOARD.Delete()` (ownership stays in C++). This fixes
+  `delete_component`, `delete_trace` (all three deletion paths),
+  `clear_board_outline` and `delete_graphic` — the same defect was present
+  in every one. A static test fails the build if bare `board.Remove()` is
+  reintroduced.
+
+  Thanks to @Dewieinns for the instrumented trace that made this findable:
+  the two errors named _different_ methods (`thisown` on the board path,
+  `GetPosition` on the read path), which is what pointed at child proxies
+  rather than the board.
+
+- **Board health checks can now see this class of damage** (#247). The
+  `_is_board_healthy()` probe tested only BOARD-level methods, so a board
+  that dispatched fine while handing back dead child items passed — which is
+  precisely why the existing post-save auto-recovery never fired here. It
+  now samples a child item as well.
+
+## [2.5.0] - 2026-07-26
+
+A minor bump rather than a patch: **20 new board-lifecycle and geometry tools**
+(#311) take the surface from 124 to 143. The rest is the formatting and
+tooling groundwork that #334 deliberately deferred.
+
+### New Features
+
+- **PCB editing interface tools** (#311): 20 tools covering board lifecycle,
+  graphics editing and geometry queries — `open_board`, `reload_board`,
+  `save_board`, `save_as`, `is_dirty`, `discard_or_reload`,
+  `create_board_from_schematic`; `clear_board_outline`,
+  `replace_board_outline`, `list_graphics`, `delete_graphic`,
+  `update_graphic`, `move_footprint_text`; and `batch_move_components`,
+  `get_component_geometry`, `get_pads`, `get_net_pads`, `get_ratsnest`,
+  `estimate_airwire_lengths`, `check_placement_clearance`.
+
+  All of them respect backend session pinning (#223), which took three
+  rounds to get right and is the reason this landed as carefully as it did.
+  `create_board_from_schematic` re-pins after swapping the board, so
+  `session_board_path` can no longer point at the previous file;
+  `save_board`/`save_as` route through the command dispatcher rather than
+  calling the save handler directly, so the dispatcher stays the single
+  owner of the pinning decision; and `save_as` additionally realigns both
+  the SWIG fallback and the session pin when an IPC save changes the board's
+  identity, dropping the stale board outright if that reload fails rather
+  than retaining it under the new path. `batch_move_components` refuses in
+  an IPC-owned session and points at `move_component`, since the IPC
+  BoardAPI exposes only single-component moves.
+  `tests/test_backend_session_pinning.py` grew to 32 tests covering each of
+  those paths on both backends.
+
+- **Search-tool role distinction** (#338): `search_parts_registry` and
+  `search_jlcpcb_parts` now each say when to prefer the other — a verified
+  existing footprint/symbol/3D bundle versus JLCPCB sourcing data (price,
+  stock, assembly tier). Both were "find me a part" entry points with
+  nothing to disambiguate them.
+
+### Tooling
+
+- **Formatting is normalized repo-wide and enforced** (#339): the deferred
+  half of #334. `pre-commit run --all-files` (black, isort, prettier,
+  flake8, mypy, eslint, whitespace) is now a real gate in CI, which is what
+  `CONTRIBUTING.md` has always claimed while nothing checked it. The
+  normalization itself touched 31 files — almost entirely `tests/` and
+  `src/tools/`, which the old `black --check python/` gate never covered —
+  and was verified formatting-only by AST-comparing every changed Python
+  file against its predecessor: 16 identical, 5 differing only in import
+  order, 0 semantic changes.
+
+  Four latent problems surfaced in the process. The pre-commit mypy hook
+  could not resolve `dotenv` (its isolated venv never listed
+  `python-dotenv`). `npm run lint` ran `black` in **write** mode against
+  whatever `black` was on `PATH` — a global 25.1.0 here, while pre-commit
+  pins 26.3.1 — so "linting" silently rewrote the working tree with a
+  formatter that disagrees with CI; it now checks only, via `python -m`, with
+  `format:py` as the write path and `lint:all` delegating to pre-commit. Two
+  more `|| echo`-swallowed gates in the `code-quality` job were replaced with
+  real ones. And `mixed-line-ending`'s `--fix=lf` had been in permanent
+  conflict with `.gitattributes`' `*.ps1 text eol=crlf` — the hook rewriting
+  to LF, git checking back out as CRLF, forever; invisible on Windows because
+  `core.autocrlf` masks it, and unfixable on Linux. `.gitattributes` now owns
+  line endings for Windows-native scripts.
+
+- **The README's tool count self-corrects** (#338):
+  `tests-ts/readme-counts.test.ts` asserts the headline "N tools across M
+  categories" matches `getRegistryStats()`. The number had already drifted
+  twice. It caught #311 within the hour — `expected 124 to be 143` — which
+  is exactly the point.
+
+## [2.4.1] - 2026-07-26
+
+Eight merges since v2.4.0. The headline is infrastructural: **CI had never
+once passed in this repository's history** — 32 failed runs, 0 successes, and
+GitHub Actions disabled repo-wide since January — so seven months of merges
+landed with no automated gating whatsoever. That is fixed (#334), and it paid
+for itself on the first real run by surfacing a live bug: every `create_zone`
+call over the IPC backend had been raising `AttributeError`.
+
+Three tools that were registered but had no backend at all now work
+(`assign_net_to_class`, `check_clearance`, `set_layer_constraints`), found by
+a documentation-coverage audit rather than by anyone using them. Two more
+fixes remove silent failures on paths users cannot easily diagnose:
+`autoroute` was being abandoned at 30 s while Freerouting was still working,
+and `get_board_2d_view` produced no file at all when the caller omitted
+`layers`.
+
+Note for anyone tracking `assign_net_to_class`: it did not work on any real
+project as first written, because a freshly written `.kicad_pro` carries
+`"netclass_assignments": null` and the writer assumed an empty dict. Caught by
+a round-trip test across the boundary it shares with #302's DSN exporter —
+both sides had green suites that never crossed it.
+
+### New Features
+
+- **Open parts-registry lookup** (#329, closes #297): `search_parts_registry`,
+  `get_registry_part` and `download_registry_part` search an open parts
+  registry, inspect a part, and fetch its footprint / symbol / 3D files to
+  disk — so a verified existing part can be reused instead of generating one
+  from scratch with `create_footprint` / `create_symbol`. Downloads are
+  host-allowlisted (the API host and its subdomains, or an explicit
+  `PARTS_REGISTRY_ASSET_HOSTS` list), extension-checked against the requested
+  format, and capped at 50 MB, so a hostile or compromised index cannot
+  redirect a fetch to an arbitrary host or dictate an arbitrary filename.
+
+- **Real-time JLCPCB part lookup via the Open Platform API** (#326):
+  `get_jlcpcb_part` now returns live stock, tiered pricing and library type
+  when `JLCPCB_APP_ID` / `JLCPCB_API_KEY` / `JLCPCB_API_SECRET` are configured
+  (see `.env.example`). Credentials are optional: without them — or on any API
+  error — the tool falls back to the existing local snapshot database, and the
+  response carries `source: "live-api" | "local-db"` so callers can tell which
+  path answered. Part _search_ remains local-only.
+
+### Tooling
+
+- **CI actually gates the Python suite now** (#334): the `python-tests` job had
+  been a no-op in four independent ways — every gate ended in
+  `|| echo "... not configured yet"`, `pytest python/` pointed at the source
+  tree so it collected 7 tests instead of the ~1477 in `tests/`, no JRE was
+  installed for the freerouting suites, and GitHub Actions was disabled
+  repo-wide so the workflow never ran at all (32 failed runs, 0 successes,
+  switched off in January). Format and type checks now run once on a pinned
+  interpreter rather than once per matrix entry, because `pip install black`
+  resolves a different build per Python version (black >=25.12 requires
+  > =3.10, so the 3.9 runner silently got 25.1.0 and disagreed on three files).
+
+### Bug Fixes
+
+- **Saving to the board's own path was silently treated as a Save As, and
+  failed on the IPC backend**: `save_board` accepts an optional `boardPath`, and
+  callers routinely echo the currently loaded path back into it. That path was
+  forwarded unconditionally as `save_params["filename"]`, so `_ipc_save_project`
+  saw a `destination` and called `ipc_backend.save_project(path, overwrite=False)`
+  → `board.save_as(current_path, overwrite=False)`. The KiCad IPC API separates
+  `save()` from `save_as(filename, overwrite=False)`, where `save_as` targets a
+  _new_ file and refuses a destination that already exists unless `overwrite` is
+  set — and the board's own file always exists, so an ordinary save could fail.
+  SWIG never hit this because it compared `filename` against the board's current
+  path and fell through to a plain `SaveBoard`, which made the identical call
+  succeed on one backend and fail on the other. The destination is now compared
+  against the authoritative board path before dispatch and dropped when they
+  name the same file, with the same collapse repeated defensively inside
+  `_handle_save_project` and `_ipc_save_project`. Real Save As to a different
+  path is unchanged, including its `overwrite` gate.
+- **Save As path comparison could misjudge the same file on Windows**:
+  `ProjectCommands.save_project()` compared `os.path.abspath(os.path.expanduser(...))`
+  strings directly. On Windows `C:\Project\Board.kicad_pcb` and
+  `c:\project\board.kicad_pcb` name one file but compare unequal, so a
+  differently cased spelling of the loaded board was classified as a Save As and
+  then rejected because the destination existed and `overwrite` defaulted to
+  False. Comparisons now go through a new `commands.project.normalize_fs_path`
+  helper (`normcase` + `realpath` + `abspath`, matching the normalization
+  `KiCADInterface` already used for session paths), which also resolves symlinks
+  and `..` segments. Normalization is used only for comparing; the path actually
+  written is still the board's own, so symlinks stay intact. Unlikely to show up
+  in Linux CI, but it affected real Windows users.
+
+- **`assign_net_to_class` and `check_clearance` now actually work — both were
+  registered MCP tools with no backend** (#315): found while auditing
+  DRC/design-rule documentation coverage. Both had a full Zod schema in
+  `design-rules.ts` and were listed in the router's `drc` category, but neither
+  had an entry in `kicad_interface.py`'s command dispatch table, so every call
+  silently returned `{"success": false, "message": "Unknown command: ..."}`.
+  `assign_net_to_class` now assigns an existing net to an existing net class,
+  mirroring `create_netclass`'s dual-write shape (best-effort in-memory
+  `NETINFO_ITEM.SetClass` plus a durable write to the project's
+  `net_settings.netclass_assignments`, since KiCad 7+ keeps net-class
+  membership in `.kicad_pro`, not the board — same reasoning as #302, and the
+  same key `utils/project_netclasses.py` already reads back for DSN export).
+  `check_clearance` resolves two items by UUID (or reference, for components)
+  and measures the gap between their bounding boxes against the board's
+  minimum clearance — the same AABB approximation `check_courtyard_overlaps`
+  already uses, not a substitute for a full `run_drc`. Also removed the dead
+  duplicate `add_net_class` tool (it overlapped with the already-working
+  `create_netclass`, which had more capability than its own TS schema exposed —
+  `create_netclass` now also accepts `uviaDiameter`, `uviaDrill`,
+  `diffPairWidth`, `diffPairGap`, and `nets`).
+
+- **`set_layer_constraints` now actually works — it was a registered MCP tool
+  with no backend**: found during the same DRC-tool audit as
+  `assign_net_to_class`/`check_clearance`. Had a full Zod schema in
+  `design-rules.ts` and was listed in the router's `drc` category, but had no
+  entry in `kicad_interface.py`'s command dispatch table, so every call
+  silently returned `{"success": false, "message": "Unknown command: set_layer_constraints"}`.
+  Unlike the other two DRC gaps, there is no pcbnew SWIG API for per-layer
+  constraints at all (confirmed against the real KiCad 10 bindings) — real
+  per-layer minimums in KiCad 9+ live in a project-scoped
+  `.kicad_dru` custom-rules text file (S-expression DSL), sibling to the
+  `.kicad_pcb`, which `kicad-cli pcb drc` auto-discovers with no flag needed.
+  New `python/utils/kicad_dru.py` does a surgical text edit — insert or
+  replace a `(rule "mcp_layer_constraint_<layer>" ...)` block by name,
+  leaving any other rules, comments, and formatting in the file untouched —
+  rather than a full parse/reserialize. Verified against real KiCad 10
+  (`kicad-cli pcb drc` on a real demo board with a deliberately strict rule):
+  all four constraint types (`track_width`, `clearance`, `via_diameter`,
+  `hole_size`) are recognized and enforced, with violations citing the rule
+  by name.
+
+- **IPC `create_zone` assigned a read-only property** (found by #334 on its
+  first real run): kipy's `Zone.fill_mode` is a read-only property — its getter
+  reads `_proto.copper_settings.fill_mode` and there is no setter — so
+  `zone.fill_mode = ...` raised `AttributeError` and every `create_zone` call
+  over the IPC backend failed. It stayed hidden because kipy is absent from a
+  bare dev environment, where mypy types `Zone` as `Any`; CI installs
+  `requirements.txt`, sees the real type, and flags it. Now writes through the
+  proto, the same way the zone outline already did.
+
+- **`autoroute` no longer times out at 30 s** (#251): `autoroute` was missing
+  from the Node bridge's long-running command list, so the call was abandoned
+  after the 30 s default while the Python side was still working through its
+  own 300 s budget — on any board past ~20 nets the tool reported failure
+  against a `.ses` that existed and was valid. Its timeout is now derived from
+  the caller's own parameters (`attempts × timeout` plus overhead, floored at
+  the blanket allowance) rather than a fixed ceiling, since `timeout` is
+  per-attempt and best-of-N multiplies it. The policy moved to
+  `src/command-timeout.ts` as a pure function so it is unit-testable.
+
+- **`get_board_2d_view` always passes `--layers`** (#235): the flag was omitted
+  entirely when the caller specified no layers, and KiCad 9+ then refuses the
+  export — verified against real KiCad 10, which prints "At least one layer
+  must be specified" and writes no file, so the tool silently produced nothing.
+  Defaults to copper + both silkscreens + `Edge.Cuts`. (Cherry-picked from
+  #277, authored by Stefan Gordon.)
+
+- **Two Windows-only test assertions made genuinely cross-platform**: a
+  `normcase` case-folding assumption and a hardcoded `\` path separator, both
+  of which could never pass on Linux runners.
+
+- **`replace_schematic_component` no longer corrupts `lib_symbols` while
+  restoring fields**: the post-replace field restore ran a `count=1` regex
+  substitution over the whole file, so the first matching
+  `(property "<name>" ...)` in the document was rewritten — for common field
+  names like `Description` that is a library symbol definition inside
+  `lib_symbols`, not the replaced component (observed corrupting an unrelated
+  `Conn_01x04` entry and tripping ERC library-mismatch warnings on every
+  instance). Restoration now delegates to the block-scoped
+  `edit_schematic_component` path, which also creates fields that the new
+  symbol does not carry yet instead of silently dropping them.
+
+- **`delete_schematic_net_label` refuses ambiguous bare-name deletes**:
+  without a `position`, `WireManager.delete_label` silently removed the first
+  label matching the name — dangerous when the same net name appears many
+  times (and easy to trigger, since misspelled top-level `x`/`y` arguments are
+  stripped by schema validation and arrive as `position=None`). A bare-name
+  delete of a name that occurs more than once now fails with the full list of
+  candidate positions so the caller can disambiguate; unique names and
+  position-qualified deletes behave as before.
 
 ## [2.4.0] - 2026-07-22
 

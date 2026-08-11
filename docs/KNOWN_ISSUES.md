@@ -1,7 +1,7 @@
 # Known Issues & Workarounds
 
-**Last Updated:** 2026-03-21
-**Version:** 2.2.3
+**Last Updated:** 2026-08-11
+**Version:** 2.7.0
 
 This document tracks known issues and provides workarounds where available.
 
@@ -77,13 +77,49 @@ AttributeError: 'BOARD' object has no attribute 'LT_USER'
 
 ---
 
-### 5. package.json Version Mismatch
+### 5. `.kicad_pro` net_settings Must Be Edited via JSON Merge
 
-**Status:** KNOWN - Non-critical
+**Status:** BY DESIGN (guard added)
 
-**Symptoms:** package.json shows version 2.1.0-alpha while CHANGELOG documents version 2.2.3
+Backend board saves are wrapped in `preserve_project_settings()`
+(`python/utils/project_settings_guard.py`): pcbnew serializes a possibly
+stale in-memory project model over `.kicad_pro` on every
+`SaveBoard`/`BOARD.Save`, so the guard restores the on-disk
+`net_settings` (and any dropped top-level keys) after each save.
 
-**Impact:** Cosmetic only. CHANGELOG.md is the authoritative version reference.
+**Implication:** commands must persist net class / netclass_patterns
+changes via direct JSON read-modify-write of the `.kicad_pro` (the
+`persist_netclass_to_project` pattern in `python/commands/routing.py`),
+never through the pcbnew project model — model-side changes to
+`net_settings` are intentionally reverted by the guard.
+
+### 6. Flat Vendor Symbols Break kicad-skip-Based Tools (now diagnosed)
+
+**Status:** MITIGATED — loud structured errors
+
+SnapEDA/SamacSys `.kicad_sym` captures put pins/graphics directly under the
+top-level `(symbol "NAME" ...)` with no `_1_1` sub-unit. KiCad and kicad-cli
+tolerate this, but kicad-skip's parser crashes on it, taking down every
+skip-based tool for the whole sheet (including sheets that merely embed a
+snapshot of such a symbol in their own `lib_symbols`).
+
+Schematic load failures now raise `SchematicLoadError` and all schematic
+tools return a structured error naming the offending symbols:
+
+```json
+{
+  "success": false,
+  "error": "schematic_load_failed",
+  "flatSymbols": ["LIB:PART"],
+  "message": "Schematic load failed for ...: embedded flat lib symbols [...]"
+}
+```
+
+**Workaround:** run the `repair_flat_symbols` tool (if available) or wrap
+each flat symbol's pins/graphics in a `(symbol "NAME_1_1" ...)` sub-unit.
+Note that tools which previously returned partial/empty results on
+unparseable schematics (e.g. `find_orphaned_wires`, hierarchical net
+traversal, `sync_schematic_to_board`) now return errors instead.
 
 ---
 

@@ -18,9 +18,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
+from commands import library, library_symbol
 from commands.library import LibraryManager
 from commands.library_symbol import SymbolLibraryManager
-from commands import library, library_symbol
 
 
 def _make_footprint_manager() -> LibraryManager:

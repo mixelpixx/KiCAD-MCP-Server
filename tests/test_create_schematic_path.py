@@ -5,11 +5,11 @@ Verifies that create_schematic respects the `path` argument and writes
 the schematic file to the correct directory instead of the process cwd.
 """
 
+import importlib.util
 import os
 import sys
-import importlib.util
 import tempfile
-from unittest.mock import patch, MagicMock, mock_open
+from unittest.mock import MagicMock, mock_open, patch
 
 # pcbnew and skip are only available inside KiCAD — stub them so the
 # schematic module can be imported in a plain Python environment.

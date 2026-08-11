@@ -385,17 +385,29 @@ class SchematicBatchCommands:
                 )
 
             if fields_to_restore:
-                content_after = sch_file.read_text(encoding="utf-8")
-                new_block, _, _ = _find_placed_symbol_block(content_after, reference)
-                if new_block:
-                    for fname, fval in fields_to_restore.items():
-                        prop_pat = re.compile(
-                            r'(\(property\s+"' + re.escape(fname) + r'"\s+)"[^"]*"'
-                        )
-                        content_after = prop_pat.sub(
-                            r'\1"' + fval.replace('"', '\\"') + '"', content_after, count=1
-                        )
-                    sch_file.write_text(content_after, encoding="utf-8")
+                # Restore the remaining fields through the block-scoped component
+                # editor. A plain regex substitution over the whole file (the
+                # previous implementation) replaced the FIRST matching
+                # (property "<name>" ...) in the file, which for common field
+                # names like "Description" lives inside lib_symbols — corrupting
+                # an unrelated library symbol definition instead of this
+                # component instance.
+                restore_result = self.iface._handle_edit_schematic_component(
+                    {
+                        "schematicPath": schematic_path,
+                        "reference": reference,
+                        "properties": {
+                            fname: {"value": fval} for fname, fval in fields_to_restore.items()
+                        },
+                    }
+                )
+                if not restore_result.get("success"):
+                    logger.warning(
+                        "Could not restore fields %s on %s after replace: %s",
+                        sorted(fields_to_restore),
+                        reference,
+                        restore_result.get("message"),
+                    )
 
             pin_locator = PinLocator()
             pins_raw = pin_locator.get_all_symbol_pins(sch_file, reference) or {}
@@ -500,12 +512,27 @@ class SchematicBatchCommands:
             return {"success": False, "message": str(e)}
 
     def batch_connect(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Place net labels on multiple pins in a single call, with facing-label wiring."""
+        """Place net labels on multiple pins in a single call, with facing-label wiring.
+
+        labelType (default "label") selects the label kind:
+          - "label":        sheet-local net label (connects only within this sheet)
+          - "global_label": connects across all sheets in the design by name
+        Facing-label auto-wiring only applies to local labels; global labels join
+        their net by name, so one is placed per pin with no inter-label wiring.
+        """
         logger.info("Batch connect: placing net labels on multiple pins")
         try:
             schematic_path = params.get("schematicPath")
             connections = params.get("connections")
             replace = bool(params.get("replace", False))
+            label_type = params.get("labelType") or params.get("label_type") or "label"
+            if label_type not in ("label", "global_label"):
+                return {
+                    "success": False,
+                    "message": (
+                        f"invalid labelType '{label_type}'; expected 'label' or 'global_label'"
+                    ),
+                }
 
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
@@ -519,17 +546,13 @@ class SchematicBatchCommands:
             sch_path = Path(schematic_path)
 
             try:
-                from skip import Schematic
+                from commands.schematic import SchematicLoadError, SchematicManager
 
-                Schematic(str(sch_path))
-            except Exception as parse_err:
-                return {
-                    "success": False,
-                    "message": (
-                        f"ERROR: Failed to load schematic at {schematic_path}: {parse_err}. "
-                        "All pin operations aborted. Run run_erc to check the schematic."
-                    ),
-                }
+                SchematicManager.load_schematic(str(sch_path))
+            except SchematicLoadError as parse_err:
+                response = parse_err.to_response()
+                response["message"] += " All pin operations aborted."
+                return response
 
             placed: List[Dict[str, Any]] = []
             failed: List[Dict[str, Any]] = []
@@ -576,7 +599,13 @@ class SchematicBatchCommands:
                         cardinal = round(raw_angle / 90) * 90 % 360
                         orientation = {0: 180, 90: 270, 180: 0, 270: 90}.get(cardinal, 0)
 
-                        existing_pos = _find_facing_label(sch_path, net_name, position, orientation)
+                        # Facing-label auto-wiring is only meaningful for local labels;
+                        # global labels join their net by name (one placed per pin).
+                        existing_pos = (
+                            _find_facing_label(sch_path, net_name, position, orientation)
+                            if label_type == "label"
+                            else None
+                        )
                         if existing_pos:
                             if WireManager.add_wire(sch_path, list(position), existing_pos):
                                 placed.append(
@@ -610,7 +639,7 @@ class SchematicBatchCommands:
                             sch_path,
                             net_name,
                             position,
-                            label_type="label",
+                            label_type=label_type,
                             orientation=orientation,
                         ):
                             placed.append(
@@ -781,7 +810,11 @@ class SchematicBatchCommands:
             }
             if nets_per_ref:
                 connect_result = self.batch_connect(
-                    {"schematicPath": schematic_path, "connections": nets_per_ref}
+                    {
+                        "schematicPath": schematic_path,
+                        "connections": nets_per_ref,
+                        "labelType": params.get("labelType") or params.get("label_type") or "label",
+                    }
                 )
 
             add_errors = add_result.get("errors", [])

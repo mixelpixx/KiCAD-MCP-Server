@@ -161,6 +161,112 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
   );
 
   // ------------------------------------------------------
+  // Assign Net to Class Tool
+  // ------------------------------------------------------
+  registerKiCadTool(
+    server,
+    "design_rules",
+    "assign_net_to_class",
+    {
+      description: "Assign a net to an existing net class to apply its specific design rules.",
+      inputSchema: z.object({
+        net: z.string().describe("Name of the net"),
+        netClass: z.string().describe("Name of the net class"),
+      }),
+    },
+    async ({ net, netClass }) => {
+      logger.debug(`Assigning net ${net} to class ${netClass}`);
+      const result = await callKicadScript("assign_net_to_class", { net, netClass });
+      return formatKicadResult(result);
+    },
+  );
+
+  // ------------------------------------------------------
+  // Set Layer Constraints Tool
+  // ------------------------------------------------------
+  registerKiCadTool(
+    server,
+    "design_rules",
+    "set_layer_constraints",
+    {
+      description:
+        "Set per-layer design rule constraints (minimum track width, clearance and via dimensions).",
+      inputSchema: z.object({
+        layer: z.string().describe("Layer name (e.g., 'F.Cu')"),
+        minTrackWidth: z.number().optional().describe("Minimum track width for this layer (mm)"),
+        minClearance: z.number().optional().describe("Minimum clearance for this layer (mm)"),
+        minViaDiameter: z.number().optional().describe("Minimum via diameter for this layer (mm)"),
+        minViaDrill: z.number().optional().describe("Minimum via drill size for this layer (mm)"),
+      }),
+    },
+    async ({ layer, minTrackWidth, minClearance, minViaDiameter, minViaDrill }) => {
+      logger.debug(`Setting constraints for layer: ${layer}`);
+      const result = await callKicadScript("set_layer_constraints", {
+        layer,
+        minTrackWidth,
+        minClearance,
+        minViaDiameter,
+        minViaDrill,
+      });
+      return formatKicadResult(result);
+    },
+  );
+
+  // ------------------------------------------------------
+  // Check Clearance Tool
+  // ------------------------------------------------------
+  registerKiCadTool(
+    server,
+    "design_rules",
+    "check_clearance",
+    {
+      description:
+        "Check the actual clearance between two PCB items (track, via, pad, zone or component) and report whether it meets the design rules.",
+      inputSchema: z.object({
+        item1: z
+          .object({
+            type: z
+              .enum(["track", "via", "pad", "zone", "component"])
+              .describe("Type of the first item"),
+            id: z.string().optional().describe("ID of the first item (if applicable)"),
+            reference: z.string().optional().describe("Reference designator (for component)"),
+            position: z
+              .object({
+                x: z.number().optional(),
+                y: z.number().optional(),
+                unit: z.enum(["mm", "mil", "inch"]).optional(),
+              })
+              .optional()
+              .describe("Position to check (if ID not provided)"),
+          })
+          .describe("First item to check"),
+        item2: z
+          .object({
+            type: z
+              .enum(["track", "via", "pad", "zone", "component"])
+              .describe("Type of the second item"),
+            id: z.string().optional().describe("ID of the second item (if applicable)"),
+            reference: z.string().optional().describe("Reference designator (for component)"),
+            position: z
+              .object({
+                x: z.number().optional(),
+                y: z.number().optional(),
+                unit: z.enum(["mm", "mil", "inch"]).optional(),
+              })
+              .optional()
+              .describe("Position to check (if ID not provided)"),
+          })
+          .describe("Second item to check"),
+      }),
+    },
+    async ({ item1, item2 }) => {
+      logger.debug(`Checking clearance between ${item1.type} and ${item2.type}`);
+      const result = await callKicadScript("check_clearance", { item1, item2 });
+      return formatKicadResult(result);
+    },
+  );
+
+  // ------------------------------------------------------
   // Get DRC Violations Tool
   // ------------------------------------------------------
   registerKiCadTool(

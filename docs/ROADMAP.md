@@ -23,7 +23,9 @@
 
 ### v2.0.0-alpha - Router and IPC (November-December 2025)
 
-- [x] Initial tool-router prototype (later replaced by the first-class catalog)
+- [x] Initial tool-router prototype; its context-gating path was rolled back
+      in March 2026 and replaced by a first-class catalog (see
+      `ROUTER_ARCHITECTURE.md`)
 - [x] IPC backend for real-time KiCAD UI synchronization (21 commands)
 - [x] Hybrid SWIG/IPC backend with automatic fallback
 - [x] Comprehensive Windows support with automated setup
@@ -56,13 +58,25 @@
 - [x] Project-local library resolution
 - [x] Developer mode (KICAD_MCP_DEV=1)
 
+### v2.4.1 through v2.6.0 - Board and Schematic Reliability (July 2026)
+
+- [x] Working net-class assignment, clearance checks, and layer constraints
+- [x] Parts-registry search/download and live JLCPCB part details
+- [x] Board lifecycle, graphics editing, geometry, placement-clearance, and
+      airwire-estimation tools
+- [x] Vendor PCB import and board-origin controls
+- [x] Hierarchical placement and sheet metadata tools
+- [x] Schematic repair, off-grid lint, cosmetic lint, and global batch labels
+- [x] Project-setting preservation and safe board-item deletion
+- [x] Structured failures for unparseable schematics
+
 ### v2.7.0 - MCP 2026-07-28 Migration (August 2026)
 
 - [x] TypeScript SDK v2 with Node.js 20+ and Zod 4
 - [x] MCP 2026-07-28 `server/discover` negotiation
 - [x] Dual-era `serveStdio` compatibility for legacy 2025 clients
 - [x] Deterministic catalog caching and structured tool results
-- [x] First-class schemas and safety annotations for all 183 tools
+- [x] First-class schemas and safety annotations for all 219 tools
 - [x] Runtime-derived catalog with three supplemental discovery tools
 - [x] Correlated, cancellable TypeScript-to-Python command bridge
 
@@ -72,7 +86,7 @@
 
 ### Documentation Overhaul (In Progress)
 
-- [ ] Per-feature documentation for all 183 tools
+- [ ] Per-feature documentation for all 219 tools
 - [x] Architecture guide for contributors
 - [ ] End-to-end PCB design workflow guide
 - [x] Documentation index

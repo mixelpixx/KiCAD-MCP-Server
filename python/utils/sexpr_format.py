@@ -43,10 +43,55 @@ round-trip, so a formatter change can never corrupt schematic data.
 from __future__ import annotations
 
 import logging
+import re
 
 import sexpdata
 
 logger = logging.getLogger("kicad_interface")
+
+
+# ---------------------------------------------------------------------------
+# Quoted-value escaping (#336)
+# ---------------------------------------------------------------------------
+#
+# KiCad double-quoted tokens escape a backslash as ``\\`` and a quote as
+# ``\"``. Code that reads them with the obvious ``"([^"]*)"`` stops at the
+# FIRST quote character, including an escaped one -- so a value containing
+# ``\"`` is silently truncated and left ending in a lone backslash. Emitting
+# that back out escapes the closing quote, the token runs on, and the rest of
+# the file is swallowed.
+#
+# Both halves of the pair matter, and so does their ORDER: escaping quotes
+# without escaping backslashes first is a no-op on exactly the values that
+# break.
+
+#: Matches one KiCad double-quoted token, capturing the raw (still-escaped)
+#: contents. Use with :func:`unescape_sexpr_string` on the captured group.
+QUOTED_VALUE = r'"((?:[^"\\]|\\.)*)"'
+
+#: Same match, capturing nothing. Use this to *skip* a quoted token in a
+#: pattern that has later positional groups — substituting the capturing form
+#: shifts every subsequent group index, which fails silently rather than
+#: loudly (a coordinate group starts returning a property value).
+QUOTED_VALUE_SKIP = r'"(?:[^"\\]|\\.)*"'
+
+
+def escape_sexpr_string(value: str) -> str:
+    """Escape a string for insertion into a KiCad double-quoted token.
+
+    Backslash first, then quote -- reversing the order double-escapes the
+    backslash that :func:`unescape_sexpr_string` then removes.
+    """
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def unescape_sexpr_string(value: str) -> str:
+    """Inverse of :func:`escape_sexpr_string`.
+
+    Quote first, then backslash -- the mirror image of the escape order.
+    """
+    return value.replace('\\"', '"').replace("\\\\", "\\")
+
 
 # Formatting constants, mirrored from KiCad's Prettify().
 _QUOTE_CHAR = '"'

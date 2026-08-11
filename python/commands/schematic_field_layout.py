@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from commands.pin_locator import PinLocator
-from commands.schematic import SchematicManager
+from commands.schematic import SchematicLoadError, SchematicManager
 from commands.schematic_text_utils import (
     _extract_property_position,
     _extract_property_visible,
@@ -352,9 +352,10 @@ class SchematicFieldLayoutCommands:
                     "y_max": fy + half_h,
                 }
 
-            schematic = SchematicManager.load_schematic(schematic_path)
-            if not schematic:
-                return {"success": False, "message": "Failed to load schematic"}
+            try:
+                schematic = SchematicManager.load_schematic(schematic_path)
+            except SchematicLoadError as e:
+                return e.to_response()
             raw_content = sch_path.read_text(encoding="utf-8")
             locator = PinLocator()
 

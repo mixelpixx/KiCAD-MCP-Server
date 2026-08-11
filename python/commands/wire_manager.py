@@ -896,6 +896,35 @@ class WireManager:
             sch_data = sexpdata.loads(sch_content)
 
             _LABEL_TYPES = {_SYM_LABEL, _SYM_GLOBAL_LABEL, _SYM_HIERARCHICAL_LABEL}
+
+            if position is None:
+                # Refuse a bare-name delete when the name is ambiguous: silently
+                # removing the first match has destroyed the wrong label before
+                # (the caller thought coordinates were being honoured). Report
+                # every candidate position so the caller can disambiguate.
+                candidates = []
+                for item in sch_data:
+                    if not (isinstance(item, list) and len(item) > 1 and item[0] in _LABEL_TYPES):
+                        continue
+                    if item[1] != net_name:
+                        continue
+                    at_entry = next(
+                        (
+                            p
+                            for p in item[1:]
+                            if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_AT
+                        ),
+                        None,
+                    )
+                    if at_entry is not None:
+                        candidates.append((float(at_entry[1]), float(at_entry[2])))
+                if len(candidates) > 1:
+                    listing = ", ".join(f"({x}, {y})" for x, y in candidates)
+                    raise ValueError(
+                        f"Label '{net_name}' appears {len(candidates)} times "
+                        f"(at {listing}); pass position to select which one to delete"
+                    )
+
             for i, item in enumerate(sch_data):
                 if not (isinstance(item, list) and len(item) > 0 and item[0] in _LABEL_TYPES):
                     continue
@@ -931,6 +960,10 @@ class WireManager:
             logger.warning(f"No matching label found for '{net_name}'")
             return False
 
+        except ValueError:
+            # Ambiguity refusal — propagate so the caller sees the candidate
+            # positions instead of a generic "not found".
+            raise
         except Exception as e:
             logger.error(f"Error deleting label: {e}")
             import traceback

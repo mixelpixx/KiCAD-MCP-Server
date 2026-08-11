@@ -126,6 +126,48 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
     },
   );
 
+  registerKiCadTool(
+    server,
+    "component",
+    "batch_move_components",
+    {
+      description:
+        "Move multiple PCB components transactionally. If one reference/spec is invalid, no components are moved. Saves by default unless save=false.",
+      inputSchema: z.object({
+        moves: z
+          .record(
+            z.string(),
+            z.object({
+              x: z.number().optional(),
+              y: z.number().optional(),
+              unit: z.enum(["mm", "inch", "mil"]).optional(),
+              position: z
+                .object({
+                  x: z.number(),
+                  y: z.number(),
+                  unit: z.enum(["mm", "inch", "mil"]).optional(),
+                })
+                .optional(),
+              rotation: z.number().optional(),
+              rot: z.number().optional(),
+              layer: z.string().optional(),
+            }),
+          )
+          .describe("Map of reference designator to placement spec"),
+        save: z
+          .boolean()
+          .optional()
+          .describe("Save the board after all moves succeed (default true)"),
+        dryRun: z.boolean().optional().describe("Validate the batch without changing the board"),
+      }),
+    },
+    async (args) => {
+      logger.debug(`Batch moving ${Object.keys(args.moves).length} components`);
+      const result = await callKicadScript("batch_move_components", args);
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
   // ------------------------------------------------------
   // Rotate Component Tool
   // ------------------------------------------------------
@@ -384,6 +426,71 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
     },
   );
 
+  registerKiCadTool(
+    server,
+    "component",
+    "get_pads",
+    {
+      description:
+        "Return pads for one PCB component, selected refs, or all components, including XY, layer, size and net.",
+      inputSchema: z.object({
+        reference: z.string().optional().describe("Optional component reference designator"),
+        refs: z.array(z.string()).optional().describe("Optional reference filter"),
+        unit: z
+          .enum(["mm", "mil", "inch"])
+          .optional()
+          .describe("Unit for coordinates (default: mm)"),
+      }),
+    },
+    async ({ reference, refs, unit }) => {
+      const result = await callKicadScript("get_pads", {
+        reference,
+        refs,
+        unit: unit || "mm",
+      });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
+  registerKiCadTool(
+    server,
+    "component",
+    "get_net_pads",
+    {
+      description: "Return every PCB pad attached to a net name or net code.",
+      inputSchema: z.object({
+        net: z.string().optional().describe("Net name"),
+        netCode: z.number().optional().describe("KiCad net code"),
+        unit: z
+          .enum(["mm", "mil", "inch"])
+          .optional()
+          .describe("Unit for coordinates (default: mm)"),
+      }),
+    },
+    async ({ net, netCode, unit }) => {
+      const result = await callKicadScript("get_net_pads", { net, netCode, unit: unit || "mm" });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
+  registerKiCadTool(
+    server,
+    "component",
+    "get_component_geometry",
+    {
+      description:
+        "Return separated footprint geometry bboxes: body, pads, courtyard, keepout, fab, silk and text.",
+      inputSchema: z.object({
+        reference: z.string().optional().describe("Optional single component reference"),
+        refs: z.array(z.string()).optional().describe("Optional list of component references"),
+      }),
+    },
+    async ({ reference, refs }) => {
+      const result = await callKicadScript("get_component_geometry", { reference, refs });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
   // ------------------------------------------------------
   // Get Component List Tool
   // ------------------------------------------------------
@@ -466,6 +573,91 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
           },
         ],
       };
+    },
+  );
+
+  registerKiCadTool(
+    server,
+    "component",
+    "get_ratsnest",
+    {
+      description:
+        "Estimate ratsnest/airwire segments and lengths from current pad positions grouped by net.",
+      inputSchema: z.object({
+        nets: z.array(z.string()).optional().describe("Optional net-name filter"),
+        maxPadsPerNet: z
+          .number()
+          .optional()
+          .describe("Skip nets above this pad count (default 128)"),
+      }),
+    },
+    async ({ nets, maxPadsPerNet }) => {
+      const result = await callKicadScript("get_ratsnest", { nets, maxPadsPerNet });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
+  registerKiCadTool(
+    server,
+    "component",
+    "estimate_airwire_lengths",
+    {
+      description: "Alias for get_ratsnest: estimate airwire segments and lengths by net.",
+      inputSchema: z.object({
+        nets: z.array(z.string()).optional(),
+        maxPadsPerNet: z.number().optional(),
+      }),
+    },
+    async ({ nets, maxPadsPerNet }) => {
+      const result = await callKicadScript("estimate_airwire_lengths", { nets, maxPadsPerNet });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
+  registerKiCadTool(
+    server,
+    "component",
+    "check_placement_clearance",
+    {
+      description:
+        "Classify placement conflicts as body overlap, courtyard overlap, keepout violation, silk/text overlap or pad clearance.",
+      inputSchema: z.object({
+        refs: z.array(z.string()).optional().describe("Optional component reference filter"),
+        margin: z.number().optional().describe("Extra bbox margin in mm for mechanical checks"),
+        padClearance: z.number().optional().describe("Extra pad bbox clearance in mm"),
+      }),
+    },
+    async ({ refs, margin, padClearance }) => {
+      const result = await callKicadScript("check_placement_clearance", {
+        refs,
+        margin,
+        padClearance,
+      });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
+  registerKiCadTool(
+    server,
+    "component",
+    "move_footprint_text",
+    {
+      description:
+        "Move or update a footprint Reference/Value/user text field without moving the footprint.",
+      inputSchema: z.object({
+        reference: z.string().describe("Component reference designator"),
+        field: z.string().describe("Text field to move, e.g. reference or value"),
+        x: z.number().optional().describe("New X coordinate"),
+        y: z.number().optional().describe("New Y coordinate"),
+        unit: z.enum(["mm", "inch", "mil"]).optional().describe("Coordinate unit"),
+        rotation: z.number().optional().describe("Optional text rotation in degrees"),
+        layer: z.string().optional().describe("Optional destination layer"),
+        visible: z.boolean().optional().describe("Optional visibility"),
+      }),
+    },
+    async (args) => {
+      const result = await callKicadScript("move_footprint_text", args);
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
     },
   );
 
@@ -797,6 +989,29 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
           },
         ],
       };
+    },
+  );
+
+  // ------------------------------------------------------
+  // Hierarchical Place Tool (footprint clustering by schematic sheet)
+  // ------------------------------------------------------
+  registerKiCadTool(
+    server,
+    "component",
+    "hierarchical_place",
+    {
+      description:
+        "Cluster a board's footprints by their schematic-sheet hierarchy (the HierPlace algorithm). After sync_schematic_to_board piles every footprint at the origin, this packs each functional block together as a starting point for manual placement. File-based: reads and rewrites the .kicad_pcb on disk, so save any in-memory board edits first. Locked footprints are left in place.",
+      inputSchema: z.object({
+        boardPath: z.string().describe("Absolute path to the .kicad_pcb file to re-place"),
+      }),
+    },
+    async ({ boardPath }) => {
+      logger.debug(`Hierarchical place on board: ${boardPath}`);
+      const result = await callKicadScript("hierarchical_place", { boardPath });
+      if (result.success === false && result.message)
+        return { content: [{ type: "text", text: `Failed: ${result.message}` }] };
+      return { content: [{ type: "text", text: result.message || JSON.stringify(result) }] };
     },
   );
 

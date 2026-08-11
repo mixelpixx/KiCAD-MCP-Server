@@ -250,12 +250,19 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
     "batch_connect",
     {
       description:
-        "Place net labels on multiple pins in one call to wire nets quickly. 'connections' is a map {reference: {pin: netName}} where pin is a number or name. If a facing label for the same net is nearby, a wire is drawn instead of a duplicate label. Set replace=true to clear any existing label at a pin first. Warns about power nets missing a PWR_FLAG.",
+        "Place net labels on multiple pins in one call to wire nets quickly. 'connections' is a map {reference: {pin: netName}} where pin is a number or name. labelType selects 'label' (sheet-local, the default) or 'global_label' (connects across all sheets by name — use this for power rails and any net that spans sheets). For local labels, if a facing label for the same net is nearby a wire is drawn instead of a duplicate label; global labels are placed one-per-pin since they join their net by name. Set replace=true to clear any existing label at a pin first. Warns about power nets missing a PWR_FLAG.",
       inputSchema: z.object({
         schematicPath: z.string().describe("Path to the .kicad_sch file"),
         connections: z
           .record(z.string(), z.record(z.string(), z.string()))
           .describe("Map of reference -> {pin: netName}"),
+        labelType: z
+          .enum(["label", "global_label"])
+          .optional()
+          .default("label")
+          .describe(
+            "Label kind: 'label' = sheet-local (default); 'global_label' = connects across all sheets by name",
+          ),
         replace: z
           .boolean()
           .optional()
@@ -281,7 +288,7 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
     "batch_add_and_connect",
     {
       description:
-        "Place multiple components AND wire their nets in a single call — the fewest-round-trip way to build a subcircuit. Each component is like batch_add_components plus an optional 'nets' map {pin: netName}. Components are placed first, then nets are connected via batch_connect.",
+        "Place multiple components AND wire their nets in a single call — the fewest-round-trip way to build a subcircuit. Each component is like batch_add_components plus an optional 'nets' map {pin: netName}. Components are placed first, then nets are connected via batch_connect. labelType selects 'label' (sheet-local, default) or 'global_label' (cross-sheet by name) for all the nets wired in this call.",
       inputSchema: z.object({
         schematicPath: z.string().describe("Path to the .kicad_sch file"),
         components: z
@@ -300,6 +307,13 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
             }),
           )
           .describe("Components to place and connect"),
+        labelType: z
+          .enum(["label", "global_label"])
+          .optional()
+          .default("label")
+          .describe(
+            "Label kind used to wire the nets: 'label' = sheet-local (default); 'global_label' = cross-sheet by name",
+          ),
         origin_x: z.number().optional(),
         origin_y: z.number().optional(),
       }),

@@ -32,7 +32,7 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 180 KiCad tools across 18 categories, plus 3 supplemental discovery tools
+- 216 tools across 20 categories, plus 3 supplemental discovery tools
 - Structured tool results, cancellation propagation, annotations, and MRTR confirmation for destructive operations
 - 18 live resources and 18 reusable prompts
 - Complete schematic workflow with 27 tools and dynamic symbol loading (~10,000 symbols)
@@ -56,8 +56,115 @@ https://github.com/mixelpixx/arduino-ide
 - Migrated the server to the MCP TypeScript SDK v2, Node.js 20+, and Zod 4.
 - Added modern stateless protocol negotiation while retaining legacy 2025 client compatibility.
 - Added structured tool results, output schemas, safety annotations, cacheable discovery, cancellation propagation, and confirmation for destructive operations.
-- Reconciled the complete TypeScript/Python command catalog and now exposes 183 first-class tools.
+- Reconciled the complete TypeScript/Python command catalog and now exposes 219 first-class tools.
 - Added an installable Codex/Claude plugin and a private, hash-locked Python runtime for zero-clone installation from npm.
+
+## What's New in v2.6.0
+
+### A session-killing bug is fixed
+
+Deleting anything from a board — a component, a trace, a board outline —
+worked exactly once. The next operation, even a pure read, failed with a
+`SwigPyObject` error, and only `close_project` then `open_project` recovered.
+`BOARD.Remove()` hands C++ ownership to Python, so dropping the reference ran
+a destructor on an object KiCad still pointed at, corrupting SWIG state
+process-wide. Six call sites were affected; all now use `BOARD.Delete()`.
+
+### 10 new tools
+
+- **Vendor PCB import**: `import_pcb` converts PADS, Altium, Eagle, CADSTAR,
+  Fabmaster, P-CAD, SolidWorks PCB and binary Cadence Allegro `.brd` files via
+  KiCad 10's native importer.
+- **Hierarchical schematics**: `remove_hierarchical_sheet`,
+  `set_sheet_property`, `get_sheet_properties`, and `hierarchical_place` for
+  arranging footprints by schematic hierarchy.
+- **Schematic lint and repair**: `lint_offgrid` finds and safely snaps
+  off-grid geometry that silently breaks junction placement;
+  `repair_flat_symbols` fixes SnapEDA/SamacSys symbols that crash kicad-skip;
+  `lint_schematic_cosmetic` tidies pin names and label orientation.
+- **Board origins**: `set_board_origin` / `get_board_origin`.
+
+### Your `.kicad_pro` net classes stop disappearing
+
+Board saves no longer let pcbnew serialize a stale in-memory project model
+over your hand-edited net classes and `netclass_patterns`. Opening a project
+no longer rewrites the file at all.
+
+### Breaking: schematic tools fail loudly on an unparseable sheet
+
+Tools that used to return partial or empty results now return a structured
+`schematic_load_failed` error naming the offending symbols. Silently skipping
+a broken sheet produced an incomplete pad-to-net map reported as success,
+which is worse. `repair_flat_symbols` fixes the usual cause. See
+[KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) section 7.
+
+Full details in the [CHANGELOG](CHANGELOG.md).
+
+## What's New in v2.5.0
+
+### 20 new board-lifecycle and geometry tools
+
+- **Lifecycle**: `open_board`, `reload_board`, `save_board`, `save_as`,
+  `is_dirty`, `discard_or_reload`, `create_board_from_schematic`.
+- **Graphics editing**: `clear_board_outline`, `replace_board_outline`,
+  `list_graphics`, `delete_graphic`, `update_graphic`, `move_footprint_text`.
+- **Geometry queries**: `batch_move_components`, `get_component_geometry`,
+  `get_pads`, `get_net_pads`, `get_ratsnest`, `estimate_airwire_lengths`,
+  `check_placement_clearance`.
+
+All of them respect backend session pinning, so a board saved while KiCad's
+GUI owns the session routes to the GUI rather than writing a stale in-memory
+copy — including the awkward case where `save_as` changes the board's
+identity mid-session.
+
+### Formatting is normalized and enforced
+
+- `pre-commit run --all-files` (black, isort, prettier, flake8, mypy, eslint)
+  is now a real CI gate, which is what CONTRIBUTING has always claimed.
+- `npm run lint` used to run `black` in **write** mode against whatever
+  `black` was on `PATH`, silently reformatting your working tree with a
+  version that disagreed with CI. It now checks only; `npm run format:py` is
+  the write path.
+- The README's tool count is pinned to the registry by a test, so it
+  self-corrects instead of drifting.
+
+Full details in the [CHANGELOG](CHANGELOG.md).
+
+## What's New in v2.4.1
+
+### Three tools that were registered but had no backend now work
+
+- `assign_net_to_class`, `check_clearance` and `set_layer_constraints` each had
+  a full schema and a router entry but no dispatch handler, so every call
+  returned `Unknown command`. Found by a documentation-coverage audit.
+- Per-layer constraints are written to a project-scoped `.kicad_dru`
+  custom-rules file, which `kicad-cli pcb drc` and the GUI both pick up — there
+  is no pcbnew API for them.
+
+### Silent failures removed
+
+- `autoroute` was abandoned by the Node bridge at 30 s while Freerouting was
+  still running, reporting failure against a valid `.ses` that existed on disk.
+  Its timeout now derives from the `timeout` and `attempts` you pass.
+- `get_board_2d_view` omitted `--layers` entirely when no layers were given,
+  and KiCad 9+ then refuses the export — producing no file at all.
+- `create_zone` raised `AttributeError` on every call over the IPC backend.
+
+### New part-sourcing tools
+
+- `search_parts_registry` / `get_registry_part` / `download_registry_part`
+  reuse a verified existing footprint or symbol instead of generating one.
+  Downloads are host-allowlisted, extension-checked and size-capped.
+- `get_jlcpcb_part` returns live stock and tiered pricing when JLCPCB Open
+  Platform credentials are configured, falling back to the local snapshot.
+
+### CI now actually runs the test suite
+
+- The Python job had been a no-op in four independent ways, and Actions was
+  disabled repo-wide — 32 failed runs and 0 successes across the project's
+  whole history. All 1551 Python and 63 TypeScript tests now gate every push.
+
+Full details in the [CHANGELOG](CHANGELOG.md).
 
 ## What's New in v2.4.0
 
@@ -303,7 +410,7 @@ connections = ConnectionManager.get_net_connections(sch, "VCC", sch_path)
 - Net connectivity: 100% accurate (VCC: 2 connections, GND: 4 connections)
 - Netlist generation: Working with accurate pin-level connections
 
-See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for the complete schematic tool documentation.
+See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for the complete schematic tool documentation, and the [Headless Authoring Guide](docs/HEADLESS_AUTHORING.md) for field-tested practice driving these tools without the KiCad GUI.
 
 ### IPC Backend (Experimental)
 
@@ -325,9 +432,9 @@ configuration command and backend options.
 
 ### Tool Discovery
 
-All 180 KiCad capabilities are first-class MCP tools with published input and output schemas. Three additional, backend-free tools provide a convenient catalog without inventing a second execution path:
+All 216 KiCad capabilities are first-class MCP tools with published input and output schemas. Three additional, backend-free tools provide a convenient catalog without inventing a second execution path:
 
-- `list_tool_categories` - Browse all 18 capability categories
+- `list_tool_categories` - Browse all 20 capability categories
 - `get_category_tools` - View the tools in one category
 - `search_tools` - Search names and descriptions by keyword
 
@@ -392,7 +499,7 @@ Backend failures are returned as MCP errors rather than successful error documen
 
 ## Available Tools
 
-The server publishes **183 first-class tools**: 180 KiCad capabilities in 18 functional categories and 3 supplemental catalog tools. The list below highlights common operations; use `list_tool_categories`, `get_category_tools`, or `search_tools` for the live authoritative catalog.
+The server publishes **219 first-class tools**: 216 KiCad capabilities in 20 functional categories and 3 supplemental catalog tools. The list below highlights common operations; use `list_tool_categories`, `get_category_tools`, or `search_tools` for the live authoritative catalog.
 
 For the complete category inventory, see [Tool Inventory](docs/TOOL_INVENTORY.md). Every listed tool is directly callable through MCP.
 
@@ -499,12 +606,14 @@ Complete schematic workflow with dynamic symbol loading (~10,000 symbols) and in
 
 See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for details and examples.
 
-### Design Rules / DRC (5 tools)
+### Design Rules / DRC (selected examples)
 
 - `set_design_rules` / `get_design_rules` - Configure and inspect rules
 - `run_drc` - Execute design rule check
 - `get_drc_violations` - Get violation list by severity
 - `add_net_class` / `create_netclass` - Net class management (compatibility and canonical names)
+- `assign_net_to_class` - Assign a net to a configured class
+- `set_layer_constraints` / `check_clearance` - Layer and clearance rules
 
 ### Export (27 tools; selected examples)
 
@@ -1271,7 +1380,7 @@ How many Basic parts are available?
 
 - **Transport:** Local stdio with SDK-managed JSON-RPC framing
 - **Protocol:** MCP 2026-07-28 stateless core plus legacy 2025 initialization compatibility
-- **Capabilities:** 183 tools, 18 resources/templates, and 18 prompts
+- **Capabilities:** 219 tools, 18 resources/templates, and 18 prompts
 - **Discovery:** Deterministic `tools/list` plus 3 supplemental catalog tools
 - **Results:** Structured output, standard MCP errors, cancellation propagation, cache hints, and MRTR confirmations
 
@@ -1422,7 +1531,7 @@ npm run format
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-**Working Features (180 KiCad tools + 3 discovery tools):**
+**Working Features (216 KiCad tools + 3 discovery tools):**
 
 - Project management with snapshot checkpointing
 - Complete board design (outline, layers, zones, mounting holes, text, SVG logos)
@@ -1522,6 +1631,6 @@ If you use this project in your research or publication, please cite:
   author = {mixelpixx},
   year = {2025},
   url = {https://github.com/mixelpixx/KiCAD-MCP-Server},
-  version = {2.3.0}
+  version = {2.7.0}
 }
 ```

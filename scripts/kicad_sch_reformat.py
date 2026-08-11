@@ -22,6 +22,7 @@ Usage
   #     "python /abs/path/scripts/kicad_sch_reformat.py --stdin"
   python scripts/kicad_sch_reformat.py --stdin < in.kicad_sch > out.kicad_sch
 """
+
 import sys
 from pathlib import Path
 

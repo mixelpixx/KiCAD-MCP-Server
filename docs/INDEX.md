@@ -4,7 +4,7 @@
 
 KiCAD MCP Server -- AI-assisted PCB design via Model Context Protocol
 
-**Version:** 2.7.0 | **Tools:** 183 first-class | **Last Updated:** 2026-08-11
+**Version:** 2.7.0 | **Tools:** 219 first-class | **Last Updated:** 2026-08-11
 
 ---
 
@@ -23,7 +23,7 @@ KiCAD MCP Server -- AI-assisted PCB design via Model Context Protocol
 
 | Document                                                                | Description                                        |
 | ----------------------------------------------------------------------- | -------------------------------------------------- |
-| [Tool Inventory](TOOL_INVENTORY.md)                                     | Runtime-verified category counts for all 183 tools |
+| [Tool Inventory](TOOL_INVENTORY.md)                                     | Runtime-verified category counts for all 219 tools |
 | [Schematic Tools Reference](SCHEMATIC_TOOLS_REFERENCE.md)               | Schematic components, wiring, analysis, and export |
 | [Routing Tools Reference](ROUTING_TOOLS_REFERENCE.md)                   | Traces, vias, differential pairs, nets, and zones  |
 | [Footprint and Symbol Creator Guide](FOOTPRINT_SYMBOL_CREATOR_GUIDE.md) | 8 tools for creating custom footprints and symbols |
@@ -46,14 +46,15 @@ KiCAD MCP Server -- AI-assisted PCB design via Model Context Protocol
 
 ## Workflows
 
-| Document                                              | Description                                 |
-| ----------------------------------------------------- | ------------------------------------------- |
-| [Realtime Workflow](REALTIME_WORKFLOW.md)             | Working with IPC backend for live updates   |
-| [Visual Feedback](VISUAL_FEEDBACK.md)                 | UI visual feedback guide                    |
-| [UI Auto Launch](UI_AUTO_LAUNCH.md)                   | Automatic KiCAD UI launch feature           |
-| [Tool Discovery Guide](mcp-router-guide.md)           | First-class catalog and supplemental search |
-| [Tool Discovery Architecture](ROUTER_ARCHITECTURE.md) | First-class catalog and discovery design    |
-| [Discovery Quick Start](ROUTER_QUICK_START.md)        | Find and call first-class tools directly    |
+| Document                                              | Description                                                                                 |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| [Realtime Workflow](REALTIME_WORKFLOW.md)             | Working with IPC backend for live updates                                                   |
+| [Headless Authoring](HEADLESS_AUTHORING.md)           | Driving the server without the KiCad GUI: build recipe, ERC triage, verification discipline |
+| [Visual Feedback](VISUAL_FEEDBACK.md)                 | UI visual feedback guide                                                                    |
+| [UI Auto Launch](UI_AUTO_LAUNCH.md)                   | Automatic KiCAD UI launch feature                                                           |
+| [Tool Discovery Guide](mcp-router-guide.md)           | First-class catalog and supplemental search                                                 |
+| [Tool Discovery Architecture](ROUTER_ARCHITECTURE.md) | First-class catalog and discovery design                                                    |
+| [Discovery Quick Start](ROUTER_QUICK_START.md)        | Find and call first-class tools directly                                                    |
 
 ---
 

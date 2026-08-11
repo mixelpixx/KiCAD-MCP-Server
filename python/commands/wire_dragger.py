@@ -10,9 +10,8 @@ import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 import sexpdata
-from sexpdata import Symbol
-
 from commands.symbol_pin_parser import parse_symbol_definition
+from sexpdata import Symbol
 
 logger = logging.getLogger("kicad_interface")
 

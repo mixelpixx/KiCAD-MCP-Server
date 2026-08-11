@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pcbnew
+from utils.board_items import delete_board_item
 
 logger = logging.getLogger("kicad_interface")
 
@@ -134,6 +135,79 @@ def persist_netclass_to_project(
         return {
             "persisted": False,
             "warning": f"could not persist net class to {pro_path}: {exc}",
+        }
+
+
+def apply_net_assignment_to_project_settings(
+    data: Dict[str, Any], net_name: str, class_name: str
+) -> Dict[str, Any]:
+    """Insert or update a net's netclass assignment in a parsed ``.kicad_pro`` dict.
+    Pure: mutates and returns ``data``; performs no I/O.
+
+    Explicit per-net assignments live in ``net_settings.netclass_assignments``
+    on KiCad 9+ (net name -> list of class names). A net keeps only the most
+    recent assignment here — composite/multi-class membership is not modeled.
+
+    Note the key is present-but-null in a freshly written project: KiCad emits
+    ``"netclass_assignments": null`` when there are no assignments (see
+    ``utils/kicad_project.py``, captured from real pcbnew output). ``setdefault``
+    would hand back that ``None`` rather than replacing it, so the key has to be
+    normalized to a dict explicitly — otherwise assignment raises ``TypeError``
+    on every real project file.
+    """
+    net_settings = data.setdefault("net_settings", {})
+    if not isinstance(net_settings, dict):
+        net_settings = {}
+        data["net_settings"] = net_settings
+    assignments = net_settings.get("netclass_assignments")
+    if not isinstance(assignments, dict):
+        assignments = {}
+        net_settings["netclass_assignments"] = assignments
+    assignments[net_name] = [class_name]
+    return data
+
+
+def persist_net_assignment_to_project(
+    pro_path: Optional[str], net_name: str, class_name: str
+) -> Dict[str, Any]:
+    """Read/modify/write ``pro_path`` so a net's class assignment survives a
+    reload (KiCad 7+ keeps net-to-class membership in the project file, not
+    the board).
+
+    Returns ``{"persisted": bool, "projectFile"?: str, "warning"?: str}``. Never
+    raises: a persistence failure is reported, not fatal, so the in-memory
+    assignment still stands. The write is atomic (temp file + ``os.replace``)
+    so a crash mid-write cannot corrupt the project file.
+    """
+    if not pro_path or not os.path.exists(pro_path):
+        return {
+            "persisted": False,
+            "warning": "no .kicad_pro project file found; net class assignment set "
+            "in memory only and will not persist across a reload",
+        }
+    try:
+        with open(pro_path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        apply_net_assignment_to_project_settings(data, net_name, class_name)
+
+        directory = os.path.dirname(pro_path) or "."
+        fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".netassign-", suffix=".kicad_pro")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, indent=2, sort_keys=True)
+                handle.write("\n")
+            os.replace(tmp_path, pro_path)
+        except Exception:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
+        return {"persisted": True, "projectFile": pro_path}
+    except Exception as exc:  # report, never fail the command on a persistence error
+        return {
+            "persisted": False,
+            "warning": f"could not persist net class assignment to {pro_path}: {exc}",
         }
 
 
@@ -689,7 +763,7 @@ class RoutingCommands:
 
                 deleted_count = len(tracks_to_remove)
                 for track in tracks_to_remove:
-                    self.board.Remove(track)
+                    delete_board_item(self.board, track)
                 tracks_to_remove.clear()
                 self.board.SetModified()
 
@@ -714,7 +788,7 @@ class RoutingCommands:
                         "errorDetails": f"Could not find track with UUID: {trace_uuid}",
                     }
 
-                self.board.Remove(track)
+                delete_board_item(self.board, track)
                 track = None
                 self.board.SetModified()
                 return {"success": True, "message": f"Deleted track: {trace_uuid}"}
@@ -748,7 +822,7 @@ class RoutingCommands:
                         closest_track = track
 
                 if closest_track and min_distance < 1000000:  # Within 1mm
-                    self.board.Remove(closest_track)
+                    delete_board_item(self.board, closest_track)
                     closest_track = None
                     self.board.SetModified()
                     return {
@@ -2053,8 +2127,20 @@ class RoutingCommands:
                     pass
                 obstacle_vias.append((pos.x, pos.y, max(width, drill) // 2))
             else:
-                s, e = track.GetStart(), track.GetEnd()
-                obstacle_tracks.append((s.x, s.y, e.x, e.y, track.GetWidth() // 2))
+                half_width = track.GetWidth() // 2
+                # A PCB_ARC recorded as the straight chord between its
+                # endpoints UNDER-estimates the region it occupies: a via
+                # sitting in the bulge between chord and arc passes the
+                # clearance check and shorts the trace (#192). Approximate the
+                # arc by a chain of short chords instead — over-approximating
+                # an obstacle is safe, under-approximating is the bug.
+                arc_points = _arc_polyline_points(track)
+                if arc_points:
+                    for (ax1, ay1), (ax2, ay2) in zip(arc_points, arc_points[1:]):
+                        obstacle_tracks.append((ax1, ay1, ax2, ay2, half_width))
+                else:
+                    s, e = track.GetStart(), track.GetEnd()
+                    obstacle_tracks.append((s.x, s.y, e.x, e.y, half_width))
 
         for fp in self.board.GetFootprints():
             for pad in fp.Pads():
@@ -2216,6 +2302,95 @@ class RoutingCommands:
 # ---------------------------------------------------------------------------
 # Module-level geometry helper (used by add_gnd_stitching_vias collision check)
 # ---------------------------------------------------------------------------
+
+
+# Chord count for arc approximation. 8 chords keeps the worst-case sagitta
+# (the gap between a chord and the arc it spans) under ~2% of the radius, which
+# is far below any realistic via-to-track clearance, while staying cheap in the
+# obstacle-gathering loop.
+_ARC_CHORD_SEGMENTS = 8
+
+
+def _arc_polyline_points(track: Any) -> List[Tuple[int, int]]:
+    """Sample a PCB_ARC into points for a chord-chain approximation.
+
+    Returns ``[]`` for anything that is not an arc, so the caller falls back to
+    its straight-segment handling. Never raises: an obstacle we cannot sample
+    must degrade to the chord rather than abort the whole stitching run.
+
+    The module checks item class by ``GetClass()`` string rather than
+    ``isinstance`` -- see the note in ``add_gnd_stitching_vias`` -- and the test
+    doubles set ``GetClass`` directly, so this matches that convention.
+    """
+    try:
+        if track.GetClass() != "PCB_ARC":
+            return []
+    except Exception:
+        return []
+
+    try:
+        centre = track.GetCenter()
+        cx, cy = int(centre.x), int(centre.y)
+        start, end = track.GetStart(), track.GetEnd()
+        sx, sy = int(start.x), int(start.y)
+        ex, ey = int(end.x), int(end.y)
+    except Exception:
+        return []
+
+    radius = math.hypot(sx - cx, sy - cy)
+    if radius <= 0:
+        return []
+
+    start_angle = math.atan2(sy - cy, sx - cx)
+    end_angle = math.atan2(ey - cy, ex - cx)
+    sweep = end_angle - start_angle
+
+    # Pick the sweep direction that passes through the arc's midpoint, so a
+    # major arc is not approximated by the minor one on the other side.
+    try:
+        mid = track.GetMid()
+        mid_angle = math.atan2(int(mid.y) - cy, int(mid.x) - cx)
+
+        def _normalise(a: float) -> float:
+            while a <= -math.pi:
+                a += 2 * math.pi
+            while a > math.pi:
+                a -= 2 * math.pi
+            return a
+
+        # If the midpoint does not lie within the shorter sweep, go the long way.
+        short = _normalise(sweep)
+        to_mid = _normalise(mid_angle - start_angle)
+        if short == 0 or (to_mid / short) < 0 or abs(to_mid) > abs(short):
+            sweep = short - math.copysign(2 * math.pi, short)
+        else:
+            sweep = short
+    except Exception:
+        # No usable midpoint: fall back to the shorter sweep.
+        while sweep <= -math.pi:
+            sweep += 2 * math.pi
+        while sweep > math.pi:
+            sweep -= 2 * math.pi
+
+    # Sample on a slightly LARGER radius so the chords circumscribe the arc
+    # instead of cutting inside it. Chords through points on the true arc are
+    # secants: their midpoints sag inward by r*(1 - cos(half_step)), which
+    # under-states the obstacle — the same defect as #192, just smaller.
+    # Dividing by cos(half_step) puts each chord's midpoint back on the true
+    # radius, so the chain never reads as further from a point than the arc is.
+    half_step = abs(sweep) / (2 * _ARC_CHORD_SEGMENTS)
+    sample_radius = radius / math.cos(half_step) if half_step else radius
+
+    points: List[Tuple[int, int]] = []
+    for i in range(_ARC_CHORD_SEGMENTS + 1):
+        angle = start_angle + sweep * (i / _ARC_CHORD_SEGMENTS)
+        points.append(
+            (
+                int(cx + sample_radius * math.cos(angle)),
+                int(cy + sample_radius * math.sin(angle)),
+            )
+        )
+    return points
 
 
 def _point_to_segment_distance_nm(px: int, py: int, x1: int, y1: int, x2: int, y2: int) -> float:

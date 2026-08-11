@@ -65,6 +65,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
 
+      - name: Set up Java for Freerouting tests
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
       - name: Install Python dependencies
         run: |
           python -m pip install --disable-pip-version-check \
@@ -143,6 +149,9 @@ jobs:
 
       - name: Run Black formatter check
         run: python -m black --check python/ tests/
+
+      - name: Run isort import-order check
+        run: python -m isort --check-only python/ tests/
 
       - name: Run MyPy type checker
         run: python -m mypy python/

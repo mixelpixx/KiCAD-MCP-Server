@@ -35,21 +35,28 @@ type ToolConfig<InputSchema extends StandardSchemaWithJSON> = {
 
 const READ_ONLY_TOOLS = new Set([
   "batch_list_symbol_pins",
+  "check_clearance",
   "check_courtyard_overlaps",
   "check_freerouting",
   "check_kicad_ui",
+  "check_placement_clearance",
+  "estimate_airwire_lengths",
   "find_component",
   "find_orphaned_wires",
   "find_overlapping_elements",
   "find_wires_crossing_symbols",
+  "generate_netlist",
   "get_backend_state",
   "get_board_extents",
   "get_board_info",
+  "get_board_origin",
   "get_category_tools",
+  "get_component_geometry",
   "get_component_list",
   "get_component_pads",
   "get_component_properties",
   "get_datasheet_url",
+  "get_design_rules",
   "get_drc_violations",
   "get_elements_in_region",
   "get_footprint_info",
@@ -58,16 +65,24 @@ const READ_ONLY_TOOLS = new Set([
   "get_layer_list",
   "get_net_at_point",
   "get_net_connections",
+  "get_net_pads",
   "get_nets_list",
   "get_pad_position",
+  "get_pads",
   "get_project_info",
+  "get_ratsnest",
+  "get_registry_part",
   "get_schematic_component",
   "get_schematic_pin_locations",
+  "get_schematic_view",
   "get_schematic_view_region",
+  "get_sheet_properties",
   "get_symbol_info",
   "get_wire_connections",
+  "is_dirty",
   "list_floating_labels",
   "list_footprint_libraries",
+  "list_graphics",
   "list_libraries",
   "list_library_footprints",
   "list_library_symbols",
@@ -82,48 +97,117 @@ const READ_ONLY_TOOLS = new Set([
   "list_tool_categories",
   "query_traces",
   "query_zones",
+  "run_erc",
   "search_footprints",
   "search_jlcpcb_parts",
+  "search_parts_registry",
   "search_symbols",
   "search_tools",
   "suggest_jlcpcb_alternatives",
-  "suggest_placement",
-  "suggest_schematic_declutter",
 ]);
 
-const DESTRUCTIVE_TOOLS = new Set([
+/**
+ * Operations whose normal execution is broad, destructive, or discards state.
+ * Ordinary additive edits intentionally do not require an MRTR round trip even
+ * though their conservative SDK annotation remains destructiveHint=true.
+ */
+const ALWAYS_CONFIRM_TOOLS = new Set([
   "annotate_schematic",
   "autoroute",
   "batch_edit_schematic_components",
+  "clear_board_outline",
   "close_project",
+  "create_board_from_schematic",
   "delete_component",
+  "delete_graphic",
   "delete_schematic_component",
   "delete_schematic_net_label",
   "delete_schematic_wire",
   "delete_symbol",
   "delete_trace",
+  "discard_or_reload",
   "download_jlcpcb_database",
   "import_eagle_project",
+  "import_pcb",
   "import_ses",
+  "hierarchical_place",
+  "reload_board",
+  "remove_hierarchical_sheet",
+  "remove_schematic_component_property",
+  "replace_board_outline",
   "replace_instance_lib_ids",
   "replace_schematic_component",
   "set_board_size",
   "set_design_rules",
+  "set_layer_constraints",
+  "set_sheet_property",
   "sync_schematic_to_board",
   "update_symbol_from_library",
 ]);
 
 const OPEN_WORLD_TOOLS = new Set([
   "download_jlcpcb_database",
-  "enrich_datasheets",
-  "get_datasheet_url",
+  "download_registry_part",
+  "get_jlcpcb_part",
+  "get_registry_part",
   "launch_kicad_ui",
-  "search_jlcpcb_parts",
+  "search_parts_registry",
 ]);
+
+function booleanArg(args: unknown, key: string): boolean {
+  return (
+    typeof args === "object" &&
+    args !== null &&
+    !Array.isArray(args) &&
+    (args as Record<string, unknown>)[key] === true
+  );
+}
+
+function falseBooleanArg(args: unknown, key: string): boolean {
+  return (
+    typeof args === "object" &&
+    args !== null &&
+    !Array.isArray(args) &&
+    (args as Record<string, unknown>)[key] === false
+  );
+}
+
+/**
+ * Decide whether this exact invocation needs an SDK-v2 MRTR confirmation.
+ * Argument-aware rules keep dry runs and guarded saves frictionless while
+ * requiring confirmation when a caller explicitly opts into an overwrite or
+ * a broad automatic rewrite.
+ */
+export function toolRequiresConfirmation(name: string, args: unknown): boolean {
+  if (ALWAYS_CONFIRM_TOOLS.has(name)) return true;
+
+  switch (name) {
+    case "create_symbol":
+    case "import_symbol":
+      return booleanArg(args, "overwrite");
+    case "repair_flat_symbols":
+      return falseBooleanArg(args, "dryRun");
+    case "save_as":
+    case "save_board":
+    case "save_project":
+      return (
+        booleanArg(args, "overwrite") ||
+        booleanArg(args, "force") ||
+        booleanArg(args, "forceExternalChanges")
+      );
+    case "suggest_placement":
+    case "suggest_schematic_declutter":
+      return booleanArg(args, "apply");
+    default:
+      return false;
+  }
+}
 
 const CONFIRMATION_KEY = "confirmation";
 const CONFIRMATION_SCHEMA = z.object({
-  confirmed: z.boolean().describe("Set true to confirm this destructive KiCad operation"),
+  confirmed: z
+    .boolean()
+    .describe("Set true to confirm this destructive or high-impact KiCad operation"),
 });
 const CONFIRMATION_STATE_TTL_SECONDS = 600;
 const MAX_CONSUMED_CONFIRMATIONS = 4_096;
@@ -278,7 +362,7 @@ export function toolAnnotationsFor(name: string): ToolAnnotations {
       openWorldHint: OPEN_WORLD_TOOLS.has(name),
     };
   }
-  if (DESTRUCTIVE_TOOLS.has(name)) {
+  if (ALWAYS_CONFIRM_TOOLS.has(name)) {
     return {
       readOnlyHint: false,
       destructiveHint: true,
@@ -371,7 +455,7 @@ export function registerKiCadTool<InputSchema extends StandardSchemaWithJSON>(
     args: unknown,
     ctx: ServerContext,
   ): Promise<CallToolResult | InputRequiredResult> => {
-    if (DESTRUCTIVE_TOOLS.has(name)) {
+    if (toolRequiresConfirmation(name, args)) {
       const argsHash = hashToolArgs(args);
       const state = ctx.mcpReq.requestState<ToolConfirmationState>();
 
@@ -389,7 +473,7 @@ export function registerKiCadTool<InputSchema extends StandardSchemaWithJSON>(
           requestState,
           inputRequests: {
             [CONFIRMATION_KEY]: inputRequired.elicit({
-              message: `Confirm destructive KiCad operation: ${title} (${name})\nTarget arguments: ${confirmationTarget(args)}`,
+              message: `Confirm destructive or high-impact KiCad operation: ${title} (${name})\nTarget arguments: ${confirmationTarget(args)}`,
               requestedSchema: CONFIRMATION_SCHEMA,
             }),
           },

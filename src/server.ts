@@ -9,6 +9,7 @@ import { existsSync, readdirSync } from "fs";
 import { join, dirname, delimiter } from "path";
 import { logger } from "./logger.js";
 import { PythonCommandBridge } from "./python-bridge.js";
+import { computeCommandTimeout, DEFAULT_COMMAND_TIMEOUT_MS } from "./command-timeout.js";
 
 // Import tool registration functions
 import { registerProjectTools } from "./tools/project.js";
@@ -24,12 +25,14 @@ import { registerSchematicHierarchyTools } from "./tools/schematic-hierarchy.js"
 import { registerSchematicLayoutTools } from "./tools/schematic-layout.js";
 import { registerSchematicBatchTools } from "./tools/schematic-batch.js";
 import { registerJLCPCBApiTools } from "./tools/jlcpcb-api.js";
+import { registerPartsRegistryTools } from "./tools/parts-registry.js";
 import { registerDatasheetTools } from "./tools/datasheet.js";
 import { registerFootprintTools } from "./tools/footprint.js";
 import { registerSymbolCreatorTools } from "./tools/symbol-creator.js";
 import { registerUITools } from "./tools/ui.js";
 import { registerFreeroutingTools } from "./tools/freerouting.js";
 import { registerEagleTools } from "./tools/eagle.js";
+import { registerPcbImportTools } from "./tools/pcb-import.js";
 import { registerRouterTools } from "./tools/router.js";
 import { toolConfirmationStateCodec } from "./tools/tool-registration.js";
 
@@ -59,10 +62,13 @@ const LONG_RUNNING_COMMANDS = new Set([
 ]);
 
 /** Public for contract tests and embedders that need matching request budgets. */
-export function commandTimeoutMs(command: string): number {
+export function commandTimeoutMs(command: string, params?: unknown): number {
   if (command === "download_jlcpcb_database") return 3_600_000;
-  if (command === "autoroute") return 1_800_000;
-  return LONG_RUNNING_COMMANDS.has(command) || command.startsWith("export_") ? 600_000 : 30_000;
+  if (command === "autoroute") {
+    return Math.min(Math.max(computeCommandTimeout(command, params), 1_800_000), 3_600_000);
+  }
+  if (LONG_RUNNING_COMMANDS.has(command) || command.startsWith("export_")) return 600_000;
+  return computeCommandTimeout(command, params);
 }
 
 function getWindowsKiCadPythonCandidates(): string[] {
@@ -481,6 +487,8 @@ export class KiCADMcpServer {
     registerUITools(server, this.callKicadScript.bind(this));
     registerFreeroutingTools(server, this.callKicadScript.bind(this));
     registerEagleTools(server, this.callKicadScript.bind(this));
+    registerPartsRegistryTools(server);
+    registerPcbImportTools(server, this.callKicadScript.bind(this));
 
     // Register all resources
     registerProjectResources(server, this.callKicadScript.bind(this));
@@ -1049,6 +1057,10 @@ export class KiCADMcpServer {
       throw new Error("Python process for KiCad scripting is not running");
     }
 
-    return this.bridge.execute(command, params, commandTimeoutMs(command), signal);
+    const timeout = commandTimeoutMs(command, params);
+    if (timeout !== DEFAULT_COMMAND_TIMEOUT_MS) {
+      logger.info(`Using extended timeout (${timeout / 1000}s) for command: ${command}`);
+    }
+    return this.bridge.execute(command, params, timeout, signal);
   }
 }

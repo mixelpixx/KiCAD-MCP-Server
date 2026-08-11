@@ -1,15 +1,16 @@
 # Tool Discovery Architecture
 
-KiCAD MCP has one authoritative, first-class MCP tool surface. All 183 tools
-are registered with the SDK and returned by `tools/list`; 180 are KiCad
-capabilities and three provide supplemental catalog discovery.
+KiCAD MCP has one authoritative, first-class MCP tool surface. At the v2.7.0
+migration baseline, all 219 tools are registered with the SDK and returned by
+`tools/list`; 216 are KiCad capabilities and three provide supplemental
+catalog discovery.
 
 ## Runtime flow
 
 ```text
 MCP client
   |
-  | tools/list (all 183 definitions)
+  | tools/list (all first-class definitions)
   v
 TypeScript McpServer
   |-- registerKiCadTool(...) -> SDK registration
@@ -20,7 +21,7 @@ TypeScript McpServer
   |-- get_category_tools
   `-- search_tools
   |
-  | direct tools/call using the selected tool name
+  | tools/call using the selected tool name
   v
 Correlated Python command bridge -> KiCad backend
 ```
@@ -63,6 +64,19 @@ They return names of tools that are already callable directly through MCP.
 Each `serveStdio` connection receives a fresh server built by
 `createProtocolServer()`. The same factory supports modern MCP 2026-07-28
 `server/discover` negotiation and the legacy 2025 `initialize` path.
+
+## Historical router design
+
+The original router attempted to hide most tools behind `execute_tool` and
+claimed a roughly 70% context reduction. That gating path was disabled in
+March 2026 because indirect execution encouraged clients to invent schemas
+they had not received. `execute_tool` was removed in May 2026. Only the
+read-only browse and search catalog remains, and it does not reduce the
+`tools/list` surface.
+
+This is a deliberate correctness trade-off, not an unfinished router phase.
+Any future context-saving design must preserve first-class schemas,
+annotations, and approval boundaries.
 
 ## Maintaining the catalog
 

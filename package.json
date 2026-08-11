@@ -4,11 +4,13 @@
   "description": "AI-assisted PCB design with KiCAD via Model Context Protocol",
   "type": "module",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
     "kicad-mcp": "dist/cli.js"
   },
   "files": [
     "dist/**/*.js",
+    "dist/**/*.d.ts",
     "python/**/*.py",
     "python/**/*.json",
     "python/**/*.kicad_sch",
@@ -38,8 +40,10 @@
     "test:coverage": "python -m pytest tests/ --cov=python --cov-report=html --cov-report=term",
     "lint": "npm run lint:ts && npm run lint:py",
     "lint:ts": "eslint src/",
-    "lint:py": "python -m black --check python/ tests/ && python -m mypy python/ && python -m pylint --errors-only python/",
-    "format": "prettier --write \"src/**/*.ts\" \"tests-ts/**/*.ts\" && python -m black python/ tests/",
+    "lint:py": "python -m black --check python/ tests/ && python -m isort --check-only python/ tests/ && python -m mypy python/ && python -m pylint --errors-only python/",
+    "lint:all": "pre-commit run --all-files",
+    "format:py": "python -m black python/ tests/ && python -m isort python/ tests/",
+    "format": "prettier --write \"src/**/*.ts\" \"tests-ts/**/*.ts\" && npm run format:py",
     "prepare": "npm run build",
     "prepack": "npm run rebuild",
     "pretest": "npm run build"

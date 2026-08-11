@@ -143,7 +143,7 @@ registerKiCadTool(
 
 ### Tool Discovery (`src/tools/router.ts` and `src/tools/registry.ts`)
 
-All 183 tools are first-class MCP tools returned by `tools/list`. The runtime
+All 219 tools are first-class MCP tools returned by `tools/list`. The runtime
 registry is populated from the same `registerKiCadTool` calls, preventing a
 second catalog from drifting.
 
@@ -307,7 +307,7 @@ Key test files:
 ## Key Design Decisions
 
 - **TypeScript + Python split**: TypeScript handles MCP protocol (well-supported SDK), Python handles KiCAD (only available API)
-- **First-class catalog**: All 183 tools retain individual schemas and annotations; three supplemental discovery tools provide category and keyword lookup
+- **First-class catalog**: All 219 tools retain individual schemas and annotations; three supplemental discovery tools provide category and keyword lookup
 - **Dual-era stdio**: SDK v2 `serveStdio` negotiates MCP 2026-07-28 while retaining the legacy 2025 path
 - **Auto-save**: Every board-modifying SWIG operation auto-saves to prevent data loss
 - **Dynamic symbol loading**: Works around kicad-skip's inability to create symbols from scratch

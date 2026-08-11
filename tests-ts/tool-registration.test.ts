@@ -1,5 +1,7 @@
 import {
   isInputRequiredResult,
+  type CallToolResult,
+  type InputRequiredResult,
   type McpServer,
   type ServerContext,
 } from "@modelcontextprotocol/server";
@@ -10,6 +12,7 @@ import {
   registerKiCadTool,
   toolAnnotationsFor,
   toolConfirmationStateCodec,
+  toolRequiresConfirmation,
   type CommandFunction,
   withToolSignal,
 } from "../src/tools/tool-registration.js";
@@ -17,7 +20,19 @@ import {
 interface CapturedTool {
   name: string;
   config: Record<string, unknown>;
-  callback: (args: unknown, ctx: ServerContext) => Promise<any>;
+  callback: (args: unknown, ctx: ServerContext) => Promise<CallToolResult | InputRequiredResult>;
+}
+
+function callToolResult(result: CallToolResult | InputRequiredResult): CallToolResult {
+  expect(isInputRequiredResult(result)).toBe(false);
+  if (isInputRequiredResult(result)) throw new Error("Expected a completed tool result");
+  return result;
+}
+
+function inputRequiredResult(result: CallToolResult | InputRequiredResult): InputRequiredResult {
+  expect(isInputRequiredResult(result)).toBe(true);
+  if (!isInputRequiredResult(result)) throw new Error("Expected an input-required result");
+  return result;
 }
 
 function captureServer(): { server: McpServer; tools: CapturedTool[] } {
@@ -59,6 +74,105 @@ describe("KiCad MCP v2 tool registration adapter", () => {
     });
   });
 
+  it.each([
+    "check_clearance",
+    "check_placement_clearance",
+    "estimate_airwire_lengths",
+    "generate_netlist",
+    "get_board_origin",
+    "get_component_geometry",
+    "get_design_rules",
+    "get_net_pads",
+    "get_pads",
+    "get_ratsnest",
+    "get_schematic_view",
+    "get_sheet_properties",
+    "is_dirty",
+    "list_graphics",
+    "run_erc",
+  ])("marks the audited inspection tool %s as read-only", (name) => {
+    expect(toolAnnotationsFor(name)).toMatchObject({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    });
+  });
+
+  it.each(["get_registry_part", "search_parts_registry", "get_jlcpcb_part"])(
+    "marks the remote catalog lookup %s as read-only and open-world",
+    (name) => {
+      expect(toolAnnotationsFor(name)).toMatchObject({
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      });
+    },
+  );
+
+  it("does not claim optional writers or local URL construction are read-only/open-world", () => {
+    for (const name of ["suggest_placement", "suggest_schematic_declutter", "get_board_2d_view"]) {
+      expect(toolAnnotationsFor(name)).toMatchObject({
+        readOnlyHint: false,
+        destructiveHint: true,
+      });
+    }
+
+    expect(toolAnnotationsFor("get_datasheet_url").openWorldHint).toBe(false);
+    expect(toolAnnotationsFor("enrich_datasheets").openWorldHint).toBe(false);
+  });
+
+  it.each([
+    "clear_board_outline",
+    "delete_graphic",
+    "discard_or_reload",
+    "import_pcb",
+    "reload_board",
+    "remove_hierarchical_sheet",
+    "remove_schematic_component_property",
+    "replace_board_outline",
+    "set_layer_constraints",
+    "set_sheet_property",
+  ])("requires confirmation for the audited high-impact tool %s", (name) => {
+    expect(toolAnnotationsFor(name)).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    });
+    expect(toolRequiresConfirmation(name, {})).toBe(true);
+  });
+
+  it("requires confirmation only for the write/overwrite forms of dual-mode tools", () => {
+    expect(toolRequiresConfirmation("repair_flat_symbols", {})).toBe(false);
+    expect(toolRequiresConfirmation("repair_flat_symbols", { dryRun: true })).toBe(false);
+    expect(toolRequiresConfirmation("repair_flat_symbols", { dryRun: false })).toBe(true);
+    expect(toolAnnotationsFor("repair_flat_symbols").destructiveHint).toBe(true);
+
+    expect(toolRequiresConfirmation("suggest_placement", { apply: false })).toBe(false);
+    expect(toolRequiresConfirmation("suggest_placement", { apply: true })).toBe(true);
+    expect(toolRequiresConfirmation("suggest_schematic_declutter", { apply: false })).toBe(false);
+    expect(toolRequiresConfirmation("suggest_schematic_declutter", { apply: true })).toBe(true);
+
+    for (const name of ["save_as", "save_board", "save_project"]) {
+      expect(toolRequiresConfirmation(name, {})).toBe(false);
+      expect(toolRequiresConfirmation(name, { force: true })).toBe(true);
+      expect(toolRequiresConfirmation(name, { forceExternalChanges: true })).toBe(true);
+      expect(toolRequiresConfirmation(name, { overwrite: true })).toBe(true);
+    }
+
+    expect(toolRequiresConfirmation("create_symbol", { overwrite: true })).toBe(true);
+    expect(toolRequiresConfirmation("import_symbol", { overwrite: true })).toBe(true);
+  });
+
+  it.each(["add_schematic_component", "move_component", "set_schematic_component_property"])(
+    "does not add MRTR friction to the ordinary edit %s",
+    (name) => {
+      expect(toolRequiresConfirmation(name, {})).toBe(false);
+    },
+  );
+
   it("adds a default output schema and parses any JSON root without replacing content blocks", async () => {
     const { server, tools } = captureServer();
     const image = { type: "image" as const, data: "AA==", mimeType: "image/png" };
@@ -68,7 +182,9 @@ describe("KiCad MCP v2 tool registration adapter", () => {
     }));
 
     expect(tools[0].config.outputSchema).toBeDefined();
-    const result = await tools[0].callback({}, context(new AbortController().signal));
+    const result = callToolResult(
+      await tools[0].callback({}, context(new AbortController().signal)),
+    );
     expect(result.structuredContent).toEqual([1, 2, 3]);
     expect(result.content).toEqual([image, { type: "text", text: "[1,2,3]" }]);
   });
@@ -94,7 +210,7 @@ describe("KiCad MCP v2 tool registration adapter", () => {
     );
 
     const controller = new AbortController();
-    const result = await tools[0].callback({}, context(controller.signal));
+    const result = callToolResult(await tools[0].callback({}, context(controller.signal)));
     expect(tools[0].config.outputSchema).toBe(explicitSchema);
     expect(backend).toHaveBeenCalledWith("failing_command", {}, controller.signal);
     expect(result.structuredContent).toBe(false);
@@ -102,12 +218,15 @@ describe("KiCad MCP v2 tool registration adapter", () => {
     expect(result.isError).toBe(true);
   });
 
-  it("requires validated MRTR confirmation only for destructive tools", async () => {
+  it("requires validated MRTR confirmation only for policy-selected tools", async () => {
     const { server, tools } = captureServer();
     const destructiveHandler = vi.fn(async () => ({
       content: [{ type: "text" as const, text: '{"success":true}' }],
     }));
     const readHandler = vi.fn(async () => ({
+      content: [{ type: "text" as const, text: '{"success":true}' }],
+    }));
+    const safeEditHandler = vi.fn(async () => ({
       content: [{ type: "text" as const, text: '{"success":true}' }],
     }));
 
@@ -125,10 +244,18 @@ describe("KiCad MCP v2 tool registration adapter", () => {
       { inputSchema: z.object({}) },
       readHandler,
     );
+    registerKiCadTool(
+      server,
+      "component",
+      "move_component",
+      { inputSchema: z.object({ reference: z.string() }) },
+      safeEditHandler,
+    );
 
     const signal = new AbortController().signal;
-    const firstRound = await tools[0].callback({ reference: "R1" }, context(signal));
-    expect(isInputRequiredResult(firstRound)).toBe(true);
+    const firstRound = inputRequiredResult(
+      await tools[0].callback({ reference: "R1" }, context(signal)),
+    );
     expect(firstRound.inputRequests).toHaveProperty("confirmation");
     expect(firstRound.requestState).toEqual(expect.any(String));
     expect(destructiveHandler).not.toHaveBeenCalled();
@@ -161,17 +288,19 @@ describe("KiCad MCP v2 tool registration adapter", () => {
       ),
     ).rejects.toThrow("already been used");
 
-    const declineRound = await tools[0].callback({ reference: "R2" }, context(signal));
-    expect(isInputRequiredResult(declineRound)).toBe(true);
+    const declineRound = inputRequiredResult(
+      await tools[0].callback({ reference: "R2" }, context(signal)),
+    );
     const declineState = await toolConfirmationStateCodec.verify(
       declineRound.requestState!,
       context(signal),
     );
-    const declined = await tools[0].callback(
-      { reference: "R2" },
-      context(signal, { confirmation: { action: "decline" } }, declineState),
+    const declined = callToolResult(
+      await tools[0].callback(
+        { reference: "R2" },
+        context(signal, { confirmation: { action: "decline" } }, declineState),
+      ),
     );
-    expect(isInputRequiredResult(declined)).toBe(false);
     expect(declined.structuredContent).toMatchObject({
       success: false,
       cancelled: true,
@@ -179,13 +308,14 @@ describe("KiCad MCP v2 tool registration adapter", () => {
     });
     expect(destructiveHandler).toHaveBeenCalledTimes(1);
 
-    const spoofedFirstRound = await tools[0].callback(
-      { reference: "R3" },
-      context(signal, {
-        confirmation: { action: "accept", content: { confirmed: true } },
-      }),
+    const spoofedFirstRound = inputRequiredResult(
+      await tools[0].callback(
+        { reference: "R3" },
+        context(signal, {
+          confirmation: { action: "accept", content: { confirmed: true } },
+        }),
+      ),
     );
-    expect(isInputRequiredResult(spoofedFirstRound)).toBe(true);
     expect(destructiveHandler).toHaveBeenCalledTimes(1);
 
     const mismatchedState = await toolConfirmationStateCodec.verify(
@@ -205,5 +335,9 @@ describe("KiCad MCP v2 tool registration adapter", () => {
 
     await tools[1].callback({}, context(signal));
     expect(readHandler).toHaveBeenCalledTimes(1);
+
+    const safeEdit = await tools[2].callback({ reference: "R5" }, context(signal));
+    expect(isInputRequiredResult(safeEdit)).toBe(false);
+    expect(safeEditHandler).toHaveBeenCalledTimes(1);
   });
 });
