@@ -424,6 +424,35 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
     },
   );
 
+  // Set net color tool
+  server.tool(
+    "set_net_color",
+    "Set or clear a net's display color override (the PCB editor's 'Net colors' panel). " +
+      "Persisted to the project's net_settings.net_colors; does not affect routing or design rules.",
+    {
+      net: z.string().describe("Name of the net"),
+      color: z
+        .string()
+        .optional()
+        .describe("Hex color, e.g. '#FF7D00'. Required unless clear is true."),
+      clear: z
+        .boolean()
+        .optional()
+        .describe("If true, remove the color override and revert to the automatic/class color"),
+    },
+    async (args: any) => {
+      const result = await callKicadScript("set_net_color", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
   // Route differential pair tool
   server.tool(
     "route_differential_pair",

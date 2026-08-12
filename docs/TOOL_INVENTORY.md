@@ -76,7 +76,7 @@ _Source: `src/tools/component.ts`_
 
 ---
 
-## Routing (13 tools)
+## Routing (14 tools)
 
 _Source: `src/tools/routing.ts`_
 
@@ -86,6 +86,7 @@ _Source: `src/tools/routing.ts`_
 | `route_trace`             | Route trace segment between XY points (single layer) | Direct           |
 | `add_via`                 | Add via (through/blind/buried)                       | Routed (routing) |
 | `add_copper_pour`         | Add copper pour / ground plane                       | Routed (routing) |
+| `set_net_color`           | Set/clear a net's display color override             | Routed (routing) |
 | `delete_trace`            | Delete traces by UUID, position, or bulk by net      | Additional       |
 | `query_traces`            | Query/filter traces by net, layer, or bounding box   | Additional       |
 | `get_nets_list`           | List all nets with statistics                        | Additional       |

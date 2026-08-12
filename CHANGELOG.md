@@ -4,6 +4,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Features
+
+- **`set_net_color`** (#375): set or clear an individual net's display color
+  override — the PCB editor's "Net colors" panel, previously not reachable
+  by any tool. `net_settings.net_colors` has no SWIG counterpart
+  (`NETINFO_ITEM` has no color getter/setter), so this is pure `.kicad_pro`
+  JSON persistence, same read/modify/write-atomically shape already used by
+  `assign_net_to_class`. Accepts a `#RRGGBB` hex color, or `clear: true` to
+  remove the override and revert to the automatic/class color. Cosmetic
+  only — does not affect routing or design rules.
+
 ## [2.7.0] - 2026-08-20
 
 ### New Tools
