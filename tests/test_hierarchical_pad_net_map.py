@@ -50,6 +50,26 @@ _LIB_SYMBOLS_BLOCK = textwrap.dedent("""\
             )
           )
         )
+        (symbol "TestLib:PWR"
+          (symbol "TestLib:PWR_1_1"
+            (pin power_in line (at 0 0 90) (length 0)
+              (name "~" (effects (font (size 1.27 1.27))))
+              (number "1" (effects (font (size 1.27 1.27))))
+            )
+          )
+        )
+        (symbol "TestLib:D"
+          (symbol "TestLib:D_1_1"
+            (pin passive line (at -1.27 0 0) (length 0)
+              (name "K" (effects (font (size 1.27 1.27))))
+              (number "1" (effects (font (size 1.27 1.27))))
+            )
+            (pin passive line (at 1.27 0 180) (length 0)
+              (name "A" (effects (font (size 1.27 1.27))))
+              (number "2" (effects (font (size 1.27 1.27))))
+            )
+          )
+        )
       )
 """)
 
@@ -97,6 +117,19 @@ def _sym_mock(ref: str, lib_id: str, x: float, y: float, rotation: float = 0) ->
     m.property.Value.value = "~"
     m.lib_id.value = lib_id
     m.at.value = [x, y, rotation]
+    return m
+
+
+def _pwr_mock(ref: str, value: str, lib_id: str, x: float, y: float) -> MagicMock:
+    """Mock of a power-ish symbol (#PWR / #FLG) whose Value carries the net name.
+
+    Distinct from _sym_mock only in that Value is meaningful rather than "~".
+    """
+    m = MagicMock()
+    m.property.Reference.value = ref
+    m.property.Value.value = value
+    m.lib_id.value = lib_id
+    m.at.value = [x, y, 0]
     return m
 
 
@@ -442,3 +475,172 @@ class TestRotatedSymbol:
         pad_net_map, _ = _call(iface, sch, mock_sch)
         assert pad_net_map.get(("R1", "1")) == "UP_NET"
         assert pad_net_map.get(("R1", "2")) == "DN_NET"
+
+
+# ===========================================================================
+# TestPowerFlagIsNotANet
+# ===========================================================================
+
+
+@pytest.mark.unit
+class TestPowerFlagIsNotANet:
+    """A PWR_FLAG (#FLG) must never contribute a net name.
+
+    Its Value property is the literal string "PWR_FLAG" — an ERC marker, not a
+    net. Treating it as one invented a bogus "PWR_FLAG" net and could propagate
+    that name over the real net the flag is wired to.
+    """
+
+    def test_pwr_flag_value_does_not_become_a_net(self, iface, tmp_path):
+        sch = tmp_path / "top.kicad_sch"
+        sch.write_text(
+            _build_sch_with_instances(
+                [
+                    ("R1", "TestLib:R", 10.0, 10.0, 0),
+                    ("#PWR01", "TestLib:PWR", 8.73, 10.0, 0),
+                    ("#FLG01", "TestLib:PWR", 5.0, 10.0, 0),
+                ]
+            )
+        )
+        # #PWR01 pin sits exactly on R1 pin 1; the flag hangs off a wire to it.
+        mock_sch = _sch_mock(
+            symbols=[
+                _sym_mock("R1", "TestLib:R", 10.0, 10.0),
+                _pwr_mock("#PWR01", "VCC", "TestLib:PWR", 8.73, 10.0),
+                _pwr_mock("#FLG01", "PWR_FLAG", "TestLib:PWR", 5.0, 10.0),
+            ],
+            wires=[_wire_mock(5.0, 10.0, 8.73, 10.0)],
+        )
+        pad_net_map, net_names = _call(iface, sch, mock_sch)
+
+        assert "PWR_FLAG" not in net_names
+        # The real rail still resolves, and the flag did not overwrite it.
+        assert pad_net_map.get(("R1", "1")) == "VCC"
+
+    def test_pwr_flag_does_not_overwrite_net_across_wire(self, iface, tmp_path):
+        """The flag's name must not win the BFS over the rail it is attached to."""
+        sch = tmp_path / "top.kicad_sch"
+        sch.write_text(
+            _build_sch_with_instances(
+                [
+                    ("R1", "TestLib:R", 10.0, 10.0, 0),
+                    ("#FLG01", "TestLib:PWR", 5.0, 10.0, 0),
+                ]
+            )
+        )
+        mock_sch = _sch_mock(
+            symbols=[
+                _sym_mock("R1", "TestLib:R", 10.0, 10.0),
+                _pwr_mock("#FLG01", "PWR_FLAG", "TestLib:PWR", 5.0, 10.0),
+            ],
+            global_labels=[_lbl_mock("VBUS", 8.73, 10.0)],
+            wires=[_wire_mock(5.0, 10.0, 8.73, 10.0)],
+        )
+        pad_net_map, net_names = _call(iface, sch, mock_sch)
+
+        assert "PWR_FLAG" not in net_names
+        assert pad_net_map.get(("R1", "1")) == "VBUS"
+
+
+# ===========================================================================
+# TestUnlabelledNetGetsAutoName
+# ===========================================================================
+
+
+@pytest.mark.unit
+class TestUnlabelledNetGetsAutoName:
+    """A wire joining two component pins with no label is still a net.
+
+    KiCad synthesises a name for it during F8 ("Net-(D1-A)"). Without that these
+    pads reached the board with no net at all, so the connection was silently
+    dropped from the layout and the pads were left unroutable.
+    """
+
+    def test_bare_wire_between_two_pins_is_named_and_shared(self, iface, tmp_path):
+        sch = tmp_path / "top.kicad_sch"
+        sch.write_text(
+            _build_sch_with_instances(
+                [
+                    ("R1", "TestLib:R", 10.0, 10.0, 0),
+                    ("R2", "TestLib:R", 20.0, 10.0, 0),
+                ]
+            )
+        )
+        # R1 pin2 (11.27, 10) --- wire --- R2 pin1 (18.73, 10). No labels at all.
+        mock_sch = _sch_mock(
+            symbols=[
+                _sym_mock("R1", "TestLib:R", 10.0, 10.0),
+                _sym_mock("R2", "TestLib:R", 20.0, 10.0),
+            ],
+            wires=[_wire_mock(11.27, 10.0, 18.73, 10.0)],
+        )
+        pad_net_map, net_names = _call(iface, sch, mock_sch)
+
+        r1_2 = pad_net_map.get(("R1", "2"))
+        r2_1 = pad_net_map.get(("R2", "1"))
+        assert r1_2 is not None, "unlabelled net was dropped entirely"
+        assert r1_2 == r2_1, "the two pads must land on the SAME net"
+        assert r1_2.startswith("Net-("), f"expected a KiCad-style auto name, got {r1_2!r}"
+        assert r1_2 in net_names
+
+    def test_auto_name_uses_pin_name_when_the_symbol_has_one(self, iface, tmp_path):
+        """KiCad names these after a pin: Net-(D1-A), not Net-(D1-Pad2)."""
+        sch = tmp_path / "top.kicad_sch"
+        sch.write_text(
+            _build_sch_with_instances(
+                [
+                    ("D1", "TestLib:D", 10.0, 10.0, 0),
+                    ("R1", "TestLib:R", 20.0, 10.0, 0),
+                ]
+            )
+        )
+        mock_sch = _sch_mock(
+            symbols=[
+                _sym_mock("D1", "TestLib:D", 10.0, 10.0),
+                _sym_mock("R1", "TestLib:R", 20.0, 10.0),
+            ],
+            wires=[_wire_mock(11.27, 10.0, 18.73, 10.0)],
+        )
+        pad_net_map, _ = _call(iface, sch, mock_sch)
+
+        # D1 sorts before R1, and its pin 2 is named "A".
+        assert pad_net_map.get(("D1", "2")) == "Net-(D1-A)"
+        assert pad_net_map.get(("R1", "1")) == "Net-(D1-A)"
+
+    def test_explicit_label_still_wins_over_auto_name(self, iface, tmp_path):
+        """Auto-naming must only fill genuine gaps, never override a real label."""
+        sch = tmp_path / "top.kicad_sch"
+        sch.write_text(
+            _build_sch_with_instances(
+                [
+                    ("R1", "TestLib:R", 10.0, 10.0, 0),
+                    ("R2", "TestLib:R", 20.0, 10.0, 0),
+                ]
+            )
+        )
+        mock_sch = _sch_mock(
+            symbols=[
+                _sym_mock("R1", "TestLib:R", 10.0, 10.0),
+                _sym_mock("R2", "TestLib:R", 20.0, 10.0),
+            ],
+            global_labels=[_lbl_mock("SIGNAL", 11.27, 10.0)],
+            wires=[_wire_mock(11.27, 10.0, 18.73, 10.0)],
+        )
+        pad_net_map, net_names = _call(iface, sch, mock_sch)
+
+        assert pad_net_map.get(("R1", "2")) == "SIGNAL"
+        assert pad_net_map.get(("R2", "1")) == "SIGNAL"
+        assert not any(n.startswith("Net-(") for n in net_names)
+
+    def test_single_pin_stub_is_not_named(self, iface, tmp_path):
+        """A wire reaching only one pin is not a connection worth inventing a net for."""
+        sch = tmp_path / "top.kicad_sch"
+        sch.write_text(_build_sch_with_instances([("R1", "TestLib:R", 10.0, 10.0, 0)]))
+        mock_sch = _sch_mock(
+            symbols=[_sym_mock("R1", "TestLib:R", 10.0, 10.0)],
+            wires=[_wire_mock(11.27, 10.0, 15.0, 10.0)],
+        )
+        pad_net_map, net_names = _call(iface, sch, mock_sch)
+
+        assert pad_net_map == {}
+        assert net_names == set()

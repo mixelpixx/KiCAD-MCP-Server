@@ -40,6 +40,18 @@ def _unit_values_in_file(path: Path) -> list[int]:
     ]
 
 
+def _instance_angles_in_file(path: Path) -> list[float]:
+    """Return the rotation from each symbol instance's (at x y angle)."""
+    content = path.read_text(encoding="utf-8")
+    return [
+        float(a)
+        for a in re.findall(
+            r"\(symbol \(lib_id [^)]+\) \(at [\d.-]+ [\d.-]+ ([\d.-]+)\)",
+            content,
+        )
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Unit tests – create_component_instance
 # ---------------------------------------------------------------------------
@@ -194,6 +206,49 @@ class TestHandlerAddSchematicComponent:
         assert result["success"] is True
         units = _unit_values_in_file(sch)
         assert 2 in units
+
+    # -- angle / mirrorY plumbing ------------------------------------------
+    #
+    # create_component_instance has always accepted angle and mirror_y, and the
+    # TS tool layer has always sent them, but the handler in between read
+    # neither — so both documented arguments were silently discarded and every
+    # symbol landed unrotated.
+
+    def _place_with(self, sch: Path, **extra: Any) -> dict:
+        component = {
+            "library": "Device",
+            "type": "R",
+            "reference": "R1",
+            "value": "1k",
+            "x": 100,
+            "y": 100,
+        }
+        component.update(extra)
+        return self._call_handler({"schematicPath": str(sch), "component": component})
+
+    def test_angle_defaults_to_zero_in_handler(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+        assert self._place_with(sch)["success"] is True
+        assert _instance_angles_in_file(sch) == [0]
+
+    def test_angle_passed_through_handler(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+        assert self._place_with(sch, angle=90)["success"] is True
+        assert _instance_angles_in_file(sch) == [90]
+
+    def test_mirror_y_passed_through_handler(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+        assert self._place_with(sch, mirrorY=True)["success"] is True
+        assert "(mirror y)" in sch.read_text(encoding="utf-8")
+
+    def test_mirror_y_absent_by_default(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+        assert self._place_with(sch)["success"] is True
+        assert "(mirror y)" not in sch.read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------

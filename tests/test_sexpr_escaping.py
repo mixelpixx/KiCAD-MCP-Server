@@ -151,3 +151,83 @@ class TestCallSitesAreConverted:
         assert (
             """replace('"', '\\\\"')""" not in source
         ), f"{filename} escapes quotes without escaping backslashes first (#336)"
+
+
+# ---------------------------------------------------------------------------
+# The #336 sweep converted the READERS. create_component_instance is a WRITER
+# that was missed: it unescapes a library property value and then interpolates
+# it straight back into a quoted token. The stock power:VCC / power:GND
+# Description carries an escaped quote, so placing either of those symbols —
+# i.e. almost any real schematic — emitted a file KiCad could not load at all,
+# and ERC failed with "Failed to load schematic".
+# ---------------------------------------------------------------------------
+
+DESC_WITH_QUOTES = 'Power symbol creates a global label with name "VCC"'
+
+
+def _sch_with_lib_symbol(description: str) -> str:
+    """A minimal schematic whose lib_symbols entry carries `description`."""
+    return (
+        '(kicad_sch (version 20231120) (generator "eeschema")\n'
+        "  (uuid 11111111-2222-3333-4444-555555555555)\n"
+        "  (lib_symbols\n"
+        '    (symbol "power:VCC"\n'
+        '      (property "Reference" "#PWR" (at 0 -3.81 0) (effects (font (size 1.27 1.27))))\n'
+        '      (property "Value" "VCC" (at 0 3.556 0) (effects (font (size 1.27 1.27))))\n'
+        '      (property "Footprint" "" (at 0 0 0) (effects (font (size 1.27 1.27))))\n'
+        '      (property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27))))\n'
+        f'      (property "Description" "{escape_sexpr_string(description)}"'
+        " (at 0 0 0) (effects (font (size 1.27 1.27))))\n"
+        '      (symbol "VCC_1_1"\n'
+        "        (pin power_in line (at 0 0 90) (length 0)\n"
+        '          (name "" (effects (font (size 1.27 1.27))))\n'
+        '          (number "1" (effects (font (size 1.27 1.27))))\n'
+        "        )\n"
+        "      )\n"
+        "    )\n"
+        "  )\n"
+        '  (sheet_instances (path "/" (page "1")))\n'
+        ")\n"
+    )
+
+
+class TestPlacedInstanceEscapesCopiedValues:
+    def _place(self, tmp_path, description):
+        from commands.dynamic_symbol_loader import DynamicSymbolLoader
+
+        sch = tmp_path / "t.kicad_sch"
+        sch.write_text(_sch_with_lib_symbol(description), encoding="utf-8")
+        (tmp_path / "t.kicad_pro").write_text("{}", encoding="utf-8")
+
+        DynamicSymbolLoader(project_path=tmp_path).create_component_instance(
+            sch, "power", "VCC", reference="#PWR01", value="VCC", x=100, y=65
+        )
+        return sch.read_text(encoding="utf-8")
+
+    def test_output_is_still_parseable(self, tmp_path):
+        """The whole point: a quote in a copied value must not break the file."""
+        content = self._place(tmp_path, DESC_WITH_QUOTES)
+        sexpdata.loads(content)  # raises if the token ran on
+
+    def test_copied_description_round_trips(self, tmp_path):
+        content = self._place(tmp_path, DESC_WITH_QUOTES)
+        found = [
+            unescape_sexpr_string(m)
+            for m in re.findall(r'\(property\s+"Description"\s+' + QUOTED_VALUE, content)
+        ]
+        # One in lib_symbols, one on the placed instance; both must survive intact.
+        assert found == [DESC_WITH_QUOTES, DESC_WITH_QUOTES], found
+
+    def test_no_bare_quote_leaks_into_the_instance(self, tmp_path):
+        content = self._place(tmp_path, DESC_WITH_QUOTES)
+        assert 'name "VCC""' not in content, "unescaped quote written into the instance"
+
+    @pytest.mark.parametrize("value", NASTY_VALUES)
+    def test_any_nasty_description_survives(self, tmp_path, value):
+        content = self._place(tmp_path, value)
+        sexpdata.loads(content)
+        found = [
+            unescape_sexpr_string(m)
+            for m in re.findall(r'\(property\s+"Description"\s+' + QUOTED_VALUE, content)
+        ]
+        assert found == [value, value], found

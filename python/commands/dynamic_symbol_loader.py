@@ -14,7 +14,12 @@ import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from utils.sexpr_format import QUOTED_VALUE, QUOTED_VALUE_SKIP, unescape_sexpr_string
+from utils.sexpr_format import (
+    QUOTED_VALUE,
+    QUOTED_VALUE_SKIP,
+    escape_sexpr_string,
+    unescape_sexpr_string,
+)
 
 logger = logging.getLogger("kicad_interface")
 
@@ -1013,10 +1018,19 @@ class DynamicSymbolLoader:
             """Build a KiCad-10 (property ...) block.
 
             Field order: at, [hide yes], show_name no, do_not_autoplace no, effects.
+
+            ``value`` arrives unescaped -- _extract_lib_property_value() runs the
+            library text through unescape_sexpr_string(), and caller-supplied
+            values are plain Python strings. Re-escape it here, or a value
+            containing a quote terminates the token early and corrupts every
+            following s-expression in the file. The stock power:VCC / power:GND
+            Description fields ('...global label with name "VCC"') hit this, so
+            the damage lands on ordinary schematics, not just exotic input.
             """
             hide_line = "      (hide yes)\n" if hide else ""
+            safe_value = escape_sexpr_string("" if value is None else str(value))
             return (
-                f'    (property "{name}" "{value}"\n'
+                f'    (property "{name}" "{safe_value}"\n'
                 f"      (at {_fmt(px)} {_fmt(py)} {_fmt(pa)})\n"
                 f"{hide_line}"
                 f"      (show_name no)\n"
