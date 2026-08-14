@@ -34,6 +34,17 @@
 > individuals and open source; commercial licenses available for businesses).
 >
 > This Python/TypeScript server remains fully open (MIT) and maintained.
+>
+> ## KiCAD MCP and Konnect works well with Nimrod 
+
+> [**Nimrod**](https://nimrod.orchis.ai) is our web-research MCP server:
+> quality-scored Google search, clean webpage extraction, and deep multi-source
+> research. Run it beside this tool and your agent stops relying on a stale
+> training cutoff — current docs, live data, cited sources.
+
+> - Works with claude.ai, Claude Desktop, Claude Code, VS Code, and any MCP client
+> - 1 credit = 1 search · extraction always free · free 50-credit trial, no card
+> - Official MCP Registry: [`ai.orchis/nimrod`](https://registry.modelcontextprotocol.io)
 
 
 #
