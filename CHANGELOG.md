@@ -259,6 +259,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **The MCP transport connects before Python starts, not up to two minutes
+  after** (#377). Python + pcbnew/wxApp initialisation takes 55-125 s, and
+  the transport only connected afterwards -- so every request a client sent
+  in that window sat unread on the server's stdin. Clients stack one drain
+  listener per unresolved send, which is exactly the reported
+  `MaxListenersExceededWarning (count: 11)` crash in opencode, and is also
+  why clients could hit their connect timeout outright. Tools, resources and
+  prompts are registered in the constructor and need no Python, so
+  `initialize`/`tools/list`/`prompts/get` now answer immediately; tool
+  _calls_ queue behind a ready gate so their timeouts do not run against
+  Python's own startup, and the explicit warm-up skips itself when a queued
+  command is already exercising the backend.
 - **`sync_schematic_to_board` no longer duplicates footprints when reference
   designators diverge** (#250, reported by @Dewieinns). Sync matched purely on
   reference strings, so a schematic re-annotated after layout made every

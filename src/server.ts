@@ -510,6 +510,24 @@ export class KiCADMcpServer {
     try {
       logger.info("Starting KiCAD MCP server...");
 
+      // ——— Phase 0: connect MCP transport BEFORE anything else ———
+      // Python + pcbnew/wxApp initialisation can take 55-125 s. If the
+      // transport only connects afterwards, every request the client sends
+      // in that window sits unread on our stdin -- clients stack a drain
+      // listener per unresolved send, tripping MaxListenersExceededWarning
+      // (#377) and connect timeouts. Tools, resources and prompts are all
+      // registered in the constructor, so initialize/tools/list/prompts/get
+      // need no Python; tool CALLS queue until the backend is ready (see
+      // processNextRequest's ready gate).
+      logger.info("Connecting MCP server to STDIO transport...");
+      try {
+        await this.server.connect(this.stdioTransport);
+        logger.info("Successfully connected to STDIO transport");
+      } catch (error) {
+        logger.error(`Failed to connect to STDIO transport: ${error}`);
+        throw error;
+      }
+
       // Start the Python process for KiCAD scripting
       logger.info(`Starting Python process with script: ${this.kicadScriptPath}`);
       const pythonExe = findPythonExecutable(this.kicadScriptPath);
@@ -583,6 +601,9 @@ export class KiCADMcpServer {
                     this.handlePythonResponse(Buffer.from(remaining));
                   }
                   this.resolveReady();
+                  // Drain any tool calls that queued while Python was
+                  // initialising (the ready gate in processNextRequest).
+                  setTimeout(() => this.processNextRequest(), 0);
                   return;
                 }
               } catch {
@@ -597,18 +618,7 @@ export class KiCADMcpServer {
       logger.info("Waiting for Python process to be ready...");
       await this.waitForReady(120_000);
       logger.info("Python process is ready.");
-      // ——— Phase 3: connect MCP transport immediately ———
-      // The transport must be live before any client timeout fires,
-      // regardless of how long warm-up takes.
-      logger.info("Connecting MCP server to STDIO transport...");
-      try {
-        await this.server.connect(this.stdioTransport);
-        logger.info("Successfully connected to STDIO transport");
-      } catch (error) {
-        logger.error(`Failed to connect to STDIO transport: ${error}`);
-        throw error;
-      }
-      // ——— Phase 4: background warm-up (does not block MCP) ———
+      // ——— Phase 3: background warm-up (transport already live) ———
       // Warm-up can take 55-125 s (wxApp + symbol library parse), but
       // the MCP transport is already live so the client timeout does not
       // apply.  Tools invoked during warm-up will work; the first
@@ -674,6 +684,16 @@ export class KiCADMcpServer {
     return new Promise<void>((resolve) => {
       if (!this.pythonProcess || !this.pythonProcess.stdin) {
         logger.warn("Python process not running — skipping warm-up");
+        resolve();
+        return;
+      }
+
+      // With the transport connected before Python is up (#377), a tool call
+      // may already have queued and dispatched the moment READY fired. A real
+      // command exercises pcbnew exactly like _warmup would -- and writing
+      // into its handler slot would corrupt the in-flight request.
+      if (this.processingRequest || this.currentRequestHandler) {
+        logger.info("Skipping explicit warm-up — a queued command is already warming the backend");
         resolve();
         return;
       }
@@ -854,6 +874,14 @@ export class KiCADMcpServer {
   private processNextRequest(): void {
     // If no more requests or already processing, return
     if (this.requestQueue.length === 0 || this.processingRequest) {
+      return;
+    }
+
+    // Backend still initialising: hold the queue. Drained when the READY
+    // marker fires (see the startup stdout handler). Without this gate, a
+    // tool called during the 55-125 s init window would start its 30 s
+    // timeout against Python's own startup and always lose (#377).
+    if (!this.readyDetected) {
       return;
     }
 
