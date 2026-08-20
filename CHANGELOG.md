@@ -259,6 +259,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **An unwritable JLCPCB data directory no longer crashes the whole server**
+  (#264 by @fage2022). `JLCPCBPartsManager` raised `PermissionError` at
+  construction -- which happens at import time, so one broken directory took
+  down all tools with `ModuleNotFoundError`-adjacent startup failures. The
+  manager now disables itself with a logged warning and every operation
+  returns an empty result. Taken from PR #264 with credit; that PR's
+  unrelated `_fix_perms.py` helper and `sys.path` change are deliberately
+  not included.
 - **`get_schematic_view` renders always have a working SVG-to-PNG converter**
   (#274 by @stefangordon, adjusted per review). The converter chain had no
   declared dependency, so a stock install silently fell back to the raw
