@@ -55,6 +55,12 @@ export function registerFreeroutingTools(server: McpServer, callKicadScript: Fun
         .describe(
           "Per-attempt `--max-passes` values to cycle through (default: [50, 60, 65, 70, 75, 80, 85, 90, 55, 95]). The list wraps if `attempts` exceeds its length.",
         ),
+      keepArtifacts: z
+        .boolean()
+        .optional()
+        .describe(
+          "Keep the intermediate .dsn/.ses files next to the board after the run (default: false). Artifacts are staged in a temporary directory and removed on every exit — success, failure, or crash — unless this is set.",
+        ),
     },
     async (args: any) => {
       const result = await callKicadScript("autoroute", args);

@@ -62,6 +62,16 @@ def cmds_no_board() -> Any:
     return FreeroutingCommands(board=None)
 
 
+@pytest.fixture(autouse=True)
+def _java_on_path(monkeypatch) -> None:
+    """Tests mock subprocess.run, so building the command must not require a
+    real JRE on the host. Tests that exercise _find_java itself hold their own
+    reference to the original function and are unaffected."""
+    import commands.freerouting as _fr
+
+    monkeypatch.setattr(_fr, "_find_java", lambda: "java")
+
+
 def _patch_direct_java() -> Any:
     """Patch to simulate Java 21+ available locally."""
     return patch.object(
@@ -290,7 +300,7 @@ class TestAutoroute:
 
         cmds.board.GetFileName.return_value = str(board_file)
         pcbnew_mock.ExportSpecctraDSN.side_effect = lambda b, p: (
-            dsn_file.write_text("(pcb)"),
+            Path(p).write_text("(pcb)"),
             True,
         )[1]
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="", timeout=10)
@@ -314,11 +324,15 @@ class TestAutoroute:
         cmds.board.GetFileName.return_value = str(board_file)
 
         pcbnew_mock.ExportSpecctraDSN.side_effect = lambda b, p: (
-            dsn_file.write_text("(pcb)"),
+            Path(p).write_text("(pcb)"),
             True,
         )[1]
-        mock_run.return_value = MagicMock(returncode=0, stdout="Routing completed", stderr="")
-        ses_file.write_text("(session)")
+
+        def _run_writes_ses(cmd, **kw):
+            Path(cmd[cmd.index("-do") + 1]).write_text("(session)")
+            return MagicMock(returncode=0, stdout="Routing completed", stderr="")
+
+        mock_run.side_effect = _run_writes_ses
         pcbnew_mock.ImportSpecctraSES.return_value = True
 
         track = MagicMock()
@@ -349,12 +363,22 @@ class TestAutoroute:
 
         cmds.board.GetFileName.return_value = str(board_file)
 
-        pcbnew_mock.ExportSpecctraDSN.side_effect = lambda b, p: (
-            dsn_file.write_text("(pcb)"),
-            True,
-        )[1]
-        mock_run.return_value = MagicMock(returncode=0, stdout="Routing completed", stderr="")
-        ses_file.write_text("(session)")
+        staged = {}
+
+        def _export(b, p):
+            staged["dsn"] = Path(p)
+            Path(p).write_text("(pcb)")
+            return True
+
+        pcbnew_mock.ExportSpecctraDSN.side_effect = _export
+
+        def _run_writes_ses(cmd, **kw):
+            # Docker maps the staging dir to /work, so the '-do' argument is a
+            # container path; write the SES where the host will look for it.
+            staged["dsn"].with_name("test.ses").write_text("(session)")
+            return MagicMock(returncode=0, stdout="Routing completed", stderr="")
+
+        mock_run.side_effect = _run_writes_ses
         pcbnew_mock.ImportSpecctraSES.return_value = True
 
         cmds.board.GetTracks.return_value = [MagicMock()]
@@ -387,7 +411,7 @@ class TestAutoroute:
 
         cmds.board.GetFileName.return_value = str(board_file)
         pcbnew_mock.ExportSpecctraDSN.side_effect = lambda b, p: (
-            dsn_file.write_text("(pcb)"),
+            Path(p).write_text("(pcb)"),
             True,
         )[1]
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="OutOfMemoryError")
