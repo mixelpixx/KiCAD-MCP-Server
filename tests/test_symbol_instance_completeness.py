@@ -40,6 +40,23 @@ EMPTY_SCH = TEMPLATES_DIR / "empty.kicad_sch"
 # --------------------------------------------------------------------------- #
 
 
+def _project_v10(tmp_path: Path, project_stem: str = "myproj") -> Path:
+    """Like :func:`_project`, but the schematic declares the KiCad 10 format.
+
+    ``empty.kicad_sch`` declares 20250114 (KiCad 9), and the writer now only emits
+    the v10-only ``(body_style ...)``/``(in_pos_files ...)`` attributes into files
+    whose version accepts them -- writing them into a v9 file makes KiCad reject
+    the schematic outright. Tests that assert on those two tokens therefore have to
+    say so by using a v10 file.
+    """
+    sch = _project(tmp_path, project_stem)
+    sch.write_text(
+        re.sub(r"\(version\s+\d+\)", "(version 20260101)", sch.read_text(encoding="utf-8")),
+        encoding="utf-8",
+    )
+    return sch
+
+
 def _project(tmp_path: Path, project_stem: str = "myproj") -> Path:
     """Create a flat project (one .kicad_sch + matching .kicad_pro) and return the sch."""
     sch = tmp_path / f"{project_stem}.kicad_sch"
@@ -117,7 +134,7 @@ _DUAL_SCH = """(kicad_sch (version 20250114) (generator "x")
 @pytest.mark.unit
 class TestHeaderFieldSet:
     def test_header_has_v10_fields_in_order(self, tmp_path: Any) -> None:
-        sch = _project(tmp_path)
+        sch = _project_v10(tmp_path)
         DynamicSymbolLoader().create_component_instance(
             sch, "Device", "R", reference="R1", value="10k", x=100, y=100
         )

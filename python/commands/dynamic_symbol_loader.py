@@ -14,9 +14,21 @@ import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from utils.sexpr_format import QUOTED_VALUE, QUOTED_VALUE_SKIP, unescape_sexpr_string
+from utils.sexpr_format import (
+    QUOTED_VALUE,
+    QUOTED_VALUE_SKIP,
+    escape_sexpr_string,
+    unescape_sexpr_string,
+)
 
 logger = logging.getLogger("kicad_interface")
+
+#: First schematic file-format version that accepts ``(body_style ...)`` and
+#: ``(in_pos_files ...)`` inside a placed ``(symbol ...)``. Both tokens are
+#: KiCad 10 additions: writing them into a KiCad 8 (20231120) or KiCad 9
+#: (20250114) file makes eeschema and kicad-cli reject the whole schematic with
+#: a bare "Failed to load schematic", naming neither the token nor the line.
+_KICAD10_SCH_VERSION = 20260101
 
 # Module-level caches shared across DynamicSymbolLoader instances.
 # A fresh loader is created for every add_component call (see
@@ -823,6 +835,29 @@ class DynamicSymbolLoader:
         except Exception:
             return []
 
+    @staticmethod
+    def _read_sch_version(content: str) -> Optional[int]:
+        """Return the ``(version NNNNNNNN)`` token of a schematic, or None.
+
+        The file's own declared version — not the installed KiCad version —
+        decides which tokens are legal, because KiCad dispatches to a parser per
+        format version. A KiCad 10 binary still refuses a v10-only token inside a
+        file that declares 20231120.
+        """
+        m = re.search(r"\(version\s+(\d+)\)", content)
+        return int(m.group(1)) if m else None
+
+    @classmethod
+    def _supports_kicad10_symbol_tokens(cls, content: str) -> bool:
+        """Whether this schematic accepts ``body_style`` / ``in_pos_files``.
+
+        Unknown/absent version is treated as KiCad 10 to preserve the previous
+        behaviour for freshly generated files, which is what the templates and
+        the create_schematic fallback emit.
+        """
+        version = cls._read_sch_version(content)
+        return version is None or version >= _KICAD10_SCH_VERSION
+
     def _build_instance_path(self, schematic_path: Path) -> str:
         """Return the symbol instance path for symbols placed in ``schematic_path``.
 
@@ -1013,10 +1048,18 @@ class DynamicSymbolLoader:
             """Build a KiCad-10 (property ...) block.
 
             Field order: at, [hide yes], show_name no, do_not_autoplace no, effects.
+
+            ``value`` is escaped: it comes from the library symbol, and several
+            stock descriptions embed double quotes (power:GND is
+            ``Power symbol creates a global label with name "GND" , ground``).
+            Interpolated raw, the first inner quote closes the token and the
+            remainder of the block becomes garbage — while the file's parentheses
+            still balance, so paren-counting sanity checks pass and sexpdata
+            parses it happily. Only KiCad notices, and only as "Failed to load".
             """
             hide_line = "      (hide yes)\n" if hide else ""
             return (
-                f'    (property "{name}" "{value}"\n'
+                f'    (property "{escape_sexpr_string(name)}" "{escape_sexpr_string(value)}"\n'
                 f"      (at {_fmt(px)} {_fmt(py)} {_fmt(pa)})\n"
                 f"{hide_line}"
                 f"      (show_name no)\n"
@@ -1070,19 +1113,28 @@ class DynamicSymbolLoader:
 
         body = "\n".join(part for part in [properties_str, pins_str, instances_str] if part)
 
+        with open(schematic_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Emit the KiCad 10-only symbol attributes only into files that declare a
+        # format version accepting them. Everything else here is common to v8/v9/v10.
+        if self._supports_kicad10_symbol_tokens(content):
+            attrs_line = (
+                "    (body_style 1) (exclude_from_sim no) (in_bom yes) (on_board yes)"
+                " (in_pos_files yes) (dnp no)\n"
+            )
+        else:
+            attrs_line = "    (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no)\n"
+
         mirror_str = " (mirror y)" if mirror_y else ""
         instance_block = (
             f'  (symbol (lib_id "{full_lib_id}") (at {_fmt(x)} {_fmt(y)} {_fmt(angle)})'
             f"{mirror_str} (unit {unit})\n"
-            "    (body_style 1) (exclude_from_sim no) (in_bom yes) (on_board yes)"
-            " (in_pos_files yes) (dnp no)\n"
+            f"{attrs_line}"
             f'    (uuid "{new_uuid}")\n'
             f"{body}\n"
             "  )"
         )
-
-        with open(schematic_path, "r", encoding="utf-8") as f:
-            content = f.read()
 
         # Insert before (sheet_instances using direct string search.
         # This works for both pretty-printed and sexpdata-compacted single-line files.

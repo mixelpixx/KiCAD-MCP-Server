@@ -6,6 +6,37 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Placing a symbol corrupted any KiCad 8 or KiCad 9 schematic, including the
+  server's own templates.** Three defects in the shared schematic writer, all of
+  which surfaced only as `Failed to load schematic` from eeschema and
+  `kicad-cli` — no token, no line number, and long after the offending call:
+  - `create_component_instance` wrote the KiCad 10-only `(body_style 1)` and
+    `(in_pos_files yes)` attributes into every placed symbol. KiCad dispatches to
+    a parser per declared format version, so a v10 token inside a file declaring
+    20231120 (KiCad 8) or 20250114 (KiCad 9) is rejected outright — by KiCad 10
+    too. This hit `minimal.kicad_sch`, `empty.kicad_sch` and
+    `template_with_symbols*.kicad_sch`, which all declare 20250114. Both tokens
+    are now gated on the target file's own `(version ...)`; a file with no
+    version token keeps the previous KiCad 10 output.
+  - Property values were interpolated into the s-expression **unescaped**. Stock
+    library descriptions embed double quotes — `power:GND` is
+    `Power symbol creates a global label with name "GND" , ground` — so the first
+    inner quote closed the token early and the rest of the block became garbage.
+    Parentheses still balanced afterwards and `sexpdata` still parsed the result,
+    which is why this went unnoticed; only KiCad objected. Values now go through
+    `escape_sexpr_string`.
+  - `add_schematic_component` silently dropped its documented `angle` and
+    `mirrorY` arguments: the TypeScript layer nests them inside `component`
+    (`src/tools/schematic.ts`) and the Python handler never read them back out.
+    Every symbol landed at 0° unrotated, so callers had to follow up with
+    `rotate_schematic_component`.
+
+  Covered by `tests/test_schematic_writer_format_compat.py`, including an
+  integration test that asserts real `kicad-cli` accepts the generated v8 and v9
+  files. `test_symbol_instance_completeness.py` asserted the v10 attributes while
+  placing into the v9 `empty.kicad_sch`; it now uses a v10 fixture for those two
+  tokens.
+
 - **`add_layer` could not add inner copper layers, and corrupted an unrelated
   layer trying** (#222). Four defects, of which the reported one — changes
   never reaching disk — was the least damaging:
