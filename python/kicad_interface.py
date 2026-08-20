@@ -5241,7 +5241,7 @@ print("ok")
         """IPC handler for place_component - places component with real-time UI update"""
         try:
             reference = params.get("reference", params.get("componentId", ""))
-            footprint = params.get("footprint", "")
+            footprint = params.get("footprint") or params.get("componentId", "")
             position = params.get("position", {})
             x = position.get("x", 0) if isinstance(position, dict) else params.get("x", 0)
             y = position.get("y", 0) if isinstance(position, dict) else params.get("y", 0)
