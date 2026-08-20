@@ -181,6 +181,7 @@ export const toolCategories: ToolCategory[] = [
       "update_symbol_from_library",
       "add_library_symbol_property",
       "replace_instance_lib_ids",
+      "find_duplicate_symbols",
     ],
   },
   {

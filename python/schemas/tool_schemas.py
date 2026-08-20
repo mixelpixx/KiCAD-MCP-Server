@@ -13,6 +13,7 @@ Each tool includes:
 from typing import Any, Dict
 
 from utils.pin_types import PIN_STYLES, PIN_TYPES
+from utils.duplicate_strategies import DEFAULT_DUPLICATE_STRATEGIES, DUPLICATE_STRATEGIES
 
 # =============================================================================
 # PROJECT TOOLS
@@ -3204,6 +3205,19 @@ SCHEMATIC_TOOLS = [
             "(path returned in 'backupPath'). 'changes' lists at most 200 per-pin records "
             "with 'changesTruncated' saying when it was cut; 'changeCount' always carries "
             "the true total."
+        "name": "find_duplicate_symbols",
+        "title": "Find Duplicate Symbols in a Library",
+        "description": (
+            "Group symbols in a .kicad_sym that are the same part stored twice under "
+            "different names -- the residue of Eagle imports, SnapEDA downloads and parts "
+            "re-added because search did not find the existing name. KiCad reports nothing "
+            "here, because the names differ, which is also why grepping does not find it. "
+            "Matches on manufacturer part number (tolerating the inconsistent property "
+            "naming real libraries have: MPN, MP, 'MANUFACTURER PART NUMBER', 'PART "
+            "NUMBER'), on distributor part number, on Value+Footprint, on an identical "
+            "drawn body, or on near-identical names. Pass schematicPaths to count how many "
+            "instances each duplicate actually has, which turns the report into a decision: "
+            "the one nothing places is the one to retire."
         ),
         "inputSchema": {
             "type": "object",
@@ -3248,6 +3262,53 @@ SCHEMATIC_TOOLS = [
                     "type": "boolean",
                     "default": False,
                     "description": "Report what would change without writing",
+                "matchBy": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": list(DUPLICATE_STRATEGIES)},
+                    "default": list(DEFAULT_DUPLICATE_STRATEGIES),
+                    "description": (
+                        "How to decide two symbols are the same part. 'graphics' is off by "
+                        "default: every resistor in a library shares one body, so on "
+                        "passives it groups the whole family. 'name' is off by default "
+                        "because matching names that differ only in separators is the "
+                        "weakest signal here. Values that only mark a field as unfilled "
+                        "(N/A, TBD, -, ~) are never used as a key."
+                    ),
+                },
+                "schematicPaths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        ".kicad_sch files or directories to scan for usage counts. "
+                        "Directories are searched recursively, skipping autosave sheets "
+                        "and backup/history folders, which are copies of sheets already "
+                        "being counted. Only placements of THIS library are counted (see "
+                        "libraryNicknames), and a sub-sheet instantiated more than once "
+                        "counts once per instantiation. Paths that do not exist come back "
+                        "in missingPaths rather than being silently ignored."
+                    ),
+                },
+                "libraryNicknames": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "The nickname(s) this library is registered under in a lib_id, if "
+                        "the file stem and the sym-lib-table entries beside the scanned "
+                        "sheets do not cover it. Placements naming another library are not "
+                        "counted: a bare 'R' here is not Device:R. The result reports the "
+                        "nicknames used (libraryNicknames) and the ones actually found in "
+                        "the sheets (nicknamesSeen)."
+                    ),
+                },
+                "minGroupSize": {
+                    "type": "integer",
+                    "default": 2,
+                    "description": "Only report groups with at least this many symbols",
+                },
+                "ignoreCase": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Compare part numbers and values case-insensitively",
                 },
             },
             "required": ["libraryPath"],
