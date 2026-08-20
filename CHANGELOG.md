@@ -259,6 +259,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **An unwritable JLCPCB data directory no longer crashes the whole server**
+  (#264 by @fage2022). `JLCPCBPartsManager` raised `PermissionError` at
+  construction -- which happens at import time, so one broken directory took
+  down all tools with `ModuleNotFoundError`-adjacent startup failures. The
+  manager now disables itself with a logged warning and every operation
+  returns an empty result. Taken from PR #264 with credit; that PR's
+  unrelated `_fix_perms.py` helper and `sys.path` change are deliberately
+  not included.
+
 - **`add_symbol_property` corrupted `.kicad_sym` libraries**. Every call dropped
   one closing paren, so the library stopped loading in eeschema. Eight defects,
   all in the same write path:
