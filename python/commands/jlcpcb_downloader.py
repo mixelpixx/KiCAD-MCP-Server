@@ -62,16 +62,41 @@ def _progress(progress: ProgressFn, message: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _parse_price_csv(raw: str) -> List[Dict[str, Any]]:
+    """Decode yaqwsx ``source-db-v2`` price CSV into ``[{"qty","price"}]``.
+
+    Format is ``qFrom-qTo:unitPrice`` segments joined by commas, where an empty
+    ``qTo`` means the break is open-ended, e.g.::
+
+        1-199:0.0189,200-599:0.0163,20000-:0.0138
+
+    Malformed segments are skipped rather than discarding the whole row.
+    """
+    out: List[Dict[str, Any]] = []
+    for segment in raw.split(","):
+        range_text, sep, price_text = segment.strip().partition(":")
+        if not sep:
+            continue
+        q_from = range_text.partition("-")[0]
+        try:
+            out.append({"qty": int(q_from), "price": float(price_text)})
+        except ValueError:
+            continue
+    out.sort(key=lambda brk: brk["qty"])
+    return out
+
+
 def normalize_price_json(raw: Any) -> str:
     """Normalize a source price value into the manager's ``[{"qty","price"}]`` shape.
 
-    Handles both CDFER/jlcparts JSON arrays (``[{"qFrom","qTo","price"}, ...]``)
-    and a bare scalar price. Returns a JSON string (``"[]"`` when no price).
+    Handles CDFER/legacy-jlcparts JSON arrays (``[{"qFrom","qTo","price"}, ...]``),
+    the yaqwsx ``source-db-v2`` price CSV (``qFrom-qTo:unitPrice,...``), and a bare
+    scalar price. Returns a JSON string (``"[]"`` when no price).
     """
     if raw is None or raw == "":
         return json.dumps([])
 
-    # JSON array string (CDFER / jlcparts store price as TEXT JSON)
+    # JSON array string (CDFER / legacy jlcparts store price as TEXT JSON)
     if isinstance(raw, str) and raw.strip().startswith("["):
         try:
             arr = json.loads(raw)
@@ -87,6 +112,10 @@ def normalize_price_json(raw: Any) -> str:
             qty = item.get("qFrom", item.get("qty", 1)) or 1
             out.append({"qty": qty, "price": price})
         return json.dumps(out)
+
+    # yaqwsx source-db-v2 CSV ("1-199:0.0189,200-:0.0138")
+    if isinstance(raw, str) and ":" in raw:
+        return json.dumps(_parse_price_csv(raw))
 
     # Scalar numeric price
     try:
@@ -117,32 +146,36 @@ def _relation_names(src: sqlite3.Connection) -> List[str]:
 
 
 def _ensure_components_view(src: sqlite3.Connection) -> None:
-    """Create a denormalized ``v_components`` view for yaqwsx-style sources.
+    """Create a denormalized ``v_components`` view for the yaqwsx full catalog.
 
-    CDFER ships a ``v_components`` view, but yaqwsx's raw ``cache.sqlite3`` (the
-    FULL catalog) stores category/manufacturer as IDs in sibling ``categories``
-    and ``manufacturers`` tables. Without this join the full-catalog convert
-    would leave category/subcategory/manufacturer blank. We build the same view
-    shape CDFER exposes so the rest of the converter is source-agnostic.
+    CDFER ships a ``v_components`` view, but yaqwsx's ``cache.sqlite3`` (the FULL
+    catalog, ``meta.format = 'source-db-v2'``) keeps components in
+    ``jlc_components`` with a ``lcsc_components`` side table. We build the same
+    view shape CDFER exposes so the rest of the converter is source-agnostic.
+
+    That layout arrived in upstream commit "Introduce compact source cache"
+    (2026-05-31), which also renamed the flags this converter relies on: the
+    ``basic`` column became ``library_type`` (``'base'``/``'expand'``), and a
+    blank ``manufacturer`` falls back to ``lcsc_components``. The join mirrors
+    upstream's own read query (``iterCategoryComponents``), incl. the
+    ``present = 1`` filter that hides delisted parts.
     """
     names = _relation_names(src)
-    if "v_components" in names:
-        return
-    if not ({"components", "categories", "manufacturers"} <= set(names)):
-        return
-    comp_cols = {r[1] for r in src.execute("PRAGMA table_info([components])").fetchall()}
-    if not ({"category_id", "manufacturer_id"} <= comp_cols):
+    if "v_components" in names or "jlc_components" not in names:
         return
     try:
         src.execute("""
             CREATE TEMP VIEW v_components AS
-            SELECT c.*, cat.category AS category, cat.subcategory AS subcategory,
-                   m.name AS manufacturer
-            FROM components c
-            LEFT JOIN categories cat ON cat.id = c.category_id
-            LEFT JOIN manufacturers m ON m.id = c.manufacturer_id
+            SELECT j.lcsc, j.category, j.subcategory, j.mfr, j.package, j.joints,
+                   COALESCE(NULLIF(j.manufacturer, ''), NULLIF(l.manufacturer, ''), '')
+                       AS manufacturer,
+                   CASE WHEN j.library_type = 'base' THEN 1 ELSE 0 END AS basic,
+                   j.preferred, j.description, j.datasheet, j.stock, j.price
+            FROM jlc_components j
+            LEFT JOIN lcsc_components l ON l.lcsc = j.lcsc
+            WHERE j.present = 1
             """)
-        logger.info("Built v_components join view for yaqwsx-style source")
+        logger.info("Built v_components join view for yaqwsx source-db-v2")
     except sqlite3.Error as exc:  # pragma: no cover - defensive
         logger.debug(f"could not build v_components view: {exc}")
 

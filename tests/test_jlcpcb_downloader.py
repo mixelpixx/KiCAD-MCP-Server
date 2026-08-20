@@ -118,63 +118,139 @@ def test_convert_source_sqlite_produces_manager_schema(tmp_path):
     con.close()
 
 
-def _make_yaqwsx_like_source(path: Path) -> None:
-    """Create a SQLite mirroring yaqwsx's FULL-catalog schema: normalized, NO view.
+def _make_yaqwsx_source(path: Path) -> None:
+    """Create a SQLite mirroring yaqwsx's ``source-db-v2`` cache.sqlite3.
 
-    category/manufacturer are IDs in sibling tables (no v_components view), which
-    is what the real ~10GB cache.sqlite3 looks like.
+    Upstream commit "Introduce compact source cache" (2026-05-31) replaced the
+    ``components``/``categories``/``manufacturers`` layout with a denormalized
+    ``jlc_components`` plus a ``lcsc_components`` side table, and re-encoded
+    ``price`` from a JSON array into a compact CSV (``qFrom-qTo:unitPrice``).
     """
     con = sqlite3.connect(str(path))
     con.executescript("""
-        CREATE TABLE manufacturers (id INTEGER PRIMARY KEY, name TEXT);
-        CREATE TABLE categories (id INTEGER PRIMARY KEY, category TEXT, subcategory TEXT);
-        CREATE TABLE components (
-            lcsc INTEGER PRIMARY KEY,
-            category_id INTEGER,
-            mfr TEXT,
-            package TEXT,
-            joints INTEGER,
-            manufacturer_id INTEGER,
-            basic INTEGER,
-            preferred INTEGER,
-            description TEXT,
-            datasheet TEXT,
-            stock INTEGER,
-            price TEXT
+        CREATE TABLE meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
+        CREATE TABLE jlc_components (
+            lcsc INTEGER PRIMARY KEY NOT NULL,
+            fetched_at INTEGER NOT NULL,
+            present INTEGER NOT NULL,
+            sync_seen INTEGER NOT NULL DEFAULT 0,
+            category TEXT NOT NULL,
+            subcategory TEXT NOT NULL,
+            mfr TEXT NOT NULL,
+            package TEXT NOT NULL,
+            joints INTEGER NOT NULL,
+            manufacturer TEXT NOT NULL,
+            library_type TEXT NOT NULL,
+            preferred INTEGER NOT NULL,
+            last_on_stock INTEGER NOT NULL,
+            description TEXT NOT NULL,
+            datasheet TEXT NOT NULL,
+            stock INTEGER NOT NULL,
+            price TEXT NOT NULL,
+            attributes TEXT NOT NULL,
+            rohs INTEGER,
+            eccn TEXT NOT NULL,
+            assembly INTEGER,
+            assembly_process TEXT,
+            assembly_mode TEXT,
+            website_component_id TEXT,
+            attrition TEXT NOT NULL
+        );
+        CREATE TABLE lcsc_components (
+            lcsc INTEGER PRIMARY KEY NOT NULL,
+            fetched_at INTEGER NOT NULL,
+            manufacturer TEXT NOT NULL,
+            attributes TEXT NOT NULL,
+            image TEXT,
+            url_slug TEXT
         );
         """)
-    con.execute("INSERT INTO manufacturers VALUES (7, 'Texas Instruments')")
-    con.execute("INSERT INTO categories VALUES (3, 'ICs', 'LDO Regulators')")
+    con.execute("INSERT INTO meta VALUES ('format', 'source-db-v2')")
+
+    def _jlc(lcsc, mfr, manufacturer, lib_type, preferred, desc, stock, price):
+        """Insert a 0603 Ferrite Bead; only the fields under test vary per row."""
+        con.execute(
+            "INSERT INTO jlc_components VALUES "
+            "(?,0,1,0,'Filters','Ferrite Beads',?,'0603',2,?,?,?,0,?,'http://ds',?,?,"
+            "'{}',NULL,'',NULL,NULL,NULL,NULL,'{}')",
+            (lcsc, mfr, manufacturer, lib_type, preferred, desc, stock, price),
+        )
+
+    prices = "1-199:0.0189,200-599:0.0163,20000-:0.0138"
+    # Basic ("base") part with the v2 CSV price, incl. an open-ended last break.
+    _jlc(1002, "GZ1608D601TF", "Sunlord", "base", 0, "ferrite bead 600R", 892564, prices)
+    # Extended part whose jlc manufacturer is blank -> must fall back to lcsc_components.
+    _jlc(1005, "CBG160808U820T", "", "expand", 0, "ferrite bead 82R", 0, "1-999:0.0039")
     con.execute(
-        "INSERT INTO components VALUES (12345, 3, 'TLV70033', 'SOT-23-5', 5, 7, 0, 0, "
-        "'3.3V LDO', 'http://ds/12345', 0, ?)",
-        (json.dumps([{"qFrom": 1, "qTo": None, "price": 0.12}]),),
+        "INSERT INTO lcsc_components VALUES (1005, 0, 'Fenghua Advanced', '{}', NULL, NULL)"
     )
+    # Preferred part with no price at all.
+    _jlc(1006, "CBG160808U600T", "FH", "expand", 1, "ferrite bead 60R", 33781, "")
     con.commit()
     con.close()
 
 
-def test_convert_yaqwsx_schema_populates_category_and_manufacturer(tmp_path):
-    """Full-catalog (yaqwsx) source has no v_components view; the join must be built."""
+def test_convert_yaqwsx_schema_populates_prices_and_library_type(tmp_path):
+    """Regression: the source-db-v2 catalog must not convert to empty price_json.
+
+    Before the fix, ``_pick_source_relation`` fell back to the largest table
+    (``jlc_components``) but the converter still looked for a JSON ``price`` and a
+    ``basic`` column, so EVERY row landed with ``price_json == '[]'`` and no part
+    was ever classified Basic.
+    """
     source = tmp_path / "cache.sqlite3"
     target = tmp_path / "jlcpcb_parts.db"
-    _make_yaqwsx_like_source(source)
+    _make_yaqwsx_source(source)
 
     stats = jlcpcb_downloader.convert_source_sqlite(source, target)
-    assert stats["total"] == 1
+    assert stats["total"] == 3
+    assert stats["basic"] == 1  # library_type == 'base'
 
     con = sqlite3.connect(str(target))
     con.row_factory = sqlite3.Row
-    row = dict(con.execute("SELECT * FROM components WHERE lcsc='C12345'").fetchone())
+    rows = {r["lcsc"]: dict(r) for r in con.execute("SELECT * FROM components")}
     con.close()
 
-    # These would be blank without the built v_components join:
-    assert row["category"] == "ICs"
-    assert row["subcategory"] == "LDO Regulators"
-    assert row["manufacturer"] == "Texas Instruments"
-    assert row["mfr_part"] == "TLV70033"
-    assert row["library_type"] == "Extended"
-    assert json.loads(row["price_json"]) == [{"qty": 1, "price": 0.12}]
+    basic = rows["C1002"]
+    assert basic["library_type"] == "Basic"
+    assert basic["category"] == "Filters"
+    assert basic["subcategory"] == "Ferrite Beads"
+    assert basic["manufacturer"] == "Sunlord"
+    assert basic["mfr_part"] == "GZ1608D601TF"
+    assert basic["stock"] == 892564
+    # The v2 CSV price must be decoded into the manager's [{"qty","price"}] shape.
+    assert json.loads(basic["price_json"]) == [
+        {"qty": 1, "price": 0.0189},
+        {"qty": 200, "price": 0.0163},
+        {"qty": 20000, "price": 0.0138},
+    ]
+
+    # Blank jlc manufacturer falls back to the lcsc_components side table.
+    assert rows["C1005"]["manufacturer"] == "Fenghua Advanced"
+    assert json.loads(rows["C1005"]["price_json"]) == [{"qty": 1, "price": 0.0039}]
+
+    assert rows["C1006"]["library_type"] == "Preferred"
+    assert json.loads(rows["C1006"]["price_json"]) == []
+
+
+def test_normalize_price_json_handles_yaqwsx_csv():
+    """source-db-v2 encodes price as ``qFrom-qTo:unitPrice`` pairs joined by commas."""
+    norm = jlcpcb_downloader.normalize_price_json
+    assert json.loads(norm("1-199:0.0189,200-599:0.0163,20000-:0.0138")) == [
+        {"qty": 1, "price": 0.0189},
+        {"qty": 200, "price": 0.0163},
+        {"qty": 20000, "price": 0.0138},
+    ]
+    # Single open-ended break.
+    assert json.loads(norm("1-:0.5")) == [{"qty": 1, "price": 0.5}]
+    # Breaks are sorted by quantity even if the source is out of order.
+    assert json.loads(norm("100-:0.2,1-99:0.4")) == [
+        {"qty": 1, "price": 0.4},
+        {"qty": 100, "price": 0.2},
+    ]
+    # Malformed segments are skipped, not fatal.
+    assert json.loads(norm("garbage,1-9:0.1")) == [{"qty": 1, "price": 0.1}]
+    assert json.loads(norm("totally bogus")) == []
 
 
 def test_normalize_price_json_handles_scalar_and_array_and_empty():
