@@ -12,8 +12,8 @@ Each tool includes:
 
 from typing import Any, Dict
 
-from utils.pin_types import PIN_STYLES, PIN_TYPES
 from utils.duplicate_strategies import DEFAULT_DUPLICATE_STRATEGIES, DUPLICATE_STRATEGIES
+from utils.pin_types import PIN_STYLES, PIN_TYPES
 
 # =============================================================================
 # PROJECT TOOLS
@@ -3205,19 +3205,6 @@ SCHEMATIC_TOOLS = [
             "(path returned in 'backupPath'). 'changes' lists at most 200 per-pin records "
             "with 'changesTruncated' saying when it was cut; 'changeCount' always carries "
             "the true total."
-        "name": "find_duplicate_symbols",
-        "title": "Find Duplicate Symbols in a Library",
-        "description": (
-            "Group symbols in a .kicad_sym that are the same part stored twice under "
-            "different names -- the residue of Eagle imports, SnapEDA downloads and parts "
-            "re-added because search did not find the existing name. KiCad reports nothing "
-            "here, because the names differ, which is also why grepping does not find it. "
-            "Matches on manufacturer part number (tolerating the inconsistent property "
-            "naming real libraries have: MPN, MP, 'MANUFACTURER PART NUMBER', 'PART "
-            "NUMBER'), on distributor part number, on Value+Footprint, on an identical "
-            "drawn body, or on near-identical names. Pass schematicPaths to count how many "
-            "instances each duplicate actually has, which turns the report into a decision: "
-            "the one nothing places is the one to retire."
         ),
         "inputSchema": {
             "type": "object",
@@ -3262,6 +3249,30 @@ SCHEMATIC_TOOLS = [
                     "type": "boolean",
                     "default": False,
                     "description": "Report what would change without writing",
+                },
+            },
+            "required": ["libraryPath"],
+        },
+    },
+    {
+        "name": "find_duplicate_symbols",
+        "title": "Find Duplicate Symbols in a Library",
+        "description": (
+            "Group symbols in a .kicad_sym that are the same part stored twice under "
+            "different names -- the residue of Eagle imports, SnapEDA downloads and parts "
+            "re-added because search did not find the existing name. KiCad reports nothing "
+            "here, because the names differ, which is also why grepping does not find it. "
+            "Matches on manufacturer part number (tolerating the inconsistent property "
+            "naming real libraries have: MPN, MP, 'MANUFACTURER PART NUMBER', 'PART "
+            "NUMBER'), on distributor part number, on Value+Footprint, on an identical "
+            "drawn body, or on near-identical names. Pass schematicPaths to count how many "
+            "instances each duplicate actually has, which turns the report into a decision: "
+            "the one nothing places is the one to retire."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "libraryPath": {"type": "string", "description": "Path to the .kicad_sym file"},
                 "matchBy": {
                     "type": "array",
                     "items": {"type": "string", "enum": list(DUPLICATE_STRATEGIES)},

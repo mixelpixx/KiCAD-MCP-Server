@@ -50,6 +50,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
   never places, because a same-named symbol in an Eagle-import library was being
   counted towards it, and for one of them the symbol it proposed to retire had
   the only two real placements.
+
 - **`set_symbol_pin_type`** — set the electrical type, and optionally the
   graphic style, of pins in a `.kicad_sym` library, filtered by symbol, pin
   number, pin name, or current type. The server could read pins
@@ -101,6 +102,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
   Verified on a 2.2 MB library: 2279 pins across 472 symbols walked correctly,
   32 pins changed, paren balance unmoved, `kicad-cli sym upgrade` accepted the
   result, and a second pass was a no-op.
+
 ### New Features
 
 - **`list_library_table`, `remove_library_table_entry`, `set_library_table_uri`**
@@ -147,6 +149,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
   libraries: the stock global table is a single row named `KiCad` standing for
   200+ libraries, so listing reports how many each one covers and removing one
   says how many libraries that unregisters.
+
 ### New Tools
 
 - **`backannotate_footprints`** — copy footprint assignments from a `.kicad_pcb`
@@ -202,6 +205,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
   The s-expression walkers this needed (`match_paren`, `iter_child_offsets`) live
   in `utils/sexpr_format.py` so later tools can share them instead of carrying
   another private paren counter.
+
 ### New Features
 
 - **`validate_schematic` and `validate_symbol_library`** — locate structural
@@ -316,6 +320,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
   KiCad 10.0.4: round-tripping `Simulation_SPICE_minimal.kicad_sym` through
   `kicad-cli sym upgrade` before and after an edit now yields byte-identical
   output apart from the changed value.
+
 - **JLCPCB yaqwsx source decodes the new `source-db-v2` schema** (#352,
   fixed by @stefanobaldo in #353). Upstream changed the published
   `cache.sqlite3` layout; every part converted with `price_json '[]'` and

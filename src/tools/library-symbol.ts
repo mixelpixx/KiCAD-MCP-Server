@@ -429,6 +429,12 @@ Returns symbol references that can be used directly in schematics.`,
     },
     async (args) => {
       const result = await callKicadScript("set_symbol_pin_type", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
   // Find the same part stored twice under different names
   server.tool(
     "find_duplicate_symbols",
