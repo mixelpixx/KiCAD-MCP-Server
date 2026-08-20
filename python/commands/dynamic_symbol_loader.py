@@ -14,7 +14,12 @@ import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from utils.sexpr_format import QUOTED_VALUE, QUOTED_VALUE_SKIP, unescape_sexpr_string
+from utils.sexpr_format import (
+    QUOTED_VALUE,
+    QUOTED_VALUE_SKIP,
+    escape_sexpr_string,
+    unescape_sexpr_string,
+)
 
 logger = logging.getLogger("kicad_interface")
 
@@ -1015,8 +1020,13 @@ class DynamicSymbolLoader:
             Field order: at, [hide yes], show_name no, do_not_autoplace no, effects.
             """
             hide_line = "      (hide yes)\n" if hide else ""
+            # Escape both: library property values legitimately contain quotes
+            # (power:GND's Description is `... global label with name "GND"`),
+            # and emitted raw the inner quote closes the token early, splitting
+            # one value into three s-expression atoms (#324/#336).
             return (
-                f'    (property "{name}" "{value}"\n'
+                f'    (property "{escape_sexpr_string(name)}"'
+                f' "{escape_sexpr_string(value)}"\n'
                 f"      (at {_fmt(px)} {_fmt(py)} {_fmt(pa)})\n"
                 f"{hide_line}"
                 f"      (show_name no)\n"
@@ -1059,9 +1069,9 @@ class DynamicSymbolLoader:
         instance_path = self._build_instance_path(schematic_path)
         instances_str = (
             "    (instances\n"
-            f'      (project "{project_name}"\n'
-            f'        (path "{instance_path}"\n'
-            f'          (reference "{reference}")\n'
+            f'      (project "{escape_sexpr_string(project_name)}"\n'
+            f'        (path "{escape_sexpr_string(instance_path)}"\n'
+            f'          (reference "{escape_sexpr_string(reference)}")\n'
             f"          (unit {unit})\n"
             "        )\n"
             "      )\n"
@@ -1072,7 +1082,8 @@ class DynamicSymbolLoader:
 
         mirror_str = " (mirror y)" if mirror_y else ""
         instance_block = (
-            f'  (symbol (lib_id "{full_lib_id}") (at {_fmt(x)} {_fmt(y)} {_fmt(angle)})'
+            f'  (symbol (lib_id "{escape_sexpr_string(full_lib_id)}")'
+            f" (at {_fmt(x)} {_fmt(y)} {_fmt(angle)})"
             f"{mirror_str} (unit {unit})\n"
             "    (body_style 1) (exclude_from_sim no) (in_bom yes) (on_board yes)"
             " (in_pos_files yes) (dnp no)\n"

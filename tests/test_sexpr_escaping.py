@@ -151,3 +151,75 @@ class TestCallSitesAreConverted:
         assert (
             """replace('"', '\\\\"')""" not in source
         ), f"{filename} escapes quotes without escaping backslashes first (#336)"
+
+
+class TestInstanceWritesAreEscaped:
+    """The WRITE side (#324). #348 fixed reading; this closes the other half.
+
+    Diagnosed by @PaulHubiss in #324: `power:GND`'s Description is
+    `Power symbol creates a global label with name "GND"`. Emitted raw, the
+    inner quote closes the token early and the single value splits into three
+    s-expression atoms — a structurally malformed property block that KiCad
+    then reads back wrong.
+
+    Note the interaction: once reading became escape-aware, the reader started
+    handing back the real value *with a live quote in it*, so an unescaped
+    writer downstream is more reachable, not less.
+    """
+
+    GND_DESCRIPTION = 'Power symbol creates a global label with name "GND"'
+
+    def test_unescaped_property_splits_into_extra_atoms(self):
+        """Pin the failure mode so a regression is unmistakable."""
+        raw = f'(property "Description" "{self.GND_DESCRIPTION}")'
+        parsed = sexpdata.loads(raw)
+        assert len(parsed) == 5, "fixture no longer demonstrates the bug"
+
+    def test_escaped_property_is_one_value(self):
+        good = f'(property "Description" "{escape_sexpr_string(self.GND_DESCRIPTION)}")'
+        parsed = sexpdata.loads(good)
+        assert len(parsed) == 3
+        assert parsed[2] == self.GND_DESCRIPTION
+
+    def test_dynamic_symbol_loader_escapes_its_property_writes(self):
+        path = Path(__file__).parent.parent / "python" / "commands" / "dynamic_symbol_loader.py"
+        source = path.read_text(encoding="utf-8")
+        assert (
+            '(property "{name}" "{value}"' not in source
+        ), "instance property writes must escape name and value (#324)"
+        assert "escape_sexpr_string(value)" in source
+
+    @pytest.mark.parametrize(
+        "raw_write",
+        [
+            '(reference "{reference}")',
+            '(lib_id "{full_lib_id}")',
+            '(project "{project_name}"',
+        ],
+    )
+    def test_sibling_instance_writes_are_escaped(self, raw_write):
+        """#336 named these alongside the property write."""
+        path = Path(__file__).parent.parent / "python" / "commands" / "dynamic_symbol_loader.py"
+        source = path.read_text(encoding="utf-8")
+        assert raw_write not in source, f"{raw_write} is still emitted raw (#336)"
+
+    @pytest.mark.parametrize("field", ["Sheet name", "Sheet file"])
+    def test_hierarchy_sheet_properties_are_escaped(self, field):
+        path = Path(__file__).parent.parent / "python" / "commands" / "schematic_hierarchy.py"
+        source = path.read_text(encoding="utf-8")
+        var = "sheet_name" if field == "Sheet name" else "rel_str"
+        assert (
+            f'(property "{field}" "{{{var}}}"' not in source
+        ), f"{field} is still emitted raw (#336)"
+
+    def test_hierarchy_lookup_matches_the_escaped_form_on_disk(self):
+        """Escaping on write must not break finding the sheet again."""
+        from commands.schematic_hierarchy import SchematicHierarchyCommands
+
+        name = 'Power "GND" sheet'
+        on_disk = f'(sheet (property "Sheet name" "{escape_sexpr_string(name)}" (at 0 0 0)))'
+        cmd = SchematicHierarchyCommands.__new__(SchematicHierarchyCommands)
+        blocks = cmd._find_sheet_blocks(on_disk)
+        assert blocks, "fixture must contain one sheet block"
+        block = on_disk[blocks[0][0] : blocks[0][1]]
+        assert f'"Sheet name" "{escape_sexpr_string(name)}"' in block
