@@ -2526,6 +2526,57 @@ SCHEMATIC_TOOLS = [
         },
     },
     {
+        "name": "backannotate_footprints",
+        "title": "Back-annotate Footprints (PCB to Schematic)",
+        "description": (
+            "Copy footprint assignments from a .kicad_pcb back into the schematic's "
+            "Footprint fields -- the reverse of sync_schematic_to_board. After a layout "
+            "pass the board is the side that is right: footprints get swapped in pcbnew, "
+            "and imported projects land with schematic-side fields that never matched the "
+            "placed parts. Matching is by reference designator, taken from each symbol's "
+            "(instances ...) block so a sheet placed more than once contributes all of its "
+            "designators; virtual references starting with '#' (power, ground) are skipped, "
+            "and every unit of a multi-unit symbol is updated. Only the quoted value is "
+            "rewritten, so field visibility, font and position survive. Nothing is written "
+            "for a reference the board uses twice, or for instances that share one Footprint "
+            "field but disagree on the board -- those are listed under 'conflicts'. "
+            "Footprints on the board with no matching symbol are listed under "
+            "'notInSchematic'. Instances missing a Footprint field get one added unless "
+            "addMissing is false. Use dryRun to see the diff first."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "boardPath": {"type": "string", "description": "Path to the .kicad_pcb file"},
+                "schematicPath": {
+                    "type": "string",
+                    "description": (
+                        "Single sheet to update. Omit to walk the sheet tree from the root "
+                        "schematic named after the board, which is what a hierarchical "
+                        "design needs; local history, backup copies and other projects "
+                        "under the same directory are left alone."
+                    ),
+                },
+                "references": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Limit the update to these reference designators",
+                },
+                "addMissing": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Add a Footprint field to instances that have none",
+                },
+                "dryRun": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Report the changes without writing them",
+                },
+            },
+            "required": ["boardPath"],
+        },
+    },
+    {
         "name": "create_board_from_schematic",
         "title": "Create Board From Schematic",
         "description": "Creates a fresh .kicad_pcb file, then updates it from the schematic so footprints and nets are present.",

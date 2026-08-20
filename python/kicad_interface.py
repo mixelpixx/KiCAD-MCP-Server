@@ -323,6 +323,7 @@ try:
     logger.info("Importing command handlers...")
     from commands.add_library_symbol_property import add_library_symbol_property
     from commands.add_symbol_property import add_symbol_property
+    from commands.backannotate_footprints import backannotate_footprints
     from commands.board import BoardCommands
     from commands.board.origin import BoardOriginCommands
     from commands.component import ComponentCommands
@@ -630,6 +631,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "export_sch_python_bom": self._handle_export_sch_python_bom,
             "generate_netlist": self._handle_generate_netlist,
             "sync_schematic_to_board": self._handle_sync_schematic_to_board,
+            "backannotate_footprints": backannotate_footprints,
             "create_board_from_schematic": self._handle_create_board_from_schematic,
             "list_schematic_libraries": self._handle_list_schematic_libraries,
             "get_schematic_view": self._handle_get_schematic_view,

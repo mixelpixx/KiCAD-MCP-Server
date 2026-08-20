@@ -23,7 +23,7 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 163 tools across 15 categories with JSON Schema validation
+- 164 tools across 15 categories with JSON Schema validation
 - Keyword tool discovery via `search_tools` / `get_category_tools`
 - 8 dynamic resources exposing project state
 - Complete schematic workflow with 27 tools and dynamic symbol loading (~10,000 symbols)
@@ -486,7 +486,7 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. **163 tools** are additionally indexed into 15 functional categories, so `search_tools` and `get_category_tools` can find one by keyword.
+The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. **164 tools** are additionally indexed into 15 functional categories, so `search_tools` and `get_category_tools` can find one by keyword.
 
 For the complete tool reference with access types (direct/routed/additional), see [Tool Inventory](docs/TOOL_INVENTORY.md).
 
@@ -1542,7 +1542,7 @@ See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix a
 - Complete schematic workflow with dynamic symbol loading (~10,000 symbols)
 - Intelligent wiring system with pin discovery and smart routing
 - FFC/ribbon cable passthrough workflow
-- Schematic-to-board synchronization
+- Schematic-to-board synchronization, plus footprint back-annotation from the board
 - Design rule checking (DRC and ERC)
 - Structural validation of schematics and symbol libraries
 - Export to Gerber, PDF, SVG, 3D, BOM, netlist, position file

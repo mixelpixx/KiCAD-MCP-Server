@@ -137,6 +137,7 @@ export const toolCategories: ToolCategory[] = [
       "get_wire_connections",
       "generate_netlist",
       "sync_schematic_to_board",
+      "backannotate_footprints",
       "get_schematic_view",
       "export_schematic_svg",
       "export_schematic_pdf",
