@@ -99,7 +99,21 @@ _LOG_LEVEL = _parse_log_level()
 try:
     log_dir = Path.home() / ".kicad-mcp" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = str(log_dir / "kicad_interface.log")
+    # One log file per process (#373): multiple concurrent servers rotating
+    # the same file collide on Windows (WinError 32 -- the file is locked by
+    # whichever sibling holds it open), killing the rotation and the logging.
+    log_file = str(log_dir / f"kicad_interface-{os.getpid()}.log")
+    # Best-effort sweep of logs from dead processes so per-PID naming cannot
+    # accumulate without bound (the concern that motivated #181's rotation).
+    try:
+        import time as _time
+
+        _cutoff = _time.time() - 7 * 24 * 3600
+        for _old_log in log_dir.glob("kicad_interface-*.log*"):
+            if _old_log.stat().st_mtime < _cutoff:
+                _old_log.unlink()
+    except OSError:
+        pass
     max_log_bytes = _parse_positive_int_env("KICAD_MCP_LOG_MAX_BYTES", 10 * 1024 * 1024)
     backup_count = _parse_positive_int_env("KICAD_MCP_LOG_BACKUP_COUNT", 3)
     if max_log_bytes:
@@ -6285,6 +6299,20 @@ print("ok")
             }
 
 
+def _attach_internal_request_id(response: Any, request_id: Any) -> Any:
+    """Echo the TypeScript bridge's requestId without mutating command results.
+
+    The Node side correlates responses to requests by this ID (#373): without
+    it, a response arriving after its request timed out was delivered to
+    whichever request was pending next, silently resolving command B with
+    command A's result and desyncing every response after it. Uncorrelated
+    responses (no ID, e.g. the ready marker) pass through untouched.
+    """
+    if request_id is None or not isinstance(response, dict):
+        return response
+    return {**response, "_requestId": request_id}
+
+
 def _write_response(response_fd: Any, response: Any) -> None:
     """Write a JSON response to the original stdout fd.
 
@@ -6320,6 +6348,7 @@ def main() -> None:
             try:
                 # Parse command
                 logger.debug(f"Received input: {line.strip()}")
+                internal_request_id = None
                 command_data = json.loads(line)
 
                 # Check if this is JSON-RPC 2.0 format
@@ -6449,6 +6478,7 @@ def main() -> None:
                     logger.info("Detected custom format message")
                     command = command_data.get("command")
                     params = command_data.get("params", {})
+                    internal_request_id = command_data.get("requestId")
 
                     if not command:
                         logger.error("Missing command field")
@@ -6462,6 +6492,7 @@ def main() -> None:
                         response = interface.handle_command(command, params)
 
                 # Send response via the clean fd (immune to pcbnew stdout noise)
+                response = _attach_internal_request_id(response, internal_request_id)
                 logger.debug(f"Sending response: {response}")
                 _write_response(_response_fd, response)
 
