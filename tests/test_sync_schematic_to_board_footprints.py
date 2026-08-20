@@ -326,3 +326,108 @@ class TestExtractComponentsFromSchematic:
             comps = iface._extract_components_from_schematic(str(sch))
 
         assert comps == []
+
+
+@pytest.mark.unit
+class TestRefdesMismatchDoesNotDuplicate:
+    """#250: a re-annotated schematic must not duplicate the whole board.
+
+    sync matched purely on reference strings, so when schematic and PCB
+    reference designators diverged (re-annotation after layout), every
+    component looked "missing" and was added again at the origin. The board
+    footprint's path (its schematic symbol UUID) identifies the symbol
+    regardless of its current name.
+    """
+
+    @staticmethod
+    def _fp_with_path(reference, symbol_uuid):
+        fp = MagicMock(name=f"fp_{reference}")
+        fp.GetReference.return_value = reference
+        path = MagicMock()
+        path.AsString.return_value = f"/{symbol_uuid}"
+        fp.GetPath.return_value = path
+        return fp
+
+    def _run(self, board, components, tmp_path):
+        sch = tmp_path / "t.kicad_sch"
+        sch.write_text("(kicad_sch)\n")
+        with (
+            patch.object(
+                _interface().__class__,
+                "_extract_components_from_schematic",
+                return_value=components,
+            ),
+            patch("commands.schematic_handlers.pcbnew") as mock_pcbnew,
+            patch("commands.library.LibraryManager") as mock_lm_cls,
+        ):
+            mock_pcbnew.FootprintLoad.return_value = MagicMock(name="proto")
+            lm = MagicMock()
+            lm.libraries = {"Resistor_SMD": "/fake/Resistor_SMD.pretty"}
+            mock_lm_cls.return_value = lm
+            iface = _interface()
+            return iface._add_missing_footprints_from_schematic(board, str(sch))
+
+    def test_same_symbol_uuid_is_not_added_again(self, tmp_path):
+        # Board has R1 bound to symbol uuid AAA; schematic renamed it to R5.
+        board = MagicMock(name="board")
+        board.GetFootprints.return_value = [self._fp_with_path("R1", "aaa-uuid")]
+        added, skipped = self._run(
+            board,
+            [
+                {
+                    "reference": "R5",
+                    "value": "10k",
+                    "footprint": "Resistor_SMD:R_0603_1608Metric",
+                    "uuid": "aaa-uuid",
+                }
+            ],
+            tmp_path,
+        )
+        assert added == [], "re-annotated symbol must not be re-added"
+        assert len(skipped) == 1
+        assert "already on board as 'R1'" in skipped[0]["reason"]
+
+    def test_genuinely_new_symbol_is_still_added(self, tmp_path):
+        board = MagicMock(name="board")
+        board.GetFootprints.return_value = [self._fp_with_path("R1", "aaa-uuid")]
+        added, skipped = self._run(
+            board,
+            [
+                {
+                    "reference": "R9",
+                    "value": "1k",
+                    "footprint": "Resistor_SMD:R_0603_1608Metric",
+                    "uuid": "bbb-uuid",
+                }
+            ],
+            tmp_path,
+        )
+        assert len(added) == 1 and added[0]["reference"] == "R9"
+
+    def test_reused_sheet_instances_claim_one_footprint_each(self, tmp_path):
+        # Two sheet instances share the symbol uuid; two comps, two boards fps.
+        board = MagicMock(name="board")
+        board.GetFootprints.return_value = [
+            self._fp_with_path("Q101", "shared-uuid"),
+            self._fp_with_path("Q201", "shared-uuid"),
+        ]
+        comps = [
+            {"reference": "Q5", "value": "", "footprint": "X:Y", "uuid": "shared-uuid"},
+            {"reference": "Q6", "value": "", "footprint": "X:Y", "uuid": "shared-uuid"},
+        ]
+        added, skipped = self._run(board, comps, tmp_path)
+        assert added == []
+        assert len(skipped) == 2
+        claimed = {s["reason"].split("'")[1] for s in skipped}
+        assert claimed == {"Q101", "Q201"}, "each comp claims a distinct footprint"
+
+    def test_reference_match_takes_priority_over_uuid(self, tmp_path):
+        # Same ref on both sides: today's behavior (silent skip) is preserved.
+        board = MagicMock(name="board")
+        board.GetFootprints.return_value = [self._fp_with_path("R1", "aaa-uuid")]
+        added, skipped = self._run(
+            board,
+            [{"reference": "R1", "value": "", "footprint": "X:Y", "uuid": "aaa-uuid"}],
+            tmp_path,
+        )
+        assert added == [] and skipped == []
