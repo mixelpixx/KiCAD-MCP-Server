@@ -4,6 +4,8 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-08-20
+
 ### New Tools
 
 - **`find_duplicate_symbols`** — group symbols in a `.kicad_sym` that are the
@@ -258,6 +260,47 @@ All notable changes to the KiCAD MCP Server project are documented here.
   or when KiCad is not installed.
 
 ### Bug Fixes
+
+- **IPC sessions are no longer silently pinned to SWIG** (#369 by
+  @Vikrammel). `get_open_board_path` predated kipy's DocumentSpecifier shape,
+  so the IPC probe always failed and the session fell back to the SWIG
+  backend without saying so. It now reads `get_open_documents(DOCTYPE_PCB)`
+  and resolves the path from `board_filename` plus the project path.
+
+- **Symbol property values containing an escaped quote were silently
+  truncated** (#336). KiCad escapes a quote inside a double-quoted token as
+  `\"`. Readers using the obvious `"([^"]*)"` stop at that escaped quote, so
+  the value came back as a lone backslash — and emitting that back out escapes
+  the closing quote, running the token on and swallowing the rest of the file.
+
+  This was not theoretical: **419 of the 22,712 stock KiCad 10 symbol files**
+  across 13 libraries have a Description wrapped in escaped quotes, including
+  every `Connector_Generic` part. Reading one returned `\` rather than the
+  description.
+
+  Reading and writing now share one escape-aware implementation in
+  `utils.sexpr_format` (`QUOTED_VALUE`, `escape_sexpr_string`,
+  `unescape_sexpr_string`), replacing five ad-hoc readers and three writers.
+  The three writers escaped quotes but not backslashes, which is a no-op on
+  precisely the values that break — order matters, and they had it wrong.
+
+- **`add_gnd_stitching_vias` treated arcs as their chord** (#192). Since
+  `route_arc_trace` landed, `board.GetTracks()` can return `PCB_ARC` items. The
+  obstacle loop distinguished only `PCB_VIA` from everything else, so an arc
+  was recorded as the straight chord between its endpoints — under-stating the
+  region it occupies. A candidate via sitting in the bulge between chord and
+  arc passed the clearance check and could short the trace.
+
+  Measured on a 10 mm-radius quarter arc against real KiCad: a point lying
+  exactly on the arc read as **2.93 mm** from the chord, so any via within that
+  bulge was waved through.
+
+  Arcs are now sampled into a chain of chords. The sampling radius is inflated
+  so the chain circumscribes the arc rather than cutting inside it —
+  over-approximating an obstacle is safe, under-approximating is the bug.
+
+  Thanks to @NiNjA-CodE, whose analysis in the issue identified the exact
+  branch and consequence.
 
 - **The MCP transport connects before Python starts, not up to two minutes
   after** (#377). Python + pcbnew/wxApp initialisation takes 55-125 s, and
@@ -558,41 +601,6 @@ symbols, and `repair_flat_symbols` fixes the common cause. See
   the first.
 
 ### Bug Fixes
-
-- **Symbol property values containing an escaped quote were silently
-  truncated** (#336). KiCad escapes a quote inside a double-quoted token as
-  `\"`. Readers using the obvious `"([^"]*)"` stop at that escaped quote, so
-  the value came back as a lone backslash — and emitting that back out escapes
-  the closing quote, running the token on and swallowing the rest of the file.
-
-  This was not theoretical: **419 of the 22,712 stock KiCad 10 symbol files**
-  across 13 libraries have a Description wrapped in escaped quotes, including
-  every `Connector_Generic` part. Reading one returned `\` rather than the
-  description.
-
-  Reading and writing now share one escape-aware implementation in
-  `utils.sexpr_format` (`QUOTED_VALUE`, `escape_sexpr_string`,
-  `unescape_sexpr_string`), replacing five ad-hoc readers and three writers.
-  The three writers escaped quotes but not backslashes, which is a no-op on
-  precisely the values that break — order matters, and they had it wrong.
-
-- **`add_gnd_stitching_vias` treated arcs as their chord** (#192). Since
-  `route_arc_trace` landed, `board.GetTracks()` can return `PCB_ARC` items. The
-  obstacle loop distinguished only `PCB_VIA` from everything else, so an arc
-  was recorded as the straight chord between its endpoints — under-stating the
-  region it occupies. A candidate via sitting in the bulge between chord and
-  arc passed the clearance check and could short the trace.
-
-  Measured on a 10 mm-radius quarter arc against real KiCad: a point lying
-  exactly on the arc read as **2.93 mm** from the chord, so any via within that
-  bulge was waved through.
-
-  Arcs are now sampled into a chain of chords. The sampling radius is inflated
-  so the chain circumscribes the arc rather than cutting inside it —
-  over-approximating an obstacle is safe, under-approximating is the bug.
-
-  Thanks to @NiNjA-CodE, whose analysis in the issue identified the exact
-  branch and consequence.
 
 - **`.kicad_pro` net settings survive a board save** (#341, @rossvonfange).
   In a long-lived backend, pcbnew reuses a stale in-memory project model:

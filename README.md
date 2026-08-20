@@ -40,6 +40,59 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 https://github.com/mixelpixx/arduino-ide
 
+## What's New in v2.7.0
+
+### The bridge no longer crosses its wires
+
+The Node-Python protocol had no request IDs: after one timeout, the next
+command was silently resolved with the _previous_ command's late result, and
+every response after that was off by one. Tool calls now carry an ID that
+Python echoes back; stale responses are discarded instead of mis-delivered
+(#373). The MCP transport also connects before Python spawns, so clients no
+longer stack up against a silent server for up to two minutes during pcbnew
+warm-up (#377).
+
+### Two file-corruption classes fixed
+
+`add_symbol_property` dropped a closing paren on every call and could splice
+a unit symbol into a top-level sibling (#362, @karu2003). And S-expression
+escaping is now symmetric: reads (#336) and writes (#324) share one
+escape-aware implementation, so a property value containing `\"` survives a
+round-trip — 419 of KiCad's own stock symbol files carry such values.
+
+### 8 new tools
+
+- **Validation**: `validate_schematic`, `validate_symbol_library` — locate
+  structural damage with line/column, confirmed via `kicad-cli` on a copy.
+- **Library tables**: `list_library_table`, `remove_library_table_entry`,
+  `set_library_table_uri` — the missing CRUD around `register_*_library`.
+- **Symbol editing**: `set_symbol_pin_type` (bulk pin type fixes with
+  dry-run), `find_duplicate_symbols` (the same part stored twice).
+- **Back-annotation**: `backannotate_footprints` — PCB footprint choices
+  flow back to the schematic, the reverse of `sync_schematic_to_board`.
+
+All by @karu2003. With #359 (@AmirF194) registering 15 existing symbol tools,
+`search_tools` now indexes 169 tools in 15 categories.
+
+### Quality of life
+
+- `autoroute` stages its `.dsn`/`.ses` work files in a temp directory and
+  cleans up on every exit — no more litter next to your board, no stale-SES
+  imports, and a killed run says "terminated externally" instead of
+  `exit code 4294967295` (#249, scoped by @Dewieinns' traces).
+- Placed symbols inherit the library's default Footprint (#300,
+  implementation by @stefangordon).
+- `add_layer` actually adds inner copper layers (#222) — it previously wrote
+  to non-copper layer IDs and renamed F.SilkS.
+- `sync_schematic_to_board` matches by symbol UUID, not just refdes (#250).
+- JLCPCB tools decode the new upstream `source-db-v2` schema (#352,
+  @stefanobaldo) and degrade gracefully when the parts DB is unavailable
+  (#264, @fage2022).
+- `setup-macos.sh --verify` now fails when Python requirements are missing
+  instead of passing on a server that cannot start (#350, @francisrath).
+
+Full details in the [CHANGELOG](CHANGELOG.md).
+
 ## What's New in v2.6.0
 
 ### A session-killing bug is fixed

@@ -6376,7 +6376,7 @@ def main() -> None:
                                 "serverInfo": {
                                     "name": "kicad-mcp-server",
                                     "title": "KiCAD PCB Design Assistant",
-                                    "version": "2.1.0-alpha",
+                                    "version": "2.7.0",
                                 },
                                 "instructions": "AI-assisted PCB design with KiCAD. Use tools to create projects, design boards, place components, route traces, and export manufacturing files.",
                             },
