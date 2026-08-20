@@ -22,6 +22,9 @@ import {
 // gate: the known set is frozen below and any NEW omission fails. Shrinking
 // the list is tracked separately -- do not add to it to make CI pass.
 //
+// #345 gave the symbol-library tools their own "symbol_library" category,
+// shrinking this baseline from 75 to 60.
+//
 // Parsing source text is deliberate: the point is to compare what is wired
 // into the server against what the registry claims, so reading the registry
 // through both paths would defeat it.
@@ -34,25 +37,20 @@ const KNOWN_UNREGISTERED = new Set([
   "add_component_3d_model",
   "add_footprint_3d_model",
   "add_gnd_stitching_vias",
-  "add_library_symbol_property",
   "add_schematic_hierarchical_label",
   "add_sheet_pin",
-  "add_symbol_property",
   "align_components",
   "check_courtyard_overlaps",
   "copy_routing_pattern",
   "create_footprint",
   "create_netclass",
-  "create_symbol",
   "delete_schematic_component",
-  "delete_symbol",
   "delete_trace",
   "download_jlcpcb_database",
   "duplicate_component",
   "edit_footprint_pad",
   "edit_schematic_component",
   "enrich_datasheets",
-  "export_symbol",
   "find_orphaned_wires",
   "find_overlapping_elements",
   "find_wires_crossing_symbols",
@@ -69,16 +67,11 @@ const KNOWN_UNREGISTERED = new Set([
   "get_schematic_component",
   "get_schematic_pin_locations",
   "get_schematic_view_region",
-  "get_symbol_info",
   "import_3d_model",
   "import_eagle_project",
   "import_svg_logo",
-  "import_symbol",
   "list_floating_labels",
   "list_footprint_libraries",
-  "list_library_symbols",
-  "list_symbol_libraries",
-  "list_symbols_in_library",
   "list_tool_categories",
   "modify_trace",
   "move_schematic_net_label",
@@ -87,17 +80,13 @@ const KNOWN_UNREGISTERED = new Set([
   "query_zones",
   "refill_zones",
   "register_footprint_library",
-  "register_symbol_library",
   "remove_schematic_component_property",
-  "rename_symbol",
-  "replace_instance_lib_ids",
   "route_arc_trace",
   "route_differential_pair",
   "route_pad_to_pad",
   "run_erc",
   "save_as",
   "search_jlcpcb_parts",
-  "search_symbols",
   "search_tools",
   "set_footprint_type",
   "set_schematic_component_property",
@@ -105,7 +94,6 @@ const KNOWN_UNREGISTERED = new Set([
   "suggest_jlcpcb_alternatives",
   "suggest_placement",
   "suggest_schematic_declutter",
-  "update_symbol_from_library",
 ]);
 
 function registeredToolNames(): Set<string> {
