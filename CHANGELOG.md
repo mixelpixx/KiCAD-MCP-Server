@@ -259,6 +259,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`autoroute` no longer litters the project directory or trusts stale
+  output** (#249, scope defined by @Dewieinns' traces). Every run staged its
+  `.dsn`/`.ses`/`_best.ses` in the board directory with no cleanup on any of
+  its twelve failure exits -- and a leftover `.ses` from an earlier run could
+  satisfy the output check and be imported as if freshly routed. Artifacts now
+  stage in a per-run temporary directory removed on every exit
+  (`keepArtifacts: true` copies them next to the board for debugging), each
+  attempt deletes its predecessor's SES before launching so an attempt that
+  exits cleanly without writing cannot re-score the previous file, a killed
+  subprocess is reported as "terminated externally" instead of raw
+  `exit code 4294967295`, and Freerouting's own shared DEBUG log is truncated
+  past 5 MB after each run.
 - **Python bridge responses are now correlated to their requests by ID**
   (#373, root cause diagnosed exactly by the reporter; implementation adapted
   from @kerby2000's #371). The Node-Python protocol was a single-slot,

@@ -178,6 +178,57 @@ def _build_freerouting_cmd(
 _SES_NET_RE = re.compile(r"\(net\s+(\S+)\s*\n\s*\(wire")
 
 
+def _describe_exit(code: Any) -> str:
+    """Human-readable suffix for a Freerouting exit code (#249).
+
+    A user cancelling the run (or an OOM killer, or a console close) surfaces
+    as a raw process exit code -- on Windows a force-killed JVM reports
+    4294967295 (0xFFFFFFFF), which reads like a Java failure rather than
+    "someone stopped it". Decode the known shapes so the error message says
+    what actually happened; return "" when the code carries no extra meaning.
+    """
+    if not isinstance(code, int):
+        return ""
+    # Windows NTSTATUS-shaped codes and POSIX negative-signal codes cannot
+    # collide (POSIX exit codes are 0..255 or small negatives), so decode
+    # both unconditionally rather than gating on os.name -- that also lets
+    # the Linux CI exercise the Windows decodings.
+    known_nt = {
+        0xFFFFFFFF: "process was terminated externally (force-kill)",
+        0xC000013A: "process was interrupted (Ctrl+C or console closed)",
+        0xC0000005: "JVM crashed with an access violation",
+    }
+    desc = known_nt.get(code & 0xFFFFFFFF)
+    if desc:
+        return f" -- {desc}"
+    if code < 0:
+        import signal
+
+        try:
+            name = signal.Signals(-code).name
+        except ValueError:
+            name = str(-code)
+        return f" -- process was killed by signal {name}"
+    return ""
+
+
+def _trim_shared_freerouting_log(max_bytes: int = 5 * 1024 * 1024) -> None:
+    """Best-effort cap on Freerouting's own shared DEBUG log (#249).
+
+    Freerouting 2.x writes an unbounded DEBUG log to a fixed path shared by
+    every run (observed growing to 9+ MB in three runs). We cannot pass it a
+    log level across all bundled JAR versions, so truncate the file when it
+    exceeds the cap after a run. Failures (file locked, absent) are ignored.
+    """
+    try:
+        log_path = Path(tempfile.gettempdir()) / "freerouting" / "freerouting.log"
+        if log_path.is_file() and log_path.stat().st_size > max_bytes:
+            with open(log_path, "w", encoding="utf-8"):
+                pass
+    except OSError:
+        pass
+
+
 def _score_ses(ses_text: str, target_nets: Iterable[str]) -> Dict[str, Any]:
     """Score a Specctra SES file by routing completeness.
 
@@ -433,12 +484,78 @@ class FreeroutingCommands:
 
         use_docker = exec_mode["use_docker"]
 
-        # Set up file paths
+        # Set up file paths. Artifacts are staged in a fresh per-run temp
+        # directory instead of the user's project directory (#249): every
+        # failure exit used to leave .dsn/.ses/_best.ses litter next to the
+        # board, and a stale .ses from an earlier run could satisfy the
+        # exists-check below and be imported as if it were this run's output.
+        # A fresh directory makes cross-run staleness structurally impossible;
+        # keepArtifacts=true copies the files back out for debugging.
+        keep_artifacts = bool(params.get("keepArtifacts", False))
         board_dir = os.path.dirname(board_path)
         board_stem = Path(board_path).stem
-        dsn_path = os.path.join(board_dir, f"{board_stem}.dsn")
-        ses_path = os.path.join(board_dir, f"{board_stem}.ses")
-        best_ses_path = os.path.join(board_dir, f"{board_stem}_best.ses")
+        staging_dir = tempfile.mkdtemp(prefix="kicad-mcp-autoroute-")
+        dsn_path = os.path.join(staging_dir, f"{board_stem}.dsn")
+        ses_path = os.path.join(staging_dir, f"{board_stem}.ses")
+        best_ses_path = os.path.join(staging_dir, f"{board_stem}_best.ses")
+        kept_paths: Dict[str, str] = {}
+
+        try:
+            return self._autoroute_staged(
+                params,
+                board_path=board_path,
+                board_dir=board_dir,
+                board_stem=board_stem,
+                dsn_path=dsn_path,
+                ses_path=ses_path,
+                best_ses_path=best_ses_path,
+                keep_artifacts=keep_artifacts,
+                kept_paths=kept_paths,
+                jar_path=jar_path,
+                timeout=timeout,
+                passes=passes,
+                attempts=attempts,
+                target_nets=target_nets,
+                pass_schedule=pass_schedule,
+                use_docker=use_docker,
+            )
+        finally:
+            # Runs on every exit -- success, failure return, or exception --
+            # so no artefact can outlive the run unless explicitly kept.
+            if keep_artifacts:
+                for src in (dsn_path, ses_path, best_ses_path):
+                    try:
+                        if os.path.isfile(src):
+                            dest = os.path.join(board_dir, os.path.basename(src))
+                            shutil.copy2(src, dest)
+                            kept_paths[os.path.basename(src)] = dest
+                    except OSError as copy_err:
+                        logger.warning(f"Could not keep artifact {src}: {copy_err}")
+            shutil.rmtree(staging_dir, ignore_errors=True)
+            _trim_shared_freerouting_log()
+
+    def _autoroute_staged(
+        self,
+        params: Dict[str, Any],
+        *,
+        board_path: str,
+        board_dir: str,
+        board_stem: str,
+        dsn_path: str,
+        ses_path: str,
+        best_ses_path: str,
+        keep_artifacts: bool,
+        kept_paths: Dict[str, str],
+        jar_path: str,
+        timeout: Any,
+        passes: Any,
+        attempts: int,
+        target_nets: List[Any],
+        pass_schedule: List[Any],
+        use_docker: bool,
+    ) -> Dict[str, Any]:
+        """Body of autoroute, running against a staged artifact directory."""
+        import pcbnew
 
         # Apply the project's net classes so the DSN carries per-class
         # width/clearance rules instead of routing everything at Default (#302)
@@ -507,6 +624,14 @@ class FreeroutingCommands:
                 f"(mp={attempt_passes}, mode={mode_label})"
             )
 
+            # Remove the previous attempt's SES before launching: an attempt
+            # that exits 0 without writing output must read as "no SES", not
+            # silently re-score its predecessor's file (#249).
+            try:
+                os.remove(ses_path)
+            except FileNotFoundError:
+                pass
+
             attempt_start = time.time()
             try:
                 proc = subprocess.run(
@@ -514,7 +639,7 @@ class FreeroutingCommands:
                     capture_output=True,
                     text=True,
                     timeout=timeout,
-                    cwd=board_dir,
+                    cwd=os.path.dirname(dsn_path),
                 )
                 attempt_elapsed = round(time.time() - attempt_start, 1)
             except subprocess.TimeoutExpired:
@@ -535,6 +660,7 @@ class FreeroutingCommands:
             if proc.returncode != 0:
                 # Don't abort the whole best-of-N just because one attempt
                 # exits nonzero — record it and move on.
+                exit_note = _describe_exit(proc.returncode)
                 attempt_results.append(
                     {
                         "attempt": idx + 1,
@@ -542,13 +668,14 @@ class FreeroutingCommands:
                         "elapsed_seconds": attempt_elapsed,
                         "ok": False,
                         "exit_code": proc.returncode,
+                        "exit_reason": exit_note.lstrip(" -") or "nonzero exit",
                         "stderr": (proc.stderr or "")[:200],
                     }
                 )
                 if attempts == 1:
                     return {
                         "success": False,
-                        "message": f"Freerouting exited with code {proc.returncode}",
+                        "message": (f"Freerouting exited with code {proc.returncode}{exit_note}"),
                         "errorDetails": proc.stderr or proc.stdout,
                         "elapsed_seconds": attempt_elapsed,
                         "mode": mode_label,
@@ -665,8 +792,16 @@ class FreeroutingCommands:
             "success": True,
             "message": f"Autoroute completed in {elapsed}s",
             "mode": mode_label,
-            "dsn_path": dsn_path,
-            "ses_path": ses_path,
+            # Artifacts are staged in a temp dir and removed after the run
+            # (#249); with keepArtifacts=true they are copied next to the
+            # board and these fields point at the kept copies.
+            "artifacts_kept": keep_artifacts,
+            "dsn_path": (
+                os.path.join(board_dir, os.path.basename(dsn_path)) if keep_artifacts else None
+            ),
+            "ses_path": (
+                os.path.join(board_dir, os.path.basename(ses_path)) if keep_artifacts else None
+            ),
             "elapsed_seconds": elapsed,
             "board_stats": {
                 "tracks": track_count,
@@ -679,7 +814,9 @@ class FreeroutingCommands:
             response["attempts"] = attempt_results
             response["best_attempt"] = best_attempt_idx + 1
             response["best_score"] = best_score
-            response["best_ses_path"] = best_ses_path
+            response["best_ses_path"] = (
+                os.path.join(board_dir, os.path.basename(best_ses_path)) if keep_artifacts else None
+            )
         return response
 
     def export_dsn(self, params: Dict[str, Any]) -> Dict[str, Any]:
