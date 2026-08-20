@@ -3058,11 +3058,17 @@ class SchematicHandlersMixin:
             root = tree.getroot()
             components = []
             for comp in root.findall("./components/comp"):
+                # <tstamps> carries the schematic symbol UUID -- verified
+                # against kicad-cli 10.0: a bare UUID with no sheet path
+                # (instances of a reused sheet share it). Legacy exports
+                # could comma-join several; keep the first.
+                tstamps = (comp.findtext("tstamps") or "").replace(",", " ").split()
                 components.append(
                     {
                         "reference": comp.get("ref", ""),
                         "value": comp.findtext("value", ""),
                         "footprint": comp.findtext("footprint", ""),
+                        "uuid": tstamps[0] if tstamps else "",
                     }
                 )
             return components
@@ -3132,6 +3138,23 @@ class SchematicHandlersMixin:
             self._sync_library_manager_state = self._fp_lib_tables_state(project_dir, cached)
         return cached
 
+    @staticmethod
+    def _board_symbol_uuid(fp: Any) -> str:
+        """The schematic symbol UUID a board footprint is bound to, or "".
+
+        ``GetPath().AsString()`` is ``/sheet-uuid/.../symbol-uuid`` (verified
+        against real KiCad 10); the last segment is the symbol UUID that
+        kicad-cli's netlist reports in ``<tstamps>``. Footprints placed by
+        hand have an empty path. Tolerant of test doubles without GetPath.
+        """
+        try:
+            path = fp.GetPath().AsString()
+        except Exception:
+            return ""
+        if not isinstance(path, str) or not path:
+            return ""
+        return path.rstrip("/").rsplit("/", 1)[-1]
+
     def _add_missing_footprints_from_schematic(
         self, board: Any, schematic_path: str
     ) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
@@ -3154,6 +3177,21 @@ class SchematicHandlersMixin:
             return added, skipped
 
         existing_refs = {fp.GetReference() for fp in board.GetFootprints()}
+
+        # Board footprints bound (by symbol UUID) to a schematic symbol whose
+        # reference no netlist comp claims: the #250 shape. A schematic that
+        # was re-annotated after layout matches nothing by reference, and
+        # adding a second copy of every such part duplicates the board. The
+        # UUID says "same symbol, different name" -- skip the add and say so.
+        # Reused-sheet instances share a symbol UUID, hence the list: each
+        # unmatched comp claims one unclaimed footprint.
+        sch_refs = {c["reference"] for c in components if c.get("reference")}
+        unclaimed_by_uuid: Dict[str, List[Any]] = {}
+        for fp in board.GetFootprints():
+            fp_uuid = self._board_symbol_uuid(fp)
+            if fp_uuid and fp.GetReference() not in sch_refs:
+                unclaimed_by_uuid.setdefault(fp_uuid, []).append(fp)
+
         project_dir = Path(schematic_path).parent
         library_manager = self._get_project_library_manager(project_dir)
 
@@ -3173,6 +3211,29 @@ class SchematicHandlersMixin:
                 continue
             if ref in existing_refs:
                 continue
+
+            claimed = unclaimed_by_uuid.get(comp.get("uuid", ""))
+            if claimed:
+                board_fp = claimed.pop(0)
+                board_ref = board_fp.GetReference()
+                logger.warning(
+                    f"sync: schematic '{ref}' is already on the board as "
+                    f"'{board_ref}' (same symbol UUID, references diverged) "
+                    "-- not adding a duplicate footprint (#250)"
+                )
+                skipped.append(
+                    {
+                        "reference": ref,
+                        "footprint": fp_str,
+                        "reason": (
+                            f"already on board as '{board_ref}' (same schematic "
+                            "symbol, references diverged -- re-annotate or rename "
+                            "to reconcile; no duplicate added)"
+                        ),
+                    }
+                )
+                continue
+
             if not fp_str or ":" not in fp_str:
                 skipped.append(
                     {

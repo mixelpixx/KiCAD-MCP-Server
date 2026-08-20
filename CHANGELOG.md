@@ -259,6 +259,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`sync_schematic_to_board` no longer duplicates footprints when reference
+  designators diverge** (#250, reported by @Dewieinns). Sync matched purely on
+  reference strings, so a schematic re-annotated after layout made every
+  component look "missing" and added a second copy of the whole board at the
+  origin. Board footprints are now also matched by their schematic symbol
+  UUID (the last segment of `GetPath()`, which kicad-cli's netlist reports as
+  `<tstamps>` -- format verified against real KiCad 10): a comp whose UUID is
+  already bound to a board footprint under a different name is skipped with
+  an explanatory reason instead of duplicated. Reused-sheet instances share a
+  symbol UUID; each unmatched comp claims one unclaimed footprint.
+
 - **`add_symbol_property` corrupted `.kicad_sym` libraries**. Every call dropped
   one closing paren, so the library stopped loading in eeschema. Eight defects,
   all in the same write path:
