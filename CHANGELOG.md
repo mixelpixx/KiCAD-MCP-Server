@@ -259,6 +259,26 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Python bridge responses are now correlated to their requests by ID**
+  (#373, root cause diagnosed exactly by the reporter; implementation adapted
+  from @kerby2000's #371). The Node-Python protocol was a single-slot,
+  ID-free pipeline: when a request timed out and the next one dispatched, the
+  late response resolved the _wrong_ handler -- command B silently received
+  command A's result, and every response after that was off by one until the
+  next timeout. The reported "no pending request" drops were the visible
+  second-order symptom. Requests now carry a bridge-local `requestId` that
+  Python echoes back as `_requestId`; stale responses are discarded with a
+  log line instead of being delivered to whoever is pending. Timeout
+  callbacks only abandon their own request, and partial frames left by a
+  timed-out command complete and are discarded by ID rather than corrupting
+  the next response.
+
+- **Each server process writes its own log file** (#373, second finding).
+  Multiple concurrent servers shared one `kicad_interface.log` through
+  rotating handlers; on Windows the rotation collides with the sibling's
+  open handle (`WinError 32`). Logs are now per-PID
+  (`kicad_interface-<pid>.log`), with a best-effort sweep of logs older than
+  seven days so the per-PID naming cannot accumulate without bound.
 - **Placed schematic instances inherit the library symbol's Footprint**
   (#300, implementation by @stefangordon in #278). `create_component_instance`
   wrote the caller's `footprint` argument verbatim, defaulted to `""`, so a
