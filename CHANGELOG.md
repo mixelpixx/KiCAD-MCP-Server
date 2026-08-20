@@ -259,6 +259,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Placed schematic instances inherit the library symbol's Footprint**
+  (#300, implementation by @stefangordon in #278). `create_component_instance`
+  wrote the caller's `footprint` argument verbatim, defaulted to `""`, so a
+  symbol with a perfectly good default footprint placed with an empty one and
+  the value survived only in the `lib_symbols` cache. Datasheet and
+  Description already inherited two lines above; Footprint now follows the
+  same pattern, an explicit argument still wins, and the value flows through
+  the escape-aware extractor (#348) and writer (#324) so a footprint
+  containing a quote inherits intact.
+
 - **`add_symbol_property` corrupted `.kicad_sym` libraries**. Every call dropped
   one closing paren, so the library stopped loading in eeschema. Eight defects,
   all in the same write path:

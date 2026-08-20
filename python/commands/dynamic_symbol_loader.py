@@ -1049,6 +1049,20 @@ class DynamicSymbolLoader:
             or ""
         )
 
+        # Footprint inherits from the library symbol the same way (#300): the
+        # library value is the default KiCad itself applies on placement, and
+        # most callers pass nothing. An explicit argument still wins. The
+        # extractor is the escape-aware one (#348), so a footprint containing
+        # a quote inherits intact and the escaping writer below (#324) emits
+        # it correctly.
+        if not footprint:
+            footprint = (
+                self._extract_lib_property_value(
+                    schematic_path, library_name, symbol_name, "Footprint"
+                )
+                or ""
+            )
+
         properties_str = "\n".join(
             [
                 _property("Reference", reference, ref_x, ref_y, ref_a, ref_eff, False),
