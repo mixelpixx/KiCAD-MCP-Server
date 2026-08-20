@@ -4,6 +4,57 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Features
+
+- **`validate_schematic` and `validate_symbol_library`** — locate structural
+  damage in `.kicad_sch` / `.kicad_sym` files. `kicad-cli` answers whether a
+  file loads, but not why: one misplaced paren in a 40 000-line library
+  produces `Unable to load library` and nothing else, leaving a manual bisect
+  as the only way forward. These tools report the line and column of each
+  fault.
+
+  A single string-aware pass catches unbalanced parens, unterminated strings
+  and trailing content — parens inside quoted values such as
+  `"Ceramic (X7R) 50V"` are text, so the naive `count("(") - count(")")` check
+  that gives false positives on real libraries is not used. On top of that:
+  - **Orphaned fragments.** A `(property ...)`, `(effects ...)` or `(at ...)`
+    sitting directly under `(kicad_sch ...)` — or, in a `.kicad_sym`, an
+    `(effects ...)`, `(at ...)`, `(hide ...)`, `(font ...)` or `(justify ...)`
+    directly inside a `(symbol ...)` — is what a truncated property rewrite
+    leaves behind. It is balanced, so nothing that counts parens notices, and
+    KiCad refuses to open the file — kicad-cli 10.0.4 answers
+    `Unable to load library` for a perfectly balanced library with either
+    fragment misplaced. The `.kicad_sym` rule is deliberately not applied to
+    `.kicad_sch`, where `(at ...)` is a legal child of a placed `(symbol ...)`.
+  - **Stale unit names.** Renaming a symbol without renaming its `NAME_0_1`
+    sub-symbols makes the _whole library_ unloadable — confirmed against
+    kicad-cli 10.0, which is why this is graded an error rather than a warning.
+  - **Escaped units.** A dropped paren promotes a unit to the top level, where
+    its name still says which symbol it came from. Graded a _warning_, because
+    the library does still load (kicad-cli returns 0) — it just loads wrong:
+    KiCad reads the unit as a symbol of its own, so the parent keeps none of
+    those graphics or pins and `symbolCount` comes out too high.
+  - **Duplicate symbol names**, where KiCad silently keeps one.
+
+  When the paren structure is _unbalanced_, every node past the break nests one
+  level too deep, so the name checks are skipped rather than reporting hundreds
+  of consequences of the one real problem: on a real 487-symbol library a single
+  deleted `)` went from 489 reported errors to 2. Since `unclosed_form` can only
+  ever blame the outermost form (line 1), an indentation heuristic — KiCad writes
+  one tab per level — points at the first line where nesting stops matching
+  indentation, which is where the paren actually went missing. That heuristic
+  runs on every tab-indented file, not only when something else already failed,
+  because the case it is needed for most is a paren fault that _nets to zero_ —
+  one dropped and a later one spare, which is what a bad slice-and-splice edit
+  produces. Nothing counts its way to that fault and kicad-cli reports no
+  position for it, so the indentation is the only evidence there is.
+
+  `kicad-cli` then runs on a throwaway copy as the authoritative answer, so a
+  file that passes the scan but not KiCad is still reported. The copy is not
+  optional: `upgrade` rewrites in place, and a validator must not modify the
+  file it is validating. Pass `runKicadCli: false` for a structure-only check
+  or when KiCad is not installed.
+
 ### Bug Fixes
 
 - **`add_symbol_property` corrupted `.kicad_sym` libraries**. Every call dropped

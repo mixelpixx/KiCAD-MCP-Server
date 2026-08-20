@@ -357,6 +357,7 @@ try:
     from commands.symbol_repair import SymbolRepairCommands
     from commands.symbol_schematic import SymbolSchematicCommands
     from commands.update_symbol_from_library import update_symbol_from_library
+    from commands.validate_kicad_files import validate_schematic, validate_symbol_library
 
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
@@ -687,6 +688,9 @@ class KiCADInterface(SchematicHandlersMixin):
             "list_symbols_in_library": self._handle_list_symbols_in_library,
             "register_symbol_library": self._handle_register_symbol_library,
             "add_symbol_property": add_symbol_property,
+            # File validation (structure scan + kicad-cli confirmation)
+            "validate_schematic": validate_schematic,
+            "validate_symbol_library": validate_symbol_library,
             # Freerouting autoroute commands
             "autoroute": self.freerouting_commands.autoroute,
             "export_dsn": self.freerouting_commands.export_dsn,

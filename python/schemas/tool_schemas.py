@@ -3068,6 +3068,77 @@ UI_TOOLS = [
 ]
 
 # =============================================================================
+# VALIDATION TOOLS
+# =============================================================================
+
+VALIDATION_TOOLS = [
+    {
+        "name": "validate_schematic",
+        "title": "Validate Schematic File",
+        "description": (
+            "Check that a .kicad_sch file is structurally sound, reporting the line and "
+            "column of every fault. kicad-cli only says whether a file loads; this says "
+            "where it broke. Catches unbalanced parens, unterminated strings, trailing "
+            "content, and property/effects fragments orphaned directly under (kicad_sch), "
+            "which is what a truncated property rewrite leaves behind. A paren fault that "
+            "nets to zero is caught too, by the first line whose indentation stops "
+            "agreeing with its nesting depth. kicad-cli is then run on a throwaway copy "
+            "as the authoritative answer, so the file being validated is never modified. "
+            "'column' counts characters, so a tab counts once and the number will be "
+            "lower than an editor's ruler shows on indented lines. Run this after any "
+            "tool that edits a schematic."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {"type": "string", "description": "Path to the .kicad_sch file"},
+                "runKicadCli": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": (
+                        "Confirm with kicad-cli on a copy. Set false for a fast "
+                        "structure-only check, or when KiCad is not installed."
+                    ),
+                },
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
+        "name": "validate_symbol_library",
+        "title": "Validate Symbol Library File",
+        "description": (
+            "Check that a .kicad_sym file is structurally sound and will load, reporting "
+            "the line and column of every fault instead of a bare 'Unable to load "
+            "library'. Beyond paren/string structure it reports units whose names no "
+            "longer match their symbol (a rename that missed the NAME_0_1 sub-symbols "
+            "makes the whole library unloadable), (effects ...)/(at ...) fragments a "
+            "truncated property rewrite left inside a (symbol ...), units that escaped "
+            "their parent to the top level, and duplicate symbol names. kicad-cli is "
+            "run on a throwaway copy, so the library is never modified. 'column' counts "
+            "characters, so a tab counts once and the number will be lower than an "
+            "editor's ruler shows on indented lines. Run this after any tool that edits "
+            "a library."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "libraryPath": {"type": "string", "description": "Path to the .kicad_sym file"},
+                "runKicadCli": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": (
+                        "Confirm with kicad-cli on a copy. Set false for a fast "
+                        "structure-only check, or when KiCad is not installed."
+                    ),
+                },
+            },
+            "required": ["libraryPath"],
+        },
+    },
+]
+
+# =============================================================================
 # COMBINED TOOL SCHEMAS
 # =============================================================================
 
@@ -3084,6 +3155,7 @@ for tool in (
     + EXPORT_TOOLS
     + SCHEMATIC_TOOLS
     + UI_TOOLS
+    + VALIDATION_TOOLS
 ):
     TOOL_SCHEMAS[tool["name"]] = tool
 
