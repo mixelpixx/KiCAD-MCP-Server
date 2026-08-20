@@ -78,13 +78,24 @@ def _pick_root_svg(svg_dir: str, schematic_path: str) -> Optional[str]:
 
 
 def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
-    """Convert SVG to PNG. No cffi dependency.
+    """Convert SVG to PNG at the requested pixel dimensions.
 
     Priority:
-      1. pymupdf (fitz) — bundled MuPDF renderer, pure Python, no system deps
-      2. Inkscape CLI — accurate KiCAD SVG rendering
-      3. ImageMagick convert — broad availability fallback
+      1. pymupdf (fitz) — the declared dependency (see requirements.txt).
+         Bundles the MuPDF renderer with binary wheels on all three
+         platforms, so `pip install -r requirements.txt` alone guarantees a
+         working converter — cairosvg cannot promise that on Windows, where
+         the native cairo runtime is typically absent (#274 review).
+      2. cairosvg — honors output_width/output_height; fine wherever the
+         cairo runtime exists.
+      3. Inkscape CLI — accurate KiCAD SVG rendering, if installed.
+      4. ImageMagick convert — broad availability fallback.
     Returns PNG bytes or None if all converters fail.
+
+    Rasterizing here is essential (#274): returning the raw KiCAD SVG
+    instead produces a full-sheet vector document (title block, grid, every
+    path and font) whose text easily exceeds an MCP client's inline size
+    cap, and width/height have no effect on it.
     """
     import subprocess
     import tempfile
@@ -96,6 +107,17 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
         page = doc[0]
         mat = fitz.Matrix(width / page.rect.width, height / page.rect.height)
         return page.get_pixmap(matrix=mat).tobytes("png")
+    except Exception:
+        pass
+
+    try:
+        import cairosvg
+
+        return cairosvg.svg2png(
+            url=svg_path,
+            output_width=int(width),
+            output_height=int(height),
+        )
     except Exception:
         pass
 

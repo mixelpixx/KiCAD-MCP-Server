@@ -259,6 +259,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`get_schematic_view` renders always have a working SVG-to-PNG converter**
+  (#274 by @stefangordon, adjusted per review). The converter chain had no
+  declared dependency, so a stock install silently fell back to the raw
+  full-sheet SVG -- which ignores the requested width/height and easily
+  exceeds an MCP client's inline size cap. `pymupdf` is now declared in
+  requirements.txt as the first-priority converter (binary wheels on all
+  three platforms; cairosvg, the PR's original choice, needs a native cairo
+  runtime that stock Windows lacks), with cairosvg second and the
+  Inkscape/ImageMagick fallbacks unchanged. Regression tests pin the
+  stock-install invariant.
+
 - **`add_symbol_property` corrupted `.kicad_sym` libraries**. Every call dropped
   one closing paren, so the library stopped loading in eeschema. Eight defects,
   all in the same write path:
