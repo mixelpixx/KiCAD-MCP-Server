@@ -344,6 +344,11 @@ try:
     from commands.library_management import LibraryManagementCommands
     from commands.library_schematic import LibraryManager as SchematicLibraryManager
     from commands.library_symbol import SymbolLibraryCommands, SymbolLibraryManager
+    from commands.library_tables import (
+        list_library_table,
+        remove_library_table_entry,
+        set_library_table_uri,
+    )
     from commands.pcb_import import PcbImportCommands
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
@@ -693,6 +698,10 @@ class KiCADInterface(SchematicHandlersMixin):
             # File validation (structure scan + kicad-cli confirmation)
             "validate_schematic": validate_schematic,
             "validate_symbol_library": validate_symbol_library,
+            # Library table maintenance (sym-lib-table / fp-lib-table)
+            "list_library_table": list_library_table,
+            "remove_library_table_entry": remove_library_table_entry,
+            "set_library_table_uri": set_library_table_uri,
             # Freerouting autoroute commands
             "autoroute": self.freerouting_commands.autoroute,
             "export_dsn": self.freerouting_commands.export_dsn,

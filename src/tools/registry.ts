@@ -148,7 +148,17 @@ export const toolCategories: ToolCategory[] = [
   {
     name: "library",
     description: "Footprint library access: search, browse, get footprint information",
-    tools: ["list_libraries", "search_footprints", "list_library_footprints", "get_footprint_info"],
+    tools: [
+      "list_libraries",
+      "search_footprints",
+      "list_library_footprints",
+      "get_footprint_info",
+      // Library table maintenance: the read/remove/repoint counterparts to
+      // register_symbol_library and register_footprint_library.
+      "list_library_table",
+      "remove_library_table_entry",
+      "set_library_table_uri",
+    ],
   },
   {
     name: "symbol_library",
