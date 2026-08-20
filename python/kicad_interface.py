@@ -358,6 +358,7 @@ try:
     from commands.schematic_field_layout import SchematicFieldLayoutCommands
     from commands.schematic_hierarchy import SchematicHierarchyCommands
     from commands.schematic_lint import SchematicLintCommands
+    from commands.set_symbol_pin_type import set_symbol_pin_type
     from commands.symbol_creator import SymbolCreator
     from commands.symbol_pins import SymbolPinCommands
     from commands.symbol_repair import SymbolRepairCommands
@@ -564,6 +565,7 @@ class KiCADInterface(SchematicHandlersMixin):
             # Symbol pin discovery commands (read pins straight from symbol libraries)
             "list_symbol_pins": self.symbol_pin_commands.list_symbol_pins,
             "batch_list_symbol_pins": self.symbol_pin_commands.batch_list_symbol_pins,
+            "set_symbol_pin_type": set_symbol_pin_type,
             "repair_flat_symbols": self.symbol_repair_commands.repair_flat_symbols,
             # Schematic hierarchy commands (sheet insertion + subsheet scaffolding)
             "add_hierarchical_sheet": self.hierarchy_commands.add_hierarchical_sheet,

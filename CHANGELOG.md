@@ -4,6 +4,59 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Tools
+
+- **`set_symbol_pin_type`** — set the electrical type, and optionally the
+  graphic style, of pins in a `.kicad_sym` library, filtered by symbol, pin
+  number, pin name, or current type. The server could read pins
+  (`list_symbol_pins`, `batch_list_symbol_pins`) but not write them, so bulk
+  fixes were done with `sed` over the library file.
+
+  That is unsafe in ways that are easy to miss. A blind substitution also
+  rewrites the words it matches inside symbol names, `Description` properties
+  and `(alternate "SPI_CLK" output line)` pin functions; it cannot tell which
+  symbol it is standing on, so "only the shield pins" is not expressible; and
+  nothing validates the replacement token, which matters because KiCad refuses
+  to load a library containing a pin type it does not recognise and reports the
+  file rather than the pin. This tool checks the token against KiCad's sets
+  before touching the file, and rewrites only the pin head.
+
+  The usual reason to need it: symbols converted from Eagle or pulled from
+  SnapEDA arrive with every pin `unspecified` or `bidirectional`, and ERC then
+  reports conflicts on nets that are electrically fine, burying the real errors.
+  `fromType` makes that a one-liner, and `dryRun` shows the list first.
+
+  Nothing that can be mistyped fails silently. An unrecognised `type`, `style`
+  or `fromType` is refused before the library is opened, and a `symbols`,
+  `pinNumbers` or `pinNames` entry that matched nothing comes back in
+  `missingSymbols`, `missingPinNumbers` or `missingPinNames`. A _derived_
+  symbol is told apart from a typo: `(extends "R_Small")` means the symbol has
+  no pins of its own, so it is reported in `symbolsWithoutOwnPins` with a
+  pointer to the parent rather than as a name absent from the library.
+
+  The library is replaced atomically -- the new text is built in a sibling
+  temporary file that is renamed over the original, the same guarantee `sed -i`
+  gives -- so a failed or interrupted write cannot leave a truncated part
+  library behind. A timestamped copy also goes into a sibling `.mcp-backups/`
+  directory (the convention `_auto_save_board` already uses for boards, and
+  already covered by `.gitignore`) and its path is returned in `backupPath`,
+  because the rename only protects against a crash: omitting `symbols` is the
+  natural way to call this tool and flattens every pin in the library, and that
+  edit succeeds. The backup is best effort and never blocks the edit. The
+  file's existing line endings are preserved, which is what keeps a 32-pin edit
+  to a 32-line diff rather than rewriting every line of a library checked out
+  with LF endings on a Windows host. Because a whole-library pass changes
+  thousands of pins and this is an MCP tool whose response is spent from the
+  model's context window, `changes` carries at most 200 per-pin records and sets
+  `changesTruncated`; `changeCount`, `alreadyCorrect` and `symbolsChanged`
+  always describe the whole run. The edits are spliced into the file in one
+  pass, because rebuilding it per pin copies the whole library once for every
+  pin changed -- ~440 GB of copying and a 169-second call on KiCad's own 16 MB
+  `MCU_ST_STM32H7` (28191 pins), against ~8 seconds spliced once.
+
+  Verified on a 2.2 MB library: 2279 pins across 472 symbols walked correctly,
+  32 pins changed, paren balance unmoved, `kicad-cli sym upgrade` accepted the
+  result, and a second pass was a no-op.
 ### New Features
 
 - **`list_library_table`, `remove_library_table_entry`, `set_library_table_uri`**

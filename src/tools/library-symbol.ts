@@ -6,6 +6,37 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+// KiCAD's pin electrical types and graphic styles, mirroring
+// python/utils/pin_types.py (and the enums python/schemas/tool_schemas.py
+// declares). Kept as z.enum rather than z.string so a client rejects a bad
+// token locally instead of learning about it from a round trip.
+const PIN_TYPES = [
+  "input",
+  "output",
+  "bidirectional",
+  "tri_state",
+  "passive",
+  "free",
+  "unspecified",
+  "power_in",
+  "power_out",
+  "open_collector",
+  "open_emitter",
+  "no_connect",
+] as const;
+
+const PIN_STYLES = [
+  "line",
+  "inverted",
+  "clock",
+  "inverted_clock",
+  "input_low",
+  "clock_low",
+  "output_low",
+  "edge_clock_high",
+  "non_logic",
+] as const;
+
 export function registerSymbolLibraryTools(server: McpServer, callKicadScript: Function) {
   // List available symbol libraries
   server.tool(
@@ -358,6 +389,48 @@ Returns symbol references that can be used directly in schematics.`,
         content: [
           { type: "text", text: `Failed to list pins: ${result.message || "Unknown error"}` },
         ],
+      };
+    },
+  );
+
+  // Change pin electrical types in a .kicad_sym library
+  server.tool(
+    "set_symbol_pin_type",
+    "Set the electrical type (and optionally the graphic style) of pins in a .kicad_sym " +
+      "library, filtered by symbol, pin number, pin name, or current type. Use this instead " +
+      "of a sed/regex pass over the library: a blind substitution also rewrites matching " +
+      "words inside symbol names, Descriptions and (alternate ...) pin functions, and it " +
+      "cannot tell which symbol it is standing on. The replacement token is checked against " +
+      "KiCAD's pin types first — an unknown one makes the whole library fail to load. " +
+      "Typical use: imported or SnapEDA symbols arrive with every pin 'unspecified' or " +
+      "'bidirectional', which floods ERC with conflicts on nets that are electrically fine. " +
+      "Run with dryRun first to see what matches. The library is replaced atomically, keeps " +
+      "its existing line endings, and is copied to a sibling '.mcp-backups/' first (path " +
+      "returned in 'backupPath'). 'changes' lists at most 200 per-pin records, with " +
+      "'changesTruncated' saying when it was cut; 'changeCount' always carries the true total.",
+    {
+      libraryPath: z.string().describe("Absolute path to the .kicad_sym library file"),
+      type: z.enum(PIN_TYPES).optional().describe("New electrical type"),
+      style: z.enum(PIN_STYLES).optional().describe("New graphic style"),
+      symbols: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Top-level symbol names to change (not unit names like 'R_0402_1_1'). " +
+            "Omit to change every symbol in the library.",
+        ),
+      pinNumbers: z.array(z.string()).optional().describe("Only pins with these numbers"),
+      pinNames: z.array(z.string()).optional().describe("Only pins with these names"),
+      fromType: z
+        .enum(PIN_TYPES)
+        .optional()
+        .describe("Only pins currently of this electrical type — the safe way to do a bulk fix"),
+      dryRun: z.boolean().optional().describe("Report what would change without writing"),
+    },
+    async (args) => {
+      const result = await callKicadScript("set_symbol_pin_type", args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
       };
     },
   );

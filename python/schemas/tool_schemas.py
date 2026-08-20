@@ -12,6 +12,8 @@ Each tool includes:
 
 from typing import Any, Dict
 
+from utils.pin_types import PIN_STYLES, PIN_TYPES
+
 # =============================================================================
 # PROJECT TOOLS
 # =============================================================================
@@ -3183,6 +3185,72 @@ SCHEMATIC_TOOLS = [
                 },
             },
             "required": ["libraryPath", "symbolName", "propertyName", "propertyValue"],
+        },
+    },
+    {
+        "name": "set_symbol_pin_type",
+        "title": "Set Pin Electrical Type in Symbol Library",
+        "description": (
+            "Set the electrical type (and optionally the graphic style) of pins in a "
+            ".kicad_sym library, filtered by symbol, pin number, pin name, or current type. "
+            "Use instead of a sed/regex pass over the library: a blind substitution also "
+            "rewrites matching words inside symbol names, Descriptions and (alternate ...) "
+            "pin functions, and cannot tell which symbol it is standing on. The replacement "
+            "token is validated first -- KiCAD refuses to load a library containing a pin "
+            "type it does not know. Typical use: imported or SnapEDA symbols arrive with "
+            "every pin 'unspecified' or 'bidirectional', flooding ERC with conflicts on nets "
+            "that are electrically fine. The library is replaced atomically, keeps its "
+            "existing line endings, and is copied to a sibling '.mcp-backups/' first "
+            "(path returned in 'backupPath'). 'changes' lists at most 200 per-pin records "
+            "with 'changesTruncated' saying when it was cut; 'changeCount' always carries "
+            "the true total."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "libraryPath": {"type": "string", "description": "Path to the .kicad_sym file"},
+                "type": {
+                    "type": "string",
+                    "enum": list(PIN_TYPES),
+                    "description": "New electrical type",
+                },
+                "style": {
+                    "type": "string",
+                    "enum": list(PIN_STYLES),
+                    "description": "New graphic style",
+                },
+                "symbols": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Top-level symbol names to change (not unit names like "
+                        "'R_0402_1_1'). Omit to change every symbol in the library."
+                    ),
+                },
+                "pinNumbers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Only pins with these numbers",
+                },
+                "pinNames": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Only pins with these names",
+                },
+                "fromType": {
+                    "type": "string",
+                    "enum": list(PIN_TYPES),
+                    "description": (
+                        "Only pins currently of this type -- the safe way to do a bulk fix"
+                    ),
+                },
+                "dryRun": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Report what would change without writing",
+                },
+            },
+            "required": ["libraryPath"],
         },
     },
     {

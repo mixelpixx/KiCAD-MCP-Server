@@ -185,8 +185,9 @@ export const toolCategories: ToolCategory[] = [
   },
   {
     name: "symbol_pins",
-    description: "Read a symbol's pins straight from the library (no schematic needed)",
-    tools: ["list_symbol_pins", "batch_list_symbol_pins"],
+    description:
+      "Read a symbol's pins straight from the library (no schematic needed), and set their electrical types",
+    tools: ["list_symbol_pins", "batch_list_symbol_pins", "set_symbol_pin_type"],
   },
   {
     name: "schematic_hierarchy",
