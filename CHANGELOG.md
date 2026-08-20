@@ -6,6 +6,23 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **JLCPCB yaqwsx source decodes the new `source-db-v2` schema** (#352,
+  fixed by @stefanobaldo in #353). Upstream changed the published
+  `cache.sqlite3` layout; every part converted with `price_json '[]'` and
+  `basic_parts 0`. The converter now reads `jlc_components` joined to
+  `lcsc_components`, derives the Basic flag from `library_type = 'base'`,
+  and parses the `qFrom-qTo:unitPrice` price encoding, including open-ended
+  breaks. Pre-migration caches should be deleted and re-downloaded.
+
+- **`setup-macos.sh --verify` now actually verifies the server can start**
+  (#350, fixed by @francisrath in #370). It previously validated `pcbnew`
+  but never the Python requirements, so a server that died on
+  `import sexpdata` before the MCP handshake still showed all-green.
+  `--verify` now import-checks all nine requirements with the same
+  interpreter the generated config points at, and `--apply` offers to
+  install them. Behavior change: `--verify` exits 1 on missing
+  requirements where it previously always exited 0.
+
 - **Instance property writes are now escaped too** (#324, diagnosed by
   @PaulHubiss). The escape-aware _reading_ landed in #348, but the matching
   write side did not: `dynamic_symbol_loader` emitted instance properties raw.
@@ -44,6 +61,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
   `canonicalName` and `id`, so the interpretation is visible at the call site.
   Non-copper `type` values are now rejected rather than silently retyping
   `F.Cu` — KiCad's technical and user layers are a fixed set.
+
+### Tooling
+
+- **15 symbol-library tools joined the `search_tools` registry** (#345
+  progress, @AmirF194 in #359). A new `symbol_library` category registers
+  `search_symbols`, `create_symbol`, `add_symbol_property` and 12 more,
+  shrinking the frozen unregistered set from 75 to 60. The
+  registry-completeness ratchet enforces that the set only shrinks.
 
 ## [2.6.0] - 2026-07-28
 

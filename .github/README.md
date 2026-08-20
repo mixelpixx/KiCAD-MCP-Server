@@ -35,7 +35,7 @@
 >
 > This Python/TypeScript server remains fully open (MIT) and maintained.
 >
-> ## KiCAD MCP and Konnect works well with Nimrod 
+> ## KiCAD MCP and Konnect works well with Nimrod
 >
 > [**Nimrod**](https://nimrod.orchis.ai) is our web-research MCP server:
 > quality-scored Google search, clean webpage extraction, and deep multi-source
