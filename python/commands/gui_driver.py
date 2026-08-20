@@ -41,6 +41,41 @@ logger = logging.getLogger("kicad_interface")
 DEFAULT_PORT = 8770
 DESTRUCTIVE_PREFIX = "⚠ "
 
+
+# -- session token -----------------------------------------------------------
+#
+# The helper's control channel is token-gated: it mints a per-session secret and
+# writes it to a mode-0600 file (see gui_driver_plugin/plugins/listener.py). We
+# read that file and echo the token on every request; without it the helper
+# answers "unauthorized". This MUST stay in lock-step with listener._token_path.
+
+
+def _token_path() -> Path:
+    """Path of the mode-0600 session-token file the helper wrote (shared contract)."""
+    override = os.environ.get("KICAD_GUI_DRIVER_TOKEN_FILE")
+    if override:
+        return Path(override)
+    port = int(os.environ.get("KICAD_GUI_DRIVER_PORT", DEFAULT_PORT))
+    plat = sys.platform
+    home = Path.home()
+    if plat.startswith("win"):
+        appdata = os.environ.get("APPDATA")
+        base = Path(appdata) / "kicad" if appdata else home / ".kicad"
+    elif plat == "darwin":
+        base = home / "Library" / "Preferences" / "kicad"
+    else:
+        base = home / ".local" / "share" / "kicad"
+    return base / f"gui_driver_{port}.token"
+
+
+def _read_token() -> Optional[str]:
+    """Read the session token the helper wrote, or None if it isn't there yet."""
+    try:
+        tok = _token_path().read_text(encoding="utf-8").strip()
+        return tok or None
+    except OSError:
+        return None
+
 # -- helper self-install -----------------------------------------------------
 #
 # The MCP bundles the in-KiCad helper (gui_driver_plugin/plugins/ in this repo)
@@ -250,9 +285,17 @@ class GuiDriverCommands:
         return int(os.environ.get("KICAD_GUI_DRIVER_PORT", DEFAULT_PORT))
 
     def _send(self, request: Dict[str, Any], timeout: float = 30.0) -> Dict[str, Any]:
-        """One request → one response over a fresh connection. Raises on I/O."""
+        """One request → one response over a fresh connection. Raises on I/O.
+
+        Echoes the session token (from the helper's 0600 token file) on every
+        request; the helper rejects requests that don't carry it.
+        """
+        payload = dict(request)
+        token = _read_token()
+        if token is not None:
+            payload["token"] = token
         with socket.create_connection(("127.0.0.1", self.port), timeout=timeout) as conn:
-            conn.sendall((json.dumps(request) + "\n").encode("utf-8"))
+            conn.sendall((json.dumps(payload) + "\n").encode("utf-8"))
             reader = conn.makefile("r", encoding="utf-8")
             line = reader.readline()
         if not line:
@@ -272,14 +315,25 @@ class GuiDriverCommands:
         return {"success": True, "result": response.get("result")}
 
     def _unreachable_error(self, exc: Exception) -> str:
-        """Not-reachable message; tries the self-install friction-reducer first.
+        """Not-reachable message. Installing the helper into the user's KiCad is
+        OPT-IN — it is a change to their config, not a side effect of a failed
+        connection. Auto-install runs only when ``KICAD_GUI_DRIVER_AUTOINSTALL``
+        is truthy; otherwise we point at the explicit ``install_gui_driver`` tool.
 
         Graceful degradation is the REQUIRED contract: this always returns a
-        string for a ``success: False`` envelope — self-install and the AT-SPI
-        refresh are best-effort layers that may improve the message, never a
-        reliance, never a raise, never a hang.
+        string for a ``success: False`` envelope — never a raise, never a hang.
         """
         base = f"GUI-driver helper not reachable on 127.0.0.1:{self.port} ({exc}). "
+        autoinstall = os.environ.get("KICAD_GUI_DRIVER_AUTOINSTALL", "").strip().lower() in (
+            "1", "true", "yes", "on"
+        )
+        if not autoinstall:
+            return base + (
+                "The helper is not installed/running. Run the `install_gui_driver` tool "
+                "to deploy it into KiCad (opt-in), set KICAD_GUI_DRIVER_ENABLE=1 in KiCad's "
+                "environment, and restart KiCad (or Tools > External Plugins > Refresh Plugins). "
+                "To auto-install on failure instead, set KICAD_GUI_DRIVER_AUTOINSTALL=1."
+            )
         try:
             deployed = ensure_helper_installed()
         except Exception as install_exc:  # noqa: BLE001 — never break graceful-fail
@@ -316,6 +370,29 @@ class GuiDriverCommands:
             return bool(out.get("success"))
         except Exception:  # noqa: BLE001 — nicety, never surfaces
             return False
+
+    def install_gui_driver(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Explicitly deploy the in-KiCad helper into the user's KiCad plugin tree.
+
+        Opt-in: the connection path no longer installs the helper as a side effect
+        of a failed connect. Returns which version dirs were written vs already
+        current, plus the steps to open the (token-gated) channel.
+        """
+        try:
+            deployed = ensure_helper_installed()
+        except Exception as exc:  # noqa: BLE001 — surface as a failed envelope, never raise
+            return {"success": False, "error": f"gui-driver helper install failed: {exc}"}
+        refreshed = self._try_refresh_plugins_atspi() if deployed["installed"] else False
+        return {
+            "success": True,
+            "installed": deployed["installed"],
+            "current": deployed["current"],
+            "refreshed_via_atspi": refreshed,
+            "next": (
+                "Set KICAD_GUI_DRIVER_ENABLE=1 in KiCad's environment, then restart KiCad "
+                "(or Tools > External Plugins > Refresh Plugins) to open the token-gated channel."
+            ),
+        }
 
     # -- generic tools -------------------------------------------------------
 

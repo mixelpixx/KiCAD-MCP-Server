@@ -3690,6 +3690,17 @@ GUI_DRIVER_TOOLS = [
             "required": ["name"],
         },
     },
+    {
+        "name": "install_gui_driver",
+        "title": "Install the GUI-driver helper (opt-in)",
+        "description": (
+            "Deploy the in-KiCad GUI-driver helper plugin into the user's KiCad plugin tree. "
+            "Opt-in: the connect path no longer installs it as a side effect of a failed connect. "
+            "After install, set KICAD_GUI_DRIVER_ENABLE=1 in KiCad's environment and restart "
+            "(or Tools > External Plugins > Refresh Plugins) to open the token-gated channel."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
 ]
 
 TOOL_SCHEMAS: Dict[str, Any] = {}

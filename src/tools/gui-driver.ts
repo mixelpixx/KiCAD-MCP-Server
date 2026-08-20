@@ -145,5 +145,13 @@ export function registerGuiDriverTools(server: McpServer, callKicadScript: Funct
       asText(await callKicadScript("kicad_gui_click_atspi", args)),
   );
 
+  // --- Opt-in installer (deploying the in-KiCad helper is a user decision) ---
+  server.tool(
+    "install_gui_driver",
+    "Deploy the in-KiCad GUI-driver helper plugin into the user's KiCad plugin tree (opt-in). The connect path no longer installs it as a side effect. After install, set KICAD_GUI_DRIVER_ENABLE=1 in KiCad's environment and restart (or Refresh Plugins) to open the token-gated control channel.",
+    {},
+    async () => asText(await callKicadScript("install_gui_driver", {})),
+  );
+
   logger.info("GUI-driver tools registered");
 }

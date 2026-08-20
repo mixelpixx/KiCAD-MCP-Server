@@ -185,8 +185,14 @@ class TestResolveName:
 
 
 @pytest.fixture()
-def helper(monkeypatch):
-    """The real helper listener on an ephemeral port with a fake driver module."""
+def helper(monkeypatch, tmp_path):
+    """The real helper listener on an ephemeral port with a fake driver module.
+
+    Token check disabled here (``token=""``) so these tests target the protocol/
+    resolution behaviour; the token itself is exercised in TestSessionToken. The
+    token file is redirected to tmp so no test ever writes the real KiCad config dir.
+    """
+    monkeypatch.setenv("KICAD_GUI_DRIVER_TOKEN_FILE", str(tmp_path / "gui_driver.token"))
     plugin_root = REPO_ROOT / "gui_driver_plugin"
     monkeypatch.syspath_prepend(str(plugin_root))
     for mod in ("plugins", "plugins.listener", "plugins.driver"):
@@ -231,7 +237,7 @@ def helper(monkeypatch):
     def stub_executor(fn, timeout=None):  # listener thread runs the fn directly
         return fn()
 
-    port = listener.start(port=0, executor=stub_executor)
+    port = listener.start(port=0, executor=stub_executor, token="")  # token disabled here
     assert port
     monkeypatch.setenv("KICAD_GUI_DRIVER_PORT", str(port))
     yield types.SimpleNamespace(port=port, driver=fake, listener=listener)
@@ -303,7 +309,87 @@ class TestSocketProtocol:
         out = GuiDriverCommands().kicad_gui_tree({})
         assert out["success"] is False
         assert "not reachable" in out["error"]
-        assert "gui_driver_plugin" in out["error"]  # install hint present
+        # opt-in: default path does NOT auto-install; it points at the explicit tool
+        assert "install_gui_driver" in out["error"]
+
+
+class TestSessionToken:
+    """The token-gated channel only accepts the caller holding the minted secret."""
+
+    @pytest.fixture()
+    def tok_helper(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("KICAD_GUI_DRIVER_TOKEN_FILE", str(tmp_path / "tok"))
+        monkeypatch.syspath_prepend(str(REPO_ROOT / "gui_driver_plugin"))
+        for mod in ("plugins", "plugins.listener", "plugins.driver"):
+            sys.modules.pop(mod, None)
+        fake = types.SimpleNamespace()
+        fake.full_tree = lambda frame=None: {"menus": [], "toolbars": []}
+        sys.modules["plugins.driver"] = fake
+        import plugins  # noqa: F401 — opt-in __init__ does NOT auto-start here
+        setattr(sys.modules["plugins"], "driver", fake)
+        from plugins import listener
+
+        listener.stop()
+        port = listener.start(port=0, executor=lambda fn, timeout=None: fn(), token="s3cret-token")
+        assert port
+        monkeypatch.setenv("KICAD_GUI_DRIVER_PORT", str(port))
+        yield types.SimpleNamespace(port=port, token="s3cret-token")
+        listener.stop()
+        for mod in ("plugins", "plugins.listener", "plugins.driver"):
+            sys.modules.pop(mod, None)
+
+    def _raw(self, port, obj):
+        with socket.create_connection(("127.0.0.1", port)) as conn:
+            conn.sendall((json.dumps(obj) + "\n").encode("utf-8"))
+            return json.loads(conn.makefile("r").readline())
+
+    def test_missing_token_is_unauthorized(self, tok_helper):
+        r = self._raw(tok_helper.port, {"cmd": "ping"})
+        assert r["ok"] is False and "unauthorized" in r["error"]
+
+    def test_wrong_token_is_unauthorized(self, tok_helper):
+        r = self._raw(tok_helper.port, {"cmd": "ping", "token": "nope"})
+        assert r["ok"] is False and "unauthorized" in r["error"]
+
+    def test_correct_token_authorized(self, tok_helper):
+        r = self._raw(tok_helper.port, {"cmd": "ping", "token": tok_helper.token})
+        assert r["ok"] is True and r["result"]["pong"] is True
+
+    def test_client_reads_token_file_and_authorizes(self, tok_helper):
+        # the real client reads the token file the listener wrote and gets in
+        assert GuiDriverCommands().kicad_gui_tree({})["success"] is True
+
+    def test_token_file_is_mode_0600(self, tok_helper, tmp_path):
+        import stat
+
+        tf = tmp_path / "tok"
+        assert tf.read_text().strip() == tok_helper.token
+        assert stat.S_IMODE(tf.stat().st_mode) == 0o600
+
+
+class TestInstallOptIn:
+    """Deploying the helper into the user's KiCad is an explicit action, not a
+    side effect of a failed connect."""
+
+    def test_default_does_not_autoinstall(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("KICAD_GUI_DRIVER_PORT", "1")
+        monkeypatch.delenv("KICAD_GUI_DRIVER_AUTOINSTALL", raising=False)
+        plugins = tmp_path / "9.0" / "3rdparty" / "plugins"
+        plugins.mkdir(parents=True)
+        monkeypatch.setattr(gui_driver, "kicad_plugin_dirs", lambda: [plugins])
+        out = GuiDriverCommands().kicad_gui_tree({})
+        assert out["success"] is False
+        assert "install_gui_driver" in out["error"]
+        assert not (plugins / HELPER_IDENTIFIER).exists()  # nothing written
+
+    def test_install_tool_deploys(self, tmp_path, monkeypatch):
+        plugins = tmp_path / "9.0" / "3rdparty" / "plugins"
+        plugins.mkdir(parents=True)
+        monkeypatch.setattr(gui_driver, "kicad_plugin_dirs", lambda: [plugins])
+        monkeypatch.setattr(GuiDriverCommands, "_try_refresh_plugins_atspi", lambda self: False)
+        out = GuiDriverCommands().install_gui_driver({})
+        assert out["success"] is True
+        assert (plugins / HELPER_IDENTIFIER / "listener.py").is_file()
 
 
 # ---------------------------------------------------------------------------
@@ -409,6 +495,7 @@ class TestGracefulFailWithSelfInstall:
 
     def _unreachable(self, monkeypatch):
         monkeypatch.setenv("KICAD_GUI_DRIVER_PORT", "1")  # nothing listens there
+        monkeypatch.setenv("KICAD_GUI_DRIVER_AUTOINSTALL", "1")  # exercise the auto-install path
         return GuiDriverCommands()
 
     def test_fresh_install_prompts_refresh(self, tmp_path, monkeypatch):
@@ -469,6 +556,7 @@ class TestGracefulFailWithSelfInstall:
 # ---------------------------------------------------------------------------
 
 GUI_TOOL_NAMES = [
+    "install_gui_driver",
     "kicad_gui_tree",
     "kicad_gui_click",
     "kicad_run_action_plugin",
