@@ -264,6 +264,7 @@ export class KiCADMcpServer {
 
   private resetReadyState(): void {
     this.startupBuffer = "";
+    this.responseBuffer = "";
     this.readyDetected = false;
     this.readyPromise = new Promise((resolve, reject) => {
       this.resolveReady = resolve;
