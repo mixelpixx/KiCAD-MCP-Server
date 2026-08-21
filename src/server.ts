@@ -226,6 +226,10 @@ function findPythonExecutable(scriptPath: string): string {
 export class KiCADMcpServer {
   private server: McpServer;
   private pythonProcess: ChildProcess | null = null;
+  private pythonExecutable: string | null = null;
+  private pythonEnv: NodeJS.ProcessEnv | null = null;
+  private restartPromise: Promise<void> | null = null;
+  private stopping = false;
   private kicadScriptPath: string;
   private stdioTransport!: StdioServerTransport;
   private requestQueue: Array<{
@@ -250,13 +254,23 @@ export class KiCADMcpServer {
   } | null = null;
 
   /** Resolved when Python prints {"type":"ready"} — stdin loop is live. */
-  private readyPromise: Promise<void>;
+  private readyPromise!: Promise<void>;
   private resolveReady!: () => void;
   private rejectReady!: (err: Error) => void;
   /** Accumulates stdout until the READY marker is seen. */
   private startupBuffer: string = "";
   /** True after READY marker detected; persistent handler takes over. */
   private readyDetected: boolean = false;
+
+  private resetReadyState(): void {
+    this.startupBuffer = "";
+    this.responseBuffer = "";
+    this.readyDetected = false;
+    this.readyPromise = new Promise((resolve, reject) => {
+      this.resolveReady = resolve;
+      this.rejectReady = reject;
+    });
+  }
 
   /**
    * Constructor for the KiCAD MCP Server
@@ -280,10 +294,7 @@ export class KiCADMcpServer {
       description: "MCP server for KiCAD PCB design operations",
     });
     // Create the ready promise (resolved when Python sends {"type":"ready"})
-    this.readyPromise = new Promise((resolve, reject) => {
-      this.resolveReady = resolve;
-      this.rejectReady = reject;
-    });
+    this.resetReadyState();
 
     // Initialize STDIO transport
     this.stdioTransport = new StdioServerTransport();
@@ -509,6 +520,7 @@ export class KiCADMcpServer {
   async start(): Promise<void> {
     try {
       logger.info("Starting KiCAD MCP server...");
+      this.stopping = false;
 
       // ——— Phase 0: connect MCP transport BEFORE anything else ———
       // Python + pcbnew/wxApp initialisation can take 55-125 s. If the
@@ -546,73 +558,16 @@ export class KiCADMcpServer {
       if (derivedSitePackages && !process.env.PYTHONPATH) {
         logger.info(`Using KiCAD site-packages: ${derivedSitePackages}`);
       }
-      this.pythonProcess = spawn(pythonExe, [this.kicadScriptPath], {
-        stdio: ["pipe", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          PYTHONPATH:
-            process.env.PYTHONPATH ||
-            derivedSitePackages ||
-            "C:/Program Files/KiCad/9.0/lib/python3/dist-packages",
-        },
-      });
+      this.pythonExecutable = pythonExe;
+      this.pythonEnv = {
+        ...process.env,
+        PYTHONPATH:
+          process.env.PYTHONPATH ||
+          derivedSitePackages ||
+          "C:/Program Files/KiCad/9.0/lib/python3/dist-packages",
+      };
 
-      // Listen for process exit
-      this.pythonProcess.on("exit", (code, signal) => {
-        logger.warn(`Python process exited with code ${code} and signal ${signal}`);
-        this.pythonProcess = null;
-      });
-
-      // Listen for process errors
-      this.pythonProcess.on("error", (err) => {
-        logger.error(`Python process error: ${err.message}`);
-      });
-
-      // Set up error logging for stderr
-      if (this.pythonProcess.stderr) {
-        this.pythonProcess.stderr.on("data", (data: Buffer) => {
-          logger.error(`Python stderr: ${data.toString()}`);
-        });
-      }
-
-      // ——— Phase 1: stdout handler that detects the READY marker ———
-      // Before Python reaches main() it may spend 55-65 s on wxApp init.
-      // The stdin loop is only live after main() prints {"type":"ready"}.
-      // Until then we buffer everything and scan for that exact JSON line.
-      if (this.pythonProcess.stdout) {
-        this.pythonProcess.stdout.on("data", (data: Buffer) => {
-          if (this.readyDetected) {
-            // Persistent handler (post-warm-up)
-            this.handlePythonResponse(data);
-          } else {
-            this.startupBuffer += data.toString();
-            const lines = this.startupBuffer.split("\n");
-            for (let i = 0; i < lines.length; i++) {
-              const line = lines[i].trim();
-              if (!line) continue;
-              try {
-                const obj = JSON.parse(line);
-                if (obj.type === "ready") {
-                  logger.info("Python process READY — stdin loop is live");
-                  this.readyDetected = true;
-                  // Replay any remaining buffered lines through the persistent handler
-                  const remaining = lines.slice(i + 1).join("\n");
-                  if (remaining.trim()) {
-                    this.handlePythonResponse(Buffer.from(remaining));
-                  }
-                  this.resolveReady();
-                  // Drain any tool calls that queued while Python was
-                  // initialising (the ready gate in processNextRequest).
-                  setTimeout(() => this.processNextRequest(), 0);
-                  return;
-                }
-              } catch {
-                // Not valid JSON yet; keep buffering
-              }
-            }
-          }
-        });
-      }
+      this.spawnPythonProcess();
 
       // ——— Phase 2: wait for Python READY ———
       logger.info("Waiting for Python process to be ready...");
@@ -642,6 +597,7 @@ export class KiCADMcpServer {
    */
   async stop(): Promise<void> {
     logger.info("Stopping KiCAD MCP server...");
+    this.stopping = true;
 
     // Kill the Python process if it's running
     if (this.pythonProcess) {
@@ -650,6 +606,107 @@ export class KiCADMcpServer {
     }
 
     logger.info("KiCAD MCP server stopped");
+  }
+
+  private spawnPythonProcess(): void {
+    if (!this.pythonExecutable || !this.pythonEnv) {
+      throw new Error("Python worker configuration is not initialized");
+    }
+
+    this.resetReadyState();
+    const worker = spawn(this.pythonExecutable, [this.kicadScriptPath], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: this.pythonEnv,
+    });
+    this.pythonProcess = worker;
+
+    worker.on("exit", (code, signal) => {
+      if (this.pythonProcess !== worker) return;
+
+      const error = new Error(`Python process exited with code ${code} and signal ${signal}`);
+      logger.warn(error.message);
+      this.pythonProcess = null;
+      if (!this.readyDetected) this.rejectReady(error);
+
+      if (this.currentRequestHandler) {
+        clearTimeout(this.currentRequestHandler.timeoutHandle);
+        const handler = this.currentRequestHandler;
+        this.currentRequestHandler = null;
+        this.processingRequest = false;
+        this.responseBuffer = "";
+        handler.reject(error);
+      }
+
+      if (!this.stopping && !this.restartPromise) {
+        void this.restartPythonProcess(error.message);
+      }
+    });
+
+    worker.on("error", (err) => {
+      logger.error(`Python process error: ${err.message}`);
+    });
+
+    worker.stderr?.on("data", (data: Buffer) => {
+      logger.error(`Python stderr: ${data.toString()}`);
+    });
+
+    worker.stdout?.on("data", (data: Buffer) => {
+      if (this.readyDetected) {
+        this.handlePythonResponse(data);
+        return;
+      }
+
+      this.startupBuffer += data.toString();
+      const lines = this.startupBuffer.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        try {
+          const obj = JSON.parse(line);
+          if (obj.type !== "ready") continue;
+
+          logger.info("Python process READY — stdin loop is live");
+          this.readyDetected = true;
+          const remaining = lines.slice(i + 1).join("\n");
+          if (remaining.trim()) this.handlePythonResponse(Buffer.from(remaining));
+          this.resolveReady();
+          setTimeout(() => this.processNextRequest(), 0);
+          return;
+        } catch {
+          // The READY line may be split across stdout chunks.
+        }
+      }
+    });
+  }
+
+  private restartPythonProcess(reason: string): Promise<void> {
+    if (this.restartPromise) return this.restartPromise;
+
+    logger.warn(`Restarting Python process after ${reason}`);
+    const oldWorker = this.pythonProcess;
+    this.pythonProcess = null;
+    oldWorker?.kill();
+
+    this.restartPromise = (async () => {
+      this.spawnPythonProcess();
+      await this.waitForReady(120_000);
+      logger.info("Python process restarted successfully");
+    })()
+      .catch((error) => {
+        logger.error(`Failed to restart Python process: ${error}`);
+        while (this.requestQueue.length > 0) {
+          this.requestQueue.shift()!.reject(error);
+        }
+        throw error;
+      })
+      .finally(() => {
+        this.restartPromise = null;
+        this.processNextRequest();
+      });
+
+    // Callers that only need recovery should not create unhandled rejections.
+    void this.restartPromise.catch(() => undefined);
+    return this.restartPromise;
   }
 
   /**
@@ -751,7 +808,7 @@ export class KiCADMcpServer {
   private async callKicadScript(command: string, params: any): Promise<any> {
     return new Promise((resolve, reject) => {
       // Check if Python process is running
-      if (!this.pythonProcess) {
+      if (!this.pythonProcess && !this.restartPromise) {
         logger.error("Python process is not running");
         reject(new Error("Python process for KiCAD scripting is not running"));
         return;
@@ -872,16 +929,15 @@ export class KiCADMcpServer {
    * Process the next request in the queue
    */
   private processNextRequest(): void {
-    // If no more requests or already processing, return
-    if (this.requestQueue.length === 0 || this.processingRequest) {
-      return;
-    }
-
-    // Backend still initialising: hold the queue. Drained when the READY
-    // marker fires (see the startup stdout handler). Without this gate, a
-    // tool called during the 55-125 s init window would start its 30 s
-    // timeout against Python's own startup and always lose (#377).
-    if (!this.readyDetected) {
+    // Do not feed a replacement worker until it has completed its READY
+    // handshake; queued calls resume from restartPythonProcess().
+    if (
+      this.requestQueue.length === 0 ||
+      this.processingRequest ||
+      this.restartPromise ||
+      !this.pythonProcess ||
+      !this.readyDetected
+    ) {
       return;
     }
 
@@ -915,8 +971,10 @@ export class KiCADMcpServer {
         // Reject the promise
         reject(new Error(`Command timeout after ${timeoutDuration / 1000}s: ${request.command}`));
 
-        // Process next request
-        setTimeout(() => this.processNextRequest(), 0);
+        // Python executes commands serially. A timed-out command may still be
+        // wedged in native KiCAD code, so continuing to feed the same worker
+        // only causes every queued request to time out behind it.
+        void this.restartPythonProcess(`command timeout: ${request.command}`);
       }, timeoutDuration);
 
       // Store the current request handler
