@@ -167,6 +167,10 @@ function Find-KiCadInstallation {
             }
             if ($entry.DisplayIcon) {
                 $iconDir = Split-Path -Parent ([string]$entry.DisplayIcon).Trim('"')
+                if ($iconDir -and (Split-Path -Leaf $iconDir) -eq 'bin') {
+                    # DisplayIcon points at <root>\bin\kicad.exe; probe the version root, not the bin dir.
+                    $iconDir = Split-Path -Parent $iconDir
+                }
                 if ($iconDir) {
                     $candidateRoots += $iconDir
                 }
@@ -234,6 +238,7 @@ function Get-KiCadInfo {
         return $null
     }
 
+    # Keep candidate probing in sync with Get-KiCadInfo in setup-windows.ps1.
     $pythonExeCandidates = @(
         (Join-Path $Root 'bin\python.exe'),
         (Join-Path $Root 'bin\Python.exe')

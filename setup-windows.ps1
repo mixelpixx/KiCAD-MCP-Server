@@ -72,6 +72,9 @@ $script:Results = @{
 # Get script directory (project root)
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+# KiCAD version directories to probe under an install root, newest first.
+$script:KnownVersions = @('10.0', '9.1', '9.0', '8.0')
+
 Write-Step "Step 1: Detecting KiCAD Installation"
 
 # Function to inspect a candidate KiCAD root and return install info if valid
@@ -91,24 +94,31 @@ function Get-KiCadInfo {
         ForEach-Object { $_.FullName })
 
     foreach ($dir in ($versionDirs | Select-Object -Unique)) {
-        $pythonExe = Join-Path $dir "bin\python.exe"
-        if (Test-Path -LiteralPath $pythonExe) {
-            $pythonLibCandidates = @(
-                (Join-Path $dir "lib\python3\dist-packages"),
-                (Join-Path $dir "bin\Lib\site-packages")
-            )
-            $pythonLib = $pythonLibCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-            if (-not $pythonLib) {
-                $pythonLib = $pythonLibCandidates[0]
-            }
+        # Keep candidate probing in sync with Get-KiCadInfo in setup-windows-opencode.ps1.
+        $pythonExeCandidates = @(
+            (Join-Path $dir "bin\python.exe"),
+            (Join-Path $dir "bin\Python.exe")
+        )
+        $pythonExe = $pythonExeCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+        if (-not $pythonExe) {
+            continue
+        }
 
-            Write-Success "Found KiCAD $((Split-Path -Leaf $dir)) at: $dir"
-            return @{
-                Path = $dir
-                Version = Split-Path -Leaf $dir
-                PythonExe = $pythonExe
-                PythonLib = $pythonLib
-            }
+        $pythonLibCandidates = @(
+            (Join-Path $dir "lib\python3\dist-packages"),
+            (Join-Path $dir "bin\Lib\site-packages")
+        )
+        $pythonLib = $pythonLibCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+        if (-not $pythonLib) {
+            $pythonLib = $pythonLibCandidates[0]
+        }
+
+        Write-Success "Found KiCAD $((Split-Path -Leaf $dir)) at: $dir"
+        return @{
+            Path = $dir
+            Version = Split-Path -Leaf $dir
+            PythonExe = $pythonExe
+            PythonLib = $pythonLib
         }
     }
 
@@ -117,8 +127,6 @@ function Get-KiCadInfo {
 
 # Function to find KiCAD installation on any drive (registry + env vars + standard paths)
 function Find-KiCAD {
-    $script:KnownVersions = @("10.0", "9.1", "9.0", "8.0")
-
     # 1. Registry uninstall keys - covers any install drive, both all-users and per-user installs
     $uninstallRoots = @(
         "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
@@ -137,6 +145,10 @@ function Find-KiCAD {
             }
             if ($entry.DisplayIcon) {
                 $iconDir = Split-Path -Parent ([string]$entry.DisplayIcon).Trim('"')
+                if ($iconDir -and (Split-Path -Leaf $iconDir) -eq 'bin') {
+                    # DisplayIcon points at <root>\bin\kicad.exe; probe the version root, not the bin dir.
+                    $iconDir = Split-Path -Parent $iconDir
+                }
                 if ($iconDir) {
                     $candidateRoots += $iconDir
                 }
