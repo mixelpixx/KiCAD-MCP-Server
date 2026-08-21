@@ -72,33 +72,126 @@ $script:Results = @{
 # Get script directory (project root)
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+# KiCAD version directories to probe under an install root, newest first.
+$script:KnownVersions = @('10.0', '9.1', '9.0', '8.0')
+
 Write-Step "Step 1: Detecting KiCAD Installation"
 
-# Function to find KiCAD installation
+# Function to inspect a candidate KiCAD root and return install info if valid
+function Get-KiCadInfo {
+    param([string]$Root)
+
+    if (-not $Root -or -not (Test-Path -LiteralPath $Root)) {
+        return $null
+    }
+
+    $versionDirs = @($Root)
+    foreach ($version in $script:KnownVersions) {
+        $versionDirs += (Join-Path $Root $version)
+    }
+    $versionDirs += (Get-ChildItem -LiteralPath $Root -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^\d+\.\d+' } |
+        ForEach-Object { $_.FullName })
+
+    foreach ($dir in ($versionDirs | Select-Object -Unique)) {
+        # Keep candidate probing in sync with Get-KiCadInfo in setup-windows-opencode.ps1.
+        $pythonExeCandidates = @(
+            (Join-Path $dir "bin\python.exe"),
+            (Join-Path $dir "bin\Python.exe")
+        )
+        $pythonExe = $pythonExeCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+        if (-not $pythonExe) {
+            continue
+        }
+
+        $pythonLibCandidates = @(
+            (Join-Path $dir "lib\python3\dist-packages"),
+            (Join-Path $dir "bin\Lib\site-packages")
+        )
+        $pythonLib = $pythonLibCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+        if (-not $pythonLib) {
+            $pythonLib = $pythonLibCandidates[0]
+        }
+
+        Write-Success "Found KiCAD $((Split-Path -Leaf $dir)) at: $dir"
+        return @{
+            Path = $dir
+            Version = Split-Path -Leaf $dir
+            PythonExe = $pythonExe
+            PythonLib = $pythonLib
+        }
+    }
+
+    return $null
+}
+
+# Function to find KiCAD installation on any drive (registry + env vars + standard paths)
 function Find-KiCAD {
+    # 1. Registry uninstall keys - covers any install drive, both all-users and per-user installs
+    $uninstallRoots = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+    )
+
+    foreach ($uninstallRoot in $uninstallRoots) {
+        $entries = Get-ItemProperty (Join-Path $uninstallRoot "*") -ErrorAction SilentlyContinue |
+            Where-Object { $_.DisplayName -match '^KiCad' }
+
+        foreach ($entry in $entries) {
+            $candidateRoots = @()
+            if ($entry.InstallLocation) {
+                $candidateRoots += [string]$entry.InstallLocation
+            }
+            if ($entry.DisplayIcon) {
+                $iconDir = Split-Path -Parent ([string]$entry.DisplayIcon).Trim('"')
+                if ($iconDir -and (Split-Path -Leaf $iconDir) -eq 'bin') {
+                    # DisplayIcon points at <root>\bin\kicad.exe; probe the version root, not the bin dir.
+                    $iconDir = Split-Path -Parent $iconDir
+                }
+                if ($iconDir) {
+                    $candidateRoots += $iconDir
+                }
+            }
+
+            foreach ($root in ($candidateRoots | Select-Object -Unique)) {
+                $info = Get-KiCadInfo -Root $root
+                if ($info) {
+                    return $info
+                }
+            }
+        }
+    }
+
+    # 2. Environment variables set by the KiCad installer (e.g. KICAD10_3DMOD_DIR)
+    $envRoots = @()
+    foreach ($var in (Get-ChildItem env: -ErrorAction SilentlyContinue)) {
+        if ($var.Name -match '^KICAD\d+_' -and $var.Value) {
+            $shareIndex = $var.Value.IndexOf('\share\kicad')
+            if ($shareIndex -gt 0) {
+                $envRoots += $var.Value.Substring(0, $shareIndex)
+            }
+        }
+    }
+
+    foreach ($root in ($envRoots | Select-Object -Unique)) {
+        $info = Get-KiCadInfo -Root $root
+        if ($info) {
+            return $info
+        }
+    }
+
+    # 3. Fallback: standard installation locations
     $possiblePaths = @(
         "C:\Program Files\KiCad",
-        "C:\Program Files (x86)\KiCad"
+        "C:\Program Files (x86)\KiCad",
         "$env:USERPROFILE\AppData\Local\Programs\KiCad"
     )
 
-    $versions = @("9.0", "9.1", "10.0", "8.0")
-
     foreach ($basePath in $possiblePaths) {
-        foreach ($version in $versions) {
-            $kicadPath = Join-Path $basePath $version
-            $pythonExe = Join-Path $kicadPath "bin\python.exe"
-            $pythonLib = Join-Path $kicadPath "lib\python3\dist-packages"
-
-            if (Test-Path $pythonExe) {
-                Write-Success "Found KiCAD $version at: $kicadPath"
-                return @{
-                    Path = $kicadPath
-                    Version = $version
-                    PythonExe = $pythonExe
-                    PythonLib = $pythonLib
-                }
-            }
+        $info = Get-KiCadInfo -Root $basePath
+        if ($info) {
+            return $info
         }
     }
 
@@ -114,8 +207,8 @@ if ($kicad) {
     Write-Info "KiCAD Version: $($kicad.Version)"
     Write-Info "Python Path: $($kicad.PythonLib)"
 } else {
-    Write-Error-Custom "KiCAD not found in standard locations"
-    Write-Warning-Custom "Checked: C:\Program Files, C:\Program Files (x86), and $env:USERPROFILE\AppData\Local\Programs"
+    Write-Error-Custom "KiCAD not found (checked registry, environment variables, and standard locations)"
+    Write-Warning-Custom "Checked: registry uninstall keys, KICAD*_* env vars, C:\Program Files, C:\Program Files (x86), and $env:USERPROFILE\AppData\Local\Programs"
     Write-Warning-Custom "Please install KiCAD 9.0+ from https://www.kicad.org/download/windows/"
     $script:Results.Errors += "KiCAD not found"
 }
@@ -257,6 +350,7 @@ Write-Step "Step 8: Generating Configuration"
 if ($kicad -and $script:Results.ProjectBuilt) {
     $distPath = Join-Path $ProjectRoot "dist\index.js"
     $distPathEscaped = $distPath -replace '\\', '\\'
+    $pythonExeEscaped = $kicad.PythonExe -replace '\\', '\\'
     $pythonLibEscaped = $kicad.PythonLib -replace '\\', '\\'
 
     $config = @"
@@ -267,6 +361,7 @@ if ($kicad -and $script:Results.ProjectBuilt) {
       "args": ["$distPathEscaped"],
       "env": {
         "PYTHONPATH": "$pythonLibEscaped",
+        "KICAD_PYTHON": "$pythonExeEscaped",
         "NODE_ENV": "production",
         "LOG_LEVEL": "info"
       }
@@ -316,6 +411,7 @@ if ($kicad -and $script:Results.ProjectBuilt) {
     Write-Info "Testing server startup..."
 
     $env:PYTHONPATH = $kicad.PythonLib
+    $env:KICAD_PYTHON = $kicad.PythonExe
     $distPath = Join-Path $ProjectRoot "dist\index.js"
 
     # Start the server process
