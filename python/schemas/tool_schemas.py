@@ -3473,6 +3473,151 @@ VALIDATION_TOOLS = [
 ]
 
 # =============================================================================
+# DIGI-KEY TOOLS
+# =============================================================================
+
+# Credentials are read from DIGIKEY_CLIENT_ID / DIGIKEY_CLIENT_SECRET in the
+# server environment and are deliberately absent from these schemas, matching
+# src/tools/digikey-api.ts: an argument is recorded in the caller's transcript,
+# in the MCP log, and in anything that replays the call. Keep it that way when
+# extending these — tests/test_digikey.py asserts no credential-shaped property
+# appears here.
+
+_DIGIKEY_LOCALE_SCHEMA = {
+    "type": "object",
+    "description": (
+        "Override the locale for this call. Digi-Key requires locale headers on every "
+        "request -- without them a search returns 404 -- but the values are yours to "
+        "pick. Defaults come from DIGIKEY_LOCALE_* or US/en/USD. The response is "
+        "localized too, so lifecycle status and packaging names come back in the "
+        "language requested; the tools compare ids rather than those strings."
+    ),
+    "properties": {
+        "site": {"type": "string", "description": "Digi-Key site, e.g. US, DE, UK"},
+        "language": {"type": "string", "description": "Language code, e.g. en, de"},
+        "currency": {"type": "string", "description": "Currency code, e.g. USD, EUR"},
+    },
+}
+
+_DIGIKEY_PACKAGING_SCHEMA = {
+    "type": "string",
+    "enum": ["TR", "CT", "DKR"],
+    "description": (
+        "Which packaging variation to quote as the headline part number: TR (tape & "
+        "reel, production), CT (cut tape, prototypes), DKR (Digi-Reel). Matching "
+        "handles localized packaging names."
+    ),
+}
+
+DIGIKEY_TOOLS = [
+    {
+        "name": "digikey_test_connection",
+        "title": "Test Digi-Key API Connection",
+        "description": (
+            "Verify that the server's Digi-Key credentials work: fetch a token and run "
+            "one search. Use this first when a Digi-Key tool reports an authentication "
+            "problem, since it distinguishes missing credentials from rejected ones from "
+            "a locale misconfiguration. Credentials come from DIGIKEY_CLIENT_ID and "
+            "DIGIKEY_CLIENT_SECRET in the server environment; they are never accepted as "
+            "arguments and never appear in a response."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"locale": _DIGIKEY_LOCALE_SCHEMA},
+        },
+    },
+    {
+        "name": "digikey_search_parts",
+        "title": "Search Digi-Key Parts",
+        "description": (
+            "Search Digi-Key by part number, manufacturer part number, or a parametric "
+            "phrase ('0402 100nF 50V X7R'), returning stock, price, lifecycle status, "
+            "packaging variations and the parametric table. Two details the raw API "
+            "makes easy to get wrong are handled here: the Digi-Key part number lives on "
+            "each packaging variation rather than on the product, so reel and cut tape "
+            "have different numbers; and lifecycle is read from ProductStatus.Id rather "
+            "than the status string, which is localized. Use preferPackaging to pick "
+            "which variation is quoted as the headline part number."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "keywords": {
+                    "type": "string",
+                    "description": (
+                        "Part number, MPN, or a parametric phrase such as " "'0402 100nF 50V X7R'"
+                    ),
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Results to return, 1-50 (default 10)",
+                },
+                "offset": {
+                    "type": "number",
+                    "description": "Result offset for paging (default 0)",
+                },
+                "preferPackaging": _DIGIKEY_PACKAGING_SCHEMA,
+                "locale": _DIGIKEY_LOCALE_SCHEMA,
+            },
+            "required": ["keywords"],
+        },
+    },
+    {
+        "name": "digikey_check_library_availability",
+        "title": "Check Symbol Library Availability on Digi-Key",
+        "description": (
+            "Look up every symbol in a .kicad_sym on Digi-Key and report which parts are "
+            "obsolete, out of stock, unfindable, or missing a part number altogether -- "
+            "the check to run before a board goes to purchasing, and after inheriting a "
+            "library from an import. Each symbol is searched by its distributor part "
+            "number first and its manufacturer part number second, because retired "
+            "Digi-Key numbers are the common failure and the MPN usually still resolves; "
+            "searchByMpnFirst reverses that. Part numbers are read under any of the "
+            "property spellings real libraries use (MPN, MP, 'MANUFACTURER PART NUMBER', "
+            "'PART NUMBER', 'SUPPLIER PART NUMBER 1'). Budget up to two rate-limited "
+            "requests per symbol -- the fallback costs a second one whenever the first "
+            "term misses -- plus one token request, so raise maxSymbols deliberately."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "libraryPath": {
+                    "type": "string",
+                    "description": "Absolute path to the .kicad_sym library file",
+                },
+                "symbols": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Only check these symbol names (default: every symbol in the " "library)"
+                    ),
+                },
+                "maxSymbols": {
+                    "type": "number",
+                    "default": 25,
+                    "description": (
+                        "Stop after this many symbols (default 25). Each symbol costs one "
+                        "or two rate-limited API requests and the client throttles itself "
+                        "between them, so a larger sweep takes minutes; raising this past "
+                        "a few hundred will exhaust even the extended timeout this tool "
+                        "runs under."
+                    ),
+                },
+                "searchByMpnFirst": {
+                    "type": "boolean",
+                    "description": (
+                        "Search by manufacturer part number before the distributor number"
+                    ),
+                },
+                "preferPackaging": _DIGIKEY_PACKAGING_SCHEMA,
+                "locale": _DIGIKEY_LOCALE_SCHEMA,
+            },
+            "required": ["libraryPath"],
+        },
+    },
+]
+
+# =============================================================================
 # COMBINED TOOL SCHEMAS
 # =============================================================================
 
@@ -3490,6 +3635,7 @@ for tool in (
     + SCHEMATIC_TOOLS
     + UI_TOOLS
     + VALIDATION_TOOLS
+    + DIGIKEY_TOOLS
 ):
     TOOL_SCHEMAS[tool["name"]] = tool
 

@@ -13,8 +13,17 @@ export const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 export const LONG_COMMAND_TIMEOUT_MS = 600_000;
 
 /**
- * Commands whose cost scales with board/schematic size rather than with any
- * parameter the caller passes.
+ * Commands whose cost scales with the size of the thing being worked on rather
+ * than with a parameter the caller can reason about up front.
+ *
+ * `digikey_check_library_availability` is here for a different reason to the
+ * rest: it issues one or two rate-limited HTTP requests per symbol and
+ * self-throttles between them, so even its reduced default of 25 symbols cannot
+ * finish inside `DEFAULT_COMMAND_TIMEOUT_MS` once network latency is included.
+ * Since #382 a late response is discarded by request id rather than mis-delivered
+ * to the next call, so the cost of timing out is now confined to this command —
+ * but it is still the whole sweep's results, every one of them already paid for
+ * against the caller's rate limit.
  */
 export const LONG_RUNNING_COMMANDS = [
   "run_drc",
@@ -25,6 +34,7 @@ export const LONG_RUNNING_COMMANDS = [
   "list_schematic_nets",
   "list_schematic_labels",
   "get_schematic_view",
+  "digikey_check_library_availability",
 ] as const;
 
 /**

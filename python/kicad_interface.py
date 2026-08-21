@@ -344,6 +344,11 @@ try:
     from commands.connection_schematic import ConnectionManager
     from commands.datasheet_manager import DatasheetManager
     from commands.design_rules import DesignRuleCommands
+    from commands.digikey import (
+        digikey_check_library_availability,
+        digikey_search_parts,
+        digikey_test_connection,
+    )
     from commands.eagle import EagleCommands
     from commands.export import ExportCommands
     from commands.find_duplicate_symbols import find_duplicate_symbols
@@ -610,6 +615,10 @@ class KiCADInterface(SchematicHandlersMixin):
             "get_jlcpcb_part": self._handle_get_jlcpcb_part,
             "get_jlcpcb_database_stats": self._handle_get_jlcpcb_database_stats,
             "suggest_jlcpcb_alternatives": self._handle_suggest_jlcpcb_alternatives,
+            # Digi-Key API commands (credentials come from the environment only)
+            "digikey_test_connection": digikey_test_connection,
+            "digikey_search_parts": digikey_search_parts,
+            "digikey_check_library_availability": digikey_check_library_availability,
             # Datasheet commands
             "enrich_datasheets": self._handle_enrich_datasheets,
             "get_datasheet_url": self._handle_get_datasheet_url,
