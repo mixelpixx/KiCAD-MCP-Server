@@ -23,7 +23,7 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 169 tools across 15 categories with JSON Schema validation
+- 172 tools across 16 categories with JSON Schema validation
 - Keyword tool discovery via `search_tools` / `get_category_tools`
 - 8 dynamic resources exposing project state
 - Complete schematic workflow with 27 tools and dynamic symbol loading (~10,000 symbols)
@@ -469,15 +469,15 @@ configuration command and backend options.
 
 We've implemented an intelligent tool router to keep AI context efficient while maintaining full functionality:
 
-- **22 direct tools** always visible for high-frequency operations
-- **113 routed tools** organized into 14 categories (board, component, export, drc, schematic, library, symbol_pins, schematic_hierarchy, schematic_layout, schematic_batch, routing, autoroute, validation, parts-registry)
+- **32 direct tools** always visible for high-frequency operations
+- **147 routed tools** organized into 16 categories (board, component, export, drc, schematic, library, symbol_library, symbol_pins, schematic_hierarchy, schematic_layout, schematic_batch, routing, autoroute, validation, parts-registry, digikey)
 - **4 router tools** for discovery and execution:
   - `list_tool_categories` - Browse all available categories
   - `get_category_tools` - View tools in a specific category
   - `search_tools` - Find tools by keyword
   - `execute_tool` - Run any tool with parameters
 
-**Why this matters:** By organizing tools into discoverable categories, Claude can intelligently find and use the right tool for your task without loading all 122 tool schemas into every conversation. This reduces context consumption while maintaining full access to all functionality.
+**Why this matters:** By organizing tools into discoverable categories, Claude can intelligently find and use the right tool for your task without loading all 172 tool schemas into every conversation. This reduces context consumption while maintaining full access to all functionality.
 
 **Usage is seamless:** Just ask naturally - "export gerber files" or "add mounting holes" - and Claude will discover and execute the appropriate tools automatically.
 
@@ -539,7 +539,7 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. **169 tools** are additionally indexed into 15 functional categories, so `search_tools` and `get_category_tools` can find one by keyword.
+The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. **172 tools** are additionally indexed into 16 functional categories, so `search_tools` and `get_category_tools` can find one by keyword.
 
 For the complete tool reference with access types (direct/routed/additional), see [Tool Inventory](docs/TOOL_INVENTORY.md).
 
@@ -1435,8 +1435,8 @@ How many Basic parts are available?
 
 - **JSON-RPC 2.0 Transport:** Bi-directional communication via STDIO
 - **Protocol Version:** MCP 2025-06-18
-- **Capabilities:** Tools (122), Resources (8)
-- **Tool Router:** Intelligent discovery system with 14 categories
+- **Capabilities:** Tools (172), Resources (8)
+- **Tool Router:** Intelligent discovery system with 16 categories
 - **Error Handling:** Standard JSON-RPC error codes
 
 ### TypeScript Server (`src/`)
@@ -1586,7 +1586,7 @@ npm run format
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-**Working Features (148 tools):**
+**Working Features (172 tools):**
 
 - Project management with snapshot checkpointing
 - Complete board design (outline, layers, zones, mounting holes, text, SVG logos)
@@ -1602,6 +1602,7 @@ See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix a
 - Custom footprint and symbol creation
 - Library table maintenance (list, remove and repoint symbol/footprint entries)
 - JLCPCB parts integration (2.5M+ parts catalog)
+- Digi-Key Product Information V4 search and library availability sweep
 - Datasheet enrichment via LCSC
 - Freerouting autorouter integration (Java, Docker, Podman)
 - UI auto-launch and management

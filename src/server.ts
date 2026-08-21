@@ -25,6 +25,7 @@ import { registerSchematicHierarchyTools } from "./tools/schematic-hierarchy.js"
 import { registerSchematicLayoutTools } from "./tools/schematic-layout.js";
 import { registerSchematicBatchTools } from "./tools/schematic-batch.js";
 import { registerJLCPCBApiTools } from "./tools/jlcpcb-api.js";
+import { registerDigiKeyApiTools } from "./tools/digikey-api.js";
 import { registerPartsRegistryTools } from "./tools/parts-registry.js";
 import { registerDatasheetTools } from "./tools/datasheet.js";
 import { registerFootprintTools } from "./tools/footprint.js";
@@ -316,6 +317,7 @@ export class KiCADMcpServer {
     registerSchematicLayoutTools(this.server, this.callKicadScript.bind(this));
     registerSchematicBatchTools(this.server, this.callKicadScript.bind(this));
     registerJLCPCBApiTools(this.server, this.callKicadScript.bind(this));
+    registerDigiKeyApiTools(this.server, this.callKicadScript.bind(this));
     registerPartsRegistryTools(this.server);
     registerDatasheetTools(this.server, this.callKicadScript.bind(this));
     registerFootprintTools(this.server, this.callKicadScript.bind(this));

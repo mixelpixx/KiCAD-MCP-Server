@@ -4,6 +4,63 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Tools
+
+- **Digi-Key Product Information V4 integration** — `digikey_search_parts`,
+  `digikey_check_library_availability` and `digikey_test_connection`. The server
+  had six JLCPCB tools and nothing for Digi-Key, so every stock check, lifecycle
+  check and replacement hunt happened in one-off scripts outside it.
+
+  `digikey_search_parts` searches by part number, MPN, or a parametric phrase and
+  returns stock, price, lifecycle status, every packaging variation and the
+  parametric table. `digikey_check_library_availability` sweeps a `.kicad_sym`
+  and reports which parts are obsolete, out of stock, unfindable, not orderable,
+  or carry no part number at all — searching by distributor number first and MPN
+  second, because retired Digi-Key numbers are the common failure and the MPN
+  usually still resolves. Part numbers are read under any of the property
+  spellings real libraries use. A symbol whose lookup fails is marked
+  `state: "error"` and the sweep continues, so one transient 500 does not throw
+  away the lookups already paid for; five consecutive failures stop it, because a
+  revoked key fails identically for every remaining symbol. The sweep costs up to
+  two rate-limited requests per symbol, so `maxSymbols` defaults to 25 and the
+  command is granted the extended Node-side timeout in `src/command-timeout.ts` —
+  on the 30 s default the timer fires mid-sweep and the caller loses every lookup
+  the sweep had already paid for.
+
+  Three things the API makes easy to get wrong:
+  - The locale headers are mandatory. Without `X-DIGIKEY-Locale-Site` and its two
+    companions a search returns **404**, which reads like a wrong URL. The client
+    always sends them; the values are configurable.
+  - The Digi-Key part number is not on the product. It lives on each entry of
+    `ProductVariations`, so the reel and the cut tape have different numbers.
+    `preferPackaging` picks which one is quoted and matches localized packaging
+    names. A product with no variations at all is reported as `not_orderable`
+    rather than available, since there is no number to put on an order.
+  - `ProductStatus.Status` is localized, so comparing it against `"Active"`
+    reports every part as a problem once the account is not set to English.
+    Lifecycle is read from `ProductStatus.Id`.
+
+  **Credentials never enter the source tree.** They are read from
+  `DIGIKEY_CLIENT_ID` and `DIGIKEY_CLIENT_SECRET` in the environment, optionally
+  via the already-gitignored `.env`, and are deliberately absent from every tool
+  schema — a key passed as a tool argument would be recorded in the conversation,
+  in the MCP log, and in anything replaying the call. Absent from the schema means
+  such an argument is _ignored_, not rejected: the MCP layer strips unknown keys,
+  so the tools now return a `warnings` entry naming the argument and telling the
+  caller to rotate the value, which is the honest description of what happened.
+  Everything leaving the module passes through a redaction step, and a non-JSON
+  response body or a hostile `Retry-After` is converted into a redacted error
+  rather than escaping as an unfiltered traceback. Tests assert all of it,
+  including that the schemas contain no credential-shaped field, that `.env` is
+  gitignored, and that `.env.example` carries names without values.
+
+  Nothing here has been exercised against the live Digi-Key service: there were no
+  working credentials available (the token endpoint answers
+  `401 invalid_client`), so every test drives a mocked transport and the
+  German-language strings in the fixtures are constructed illustrations of the
+  localization hazard rather than captured responses. `ACTIVE_STATUS_ID = 0` is
+  documented in the source as an assumption to confirm on first real use.
+
 ## [2.7.0] - 2026-08-20
 
 ### New Tools
