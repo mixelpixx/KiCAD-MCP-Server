@@ -1776,6 +1776,26 @@ ROUTING_TOOLS = [
         },
     },
     {
+        "name": "set_net_color",
+        "title": "Set Net Color",
+        "description": "Sets or clears a net's display color override (PCB editor's 'Net colors' panel). Cosmetic only — does not affect routing or design rules.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {"type": "string", "description": "Name of the net"},
+                "color": {
+                    "type": "string",
+                    "description": "Hex color, e.g. '#FF7D00'. Required unless clear is true.",
+                },
+                "clear": {
+                    "type": "boolean",
+                    "description": "If true, remove the color override and revert to the automatic/class color",
+                },
+            },
+            "required": ["net"],
+        },
+    },
+    {
         "name": "add_copper_pour",
         "title": "Add Copper Pour",
         "description": "Creates a copper pour/zone (typically for ground or power planes).",

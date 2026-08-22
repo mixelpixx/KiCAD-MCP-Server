@@ -229,8 +229,8 @@ export const toolCategories: ToolCategory[] = [
   },
   {
     name: "routing",
-    description: "Advanced routing operations: vias, copper pours",
-    tools: ["add_via", "add_copper_pour"],
+    description: "Advanced routing operations: vias, copper pours, net display colors",
+    tools: ["add_via", "add_copper_pour", "set_net_color"],
   },
   {
     name: "autoroute",

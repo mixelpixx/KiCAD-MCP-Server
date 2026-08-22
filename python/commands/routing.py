@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -208,6 +209,99 @@ def persist_net_assignment_to_project(
         return {
             "persisted": False,
             "warning": f"could not persist net class assignment to {pro_path}: {exc}",
+        }
+
+
+# --- Net color project-file persistence (KiCad 7+) -------------------------
+#
+# An individual net's display color (the "Net colors" panel in the PCB
+# editor) lives only in ``<project>.kicad_pro`` -> ``net_settings.net_colors``,
+# a flat ``{net_name: "rgb(r, g, b)"}`` map. Unlike net class membership,
+# there is no SWIG mirror to keep in sync: ``NETINFO_ITEM`` (pcbnew.py) has no
+# color getter/setter at all, so this is pure JSON I/O, same persistence
+# shape as ``apply_net_assignment_to_project_settings`` above. A net with no
+# entry in the map simply uses its automatic/class color, which is why
+# clearing an override means deleting the key rather than writing a sentinel.
+
+_HEX_COLOR_RE = re.compile(r"^#?([0-9A-Fa-f]{6})$")
+
+
+def _hex_to_kicad_rgb(color: str) -> str:
+    """Convert a ``#RRGGBB`` / ``RRGGBB`` hex string to KiCad's
+    ``"rgb(r, g, b)"`` net_colors format. Raises ValueError on anything else.
+    """
+    match = _HEX_COLOR_RE.match(color.strip())
+    if not match:
+        raise ValueError(f"'{color}' is not a valid hex color (expected '#RRGGBB')")
+    hex_digits = match.group(1)
+    r = int(hex_digits[0:2], 16)
+    g = int(hex_digits[2:4], 16)
+    b = int(hex_digits[4:6], 16)
+    return f"rgb({r}, {g}, {b})"
+
+
+def apply_net_color_to_project_settings(
+    data: Dict[str, Any], net_name: str, kicad_rgb: Optional[str]
+) -> Dict[str, Any]:
+    """Insert, update, or clear a net's color override in a parsed
+    ``.kicad_pro`` dict. Pure: mutates and returns ``data``; performs no I/O.
+
+    ``kicad_rgb=None`` clears the override (removes the key), reverting the
+    net to its automatic/class color — mirroring the native "Clear color"
+    action. Same present-but-null defensiveness as
+    ``apply_net_assignment_to_project_settings``: a fresh project can have
+    ``"net_colors": null``.
+    """
+    net_settings = data.setdefault("net_settings", {})
+    if not isinstance(net_settings, dict):
+        net_settings = {}
+        data["net_settings"] = net_settings
+    net_colors = net_settings.get("net_colors")
+    if not isinstance(net_colors, dict):
+        net_colors = {}
+        net_settings["net_colors"] = net_colors
+    if kicad_rgb is None:
+        net_colors.pop(net_name, None)
+    else:
+        net_colors[net_name] = kicad_rgb
+    return data
+
+
+def persist_net_color_to_project(
+    pro_path: Optional[str], net_name: str, kicad_rgb: Optional[str]
+) -> Dict[str, Any]:
+    """Read/modify/write ``pro_path`` so a net's color override survives a
+    reload. Returns ``{"persisted": bool, "projectFile"?: str, "warning"?: str}``.
+    Never raises. The write is atomic (temp file + ``os.replace``).
+    """
+    if not pro_path or not os.path.exists(pro_path):
+        return {
+            "persisted": False,
+            "warning": "no .kicad_pro project file found; net color not persisted",
+        }
+    try:
+        with open(pro_path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        apply_net_color_to_project_settings(data, net_name, kicad_rgb)
+
+        directory = os.path.dirname(pro_path) or "."
+        fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".netcolor-", suffix=".kicad_pro")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, indent=2, sort_keys=True)
+                handle.write("\n")
+            os.replace(tmp_path, pro_path)
+        except Exception:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
+        return {"persisted": True, "projectFile": pro_path}
+    except Exception as exc:  # report, never fail the command on a persistence error
+        return {
+            "persisted": False,
+            "warning": f"could not persist net color to {pro_path}: {exc}",
         }
 
 
@@ -879,6 +973,97 @@ class RoutingCommands:
             return {
                 "success": False,
                 "message": "Failed to get nets list",
+                "errorDetails": str(e),
+            }
+
+    def set_net_color(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Set or clear a net's display color override.
+
+        This is pure ``.kicad_pro`` persistence (``net_settings.net_colors``)
+        — there is no in-memory SWIG counterpart to update, since
+        ``NETINFO_ITEM`` has no color getter/setter (see module docstring
+        above ``apply_net_color_to_project_settings``).
+        """
+        try:
+            if not self.board:
+                return {
+                    "success": False,
+                    "message": "No board is loaded",
+                    "errorDetails": "Load or create a board first",
+                }
+
+            net_name = params.get("net")
+            color = params.get("color")
+            clear = params.get("clear", False)
+
+            if not net_name:
+                return {
+                    "success": False,
+                    "message": "Missing net name",
+                    "errorDetails": "net parameter is required",
+                }
+            if not clear and not color:
+                return {
+                    "success": False,
+                    "message": "Missing color",
+                    "errorDetails": "color is required unless clear is true",
+                }
+
+            netinfo = self.board.GetNetInfo()
+            nets_map = netinfo.NetsByName()
+            if not nets_map.has_key(net_name):
+                return {
+                    "success": False,
+                    "message": f"Net not found: {net_name}",
+                    "errorDetails": f"'{net_name}' does not exist on the board",
+                }
+
+            kicad_rgb = None
+            if not clear:
+                try:
+                    kicad_rgb = _hex_to_kicad_rgb(color)
+                except ValueError as exc:
+                    return {
+                        "success": False,
+                        "message": "Invalid color",
+                        "errorDetails": str(exc),
+                    }
+
+            pro_path = None
+            try:
+                board_path = self.board.GetFileName()
+                if board_path and board_path.endswith(".kicad_pcb"):
+                    pro_path = str(Path(board_path).with_suffix(".kicad_pro"))
+            except Exception:
+                pro_path = None
+
+            persist = persist_net_color_to_project(pro_path, net_name, kicad_rgb)
+            if not persist.get("persisted"):
+                return {
+                    "success": False,
+                    "message": "Failed to set net color",
+                    "errorDetails": persist.get("warning", "unknown persistence error"),
+                }
+
+            result = {
+                "success": True,
+                "message": (
+                    f"Cleared color for net: {net_name}"
+                    if clear
+                    else f"Set color for net {net_name} to {kicad_rgb}"
+                ),
+                "net": net_name,
+                "color": kicad_rgb,
+                "persisted": True,
+                "projectFile": persist.get("projectFile"),
+            }
+            return result
+
+        except Exception as e:
+            logger.error(f"Error setting net color: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to set net color",
                 "errorDetails": str(e),
             }
 

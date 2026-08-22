@@ -23,7 +23,7 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 169 tools across 15 categories with JSON Schema validation
+- 170 tools across 15 categories with JSON Schema validation
 - Keyword tool discovery via `search_tools` / `get_category_tools`
 - 8 dynamic resources exposing project state
 - Complete schematic workflow with 27 tools and dynamic symbol loading (~10,000 symbols)
@@ -72,7 +72,7 @@ round-trip — 419 of KiCad's own stock symbol files carry such values.
   flow back to the schematic, the reverse of `sync_schematic_to_board`.
 
 All by @karu2003. With #359 (@AmirF194) registering 15 existing symbol tools,
-`search_tools` now indexes 169 tools in 15 categories.
+`search_tools` now indexes 170 tools in 15 categories.
 
 ### Quality of life
 
@@ -539,7 +539,7 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. **169 tools** are additionally indexed into 15 functional categories, so `search_tools` and `get_category_tools` can find one by keyword.
+The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. **170 tools** are additionally indexed into 15 functional categories, so `search_tools` and `get_category_tools` can find one by keyword.
 
 For the complete tool reference with access types (direct/routed/additional), see [Tool Inventory](docs/TOOL_INVENTORY.md).
 
@@ -585,7 +585,7 @@ For the complete tool reference with access types (direct/routed/additional), se
 - `align_components` - Align multiple components
 - `duplicate_component` - Copy existing component
 
-### Routing (13 tools)
+### Routing (14 tools)
 
 - `add_net` - Create electrical net
 - `route_trace` - Route copper traces between XY points
@@ -600,6 +600,7 @@ For the complete tool reference with access types (direct/routed/additional), se
 - `route_differential_pair` - Route differential signals
 - `refill_zones` - Refill all copper zones
 - `copy_routing_pattern` - Replicate routing between component groups
+- `set_net_color` - Set or clear a net's display color override
 
 ### Schematic (27 tools)
 
