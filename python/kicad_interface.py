@@ -349,6 +349,7 @@ try:
     from commands.find_duplicate_symbols import find_duplicate_symbols
     from commands.footprint import FootprintCreator
     from commands.freerouting import FreeroutingCommands
+    from commands.gui_driver import GuiDriverCommands
     from commands.hierarchical_place import HierarchicalPlaceCommands
     from commands.jlcpcb import JLCPCBClient, test_jlcpcb_connection
     from commands.jlcpcb_parts import JLCPCBPartsManager
@@ -365,7 +366,6 @@ try:
         set_library_table_uri,
     )
     from commands.pcb_import import PcbImportCommands
-    from commands.gui_driver import GuiDriverCommands
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
     from commands.schematic import SchematicLoadError, SchematicManager
