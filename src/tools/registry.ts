@@ -249,6 +249,24 @@ export const toolCategories: ToolCategory[] = [
       "Open gate-verified parts registry (PartReel by default, no auth): search existing KiCAD parts and download footprint/symbol/3D files before generating custom ones",
     tools: ["search_parts_registry", "get_registry_part", "download_registry_part"],
   },
+  {
+    name: "gui-driver",
+    description:
+      "GUI-driver: drive KiCad's live GUI (menus, toolbars, dialogs, plugins) over a token-gated localhost helper. Opt-in — deploy with install_gui_driver and enable via KICAD_GUI_DRIVER_ENABLE. Destructive items are advisory-flagged, not gated.",
+    tools: [
+      "install_gui_driver",
+      "kicad_gui_tree",
+      "kicad_gui_click",
+      "kicad_run_action_plugin",
+      "kicad_gui_wait_for",
+      "kicad_gui_screenshot",
+      "kicad_pcb_snapshot",
+      "kicad_reload_and_open_plugin",
+      "kicad_run_drc",
+      "kicad_gui_tree_atspi",
+      "kicad_gui_click_atspi",
+    ],
+  },
 ];
 
 /**

@@ -3476,6 +3476,233 @@ VALIDATION_TOOLS = [
 # COMBINED TOOL SCHEMAS
 # =============================================================================
 
+# Thin socket clients for the in-KiCad helper plugin (gui_driver_plugin/).
+# Requires KiCad running with the kicad-gui-driver plugin installed; the
+# AT-SPI variants are the Linux zero-in-KiCad fast path.
+
+_GUI_FRAME_PROP = {
+    "frame": {
+        "type": "string",
+        "description": "Optional frame name/title filter (e.g. 'PcbFrame', 'Schematic'). Defaults to the PCB editor.",
+    }
+}
+
+GUI_DRIVER_TOOLS = [
+    {
+        "name": "kicad_gui_tree",
+        "title": "Enumerate KiCad GUI (menus + toolbars)",
+        "description": (
+            "Enumerates the live KiCad GUI via the in-process helper: all menus/submenus "
+            "(name + wx id, including Tools > External Plugins entries) and AUI toolbars "
+            "(id + tooltip; toolbar buttons are icon-only). Destructive items carry "
+            "destructive:true and a leading '⚠ ' — advisory only, nothing is gated."
+        ),
+        "inputSchema": {"type": "object", "properties": {**_GUI_FRAME_PROP}},
+    },
+    {
+        "name": "kicad_gui_click",
+        "title": "Click a KiCad menu item / toolbar tool",
+        "description": (
+            "Activates a menu item or AUI toolbar tool by name (as shown by kicad_gui_tree; "
+            "the '⚠ ' prefix may be included or omitted) or by explicit wx id. Injects a real "
+            "wx command event on the UI thread — no pixel coordinates. NOT gated: destructive "
+            "items execute too."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Menu label or toolbar tooltip to activate.",
+                },
+                "id": {
+                    "type": "integer",
+                    "description": "Explicit wx item id (skips name resolution).",
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": ["menu", "tool"],
+                    "description": "Item kind when passing an explicit id (default menu).",
+                },
+                **_GUI_FRAME_PROP,
+            },
+        },
+    },
+    {
+        "name": "kicad_run_action_plugin",
+        "title": "Run a KiCad action plugin",
+        "description": (
+            "Finds the Tools > External Plugins submenu entry with the given name "
+            "(e.g. 'Open kiHarness') and triggers it — end-to-end proof a plugin button works."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Plugin menu entry name."},
+                **_GUI_FRAME_PROP,
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "kicad_gui_wait_for",
+        "title": "Wait for a KiCad window/dialog",
+        "description": "Polls until a shown top-level window whose title contains `title` exists (or timeout).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Substring of the window title to wait for.",
+                },
+                "timeout": {
+                    "type": "number",
+                    "description": "Seconds to wait (default 10).",
+                    "default": 10,
+                },
+            },
+            "required": ["title"],
+        },
+    },
+    {
+        "name": "kicad_gui_screenshot",
+        "title": "Screenshot the KiCad frame",
+        "description": "Captures the driven frame's screen rectangle to a PNG and returns its path.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Output PNG path (temp file if omitted).",
+                },
+                **_GUI_FRAME_PROP,
+            },
+        },
+    },
+    {
+        "name": "kicad_pcb_snapshot",
+        "title": "Playbook: Zoom-to-Fit + screenshot",
+        "description": "GUI playbook: triggers Zoom to Fit, waits for the repaint, screenshots the frame.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Output PNG path (temp file if omitted).",
+                },
+                "settle": {
+                    "type": "number",
+                    "description": "Seconds to wait after zoom (default 0.5).",
+                },
+                **_GUI_FRAME_PROP,
+            },
+        },
+    },
+    {
+        "name": "kicad_reload_and_open_plugin",
+        "title": "Playbook: refresh plugins + open one",
+        "description": (
+            "GUI playbook (the plugin dev/test loop): triggers Refresh Plugins, then the named "
+            "External-Plugins entry."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Plugin menu entry to open after the refresh.",
+                },
+                "settle": {
+                    "type": "number",
+                    "description": "Seconds to wait after refresh (default 1).",
+                },
+                **_GUI_FRAME_PROP,
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "kicad_run_drc",
+        "title": "Playbook: run DRC via the GUI dialog",
+        "description": (
+            "GUI playbook: opens the Design Rules Checker dialog, clicks 'Run DRC', then scrapes "
+            "the violations list (best-effort; always returns the raw widget scrape). Exercises "
+            "the dialog-driving path — for headless DRC use the plain run_drc tool instead."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "dialogTitle": {
+                    "type": "string",
+                    "description": "Dialog title substring (default 'DRC').",
+                },
+                "timeout": {
+                    "type": "number",
+                    "description": "Seconds to wait for the dialog (default 15).",
+                },
+                "runTimeout": {
+                    "type": "number",
+                    "description": "Seconds to wait for results (default 60).",
+                },
+                **_GUI_FRAME_PROP,
+            },
+        },
+    },
+    {
+        "name": "kicad_gui_tree_atspi",
+        "title": "Enumerate KiCad GUI via AT-SPI (Linux)",
+        "description": (
+            "Backend B: dumps KiCad's accessible widget tree (role + name) from the Linux a11y "
+            "bus — zero code inside KiCad. Needs toolkit-accessibility enabled and KiCad "
+            "launched with GTK_MODULES=gail:atk-bridge."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "app": {
+                    "type": "string",
+                    "description": "Accessible application name filter (default 'kicad').",
+                },
+                "maxDepth": {
+                    "type": "integer",
+                    "description": "Recursion depth limit (default 12).",
+                },
+            },
+        },
+    },
+    {
+        "name": "kicad_gui_click_atspi",
+        "title": "Click a KiCad widget via AT-SPI (Linux)",
+        "description": "Backend B: activates the first accessible node matching `name` (and optional role) via do_action(0).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Accessible name to activate."},
+                "role": {
+                    "type": "string",
+                    "description": "Optional role substring filter (e.g. 'push button', 'menu item').",
+                },
+                "app": {
+                    "type": "string",
+                    "description": "Accessible application name filter (default 'kicad').",
+                },
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "install_gui_driver",
+        "title": "Install the GUI-driver helper (opt-in)",
+        "description": (
+            "Deploy the in-KiCad GUI-driver helper plugin into the user's KiCad plugin tree. "
+            "Opt-in: the connect path no longer installs it as a side effect of a failed connect. "
+            "After install, set KICAD_GUI_DRIVER_ENABLE=1 in KiCad's environment and restart "
+            "(or Tools > External Plugins > Refresh Plugins) to open the token-gated channel."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+]
+
 TOOL_SCHEMAS: Dict[str, Any] = {}
 
 # Combine all tool categories
@@ -3490,6 +3717,7 @@ for tool in (
     + SCHEMATIC_TOOLS
     + UI_TOOLS
     + VALIDATION_TOOLS
+    + GUI_DRIVER_TOOLS
 ):
     TOOL_SCHEMAS[tool["name"]] = tool
 
