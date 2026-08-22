@@ -326,6 +326,7 @@ class TestSessionToken:
         fake.full_tree = lambda frame=None: {"menus": [], "toolbars": []}
         sys.modules["plugins.driver"] = fake
         import plugins  # noqa: F401 — opt-in __init__ does NOT auto-start here
+
         setattr(sys.modules["plugins"], "driver", fake)
         from plugins import listener
 

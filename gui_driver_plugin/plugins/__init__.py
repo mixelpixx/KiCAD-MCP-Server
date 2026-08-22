@@ -20,7 +20,12 @@ from __future__ import annotations
 import os
 import sys
 
-_ENABLE = os.environ.get("KICAD_GUI_DRIVER_ENABLE", "").strip().lower() in ("1", "true", "yes", "on")
+_ENABLE = os.environ.get("KICAD_GUI_DRIVER_ENABLE", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 
 if _ENABLE:
     try:
@@ -34,7 +39,9 @@ if _ENABLE:
                 file=sys.stderr,
             )
         else:
-            print(f"kicad-gui-driver: listening on 127.0.0.1:{_port} (token-gated).", file=sys.stderr)
+            print(
+                f"kicad-gui-driver: listening on 127.0.0.1:{_port} (token-gated).", file=sys.stderr
+            )
     except Exception as exc:  # pragma: no cover - best-effort, never break the scan
         print(f"kicad-gui-driver: listener not started ({exc})", file=sys.stderr)
 else:

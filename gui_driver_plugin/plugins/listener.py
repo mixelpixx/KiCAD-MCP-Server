@@ -238,7 +238,10 @@ class _Handler(socketserver.StreamRequestHandler):
             try:
                 request = json.loads(line)
                 if not _token_ok(request.get("token"), expected):
-                    response = {"ok": False, "error": "unauthorized: missing or invalid session token"}
+                    response = {
+                        "ok": False,
+                        "error": "unauthorized: missing or invalid session token",
+                    }
                 else:
                     result = _dispatch(request, executor)
                     response = {"ok": True, "result": result}
@@ -255,16 +258,25 @@ class _Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, addr, executor: Callable[..., Any], token: Optional[str] = None,
-                 token_file: Optional[Path] = None):
+    def __init__(
+        self,
+        addr,
+        executor: Callable[..., Any],
+        token: Optional[str] = None,
+        token_file: Optional[Path] = None,
+    ):
         super().__init__(addr, _Handler)
         self.executor = executor
         self.token = token
         self.token_file = token_file
 
 
-def start(port: int = PORT, executor: Callable[..., Any] = wx_executor,
-          token: Optional[str] = None, token_file: Optional[Path] = None) -> Optional[int]:
+def start(
+    port: int = PORT,
+    executor: Callable[..., Any] = wx_executor,
+    token: Optional[str] = None,
+    token_file: Optional[Path] = None,
+) -> Optional[int]:
     """Start the listener thread (idempotent). Mints a session token, writes it to a
     mode-0600 file the MCP client reads, and requires it on every request. Returns the
     bound port, or None if the port is taken (a second KiCad frame already serves it).

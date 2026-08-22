@@ -76,6 +76,7 @@ def _read_token() -> Optional[str]:
     except OSError:
         return None
 
+
 # -- helper self-install -----------------------------------------------------
 #
 # The MCP bundles the in-KiCad helper (gui_driver_plugin/plugins/ in this repo)
@@ -325,7 +326,10 @@ class GuiDriverCommands:
         """
         base = f"GUI-driver helper not reachable on 127.0.0.1:{self.port} ({exc}). "
         autoinstall = os.environ.get("KICAD_GUI_DRIVER_AUTOINSTALL", "").strip().lower() in (
-            "1", "true", "yes", "on"
+            "1",
+            "true",
+            "yes",
+            "on",
         )
         if not autoinstall:
             return base + (
