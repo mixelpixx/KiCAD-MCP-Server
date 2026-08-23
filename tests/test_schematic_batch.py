@@ -175,7 +175,11 @@ class TestBatchConnect:
         r = c.batch_connect({"schematicPath": str(f), "connections": {"R1": {"1": "SDA"}}})
         assert r["success"] is True
         assert len(r["placed"]) == 1
-        assert labels == [("SDA", 180)]  # pin angle 0 -> label orientation 180
+        # A pin whose outward direction is 0 (pointing right) gets a label at 0:
+        # KiCad renders angle 0 with `justify left`, i.e. text growing rightwards,
+        # away from the symbol body. The label follows the pin, never turns back
+        # over it.
+        assert labels == [("SDA", 0)]
 
     def test_places_global_label(self, monkeypatch, tmp_path):
         f = tmp_path / "x.kicad_sch"
@@ -223,6 +227,64 @@ class TestBatchConnect:
         )
         assert r["success"] is False
         assert "labelType" in r["message"]
+
+
+class TestBatchAddUnits:
+    """A multi-unit part is placed one entry per unit, all sharing a reference.
+
+    Regression: batch_add_components ignored `unit` and always placed unit 1, so
+    a five-unit FPGA needed five separate add_schematic_component calls — the
+    round-trips the batch exists to avoid.
+    """
+
+    def _stub_loader(self, monkeypatch, tmp_path, calls):
+        sch = tmp_path / "x.kicad_sch"
+        sch.write_text("(kicad_sch)")
+
+        def fake_add_component(self, path, library, name, **kwargs):
+            calls.append((name, kwargs.get("unit"), kwargs.get("reference")))
+            return True
+
+        monkeypatch.setattr(sb.DynamicSymbolLoader, "add_component", fake_add_component)
+        monkeypatch.setattr(
+            sb,
+            "PinLocator",
+            lambda: types.SimpleNamespace(
+                _schematic_cache={},
+                get_all_symbol_pins=lambda p, ref: {},
+            ),
+        )
+        monkeypatch.setattr(sb, "_find_placed_symbol_block", lambda *a, **k: (None, -1, -1))
+        return sch
+
+    def test_unit_is_passed_through(self, monkeypatch, tmp_path):
+        calls = []
+        sch = self._stub_loader(monkeypatch, tmp_path, calls)
+        c = SchematicBatchCommands(types.SimpleNamespace())
+        r = c.batch_add_components(
+            {
+                "schematicPath": str(sch),
+                "components": [
+                    {"symbol": "FPGA:GW2A", "reference": "U201", "unit": 1},
+                    {"symbol": "FPGA:GW2A", "reference": "U201", "unit": 4},
+                ],
+            }
+        )
+        assert r["added_count"] == 2
+        assert calls == [("GW2A", 1, "U201"), ("GW2A", 4, "U201")]
+        assert [e["unit"] for e in r["added"]] == [1, 4]
+
+    def test_unit_defaults_to_one(self, monkeypatch, tmp_path):
+        calls = []
+        sch = self._stub_loader(monkeypatch, tmp_path, calls)
+        c = SchematicBatchCommands(types.SimpleNamespace())
+        c.batch_add_components(
+            {
+                "schematicPath": str(sch),
+                "components": [{"symbol": "Device:R", "reference": "R1"}],
+            }
+        )
+        assert calls == [("R", 1, "R1")]
 
 
 class TestBatchAddAndConnect:

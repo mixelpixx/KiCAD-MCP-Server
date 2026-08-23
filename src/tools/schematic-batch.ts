@@ -10,7 +10,7 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
   // Add many components at once
   server.tool(
     "batch_add_components",
-    "Add multiple components to a schematic in one call (far fewer round-trips than add_schematic_component). Each component: {symbol:'Library:Name', reference, value?, footprint?, position:{x,y}, rotation?, includePins?}. Reference/Value fields are auto-positioned outside the body (disable with auto_position_fields=false). Returns per-component snapped position, field positions, body_bbox, and an overall placement_bbox.",
+    "Add multiple components to a schematic in one call (far fewer round-trips than add_schematic_component). Each component: {symbol:'Library:Name', reference, value?, footprint?, position:{x,y}, rotation?, includePins?, unit?}. Multi-unit parts are placed one entry per unit, sharing a reference. Reference/Value fields are auto-positioned outside the body (disable with auto_position_fields=false). Returns per-component snapped position, field positions, body_bbox, and an overall placement_bbox.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       components: z
@@ -23,6 +23,14 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
             position: z.object({ x: z.number(), y: z.number() }).optional(),
             rotation: z.number().optional(),
             includePins: z.boolean().optional(),
+            unit: z
+              .number()
+              .int()
+              .optional()
+              .describe(
+                "Unit of a multi-unit part (1=A, 2=B, …), default 1. Place each unit " +
+                  "as its own entry, all sharing the same reference.",
+              ),
           }),
         )
         .describe("Components to place"),
