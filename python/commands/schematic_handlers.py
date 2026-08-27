@@ -1660,6 +1660,7 @@ class SchematicHandlersMixin:
         """List all nets in a schematic with their connections"""
         logger.info("Listing schematic nets")
         try:
+            from commands.pin_locator import PinLocator
             from commands.wire_connectivity import (
                 _build_adjacency,
                 _discover_sub_sheets,
@@ -1668,7 +1669,7 @@ class SchematicHandlersMixin:
                 _parse_virtual_connections,
                 _parse_wires,
                 count_pins_on_net,
-                get_connections_for_net,
+                get_connections_for_nets,
             )
 
             schematic_path = params.get("schematicPath")
@@ -1722,9 +1723,19 @@ class SchematicHandlersMixin:
                 adjacency, iu_to_wires = [], {}
             point_to_label, label_to_points = _parse_virtual_connections(schematic, schematic_path)
 
+            # One shared locator + one batched connectivity pass: every sheet
+            # is parsed and pin-located once for the whole net list, instead of
+            # once per net (which made this handler O(nets × sheet size) and
+            # took minutes on large flat schematics).
+            sorted_net_names = sorted(net_names)
+            locator = PinLocator()
+            connections_by_net = get_connections_for_nets(
+                schematic, schematic_path, sorted_net_names, locator=locator
+            )
+
             nets = []
-            for net_name in sorted(net_names):
-                connections = get_connections_for_net(schematic, schematic_path, net_name)
+            for net_name in sorted_net_names:
+                connections = connections_by_net[net_name]
                 pin_count = count_pins_on_net(
                     schematic,
                     schematic_path,
@@ -1734,6 +1745,7 @@ class SchematicHandlersMixin:
                     adjacency,
                     point_to_label,
                     label_to_points,
+                    locator=locator,
                 )
                 nets.append(
                     {
