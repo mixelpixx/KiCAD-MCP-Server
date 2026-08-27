@@ -4,6 +4,23 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`list_schematic_nets` and `generate_netlist` no longer scale as
+  O(nets × sheet size)** — net connectivity was recomputed from scratch for
+  every net in the list: each per-net query re-parsed the schematic
+  s-expression tree (dozens of `sexpdata.loads` calls per net), rebuilt the
+  wire adjacency graph, and re-located every component pin through a fresh
+  `PinLocator`, whose caches died with it. On a flat 119-component, 44-net
+  schematic, `list_schematic_nets` took over 90 seconds. The per-sheet work is
+  now done once per request and shared across all nets
+  (`get_connections_for_nets`), `_load_sexp` actually caches the parsed tree
+  (keyed by file mtime and size, as its docstring always claimed), and
+  `PinLocator.get_all_symbol_pins` memoises per (schematic, reference). The
+  same schematic now lists in under 3 seconds, with identical results —
+  `get_connections_for_net` remains as a single-net wrapper for existing
+  callers.
+
 ## [2.7.0] - 2026-08-20
 
 ### New Tools
