@@ -72,15 +72,11 @@ class TestFootprintExchange:
 
         cmd, board = _make_component_commands(old, new)
 
-        result = cmd.edit_component(
-            {"reference": "D1", "footprint": "Package_TO_SOT_SMD:SOT-23"}
-        )
+        result = cmd.edit_component({"reference": "D1", "footprint": "Package_TO_SOT_SMD:SOT-23"})
 
         assert result["success"] is True
         # The loaded footprint was fetched from the library, not fabricated from the FPID.
-        _pcbnew_stub.FootprintLoad.assert_called_once_with(
-            "/libs/SOT-23.pretty", "SOT-23"
-        )
+        _pcbnew_stub.FootprintLoad.assert_called_once_with("/libs/SOT-23.pretty", "SOT-23")
         # It replaced the old footprint on the board rather than mutating it in place.
         board.Add.assert_called_once_with(new)
         board.Delete.assert_called_once_with(old)
@@ -123,14 +119,10 @@ class TestFootprintExchange:
         new = _make_footprint("SOT-23-proto", "", (0, 0), 0, new_pads)
 
         cmd, _board = _make_component_commands(old, new)
-        result = cmd.edit_component(
-            {"reference": "D1", "footprint": "Package_TO_SOT_SMD:SOT-23"}
-        )
+        result = cmd.edit_component({"reference": "D1", "footprint": "Package_TO_SOT_SMD:SOT-23"})
 
         assert result["success"] is True
-        _pcbnew_stub.FootprintLoad.assert_called_once_with(
-            "/libs/SOT-23.pretty", "SOT-23"
-        )
+        _pcbnew_stub.FootprintLoad.assert_called_once_with("/libs/SOT-23.pretty", "SOT-23")
         new_pads[2].SetNet.assert_not_called()
 
     def test_bare_footprint_name_keeps_the_existing_library(self):
@@ -144,9 +136,7 @@ class TestFootprintExchange:
 
         cmd.edit_component({"reference": "D1", "footprint": "D_SOD-323"})
 
-        _pcbnew_stub.FootprintLoad.assert_called_once_with(
-            "/libs/SOT-23.pretty", "D_SOD-323"
-        )
+        _pcbnew_stub.FootprintLoad.assert_called_once_with("/libs/SOT-23.pretty", "D_SOD-323")
 
     def test_flipped_component_is_flipped_after_re_add(self):
         """Flip() needs board context in KiCAD 9 (established convention elsewhere in this
@@ -169,9 +159,7 @@ class TestFootprintExchange:
         new = _make_footprint("proto", "", (0, 0), 0, [])
         cmd, board = _make_component_commands(old, new, library_path=None)
 
-        result = cmd.edit_component(
-            {"reference": "D1", "footprint": "NoSuchLib:Whatever"}
-        )
+        result = cmd.edit_component({"reference": "D1", "footprint": "NoSuchLib:Whatever"})
 
         assert result["success"] is False
         board.Add.assert_not_called()
