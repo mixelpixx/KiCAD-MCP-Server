@@ -43,8 +43,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
+from utils.file_io import read_text_preserve_newline as _read_text
+from utils.file_io import write_text_atomic as _write_text
 from utils.platform_helper import PlatformHelper
-from utils.sexpr_format import escape_sexpr_string, unescape_sexpr_string
+from utils.sexpr_format import escape_sexpr_string
+from utils.sexpr_format import match_paren as _match_paren
+from utils.sexpr_format import unescape_sexpr_string
 
 logger = logging.getLogger("kicad_interface")
 
@@ -94,29 +98,6 @@ def _kicad_config_dirs() -> List[Path]:
     return [root / version for version in _KICAD_VERSIONS for root in roots]
 
 
-def _read_text(path: Path) -> Tuple[str, str]:
-    """File text with LF newlines, plus the newline style to write back."""
-    with open(path, "r", encoding="utf-8", newline="") as fh:
-        raw = fh.read()
-    return raw.replace("\r\n", "\n"), ("\r\n" if "\r\n" in raw else "\n")
-
-
-def _write_text(path: Path, text: str, newline: str) -> None:
-    """Atomic write that keeps the file's original newline style."""
-    tmp = path.with_name(path.name + ".mcp-tmp")
-    try:
-        with open(tmp, "w", encoding="utf-8", newline=newline) as fh:
-            fh.write(text)
-        os.replace(tmp, path)
-    except OSError:
-        # Never leave a half-written scratch file beside a live KiCad config.
-        try:
-            tmp.unlink()
-        except OSError:
-            pass
-        raise
-
-
 def _backup(path: Path) -> Optional[str]:
     """Copy the table into a sibling ``.mcp-backups/`` before it is rewritten.
 
@@ -136,31 +117,6 @@ def _backup(path: Path) -> Optional[str]:
     except OSError as exc:
         logger.warning(f"Library-table backup failed (continuing): {exc}")
         return None
-
-
-def _match_paren(content: str, open_idx: int) -> int:
-    """Index of the ``)`` closing the ``(`` at *open_idx*, or -1 if unbalanced."""
-    depth = 0
-    in_string = False
-    i = open_idx
-    while i < len(content):
-        ch = content[i]
-        if in_string:
-            if ch == "\\":
-                i += 2
-                continue
-            if ch == '"':
-                in_string = False
-        elif ch == '"':
-            in_string = True
-        elif ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-            if depth == 0:
-                return i
-        i += 1
-    return -1
 
 
 def _child_spans(content: str, open_idx: int) -> List[Tuple[int, int]]:

@@ -22,6 +22,8 @@
     "lint:py": "python -m black --check python/ && python -m mypy python/ && python -m flake8 python/",
     "format:py": "python -m black python/ tests/ && python -m isort python/ tests/",
     "format": "prettier --write 'src/**/*.ts' && black python/",
+    "docs:tools": "node scripts/generate-tool-inventory.mjs",
+    "docs:tools:check": "node scripts/generate-tool-inventory.mjs --check",
     "prepare": "npm run build",
     "pretest": "npm run build"
   },

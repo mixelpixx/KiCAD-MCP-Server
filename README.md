@@ -23,10 +23,11 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 169 tools across 15 categories with JSON Schema validation
+- 233 tools registered, 173 of them indexed for keyword discovery
+- 173 tools across 16 categories with JSON Schema validation
 - Keyword tool discovery via `search_tools` / `get_category_tools`
-- 8 dynamic resources exposing project state
-- Complete schematic workflow with 27 tools and dynamic symbol loading (~10,000 symbols)
+- 23 dynamic resources exposing project state
+- Complete schematic workflow with 65 tools (authoring, batch edits, hierarchy, layout) and dynamic symbol loading (~10,000 symbols)
 - Freerouting autorouter integration (Java, Docker, or Podman)
 - Custom footprint and symbol creation tools
 - JLCPCB parts integration with 2.5M+ component catalog and local library search
@@ -465,21 +466,34 @@ For OpenCode on Windows, the backend can be configured as `auto`, `ipc`, or
 `swig` during setup. See [OpenCode (Windows)](#opencode-windows) for the
 configuration command and backend options.
 
-### Tool Discovery & Router Pattern
+### Tool Discovery
 
-We've implemented an intelligent tool router to keep AI context efficient while maintaining full functionality:
+Every tool is registered individually, so an MCP client can call any of them by
+name. On top of that, most tools are indexed so an assistant can find one by
+keyword instead of guessing:
 
-- **22 direct tools** always visible for high-frequency operations
-- **113 routed tools** organized into 14 categories (board, component, export, drc, schematic, library, symbol_pins, schematic_hierarchy, schematic_layout, schematic_batch, routing, autoroute, validation, parts-registry)
-- **4 router tools** for discovery and execution:
+- **32 essential tools** that `search_tools` surfaces first, covering the
+  operations nearly every session needs
+- **173 tools indexed across 16 categories** (board, component, export, drc,
+  schematic, library, symbol_library, symbol_pins, schematic_hierarchy,
+  schematic_layout, schematic_batch, routing, autoroute, validation,
+  parts-registry, digikey)
+- **3 discovery tools**:
   - `list_tool_categories` - Browse all available categories
   - `get_category_tools` - View tools in a specific category
   - `search_tools` - Find tools by keyword
-  - `execute_tool` - Run any tool with parameters
 
-**Why this matters:** By organizing tools into discoverable categories, Claude can intelligently find and use the right tool for your task without loading all 122 tool schemas into every conversation. This reduces context consumption while maintaining full access to all functionality.
+The remaining 60 registered tools are not indexed yet. They work exactly the
+same when called by name; they simply do not appear in `search_tools` results.
 
-**Usage is seamless:** Just ask naturally - "export gerber files" or "add mounting holes" - and Claude will discover and execute the appropriate tools automatically.
+**Why this matters:** the assistant can locate the right tool for your task by
+keyword rather than inventing a name. Note that discovery does _not_ reduce
+context: every tool schema is still sent to the client. An earlier design hid
+tools behind an `execute_tool` dispatcher to save context; it was removed
+because the model then invented schemas it had never been shown. See
+[ROUTER_ARCHITECTURE.md](docs/ROUTER_ARCHITECTURE.md) for that history.
+
+**Usage is seamless:** Just ask naturally - "export gerber files" or "add mounting holes" - and Claude will find and call the appropriate tools automatically.
 
 ### NEEDS TESTING - REPORT ISSUES
 
@@ -539,19 +553,24 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. **169 tools** are additionally indexed into 15 functional categories, so `search_tools` and `get_category_tools` can find one by keyword.
+The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. **173 tools** are additionally indexed into 16 functional categories, so `search_tools` and `get_category_tools` can find one by keyword.
 
-For the complete tool reference with access types (direct/routed/additional), see [Tool Inventory](docs/TOOL_INVENTORY.md).
+The lists below are a curated tour of the most useful tools, not the full set.
+For the complete, generated reference of all 233 tools -- including how each one
+is discovered -- see [Tool Inventory](docs/TOOL_INVENTORY.md).
 
-### Project Management (5 tools)
+### Project Management (12 tools)
 
 - `create_project` - Initialize new KiCAD projects
 - `open_project` - Load existing project files
-- `save_project` - Save current project state
+- `open_board` / `reload_board` - Open or re-read a specific `.kicad_pcb`
+- `save_project` / `save_board` / `save_as` - Save current state
+- `close_project` - Save (optionally) and drop in-memory state
+- `is_dirty` / `discard_or_reload` - Check for and undo unsaved changes
 - `get_project_info` - Retrieve project metadata
 - `snapshot_project` - Save named checkpoint snapshot
 
-### Board Operations (12 tools)
+### Board Operations (19 tools)
 
 - `set_board_size` - Configure PCB dimensions
 - `add_board_outline` - Create board edge (rectangle, circle, polygon, rounded rectangle)
@@ -564,9 +583,12 @@ For the complete tool reference with access types (direct/routed/additional), se
 - `add_mounting_hole` - Place mounting holes
 - `add_board_text` - Add text annotations
 - `add_zone` - Add copper zone/pour with clearance settings
+- `clear_board_outline` / `replace_board_outline` - Remove or swap the Edge.Cuts outline
+- `set_board_origin` / `get_board_origin` - Read and set the drill/place and grid origins
+- `list_graphics` / `update_graphic` / `delete_graphic` - Inspect and edit drawing items
 - `import_svg_logo` - Import SVG file as PCB silkscreen polygons
 
-### Component Management (16 tools)
+### Component Management (28 tools)
 
 - `place_component` - Place single component with footprint
 - `move_component` - Reposition existing component
@@ -584,8 +606,11 @@ For the complete tool reference with access types (direct/routed/additional), se
 - `place_component_array` - Create component grids/patterns
 - `align_components` - Align multiple components
 - `duplicate_component` - Copy existing component
+- `batch_move_components` - Move many components in one transactional call
+- `get_component_geometry` / `check_placement_clearance` - Body sizes and overlap checks
+- `get_ratsnest` / `estimate_airwire_lengths` - Unrouted connection analysis
 
-### Routing (13 tools)
+### Routing (17 tools)
 
 - `add_net` - Create electrical net
 - `route_trace` - Route copper traces between XY points
@@ -600,8 +625,12 @@ For the complete tool reference with access types (direct/routed/additional), se
 - `route_differential_pair` - Route differential signals
 - `refill_zones` - Refill all copper zones
 - `copy_routing_pattern` - Replicate routing between component groups
+- `set_net_color` - Set or clear a net's display color override
+- `route_arc_trace` - Route a curved trace
+- `add_gnd_stitching_vias` - Stitch a ground plane with vias
+- `query_zones` - Inspect copper zones
 
-### Schematic (27 tools)
+### Schematic (46 tools)
 
 Complete schematic workflow with dynamic symbol loading (~10,000 symbols) and intelligent wiring.
 
@@ -620,9 +649,9 @@ Complete schematic workflow with dynamic symbol loading (~10,000 symbols) and in
 
 **Wiring and Connections:**
 
-- `add_wire` - Create wire between points
+- `add_schematic_wire` - Create wire between points
 - `delete_schematic_wire` - Remove wire segment
-- `add_schematic_connection` - Auto-connect pins with routing
+- `add_no_connect` - Mark a pin as deliberately unconnected
 - `add_schematic_net_label` - Add net labels (VCC, GND, signals)
 - `delete_schematic_net_label` - Remove net label
 - `connect_to_net` - Connect pin to named net
@@ -639,10 +668,28 @@ Complete schematic workflow with dynamic symbol loading (~10,000 symbols) and in
 - `run_erc` - Electrical rule check
 - `generate_netlist` - Generate netlist from schematic
 - `sync_schematic_to_board` - Import nets/pads to PCB (F8 equivalent)
+- `backannotate_footprints` - Copy footprint choices from the board back to the schematic
+- `create_board_from_schematic` - Create a board populated from the schematic
+
+**Batch, Hierarchy and Layout (19 more tools):**
+
+- `batch_add_components` / `batch_edit_schematic_components` / `batch_connect` - Bulk authoring
+- `add_hierarchical_sheet` / `create_hierarchical_subsheet` - Multi-sheet designs
+- `autoplace_schematic_fields` / `lint_schematic_cosmetic` - Tidy field placement
+- `lint_offgrid` / `snap_to_grid` - Find and fix off-grid coordinates
 
 See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for details and examples.
 
-### Design Rules / DRC (8 tools)
+### File Validation (2 tools)
+
+Find structural damage before KiCad refuses to open a file. Both report the line
+and column of every fault, and confirm the verdict with `kicad-cli` run against a
+throwaway copy.
+
+- `validate_schematic` - Check a `.kicad_sch` file
+- `validate_symbol_library` - Check a `.kicad_sym` file
+
+### Design Rules / DRC (7 tools)
 
 - `set_design_rules` / `get_design_rules` - Configure and inspect rules
 - `run_drc` - Execute design rule check
@@ -650,31 +697,47 @@ See [Schematic Tools Reference](docs/SCHEMATIC_TOOLS_REFERENCE.md) for details a
 - `create_netclass` / `assign_net_to_class` - Net class management
 - `set_layer_constraints` / `check_clearance` - Layer and clearance rules
 
-### Export (8 tools)
+### Export (27 tools)
 
-- `export_gerber` - Gerber fabrication files
-- `export_pdf` / `export_svg` - Documentation and vector graphics
+- `export_gerber` / `export_gerbers` / `export_gerber_single` - Gerber fabrication files
+- `export_drill` - Drill files
+- `export_ipc2581` / `export_odb` / `export_ipcd356` / `export_gencad` - Other fabrication formats
+- `export_pdf` / `export_svg` / `export_pcb_dxf` - Documentation and vector graphics
 - `export_3d` - 3D models (STEP, STL, VRML, OBJ)
-- `export_bom` - Bill of materials (CSV, XML, HTML, JSON)
+- `export_bom` / `export_sch_bom` - Bill of materials (CSV, XML, HTML, JSON)
 - `export_netlist` - Netlist (KiCad, Spice, Cadstar, OrcadPCB2)
-- `export_position_file` - Component positions for pick and place
+- `export_position_file` / `export_pos` - Component positions for pick and place
+- `export_sch_pdf` / `export_sch_svg` / `export_sch_dxf` - Schematic output
 - `export_vrml` - VRML 3D model
 
-### Footprint Libraries (4 tools) and Symbol Libraries (4 tools)
+### Footprint Libraries and Symbol Libraries (16 tools)
 
 - `list_libraries` / `list_symbol_libraries` - Browse available libraries
 - `search_footprints` / `search_symbols` - Search across all libraries
 - `list_library_footprints` / `list_library_symbols` - Browse specific library
 - `get_footprint_info` / `get_symbol_info` - Detailed information
+- `list_symbol_pins` / `batch_list_symbol_pins` - Read pins straight from a library
+- `set_symbol_pin_type` - Bulk-set pin electrical types, with a dry run first
+- `find_duplicate_symbols` - Find the same part stored twice under different names
+- `repair_flat_symbols` - Fix vendor symbols that KiCad tolerates but tools cannot parse
 
-### Footprint Creator (4 tools) and Symbol Creator (4 tools)
+**Library tables** (`sym-lib-table` / `fp-lib-table`):
+
+- `list_library_table` - Read every registered library and check its URI resolves
+- `remove_library_table_entry` - Unregister a library
+- `set_library_table_uri` - Repoint a library that moved
+
+### Footprint Creator (7 tools) and Symbol Creator (8 tools)
 
 Create custom components when existing libraries do not have what you need.
 
 - `create_footprint` / `create_symbol` - Build from scratch with pads/pins
 - `edit_footprint_pad` - Modify pad properties
+- `add_footprint_3d_model` / `add_component_3d_model` / `import_3d_model` - Attach 3D models
 - `register_footprint_library` / `register_symbol_library` - Register in lib-table
 - `list_footprint_libraries` / `list_symbols_in_library` - Browse custom libraries
+- `add_symbol_property` - Add or update a field on a library symbol
+- `import_symbol` / `export_symbol` / `rename_symbol` - Move symbols between libraries
 - `delete_symbol` - Remove symbol from library
 
 See [Footprint and Symbol Creator Guide](docs/FOOTPRINT_SYMBOL_CREATOR_GUIDE.md) for details.
@@ -700,10 +763,24 @@ See [Footprint and Symbol Creator Guide](docs/FOOTPRINT_SYMBOL_CREATOR_GUIDE.md)
 
 See [Freerouting Guide](docs/FREEROUTING_GUIDE.md) for setup and usage.
 
-### UI Management (2 tools)
+### UI Management (3 tools)
 
 - `check_kicad_ui` - Check if KiCAD is running
 - `launch_kicad_ui` - Launch KiCAD application
+- `get_backend_state` - Report which backend (IPC or SWIG) is in use
+
+### Parts Registry (3 tools)
+
+Look for a ready-made part before generating a custom one.
+
+- `search_parts_registry` - Search the registry by name, keyword or manufacturer
+- `get_registry_part` - Inspect one part in detail
+- `download_registry_part` - Download its footprint, symbol or 3D model
+
+### Import (2 tools)
+
+- `import_eagle_project` - Convert an Eagle project
+- `import_pcb` - Load an existing `.kicad_pcb` into the session
 
 ## Prerequisites
 
@@ -797,7 +874,8 @@ The script will:
 - Run diagnostics
 
 **Manual Setup:**
-See [Windows Installation Guide](docs/WINDOWS_SETUP.md) for detailed instructions.
+See [Platform Guide](docs/PLATFORM_GUIDE.md) for detailed instructions, and
+[Windows Troubleshooting](docs/WINDOWS_TROUBLESHOOTING.md) if setup fails.
 
 ### macOS
 
@@ -1435,8 +1513,8 @@ How many Basic parts are available?
 
 - **JSON-RPC 2.0 Transport:** Bi-directional communication via STDIO
 - **Protocol Version:** MCP 2025-06-18
-- **Capabilities:** Tools (122), Resources (8)
-- **Tool Router:** Intelligent discovery system with 14 categories
+- **Capabilities:** Tools (233), Resources (23)
+- **Tool discovery:** keyword search catalogue indexing 173 tools in 16 categories
 - **Error Handling:** Standard JSON-RPC error codes
 
 ### TypeScript Server (`src/`)
@@ -1553,7 +1631,7 @@ npm run format
 
 **Solutions:**
 
-1. Check server logs: `~/.kicad-mcp/logs/kicad_interface.log`
+1. Check server logs: `~/.kicad-mcp/logs/kicad_interface-<pid>.log` (one file per server process)
 2. Verify a project is loaded before running board operations
 3. Ensure file paths are absolute, not relative
 4. Check tool parameter types match schema requirements
@@ -1572,7 +1650,7 @@ npm run format
 ### Getting Help
 
 1. Check the [GitHub Issues](https://github.com/mixelpixx/KiCAD-MCP-Server/issues)
-2. Review server logs: `~/.kicad-mcp/logs/kicad_interface.log`
+2. Review server logs: `~/.kicad-mcp/logs/kicad_interface-<pid>.log` (one file per server process)
 3. Open a new issue with:
    - Operating system and version
    - KiCAD version (`python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"`)
@@ -1582,11 +1660,11 @@ npm run format
 
 ## Project Status
 
-**Current Version:** 2.5.0
+**Current Version:** 2.7.0
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-**Working Features (148 tools):**
+**Working Features (233 tools):**
 
 - Project management with snapshot checkpointing
 - Complete board design (outline, layers, zones, mounting holes, text, SVG logos)
@@ -1602,6 +1680,7 @@ See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix a
 - Custom footprint and symbol creation
 - Library table maintenance (list, remove and repoint symbol/footprint entries)
 - JLCPCB parts integration (2.5M+ parts catalog)
+- Digi-Key Product Information V4 search and library availability sweep
 - Datasheet enrichment via LCSC
 - Freerouting autorouter integration (Java, Docker, Podman)
 - UI auto-launch and management

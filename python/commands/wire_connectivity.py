@@ -936,7 +936,6 @@ def get_connections_for_net(schematic: Any, schematic_path: str, net_name: str) 
 
     Returns a list of {"component": ref, "pin": pin_num} dicts.
     """
-    from skip import Schematic as SkipSchematic
 
     seen: Set[Tuple[str, str]] = set()
     all_pins: List[Dict] = []

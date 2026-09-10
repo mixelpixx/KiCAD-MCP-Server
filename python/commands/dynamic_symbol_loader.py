@@ -23,6 +23,15 @@ from utils.sexpr_format import (
 
 logger = logging.getLogger("kicad_interface")
 
+#: First schematic file-format version that accepts ``(body_style ...)`` and
+#: ``(in_pos_files ...)`` inside a placed ``(symbol ...)``. Both tokens are
+#: KiCad 10 additions: a KiCad 8 (20231120) or KiCad 9 (20250114) file never
+#: contains them, and those KiCad releases reject a schematic carrying a token
+#: they do not know with a bare "Failed to load schematic". KiCad 10 accepts a
+#: v9 file either way (kicad-cli 10.0.0), so gating on the file's declared
+#: version costs nothing there and keeps the file loadable everywhere else.
+_KICAD10_SCH_VERSION = 20260101
+
 # Module-level caches shared across DynamicSymbolLoader instances.
 # A fresh loader is created for every add_component call (see
 # schematic_handlers), so instance-level caches never survive — every
@@ -653,10 +662,14 @@ class DynamicSymbolLoader:
         symbol_name: str,
     ) -> dict:
         """
-        Return {prop_name: (dx, dy, text_angle, effects_str)} from the lib_symbols
-        section of the schematic (which must already have the symbol injected).
+        Return {prop_name: (dx, dy, text_angle, effects_str, hidden)} from the
+        lib_symbols section of the schematic (which must already have the symbol
+        injected).
         effects_str is the full '(effects ...)' string to be reused in the placed
-        instance so that justify, font size, hide etc. are preserved.
+        instance so that justify, font size etc. are preserved; ``hidden`` carries
+        the library's field visibility separately, because the hide marker is
+        stripped out of effects_str (KiCad 10 records visibility as a top-level
+        ``(hide yes)`` on the property, not inside ``(effects ...)``).
         Returns an empty dict on failure.
         """
         try:
@@ -700,16 +713,28 @@ class DynamicSymbolLoader:
                 eff_pos = prop_block.find("(effects")
                 if eff_pos != -1:
                     effects_str = self._extract_paren_block(prop_block, eff_pos)
-                    # Strip (hide ...) sub-expressions — visibility will be set
-                    # separately by the caller
+                    # Strip (hide ...) sub-expressions — visibility travels
+                    # separately in the `hidden` flag below
                     effects_str = re.sub(r"\s*\(hide\s+[^)]+\)", "", effects_str)
                     effects_str = effects_str.strip()
                 else:
                     effects_str = "(effects (font (size 1.27 1.27)))"
 
+                # Library field visibility. Both spellings occur in the wild:
+                # KiCad 10 writes a top-level (hide yes) on the property, older
+                # libraries put `hide` (bare token or parenthesised) inside
+                # (effects ...). Either means "don't draw this field".
+                # Blank the quoted values first: a field whose *value* contains
+                # the word "hide" must not be mistaken for a hidden field.
+                prop_tokens = re.sub(QUOTED_VALUE, '""', prop_block)
+                hidden = bool(
+                    re.search(r"\(hide\s+yes\)", prop_tokens)
+                    or re.search(r"\s+hide(?=[\s)])", prop_tokens)
+                )
+
                 # Only store the first occurrence (top-level lib property, not sub-symbol)
                 if name not in result:
-                    result[name] = (dx, dy, angle, effects_str)
+                    result[name] = (dx, dy, angle, effects_str, hidden)
 
                 search_pos = abs_start + 1
 
@@ -827,6 +852,29 @@ class DynamicSymbolLoader:
             return []
         except Exception:
             return []
+
+    @staticmethod
+    def _read_sch_version(content: str) -> Optional[int]:
+        """Return the ``(version NNNNNNNN)`` token of a schematic, or None.
+
+        The file's own declared version — not the installed KiCad version —
+        decides which tokens are legal, because KiCad dispatches to a parser per
+        format version. A KiCad 10 binary still refuses a v10-only token inside a
+        file that declares 20231120.
+        """
+        m = re.search(r"\(version\s+(\d+)\)", content)
+        return int(m.group(1)) if m else None
+
+    @classmethod
+    def _supports_kicad10_symbol_tokens(cls, content: str) -> bool:
+        """Whether this schematic accepts ``body_style`` / ``in_pos_files``.
+
+        Unknown/absent version is treated as KiCad 10 to preserve the previous
+        behaviour for freshly generated files, which is what the templates and
+        the create_schematic fallback emit.
+        """
+        version = cls._read_sch_version(content)
+        return version is None or version >= _KICAD10_SCH_VERSION
 
     def _build_instance_path(self, schematic_path: Path) -> str:
         """Return the symbol instance path for symbols placed in ``schematic_path``.
@@ -977,19 +1025,26 @@ class DynamicSymbolLoader:
         def _prop_at(
             name: str, fallback_dx: float, fallback_dy: float, fallback_angle: float = 0
         ) -> tuple:
-            """Return (abs_x, abs_y, text_angle, effects_str) for a property."""
+            """Return (abs_x, abs_y, text_angle, effects_str, hidden) for a property."""
             if name in lib_props:
-                dx, dy, text_ang, eff = lib_props[name]
+                dx, dy, text_ang, eff, hidden = lib_props[name]
             else:
                 dx, dy, text_ang, eff = fallback_dx, fallback_dy, fallback_angle, _DEFAULT_EFFECTS
+                hidden = False
             rdx, rdy = self._rotate_offset(dx, dy, angle)
-            return round(x + rdx, 3), round(y + rdy, 3), text_ang, eff
+            return round(x + rdx, 3), round(y + rdy, 3), text_ang, eff, hidden
 
-        ref_x, ref_y, ref_a, ref_eff = _prop_at("Reference", 2.032, 0, 0)
-        val_x, val_y, val_a, val_eff = _prop_at("Value", 0, 2.54, 0)
-        fp_x, fp_y, fp_a, fp_eff = _prop_at("Footprint", 0, 0, 0)
-        ds_x, ds_y, ds_a, ds_eff = _prop_at("Datasheet", 0, 0, 0)
-        desc_x, desc_y, desc_a, desc_eff = _prop_at("Description", 0, 0, 0)
+        # Reference/Value inherit the library's visibility. Power symbols
+        # (power:GND, power:+3V3, …) hide Reference by convention — the #PWR101
+        # designators are meaningless to a reader — and losing that flag on
+        # placement printed one stray designator beside every ground symbol.
+        # Footprint/Datasheet/Description stay hidden unconditionally, matching
+        # what eeschema writes on placement.
+        ref_x, ref_y, ref_a, ref_eff, ref_hide = _prop_at("Reference", 2.032, 0, 0)
+        val_x, val_y, val_a, val_eff, val_hide = _prop_at("Value", 0, 2.54, 0)
+        fp_x, fp_y, fp_a, fp_eff, _ = _prop_at("Footprint", 0, 0, 0)
+        ds_x, ds_y, ds_a, ds_eff, _ = _prop_at("Datasheet", 0, 0, 0)
+        desc_x, desc_y, desc_a, desc_eff, _ = _prop_at("Description", 0, 0, 0)
 
         def _fmt(n: float) -> str:
             """Format a coordinate the way KiCad does: integral values without a
@@ -1065,8 +1120,8 @@ class DynamicSymbolLoader:
 
         properties_str = "\n".join(
             [
-                _property("Reference", reference, ref_x, ref_y, ref_a, ref_eff, False),
-                _property("Value", value or symbol_name, val_x, val_y, val_a, val_eff, False),
+                _property("Reference", reference, ref_x, ref_y, ref_a, ref_eff, ref_hide),
+                _property("Value", value or symbol_name, val_x, val_y, val_a, val_eff, val_hide),
                 _property("Footprint", footprint, fp_x, fp_y, fp_a, fp_eff, True),
                 _property("Datasheet", ds_val, ds_x, ds_y, ds_a, ds_eff, True),
                 _property("Description", desc_val, desc_x, desc_y, desc_a, desc_eff, True),
@@ -1094,20 +1149,31 @@ class DynamicSymbolLoader:
 
         body = "\n".join(part for part in [properties_str, pins_str, instances_str] if part)
 
+        with open(schematic_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Emit the KiCad 10-only symbol attributes only into files whose declared
+        # format version accepts them (#351). A KiCad 8 or 9 file never contains
+        # them and those releases refuse a schematic carrying a token they do not
+        # know. Everything else on this line is common to v8/v9/v10.
+        if self._supports_kicad10_symbol_tokens(content):
+            attrs_line = (
+                "    (body_style 1) (exclude_from_sim no) (in_bom yes) (on_board yes)"
+                " (in_pos_files yes) (dnp no)\n"
+            )
+        else:
+            attrs_line = "    (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no)\n"
+
         mirror_str = " (mirror y)" if mirror_y else ""
         instance_block = (
             f'  (symbol (lib_id "{escape_sexpr_string(full_lib_id)}")'
             f" (at {_fmt(x)} {_fmt(y)} {_fmt(angle)})"
             f"{mirror_str} (unit {unit})\n"
-            "    (body_style 1) (exclude_from_sim no) (in_bom yes) (on_board yes)"
-            " (in_pos_files yes) (dnp no)\n"
+            f"{attrs_line}"
             f'    (uuid "{new_uuid}")\n'
             f"{body}\n"
             "  )"
         )
-
-        with open(schematic_path, "r", encoding="utf-8") as f:
-            content = f.read()
 
         # Insert before (sheet_instances using direct string search.
         # This works for both pretty-printed and sexpdata-compacted single-line files.

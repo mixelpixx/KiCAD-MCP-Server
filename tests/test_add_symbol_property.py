@@ -1,5 +1,6 @@
 """Tests for add_symbol_property — add custom properties to .kicad_sym library files."""
 
+import os
 import shutil
 import subprocess
 import sys
@@ -888,15 +889,13 @@ def test_write_leaves_no_temp_file(tmp_path):
 
 def test_failed_write_leaves_original_intact(tmp_path, monkeypatch):
     """The rename is the commit point: a failure before it cannot truncate."""
-    import commands.add_symbol_property as mod
-
     p = tmp_path / "atomic.kicad_sym"
     p.write_bytes(_NEWLINE_LIB.encode("utf-8"))
 
     def boom(src, dst):
         raise OSError("disk full")
 
-    monkeypatch.setattr(mod.os, "replace", boom)
+    monkeypatch.setattr(os, "replace", boom)
     with pytest.raises(OSError):
         add_symbol_property(
             {

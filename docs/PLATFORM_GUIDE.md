@@ -349,7 +349,7 @@ pytest tests/
 **View logs:**
 
 ```bash
-tail -f ~/.kicad-mcp/logs/kicad_interface.log
+tail -f $(ls -t ~/.kicad-mcp/logs/kicad_interface-*.log | head -1)
 ```
 
 **Start server manually:**
@@ -376,7 +376,7 @@ bash setup-macos.sh --verify
 **View logs:**
 
 ```bash
-tail -f ~/.kicad-mcp/logs/kicad_interface.log
+tail -f $(ls -t ~/.kicad-mcp/logs/kicad_interface-*.log | head -1)
 ```
 
 **Start server manually:**
@@ -410,7 +410,7 @@ Test-Path "C:\Program Files\KiCad\9.0"
 **View logs:**
 
 ```powershell
-Get-Content "$env:USERPROFILE\.kicad-mcp\logs\kicad_interface.log" -Tail 50 -Wait
+Get-Content (Get-ChildItem "$env:USERPROFILE\.kicad-mcp\logs\kicad_interface-*.log" | Sort-Object LastWriteTime -Descending)[0] -Tail 50 -Wait
 ```
 
 **Start server manually:**

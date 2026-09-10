@@ -65,7 +65,8 @@ Connect J1 pin 1 to the VCC net.
 Connect LED1 pin 2 to GND.
 ```
 
-**Tools:** `add_schematic_connection`, `add_schematic_net_label`, `connect_to_net`
+**Tools:** `add_schematic_wire`, `add_schematic_net_label`, `connect_to_net`,
+`add_no_connect`
 
 ### FFC/Ribbon Cable Passthrough (Special Workflow)
 
@@ -304,7 +305,7 @@ See [SVG Import Guide](SVG_IMPORT_GUIDE.md) for requirements and tips.
 
 ## Related Documentation
 
-- [Tool Inventory](TOOL_INVENTORY.md) -- complete list of all 122 tools
+- [Tool Inventory](TOOL_INVENTORY.md) -- generated list of all 229 tools
 - [Schematic Tools Reference](SCHEMATIC_TOOLS_REFERENCE.md) -- detailed schematic tool docs
 - [Routing Tools Reference](ROUTING_TOOLS_REFERENCE.md) -- detailed routing tool docs
 - [Freerouting Guide](FREEROUTING_GUIDE.md) -- autorouter setup and usage

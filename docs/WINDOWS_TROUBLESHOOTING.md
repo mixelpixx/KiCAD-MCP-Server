@@ -37,10 +37,11 @@ If the automated setup fails, continue with the manual troubleshooting below.
 1. **Check the log file** (this has the actual error):
 
    ```
-   %USERPROFILE%\.kicad-mcp\logs\kicad_interface.log
+   %USERPROFILE%\.kicad-mcp\logs\kicad_interface-<pid>.log
    ```
 
-   Open in Notepad and look at the last 50-100 lines.
+   Each server process writes its own log file, so open the newest one.
+   Open it in Notepad and look at the last 50-100 lines.
 
 2. **Test pcbnew import manually:**
 
@@ -380,7 +381,7 @@ Expected: Server should start and wait for input (doesn't exit immediately)
 
 ```powershell
 # View log file
-Get-Content "$env:USERPROFILE\.kicad-mcp\logs\kicad_interface.log" -Tail 50
+Get-Content (Get-ChildItem "$env:USERPROFILE\.kicad-mcp\logs\kicad_interface-*.log" | Sort-Object LastWriteTime -Descending)[0] -Tail 50
 ```
 
 Should show successful initialization with no errors.
@@ -449,7 +450,7 @@ If none of the above solutions work:
    Copy the entire output.
 
 2. **Collect log files:**
-   - MCP log: `%USERPROFILE%\.kicad-mcp\logs\kicad_interface.log`
+   - MCP log: `%USERPROFILE%\.kicad-mcp\logs\kicad_interface-<pid>.log`
    - Claude Desktop log: `%APPDATA%\Claude\logs\mcp*.log`
 
 3. **Open a GitHub issue:**

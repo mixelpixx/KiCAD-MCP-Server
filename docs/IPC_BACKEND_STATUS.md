@@ -278,7 +278,6 @@ python/
 ## Related Documentation
 
 - [ROADMAP.md](./ROADMAP.md) - Project roadmap
-- [IPC_API_MIGRATION_PLAN.md](./IPC_API_MIGRATION_PLAN.md) - Migration details
 - [REALTIME_WORKFLOW.md](./REALTIME_WORKFLOW.md) - Collaboration workflows
 - [kicad-python docs](https://docs.kicad.org/kicad-python-main/) - Official API docs
 

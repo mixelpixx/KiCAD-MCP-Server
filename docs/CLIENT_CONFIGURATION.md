@@ -437,7 +437,7 @@ Production (minimal logging):
   "mcpServers": {
     "kicad": {
       "command": "node",
-      "args": ["/home/chris/MCP/KiCAD-MCP-Server/dist/index.js"],
+      "args": ["/home/YOUR_USER/KiCAD-MCP-Server/dist/index.js"],
       "env": {
         "PYTHONPATH": "/usr/share/kicad/scripting/plugins:/usr/lib/kicad/lib/python3/dist-packages"
       }
@@ -534,5 +534,5 @@ For bugs or feature requests, open an issue on GitHub.
 
 ---
 
-**Last Updated:** March 21, 2026
-**Version:** 2.2.3+
+**Last Updated:** September 1, 2026
+**Version:** 2.7.0

@@ -409,7 +409,7 @@ After creating custom parts:
 
 ## Source Files
 
-- TypeScript tool definitions: `/home/chris/MCP/KiCAD-MCP-Server/src/tools/footprint.ts`
-- TypeScript symbol definitions: `/home/chris/MCP/KiCAD-MCP-Server/src/tools/symbol-creator.ts`
-- Python footprint implementation: `/home/chris/MCP/KiCAD-MCP-Server/python/commands/footprint.py`
-- Python symbol implementation: `/home/chris/MCP/KiCAD-MCP-Server/python/commands/symbol_creator.py`
+- TypeScript tool definitions: `src/tools/footprint.ts`
+- TypeScript symbol definitions: `src/tools/symbol-creator.ts`
+- Python footprint implementation: `python/commands/footprint.py`
+- Python symbol implementation: `python/commands/symbol_creator.py`

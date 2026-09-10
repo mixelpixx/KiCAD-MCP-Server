@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-import os
 import re
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
-from utils.sexpr_format import escape_sexpr_string
+from utils.file_io import read_text_preserve_newline as _read_text
+from utils.file_io import write_text_atomic as _write_text
+from utils.sexpr_format import escape_sexpr_string, iter_child_offsets
+from utils.sexpr_format import match_paren as _match_paren
 
 # A property belongs to the symbol itself, so it has to sit at the same nesting
 # level as (property "Reference" ...). Inside the parent block that is depth 2:
@@ -20,60 +22,6 @@ _CHILD_DEPTH = 2
 _AT_HEAD = re.compile(r"\(at\s")
 
 _HIDE_LIST = re.compile(r"\(hide\s+(yes|no)\s*\)")
-
-
-def _read_text(path: Path) -> tuple[str, str]:
-    """File text with LF newlines, plus the newline style to write back.
-
-    ``Path.read_text``/``write_text`` apply universal-newline translation, so on
-    Windows a CRLF library round-tripped through them keeps its line endings by
-    luck and an LF one silently gains a ``\\r`` on every line -- turning a
-    one-property edit into a whole-file diff.
-    """
-    with open(path, "r", encoding="utf-8", newline="") as fh:
-        raw = fh.read()
-    return raw.replace("\r\n", "\n"), ("\r\n" if "\r\n" in raw else "\n")
-
-
-def _write_text(path: Path, text: str, newline: str) -> None:
-    """Atomic write that keeps the file's original newline style.
-
-    ``write_text`` truncates in place, so a failure part-way through the write
-    leaves a 2 MB library half-written with no copy of the original anywhere.
-    """
-    tmp = path.with_name(path.name + ".mcp-tmp")
-    with open(tmp, "w", encoding="utf-8", newline=newline) as fh:
-        fh.write(text)
-    os.replace(tmp, path)
-
-
-def _match_paren(content: str, open_idx: int) -> int:
-    """Index of the ``)`` closing the ``(`` at *open_idx*, or -1 if unbalanced.
-
-    Parentheses inside quoted tokens are literal text -- a Description of
-    ``"Cap (X7R)"`` must not be read as a nested list.
-    """
-    depth = 0
-    in_string = False
-    i = open_idx
-    while i < len(content):
-        ch = content[i]
-        if in_string:
-            if ch == "\\":
-                i += 2
-                continue
-            if ch == '"':
-                in_string = False
-        elif ch == '"':
-            in_string = True
-        elif ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-            if depth == 0:
-                return i
-        i += 1
-    return -1
 
 
 def _paren_balance(content: str) -> int:
@@ -101,26 +49,7 @@ def _paren_balance(content: str) -> int:
 
 def _iter_children(block: str) -> Iterator[int]:
     """Yield the offset of every direct child list inside a symbol *block*."""
-    depth = 0
-    in_string = False
-    i = 0
-    while i < len(block):
-        ch = block[i]
-        if in_string:
-            if ch == "\\":
-                i += 2
-                continue
-            if ch == '"':
-                in_string = False
-        elif ch == '"':
-            in_string = True
-        elif ch == "(":
-            depth += 1
-            if depth == _CHILD_DEPTH:
-                yield i
-        elif ch == ")":
-            depth -= 1
-        i += 1
+    yield from iter_child_offsets(block, depth=_CHILD_DEPTH)
 
 
 def _iter_bare_atoms(block: str) -> Iterator[tuple[int, int]]:

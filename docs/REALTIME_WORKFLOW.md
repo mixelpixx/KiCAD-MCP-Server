@@ -1,8 +1,8 @@
 # Real-Time Collaboration Workflow
 
 **Status:** ✅ TESTED AND WORKING
-**Date:** 2025-11-01
-**Version:** 2.1.0-alpha
+**First documented:** 2025-11-01 (v2.1.0-alpha)
+**Reviewed against:** v2.7.0
 
 ## Overview
 
@@ -429,7 +429,7 @@ The KiCAD MCP Server successfully enables paired circuit board design between AI
 - [LIBRARY_INTEGRATION.md](./LIBRARY_INTEGRATION.md) - Component library system
 - [STATUS_SUMMARY.md](./STATUS_SUMMARY.md) - Current implementation status
 - [ROADMAP.md](./ROADMAP.md) - Future development plans
-- [API.md](./API.md) - Full MCP API reference
+- [TOOL_INVENTORY.md](./TOOL_INVENTORY.md) - Generated catalogue of every tool
 
 ## Changelog
 

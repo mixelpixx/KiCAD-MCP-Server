@@ -291,17 +291,28 @@ class KiCADProcessManager:
                         and "kicad_interface.py" not in line
                         and "grep" not in line
                     ):
-                        # More specific check: must have /pcbnew or /kicad in the path
-                        if "/pcbnew" in line or "/kicad" in line or "KiCad.app" in line:
-                            parts = line.split()
-                            if len(parts) >= 11:
-                                processes.append(
-                                    {
-                                        "pid": parts[1],
-                                        "name": parts[10],
-                                        "command": " ".join(parts[10:]),
-                                    }
-                                )
+                        parts = line.split()
+                        if len(parts) < 11:
+                            continue
+                        proc_name = parts[10]
+                        # ps shows a bare command name (no leading slash) when the
+                        # process was launched via $PATH lookup rather than an
+                        # absolute path, so also accept an exact "kicad"/"pcbnew"
+                        # basename alongside the path-based checks.
+                        base_name = proc_name.rsplit("/", 1)[-1].lower()
+                        if (
+                            "/pcbnew" in line
+                            or "/kicad" in line
+                            or "KiCad.app" in line
+                            or base_name in ("kicad", "pcbnew")
+                        ):
+                            processes.append(
+                                {
+                                    "pid": parts[1],
+                                    "name": proc_name,
+                                    "command": " ".join(parts[10:]),
+                                }
+                            )
 
             elif system == "Windows":
                 for proc in KiCADProcessManager._windows_list_processes():

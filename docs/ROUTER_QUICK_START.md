@@ -1,206 +1,123 @@
-# Router Quick Start Guide
+# Tool Discovery Quick Start
 
-## What is the Router?
+_(File name kept as `ROUTER_QUICK_START.md` so existing links keep working. The
+word "router" in the name is historical: see the note below.)_
 
-The KiCAD MCP Server indexes its tools into 13 discoverable categories, so you
-can find one by keyword instead of scanning the whole list.
+## What is tool discovery?
 
-> **It is a search catalogue, not a gate.** Every tool is registered directly
-> and is already visible to your assistant, so the router saves no context.
-> The original gated design (`execute_tool`) was removed in `963a39c` because
+The KiCAD MCP Server registers 229 tools. Your assistant can call any of them by
+name at any time. To help it find the right one, 169 of those tools are indexed
+into 15 categories that can be searched by keyword.
+
+> **This is a search catalogue, not a gate.** Every tool is registered directly
+> and is already visible to your assistant, so discovery saves no context. The
+> original gated design (`execute_tool`) was removed in `963a39c` because
 > indirect execution made the model invent tool schemas it had not been shown.
 > See [ROUTER_ARCHITECTURE.md](ROUTER_ARCHITECTURE.md) for the full history.
 
-## How It Works
+## How it works
 
-Alongside the directly-registered tools, Claude gets three discovery tools:
+Alongside the tools themselves, your assistant gets three discovery tools:
 
-- **12 direct tools** for high-frequency operations (always visible)
-- **4 router tools** for discovering and executing the other 47 tools
+- `list_tool_categories` - browse the categories
+- `get_category_tools` - list the tools inside one category
+- `search_tools` - find tools by keyword
 
-When you ask Claude to do something (like "export gerber files"), it will:
+When you ask for something like "export gerber files", the assistant either
+already sees `export_gerber` in its tool list, or searches for it first. Either
+way it then calls the real tool with the real schema. There is no intermediate
+execution step.
 
-1. Search for relevant tools using `search_tools`
-2. Find the `export_gerber` tool in the "export" category
-3. Execute it via `execute_tool` with your parameters
-4. Return the results
+## Tool categories
 
-**You don't need to change how you interact with Claude** - the discovery happens automatically!
+Counts below come from `getRegistryStats()` and are current for v2.7.0. The
+generated [Tool Inventory](TOOL_INVENTORY.md) lists which tools are in each one.
 
-## Tool Categories
+| Category              | Tools | Covers                                                                    |
+| --------------------- | ----- | ------------------------------------------------------------------------- |
+| `board`               | 15    | Layers, origins, mounting holes, zones, graphics, 2D view                 |
+| `component`           | 15    | Edit, delete, search, group, annotate, geometry and clearance checks      |
+| `export`              | 27    | Gerber, drill, IPC-2581, ODB++, PDF, SVG, DXF, 3D, BOM, netlist, position |
+| `drc`                 | 7     | Design rules, DRC runs, net classes, clearance checks                     |
+| `schematic`           | 26    | Create, inspect, edit, wire, annotate, netlists, board sync               |
+| `library`             | 7     | Footprint library search and browse, plus library-table maintenance       |
+| `symbol_library`      | 17    | Symbol search, create, edit, rename, import, export, repair               |
+| `symbol_pins`         | 3     | Read pins straight from a library and set their electrical types          |
+| `schematic_hierarchy` | 5     | Insert, remove and scaffold sub-sheets; read and write sheet properties   |
+| `schematic_layout`    | 5     | Field placement, autoplace, off-grid lint                                 |
+| `schematic_batch`     | 6     | Bulk add, edit, replace, connect                                          |
+| `routing`             | 2     | Vias and copper pours                                                     |
+| `autoroute`           | 4     | Freerouting: autoroute, DSN export, SES import, availability check        |
+| `validation`          | 2     | Find structural damage in schematics and symbol libraries                 |
+| `parts-registry`      | 3     | Search and download parts from an open parts registry                     |
 
-The 110+ routed tools are organized into these categories:
+The other 60 registered tools are not indexed yet. They work exactly the same
+way when called by name; they simply do not turn up in `search_tools` results.
+`tests-ts/registry-completeness.test.ts` freezes that number so it can only go
+down.
 
-### 1. board (9 tools)
+## Always-visible essentials
 
-Board configuration: layers, mounting holes, zones, visualization
+32 tools are marked as essentials in `src/tools/registry.ts`. This does not make
+them more callable than any other tool - it means `search_tools` surfaces them
+first, because they cover the operations almost every session needs:
 
-- add_layer, set_active_layer, get_layer_list
-- add_mounting_hole, add_board_text
-- add_zone, get_board_extents, get_board_2d_view
-- launch_kicad_ui
+**Project and board files:** `create_project`, `open_project`, `open_board`,
+`reload_board`, `close_project`, `save_project`, `save_board`, `is_dirty`,
+`discard_or_reload`, `snapshot_project`, `get_project_info`
 
-### 2. component (8 tools)
+**Core PCB operations:** `place_component`, `move_component`,
+`batch_move_components`, `add_net`, `route_trace`, `get_board_info`,
+`set_board_size`, `add_board_outline`, `replace_board_outline`,
+`clear_board_outline`, `get_component_geometry`
 
-Advanced component operations: edit, delete, search, group, annotate
+**Core schematic operations:** `add_schematic_component`,
+`list_schematic_components`, `annotate_schematic`, `connect_passthrough`,
+`connect_to_net`, `add_schematic_net_label`, `sync_schematic_to_board`,
+`create_board_from_schematic`
 
-- rotate_component, delete_component, edit_component
-- find_component, get_component_properties
-- add_component_annotation, group_components, replace_component
+**Session state:** `get_backend_state`, `check_kicad_ui`
 
-### 3. export (8 tools)
+## Usage examples
 
-File export for fabrication and documentation
+### Natural interaction (recommended)
 
-- export_gerber, export_pdf, export_svg, export_3d
-- export_bom, export_netlist, export_position_file, export_vrml
-
-### 4. drc (8 tools)
-
-Design rule checking and electrical validation
-
-- set_design_rules, get_design_rules, run_drc
-- create_netclass, assign_net_to_class, set_layer_constraints
-- check_clearance, get_drc_violations
-
-### 5. schematic (8 tools)
-
-Schematic operations: create, add components, wire connections
-
-- create_schematic, add_schematic_component, add_wire
-- add_schematic_connection, add_schematic_net_label
-- connect_to_net, get_net_connections, generate_netlist
-
-### 6. library (4 tools)
-
-Footprint library access and search
-
-- list_libraries, search_footprints
-- list_library_footprints, get_footprint_info
-
-### 7. routing (2 tools)
-
-Advanced routing operations
-
-- add_via, add_copper_pour
-
-## Direct Tools (Always Available)
-
-These 12 tools are always visible for common operations:
-
-**Project Lifecycle:**
-
-- create_project, open_project, save_project, get_project_info
-
-**Core PCB Operations:**
-
-- place_component, move_component
-- add_net, route_trace
-- get_board_info, set_board_size
-- add_board_outline
-
-**UI Management:**
-
-- check_kicad_ui
-
-## Router Tools
-
-### list_tool_categories
-
-Browse all available tool categories.
-
-**Example:**
-
-```
-Claude, what tool categories are available?
-```
-
-### get_category_tools
-
-View all tools in a specific category.
-
-**Example:**
-
-```
-Show me all export tools available.
-```
-
-### search_tools
-
-Find tools by keyword.
-
-**Example:**
-
-```
-Search for tools related to "gerber" or "mounting holes"
-```
-
-### execute_tool
-
-Execute any routed tool with parameters.
-
-**Example:**
-
-```
-Execute the export_gerber tool with outputDir set to ./fabrication
-```
-
-## Usage Examples
-
-### Natural Interaction (Recommended)
-
-Just ask Claude what you want - it handles discovery automatically:
+Just say what you want. Discovery happens on its own:
 
 ```
 "Export gerber files to ./output"
 "Add a mounting hole at x=10, y=10"
 "Run a design rule check"
-"Create a copper pour on the ground layer"
+"Check that my symbol library still loads"
 ```
 
-### Manual Discovery (Optional)
+### Manual discovery (optional)
 
-You can also browse tools explicitly:
+You can browse explicitly:
 
 ```
 "List all tool categories"
 "What export tools are available?"
-"Search for DRC tools"
+"Search for tools that validate a schematic"
 ```
 
-## Benefits
+## Technical details
 
-1. **Organized Tools**: Logical categorization makes tools easy to find
-2. **Keyword Search**: `search_tools` locates a tool without knowing its name
-3. **Seamless Experience**: Works transparently - no changes to how you interact
-4. **Extensible**: Easy to add new tools and categories
-5. **Backwards Compatible**: All existing tools still work
+- **Registry:** `src/tools/registry.ts` - categories, essentials, and lookup
+- **Discovery tools:** `src/tools/router.ts`
+- **Server integration:** `src/server.ts` - all tools registered at startup
 
-Note: context reduction is _not_ among these. See the caveat at the top.
+Related reading:
 
-## Technical Details
+- [ROUTER_ARCHITECTURE.md](ROUTER_ARCHITECTURE.md) - the original gated design
+  and why it was rolled back
+- [TOOL_INVENTORY.md](TOOL_INVENTORY.md) - the generated catalogue of all 229
+  tools
 
-- **Registry**: `src/tools/registry.ts` - Tool categorization and lookup
-- **Router**: `src/tools/router.ts` - Discovery and execution implementation
-- **Server Integration**: `src/server.ts` - Router tools registered at startup
+## A note on context usage
 
-For implementation details, see:
-
-- [ROUTER_ARCHITECTURE.md](ROUTER_ARCHITECTURE.md) - Design specification
-- [ROUTER_IMPLEMENTATION_STATUS.md](ROUTER_IMPLEMENTATION_STATUS.md) - Current status
-- [TOOL_INVENTORY.md](TOOL_INVENTORY.md) - Complete tool catalog
-
-## Token Savings
-
-**Before Router:**
-
-- 122 tools × ~700 tokens each = ~85K tokens per conversation
-
-**After Router (Current):**
-
-- 12 direct tools + 4 router tools = 16 tools visible
-- Routed tools discovered on-demand
-- ~12-15K tokens per conversation
-- **~80% reduction** in context usage
-
-The router pattern is complete and functional, providing efficient tool discovery while maintaining full access to all 122+ tools.
+Earlier versions of this page claimed roughly an 80% reduction in context. That
+was true only of the gated design, which no longer exists. Today every tool
+schema is sent to the client, so discovery costs context rather than saving it.
+The benefit it provides is accuracy: the assistant can find the right tool by
+keyword instead of guessing a name.

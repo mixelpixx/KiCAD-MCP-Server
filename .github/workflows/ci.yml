@@ -43,6 +43,15 @@ jobs:
       - name: Run TypeScript tests
         run: npm run test:ts
 
+      # docs/TOOL_INVENTORY.md is generated from src/tools/*.ts and
+      # dist/tools/registry.js, so it silently goes stale whenever a tool is
+      # added or removed. It had drifted to 138 documented tools against 229
+      # registered before this check existed. The pre-commit hook only protects
+      # contributors who installed it; this makes the inventory a real gate.
+      # Must run after `npm run build` above, because it reads dist/.
+      - name: Check generated tool inventory is current
+        run: npm run docs:tools:check
+
   # Python tests
   python-tests:
     name: Python Tests

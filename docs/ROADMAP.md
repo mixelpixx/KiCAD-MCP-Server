@@ -63,7 +63,8 @@
 
 ### Documentation Overhaul (In Progress)
 
-- [ ] Per-feature documentation for all 122 tools
+- [x] Generated tool inventory covering all 229 tools (`npm run docs:tools`)
+- [ ] Per-feature documentation for the tools that need more than one line
 - [ ] Architecture guide for contributors
 - [ ] End-to-end PCB design workflow guide
 - [ ] Documentation index

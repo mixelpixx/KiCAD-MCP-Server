@@ -1,7 +1,7 @@
 # Known Issues & Workarounds
 
-**Last Updated:** 2026-03-21
-**Version:** 2.2.3
+**Last Updated:** 2026-09-01
+**Version:** 2.7.0
 
 This document tracks known issues and provides workarounds where available.
 
@@ -77,17 +77,7 @@ AttributeError: 'BOARD' object has no attribute 'LT_USER'
 
 ---
 
-### 5. package.json Version Mismatch
-
-**Status:** KNOWN - Non-critical
-
-**Symptoms:** package.json shows version 2.1.0-alpha while CHANGELOG documents version 2.2.3
-
-**Impact:** Cosmetic only. CHANGELOG.md is the authoritative version reference.
-
----
-
-### 6. `.kicad_pro` net_settings Must Be Edited via JSON Merge
+### 5. `.kicad_pro` net_settings Must Be Edited via JSON Merge
 
 **Status:** BY DESIGN (guard added)
 
@@ -103,7 +93,7 @@ changes via direct JSON read-modify-write of the `.kicad_pro` (the
 never through the pcbnew project model — model-side changes to
 `net_settings` are intentionally reverted by the guard.
 
-### 7. Flat Vendor Symbols Break kicad-skip-Based Tools (now diagnosed)
+### 6. Flat Vendor Symbols Break kicad-skip-Based Tools (now diagnosed)
 
 **Status:** MITIGATED — loud structured errors
 
@@ -130,6 +120,34 @@ each flat symbol's pins/graphics in a `(symbol "NAME_1_1" ...)` sub-unit.
 Note that tools which previously returned partial/empty results on
 unparseable schematics (e.g. `find_orphaned_wires`, hierarchical net
 traversal, `sync_schematic_to_board`) now return errors instead.
+
+---
+
+## Recently Fixed (v2.7.0)
+
+### Python Bridge Delivered Responses to the Wrong Caller (Fixed v2.7.0, #373)
+
+- After a tool call timed out, the late reply resolved the _next_ request, and
+  every response after that was off by one. Requests now carry an ID that
+  Python echoes back, and stale responses are discarded.
+
+### Clients Stalled for up to Two Minutes at Startup (Fixed v2.7.0, #377)
+
+- The MCP transport used to connect only after Python and pcbnew had finished
+  initialising. It now connects first, so `initialize` and `tools/list` answer
+  immediately and tool calls queue behind a ready gate.
+
+### `add_symbol_property` Corrupted `.kicad_sym` Libraries (Fixed v2.7.0)
+
+- Every call dropped a closing paren, and a new property could land inside the
+  last unit or outside the symbol entirely. The write path now matches parens
+  with string awareness, verifies the result before writing, and writes
+  atomically.
+
+### Concurrent Servers Fought Over One Log File (Fixed v2.7.0, #373)
+
+- Log files are now per-process, named `kicad_interface-<pid>.log`. Old logs
+  are swept after seven days.
 
 ---
 
@@ -180,7 +198,7 @@ traversal, `sync_schematic_to_board`) now return errors instead.
 
 If you encounter an issue not listed here:
 
-1. **Check MCP logs:** `~/.kicad-mcp/logs/kicad_interface.log`
+1. **Check MCP logs:** `~/.kicad-mcp/logs/kicad_interface-<pid>.log` (one file per server process)
 2. **Enable developer mode:** Set `KICAD_MCP_DEV=1` to capture session logs
 3. **Check KiCAD version:** `python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"` (must be 9.0+)
 4. **Try the operation in KiCAD directly** -- is it a KiCAD issue?
@@ -233,5 +251,5 @@ python3 python/utils/platform_helper.py
 **Need Help?**
 
 - Check [IPC_BACKEND_STATUS.md](IPC_BACKEND_STATUS.md) for IPC details
-- Check logs: `~/.kicad-mcp/logs/kicad_interface.log`
+- Check logs: `~/.kicad-mcp/logs/kicad_interface-<pid>.log` (one file per server process)
 - Open an issue on GitHub

@@ -268,6 +268,12 @@ class SchematicHandlersMixin:
             x = component.get("x", 0)
             y = component.get("y", 0)
             unit = component.get("unit", 1)
+            # The TS layer puts these inside `component` alongside x/y/unit
+            # (src/tools/schematic.ts). Dropping them here silently ignored the
+            # documented angle/mirrorY arguments, so every symbol landed at 0°
+            # and callers had to follow up with rotate_schematic_component.
+            angle = component.get("angle", 0)
+            mirror_y = bool(component.get("mirrorY", False))
 
             # Derive project path from schematic path for project-local library resolution.
             # Walk up from the schematic file to find the directory that owns the project
@@ -292,6 +298,8 @@ class SchematicHandlersMixin:
                 x=x,
                 y=y,
                 unit=unit,
+                angle=angle,
+                mirror_y=mirror_y,
                 project_path=derived_project_path,
             )
 
@@ -333,6 +341,7 @@ class SchematicHandlersMixin:
             schematic_path = params.get("schematicPath")
             reference = params.get("reference")
             delete_attached_labels = bool(params.get("deleteAttachedLabels", False))
+            unit = params.get("unit")
 
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
@@ -392,10 +401,27 @@ class SchematicHandlersMixin:
                     r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"',
                     block_text,
                 ):
+                    # A multi-unit part places each unit as its own block under
+                    # the same reference, so deleting by reference alone takes
+                    # the whole part. `unit` narrows it to one placement.
+                    if unit is not None:
+                        um = re.search(r"\(unit\s+(\d+)\)", block_text)
+                        if not um or int(um.group(1)) != int(unit):
+                            search_start = end + 1
+                            continue
                     blocks_to_delete.append((pos, end))
                 search_start = end + 1
 
             if not blocks_to_delete:
+                if unit is not None:
+                    return {
+                        "success": False,
+                        "message": (
+                            f"Component '{reference}' has no unit {unit} in this schematic "
+                            "(note: this tool removes schematic symbols, use delete_component "
+                            "for PCB footprints)"
+                        ),
+                    }
                 return {
                     "success": False,
                     "message": f"Component '{reference}' not found in schematic (note: this tool removes schematic symbols, use delete_component for PCB footprints)",
@@ -407,7 +433,9 @@ class SchematicHandlersMixin:
             label_cleanup_warning: Optional[str] = None
             if delete_attached_labels:
                 try:
-                    target_pin_positions = self._pin_positions_for_reference(content, reference)
+                    target_pin_positions = self._pin_positions_for_reference(
+                        content, reference, unit
+                    )
                     if not target_pin_positions:
                         logger.warning(
                             "deleteAttachedLabels: no pin positions resolvable "
@@ -459,9 +487,14 @@ class SchematicHandlersMixin:
             return {"success": False, "message": str(e)}
 
     @staticmethod
-    def _pin_positions_for_reference(content: str, reference: str) -> List[Tuple[float, float]]:
+    def _pin_positions_for_reference(
+        content: str, reference: str, unit: Optional[int] = None
+    ) -> List[Tuple[float, float]]:
         """World (x, y) positions of every pin of every placed instance whose
         Reference property equals ``reference``.
+
+        ``unit`` restricts this to one placement of a multi-unit part, matching
+        the units the caller actually deleted.
 
         Builds a mini document of [lib_symbols] + [matching placed symbols]
         and reuses WireManager._collect_pin_positions, which applies the
@@ -471,6 +504,16 @@ class SchematicHandlersMixin:
         sym = sexpdata.Symbol("symbol")
         lib_symbols = sexpdata.Symbol("lib_symbols")
         prop = sexpdata.Symbol("property")
+        unit_sym = sexpdata.Symbol("unit")
+
+        def _instance_unit(instance: list) -> Optional[int]:
+            for part in instance[1:]:
+                if isinstance(part, list) and len(part) >= 2 and part[0] == unit_sym:
+                    try:
+                        return int(part[1])
+                    except (TypeError, ValueError):
+                        return None
+            return None
 
         data = sexpdata.loads(content)
         mini_doc: list = []
@@ -491,7 +534,8 @@ class SchematicHandlersMixin:
                     and str(part[1]) == "Reference"
                     and str(part[2]) == reference
                 ):
-                    mini_doc.append(item)
+                    if unit is None or _instance_unit(item) == int(unit):
+                        mini_doc.append(item)
                     break
         return WireManager._collect_pin_positions(mini_doc)
 
@@ -1305,7 +1349,8 @@ class SchematicHandlersMixin:
             net_name = params.get("netName")
             position = params.get("position")
             label_type = params.get("labelType", "label")
-            orientation = params.get("orientation", 0)
+            orientation_param = params.get("orientation")
+            orientation = 0 if orientation_param is None else orientation_param
             component_ref = params.get("componentRef")
             pin_number = params.get("pinNumber")
 
@@ -1338,6 +1383,26 @@ class SchematicHandlersMixin:
                 logger.info(
                     f"Snapped label '{net_name}' to pin {component_ref}/{pin_number} at {position}"
                 )
+
+                # Orient the label along the pin unless the caller asked for a
+                # specific angle. A label inherits its text direction from its
+                # angle: 0 grows right, 180 grows left (WireManager.add_label
+                # pairs the matching justify). Defaulting to 0 on a left-facing
+                # pin — or 180 on a right-facing one — lays the text back over
+                # the symbol body, and since `justify` is not separately
+                # settable, callers could not fix it without editing the file.
+                if orientation_param is None:
+                    pin_angle = locator.get_pin_angle(
+                        Path(schematic_path), component_ref, str(pin_number)
+                    )
+                    if pin_angle is not None:
+                        # Snap the outward bearing (0=right, 90=up, 180=left,
+                        # 270=down) to the four orientations KiCad allows.
+                        orientation = int(round(pin_angle / 90.0) * 90) % 360
+                        logger.info(
+                            f"Derived label orientation {orientation}° from pin "
+                            f"{component_ref}/{pin_number} outward angle {pin_angle:.1f}°"
+                        )
             elif position is None:
                 return {
                     "success": False,
@@ -1390,6 +1455,7 @@ class SchematicHandlersMixin:
                 "success": True,
                 "message": f"Added net label '{net_name}' at {position}",
                 "actual_position": position,
+                "orientation": orientation,
             }
             if snapped_to_pin:
                 response["snapped_to_pin"] = snapped_to_pin
@@ -1889,6 +1955,19 @@ class SchematicHandlersMixin:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
+    @staticmethod
+    def _unit_not_found_message(sch_data: list, reference: str, unit: Any) -> str:
+        """Explain a failed symbol lookup, naming the units that do exist."""
+        from commands.wire_dragger import WireDragger
+
+        if unit is None:
+            return f"Component {reference} not found"
+        units = WireDragger.list_symbol_units(sch_data, reference)
+        if not units:
+            return f"Component {reference} not found"
+        placed = ", ".join(str(u) for u in sorted(set(units)))
+        return f"Component {reference} has no unit {unit}; units placed here: {placed}"
+
     def _handle_move_schematic_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Move a schematic component to a new position, dragging connected wires."""
         logger.info("Moving schematic component")
@@ -1901,6 +1980,8 @@ class SchematicHandlersMixin:
             new_x = position.get("x")
             new_y = position.get("y")
             preserve_wires = params.get("preserveWires", True)
+            straighten = params.get("straightenWires", True)
+            unit = params.get("unit")
 
             if not schematic_path or not reference:
                 return {
@@ -1917,9 +1998,12 @@ class SchematicHandlersMixin:
                 sch_data = sexpdata.loads(f.read())
 
             # Find symbol and record old position
-            found = WireDragger.find_symbol(sch_data, reference)
+            found = WireDragger.find_symbol(sch_data, reference, unit)
             if found is None:
-                return {"success": False, "message": f"Component {reference} not found"}
+                return {
+                    "success": False,
+                    "message": self._unit_not_found_message(sch_data, reference, unit),
+                }
             _, old_x, old_y = found[0], found[1], found[2]
             old_position = {"x": old_x, "y": old_y}
 
@@ -1927,7 +2011,7 @@ class SchematicHandlersMixin:
             if preserve_wires:
                 # Compute pin world positions before and after the move
                 pin_positions = WireDragger.compute_pin_positions(
-                    sch_data, reference, float(new_x), float(new_y)
+                    sch_data, reference, float(new_x), float(new_y), unit
                 )
                 # Build old→new coordinate map (deduplicate coincident pins)
                 old_to_new = {}
@@ -1941,17 +2025,29 @@ class SchematicHandlersMixin:
                         continue
                     old_to_new[old_xy] = new_xy
 
-                drag_summary = WireDragger.drag_wires(sch_data, old_to_new)
+                # Everything that must stay put while bends are straightened:
+                # the pins of every other symbol, plus this symbol's own pins at
+                # their new positions (they are the ends we just dragged).
+                anchors = set(
+                    WireDragger.get_all_stationary_pin_positions(sch_data, reference, unit).keys()
+                )
+                anchors.update(new_xy for (_old, new_xy) in pin_positions.values())
+
+                drag_summary = WireDragger.drag_wires(
+                    sch_data, old_to_new, anchor_points=anchors, straighten=straighten
+                )
 
                 # Synthesize wires for touching-pin connections after dragging,
                 # so drag_wires doesn't accidentally move and collapse the new wire.
                 wires_synthesized = WireDragger.synthesize_touching_pin_wires(
-                    sch_data, reference, pin_positions
+                    sch_data, reference, pin_positions, moved_unit=unit
                 )
                 drag_summary["wires_synthesized"] = wires_synthesized
 
             # Update symbol position
-            WireDragger.update_symbol_position(sch_data, reference, float(new_x), float(new_y))
+            WireDragger.update_symbol_position(
+                sch_data, reference, float(new_x), float(new_y), unit
+            )
 
             WireManager.sync_junctions(sch_data)
 
@@ -1962,10 +2058,14 @@ class SchematicHandlersMixin:
                 "success": True,
                 "oldPosition": old_position,
                 "newPosition": {"x": new_x, "y": new_y},
+                "unit": unit,
                 "wiresMoved": drag_summary.get("endpoints_moved", 0),
                 "wiresRemoved": drag_summary.get("wires_removed", 0),
                 "wiresSynthesized": drag_summary.get("wires_synthesized", 0),
                 "labelsMoved": drag_summary.get("labels_moved", 0),
+                "noConnectsMoved": drag_summary.get("no_connects_moved", 0),
+                "wiresStraightened": drag_summary.get("wires_straightened", 0),
+                "wiresLeftDiagonal": drag_summary.get("wires_left_diagonal", 0),
             }
 
         except Exception as e:
@@ -1986,6 +2086,8 @@ class SchematicHandlersMixin:
             reference = params.get("reference")
             angle = params.get("angle", 0)
             mirror = params.get("mirror")  # "x", "y", or None
+            straighten = params.get("straightenWires", True)
+            unit = params.get("unit")
 
             if not schematic_path or not reference:
                 return {
@@ -1996,9 +2098,12 @@ class SchematicHandlersMixin:
             with open(schematic_path, "r", encoding="utf-8") as f:
                 sch_data = _sexpdata.loads(f.read())
 
-            found = WireDragger.find_symbol(sch_data, reference)
+            found = WireDragger.find_symbol(sch_data, reference, unit)
             if found is None:
-                return {"success": False, "message": f"Component {reference} not found"}
+                return {
+                    "success": False,
+                    "message": self._unit_not_found_message(sch_data, reference, unit),
+                }
 
             # Determine new mirror state: explicit param overrides; None preserves existing
             _, _, _, _, _, old_mirror_x, old_mirror_y = found
@@ -2013,7 +2118,7 @@ class SchematicHandlersMixin:
 
             # Compute pin world positions before and after the transform
             pin_positions = WireDragger.compute_pin_positions_for_rotation(
-                sch_data, reference, float(angle), new_mirror_x, new_mirror_y
+                sch_data, reference, float(angle), new_mirror_x, new_mirror_y, unit
             )
 
             # Build old→new map (skip pins that don't move)
@@ -2030,11 +2135,17 @@ class SchematicHandlersMixin:
                 old_to_new[old_xy] = new_xy
 
             # Drag connected wires to follow pins
-            drag_summary = WireDragger.drag_wires(sch_data, old_to_new)
+            anchors = set(
+                WireDragger.get_all_stationary_pin_positions(sch_data, reference, unit).keys()
+            )
+            anchors.update(new_xy for (_old, new_xy) in pin_positions.values())
+            drag_summary = WireDragger.drag_wires(
+                sch_data, old_to_new, anchor_points=anchors, straighten=straighten
+            )
 
             # Update the symbol's rotation and mirror token in sexpdata
             WireDragger.update_symbol_rotation_mirror(
-                sch_data, reference, float(angle), effective_mirror
+                sch_data, reference, float(angle), effective_mirror, unit
             )
 
             WireManager.sync_junctions(sch_data)
@@ -2045,11 +2156,15 @@ class SchematicHandlersMixin:
             return {
                 "success": True,
                 "reference": reference,
+                "unit": unit,
                 "angle": angle,
                 "mirror": effective_mirror,
                 "wiresMoved": drag_summary.get("endpoints_moved", 0),
                 "wiresRemoved": drag_summary.get("wires_removed", 0),
                 "labelsMoved": drag_summary.get("labels_moved", 0),
+                "noConnectsMoved": drag_summary.get("no_connects_moved", 0),
+                "wiresStraightened": drag_summary.get("wires_straightened", 0),
+                "wiresLeftDiagonal": drag_summary.get("wires_left_diagonal", 0),
             }
 
         except Exception as e:
@@ -2767,13 +2882,18 @@ class SchematicHandlersMixin:
             logger.error(f"Error running ERC: {str(e)}")
             return {"success": False, "message": str(e)}
 
-    def _build_hierarchical_pad_net_map(self, project_sch_path: str):
-        """Walk all .kicad_sch files in the project and build a {(ref, pin_num): net_name} map.
+    def _build_hierarchical_pad_net_map(self, project_sch_path: str, sheets_out=None):
+        """Walk the sheets reachable from the root schematic and build a
+        {(ref, pin_num): net_name} map.
 
-        Handles hierarchical schematics by scanning every sub-sheet file.  Net names
-        from global_label / hierarchical_label / local label / power symbols are all
-        collected.  Wire connectivity is traced via BFS so labels not placed directly
-        on a pin endpoint still reach through wire segments.
+        Handles hierarchical schematics by following ``(sheet ...)`` references
+        from the root.  Net names from global_label / hierarchical_label / local
+        label / power symbols are all collected, and a wired net with no label at
+        all gets the ``Net-(REF-PadN)`` name KiCad would give it.  Wire
+        connectivity is traced via BFS so labels not placed directly on a pin
+        endpoint still reach through wire segments.
+
+        ``sheets_out``, when given, receives the path of every sheet read.
 
         Returns: (pad_net_map, net_names_set)
         """
@@ -2781,7 +2901,7 @@ class SchematicHandlersMixin:
         from pathlib import Path
 
         from commands.pin_locator import PinLocator
-        from skip import Schematic
+        from utils.sheet_tree import sheet_tree
 
         TOLERANCE = 0.5  # mm; schematic grid is 1.27 mm so 0.5 is safe
 
@@ -2802,13 +2922,22 @@ class SchematicHandlersMixin:
                     return name
             return None
 
-        project_dir = Path(project_sch_path).parent
         pad_net_map: dict = {}
         all_net_names: set = set()
         pin_locator = PinLocator()
 
-        sch_files = sorted(project_dir.rglob("*.kicad_sch"))
-        logger.info(f"_build_hierarchical_pad_net_map: scanning {len(sch_files)} schematic files")
+        # Only the sheets reachable from the root are part of the design. A
+        # recursive glob of the project directory also read KiCad's .history/
+        # snapshots, this server's .mcp-backups/ copies and hand-made backup
+        # folders as live sheets, and whichever copy sorted last silently
+        # overwrote the live sheet's nets (#400).
+        sch_files = sheet_tree(Path(project_sch_path))
+        if sheets_out is not None:
+            sheets_out.extend(str(p) for p in sch_files)
+        logger.info(
+            f"_build_hierarchical_pad_net_map: scanning {len(sch_files)} sheet(s): "
+            + ", ".join(p.name for p in sch_files)
+        )
 
         for sch_path in sch_files:
             # A broken sheet must fail the sync loudly: silently skipping it
@@ -2831,11 +2960,19 @@ class SchematicHandlersMixin:
                     except Exception:
                         pass
 
-            # Power symbols (#PWR / #FLG): value property IS the net name; use pin 1 pos
+            # Power symbols (#PWR): the Value property IS the net name; seed
+            # every pin position with it.
+            #
+            # #FLG (PWR_FLAG) is deliberately excluded. Its Value is the literal
+            # string "PWR_FLAG", an ERC marker rather than a net name. Treating
+            # it as one invented a bogus "PWR_FLAG" net and, worse, stamped that
+            # name onto the flag's pin, from where the BFS below propagated it
+            # over the real net. A PWR_FLAG takes whatever net it is wired to;
+            # it never names one.
             for sym in getattr(sch, "symbol", None) or []:
                 try:
                     ref = sym.property.Reference.value
-                    if not (ref.startswith("#PWR") or ref.startswith("#FLG")):
+                    if not ref.startswith("#PWR"):
                         continue
                     net_name = sym.property.Value.value
                     if not net_name:
@@ -2887,7 +3024,8 @@ class SchematicHandlersMixin:
                         visited.add(neighbor)
                         queue.append(neighbor)
 
-            # ── 3. Match component pin positions to net names ────────────────
+            # ── 3. Collect real (non-power) symbol pins with their positions ──
+            sym_pins = []  # (ref, pin_num, (px, py))
             for sym in getattr(sch, "symbol", None) or []:
                 try:
                     ref = sym.property.Reference.value
@@ -2898,9 +3036,60 @@ class SchematicHandlersMixin:
 
                 pin_positions = pin_locator.get_all_symbol_pins(sch_path, ref)
                 for pin_num, (px, py) in pin_positions.items():
-                    net = nearby_net((px, py), point_net)
-                    if net:
-                        pad_net_map[(ref, pin_num)] = net
+                    sym_pins.append((ref, pin_num, (px, py)))
+
+            # ── 3b. Name wire clusters that carry no label ────────────────────
+            # A net formed only by a wire between component pins -- no label, no
+            # power symbol -- was named by nothing above, so its pads reached the
+            # board with no net at all and the connection silently vanished from
+            # the layout (#402). KiCad names such a net itself; the rule, checked
+            # against kicad-cli 10.0.0 on synthetic schematics, is
+            # "Net-(REF-PadN)" built from the pad NUMBER (the pin's name is not
+            # used even when it has one), choosing the candidate that sorts
+            # lowest as a plain string, so R10 beats R2. Step 2's BFS floods a
+            # name across a whole connected cluster, so a cluster is either
+            # wholly named or wholly unnamed, and testing one point suffices.
+            def in_cluster(pt, cluster):
+                if snap(*pt) in cluster:
+                    return True
+                x, y = pt
+                return any(
+                    abs(x - cx) < TOLERANCE and abs(y - cy) < TOLERANCE for cx, cy in cluster
+                )
+
+            clustered: set = set()
+            for seed in sorted(all_wire_pts):
+                if seed in point_net or seed in clustered:
+                    continue
+                cluster = set()
+                stack = [seed]
+                clustered.add(seed)
+                while stack:
+                    cur = stack.pop()
+                    cluster.add(cur)
+                    for neighbor in point_adj[cur]:
+                        if neighbor not in clustered:
+                            clustered.add(neighbor)
+                            stack.append(neighbor)
+
+                candidates = [
+                    f"Net-({ref}-Pad{pin_num})"
+                    for ref, pin_num, pt in sym_pins
+                    if in_cluster(pt, cluster)
+                ]
+                # A single pin on a wire stub is a dangling wire, not a net.
+                if len(candidates) < 2:
+                    continue
+                auto_name = min(candidates)
+                for pt in cluster:
+                    point_net[pt] = auto_name
+                all_net_names.add(auto_name)
+
+            # ── 3c. Match component pin positions to net names ───────────────
+            for ref, pin_num, (px, py) in sym_pins:
+                net = nearby_net((px, py), point_net)
+                if net:
+                    pad_net_map[(ref, pin_num)] = net
 
         logger.info(
             f"_build_hierarchical_pad_net_map: {len(pad_net_map)} pin→net assignments, "
@@ -2961,8 +3150,11 @@ class SchematicHandlersMixin:
                     "message": f"Schematic not found. Provide schematicPath. Tried: {schematic_path}",
                 }
 
-            # Build hierarchical pad→net map (walks all sub-sheets)
-            pad_net_map, net_names = self._build_hierarchical_pad_net_map(schematic_path)
+            # Build the pad->net map from the sheets reachable from the root
+            sheets_scanned: list = []
+            pad_net_map, net_names = self._build_hierarchical_pad_net_map(
+                schematic_path, sheets_out=sheets_scanned
+            )
 
             # Add missing footprints from the schematic to the board *before*
             # we add nets and assign pads — F8 in KiCad does this implicitly
@@ -3015,16 +3207,38 @@ class SchematicHandlersMixin:
                 f"sync_schematic_to_board: {len(added_nets)} nets added, "
                 f"{len(added_footprints)} footprints added, {assigned_pads} pads assigned"
             )
+            # Every wired pin now carries a net (an unlabeled wire gets a
+            # Net-(REF-PadN) name), so an unmatched pad is one the schematic
+            # does not wire at all, or a pad the symbol does not have. Report
+            # all of them: a ten-entry sample buried a 25-pad failure (#400).
+            warnings: List[str] = []
+            if unmatched:
+                warnings.append(
+                    f"{len(unmatched)} pad(s) have no net in the schematic and were left "
+                    "unchanged: " + ", ".join(unmatched)
+                )
+                logger.warning("sync_schematic_to_board: " + warnings[-1])
+            root_dir = Path(schematic_path).parent
+            sheet_names = []
+            for p in sheets_scanned:
+                try:
+                    sheet_names.append(Path(p).relative_to(root_dir).as_posix())
+                except ValueError:
+                    sheet_names.append(Path(p).name)
             return {
                 "success": True,
                 "message": (
                     f"PCB updated from schematic: {len(added_footprints)} footprints added, "
                     f"{len(added_nets)} nets added, {assigned_pads} pads assigned"
                 ),
+                "sheets_scanned": sheet_names,
                 "nets_added": added_nets,
                 "nets_total": len(net_names),
                 "pads_assigned": assigned_pads,
+                "unmatched_pad_count": len(unmatched),
+                "unmatched_pads": unmatched,
                 "unmatched_pads_sample": unmatched[:10],
+                "warnings": warnings,
                 "footprints_added": added_footprints,
                 "footprints_skipped": skipped_footprints,
             }

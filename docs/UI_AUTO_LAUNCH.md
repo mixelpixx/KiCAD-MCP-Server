@@ -439,6 +439,6 @@ User: "Design a board"
 
 ---
 
-**Last Updated:** 2025-10-26
-**Version:** 2.0.0-alpha.1
+**First documented:** 2025-10-26 (v2.0.0-alpha.1)
+**Reviewed against:** v2.7.0
 **Status:** ✅ Production Ready

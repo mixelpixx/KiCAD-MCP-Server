@@ -3,7 +3,11 @@ import uuid
 from pathlib import Path
 from typing import Any, List, Optional
 
-from skip import Schematic
+try:
+    from skip import Schematic
+except ImportError:
+    # kicad-skip is optional; fall back to Any so these type hints stay valid.
+    Schematic = Any
 
 logger = logging.getLogger(__name__)
 

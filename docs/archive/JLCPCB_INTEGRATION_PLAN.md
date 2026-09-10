@@ -617,10 +617,10 @@ Claude: [searches JLCPCB database]
 
 ## Related Documentation
 
-- [LIBRARY_INTEGRATION.md](./LIBRARY_INTEGRATION.md) - KiCAD footprint libraries
-- [REALTIME_WORKFLOW.md](./REALTIME_WORKFLOW.md) - MCP ↔ UI collaboration
-- [ROADMAP.md](./ROADMAP.md) - Overall project plan
-- [API.md](./API.md) - MCP API reference
+- [LIBRARY_INTEGRATION.md](../LIBRARY_INTEGRATION.md) - KiCAD footprint libraries
+- [REALTIME_WORKFLOW.md](../REALTIME_WORKFLOW.md) - MCP ↔ UI collaboration
+- [ROADMAP.md](../ROADMAP.md) - Overall project plan
+- [TOOL_INVENTORY.md](../TOOL_INVENTORY.md) - Generated catalogue of every tool
 
 ---
 

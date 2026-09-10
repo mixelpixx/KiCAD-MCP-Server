@@ -275,7 +275,8 @@ Windows Troubleshooting:
 2. Check PYTHONPATH environment variable points to:
    C:\\Program Files\\KiCad\\9.0\\lib\\python3\\dist-packages
 3. Test with: "C:\\Program Files\\KiCad\\9.0\\bin\\python.exe" -c "import pcbnew"
-4. Log file location: %USERPROFILE%\\.kicad-mcp\\logs\\kicad_interface.log
+4. Log file location: %USERPROFILE%\\.kicad-mcp\\logs\\kicad_interface-<pid>.log
+   (one file per server process; open the newest one)
 5. Run setup-windows.ps1 for automatic configuration
 """
         elif sys.platform == "darwin":
@@ -344,6 +345,11 @@ try:
     from commands.connection_schematic import ConnectionManager
     from commands.datasheet_manager import DatasheetManager
     from commands.design_rules import DesignRuleCommands
+    from commands.digikey import (
+        digikey_check_library_availability,
+        digikey_search_parts,
+        digikey_test_connection,
+    )
     from commands.eagle import EagleCommands
     from commands.export import ExportCommands
     from commands.find_duplicate_symbols import find_duplicate_symbols
@@ -550,6 +556,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "copy_routing_pattern": self.routing_commands.copy_routing_pattern,
             "get_nets_list": self.routing_commands.get_nets_list,
             "create_netclass": self.routing_commands.create_netclass,
+            "set_net_color": self.routing_commands.set_net_color,
             "add_copper_pour": self.routing_commands.add_copper_pour,
             "route_differential_pair": self.routing_commands.route_differential_pair,
             "refill_zones": self._handle_refill_zones,
@@ -610,6 +617,10 @@ class KiCADInterface(SchematicHandlersMixin):
             "get_jlcpcb_part": self._handle_get_jlcpcb_part,
             "get_jlcpcb_database_stats": self._handle_get_jlcpcb_database_stats,
             "suggest_jlcpcb_alternatives": self._handle_suggest_jlcpcb_alternatives,
+            # Digi-Key API commands (credentials come from the environment only)
+            "digikey_test_connection": digikey_test_connection,
+            "digikey_search_parts": digikey_search_parts,
+            "digikey_check_library_availability": digikey_check_library_availability,
             # Datasheet commands
             "enrich_datasheets": self._handle_enrich_datasheets,
             "get_datasheet_url": self._handle_get_datasheet_url,

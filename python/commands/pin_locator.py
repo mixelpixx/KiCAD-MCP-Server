@@ -15,7 +15,11 @@ from typing import Any, Dict, List, Optional, Tuple
 import sexpdata
 from commands.schematic import SchematicLoadError, SchematicManager
 from sexpdata import Symbol
-from skip import Schematic
+
+try:
+    from skip import Schematic  # noqa: F401 (unused here, but tests patch this name)
+except ImportError:
+    Schematic = None
 
 logger = logging.getLogger("kicad_interface")
 

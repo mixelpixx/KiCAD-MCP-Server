@@ -150,6 +150,53 @@ function Find-KiCadInstallation {
         return $null
     }
 
+    $uninstallRoots = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall',
+        'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
+    )
+
+    foreach ($uninstallRoot in $uninstallRoots) {
+        $entries = Get-ItemProperty (Join-Path $uninstallRoot '*') -ErrorAction SilentlyContinue |
+            Where-Object { $_.DisplayName -match '^KiCad' }
+
+        foreach ($entry in $entries) {
+            $candidateRoots = @()
+            if ($entry.InstallLocation) {
+                $candidateRoots += [string]$entry.InstallLocation
+            }
+            if ($entry.DisplayIcon) {
+                $iconDir = Split-Path -Parent ([string]$entry.DisplayIcon).Trim('"')
+                if ($iconDir -and (Split-Path -Leaf $iconDir) -eq 'bin') {
+                    # DisplayIcon points at <root>\bin\kicad.exe; probe the version root, not the bin dir.
+                    $iconDir = Split-Path -Parent $iconDir
+                }
+                if ($iconDir) {
+                    $candidateRoots += $iconDir
+                }
+            }
+
+            foreach ($root in ($candidateRoots | Select-Object -Unique)) {
+                $info = Get-KiCadInfo -Root $root
+                if ($info) {
+                    return $info
+                }
+            }
+        }
+    }
+
+    foreach ($var in (Get-ChildItem env: -ErrorAction SilentlyContinue)) {
+        if ($var.Name -match '^KICAD\d+_' -and $var.Value) {
+            $shareIndex = $var.Value.IndexOf('\share\kicad')
+            if ($shareIndex -gt 0) {
+                $info = Get-KiCadInfo -Root $var.Value.Substring(0, $shareIndex)
+                if ($info) {
+                    return $info
+                }
+            }
+        }
+    }
+
     $basePaths = @(
         'C:\Program Files\KiCad',
         'C:\Program Files (x86)\KiCad',
@@ -191,6 +238,7 @@ function Get-KiCadInfo {
         return $null
     }
 
+    # Keep candidate probing in sync with Get-KiCadInfo in setup-windows.ps1.
     $pythonExeCandidates = @(
         (Join-Path $Root 'bin\python.exe'),
         (Join-Path $Root 'bin\Python.exe')
@@ -288,6 +336,7 @@ function Set-McpEntry {
         [string]$ServerName,
         [string]$DistPath,
         [string]$PythonPath,
+        [string]$PythonExe,
         [string]$Backend
     )
 
@@ -305,6 +354,10 @@ function Set-McpEntry {
 
     if ($PythonPath) {
         $environment['PYTHONPATH'] = $PythonPath
+    }
+
+    if ($PythonExe) {
+        $environment['KICAD_PYTHON'] = $PythonExe
     }
 
     $Config['mcp'][$ServerName] = [ordered]@{
@@ -577,7 +630,8 @@ if (-not $Force) {
 if ($canGenerate) {
     $config = Read-OpenCodeConfig -Path $TargetConfigPath
     $pythonPath = if ($kicad) { $kicad.PythonLib } else { '' }
-    Set-McpEntry -Config $config -ServerName $Name -DistPath $DistPath -PythonPath $pythonPath -Backend $Backend
+    $pythonExe = if ($kicad) { $kicad.PythonExe } else { '' }
+    Set-McpEntry -Config $config -ServerName $Name -DistPath $DistPath -PythonPath $pythonPath -PythonExe $pythonExe -Backend $Backend
     $script:Results.ConfigReady = $true
 
     Write-Success "OpenCode MCP entry prepared for server name '$Name'."

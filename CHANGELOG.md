@@ -4,6 +4,256 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Tools
+
+- **Digi-Key Product Information V4 integration** — `digikey_search_parts`,
+  `digikey_check_library_availability` and `digikey_test_connection`. The server
+  had six JLCPCB tools and nothing for Digi-Key, so every stock check, lifecycle
+  check and replacement hunt happened in one-off scripts outside it.
+
+  `digikey_search_parts` searches by part number, MPN, or a parametric phrase and
+  returns stock, price, lifecycle status, every packaging variation and the
+  parametric table. `digikey_check_library_availability` sweeps a `.kicad_sym`
+  and reports which parts are obsolete, out of stock, unfindable, not orderable,
+  or carry no part number at all — searching by distributor number first and MPN
+  second, because retired Digi-Key numbers are the common failure and the MPN
+  usually still resolves. Part numbers are read under any of the property
+  spellings real libraries use. A symbol whose lookup fails is marked
+  `state: "error"` and the sweep continues, so one transient 500 does not throw
+  away the lookups already paid for; five consecutive failures stop it, because a
+  revoked key fails identically for every remaining symbol. The sweep costs up to
+  two rate-limited requests per symbol, so `maxSymbols` defaults to 25 and the
+  command is granted the extended Node-side timeout in `src/command-timeout.ts` —
+  on the 30 s default the timer fires mid-sweep and the caller loses every lookup
+  the sweep had already paid for.
+
+  Three things the API makes easy to get wrong:
+  - The locale headers are mandatory. Without `X-DIGIKEY-Locale-Site` and its two
+    companions a search returns **404**, which reads like a wrong URL. The client
+    always sends them; the values are configurable.
+  - The Digi-Key part number is not on the product. It lives on each entry of
+    `ProductVariations`, so the reel and the cut tape have different numbers.
+    `preferPackaging` picks which one is quoted and matches localized packaging
+    names. A product with no variations at all is reported as `not_orderable`
+    rather than available, since there is no number to put on an order.
+  - `ProductStatus.Status` is localized, so comparing it against `"Active"`
+    reports every part as a problem once the account is not set to English.
+    Lifecycle is read from `ProductStatus.Id`.
+
+  **Credentials never enter the source tree.** They are read from
+  `DIGIKEY_CLIENT_ID` and `DIGIKEY_CLIENT_SECRET` in the environment, optionally
+  via the already-gitignored `.env`, and are deliberately absent from every tool
+  schema — a key passed as a tool argument would be recorded in the conversation,
+  in the MCP log, and in anything replaying the call. Absent from the schema means
+  such an argument is _ignored_, not rejected: the MCP layer strips unknown keys,
+  so the tools now return a `warnings` entry naming the argument and telling the
+  caller to rotate the value, which is the honest description of what happened.
+  Everything leaving the module passes through a redaction step, and a non-JSON
+  response body or a hostile `Retry-After` is converted into a redacted error
+  rather than escaping as an unfiltered traceback. Tests assert all of it,
+  including that the schemas contain no credential-shaped field, that `.env` is
+  gitignored, and that `.env.example` carries names without values.
+
+  Nothing here has been exercised against the live Digi-Key service: there were no
+  working credentials available (the token endpoint answers
+  `401 invalid_client`), so every test drives a mocked transport and the
+  German-language strings in the fixtures are constructed illustrations of the
+  localization hazard rather than captured responses. `ACTIVE_STATUS_ID = 0` is
+  documented in the source as an assumption to confirm on first real use.
+
+### New Features
+
+- **`set_net_color`** (#375): set or clear an individual net's display color
+  override — the PCB editor's "Net colors" panel, previously not reachable
+  by any tool. `net_settings.net_colors` has no SWIG counterpart
+  (`NETINFO_ITEM` has no color getter/setter), so this is pure `.kicad_pro`
+  JSON persistence, same read/modify/write-atomically shape already used by
+  `assign_net_to_class`. Accepts a `#RRGGBB` hex color, or `clear: true` to
+  remove the override and revert to the automatic/class color. Cosmetic
+  only — does not affect routing or design rules.
+
+- **`batch_add_components` accepts `unit`.** `add_schematic_component` had it,
+  the batch did not, so a five-unit FPGA had to be placed one call per unit —
+  the round-trips the batch exists to avoid. Each entry now names its unit;
+  entries sharing a reference are the units of one part.
+
+### Bug Fixes
+
+- **`edit_component`'s footprint swap now actually replaces the footprint** (#399,
+  reported by @joseluu). Passing a new `footprint` rewrote the FPID library-ID
+  string via `SetFPID` and stopped there, so the pads, courtyard and silkscreen
+  stayed whatever the old footprint had. KiCad then reports `lib_footprint_mismatch`
+  plus unconnected pads once the pad counts differ. The handler now loads the new
+  footprint from the library and exchanges it in place, matching KiCad's own
+  `PCB_EDIT_FRAME::ExchangeFootprint()`: reference, value, position and orientation
+  carry over, and each new pad picks up the net of the old pad with the same
+  number.
+- **A missing kicad-skip no longer kills every tool at startup** (#389, @AmirF194).
+  Six modules imported `from skip import Schematic` at their own top level.
+  Two of them sit on the import chain `kicad_interface` -> `schematic_handlers`
+  -> `library_schematic`/`schematic`, which runs before the process reaches
+  its own try/except import guard, so a missing kicad-skip raised an
+  unhandled `ModuleNotFoundError` at startup instead of the intended clean
+  JSON error. Three of the six modules never actually used the import and
+  had it removed; the other three guard it now. `create_schematic` and
+  `load_schematic`, the two tools that genuinely need kicad-skip, raise a
+  `SchematicLoadError` naming the exact `pip install kicad-skip` command
+  instead of taking the rest of the server down with them.
+- **`setup-windows.ps1` / `setup-windows-opencode.ps1`** (#356, @LiJoeAllen): find
+  KiCad on any drive. The registry uninstall keys (HKLM, WOW6432Node, HKCU) and the
+  installer's `KICAD<ver>_*` environment variables are probed before the hard-coded
+  `C:\Program Files` paths, and the version root is derived from `DisplayIcon` by
+  walking up out of `bin\`, so a `D:\KiCad\10.0` install no longer ends in "KiCAD
+  not found". The generated config now pins `KICAD_PYTHON` to the bundled
+  interpreter, so the server runs KiCad's own Python rather than whichever one is
+  first on PATH - the v10 failure mode where `pcbnew` imports in one interpreter
+  and not the other. The two scripts' probing logic is kept in sync by
+  cross-reference comments, since both carry a copy of `Get-KiCadInfo`.
+- **`modify_trace` reachable by UUID, `add_net` honours `netClass`** (#403,
+  reported by @joseluu): the tool's zod schema declares `traceUuid` but the
+  handler read `uuid`, so the documented UUID path always answered "Missing
+  trace identifier" and only the position fallback worked. `add_net` had the
+  same shape - schema `netClass`, handler `class` - so the net class was
+  silently dropped. Both handlers now read the schema's name and keep the old
+  key for JSON-RPC callers. The slip had recurred often enough (#392 found five
+  more in the JSON-RPC schema) that a new ratcheting test,
+  `tests/test_schema_param_names.py`, compares every tool's declared parameter
+  names against the keys its Python handler actually reads, on both schema
+  layers, and checks that every TypeScript tool has a Python route. What it
+  found on first run is frozen as known lists that may only shrink - 12 tools
+  with an ignored Node-facing parameter, 16 with a stale JSON-RPC one, and six
+  tools whose command has no route at all - and tracked in #407. Also fixes
+  the `microViaD iameter` typo in the JSON-RPC schema for `set_design_rules`.
+- **No more `PCB_VIA::GetWidth` assert dialog on KiCad 9/10, and KiCad 8 works
+  again** (#398, @scorp508): KiCad 9 moved vias onto per-layer padstacks, so the
+  no-argument `GetWidth()` a via inherits pops a modal wxWidgets assert, once per
+  via, when listing traces or stitching a ground plane. Two earlier call sites had
+  dodged the dialog with `GetWidth(pcbnew.F_Cu)`, which does not exist on KiCad 8.
+  A `_via_front_width()` shim now prefers `GetFrontWidth()` where it exists and
+  falls back to the bare call on KiCad 8. Also fixes a MagicMock test double that
+  had the stitching-via tests running with 1 nm vias.
+- **Discovery tools no longer tell clients to call the deleted `execute_tool`**
+  (#397, @scorp508): `execute_tool` was removed in May, but `list_tool_categories`,
+  `get_category_tools` and `search_tools` still said to use it, sending models
+  after a tool that does not exist. The text now says what is true: every tool is
+  callable directly by name. A test checks the runtime output for stale names.
+- **KiCad launched from PATH is detected on Linux** (#401, @famez): the process
+  probe required `/kicad` or `/pcbnew` with a leading slash in the `ps` line, so a
+  KiCad started from a desktop launcher or a terminal (bare `argv[0]`) reported
+  "not running". An exact basename match is accepted as well; the Windows branch
+  is untouched.
+- **Five JSON-RPC schema parameters renamed to what the handlers read** (#392,
+  @karpovantonme): `set_active_layer` takes `layer`, `add_net` takes `name`,
+  `add_copper_pour` takes `net`, `export_gerber` takes `outputDir`, `delete_trace`
+  takes `traceUuid`. This is the schema the standalone JSON-RPC path's `tools/list`
+  returns (`python/schemas/tool_schemas.py`); the zod schemas Node clients see
+  already used these names. `add_net` keeps `netClass`, which the handler reads
+  since #403.
+
+- **`sync_schematic_to_board` reads only the design's own sheets, and wires an
+  unlabeled net instead of dropping it** (#400 reported by @SinanTufekci; #402
+  reported by @joseluu, with the fix for the unlabeled case taken from #358 by
+  @davidwesternall-oss). The pad-to-net map was built from every `.kicad_sch`
+  under the project directory, so KiCad's own `.history/` snapshots, this
+  server's `.mcp-backups/` copies and hand-made backup folders were read as live
+  sheets, and whichever sorted last silently overwrote the live nets (25 wrong
+  pad nets on one real board). The map now follows `(sheet ...)` references from
+  the root, through the walker `backannotate_footprints` already used, promoted
+  to `python/utils/sheet_tree.py`. Separately, a net formed only by a wire
+  between two pins, with no label or power symbol, was named by nothing, so its
+  pads reached the board with no net at all. Such a net now gets the name KiCad
+  itself would give it, `Net-(REF-PadN)`, built from the pad number and taking
+  the candidate that sorts lowest as a plain string; both details were checked
+  against kicad-cli 10.0.0. `PWR_FLAG` symbols no longer seed a bogus `PWR_FLAG`
+  net. The response lists every unmatched pad (`unmatched_pads`, with a
+  warning) and the sheets read (`sheets_scanned`) instead of a ten-entry
+  sample. The unused `skip` imports in this function and in
+  `get_connections_for_net` are gone, so a missing kicad-skip now surfaces the
+  loader's `SchematicLoadError` message there too (#393 follow-up).
+- **Placing a symbol no longer writes KiCad 10-only attributes into KiCad 8 or 9
+  schematics, and `add_schematic_component` honours `angle` and `mirrorY`**
+  (#351 by @Rotario, taken over; the orientation fix was also in #358 by
+  @davidwesternall-oss). `create_component_instance` wrote `(body_style 1)` and
+  `(in_pos_files yes)` into every placed symbol regardless of the file's
+  declared format. Neither token exists in a KiCad 8 (20231120) or KiCad 9
+  (20250114) file, and KiCad's parser refuses tokens it does not know, so a
+  KiCad 8 or 9 user got "Failed to load schematic" from a file this server had
+  just edited; four of the five shipped templates declare 20250114. Both tokens
+  are now emitted only into files whose `(version ...)` is 20260101 or later,
+  and a file with no version token keeps the KiCad 10 output. KiCad 10 itself
+  accepts a v9 file either way (checked with kicad-cli 10.0.0). Separately, the
+  TypeScript layer nests the documented `angle` and `mirrorY` inside `component`
+  and the Python handler never read them, so every symbol landed unrotated and
+  callers had to follow up with `rotate_schematic_component`; both are read
+  now. The escaping half of #351 had already landed in #354.
+
+- **Placed symbols lost the library's field visibility.** `Reference` and
+  `Value` were written visible unconditionally, ignoring the `(hide yes)` the
+  library symbol carries. Power symbols hide `Reference` by convention — a
+  `#PWR101` designator tells a reader nothing — so every ground and rail symbol
+  placed through the API printed one. A sheet with 26 grounds came out with 26
+  stray designators over the wiring, and the only way back was hand-editing the
+  file. Visibility is now read from the injected `lib_symbols` definition
+  alongside the position and effects that were already inherited. The marker is
+  matched as a token, so a field whose _value_ contains the word "hide" is not
+  mistaken for a hidden field.
+
+- **Net labels snapped to a pin faced the wrong way.** KiCad pairs label angle
+  0/90 with `justify left` and 180/270 with `justify right`; a label anchored at
+  a pin endpoint has to run along the pin's outward direction or its text lies
+  across the symbol body. `add_schematic_net_label` defaulted to angle 0
+  regardless of the pin, and `batch_connect` went further and turned the label
+  around (a right-facing pin got 180), which put the net name over the body on
+  every right-hand pin of every part. Since `justify` is not separately
+  settable through the API, callers could not repair it without editing the
+  file. Both now orient the label along the pin's outward bearing, snapped to
+  the four orientations KiCad allows. An explicit `orientation` still wins.
+
+- **Dragging a component broke its routing and left its no-connect flags
+  behind.** Moving or rotating a symbol updated only the wire endpoint touching
+  each pin. A trace routed pin → corner → corner → pin is a chain of separate
+  two-point segments, so the first segment came out diagonal and its bend landed
+  off-grid — reported afterwards as `endpoint_off_grid` on a trace nobody
+  touched. A no-connect flag on a moved pin stayed at the old coordinate,
+  turning into a dangling flag plus an unconnected pin.
+
+  `move_schematic_component` and `rotate_schematic_component` now carry the
+  neighbouring bend along with the pin, cascading through the chain until the
+  routing settles, and move no-connect flags with the pins they mark. A corner
+  is left alone — and the segment left diagonal — when an explicit junction, a
+  fork of three or more segments, or another component's pin holds it: moving
+  those would drag unrelated wiring or tear a connection apart. The response
+  counts both outcomes (`wiresStraightened`, `wiresLeftDiagonal`,
+  `noConnectsMoved`); `straightenWires: false` opts out.
+
+- **A single unit of a multi-unit part could not be addressed.** Every unit of
+  a multi-unit symbol is placed as its own `(symbol ...)` block under one shared
+  reference, so `move_schematic_component`, `rotate_schematic_component` and
+  `delete_schematic_component` acted on whichever block came first in the file —
+  not predictable from the outside — and `delete` took the whole part. All three
+  now accept an optional `unit`. Naming a unit that is not placed reports which
+  ones are, rather than failing as "not found". Wire dragging follows: pins are
+  filtered to the moved unit, and the part's other units count as stationary,
+  so their wiring is left where it is.
+
+### Tooling
+
+- **Documentation trued up to the shipped server, and the tool inventory is now
+  generated and gated in CI** (#396, @scorp508): the inventory listed 137 tools
+  while the server registers 233 (173 of them indexed by `search_tools`); other
+  documents still described the tool-gating design removed a year ago, and two
+  documented tools did not exist. A generator script now derives
+  `docs/TOOL_INVENTORY.md` from the tool sources and the registry, preserving
+  hand-written descriptions, and `npm run docs:tools:check` runs in the
+  TypeScript CI job so the inventory cannot drift again. Around twenty documents
+  corrected.
+- **One implementation of the KiCad text-file helpers** (#395, @kkkhs, closes
+  #380): the four private `_read_text` / `_write_text` copies in
+  `add_symbol_property`, `backannotate_footprints`, `library_tables` and
+  `set_symbol_pin_type` are replaced by `python/utils/file_io.py`
+  (newline-preserving read, atomic write). Two of the four gain temp-file cleanup
+  on a failed write, which the other two already had.
+
 ## [2.7.0] - 2026-08-20
 
 ### New Tools

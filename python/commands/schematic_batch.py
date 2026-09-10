@@ -134,6 +134,11 @@ class SchematicBatchCommands:
                 y = (pos.get("y", 0) if isinstance(pos, dict) else 0) + origin_y
                 rotation = comp.get("rotation", 0)
                 include_pins = comp.get("includePins", False)
+                # Multi-unit parts place one unit per entry, all sharing the
+                # reference. Without this the batch could only ever place unit 1,
+                # so an FPGA split into five units had to go in one call per unit
+                # — exactly the round-trips the batch exists to avoid.
+                unit = int(comp.get("unit", 1) or 1)
 
                 try:
                     loader.add_component(
@@ -145,6 +150,7 @@ class SchematicBatchCommands:
                         footprint=footprint,
                         x=x,
                         y=y,
+                        unit=unit,
                         angle=rotation,
                         project_path=project_path,
                     )
@@ -152,6 +158,7 @@ class SchematicBatchCommands:
                     entry: Dict[str, Any] = {
                         "reference": reference,
                         "symbol": symbol,
+                        "unit": unit,
                         "snapped_position": {"x": _snap(x), "y": _snap(y)},
                     }
 
@@ -168,7 +175,7 @@ class SchematicBatchCommands:
                     block_text = None
                     raw_content = schematic_file.read_text(encoding="utf-8")
                     block_text, block_start, block_end = _find_placed_symbol_block(
-                        raw_content, reference
+                        raw_content, reference, unit
                     )
                     if auto_position_fields and block_text:
                         cx, cy = _snap(x), _snap(y)
@@ -595,9 +602,18 @@ class SchematicBatchCommands:
                             )
                             continue
 
+                        # Orient the label along the pin's OUTWARD direction, the
+                        # way eeschema does: the label is anchored at the pin
+                        # endpoint and its text runs away from the body. KiCad
+                        # pairs angle 0/90 with `justify left` (text grows right/
+                        # up) and 180/270 with `justify right` (text grows left/
+                        # down) — WireManager.add_label follows the same pairing.
+                        # Turning the label back on itself (the old 0->180 map)
+                        # laid every right-hand pin's net name across the symbol
+                        # body, and since `justify` is not separately settable it
+                        # could not be corrected without hand-editing the file.
                         raw_angle = locator.get_pin_angle(sch_path, ref, resolved_pin) or 0
-                        cardinal = round(raw_angle / 90) * 90 % 360
-                        orientation = {0: 180, 90: 270, 180: 0, 270: 90}.get(cardinal, 0)
+                        orientation = int(round(raw_angle / 90) * 90) % 360
 
                         # Facing-label auto-wiring is only meaningful for local labels;
                         # global labels join their net by name (one placed per pin).

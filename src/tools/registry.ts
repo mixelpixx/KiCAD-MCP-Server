@@ -229,8 +229,8 @@ export const toolCategories: ToolCategory[] = [
   },
   {
     name: "routing",
-    description: "Advanced routing operations: vias, copper pours",
-    tools: ["add_via", "add_copper_pour"],
+    description: "Advanced routing operations: vias, copper pours, net display colors",
+    tools: ["add_via", "add_copper_pour", "set_net_color"],
   },
   {
     name: "autoroute",
@@ -248,6 +248,16 @@ export const toolCategories: ToolCategory[] = [
     description:
       "Open gate-verified parts registry (PartReel by default, no auth): search existing KiCAD parts and download footprint/symbol/3D files before generating custom ones",
     tools: ["search_parts_registry", "get_registry_part", "download_registry_part"],
+  },
+  {
+    name: "digikey",
+    description:
+      "Digi-Key Product Information V4: search parts for stock, price and lifecycle, and sweep a symbol library for obsolete or unavailable parts (needs DIGIKEY_CLIENT_ID / DIGIKEY_CLIENT_SECRET in the server environment)",
+    tools: [
+      "digikey_test_connection",
+      "digikey_search_parts",
+      "digikey_check_library_availability",
+    ],
   },
 ];
 
@@ -397,7 +407,7 @@ export function searchTools(query: string): SearchResult[] {
       matches.push({
         category: "direct",
         tool: toolName,
-        description: `${toolName} (direct tool — call directly, no execute_tool needed)`,
+        description: `${toolName} (direct tool — call directly by name)`,
       });
     }
   }

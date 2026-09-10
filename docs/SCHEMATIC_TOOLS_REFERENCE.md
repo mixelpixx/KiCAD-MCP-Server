@@ -1,9 +1,14 @@
 # Schematic Tools Reference
 
-Added in: v2.1.0, expanded in v2.2.0-v2.2.3
-Contributors: @Mehanik (PRs #60, #66), @Kletternaut (PR #57)
+Added in: v2.1.0, expanded through v2.7.0
+Contributors: @Mehanik (PRs #60, #66), @Kletternaut (PR #57), @karu2003 (v2.7.0)
 
-This document provides a complete reference for the 29 schematic tools in the KiCAD MCP Server. These tools enable a complete schematic design workflow, from creating projects and adding components to wiring, validation, BOM/sourcing metadata, and synchronization with PCB boards. The dynamic symbol loading feature provides access to approximately 10,000 standard KiCad symbols.
+`src/tools/schematic.ts` registers 46 schematic tools; another 19 live in
+`schematic-batch.ts`, `schematic-hierarchy.ts` and `schematic-layout.ts`. This
+document covers the ones that need more explanation than a one-line summary. For
+the full list, see the generated [Tool Inventory](TOOL_INVENTORY.md).
+
+These tools enable a complete schematic design workflow, from creating projects and adding components to wiring, validation, BOM/sourcing metadata, and synchronization with PCB boards. The dynamic symbol loading feature provides access to approximately 10,000 standard KiCad symbols.
 
 **Shared error shape — `schematic_load_failed`:** every kicad-skip-based schematic tool returns a structured error when the schematic cannot be parsed (instead of empty/partial results): `{"success": false, "error": "schematic_load_failed", "flatSymbols": ["LIB:PART", ...], "message": "...", "errorDetails": "..."}`. `flatSymbols` names embedded vendor symbols with no sub-units (the SnapEDA/SamacSys pattern that crashes the parser); see KNOWN_ISSUES.md for the repair procedure.
 
@@ -178,28 +183,48 @@ Assign reference designators to unannotated components (R? → R1, R2, ...). Mus
 | ------------- | ------ | -------- | --------------------------- |
 | schematicPath | string | Yes      | Path to the .kicad_sch file |
 
-## Wiring and Connections (8 tools)
+## Wiring and Connections (9 tools)
 
-### add_wire
+### add_schematic_wire
 
-Add a wire connection in the schematic.
+Draw a wire between two or more points. Call `get_schematic_pin_locations` first
+to get approximate pin coordinates, then pass them as the first and last
+waypoints. `snapToPins` (on by default) corrects float imprecision by snapping
+the endpoints to the nearest pin, which matters because a 0.01 mm offset is
+enough to break the connection in KiCad.
 
-| Parameter | Type   | Required | Description                             |
-| --------- | ------ | -------- | --------------------------------------- |
-| start     | object | Yes      | Start position with x and y coordinates |
-| end       | object | Yes      | End position with x and y coordinates   |
+To route around a component, add intermediate waypoints. For example
+`[[x1,y1], [xMid,y1], [xMid,y2], [x2,y2]]` routes horizontally, then vertically.
+Intermediate waypoints are never snapped.
 
-### add_schematic_connection
+| Parameter     | Type    | Required | Description                                                 |
+| ------------- | ------- | -------- | ----------------------------------------------------------- |
+| schematicPath | string  | Yes      | Path to the `.kicad_sch` file                               |
+| waypoints     | array   | Yes      | Ordered list of `[x, y]` coordinates. Minimum 2 points.     |
+| snapToPins    | boolean | No       | Snap the first and last waypoints to the nearest pin (true) |
+| snapTolerance | number  | No       | Maximum snap distance in mm (default 1.0)                   |
 
-Connect two component pins with a wire. Use this for individual connections between components with different pin roles (e.g. U1.SDA → J3.2). WARNING: Do NOT use this in a loop to wire N passthrough pins — use connect_passthrough instead (single call, cleaner layout, far fewer tokens).
+> **Note:** earlier versions of this document described `add_wire` and
+> `add_schematic_connection`. Neither tool exists. Use `add_schematic_wire` to
+> draw a wire, or `connect_to_net` to join a pin to a named net. To wire many
+> matching pins between two connectors, use `connect_passthrough` -- one call
+> produces a cleaner layout than a loop of individual wires.
 
-| Parameter     | Type   | Required | Description                              |
-| ------------- | ------ | -------- | ---------------------------------------- |
-| schematicPath | string | Yes      | Path to the schematic file               |
-| sourceRef     | string | Yes      | Source component reference (e.g., R1)    |
-| sourcePin     | string | Yes      | Source pin name/number (e.g., 1, 2, GND) |
-| targetRef     | string | Yes      | Target component reference (e.g., C1)    |
-| targetPin     | string | Yes      | Target pin name/number (e.g., 1, 2, VCC) |
+### add_no_connect
+
+Place a no-connect flag (the X marker) on a pin that is deliberately left
+unconnected, so ERC stops reporting "Pin not connected" for it.
+
+Preferred usage: supply `componentRef` + `pinNumber`, which snaps the flag to
+the exact pin endpoint. Otherwise supply `position`, whose coordinates must
+match the pin endpoint exactly.
+
+| Parameter     | Type            | Required | Description                                                          |
+| ------------- | --------------- | -------- | -------------------------------------------------------------------- |
+| schematicPath | string          | Yes      | Path to the schematic file                                           |
+| componentRef  | string          | No       | Component reference to snap to (e.g., U1). Use with `pinNumber`.     |
+| pinNumber     | string / number | No       | Pin to mark as not connected. Use with `componentRef`.               |
+| position      | array           | No       | `[x, y]` in mm. Required when `componentRef`/`pinNumber` are absent. |
 
 ### add_schematic_net_label
 
@@ -552,6 +577,46 @@ Import the schematic netlist into the PCB board — equivalent to pressing F8 in
 
 **Usage Notes:** This is the F8 equivalent. It synchronizes the schematic design to the PCB, creating footprints on the board and assigning nets. This step is critical in the workflow: design in schematic → sync_schematic_to_board → place and route on PCB.
 
+Board footprints are matched to schematic symbols by reference designator _and_
+by symbol UUID. The UUID match is what stops a re-annotated schematic from
+looking entirely "missing" and being added to the board a second time.
+
+### backannotate_footprints
+
+Copy footprint assignments from a `.kicad_pcb` back into the schematic's
+`Footprint` fields. This is the reverse of `sync_schematic_to_board`: after a
+layout pass where footprints were swapped in pcbnew, the schematic would
+otherwise keep the old values and push them back on the next ECO run.
+
+| Parameter  | Type    | Required | Description                                                        |
+| ---------- | ------- | -------- | ------------------------------------------------------------------ |
+| boardPath  | string  | Yes      | Absolute path to the `.kicad_pcb` file                             |
+| addMissing | boolean | No       | Add a `Footprint` field to instances that have none (default true) |
+| dryRun     | boolean | No       | Report the changes without writing them                            |
+
+**Usage Notes:** Matches by reference designator and updates every unit of a
+multi-unit symbol. References starting with `#` (power and ground symbols) are
+skipped, because they carry no footprint. Anything ambiguous is reported rather
+than guessed: if two sheet instances that share one `Footprint` field disagree,
+or the board carries one reference on two footprints, the case lands in
+`conflicts` and nothing is written. Footprints on the board with no matching
+symbol -- mounting holes and test points added directly in pcbnew -- are listed
+under `notInSchematic`. Only sheets reachable from the root schematic are
+rewritten, so `.history` snapshots and unrelated projects in the same directory
+are left alone.
+
+## Related Tools
+
+These live in other reference documents but belong to the same workflow:
+
+- `validate_schematic` - check that a `.kicad_sch` file is still structurally
+  sound, reporting the line and column of each fault. Worth running after any
+  tool that edits a schematic.
+- `batch_add_components`, `batch_connect`, `batch_add_and_connect` - bulk
+  authoring in one call instead of many.
+- `autoplace_schematic_fields`, `lint_schematic_cosmetic` - tidy up field
+  placement before exporting a PDF.
+
 ## Example Workflows
 
 ### Basic Circuit Design
@@ -559,7 +624,7 @@ Import the schematic netlist into the PCB board — equivalent to pressing F8 in
 1. **Create project:** Use `create_schematic` to initialize a new schematic file
 2. **Add components:** Use `add_schematic_component` to place resistors, capacitors, ICs, etc.
    - Example: Add a resistor with `symbol: "Device:R"`, `reference: "R1"`, `value: "10k"`
-3. **Wire components:** Use `add_schematic_connection` to connect component pins
+3. **Wire components:** Use `add_schematic_wire` to draw wires between pin coordinates
    - Or use `connect_to_net` to connect pins to named nets (VCC, GND, etc.)
 4. **Add net labels:** Use `add_schematic_net_label` to label important signals
 5. **Validate:** Run `run_erc` to check for electrical rule violations
@@ -577,14 +642,21 @@ Import the schematic netlist into the PCB board — equivalent to pressing F8 in
 
 ## Source Files
 
-The schematic tools are implemented across the following source files:
+Paths are relative to the repository root.
 
-- **TypeScript (Tool Definitions):**
-  - `/home/chris/MCP/KiCAD-MCP-Server/src/tools/schematic.ts` - All 27 schematic tool definitions with parameter schemas and handlers
+- **TypeScript (tool definitions):**
+  - `src/tools/schematic.ts` - the 46 core schematic tools
+  - `src/tools/schematic-batch.ts` - bulk add, edit, connect
+  - `src/tools/schematic-hierarchy.ts` - hierarchical sheets
+  - `src/tools/schematic-layout.ts` - field placement and cosmetic lint
+  - `src/tools/validation.ts` - `validate_schematic`, `validate_symbol_library`
 
-- **Python (Backend Implementation):**
-  - `/home/chris/MCP/KiCAD-MCP-Server/python/commands/component_schematic.py` - ComponentManager class (add, delete, edit, list components with dynamic symbol loading)
-  - `/home/chris/MCP/KiCAD-MCP-Server/python/commands/connection_schematic.py` - ConnectionManager class (wiring, net labels, passthrough, netlist generation)
-  - `/home/chris/MCP/KiCAD-MCP-Server/python/commands/wire_manager.py` - WireManager class (low-level wire manipulation)
-  - `/home/chris/MCP/KiCAD-MCP-Server/python/commands/pin_locator.py` - PinLocator class (pin location lookup and angle calculation)
-  - `/home/chris/MCP/KiCAD-MCP-Server/python/commands/dynamic_symbol_loader.py` - DynamicSymbolLoader class (runtime symbol loading from KiCad libraries)
+- **Python (backend implementation):**
+  - `python/commands/component_schematic.py` - ComponentManager (add, delete, edit, list components with dynamic symbol loading)
+  - `python/commands/connection_schematic.py` - ConnectionManager (wiring, net labels, passthrough, netlist generation)
+  - `python/commands/wire_manager.py` - WireManager (low-level wire manipulation)
+  - `python/commands/pin_locator.py` - PinLocator (pin location lookup and angle calculation)
+  - `python/commands/dynamic_symbol_loader.py` - DynamicSymbolLoader (runtime symbol loading from KiCad libraries)
+  - `python/commands/backannotate_footprints.py` - footprint back-annotation from board to schematic
+  - `python/commands/validate_kicad_files.py` - structural validation of `.kicad_sch` and `.kicad_sym`
+  - `python/utils/sexpr_format.py` - shared, escape-aware S-expression reading and writing

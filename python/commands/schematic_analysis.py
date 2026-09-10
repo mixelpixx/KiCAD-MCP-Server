@@ -15,7 +15,6 @@ import sexpdata
 from commands.pin_locator import PinLocator
 from commands.wire_connectivity import _parse_virtual_connections, _to_iu
 from sexpdata import Symbol
-from skip import Schematic
 
 logger = logging.getLogger("kicad_interface")
 

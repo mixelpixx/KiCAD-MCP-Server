@@ -69,6 +69,13 @@ def _via(net_code, x, y, size_mm=0.8, drill_mm=0.4):
     v.GetNetCode.return_value = net_code
     v.GetPosition.return_value = _vector(x, y)
     v.GetWidth.return_value = _mm(size_mm)
+    # KiCad 9+ vias expose GetFrontWidth(), which _via_front_width() prefers in
+    # order to avoid the "GetWidth called without a layer argument" assert. A
+    # bare MagicMock auto-creates that attribute and int() of the resulting mock
+    # is 1, which would silently shrink every via here to 1 nm and quietly
+    # destroy the obstacle-radius margins these tests exist to pin. Set it
+    # explicitly so the double matches the real KiCad 9/10 object.
+    v.GetFrontWidth.return_value = _mm(size_mm)
     v.GetDrill.return_value = _mm(drill_mm)
     v.GetClass.return_value = "PCB_VIA"  # routing code checks via GetClass()
     return v

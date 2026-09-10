@@ -553,5 +553,5 @@ Note: Use the IPC backend (keep KiCAD open) when using refill_zones to avoid pot
 
 ## Source Files
 
-- **TypeScript Tool Definitions**: `/home/chris/MCP/KiCAD-MCP-Server/src/tools/routing.ts`
-- **Python Implementation**: `/home/chris/MCP/KiCAD-MCP-Server/python/commands/routing.py`
+- **TypeScript Tool Definitions**: `src/tools/routing.ts`
+- **Python Implementation**: `python/commands/routing.py`

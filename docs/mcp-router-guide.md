@@ -1,5 +1,16 @@
 # MCP Tool Router Pattern Guide
 
+> **⚠ Historical design document.** This is a general write-up of the router
+> pattern, and its code samples describe a gated design that this server no
+> longer uses. The `execute_tool` dispatcher shown throughout was deleted in
+> 2026-05 (commit `963a39c`) because MCP clients could not see the tools behind
+> it. Today every tool is registered directly and the router tools
+> (`list_tool_categories`, `search_tools`, `get_tool_help`) are a searchable
+> catalogue that saves no context. Read
+> [docs/ROUTER_QUICK_START.md](ROUTER_QUICK_START.md) for how discovery
+> actually works, and treat this file as background reading on the pattern
+> rather than a description of this codebase.
+
 A practical guide for building MCP servers with 50-500+ tools without destroying context windows or confusing the LLM.
 
 ---
@@ -13,7 +24,7 @@ When your MCP server exposes too many tools:
 3. **Context starvation**: Less room for actual conversation and results
 4. **Accuracy degradation**: More tools = more confusion about which to use
 
-Real-world example: A KiCAD MCP server with 52 tools consumes ~40K tokens. An IDA Pro MCP server could easily hit 100+ tools.
+Real-world example: A KiCAD MCP server with 229 tools consumes well over 100K tokens of schema. An IDA Pro MCP server could easily hit 100+ tools.
 
 ---
 
@@ -1139,7 +1150,7 @@ See [Tool Search Tool Documentation](https://platform.claude.com/docs/en/agents-
 
 ### Example Implementations
 
-- [KiCAD MCP Server](https://github.com/mixelpixx/KiCAD-MCP-Server) - 52+ tools with natural language PCB design
+- [KiCAD MCP Server](https://github.com/mixelpixx/KiCAD-MCP-Server) - 229 tools with natural language PCB design
 - [MCP Servers Repository](https://github.com/modelcontextprotocol/servers) - Official reference implementations
 
 ---

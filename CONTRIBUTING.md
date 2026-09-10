@@ -168,15 +168,25 @@ kicad-mcp-server/
 
 The KiCAD MCP Server is organized into several key components:
 
-- **TypeScript MCP Server** (`src/`) - Handles MCP protocol communication and tool routing
+- **TypeScript MCP Server** (`src/`) - Handles MCP protocol communication and tool registration
 - **Python KiCAD Interface** (`python/`) - Interfaces with KiCAD's Python API (pcbnew)
-- **Tool Router** - Organizes 122+ tools into 8 discoverable categories
+- **Tool Registry** (`src/tools/registry.ts`) - Groups tools into categories so `search_tools` and `get_category_tools` can find them by keyword
 - **Resource System** - Provides dynamic project/board state information
 - **Prompt System** - Offers context-aware design prompts
 
-**Current Tool Count:** 122+ tools across 8 categories (direct + routed)
+**Current Tool Count:** 229 tools registered on the server, of which 169 are
+indexed for keyword discovery across 15 categories. Every tool is callable by
+name whether or not it is indexed.
 
-For detailed architecture information, see `docs/ROUTER_ARCHITECTURE.md`.
+These numbers are generated, not typed by hand. Run `npm run build && npm run docs:tools`
+to regenerate `docs/TOOL_INVENTORY.md` after adding or removing a tool, and
+`npm run docs:tools:check` to confirm the document is current. Two tests keep
+the rest honest: `tests-ts/readme-counts.test.ts` pins the README headline to
+the registry, and `tests-ts/registry-completeness.test.ts` fails if a newly
+added tool is missing from the registry.
+
+For detailed architecture information, see `docs/ARCHITECTURE.md`. The historical
+router design is described in `docs/ROUTER_ARCHITECTURE.md`.
 
 ---
 
@@ -426,7 +436,7 @@ We track work using GitHub Projects and Issues:
 5. ⏳ Add JLCPCB integration
 6. ⏳ Add Digikey integration
 
-See [docs/REBUILD_PLAN.md](docs/REBUILD_PLAN.md) for the complete 12-week roadmap.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the planned work.
 
 ---
 

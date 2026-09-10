@@ -136,13 +136,23 @@ server.tool(
 );
 ```
 
-### Tool Router (`src/tools/router.ts` and `src/tools/registry.ts`)
+### Tool Discovery (`src/tools/router.ts` and `src/tools/registry.ts`)
 
-The router pattern reduces AI context usage:
+Every tool is registered individually with `server.tool()`, so any MCP client can
+call any tool by name. The registry exists to help an assistant _find_ a tool it
+does not already know about:
 
-- `registry.ts` defines tool categories and which tools are "direct" (always visible) vs "routed" (discoverable)
-- `router.ts` provides 4 meta-tools: `list_tool_categories`, `get_category_tools`, `search_tools`, `execute_tool`
-- Routed tools are not registered as individual MCP tools -- they are invoked through `execute_tool`
+- `registry.ts` defines the categories and the small "essentials" list that
+  `search_tools` ranks first. It currently indexes 169 of the 229 registered
+  tools across 15 categories.
+- `router.ts` provides 3 discovery tools: `list_tool_categories`,
+  `get_category_tools` and `search_tools`.
+- Nothing is hidden behind a dispatcher. An earlier design routed calls through
+  an `execute_tool` meta-tool; that was rolled back because clients could not
+  see the real tool schemas. See `docs/ROUTER_ARCHITECTURE.md` for that history.
+- A tool that is registered but missing from the registry still works, it is
+  simply harder to discover. `tests-ts/registry-completeness.test.ts` freezes
+  the number of such tools so it can only shrink.
 
 ### Python Subprocess Communication
 
@@ -303,7 +313,7 @@ Key test files:
 ## Key Design Decisions
 
 - **TypeScript + Python split**: TypeScript handles MCP protocol (well-supported SDK), Python handles KiCAD (only available API)
-- **Router pattern**: Reduces AI context from ~80K tokens (122 tools) to manageable size
+- **Keyword discovery instead of routing**: all 229 tools stay individually callable; the registry indexes 169 of them so `search_tools` can find one without the client reading every schema
 - **Auto-save**: Every board-modifying SWIG operation auto-saves to prevent data loss
 - **Dynamic symbol loading**: Works around kicad-skip's inability to create symbols from scratch
 - **S-expression wire injection**: Works around kicad-skip's inability to create wires

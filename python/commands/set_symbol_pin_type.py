@@ -44,13 +44,14 @@ nobody.
 from __future__ import annotations
 
 import logging
-import os
 import re
 import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
+from utils.file_io import read_text_preserve_newline as _read_text
+from utils.file_io import write_text_atomic as _write_text
 from utils.pin_types import PIN_STYLES, PIN_TYPES
 from utils.sexpr_format import match_paren
 
@@ -106,32 +107,6 @@ def _backup(path: Path) -> Optional[Path]:
         return None
     _prune_backups(backup_dir, path.name)
     return dest
-
-
-def _read_text(path: Path) -> Tuple[str, str]:
-    """File text with LF newlines, plus the newline style to write back."""
-    with open(path, "r", encoding="utf-8", newline="") as fh:
-        raw = fh.read()
-    return raw.replace("\r\n", "\n"), ("\r\n" if "\r\n" in raw else "\n")
-
-
-def _write_text(path: Path, text: str, newline: str) -> None:
-    """Atomic write that keeps the file's original newline style.
-
-    The temporary file is removed on failure so a full disk does not leave a
-    second copy of the library beside the first.
-    """
-    tmp = path.with_name(path.name + ".mcp-tmp")
-    try:
-        with open(tmp, "w", encoding="utf-8", newline=newline) as fh:
-            fh.write(text)
-        os.replace(tmp, path)
-    except OSError:
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
-        raise
 
 
 def _read_string(text: str, i: int) -> Tuple[Optional[str], int]:

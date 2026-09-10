@@ -1,13 +1,18 @@
 import logging
 import os
 import shutil
+import sys
 import traceback
 import uuid
 from typing import Any, List, Optional
 
 import sexpdata
-from skip import Schematic
 from utils.sexpr_format import prettify
+
+try:
+    from skip import Schematic
+except ImportError:
+    Schematic = None
 
 logger = logging.getLogger("kicad_interface")
 
@@ -17,9 +22,10 @@ class SchematicLoadError(Exception):
 
     Carries a structured diagnosis so every schematic tool can fail loudly
     and actionably instead of returning plausible-looking empty results.
-    ``kind`` is ``"not_found"`` or ``"parse_error"``; ``flat_symbols`` names
-    embedded lib symbols with no sub-units (the SnapEDA/SamacSys pattern
-    that crashes kicad-skip's LibSymbol parser).
+    ``kind`` is ``"not_found"``, ``"parse_error"``, or ``"dependency_missing"``
+    (kicad-skip itself is not installed); ``flat_symbols`` names embedded lib
+    symbols with no sub-units (the SnapEDA/SamacSys pattern that crashes
+    kicad-skip's LibSymbol parser).
     """
 
     def __init__(
@@ -38,6 +44,11 @@ class SchematicLoadError(Exception):
     def _message(self) -> str:
         if self.kind == "not_found":
             return f"Schematic file not found: {self.path}"
+        if self.kind == "dependency_missing":
+            return (
+                f"Cannot load {self.path}: kicad-skip is not installed. "
+                f"Install it with: {sys.executable} -m pip install kicad-skip"
+            )
         if self.flat_symbols:
             names = ", ".join(self.flat_symbols)
             return (
@@ -110,6 +121,8 @@ class SchematicManager:
         name: str, metadata: Optional[Any] = None, *, path: Optional[str] = None
     ) -> Any:
         """Create a new empty schematic from template"""
+        if Schematic is None:
+            raise SchematicLoadError(path or name, kind="dependency_missing")
         try:
             # Determine template path. New schematics start from a blank KiCad 10
             # file (empty lib_symbols, no placed symbols) rather than the seeded
@@ -196,6 +209,8 @@ class SchematicManager:
         if not os.path.exists(file_path):
             logger.error(f"Schematic file not found at {file_path}")
             raise SchematicLoadError(file_path, kind="not_found")
+        if Schematic is None:
+            raise SchematicLoadError(file_path, kind="dependency_missing")
         try:
             sch = Schematic(file_path)
             logger.info(f"Loaded schematic from: {file_path}")
