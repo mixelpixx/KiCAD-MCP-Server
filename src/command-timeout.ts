@@ -26,6 +26,14 @@ export const LONG_COMMAND_TIMEOUT_MS = 600_000;
  * against the caller's rate limit.
  */
 export const LONG_RUNNING_COMMANDS = [
+  "open_project",
+  "create_project",
+  "open_board",
+  "reload_board",
+  "close_project",
+  "place_component",
+  "get_component_list",
+  "get_board_info",
   "run_drc",
   "export_gerber",
   "export_pdf",

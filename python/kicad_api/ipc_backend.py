@@ -145,8 +145,10 @@ class IPCBackend(KiCADBackend):
 
         def worker() -> None:
             try:
-                kicad = KiCad(socket_path=path) if path else KiCad()
-                kicad.ping()  # returns None on success, raises on failure
+                # kipy 0.7.1: KiCad() auto-dials the running KiCad; ping() can
+                # time out even when connected, so verify with get_version().
+                kicad = KiCad() if not path else KiCad(socket_path=path)
+                kicad.get_version()
                 result["kicad"] = kicad
             except Exception as e:  # noqa: BLE001 — surfaced to caller below
                 result["error"] = e
@@ -679,29 +681,33 @@ class IPCBoardAPI(BoardAPI):
                 lib_name = None
                 fp_name = footprint_path
 
-            # Get the footprint library table
-            fp_lib_table = pcbnew.GetGlobalFootprintLib()
+            # KiCad 10 removed GetGlobalFootprintLib; load by .pretty dir path.
+            def _pretty_dirs() -> list:
+                roots = [
+                    os.environ.get("KICAD_FOOTPRINTS_DIR", r"D:\kicad\share\kicad\footprints"),
+                    r"D:\kicad\custom-lib",
+                    os.path.expanduser(r"~\Documents\KiCad\10.0\libraries"),
+                ]
+                dirs: list = []
+                for root in roots:
+                    if lib_name:
+                        dirs.append(os.path.join(root, lib_name + ".pretty"))
+                    elif os.path.isdir(root):
+                        dirs.extend(
+                            os.path.join(root, d)
+                            for d in os.listdir(root)
+                            if d.endswith(".pretty")
+                        )
+                return dirs
 
-            if lib_name:
-                # Load from specific library
+            for pretty_dir in _pretty_dirs():
                 try:
-                    loaded_fp = pcbnew.FootprintLoad(fp_lib_table, lib_name, fp_name)
+                    loaded_fp = pcbnew.FootprintLoad(pretty_dir, fp_name)
                     if loaded_fp:
-                        logger.info(f"Loaded footprint '{fp_name}' from library '{lib_name}'")
+                        logger.info(f"Loaded footprint '{fp_name}' from {pretty_dir}")
                         return loaded_fp
                 except Exception as e:
-                    logger.warning(f"Could not load from {lib_name}: {e}")
-            else:
-                # Search all libraries for the footprint
-                lib_names = fp_lib_table.GetLogicalLibs()
-                for lib in lib_names:
-                    try:
-                        loaded_fp = pcbnew.FootprintLoad(fp_lib_table, lib, fp_name)
-                        if loaded_fp:
-                            logger.info(f"Found footprint '{fp_name}' in library '{lib}'")
-                            return loaded_fp
-                    except:
-                        continue
+                    logger.debug(f"FootprintLoad failed for {pretty_dir}: {e}")
 
             logger.warning(f"Footprint '{footprint_path}' not found in any library")
             return None
@@ -741,8 +747,19 @@ class IPCBoardAPI(BoardAPI):
 
             # Try to get the board path from kipy
             try:
-                docs = self._kicad.get_open_documents()
+                from kipy.proto.common.types import DocumentType
+                docs = self._kicad.get_open_documents(DocumentType.DOCTYPE_PCB)
                 for doc in docs:
+                    # kipy 0.7.x DocumentSpecifier: board_filename + project.path
+                    bf = getattr(doc, "board_filename", None)
+                    proj = getattr(doc, "project", None)
+                    proj_path = getattr(proj, "path", None) if proj else None
+                    if bf:
+                        if proj_path:
+                            board_path = os.path.join(str(proj_path), str(bf))
+                        else:
+                            board_path = str(bf)
+                        break
                     if hasattr(doc, "path") and str(doc.path).endswith(".kicad_pcb"):
                         board_path = str(doc.path)
                         break
