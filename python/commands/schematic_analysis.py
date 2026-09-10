@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import sexpdata
 from commands.pin_locator import PinLocator
 from commands.wire_connectivity import _parse_virtual_connections, _to_iu
+from commands.wire_dragger import WireDragger
 from sexpdata import Symbol
 
 logger = logging.getLogger("kicad_interface")
@@ -348,24 +349,15 @@ def _transform_local_point(
     mirror_y: bool,
 ) -> Tuple[float, float]:
     """
-    Transform a point from local symbol coordinates to absolute schematic
-    coordinates using KiCad's transform order:
-    negate-y (lib y-up → schematic y-down) → mirror → rotate → translate.
+    Transform a point from library symbol coordinates (y-up) to sheet
+    coordinates (y-down) for a placed symbol instance.
+
+    Delegates to WireDragger.pin_world_xy, the one transform verified against
+    kicad-cli netlists (y-flip → rotate screen-CCW → mirror → translate). The
+    earlier local copy rotated the other way and mirrored before rotating,
+    which was wrong at 90 and 270 degrees (#404).
     """
-    # Library symbols use y-up; schematic uses y-down
-    ly = -ly
-
-    # Apply mirroring in local coords
-    if mirror_x:
-        ly = -ly
-    if mirror_y:
-        lx = -lx
-
-    # Apply rotation
-    if rotation != 0:
-        lx, ly = PinLocator.rotate_point(lx, ly, rotation)
-
-    return (sym_x + lx, sym_y + ly)
+    return WireDragger.pin_world_xy(lx, ly, sym_x, sym_y, rotation, mirror_x, mirror_y)
 
 
 def _compute_symbol_bbox_direct(
@@ -730,7 +722,10 @@ def _compute_pin_positions_direct(
     lookup in the schematic, so it works correctly when multiple symbols share
     the same reference designator (e.g. unannotated "Q?").
 
-    KiCad transform order: mirror (in local coords) → rotate → translate.
+    The transform itself is WireDragger.pin_world_xy, verified against
+    kicad-cli netlists. The earlier local copy never flipped library y-up to
+    sheet y-down and rotated the other way, so its positions were wrong at
+    every rotation (#404); only these linting helpers used it.
     """
     sym_x = sym["x"]
     sym_y = sym["y"]
@@ -740,20 +735,16 @@ def _compute_pin_positions_direct(
 
     result: Dict[str, List[float]] = {}
     for pin_num, pin_data in pin_defs.items():
-        rel_x = float(pin_data["x"])
-        rel_y = float(pin_data["y"])
-
-        # Apply mirroring in local symbol coordinates
-        if mirror_x:
-            rel_y = -rel_y
-        if mirror_y:
-            rel_x = -rel_x
-
-        # Apply symbol rotation
-        if rotation != 0:
-            rel_x, rel_y = PinLocator.rotate_point(rel_x, rel_y, rotation)
-
-        result[pin_num] = [sym_x + rel_x, sym_y + rel_y]
+        x, y = WireDragger.pin_world_xy(
+            float(pin_data["x"]),
+            float(pin_data["y"]),
+            sym_x,
+            sym_y,
+            rotation,
+            mirror_x,
+            mirror_y,
+        )
+        result[pin_num] = [x, y]
     return result
 
 

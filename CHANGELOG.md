@@ -236,6 +236,28 @@ All notable changes to the KiCAD MCP Server project are documented here.
   filtered to the moved unit, and the part's other units count as stationary,
   so their wiring is left where it is.
 
+- **`add_schematic_wire` said "success" for a wire that connected nothing**
+  (#404, reported by @andersresen). With `snapToPins` on (the default), an
+  endpoint that was not within `snapTolerance` of any pin was left where it
+  was and the response did not say so, which is how a wire drawn from a
+  miscalculated pin position ends up floating next to the pin. The response
+  now reports, for the start and end points, whether they snapped, the
+  nearest pin and its distance, and carries a warning (also appended to the
+  message) when an endpoint is outside the tolerance of every pin.
+
+  The report's own numbers turned out to be the y-up/y-down mistake: KiCad
+  library symbols are drawn y-up and sheets are y-down, so a rotation-0
+  instance at (x, y) puts a library pin (px, py) at (x + px, y - py), which
+  is what `get_schematic_pin_locations` returns and what kicad-cli netlists
+  confirm. Two linting helpers in `schematic_analysis.py` did have that bug
+  and more: `_compute_pin_positions_direct` (behind
+  `find_wires_crossing_symbols` and `get_elements_in_region`) never flipped y
+  and rotated the wrong way, so its pin positions were wrong at every
+  rotation, and `_transform_local_point` (symbol body boxes) was wrong at 90
+  and 270 degrees. Both now delegate to the netlist-verified transform in
+  `WireDragger.pin_world_xy`, pinned by a test whose expected coordinates are
+  the verified formulas rather than the code under test.
+
 ### Tooling
 
 - **Documentation trued up to the shipped server, and the tool inventory is now

@@ -1146,8 +1146,17 @@ class SchematicHandlersMixin:
             # Make a mutable copy of points
             points = [list(p) for p in points]
 
-            # Pin snapping: adjust first and last endpoints to nearest pin
-            snapped_info = []
+            # Pin snapping: adjust first and last endpoints to nearest pin.
+            # The response says what happened to each endpoint. Snapping
+            # nothing used to be silent, so a wire drawn from a miscalculated
+            # pin position was reported as a success while floating next to
+            # the pin it was meant for (#404).
+            snapped_info: List[str] = []
+            warnings: List[str] = []
+            endpoints: Dict[str, Dict[str, Any]] = {
+                "start": {"position": list(points[0]), "snapped": False},
+                "end": {"position": list(points[-1]), "snapped": False},
+            }
             if snap_to_pins:
                 from commands.pin_locator import PinLocator
 
@@ -1170,40 +1179,51 @@ class SchematicHandlersMixin:
                     for pin_num, coords in pin_locs.items():
                         all_pins.append((ref, pin_num, coords))
 
-                def find_nearest_pin(point: Any, tolerance: Any) -> Any:
-                    """Find the nearest pin within tolerance of a point."""
+                def find_nearest_pin(point: Any) -> Any:
+                    """Return (ref, pin_num, coords, distance) of the closest pin."""
                     best = None
-                    best_dist = tolerance
                     for ref, pin_num, coords in all_pins:
                         dx = point[0] - coords[0]
                         dy = point[1] - coords[1]
                         dist = (dx * dx + dy * dy) ** 0.5
-                        if dist <= best_dist:
-                            best_dist = dist
-                            best = (ref, pin_num, coords)
+                        if best is None or dist < best[3]:
+                            best = (ref, pin_num, coords, dist)
                     return best
 
-                # Snap first endpoint
-                match = find_nearest_pin(points[0], snap_tolerance)
-                if match:
-                    ref, pin_num, coords = match
-                    logger.info(
-                        f"Snapped start point {points[0]} -> {coords} (pin {ref}/{pin_num})"
-                    )
-                    snapped_info.append(
-                        f"start snapped to {ref}/{pin_num} at [{coords[0]}, {coords[1]}]"
-                    )
-                    points[0] = list(coords)
-
-                # Snap last endpoint
-                match = find_nearest_pin(points[-1], snap_tolerance)
-                if match:
-                    ref, pin_num, coords = match
-                    logger.info(f"Snapped end point {points[-1]} -> {coords} (pin {ref}/{pin_num})")
-                    snapped_info.append(
-                        f"end snapped to {ref}/{pin_num} at [{coords[0]}, {coords[1]}]"
-                    )
-                    points[-1] = list(coords)
+                for label, index in (("start", 0), ("end", -1)):
+                    requested = points[index]
+                    info = endpoints[label]
+                    match = find_nearest_pin(requested)
+                    if match is None:
+                        warnings.append(
+                            f"{label} point [{requested[0]}, {requested[1]}] was not snapped: "
+                            "the schematic has no symbol pins"
+                        )
+                        continue
+                    ref, pin_num, coords, dist = match
+                    info["nearestPin"] = {
+                        "reference": ref,
+                        "pin": pin_num,
+                        "position": [coords[0], coords[1]],
+                    }
+                    info["nearestPinDistance"] = round(dist, 4)
+                    if dist <= snap_tolerance:
+                        logger.info(
+                            f"Snapped {label} point {requested} -> {coords} ({ref}/{pin_num})"
+                        )
+                        snapped_info.append(
+                            f"{label} snapped to {ref}/{pin_num} at [{coords[0]}, {coords[1]}]"
+                        )
+                        points[index] = list(coords)
+                        info["position"] = list(coords)
+                        info["snapped"] = True
+                    else:
+                        warnings.append(
+                            f"{label} point [{requested[0]}, {requested[1]}] is {dist:.2f} mm from "
+                            f"the nearest pin {ref}/{pin_num} at [{coords[0]}, {coords[1]}], "
+                            f"outside snapTolerance {snap_tolerance} mm; the endpoint was left "
+                            "where it was and the wire may be floating"
+                        )
 
             # Extract wire properties
             stroke_width = properties.get("stroke_width", 0)
@@ -1230,8 +1250,17 @@ class SchematicHandlersMixin:
                 message = "Wire added successfully"
                 if snapped_info:
                     message += "; " + "; ".join(snapped_info)
+                if warnings:
+                    message += ". Warning: " + " ".join(warnings)
                 self._reload_kicad_schematic()
-                return {"success": True, "message": message}
+                result: Dict[str, Any] = {
+                    "success": True,
+                    "message": message,
+                    "endpoints": endpoints,
+                }
+                if warnings:
+                    result["warnings"] = warnings
+                return result
             else:
                 return {"success": False, "message": "Failed to add wire"}
         except SchematicLoadError as e:
