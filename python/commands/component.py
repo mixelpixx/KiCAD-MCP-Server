@@ -504,13 +504,28 @@ class ComponentCommands(PlacementOptimizerCommands):
                 # Parse footprint string (format: "Library:Footprint")
                 if ":" in footprint:
                     lib_name, fp_name = footprint.split(":", 1)
+                    library_path = self.library_manager.get_library_path(lib_name)
                 else:
                     # If no library specified, keep existing library
                     current_fpid = module.GetFPID()
                     lib_name = current_fpid.GetLibNickname().GetUTF8()
                     fp_name = footprint
+                    library_path = (
+                        self.library_manager.get_library_path(lib_name) if lib_name else None
+                    )
 
-                library_path = self.library_manager.get_library_path(lib_name)
+                    if not library_path:
+                        # Empty nickname (footprint placed without a library, or an
+                        # imported board) or one the table no longer resolves: search
+                        # every library, same fallback place_component uses.
+                        fallback = self.library_manager.find_footprint(fp_name)
+                        if fallback:
+                            library_path, fp_name = fallback
+                            for nick, path in self.library_manager.libraries.items():
+                                if path == library_path:
+                                    lib_name = nick
+                                    break
+
                 if not library_path:
                     return {
                         "success": False,
@@ -534,6 +549,9 @@ class ComponentCommands(PlacementOptimizerCommands):
                 new_module.SetPosition(module.GetPosition())
                 new_module.SetOrientation(module.GetOrientation())
                 new_module.SetFPID(pcbnew.LIB_ID(lib_name, fp_name))
+                new_module.SetPath(module.GetPath())
+                new_module.SetAttributes(module.GetAttributes())
+                new_module.SetLocked(module.IsLocked())
 
                 old_nets = {pad.GetNumber(): pad.GetNet() for pad in module.Pads()}
                 for pad in new_module.Pads():

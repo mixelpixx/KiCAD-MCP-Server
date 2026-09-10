@@ -164,3 +164,61 @@ class TestFootprintExchange:
         assert result["success"] is False
         board.Add.assert_not_called()
         board.Delete.assert_not_called()
+
+    def test_empty_nickname_falls_back_to_searching_all_libraries(self):
+        """A footprint placed without a library, or on an imported board, reports an
+        empty nickname from GetFPID(); get_library_path("") then has nothing to look
+        up even though the footprint exists. Fall back to find_footprint(), the same
+        way place_component does."""
+        old_fpid = MagicMock()
+        old_fpid.GetLibNickname.return_value.GetUTF8.return_value = ""
+        old = _make_footprint("D1", "1N4148", (0, 0), 0, [])
+        old.GetFPID.return_value = old_fpid
+
+        new = _make_footprint("proto", "", (0, 0), 0, [])
+        cmd, _board = _make_component_commands(old, new)
+        cmd.library_manager.get_library_path.return_value = None
+        cmd.library_manager.find_footprint.return_value = ("/libs/SOT-23.pretty", "D_SOD-323")
+        cmd.library_manager.libraries = {"Diode_SMD": "/libs/SOT-23.pretty"}
+
+        result = cmd.edit_component({"reference": "D1", "footprint": "D_SOD-323"})
+
+        assert result["success"] is True
+        cmd.library_manager.find_footprint.assert_called_once_with("D_SOD-323")
+        _pcbnew_stub.FootprintLoad.assert_called_once_with("/libs/SOT-23.pretty", "D_SOD-323")
+
+    def test_unresolvable_nickname_and_no_fallback_match_reports_failure(self):
+        old_fpid = MagicMock()
+        old_fpid.GetLibNickname.return_value.GetUTF8.return_value = ""
+        old = _make_footprint("D1", "1N4148", (0, 0), 0, [])
+        old.GetFPID.return_value = old_fpid
+
+        new = _make_footprint("proto", "", (0, 0), 0, [])
+        cmd, board = _make_component_commands(old, new)
+        cmd.library_manager.get_library_path.return_value = None
+        cmd.library_manager.find_footprint.return_value = None
+
+        result = cmd.edit_component({"reference": "D1", "footprint": "NoSuchFootprint"})
+
+        assert result["success"] is False
+        board.Add.assert_not_called()
+
+    def test_carried_over_fields_survive_the_swap(self):
+        """KiCAD's own PCB_EDIT_FRAME::ExchangeFootprint() also carries the KIID_PATH
+        (the schematic-symbol link Update PCB from Schematic matches by), the DNP /
+        exclude-from-BOM / exclude-from-POS attribute bits, and the locked flag. A swap
+        that drops them desyncs the new footprint from its schematic symbol and
+        silently clears DNP/locked."""
+        old = _make_footprint("D1", "1N4148", (0, 0), 0, [])
+        old.GetPath.return_value = "/abc123/def456"
+        old.GetAttributes.return_value = 42
+        old.IsLocked.return_value = True
+
+        new = _make_footprint("proto", "", (0, 0), 0, [])
+        cmd, _board = _make_component_commands(old, new)
+
+        cmd.edit_component({"reference": "D1", "footprint": "Package_TO_SOT_SMD:SOT-23"})
+
+        new.SetPath.assert_called_once_with("/abc123/def456")
+        new.SetAttributes.assert_called_once_with(42)
+        new.SetLocked.assert_called_once_with(True)

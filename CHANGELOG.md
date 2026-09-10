@@ -75,7 +75,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
 ### Bug Fixes
 
 - **`edit_component`'s footprint swap now actually replaces the footprint** (#399,
-  reported by @mixelpixx). Passing a new `footprint` rewrote the FPID library-ID
+  reported by @joseluu). Passing a new `footprint` rewrote the FPID library-ID
   string via `SetFPID` and stopped there, so the pads, courtyard and silkscreen
   stayed whatever the old footprint had. KiCad then reports `lib_footprint_mismatch`
   plus unconnected pads once the pad counts differ. The handler now loads the new
