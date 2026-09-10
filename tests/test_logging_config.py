@@ -22,6 +22,7 @@ from kicad_interface import (  # noqa: E402
     _env_flag_enabled,
     _parse_log_level,
     _parse_positive_int_env,
+    _TolerantRotatingFileHandler,
 )
 
 
@@ -103,11 +104,19 @@ class TestLoggingSideEffects:
             assert logging.getLogger(name).level == logging.WARNING
 
     def test_no_unbounded_handler_for_kicad_log(self):
-        # The regression was a plain logging.FileHandler on kicad_interface.log
-        # that grows forever. Any handler targeting that file must rotate.
-        # (Unrelated handlers, e.g. a NUL-device sink from the test harness,
-        # are ignored — they can't grow.)
-        for handler in logging.getLogger().handlers:
-            base = getattr(handler, "baseFilename", "")
-            if base and base.endswith("kicad_interface.log"):
-                assert isinstance(handler, RotatingFileHandler)
+        # The regression was a plain logging.FileHandler on the worker log
+        # that grows forever. Any handler targeting that file must rotate,
+        # and rotate tolerantly (#405): a rollover that fails because another
+        # process holds the file must not stop logging. The file has been
+        # per-PID (kicad_interface-<pid>.log) since #373. (Unrelated handlers,
+        # e.g. a NUL-device sink from the test harness, are ignored — they
+        # can't grow.)
+        worker_log_handlers = [
+            handler
+            for handler in logging.getLogger().handlers
+            if "kicad_interface-" in Path(getattr(handler, "baseFilename", "")).name
+        ]
+        assert worker_log_handlers, "kicad_interface installs a file handler at import"
+        for handler in worker_log_handlers:
+            assert isinstance(handler, RotatingFileHandler)
+            assert isinstance(handler, _TolerantRotatingFileHandler)
