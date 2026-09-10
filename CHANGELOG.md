@@ -79,6 +79,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`edit_component`'s footprint swap now actually replaces the footprint** (#399,
+  reported by @joseluu). Passing a new `footprint` rewrote the FPID library-ID
+  string via `SetFPID` and stopped there, so the pads, courtyard and silkscreen
+  stayed whatever the old footprint had. KiCad then reports `lib_footprint_mismatch`
+  plus unconnected pads once the pad counts differ. The handler now loads the new
+  footprint from the library and exchanges it in place, matching KiCad's own
+  `PCB_EDIT_FRAME::ExchangeFootprint()`: reference, value, position and orientation
+  carry over, and each new pad picks up the net of the old pad with the same
+  number.
 - **A missing kicad-skip no longer kills every tool at startup** (#389, @AmirF194).
   Six modules imported `from skip import Schematic` at their own top level.
   Two of them sit on the import chain `kicad_interface` -> `schematic_handlers`
