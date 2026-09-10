@@ -224,6 +224,14 @@ function findPythonExecutable(scriptPath: string): string {
 /**
  * KiCAD MCP Server class
  */
+/**
+ * Crash-loop budget for automatic Python worker restarts: after this many
+ * restarts inside the window the worker stays down until the MCP server is
+ * restarted by hand (see restartPythonProcess).
+ */
+const MAX_RESTARTS_PER_WINDOW = 3;
+const RESTART_WINDOW_MS = 5 * 60_000;
+
 export class KiCADMcpServer {
   private server: McpServer;
   private pythonProcess: ChildProcess | null = null;
@@ -231,6 +239,8 @@ export class KiCADMcpServer {
   private pythonEnv: NodeJS.ProcessEnv | null = null;
   private restartPromise: Promise<void> | null = null;
   private stopping = false;
+  /** Start times of recent automatic worker restarts (crash-loop budget). */
+  private restartTimes: number[] = [];
   private kicadScriptPath: string;
   private stdioTransport!: StdioServerTransport;
   private requestQueue: Array<{
@@ -523,6 +533,7 @@ export class KiCADMcpServer {
     try {
       logger.info("Starting KiCAD MCP server...");
       this.stopping = false;
+      this.restartTimes = [];
 
       // ——— Phase 0: connect MCP transport BEFORE anything else ———
       // Python + pcbnew/wxApp initialisation can take 55-125 s. If the
@@ -628,7 +639,16 @@ export class KiCADMcpServer {
       const error = new Error(`Python process exited with code ${code} and signal ${signal}`);
       logger.warn(error.message);
       this.pythonProcess = null;
-      if (!this.readyDetected) this.rejectReady(error);
+
+      if (!this.readyDetected) {
+        // Died before its READY handshake. On the initial start() this
+        // rejects waitForReady so start() fails and the caller decides;
+        // during a restart it fails that restart, which drains the queue.
+        // Spawning a replacement from here as well would leave a second
+        // worker running after the caller has given up.
+        this.rejectReady(error);
+        return;
+      }
 
       if (this.currentRequestHandler) {
         clearTimeout(this.currentRequestHandler.timeoutHandle);
@@ -684,21 +704,39 @@ export class KiCADMcpServer {
   private restartPythonProcess(reason: string): Promise<void> {
     if (this.restartPromise) return this.restartPromise;
 
-    logger.warn(`Restarting Python process after ${reason}`);
     const oldWorker = this.pythonProcess;
     this.pythonProcess = null;
     oldWorker?.kill();
 
+    // Crash-loop budget. A worker that keeps dying (a broken KiCad install,
+    // a board that crashes pcbnew on load) would otherwise be respawned
+    // forever, each attempt costing a full pcbnew start-up. Past the budget
+    // the worker stays down and every call fails fast with "Python process
+    // for KiCAD scripting is not running" until the MCP server is restarted.
+    const now = Date.now();
+    this.restartTimes = this.restartTimes.filter((t) => now - t < RESTART_WINDOW_MS);
+    if (this.restartTimes.length >= MAX_RESTARTS_PER_WINDOW) {
+      const error = new Error(
+        `Python process restarted ${MAX_RESTARTS_PER_WINDOW} times in the last ` +
+          `${RESTART_WINDOW_MS / 60_000} minutes (latest reason: ${reason}); not restarting ` +
+          "again. Restart the MCP server to recover.",
+      );
+      logger.error(error.message);
+      this.rejectQueuedRequests(error);
+      return Promise.resolve();
+    }
+    this.restartTimes.push(now);
+
+    logger.warn(`Restarting Python process after ${reason}`);
     this.restartPromise = (async () => {
       this.spawnPythonProcess();
       await this.waitForReady(120_000);
       logger.info("Python process restarted successfully");
     })()
       .catch((error) => {
+        // Single-shot: a replacement that never reports READY is not retried.
         logger.error(`Failed to restart Python process: ${error}`);
-        while (this.requestQueue.length > 0) {
-          this.requestQueue.shift()!.reject(error);
-        }
+        this.rejectQueuedRequests(error);
         throw error;
       })
       .finally(() => {
@@ -709,6 +747,12 @@ export class KiCADMcpServer {
     // Callers that only need recovery should not create unhandled rejections.
     void this.restartPromise.catch(() => undefined);
     return this.restartPromise;
+  }
+
+  private rejectQueuedRequests(error: Error): void {
+    while (this.requestQueue.length > 0) {
+      this.requestQueue.shift()!.reject(error);
+    }
   }
 
   /**
