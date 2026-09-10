@@ -13,6 +13,7 @@ import logging
 import os
 import shutil
 import sys
+import time
 import traceback
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
@@ -90,6 +91,54 @@ def _env_flag_enabled(name: str) -> bool:
 
 _LOG_LEVEL = _parse_log_level()
 
+
+class _TolerantRotatingFileHandler(RotatingFileHandler):
+    """A RotatingFileHandler whose failed rollover is not a logging error.
+
+    Rotation renames the live log file, and on Windows that rename fails with
+    WinError 32 for as long as any other process holds the file open (an
+    antivirus scanner, a search indexer, a ``tail``). The stock handler then
+    prints a "--- Logging error ---" traceback to stderr for every record and
+    writes nothing more to the file: each emit re-attempts the rename, fails
+    again, and drops the record (#405).
+
+    Here a failed rollover keeps the current file open for writing instead,
+    warns once on stderr, and waits a minute before trying to rotate again.
+    The file can exceed ``maxBytes`` while the lock lasts; rotation resumes
+    at the first attempt after it is released.
+    """
+
+    _RETRY_SECONDS = 60.0
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._next_rollover_attempt = 0.0
+        self._rollover_warned = False
+
+    def shouldRollover(self, record: logging.LogRecord) -> int:  # noqa: N802 - stdlib name
+        if time.monotonic() < self._next_rollover_attempt:
+            return 0
+        return super().shouldRollover(record)
+
+    def doRollover(self) -> None:  # noqa: N802 - stdlib name
+        try:
+            super().doRollover()
+            self._next_rollover_attempt = 0.0
+        except OSError as exc:
+            self._next_rollover_attempt = time.monotonic() + self._RETRY_SECONDS
+            if not self._rollover_warned:
+                self._rollover_warned = True
+                sys.stderr.write(
+                    f"kicad_interface: log rotation of {self.baseFilename} failed "
+                    f"({exc}); continuing in the current file\n"
+                )
+            # The base class closed the stream before the rename attempt;
+            # reopen it (append mode) so the record that triggered the
+            # rollover, and every later one, still lands in the file.
+            if self.stream is None and not self.delay:
+                self.stream = self._open()
+
+
 # Configure logging.
 # The file handler rotates (default 10 MB x 3 backups) so the log can never
 # grow without bound (issue #181); the level honors the environment instead of
@@ -106,9 +155,7 @@ try:
     # Best-effort sweep of logs from dead processes so per-PID naming cannot
     # accumulate without bound (the concern that motivated #181's rotation).
     try:
-        import time as _time
-
-        _cutoff = _time.time() - 7 * 24 * 3600
+        _cutoff = time.time() - 7 * 24 * 3600
         for _old_log in log_dir.glob("kicad_interface-*.log*"):
             if _old_log.stat().st_mtime < _cutoff:
                 _old_log.unlink()
@@ -117,7 +164,7 @@ try:
     max_log_bytes = _parse_positive_int_env("KICAD_MCP_LOG_MAX_BYTES", 10 * 1024 * 1024)
     backup_count = _parse_positive_int_env("KICAD_MCP_LOG_BACKUP_COUNT", 3)
     if max_log_bytes:
-        log_handler: logging.Handler = RotatingFileHandler(
+        log_handler: logging.Handler = _TolerantRotatingFileHandler(
             log_file,
             maxBytes=max_log_bytes,
             backupCount=backup_count,
@@ -6360,14 +6407,19 @@ def main() -> None:
                 # Parse command
                 logger.debug(f"Received input: {line.strip()}")
                 internal_request_id = None
+                rpc_request_id = None
+                is_jsonrpc = False
+                command_name: Optional[str] = None
                 command_data = json.loads(line)
 
                 # Check if this is JSON-RPC 2.0 format
                 if "jsonrpc" in command_data and command_data["jsonrpc"] == "2.0":
                     logger.info("Detected JSON-RPC 2.0 format message")
+                    is_jsonrpc = True
                     method = command_data.get("method")
                     params = command_data.get("params", {})
                     request_id = command_data.get("id")
+                    rpc_request_id = request_id
 
                     # Handle MCP protocol methods
                     if method == "initialize":
@@ -6435,6 +6487,7 @@ def main() -> None:
                         logger.info("Handling MCP tools/call")
                         tool_name = params.get("name")
                         tool_params = params.get("arguments", {})
+                        command_name = tool_name
 
                         # Execute the command
                         result = interface.handle_command(tool_name, tool_params)
@@ -6490,6 +6543,7 @@ def main() -> None:
                     command = command_data.get("command")
                     params = command_data.get("params", {})
                     internal_request_id = command_data.get("requestId")
+                    command_name = command
 
                     if not command:
                         logger.error("Missing command field")
@@ -6516,11 +6570,47 @@ def main() -> None:
                 }
                 _write_response(_response_fd, response)
 
+            except Exception as e:
+                # One bad request must not take the worker down (#405).
+                # Errors raised inside a handler are already answered by
+                # handle_command; what reaches here escaped while the
+                # response was being built or written -- a result value
+                # json.dumps rejects, a request whose JSON is valid but is not
+                # an object -- and used to fall through to the sys.exit(1)
+                # below, failing every later call with "Python process for
+                # KiCAD scripting is not running".
+                logger.error(
+                    f"Unhandled error while processing {command_name or 'request'}: "
+                    f"{e}\n{traceback.format_exc()}"
+                )
+                what = f"command {command_name!r}" if command_name else "request"
+                message = f"Internal error while processing {what}: {type(e).__name__}: {e}"
+                if is_jsonrpc:
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": rpc_request_id,
+                        "error": {"code": -32603, "message": message},
+                    }
+                else:
+                    response = _attach_internal_request_id(
+                        {
+                            "success": False,
+                            "message": message,
+                            "errorDetails": str(e),
+                        },
+                        internal_request_id,
+                    )
+                # If this write fails as well, the response channel itself is
+                # broken (the host is gone) and the outer handler exits.
+                _write_response(_response_fd, response)
+
     except KeyboardInterrupt:
         logger.info("KiCAD interface stopped")
         sys.exit(0)
 
     except Exception as e:
+        # Only failures outside a single request reach here now: stdin
+        # itself failing, or the response channel being unwritable.
         logger.error(f"Unexpected error: {str(e)}\n{traceback.format_exc()}")
         sys.exit(1)
 

@@ -227,6 +227,25 @@ All notable changes to the KiCAD MCP Server project are documented here.
   filtered to the moved unit, and the part's other units count as stationary,
   so their wiring is left where it is.
 
+- **One bad command no longer kills the Python worker for the rest of the
+  session** (#405, reported by @joseluu). The worker's stdin loop caught only
+  invalid JSON per request. Anything else that escaped while a response was
+  being built or written (a handler result holding a value the JSON encoder
+  rejects, a request whose JSON is valid but is not an object) fell through
+  to the outer handler, which exited with code 1; every later tool call then
+  failed with "Python process for KiCAD scripting is not running" until the
+  server was restarted. The loop now answers such a request with an error
+  frame that still carries its request id (a JSON-RPC error for JSON-RPC
+  requests) and keeps serving.
+
+  The same report showed log rotation failing on Windows for two days: the
+  rename that `RotatingFileHandler` performs raises WinError 32 while any
+  other process holds the file open, and the stock handler then drops every
+  record behind a "--- Logging error ---" traceback. Per-process log files
+  (2.7.0, #373) removed the collision between sibling servers; the handler
+  now also treats a failed rollover as best effort, keeps writing to the
+  current file, warns once on stderr, and retries a minute later.
+
 ### Tooling
 
 - **Documentation trued up to the shipped server, and the tool inventory is now
