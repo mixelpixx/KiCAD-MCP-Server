@@ -769,10 +769,14 @@ class TestTransformLocalPoint:
         assert y == pytest.approx(-2.0)
 
     def test_rotation_90(self) -> None:
-        # ly=0 negated is still 0, then rotate lx=1 by 90°
+        # A library point (px, py) on a symbol rotated 90 degrees lands at
+        # (x - py, y - px): eeschema rotates screen-CCW in y-down space. This
+        # used to expect (0, 1), the math-CCW direction, which is what the
+        # old local transform produced (#404); the netlist-verified value is
+        # (0, -1). See tests/test_issue_404_pin_transform.py.
         x, y = _transform_local_point(1.0, 0.0, 0.0, 0.0, 90, False, False)
         assert x == pytest.approx(0.0, abs=1e-9)
-        assert y == pytest.approx(1.0, abs=1e-9)
+        assert y == pytest.approx(-1.0, abs=1e-9)
 
 
 # ===================================================================
