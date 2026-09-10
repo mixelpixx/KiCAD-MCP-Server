@@ -662,10 +662,14 @@ class DynamicSymbolLoader:
         symbol_name: str,
     ) -> dict:
         """
-        Return {prop_name: (dx, dy, text_angle, effects_str)} from the lib_symbols
-        section of the schematic (which must already have the symbol injected).
+        Return {prop_name: (dx, dy, text_angle, effects_str, hidden)} from the
+        lib_symbols section of the schematic (which must already have the symbol
+        injected).
         effects_str is the full '(effects ...)' string to be reused in the placed
-        instance so that justify, font size, hide etc. are preserved.
+        instance so that justify, font size etc. are preserved; ``hidden`` carries
+        the library's field visibility separately, because the hide marker is
+        stripped out of effects_str (KiCad 10 records visibility as a top-level
+        ``(hide yes)`` on the property, not inside ``(effects ...)``).
         Returns an empty dict on failure.
         """
         try:
@@ -709,16 +713,28 @@ class DynamicSymbolLoader:
                 eff_pos = prop_block.find("(effects")
                 if eff_pos != -1:
                     effects_str = self._extract_paren_block(prop_block, eff_pos)
-                    # Strip (hide ...) sub-expressions — visibility will be set
-                    # separately by the caller
+                    # Strip (hide ...) sub-expressions — visibility travels
+                    # separately in the `hidden` flag below
                     effects_str = re.sub(r"\s*\(hide\s+[^)]+\)", "", effects_str)
                     effects_str = effects_str.strip()
                 else:
                     effects_str = "(effects (font (size 1.27 1.27)))"
 
+                # Library field visibility. Both spellings occur in the wild:
+                # KiCad 10 writes a top-level (hide yes) on the property, older
+                # libraries put `hide` (bare token or parenthesised) inside
+                # (effects ...). Either means "don't draw this field".
+                # Blank the quoted values first: a field whose *value* contains
+                # the word "hide" must not be mistaken for a hidden field.
+                prop_tokens = re.sub(QUOTED_VALUE, '""', prop_block)
+                hidden = bool(
+                    re.search(r"\(hide\s+yes\)", prop_tokens)
+                    or re.search(r"\s+hide(?=[\s)])", prop_tokens)
+                )
+
                 # Only store the first occurrence (top-level lib property, not sub-symbol)
                 if name not in result:
-                    result[name] = (dx, dy, angle, effects_str)
+                    result[name] = (dx, dy, angle, effects_str, hidden)
 
                 search_pos = abs_start + 1
 
@@ -1009,19 +1025,26 @@ class DynamicSymbolLoader:
         def _prop_at(
             name: str, fallback_dx: float, fallback_dy: float, fallback_angle: float = 0
         ) -> tuple:
-            """Return (abs_x, abs_y, text_angle, effects_str) for a property."""
+            """Return (abs_x, abs_y, text_angle, effects_str, hidden) for a property."""
             if name in lib_props:
-                dx, dy, text_ang, eff = lib_props[name]
+                dx, dy, text_ang, eff, hidden = lib_props[name]
             else:
                 dx, dy, text_ang, eff = fallback_dx, fallback_dy, fallback_angle, _DEFAULT_EFFECTS
+                hidden = False
             rdx, rdy = self._rotate_offset(dx, dy, angle)
-            return round(x + rdx, 3), round(y + rdy, 3), text_ang, eff
+            return round(x + rdx, 3), round(y + rdy, 3), text_ang, eff, hidden
 
-        ref_x, ref_y, ref_a, ref_eff = _prop_at("Reference", 2.032, 0, 0)
-        val_x, val_y, val_a, val_eff = _prop_at("Value", 0, 2.54, 0)
-        fp_x, fp_y, fp_a, fp_eff = _prop_at("Footprint", 0, 0, 0)
-        ds_x, ds_y, ds_a, ds_eff = _prop_at("Datasheet", 0, 0, 0)
-        desc_x, desc_y, desc_a, desc_eff = _prop_at("Description", 0, 0, 0)
+        # Reference/Value inherit the library's visibility. Power symbols
+        # (power:GND, power:+3V3, …) hide Reference by convention — the #PWR101
+        # designators are meaningless to a reader — and losing that flag on
+        # placement printed one stray designator beside every ground symbol.
+        # Footprint/Datasheet/Description stay hidden unconditionally, matching
+        # what eeschema writes on placement.
+        ref_x, ref_y, ref_a, ref_eff, ref_hide = _prop_at("Reference", 2.032, 0, 0)
+        val_x, val_y, val_a, val_eff, val_hide = _prop_at("Value", 0, 2.54, 0)
+        fp_x, fp_y, fp_a, fp_eff, _ = _prop_at("Footprint", 0, 0, 0)
+        ds_x, ds_y, ds_a, ds_eff, _ = _prop_at("Datasheet", 0, 0, 0)
+        desc_x, desc_y, desc_a, desc_eff, _ = _prop_at("Description", 0, 0, 0)
 
         def _fmt(n: float) -> str:
             """Format a coordinate the way KiCad does: integral values without a
@@ -1097,8 +1120,8 @@ class DynamicSymbolLoader:
 
         properties_str = "\n".join(
             [
-                _property("Reference", reference, ref_x, ref_y, ref_a, ref_eff, False),
-                _property("Value", value or symbol_name, val_x, val_y, val_a, val_eff, False),
+                _property("Reference", reference, ref_x, ref_y, ref_a, ref_eff, ref_hide),
+                _property("Value", value or symbol_name, val_x, val_y, val_a, val_eff, val_hide),
                 _property("Footprint", footprint, fp_x, fp_y, fp_a, fp_eff, True),
                 _property("Datasheet", ds_val, ds_x, ds_y, ds_a, ds_eff, True),
                 _property("Description", desc_val, desc_x, desc_y, desc_a, desc_eff, True),

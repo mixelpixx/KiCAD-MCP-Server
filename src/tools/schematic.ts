@@ -153,8 +153,21 @@ To remove a footprint from a PCB, use delete_component instead.`,
           "Also delete net labels sitting on the deleted component's pin positions, " +
             "unless still attached to a wire or another component's pin (default false)",
         ),
+      unit: z
+        .number()
+        .int()
+        .optional()
+        .describe(
+          "Unit of a multi-unit part (1=A, 2=B, …) to remove. Every unit shares one " +
+            "reference, so without this ALL units of the part are deleted.",
+        ),
     },
-    async (args: { schematicPath: string; reference: string; deleteAttachedLabels?: boolean }) => {
+    async (args: {
+      schematicPath: string;
+      reference: string;
+      deleteAttachedLabels?: boolean;
+      unit?: number;
+    }) => {
       const result = await callKicadScript("delete_schematic_component", args);
       if (result.success) {
         const labelNote =
@@ -610,7 +623,14 @@ edit_schematic_component and set its value to an empty string.`,
         .enum(["label", "global_label", "hierarchical_label"])
         .optional()
         .describe("Label type (default: label)"),
-      orientation: z.number().optional().describe("Rotation angle 0/90/180/270 (default: 0)"),
+      orientation: z
+        .number()
+        .optional()
+        .describe(
+          "Rotation angle 0/90/180/270. Omit it when snapping to a pin: the label " +
+            "is then oriented along the pin's outward direction so the text runs " +
+            "away from the symbol body instead of over it. Defaults to 0 otherwise.",
+        ),
     },
     async (args: {
       schematicPath: string;
@@ -1099,7 +1119,7 @@ edit_schematic_component and set its value to an empty string.`,
   // Move a placed symbol, dragging connected wires
   server.tool(
     "move_schematic_component",
-    "Move a placed symbol to a new position in the schematic. By default (preserveWires=true) wire endpoints touching the component's pins are stretched to follow the new position.",
+    "Move a placed symbol to a new position in the schematic. By default (preserveWires=true) wire endpoints touching the component's pins are stretched to follow the new position, no-connect flags and net labels on those pins come along, and bends left diagonal by the stretch are squared up again. For a multi-unit part pass unit to say which placement to move.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       reference: z.string().describe("Reference designator (e.g., R1, U1)"),
@@ -1109,29 +1129,59 @@ edit_schematic_component and set its value to an empty string.`,
       preserveWires: z
         .boolean()
         .optional()
-        .describe("Stretch connected wire endpoints to follow the move (default true)"),
+        .describe(
+          "Stretch connected wire endpoints to follow the move, carrying the " +
+            "attached net labels, no-connect flags and wire bends along so the " +
+            "routing stays orthogonal (default true)",
+        ),
+      straightenWires: z
+        .boolean()
+        .optional()
+        .describe(
+          "Square up wire bends that the stretch turned diagonal, by carrying " +
+            "the neighbouring corner along with the pin (default true). Set false " +
+            "to leave stretched segments exactly as the drag left them.",
+        ),
+      unit: z
+        .number()
+        .int()
+        .optional()
+        .describe(
+          "Unit of a multi-unit part (1=A, 2=B, …). Every unit of a part shares one reference, so without this the tool acts on whichever placement comes first in the file. Omit for single-unit parts.",
+        ),
     },
     async (args: {
       schematicPath: string;
       reference: string;
       position: { x: number; y: number };
       preserveWires?: boolean;
+      straightenWires?: boolean;
+      unit?: number;
     }) => {
       const result = await callKicadScript("move_schematic_component", args);
       if (result.success) {
         const moved = result.wiresMoved ?? 0;
         const removed = result.wiresRemoved ?? 0;
         const labels = result.labelsMoved ?? 0;
+        const noConnects = result.noConnectsMoved ?? 0;
+        const straightened = result.wiresStraightened ?? 0;
+        const diagonal = result.wiresLeftDiagonal ?? 0;
         return {
           content: [
             {
               type: "text",
               text:
-                `Moved ${args.reference} from (${result.oldPosition.x}, ${result.oldPosition.y}) ` +
+                `Moved ${args.reference}${args.unit ? ` unit ${args.unit}` : ""} ` +
+                `from (${result.oldPosition.x}, ${result.oldPosition.y}) ` +
                 `to (${result.newPosition.x}, ${result.newPosition.y})` +
                 (moved > 0 ? `, ${moved} wire endpoint(s) updated` : "") +
                 (removed > 0 ? `, ${removed} zero-length wire(s) removed` : "") +
-                (labels > 0 ? `, ${labels} net label(s) moved to stay attached` : ""),
+                (labels > 0 ? `, ${labels} net label(s) moved to stay attached` : "") +
+                (noConnects > 0 ? `, ${noConnects} no-connect flag(s) moved` : "") +
+                (straightened > 0 ? `, ${straightened} wire bend(s) squared up` : "") +
+                (diagonal > 0
+                  ? `, ${diagonal} segment(s) left diagonal (their far end is held by a junction, a fork, or another component's pin)`
+                  : ""),
             },
           ],
         };
@@ -1151,7 +1201,7 @@ edit_schematic_component and set its value to an empty string.`,
   // Rotate schematic component
   server.tool(
     "rotate_schematic_component",
-    "Rotate a placed symbol in the schematic.",
+    "Rotate a placed symbol in the schematic. For a multi-unit part pass unit to say which placement to rotate.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       reference: z.string().describe("Reference designator (e.g., R1, U1)"),
@@ -1163,25 +1213,42 @@ edit_schematic_component and set its value to an empty string.`,
             "symbol to 90° regardless of its current angle (unlike KiCad's UI 'R' key).",
         ),
       mirror: z.enum(["x", "y"]).optional().describe("Optional mirror axis"),
+      straightenWires: z
+        .boolean()
+        .optional()
+        .describe("Square up wire bends that the rotation turned diagonal (default true)."),
+      unit: z
+        .number()
+        .int()
+        .optional()
+        .describe(
+          "Unit of a multi-unit part (1=A, 2=B, …). Every unit of a part shares one reference, so without this the tool acts on whichever placement comes first in the file. Omit for single-unit parts.",
+        ),
     },
     async (args: {
       schematicPath: string;
       reference: string;
       angle: number;
       mirror?: "x" | "y";
+      straightenWires?: boolean;
+      unit?: number;
     }) => {
       const result = await callKicadScript("rotate_schematic_component", args);
       if (result.success) {
         const moved = result.wiresMoved ?? 0;
         const labels = result.labelsMoved ?? 0;
+        const noConnects = result.noConnectsMoved ?? 0;
+        const straightened = result.wiresStraightened ?? 0;
         return {
           content: [
             {
               type: "text",
               text:
-                `Rotated ${args.reference} to ${args.angle}°${args.mirror ? ` (mirrored ${args.mirror})` : ""}` +
+                `Rotated ${args.reference}${args.unit ? ` unit ${args.unit}` : ""} to ${args.angle}°${args.mirror ? ` (mirrored ${args.mirror})` : ""}` +
                 (moved > 0 ? `, ${moved} wire endpoint(s) updated` : "") +
-                (labels > 0 ? `, ${labels} net label(s) moved to stay attached` : ""),
+                (labels > 0 ? `, ${labels} net label(s) moved to stay attached` : "") +
+                (noConnects > 0 ? `, ${noConnects} no-connect flag(s) moved` : "") +
+                (straightened > 0 ? `, ${straightened} wire bend(s) squared up` : ""),
             },
           ],
         };

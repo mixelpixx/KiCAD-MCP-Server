@@ -72,6 +72,11 @@ All notable changes to the KiCAD MCP Server project are documented here.
   remove the override and revert to the automatic/class color. Cosmetic
   only — does not affect routing or design rules.
 
+- **`batch_add_components` accepts `unit`.** `add_schematic_component` had it,
+  the batch did not, so a five-unit FPGA had to be placed one call per unit —
+  the round-trips the batch exists to avoid. Each entry now names its unit;
+  entries sharing a reference are the units of one part.
+
 ### Bug Fixes
 
 - **A missing kicad-skip no longer kills every tool at startup** (#389, @AmirF194).
@@ -172,6 +177,55 @@ All notable changes to the KiCAD MCP Server project are documented here.
   and the Python handler never read them, so every symbol landed unrotated and
   callers had to follow up with `rotate_schematic_component`; both are read
   now. The escaping half of #351 had already landed in #354.
+
+- **Placed symbols lost the library's field visibility.** `Reference` and
+  `Value` were written visible unconditionally, ignoring the `(hide yes)` the
+  library symbol carries. Power symbols hide `Reference` by convention — a
+  `#PWR101` designator tells a reader nothing — so every ground and rail symbol
+  placed through the API printed one. A sheet with 26 grounds came out with 26
+  stray designators over the wiring, and the only way back was hand-editing the
+  file. Visibility is now read from the injected `lib_symbols` definition
+  alongside the position and effects that were already inherited. The marker is
+  matched as a token, so a field whose _value_ contains the word "hide" is not
+  mistaken for a hidden field.
+
+- **Net labels snapped to a pin faced the wrong way.** KiCad pairs label angle
+  0/90 with `justify left` and 180/270 with `justify right`; a label anchored at
+  a pin endpoint has to run along the pin's outward direction or its text lies
+  across the symbol body. `add_schematic_net_label` defaulted to angle 0
+  regardless of the pin, and `batch_connect` went further and turned the label
+  around (a right-facing pin got 180), which put the net name over the body on
+  every right-hand pin of every part. Since `justify` is not separately
+  settable through the API, callers could not repair it without editing the
+  file. Both now orient the label along the pin's outward bearing, snapped to
+  the four orientations KiCad allows. An explicit `orientation` still wins.
+
+- **Dragging a component broke its routing and left its no-connect flags
+  behind.** Moving or rotating a symbol updated only the wire endpoint touching
+  each pin. A trace routed pin → corner → corner → pin is a chain of separate
+  two-point segments, so the first segment came out diagonal and its bend landed
+  off-grid — reported afterwards as `endpoint_off_grid` on a trace nobody
+  touched. A no-connect flag on a moved pin stayed at the old coordinate,
+  turning into a dangling flag plus an unconnected pin.
+
+  `move_schematic_component` and `rotate_schematic_component` now carry the
+  neighbouring bend along with the pin, cascading through the chain until the
+  routing settles, and move no-connect flags with the pins they mark. A corner
+  is left alone — and the segment left diagonal — when an explicit junction, a
+  fork of three or more segments, or another component's pin holds it: moving
+  those would drag unrelated wiring or tear a connection apart. The response
+  counts both outcomes (`wiresStraightened`, `wiresLeftDiagonal`,
+  `noConnectsMoved`); `straightenWires: false` opts out.
+
+- **A single unit of a multi-unit part could not be addressed.** Every unit of
+  a multi-unit symbol is placed as its own `(symbol ...)` block under one shared
+  reference, so `move_schematic_component`, `rotate_schematic_component` and
+  `delete_schematic_component` acted on whichever block came first in the file —
+  not predictable from the outside — and `delete` took the whole part. All three
+  now accept an optional `unit`. Naming a unit that is not placed reports which
+  ones are, rather than failing as "not found". Wire dragging follows: pins are
+  filtered to the moved unit, and the part's other units count as stationary,
+  so their wiring is left where it is.
 
 ### Tooling
 

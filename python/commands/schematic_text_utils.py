@@ -45,8 +45,14 @@ def _find_matching_paren(s: str, start: int) -> int:
     return -1
 
 
-def _find_placed_symbol_block(content: str, reference: str) -> Tuple[Optional[str], int, int]:
-    """Find the placed symbol block for *reference*. Returns (block, start, end) or (None, -1, -1)."""
+def _find_placed_symbol_block(
+    content: str, reference: str, unit: Optional[int] = None
+) -> Tuple[Optional[str], int, int]:
+    """Find the placed symbol block for *reference*. Returns (block, start, end) or (None, -1, -1).
+
+    ``unit`` picks one placement of a multi-unit part, whose units all carry the
+    same reference; without it the first block in file order wins.
+    """
     lib_sym_pos = content.find("(lib_symbols")
     lib_sym_end = _find_matching_paren(content, lib_sym_pos) if lib_sym_pos >= 0 else -1
     pattern = re.compile(r'\(symbol\s+\(lib_id\s+"')
@@ -65,7 +71,11 @@ def _find_placed_symbol_block(content: str, reference: str) -> Tuple[Optional[st
             continue
         block_text = content[pos : end + 1]
         if re.search(r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"', block_text):
-            return block_text, pos, end
+            if unit is None:
+                return block_text, pos, end
+            um = re.search(r"\(unit\s+(\d+)\)", block_text)
+            if um and int(um.group(1)) == int(unit):
+                return block_text, pos, end
         search_start = end + 1
     return None, -1, -1
 

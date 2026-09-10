@@ -341,6 +341,7 @@ class SchematicHandlersMixin:
             schematic_path = params.get("schematicPath")
             reference = params.get("reference")
             delete_attached_labels = bool(params.get("deleteAttachedLabels", False))
+            unit = params.get("unit")
 
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
@@ -400,10 +401,27 @@ class SchematicHandlersMixin:
                     r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"',
                     block_text,
                 ):
+                    # A multi-unit part places each unit as its own block under
+                    # the same reference, so deleting by reference alone takes
+                    # the whole part. `unit` narrows it to one placement.
+                    if unit is not None:
+                        um = re.search(r"\(unit\s+(\d+)\)", block_text)
+                        if not um or int(um.group(1)) != int(unit):
+                            search_start = end + 1
+                            continue
                     blocks_to_delete.append((pos, end))
                 search_start = end + 1
 
             if not blocks_to_delete:
+                if unit is not None:
+                    return {
+                        "success": False,
+                        "message": (
+                            f"Component '{reference}' has no unit {unit} in this schematic "
+                            "(note: this tool removes schematic symbols, use delete_component "
+                            "for PCB footprints)"
+                        ),
+                    }
                 return {
                     "success": False,
                     "message": f"Component '{reference}' not found in schematic (note: this tool removes schematic symbols, use delete_component for PCB footprints)",
@@ -415,7 +433,9 @@ class SchematicHandlersMixin:
             label_cleanup_warning: Optional[str] = None
             if delete_attached_labels:
                 try:
-                    target_pin_positions = self._pin_positions_for_reference(content, reference)
+                    target_pin_positions = self._pin_positions_for_reference(
+                        content, reference, unit
+                    )
                     if not target_pin_positions:
                         logger.warning(
                             "deleteAttachedLabels: no pin positions resolvable "
@@ -467,9 +487,14 @@ class SchematicHandlersMixin:
             return {"success": False, "message": str(e)}
 
     @staticmethod
-    def _pin_positions_for_reference(content: str, reference: str) -> List[Tuple[float, float]]:
+    def _pin_positions_for_reference(
+        content: str, reference: str, unit: Optional[int] = None
+    ) -> List[Tuple[float, float]]:
         """World (x, y) positions of every pin of every placed instance whose
         Reference property equals ``reference``.
+
+        ``unit`` restricts this to one placement of a multi-unit part, matching
+        the units the caller actually deleted.
 
         Builds a mini document of [lib_symbols] + [matching placed symbols]
         and reuses WireManager._collect_pin_positions, which applies the
@@ -479,6 +504,16 @@ class SchematicHandlersMixin:
         sym = sexpdata.Symbol("symbol")
         lib_symbols = sexpdata.Symbol("lib_symbols")
         prop = sexpdata.Symbol("property")
+        unit_sym = sexpdata.Symbol("unit")
+
+        def _instance_unit(instance: list) -> Optional[int]:
+            for part in instance[1:]:
+                if isinstance(part, list) and len(part) >= 2 and part[0] == unit_sym:
+                    try:
+                        return int(part[1])
+                    except (TypeError, ValueError):
+                        return None
+            return None
 
         data = sexpdata.loads(content)
         mini_doc: list = []
@@ -499,7 +534,8 @@ class SchematicHandlersMixin:
                     and str(part[1]) == "Reference"
                     and str(part[2]) == reference
                 ):
-                    mini_doc.append(item)
+                    if unit is None or _instance_unit(item) == int(unit):
+                        mini_doc.append(item)
                     break
         return WireManager._collect_pin_positions(mini_doc)
 
@@ -1313,7 +1349,8 @@ class SchematicHandlersMixin:
             net_name = params.get("netName")
             position = params.get("position")
             label_type = params.get("labelType", "label")
-            orientation = params.get("orientation", 0)
+            orientation_param = params.get("orientation")
+            orientation = 0 if orientation_param is None else orientation_param
             component_ref = params.get("componentRef")
             pin_number = params.get("pinNumber")
 
@@ -1346,6 +1383,26 @@ class SchematicHandlersMixin:
                 logger.info(
                     f"Snapped label '{net_name}' to pin {component_ref}/{pin_number} at {position}"
                 )
+
+                # Orient the label along the pin unless the caller asked for a
+                # specific angle. A label inherits its text direction from its
+                # angle: 0 grows right, 180 grows left (WireManager.add_label
+                # pairs the matching justify). Defaulting to 0 on a left-facing
+                # pin — or 180 on a right-facing one — lays the text back over
+                # the symbol body, and since `justify` is not separately
+                # settable, callers could not fix it without editing the file.
+                if orientation_param is None:
+                    pin_angle = locator.get_pin_angle(
+                        Path(schematic_path), component_ref, str(pin_number)
+                    )
+                    if pin_angle is not None:
+                        # Snap the outward bearing (0=right, 90=up, 180=left,
+                        # 270=down) to the four orientations KiCad allows.
+                        orientation = int(round(pin_angle / 90.0) * 90) % 360
+                        logger.info(
+                            f"Derived label orientation {orientation}° from pin "
+                            f"{component_ref}/{pin_number} outward angle {pin_angle:.1f}°"
+                        )
             elif position is None:
                 return {
                     "success": False,
@@ -1398,6 +1455,7 @@ class SchematicHandlersMixin:
                 "success": True,
                 "message": f"Added net label '{net_name}' at {position}",
                 "actual_position": position,
+                "orientation": orientation,
             }
             if snapped_to_pin:
                 response["snapped_to_pin"] = snapped_to_pin
@@ -1897,6 +1955,19 @@ class SchematicHandlersMixin:
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
 
+    @staticmethod
+    def _unit_not_found_message(sch_data: list, reference: str, unit: Any) -> str:
+        """Explain a failed symbol lookup, naming the units that do exist."""
+        from commands.wire_dragger import WireDragger
+
+        if unit is None:
+            return f"Component {reference} not found"
+        units = WireDragger.list_symbol_units(sch_data, reference)
+        if not units:
+            return f"Component {reference} not found"
+        placed = ", ".join(str(u) for u in sorted(set(units)))
+        return f"Component {reference} has no unit {unit}; units placed here: {placed}"
+
     def _handle_move_schematic_component(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Move a schematic component to a new position, dragging connected wires."""
         logger.info("Moving schematic component")
@@ -1909,6 +1980,8 @@ class SchematicHandlersMixin:
             new_x = position.get("x")
             new_y = position.get("y")
             preserve_wires = params.get("preserveWires", True)
+            straighten = params.get("straightenWires", True)
+            unit = params.get("unit")
 
             if not schematic_path or not reference:
                 return {
@@ -1925,9 +1998,12 @@ class SchematicHandlersMixin:
                 sch_data = sexpdata.loads(f.read())
 
             # Find symbol and record old position
-            found = WireDragger.find_symbol(sch_data, reference)
+            found = WireDragger.find_symbol(sch_data, reference, unit)
             if found is None:
-                return {"success": False, "message": f"Component {reference} not found"}
+                return {
+                    "success": False,
+                    "message": self._unit_not_found_message(sch_data, reference, unit),
+                }
             _, old_x, old_y = found[0], found[1], found[2]
             old_position = {"x": old_x, "y": old_y}
 
@@ -1935,7 +2011,7 @@ class SchematicHandlersMixin:
             if preserve_wires:
                 # Compute pin world positions before and after the move
                 pin_positions = WireDragger.compute_pin_positions(
-                    sch_data, reference, float(new_x), float(new_y)
+                    sch_data, reference, float(new_x), float(new_y), unit
                 )
                 # Build old→new coordinate map (deduplicate coincident pins)
                 old_to_new = {}
@@ -1949,17 +2025,29 @@ class SchematicHandlersMixin:
                         continue
                     old_to_new[old_xy] = new_xy
 
-                drag_summary = WireDragger.drag_wires(sch_data, old_to_new)
+                # Everything that must stay put while bends are straightened:
+                # the pins of every other symbol, plus this symbol's own pins at
+                # their new positions (they are the ends we just dragged).
+                anchors = set(
+                    WireDragger.get_all_stationary_pin_positions(sch_data, reference, unit).keys()
+                )
+                anchors.update(new_xy for (_old, new_xy) in pin_positions.values())
+
+                drag_summary = WireDragger.drag_wires(
+                    sch_data, old_to_new, anchor_points=anchors, straighten=straighten
+                )
 
                 # Synthesize wires for touching-pin connections after dragging,
                 # so drag_wires doesn't accidentally move and collapse the new wire.
                 wires_synthesized = WireDragger.synthesize_touching_pin_wires(
-                    sch_data, reference, pin_positions
+                    sch_data, reference, pin_positions, moved_unit=unit
                 )
                 drag_summary["wires_synthesized"] = wires_synthesized
 
             # Update symbol position
-            WireDragger.update_symbol_position(sch_data, reference, float(new_x), float(new_y))
+            WireDragger.update_symbol_position(
+                sch_data, reference, float(new_x), float(new_y), unit
+            )
 
             WireManager.sync_junctions(sch_data)
 
@@ -1970,10 +2058,14 @@ class SchematicHandlersMixin:
                 "success": True,
                 "oldPosition": old_position,
                 "newPosition": {"x": new_x, "y": new_y},
+                "unit": unit,
                 "wiresMoved": drag_summary.get("endpoints_moved", 0),
                 "wiresRemoved": drag_summary.get("wires_removed", 0),
                 "wiresSynthesized": drag_summary.get("wires_synthesized", 0),
                 "labelsMoved": drag_summary.get("labels_moved", 0),
+                "noConnectsMoved": drag_summary.get("no_connects_moved", 0),
+                "wiresStraightened": drag_summary.get("wires_straightened", 0),
+                "wiresLeftDiagonal": drag_summary.get("wires_left_diagonal", 0),
             }
 
         except Exception as e:
@@ -1994,6 +2086,8 @@ class SchematicHandlersMixin:
             reference = params.get("reference")
             angle = params.get("angle", 0)
             mirror = params.get("mirror")  # "x", "y", or None
+            straighten = params.get("straightenWires", True)
+            unit = params.get("unit")
 
             if not schematic_path or not reference:
                 return {
@@ -2004,9 +2098,12 @@ class SchematicHandlersMixin:
             with open(schematic_path, "r", encoding="utf-8") as f:
                 sch_data = _sexpdata.loads(f.read())
 
-            found = WireDragger.find_symbol(sch_data, reference)
+            found = WireDragger.find_symbol(sch_data, reference, unit)
             if found is None:
-                return {"success": False, "message": f"Component {reference} not found"}
+                return {
+                    "success": False,
+                    "message": self._unit_not_found_message(sch_data, reference, unit),
+                }
 
             # Determine new mirror state: explicit param overrides; None preserves existing
             _, _, _, _, _, old_mirror_x, old_mirror_y = found
@@ -2021,7 +2118,7 @@ class SchematicHandlersMixin:
 
             # Compute pin world positions before and after the transform
             pin_positions = WireDragger.compute_pin_positions_for_rotation(
-                sch_data, reference, float(angle), new_mirror_x, new_mirror_y
+                sch_data, reference, float(angle), new_mirror_x, new_mirror_y, unit
             )
 
             # Build old→new map (skip pins that don't move)
@@ -2038,11 +2135,17 @@ class SchematicHandlersMixin:
                 old_to_new[old_xy] = new_xy
 
             # Drag connected wires to follow pins
-            drag_summary = WireDragger.drag_wires(sch_data, old_to_new)
+            anchors = set(
+                WireDragger.get_all_stationary_pin_positions(sch_data, reference, unit).keys()
+            )
+            anchors.update(new_xy for (_old, new_xy) in pin_positions.values())
+            drag_summary = WireDragger.drag_wires(
+                sch_data, old_to_new, anchor_points=anchors, straighten=straighten
+            )
 
             # Update the symbol's rotation and mirror token in sexpdata
             WireDragger.update_symbol_rotation_mirror(
-                sch_data, reference, float(angle), effective_mirror
+                sch_data, reference, float(angle), effective_mirror, unit
             )
 
             WireManager.sync_junctions(sch_data)
@@ -2053,11 +2156,15 @@ class SchematicHandlersMixin:
             return {
                 "success": True,
                 "reference": reference,
+                "unit": unit,
                 "angle": angle,
                 "mirror": effective_mirror,
                 "wiresMoved": drag_summary.get("endpoints_moved", 0),
                 "wiresRemoved": drag_summary.get("wires_removed", 0),
                 "labelsMoved": drag_summary.get("labels_moved", 0),
+                "noConnectsMoved": drag_summary.get("no_connects_moved", 0),
+                "wiresStraightened": drag_summary.get("wires_straightened", 0),
+                "wiresLeftDiagonal": drag_summary.get("wires_left_diagonal", 0),
             }
 
         except Exception as e:
