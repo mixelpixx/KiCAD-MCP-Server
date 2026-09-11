@@ -186,8 +186,10 @@ class KiCADProcessManager:
             ]
         elif system == "Windows":
             candidates = [
+                Path("C:/Program Files/KiCad/10.0/bin/pcbnew.exe"),
                 Path("C:/Program Files/KiCad/9.0/bin/pcbnew.exe"),
                 Path("C:/Program Files/KiCad/8.0/bin/pcbnew.exe"),
+                Path("C:/Program Files (x86)/KiCad/10.0/bin/pcbnew.exe"),
                 Path("C:/Program Files (x86)/KiCad/9.0/bin/pcbnew.exe"),
             ]
         else:
