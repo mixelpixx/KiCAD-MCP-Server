@@ -54,6 +54,39 @@ def _find_java() -> Optional[str]:
     return None
 
 
+def _api_ok(result: Any) -> bool:
+    """True when a pcbnew Specctra export/import call reports success.
+
+    ``ExportSpecctraDSN``/``ImportSpecctraSES`` return a bool (``0`` on some older
+    builds). Because ``False == 0`` in Python, the previous
+    ``result is not True and result != 0`` check read a failed call as success.
+    """
+    return result is True or (type(result) is int and result == 0)
+
+
+def _strip_ses_placement(ses_text: str) -> str:
+    """Drop the SES ``(placement ...)`` block before import.
+
+    Freerouting never moves components, but ``ImportSpecctraSES`` looks up every
+    placed component by reference and aborts the whole import (returning False)
+    when one is missing — e.g. boards with duplicate ``REF**`` references, which
+    the DSN export renames ``REF**_1``, ``REF**_2``... Without the block the
+    routing itself imports normally.
+    """
+    start = ses_text.find("(placement")
+    if start < 0:
+        return ses_text
+    depth = 0
+    for i in range(start, len(ses_text)):
+        if ses_text[i] == "(":
+            depth += 1
+        elif ses_text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return ses_text[:start] + ses_text[i + 1 :]
+    return ses_text
+
+
 def _find_docker() -> Optional[str]:
     """Find docker executable on the system."""
     return shutil.which("docker") or shutil.which("podman")
@@ -567,7 +600,7 @@ class FreeroutingCommands:
         logger.info(f"Exporting DSN to {dsn_path}")
         try:
             result = pcbnew.ExportSpecctraDSN(self.board, dsn_path)
-            if result is not True and result != 0:
+            if not _api_ok(result):
                 return {
                     "success": False,
                     "message": "DSN export failed",
@@ -753,8 +786,12 @@ class FreeroutingCommands:
         # Step 3: Import the winning SES
         logger.info(f"Importing SES from {ses_path}")
         try:
+            with open(ses_path, "r", encoding="utf-8", errors="replace") as fh:
+                routed = _strip_ses_placement(fh.read())
+            with open(ses_path, "w", encoding="utf-8") as fh:
+                fh.write(routed)
             result = pcbnew.ImportSpecctraSES(self.board, ses_path)
-            if result is not True and result != 0:
+            if not _api_ok(result):
                 return {
                     "success": False,
                     "message": "SES import failed",
@@ -858,7 +895,7 @@ class FreeroutingCommands:
 
         try:
             result = pcbnew.ExportSpecctraDSN(self.board, output_path)
-            if result is not True and result != 0:
+            if not _api_ok(result):
                 return {
                     "success": False,
                     "message": "DSN export failed",
@@ -933,6 +970,8 @@ class FreeroutingCommands:
         # so pcbnew's exact-string lookup binds routed tracks to the real board
         # nets instead of creating phantom slashless duplicates (#246). Any
         # failure here falls back to importing the original file unchanged.
+        # The (placement ...) block is dropped too: an unmatched reference in it
+        # aborts the whole import.
         import_path = ses_path
         reconciled_temp: Optional[str] = None
         remapped: List[str] = []
@@ -941,25 +980,27 @@ class FreeroutingCommands:
             with open(ses_path, "r", encoding="utf-8") as f:
                 ses_text = f.read()
             fixed_text, remapped = _reconcile_ses_net_names(ses_text, board_net_names)
-            if remapped:
+            fixed_text = _strip_ses_placement(fixed_text)
+            if fixed_text != ses_text:
                 fd, reconciled_temp = tempfile.mkstemp(
                     suffix=".ses", prefix="reconciled-", dir=os.path.dirname(ses_path) or None
                 )
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write(fixed_text)
                 import_path = reconciled_temp
-                logger.info(
-                    "Reconciled %d SES net name(s) to their '/'-prefixed board nets: %s",
-                    len(remapped),
-                    sorted(set(remapped)),
-                )
+                if remapped:
+                    logger.info(
+                        "Reconciled %d SES net name(s) to their '/'-prefixed board nets: %s",
+                        len(remapped),
+                        sorted(set(remapped)),
+                    )
         except Exception as e:
             logger.warning(f"SES net-name reconciliation skipped ({e}); importing original file")
             import_path = ses_path
 
         try:
             result = pcbnew.ImportSpecctraSES(self.board, import_path)
-            if result is not True and result != 0:
+            if not _api_ok(result):
                 return {
                     "success": False,
                     "message": "SES import failed",

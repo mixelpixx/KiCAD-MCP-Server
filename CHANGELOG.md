@@ -79,6 +79,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`autoroute` / `import_ses` no longer report success when nothing was imported.**
+  `ImportSpecctraSES` and `ExportSpecctraDSN` return `False` on failure, and the
+  check `result is not True and result != 0` let that through because
+  `False == 0` in Python — the tool answered `success: true` with an unchanged
+  board. A cause that this used to hide is fixed alongside it: `ImportSpecctraSES`
+  aborts the whole import when the SES `(placement ...)` block names a reference
+  that is not on the board, which happens on any board with duplicate references
+  (`REF**` is renamed `REF**_1`, `REF**_2`... by the DSN export). Freerouting never
+  moves parts, so the block is now dropped before import.
 - **`edit_component`'s footprint swap now actually replaces the footprint** (#399,
   reported by @joseluu). Passing a new `footprint` rewrote the FPID library-ID
   string via `SetFPID` and stopped there, so the pads, courtyard and silkscreen
