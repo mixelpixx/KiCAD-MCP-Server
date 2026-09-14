@@ -66,6 +66,7 @@ def _jar_required_java(jar_path: str) -> int:
 
 
 def _docker_image(required_java: int) -> str:
+    """Temurin JRE image for the Java release the Freerouting JAR needs (never below 21)."""
     return f"eclipse-temurin:{max(required_java, DEFAULT_REQUIRED_JAVA)}-jre"
 
 
