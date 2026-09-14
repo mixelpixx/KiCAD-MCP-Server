@@ -10,6 +10,7 @@ Supports two execution modes:
 """
 
 import logging
+import math
 import os
 import re
 import shutil
@@ -52,6 +53,41 @@ def _find_java() -> Optional[str]:
         if os.path.isfile(candidate):
             return candidate
     return None
+
+
+_DSN_KEEPOUT_RE = re.compile(r'(\(keepout "[^"]*" \(polygon signal 0\s+)([-\d.\s]+?)(\))')
+
+
+def _grow_hole_keepouts(dsn_text: str, grow_um: float) -> str:
+    """Enlarge circular board-level keepouts (Edge.Cuts holes) by ``grow_um``.
+
+    KiCad exports internal Edge.Cuts circles (mounting holes, cut-outs) as plain
+    keepouts, which Freerouting clears by the ordinary track clearance only — so
+    routes land well inside the board's copper-to-edge clearance. Non-circular
+    keepouts are left untouched.
+    """
+    if grow_um <= 0:
+        return dsn_text
+
+    def _repl(m: "re.Match[str]") -> str:
+        nums = [float(v) for v in m.group(2).split()]
+        pts = list(zip(nums[0::2], nums[1::2]))
+        if len(set(pts)) < 12:  # KiCad polygonises circles finely; rectangles are 4-5 points
+            return m.group(0)
+        # bbox centre: vertex averages are skewed by uneven arc steps and the closing point
+        cx = (min(p[0] for p in pts) + max(p[0] for p in pts)) / 2
+        cy = (min(p[1] for p in pts) + max(p[1] for p in pts)) / 2
+        radii = [((x - cx) ** 2 + (y - cy) ** 2) ** 0.5 for x, y in pts]
+        if min(radii) <= 0 or max(radii) / min(radii) > 1.05:
+            return m.group(0)
+        r = sum(radii) / len(radii)
+        n = len(set(pts))
+        # a polygon's edges sit inside its vertices: size it so the apothem clears r + grow
+        k = (r + grow_um) / math.cos(math.pi / n) / r
+        grown = "  ".join(f"{cx + (x - cx) * k:.1f} {cy + (y - cy) * k:.1f}" for x, y in pts)
+        return f"{m.group(1)}{grown}{m.group(3)}"
+
+    return _DSN_KEEPOUT_RE.sub(_repl, dsn_text)
 
 
 def _find_docker() -> Optional[str]:
@@ -353,6 +389,24 @@ class FreeroutingCommands:
             logger.info(f"Applied project net classes to board: {report['applied']}")
         return report
 
+    def _apply_edge_clearance(self, dsn_path: str) -> None:
+        """Grow hole keepouts in the exported DSN to the board's copper-to-edge clearance."""
+        try:
+            ds = self.board.GetDesignSettings()
+            edge_um = ds.m_CopperEdgeClearance / 1000.0
+            with open(dsn_path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+            if not re.search(r"\(unit um\)", text):  # KiCad writes um; anything else: leave it
+                return
+            m = re.search(r"\(rule\s*\(width [\d.]+\)\s*\(clearance ([\d.]+)\)", text)
+            track_um = float(m.group(1)) if m else 0.0
+            grown = _grow_hole_keepouts(text, edge_um - track_um)
+            if grown != text:
+                with open(dsn_path, "w", encoding="utf-8") as fh:
+                    fh.write(grown)
+        except Exception as e:
+            logger.warning(f"Edge-clearance keepout adjustment skipped: {e}")
+
     def _resolve_execution_mode(self, jar_path: str) -> Dict[str, Any]:
         """Determine how to run Freerouting: direct or docker.
 
@@ -587,6 +641,7 @@ class FreeroutingCommands:
                 "errorDetails": f"Expected at: {dsn_path}",
             }
 
+        self._apply_edge_clearance(dsn_path)
         dsn_size = os.path.getsize(dsn_path)
         logger.info(f"DSN exported: {dsn_size} bytes")
 
@@ -871,6 +926,8 @@ class FreeroutingCommands:
                 "errorDetails": str(e),
             }
 
+        if os.path.isfile(output_path):
+            self._apply_edge_clearance(output_path)
         file_size = os.path.getsize(output_path) if os.path.isfile(output_path) else 0
         return {
             "success": True,

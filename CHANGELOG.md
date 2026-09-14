@@ -79,6 +79,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`autoroute` keeps tracks out of the copper-to-edge clearance around board holes.**
+  KiCad exports internal Edge.Cuts circles (mounting holes, round cut-outs) to the
+  Specctra DSN as plain keepouts, and Freerouting clears those by the ordinary track
+  clearance only — 0.2 mm against KiCad's default 0.5 mm edge clearance — so routed
+  tracks ran ~0.2 mm from mounting holes and DRC flagged every one (8 violations on a
+  190 x 37 mm test board; Freerouting's own `router.copper_to_edge_clearance_um` gives
+  a byte-identical result). `autoroute` and `export_dsn` now grow circular keepouts
+  by the difference, sized so the polygon's edges — not just its vertices — clear the
+  hole; other keepouts are left alone. Same board afterwards: 0 edge violations.
+
 - **`edit_component`'s footprint swap now actually replaces the footprint** (#399,
   reported by @joseluu). Passing a new `footprint` rewrote the FPID library-ID
   string via `SetFPID` and stopped there, so the pads, courtyard and silkscreen
