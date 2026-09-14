@@ -69,7 +69,7 @@ def _java_on_path(monkeypatch) -> None:
     reference to the original function and are unaffected."""
     import commands.freerouting as _fr
 
-    monkeypatch.setattr(_fr, "_find_java", lambda: "java")
+    monkeypatch.setattr(_fr, "_find_java", lambda *a, **k: "java")
 
 
 def _patch_direct_java() -> Any:
@@ -430,11 +430,40 @@ class TestAutoroute:
 
 class TestFindJava:
     def test_finds_via_which(self) -> None:
-        with patch(
-            "commands.freerouting.shutil.which",
-            return_value="/usr/bin/java",
+        with (
+            patch("commands.freerouting.shutil.which", return_value="/usr/bin/java"),
+            patch("commands.freerouting._java_version_ok", return_value=True),
         ):
             assert _find_java() == "/usr/bin/java"
+
+    def test_skips_unusable_stub_for_working_jdk(self, monkeypatch: Any) -> None:
+        # macOS: /usr/bin/java exists without a JRE; Homebrew's JDK is keg-only (not on PATH)
+        monkeypatch.delenv("JAVA_HOME", raising=False)
+        brew = "/opt/homebrew/opt/openjdk/bin/java"
+        with (
+            patch("commands.freerouting.shutil.which", return_value="/usr/bin/java"),
+            patch("os.path.isfile", side_effect=lambda p: p in ("/usr/bin/java", brew)),
+            patch("commands.freerouting._java_version_ok", side_effect=lambda p, r=21: p == brew),
+        ):
+            assert _find_java() == brew
+
+    def test_java_home_is_preferred(self, monkeypatch: Any) -> None:
+        monkeypatch.setenv("JAVA_HOME", "/opt/jdk25")
+        with (
+            patch("commands.freerouting.shutil.which", return_value="/usr/bin/java"),
+            patch("os.path.isfile", return_value=True),
+            patch("commands.freerouting._java_version_ok", return_value=True),
+        ):
+            assert _find_java() == "/opt/jdk25/bin/java"
+
+    def test_falls_back_to_first_found_when_none_is_new_enough(self, monkeypatch: Any) -> None:
+        monkeypatch.delenv("JAVA_HOME", raising=False)
+        with (
+            patch("commands.freerouting.shutil.which", return_value="/usr/bin/java"),
+            patch("os.path.isfile", return_value=False),
+            patch("commands.freerouting._java_version_ok", return_value=False),
+        ):
+            assert _find_java(25) == "/usr/bin/java"  # reported as "found but too old"
 
     def test_none_when_not_found(self) -> None:
         with (
@@ -512,9 +541,60 @@ class TestJavaVersionOk:
             mock_run.return_value = MagicMock(stderr='openjdk version "17.0.18"', stdout="")
             assert _java_version_ok("/usr/bin/java") is False
 
+    def test_java_21_too_old_for_required_25(self) -> None:
+        with patch("commands.freerouting.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stderr='openjdk version "21.0.1"', stdout="")
+            assert _java_version_ok("/usr/bin/java", 25) is False
+
     def test_java_error(self) -> None:
         with patch(
             "commands.freerouting.subprocess.run",
             side_effect=Exception("not found"),
         ):
             assert _java_version_ok("/usr/bin/java") is False
+
+
+def _fake_jar(path: Any, class_major: int, main: str = "app.freerouting.Freerouting") -> str:
+    import zipfile
+
+    with zipfile.ZipFile(path, "w") as jar:
+        jar.writestr("META-INF/MANIFEST.MF", f"Manifest-Version: 1.0\nMain-Class: {main}\n")
+        header = b"\xca\xfe\xba\xbe" + b"\x00\x00" + class_major.to_bytes(2, "big")
+        jar.writestr(main.replace(".", "/") + ".class", header + b"\x00" * 16)
+    return str(path)
+
+
+class TestJarRequiredJava:
+    def test_reads_java_25_from_freerouting_2_4_jar(self, tmp_path: Any) -> None:
+        from commands.freerouting import _jar_required_java
+
+        assert _jar_required_java(_fake_jar(tmp_path / "fr.jar", 69)) == 25
+
+    def test_java_21_jar(self, tmp_path: Any) -> None:
+        from commands.freerouting import _jar_required_java
+
+        assert _jar_required_java(_fake_jar(tmp_path / "fr.jar", 65)) == 21
+
+    def test_unreadable_jar_falls_back_to_21(self, tmp_path: Any) -> None:
+        from commands.freerouting import _jar_required_java
+
+        assert _jar_required_java(str(tmp_path / "missing.jar")) == 21
+        (tmp_path / "junk.jar").write_bytes(b"not a zip")
+        assert _jar_required_java(str(tmp_path / "junk.jar")) == 21
+
+    def test_docker_image_follows_required_java(self) -> None:
+        from commands.freerouting import _docker_image
+
+        assert _docker_image(25) == "eclipse-temurin:25-jre"
+        assert _docker_image(17) == "eclipse-temurin:21-jre"
+
+    def test_resolve_mode_reports_required_version(self, cmds: Any, tmp_path: Any) -> None:
+        jar = _fake_jar(tmp_path / "fr.jar", 69)
+        with (
+            patch("commands.freerouting._find_java", return_value="/usr/bin/java"),
+            patch("commands.freerouting._java_version_ok", return_value=False),
+            patch("commands.freerouting._docker_available", return_value=False),
+        ):
+            result = cmds._resolve_execution_mode(jar)
+        assert result["mode"] == "error"
+        assert "Java 25+" in result["error"]

@@ -79,6 +79,19 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Freerouting runs on the Java the JAR actually needs, and finds it on macOS.**
+  The runtime check accepted any Java 21+, but Freerouting 2.4.x is compiled for
+  Java 25, so a Java 21 install passed `check_freerouting` and then every run died
+  with `UnsupportedClassVersionError`. The required release is now read from the
+  JAR's class-file version; the direct-run check, the error messages and the Docker
+  fallback image (`eclipse-temurin:<version>-jre`) all follow it, and
+  `check_freerouting` reports it as `java.required_version` (`java_21_ok` is kept
+  and now means "meets the JAR's requirement"). Java lookup also no longer stops at
+  the first `java` it sees: on macOS `/usr/bin/java` is a stub that exists without
+  any JRE, and Homebrew's `openjdk` is keg-only, so a working JDK was never found.
+  `JAVA_HOME`, `PATH`, Homebrew's `openjdk`, `/usr/bin/java` and `/usr/local/bin/java`
+  are now tried in order, and the first one new enough wins.
+
 - **`edit_component`'s footprint swap now actually replaces the footprint** (#399,
   reported by @joseluu). Passing a new `footprint` rewrote the FPID library-ID
   string via `SetFPID` and stopped there, so the pads, courtyard and silkscreen

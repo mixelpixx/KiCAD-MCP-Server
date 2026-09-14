@@ -38,11 +38,16 @@ The default location is `~/.kicad-mcp/freerouting.jar`. You can override this wi
 
 ### Java Runtime (Option A -- Direct Execution)
 
-Freerouting 2.x requires Java 21 or higher.
+Freerouting 2.x requires Java 21 or higher, and newer releases need more — Freerouting
+2.4.x is built for **Java 25**. The integration reads the required version from the JAR
+itself, so `check_freerouting` reports it as `java.required_version`.
 
 ```bash
-# Ubuntu/Debian
+# Ubuntu/Debian (use the version check_freerouting reports)
 sudo apt install openjdk-21-jre
+
+# macOS (Homebrew's JDK is keg-only, not on PATH — it is still found automatically)
+brew install openjdk
 
 # Verify
 java -version
@@ -50,7 +55,7 @@ java -version
 
 ### Docker or Podman (Option B -- No Java Install Needed)
 
-If you do not have Java 21+ installed, the integration automatically falls back to Docker or Podman using the `eclipse-temurin:21-jre` image.
+If you do not have a suitable Java installed, the integration automatically falls back to Docker or Podman using the `eclipse-temurin:<required version>-jre` image (`eclipse-temurin:21-jre` for Freerouting 2.0–2.3, `eclipse-temurin:25-jre` for 2.4.x).
 
 ```bash
 # Pull the image (one-time)
@@ -64,7 +69,8 @@ podman pull eclipse-temurin:21-jre
 
 The autorouter checks for runtimes in this order:
 
-1. Local Java 21+ (direct execution, fastest)
+1. Local Java meeting the JAR's requirement (direct execution, fastest) — checked in
+   `JAVA_HOME`, `PATH`, Homebrew's `openjdk`, `/usr/bin/java`, `/usr/local/bin/java`
 2. Docker (container execution)
 3. Podman (container execution)
 
@@ -189,13 +195,13 @@ Set `FREEROUTING_JAR` in your MCP client configuration to avoid specifying the p
 
 ### "Neither Java 21+ nor Docker found"
 
-Install either Java 21+ or Docker/Podman. See the Prerequisites section above.
+The number is the version your Freerouting JAR requires. Install that Java or Docker/Podman. See the Prerequisites section above.
 
-### "Java found but version < 21"
+### "Java found but version < 21" (or < 25)
 
-Freerouting 2.x requires Java 21+. Either:
+The Freerouting JAR needs a newer Java than the one found. Either:
 
-- Upgrade your Java installation
+- Upgrade your Java installation, or point `JAVA_HOME` at a newer one
 - Install Docker as a fallback
 
 ### Timeout Errors
