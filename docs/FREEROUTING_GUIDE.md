@@ -119,6 +119,11 @@ Export the PCB to Specctra DSN format for manual routing workflows.
 | `boardPath` | string | No | Path to .kicad_pcb file (default: current board) |
 | `outputPath` | string | No | Output DSN file path (default: same directory as board) |
 
+Round holes and cut-outs on Edge.Cuts are written as keepouts enlarged to the board's
+copper-to-edge clearance. Freerouting otherwise keeps tracks away from them by the ordinary
+track clearance only, which puts routes inside the edge clearance around mounting holes.
+`autoroute` exports the DSN the same way.
+
 ### `import_ses`
 
 Import a routed Specctra SES file back into the PCB.
