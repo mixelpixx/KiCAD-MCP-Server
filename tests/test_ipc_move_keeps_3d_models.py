@@ -47,9 +47,10 @@ def test_kipy_orientation_setter_drops_models() -> None:
 @pytest.mark.parametrize("degrees", [0, 90, 180, -90])
 def test_helper_keeps_models(degrees: float) -> None:
     fp = _footprint_with_model()
-    _set_orientation_keep_models(fp, geometry.Angle.from_degrees(degrees))
+    angle = geometry.Angle.from_degrees(degrees)
+    _set_orientation_keep_models(fp, angle)
     assert _model_files(fp) == [MODEL]
-    assert fp.orientation.degrees == pytest.approx(geometry.Angle.from_degrees(degrees).normalize180().degrees)
+    assert fp.orientation.degrees == pytest.approx(angle.normalize180().degrees)
 
 
 def test_move_component_with_rotation_pushes_models() -> None:
@@ -58,9 +59,9 @@ def test_move_component_with_rotation_pushes_models() -> None:
     board.get_footprints.return_value = [fp]
 
     api = IPCBoardAPI.__new__(IPCBoardAPI)
-    with patch.object(IPCBoardAPI, "_get_board", return_value=board), patch.object(
-        IPCBoardAPI, "_notify", create=True
-    ):
+    get_board = patch.object(IPCBoardAPI, "_get_board", return_value=board)
+    notify = patch.object(IPCBoardAPI, "_notify", create=True)
+    with get_board, notify:
         assert api.move_component("C12", 119.8, 80.0, rotation=180) is True
 
     (pushed,), _ = board.update_items.call_args
