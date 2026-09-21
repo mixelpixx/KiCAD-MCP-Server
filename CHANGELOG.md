@@ -79,6 +79,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **IPC `move_component` no longer strips 3D models when a rotation is passed.**
+  kipy's `FootprintInstance.orientation` setter (kicad-python 0.8.0) rotates the
+  footprint's fields, pads, text, zones and shapes, then rebuilds
+  `definition.items` from only those types — every `Footprint3DModel` is dropped,
+  even when the angle is unchanged. `move_component` pushed that instance back
+  with `update_items`, so each rotated move on a live board left the part with no
+  3D model. The orientation is now set through `_set_orientation_keep_models`,
+  which snapshots the models and re-attaches any the setter removed. A tripwire
+  test pins the upstream behaviour so the workaround can be dropped once kipy
+  fixes the setter.
 - **`edit_component`'s footprint swap now actually replaces the footprint** (#399,
   reported by @joseluu). Passing a new `footprint` rewrote the FPID library-ID
   string via `SetFPID` and stopped there, so the pads, courtyard and silkscreen

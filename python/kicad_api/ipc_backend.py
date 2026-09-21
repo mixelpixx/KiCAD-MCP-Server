@@ -40,6 +40,26 @@ MM_TO_NM = 1_000_000
 INCH_TO_NM = 25_400_000
 
 
+def _set_orientation_keep_models(fp: Any, angle: Any) -> None:
+    """Set a FootprintInstance's orientation without losing its 3D models.
+
+    kipy's ``FootprintInstance.orientation`` setter (kicad-python 0.8.0) rotates
+    the footprint's fields, pads, text, zones and shapes, then rebuilds
+    ``definition.items`` from only those types, so every ``Footprint3DModel``
+    is dropped — even when the angle is unchanged. Pushing that instance with
+    ``update_items`` then strips the models from the live board.
+    """
+    models = list(fp.definition.models)
+    fp.orientation = angle
+    if not models:
+        return
+    defn = fp.definition
+    present = {m.filename for m in defn.models}
+    for model in models:
+        if model.filename not in present:
+            defn.add_item(model)
+
+
 class IPCBackend(KiCADBackend):
     """
     KiCAD IPC API backend for real-time UI synchronization.
@@ -905,7 +925,7 @@ class IPCBoardAPI(BoardAPI):
             target_fp.position = Vector2.from_xy(from_mm(x), from_mm(y))
 
             if rotation is not None:
-                target_fp.orientation = Angle.from_degrees(rotation)
+                _set_orientation_keep_models(target_fp, Angle.from_degrees(rotation))
 
             # Apply changes
             commit = board.begin_commit()
