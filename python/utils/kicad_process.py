@@ -185,9 +185,17 @@ class KiCADProcessManager:
                 Path("/Applications/KiCad/pcbnew.app/Contents/MacOS/pcbnew"),
             ]
         elif system == "Windows":
-            candidates = [
+            from utils.kicad_roots import kicad_install_roots
+
+            # Every discovered install root first, newest version first: the
+            # registry, Program Files and custom roots such as C:\KiCad\<ver>
+            # (#286). The fixed locations stay as a last resort.
+            candidates = [root / "bin" / "pcbnew.exe" for root in kicad_install_roots()]
+            candidates += [
+                Path("C:/Program Files/KiCad/10.0/bin/pcbnew.exe"),
                 Path("C:/Program Files/KiCad/9.0/bin/pcbnew.exe"),
                 Path("C:/Program Files/KiCad/8.0/bin/pcbnew.exe"),
+                Path("C:/Program Files (x86)/KiCad/10.0/bin/pcbnew.exe"),
                 Path("C:/Program Files (x86)/KiCad/9.0/bin/pcbnew.exe"),
             ]
         else:

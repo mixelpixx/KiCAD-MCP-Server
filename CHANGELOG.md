@@ -79,6 +79,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`launch_kicad_ui` and `list_footprint_libraries` find KiCad 10 and
+  relocated installs on Windows** (#416, @DieterMayerOSS). Both kept their own
+  fixed Program Files lists that stopped at 9.0, so with KiCad 9 and 10 side by
+  side the launcher opened the KiCad 9 GUI while the server ran on KiCad 10,
+  footprint discovery read the 9.0 libraries, and an install under a custom root
+  such as `C:\KiCad\10.0` was not found at all. Both now consult the shared
+  install-root discovery (registry, Program Files and custom roots, from #286)
+  before the fixed locations, and the library listing lets the newest install
+  win a library-name clash.
 - **IPC `move_component` no longer strips 3D models when a rotation is passed**
   (#422, @Putpluto). kipy's `FootprintInstance.orientation` setter
   (kicad-python 0.7.1 and 0.8.0) rotates the footprint's fields, pads, text,
