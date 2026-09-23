@@ -101,6 +101,21 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Symbols placed on a linked sub-sheet get KiCad's hierarchical instance
+  path** (#423 and #424, @zerthimon). The instance-path builder treated any
+  schematic carrying `(sheet_instances ...)` as the root, and
+  `create_schematic` writes that block into every new file, so a part placed
+  on a sub-sheet created through the server got a one-level
+  `/<sub-sheet-uuid>` path instead of the `/<root-uuid>/<sheet-block-uuid>`
+  path KiCad writes. Sub-sheets of a root saved by KiCad fell back to one
+  level too, because the sheet-tree walk matched only the property spelling
+  `Sheet file` while KiCad writes `Sheetfile`. The hierarchy is now resolved
+  first, both spellings are accepted, and without a `.kicad_pro` every
+  unreferenced candidate root is tried until one reaches the sheet. On KiCad
+  10.0.5 a one-level path on a single-instance sheet still resolves through
+  the Reference field, so the netlist loss in the report did not reproduce
+  here. A sheet used more than once still gets only its first instance's
+  path (#428).
 - **`launch_kicad_ui` and `list_footprint_libraries` find KiCad 10 and
   relocated installs on Windows** (#416, @DieterMayerOSS). Both kept their own
   fixed Program Files lists that stopped at 9.0, so with KiCad 9 and 10 side by
