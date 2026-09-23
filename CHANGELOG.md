@@ -79,6 +79,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **IPC `place_component` places the library footprint again on KiCad 10**
+  (takes over #378 by @AlloyPlane). With the KiCad GUI open, placement went
+  through two calls that no longer exist in the form the code used:
+  `pcbnew.GetGlobalFootprintLib()`, which KiCad 10 removed, and
+  `get_open_documents()` without a document type, which kipy rejects. Both
+  failures were caught and logged, and the component fell through to the
+  placeholder path instead. Footprints are now resolved through the same
+  fp-lib-table parsing the file-based path uses, including the project's own
+  table, and the board file comes from the kipy board the call is bound to.
+  #378's hard-coded `D:\kicad` search paths, its extra command timeouts and its
+  `ping()` replacement were not carried over.
 - **`launch_kicad_ui` and `list_footprint_libraries` find KiCad 10 and
   relocated installs on Windows** (#416, @DieterMayerOSS). Both kept their own
   fixed Program Files lists that stopped at 9.0, so with KiCad 9 and 10 side by
