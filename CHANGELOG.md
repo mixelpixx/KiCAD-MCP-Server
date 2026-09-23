@@ -101,20 +101,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
-- **`list_schematic_nets` and `generate_netlist` no longer scale as
-  O(nets × sheet size)** — net connectivity was recomputed from scratch for
-  every net in the list: each per-net query re-parsed the schematic
-  s-expression tree (dozens of `sexpdata.loads` calls per net), rebuilt the
-  wire adjacency graph, and re-located every component pin through a fresh
-  `PinLocator`, whose caches died with it. On a flat 119-component, 44-net
-  schematic, `list_schematic_nets` took over 90 seconds. The per-sheet work is
-  now done once per request and shared across all nets
-  (`get_connections_for_nets`), `_load_sexp` actually caches the parsed tree
-  (keyed by file mtime and size, as its docstring always claimed), and
-  `PinLocator.get_all_symbol_pins` memoises per (schematic, reference). The
-  same schematic now lists in under 3 seconds, with identical results —
-  `get_connections_for_net` remains as a single-net wrapper for existing
-  callers.
+- **`list_schematic_nets` and `generate_netlist` no longer take minutes on a
+  large schematic** (takes over #394 by @markszente). Net connectivity was
+  recomputed from scratch for every net: each per-net query re-parsed the
+  schematic (dozens of `sexpdata.loads` calls per net), rebuilt the wire graph
+  and re-located every component pin through a fresh `PinLocator`. On a flat
+  119-component, 44-net schematic `list_schematic_nets` took over 90 seconds.
+  Nets are now resolved in one pass per sheet (`get_connections_for_nets`):
+  each sheet is parsed, wired and pin-located once per call and shared by every
+  net, and `get_connections_for_net` is a single-net wrapper over it. That
+  schematic now lists in under 3 seconds with identical results. The parse
+  cache and the per-symbol pin memo live for one call only, so an edit between
+  two tool calls is always seen. Netlist nets now come out sorted by name.
 - **Symbols placed on a linked sub-sheet get KiCad's hierarchical instance
   path** (#423 and #424, @zerthimon). The instance-path builder treated any
   schematic carrying `(sheet_instances ...)` as the root, and

@@ -1794,7 +1794,7 @@ class SchematicHandlersMixin:
             # once per net (which made this handler O(nets × sheet size) and
             # took minutes on large flat schematics).
             sorted_net_names = sorted(net_names)
-            locator = PinLocator()
+            locator = PinLocator(memoize_pins=True)  # this request only
             connections_by_net = get_connections_for_nets(
                 schematic, schematic_path, sorted_net_names, locator=locator
             )

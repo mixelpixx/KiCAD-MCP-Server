@@ -10,7 +10,6 @@ sub-sheet files and bridging nets via hierarchical labels / sheet pins.
 """
 
 import logging
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -29,28 +28,24 @@ def _to_iu(x_mm: float, y_mm: float) -> Tuple[int, int]:
     return (round(x_mm * _IU_PER_MM), round(y_mm * _IU_PER_MM))
 
 
-# path -> ((mtime_ns, size), parsed tree). Invalidated when the file changes
-# on disk, so repeated per-net/per-tool queries against the same schematic
-# don't re-read and re-parse it (sexpdata.loads on a multi-hundred-KB sheet
-# costs ~50 ms, and net tracing used to trigger it dozens of times per call).
-_SEXP_CACHE: Dict[str, Tuple[Tuple[int, int], list]] = {}
+def _load_sexp(schematic_path: str, cache: Optional[Dict[str, list]] = None) -> list:
+    """Parse a schematic file into its raw sexpdata tree.
 
-
-def _load_sexp(schematic_path: str) -> list:
-    """Load and cache the raw sexpdata tree for a schematic file.
-
-    Callers must treat the returned tree as read-only: it is shared across
-    all callers until the file's mtime/size changes.
+    With *cache*, each path is parsed once for the lifetime of that dict.
+    :func:`get_connections_for_nets` passes one dict per call, so every sheet is
+    parsed once per batch of nets (``sexpdata.loads`` on a multi-hundred-KB sheet
+    costs ~50 ms, and per-net tracing used to parse it dozens of times per net).
+    Nothing is cached across calls: an edit between two tool calls is always
+    seen, and a caller that modifies the tree it got back cannot corrupt what
+    the next call reads.
     """
     key = str(schematic_path)
-    st = os.stat(key)
-    stamp = (st.st_mtime_ns, st.st_size)
-    cached = _SEXP_CACHE.get(key)
-    if cached is not None and cached[0] == stamp:
-        return cached[1]
+    if cache is not None and key in cache:
+        return cache[key]
     with open(key, "r", encoding="utf-8") as f:
         sexp = sexpdata.loads(f.read())
-    _SEXP_CACHE[key] = (stamp, sexp)
+    if cache is not None:
+        cache[key] = sexp
     return sexp
 
 
@@ -811,16 +806,19 @@ def get_net_at_point(
 # ---------------------------------------------------------------------------
 
 
-def _discover_sub_sheets(schematic_path: str) -> List[str]:
+def _discover_sub_sheets(
+    schematic_path: str, sexp_cache: Optional[Dict[str, list]] = None
+) -> List[str]:
     """Recursively discover all sub-sheet .kicad_sch files referenced by the schematic.
 
     Returns a list of absolute paths to sub-sheet files (does NOT include the
-    top-level schematic_path itself).
+    top-level schematic_path itself). *sexp_cache* is the per-request parse
+    cache from :func:`get_connections_for_nets`, if any.
     """
     parent_dir = Path(schematic_path).parent
     result: List[str] = []
     try:
-        sexp = _load_sexp(schematic_path)
+        sexp = _load_sexp(schematic_path, sexp_cache)
     except Exception as e:
         logger.warning(f"Could not parse {schematic_path} for sub-sheets: {e}")
         return result
@@ -840,7 +838,7 @@ def _discover_sub_sheets(schematic_path: str) -> List[str]:
                 if sheet_path.exists():
                     abs_path = str(sheet_path.resolve())
                     result.append(abs_path)
-                    result.extend(_discover_sub_sheets(abs_path))
+                    result.extend(_discover_sub_sheets(abs_path, sexp_cache))
                 else:
                     logger.warning(f"Sub-sheet not found: {sheet_path}")
     return result
@@ -948,6 +946,7 @@ def _process_single_sheet_nets(
     schematic_path: str,
     net_names: List[str],
     locator: Optional[PinLocator] = None,
+    sexp_cache: Optional[Dict[str, list]] = None,
 ) -> Dict[str, List[Dict]]:
     """Find pins connected to each of *net_names* on a single schematic sheet.
 
@@ -966,7 +965,7 @@ def _process_single_sheet_nets(
         locator = PinLocator()
 
     try:
-        sexp = _load_sexp(schematic_path)
+        sexp = _load_sexp(schematic_path, sexp_cache)
     except Exception as e:
         logger.warning(f"Could not load sexp for {schematic_path}: {e}")
         return {net_name: [] for net_name in net_names}
@@ -1038,9 +1037,7 @@ def _process_single_sheet_nets(
         seen: Set[Tuple[str, str]] = set()
         for ref, pin_num, (ix, iy) in pin_index:
             on_net = (ix, iy) in net_points or any(
-                (ix + dx, iy + dy) in net_points
-                for dx in (-1, 0, 1)
-                for dy in (-1, 0, 1)
+                (ix + dx, iy + dy) in net_points for dx in (-1, 0, 1) for dy in (-1, 0, 1)
             )
             if on_net:
                 key = (ref, pin_num)
@@ -1078,12 +1075,14 @@ def get_connections_for_nets(
 
     Every sheet (including each sub-sheet) is loaded and scanned exactly once
     for the whole batch of nets — callers listing many nets should use this
-    instead of calling :func:`get_connections_for_net` in a loop.
+    instead of calling :func:`get_connections_for_net` in a loop. The parse
+    cache lives only for this call.
 
     Returns {net_name: [{"component": ref, "pin": pin_num}, ...]}.
     """
     if locator is None:
-        locator = PinLocator()
+        locator = PinLocator(memoize_pins=True)  # lives for this call only
+    sexp_cache: Dict[str, list] = {}
 
     seen: Dict[str, Set[Tuple[str, str]]] = {net_name: set() for net_name in net_names}
     results: Dict[str, List[Dict]] = {net_name: [] for net_name in net_names}
@@ -1096,15 +1095,15 @@ def get_connections_for_nets(
                     seen[net_name].add(key)
                     results[net_name].append(pin)
 
-    _collect(_process_single_sheet_nets(schematic, schematic_path, net_names, locator))
+    _collect(_process_single_sheet_nets(schematic, schematic_path, net_names, locator, sexp_cache))
 
-    sub_sheets = _discover_sub_sheets(schematic_path)
+    sub_sheets = _discover_sub_sheets(schematic_path, sexp_cache)
     for sub_path in sub_sheets:
         try:
             from commands.schematic import SchematicLoadError, SchematicManager
 
             sub_sch = SchematicManager.load_schematic(sub_path)
-            _collect(_process_single_sheet_nets(sub_sch, sub_path, net_names, locator))
+            _collect(_process_single_sheet_nets(sub_sch, sub_path, net_names, locator, sexp_cache))
         except SchematicLoadError:
             # A broken sub-sheet must fail the hierarchical traversal loudly
             # instead of silently omitting that sheet's pins from the net.
