@@ -12,7 +12,7 @@ import os
 import re
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from utils.sexpr_format import (
     QUOTED_VALUE,
@@ -791,33 +791,56 @@ class DynamicSymbolLoader:
         """Yield (sheet_block_uuid, sheet_file_rel) for each (sheet ...) in a schematic.
 
         Skips (sheet_instances ...) — its token has no whitespace after ``sheet``.
+        KiCad writes the file property as ``Sheetfile``; ``Sheet file`` (the GUI
+        label, and what older MCP builds emitted) is accepted too.
         """
         results: List[Tuple[str, str]] = []
         for m in re.finditer(r"\(sheet(?=\s)", content):
             block = self._extract_paren_block(content, m.start())
             um = re.search(r'\(uuid\s+"?([0-9a-fA-F-]+)"?\)', block)
-            fm = re.search(r'\(property\s+"Sheet file"\s+"([^"]+)"', block)
+            fm = re.search(r'\(property\s+"Sheet ?file"\s+"([^"]+)"', block)
             if um and fm:
                 results.append((um.group(1), fm.group(1).replace("\\", "/")))
         return results
 
-    def _find_root_schematic(self, target: Path) -> Optional[Path]:
-        """Find the project's root .kicad_sch (the one carrying (sheet_instances ...))."""
+    def _root_candidates(self, target: Path) -> List[Path]:
+        """Possible root .kicad_sch files for *target*'s project, most likely first.
+
+        The schematic named after a ``.kicad_pro`` in the same directory comes
+        first. After it come the schematics carrying ``(sheet_instances ...)``
+        that no other schematic references as a sub-sheet: ``create_schematic``
+        writes that block into every new file, so its presence alone does not
+        identify the root. Callers try the candidates in order and keep the first
+        one whose sheet tree actually reaches *target*, so a stray unlinked
+        schematic that sorts first cannot stand in for the real root.
+        """
+        candidates: List[Path] = []
         try:
             directory = target.parent
             for pro in sorted(directory.glob("*.kicad_pro")):
                 cand = directory / f"{pro.stem}.kicad_sch"
                 if cand.exists():
-                    return cand.resolve()
+                    candidates.append(cand.resolve())
+            referenced: Set[Path] = set()
+            bearing: List[Path] = []
             for cand in sorted(directory.glob("*.kicad_sch")):
                 try:
-                    if "(sheet_instances" in cand.read_text(encoding="utf-8"):
-                        return cand.resolve()
+                    text = cand.read_text(encoding="utf-8")
                 except Exception:
                     continue
+                for _, rel in self._iter_child_sheets(text):
+                    referenced.add((cand.parent / rel).resolve())
+                if "(sheet_instances" in text:
+                    bearing.append(cand.resolve())
+            candidates += [c for c in bearing if c not in referenced and c not in candidates]
         except Exception:
             pass
-        return None
+        return candidates
+
+    def _find_root_schematic(self, target: Path) -> Optional[Path]:
+        """The most likely root .kicad_sch for *target*'s project, or None."""
+        candidates = self._root_candidates(target)
+        return candidates[0] if candidates else None
 
     def _sheet_chain_to(self, root: Path, target: Path) -> List[str]:
         """Return the UUID chain [root_uuid, sheet_block_uuid, ...] from root to target.
@@ -879,24 +902,31 @@ class DynamicSymbolLoader:
     def _build_instance_path(self, schematic_path: Path) -> str:
         """Return the symbol instance path for symbols placed in ``schematic_path``.
 
-        - Root / flat schematic (carries (sheet_instances ...)): ``/<root-sheet-uuid>``
-          where the UUID is the schematic's own top-level (uuid ...).
+        - Root / flat schematic: ``/<root-sheet-uuid>`` where the UUID is the
+          schematic's own top-level (uuid ...).
         - Child sheet in a hierarchy: the chain of sheet-instance UUIDs from the root,
           ``/<root-uuid>/<sheet-block-uuid>[/...]``, reconstructed by walking the root
           project's sheet tree.
         - Unlinked child (no chain yet): one level using the sheet's own UUID;
           add_hierarchical_sheet -> fix_subsheet_instances repairs it once linked.
+
+        The hierarchy is resolved before any ``(sheet_instances ...)`` check:
+        ``create_schematic`` writes that block into every new file, so its
+        presence does not mean "this is the root", and treating a linked
+        sub-sheet as the root gave its parts a one-level path (#423). KiCad
+        writes the root's sheet-file property as ``Sheetfile``, which the chain
+        walk now also matches; before, a sub-sheet of a KiCad-saved root found
+        no chain and fell back to one level too.
+
+        A sheet instantiated more than once needs one path per instance; this
+        returns the first instance's path only.
         """
         try:
             target = Path(schematic_path).resolve()
             content = target.read_text(encoding="utf-8")
             this_uuid = self._read_root_uuid(content)
 
-            if "(sheet_instances" in content and this_uuid:
-                return f"/{this_uuid}"
-
-            root = self._find_root_schematic(target)
-            if root is not None:
+            for root in self._root_candidates(target):
                 chain = self._sheet_chain_to(root, target)
                 if chain:
                     return "/" + "/".join(chain)
