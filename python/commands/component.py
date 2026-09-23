@@ -501,18 +501,70 @@ class ComponentCommands(PlacementOptimizerCommands):
             if value:
                 module.SetValue(value)
             if footprint:
-                # For KiCAD 9.x compatibility, use SetFPID instead of SetFootprintName
                 # Parse footprint string (format: "Library:Footprint")
                 if ":" in footprint:
                     lib_name, fp_name = footprint.split(":", 1)
-                    fpid = pcbnew.LIB_ID(lib_name, fp_name)
-                    module.SetFPID(fpid)
+                    library_path = self.library_manager.get_library_path(lib_name)
                 else:
                     # If no library specified, keep existing library
                     current_fpid = module.GetFPID()
                     lib_name = current_fpid.GetLibNickname().GetUTF8()
-                    fpid = pcbnew.LIB_ID(lib_name, footprint)
-                    module.SetFPID(fpid)
+                    fp_name = footprint
+                    library_path = (
+                        self.library_manager.get_library_path(lib_name) if lib_name else None
+                    )
+
+                    if not library_path:
+                        # Empty nickname (footprint placed without a library, or an
+                        # imported board) or one the table no longer resolves: search
+                        # every library, same fallback place_component uses.
+                        fallback = self.library_manager.find_footprint(fp_name)
+                        if fallback:
+                            library_path, fp_name = fallback
+                            for nick, path in self.library_manager.libraries.items():
+                                if path == library_path:
+                                    lib_name = nick
+                                    break
+
+                if not library_path:
+                    return {
+                        "success": False,
+                        "message": "Library not found",
+                        "errorDetails": f"Could not find footprint library: {lib_name}",
+                    }
+
+                new_module = pcbnew.FootprintLoad(library_path, fp_name)
+                if not new_module:
+                    return {
+                        "success": False,
+                        "message": "Failed to load footprint",
+                        "errorDetails": f"Could not load footprint from {lib_name}:{fp_name}",
+                    }
+
+                # Replace the physical footprint (pads, courtyard, silkscreen, ...), not just
+                # the FPID string: mirrors KiCAD's own PCB_EDIT_FRAME::ExchangeFootprint(),
+                # preserving identity, placement and pad-to-net connectivity by pad number.
+                new_module.SetReference(module.GetReference())
+                new_module.SetValue(module.GetValue())
+                new_module.SetPosition(module.GetPosition())
+                new_module.SetOrientation(module.GetOrientation())
+                new_module.SetFPID(pcbnew.LIB_ID(lib_name, fp_name))
+                new_module.SetPath(module.GetPath())
+                new_module.SetAttributes(module.GetAttributes())
+                new_module.SetLocked(module.IsLocked())
+
+                old_nets = {pad.GetNumber(): pad.GetNet() for pad in module.Pads()}
+                for pad in new_module.Pads():
+                    net = old_nets.get(pad.GetNumber())
+                    if net is not None:
+                        pad.SetNet(net)
+
+                was_flipped = module.IsFlipped()
+                self.board.Add(new_module)
+                if was_flipped and not new_module.IsFlipped():
+                    new_module.Flip(new_module.GetPosition(), False)
+                delete_board_item(self.board, module)
+                module = new_module
 
             return {
                 "success": True,

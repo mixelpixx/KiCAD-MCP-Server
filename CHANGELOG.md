@@ -6,6 +6,28 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Tools
 
+- **GUI driver: drive the live KiCad GUI** (#333, @rossvonfange) — eleven tools
+  that reach what the IPC and file APIs cannot: menus, AUI toolbars, dialogs and
+  action-plugin buttons. `kicad_gui_tree` lists menus and toolbar tools by name,
+  `kicad_gui_click` activates one, `kicad_run_action_plugin` triggers an
+  External Plugins entry, `kicad_gui_wait_for` waits for a window,
+  `kicad_gui_screenshot` captures a frame, and three playbooks build on them
+  (`kicad_pcb_snapshot`, `kicad_reload_and_open_plugin`, `kicad_run_drc`, which
+  scrapes the DRC dialog's results). On Linux, `kicad_gui_tree_atspi` and
+  `kicad_gui_click_atspi` read the accessibility bus with no code inside KiCad.
+
+  It is opt-in twice: `install_gui_driver` deploys a small helper plugin into
+  KiCad's plugin directory (nothing is installed as a side effect), and the
+  helper opens its channel only when `KICAD_GUI_DRIVER_ENABLE=1` is set in
+  KiCad's environment. The channel is TCP on 127.0.0.1 only, and every request
+  must carry a per-session token the helper writes to a file in the user's
+  KiCad configuration directory (mode 0600 on POSIX; on Windows the file is
+  under `%APPDATA%`, whose profile ACL keeps other users out). Request lines are
+  capped at 64 KiB before the token is checked, and a screenshot path must be an
+  absolute `.png` in an existing directory. `kicad_gui_tree` marks destructive
+  menu items, but `kicad_gui_click` does not gate them: it runs whatever it is
+  asked to. Hardening follow-ups are tracked in #412.
+
 - **Digi-Key Product Information V4 integration** — `digikey_search_parts`,
   `digikey_check_library_availability` and `digikey_test_connection`. The server
   had six JLCPCB tools and nothing for Digi-Key, so every stock check, lifecycle
@@ -79,6 +101,95 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Symbols placed on a linked sub-sheet get KiCad's hierarchical instance
+  path** (#423 and #424, @zerthimon). The instance-path builder treated any
+  schematic carrying `(sheet_instances ...)` as the root, and
+  `create_schematic` writes that block into every new file, so a part placed
+  on a sub-sheet created through the server got a one-level
+  `/<sub-sheet-uuid>` path instead of the `/<root-uuid>/<sheet-block-uuid>`
+  path KiCad writes. Sub-sheets of a root saved by KiCad fell back to one
+  level too, because the sheet-tree walk matched only the property spelling
+  `Sheet file` while KiCad writes `Sheetfile`. The hierarchy is now resolved
+  first, both spellings are accepted, and without a `.kicad_pro` every
+  unreferenced candidate root is tried until one reaches the sheet. On KiCad
+  10.0.5 a one-level path on a single-instance sheet still resolves through
+  the Reference field, so the netlist loss in the report did not reproduce
+  here. A sheet used more than once still gets only its first instance's
+  path (#428).
+- **`launch_kicad_ui` and `list_footprint_libraries` find KiCad 10 and
+  relocated installs on Windows** (#416, @DieterMayerOSS). Both kept their own
+  fixed Program Files lists that stopped at 9.0, so with KiCad 9 and 10 side by
+  side the launcher opened the KiCad 9 GUI while the server ran on KiCad 10,
+  footprint discovery read the 9.0 libraries, and an install under a custom root
+  such as `C:\KiCad\10.0` was not found at all. Both now consult the shared
+  install-root discovery (registry, Program Files and custom roots, from #286)
+  before the fixed locations, and the library listing lets the newest install
+  win a library-name clash.
+- **IPC `move_component` no longer strips 3D models when a rotation is passed**
+  (#422, @Putpluto). kipy's `FootprintInstance.orientation` setter
+  (kicad-python 0.7.1 and 0.8.0) rotates the footprint's fields, pads, text,
+  zones and shapes, then rebuilds `definition.items` from only those types —
+  every `Footprint3DModel` is dropped, even when the angle is unchanged.
+  `move_component` (and `rotate_component`, which goes through it over IPC)
+  pushed that instance back with `update_items`, so each rotated move on a live
+  board left the part with no 3D model. The orientation is now set through
+  `_set_orientation_keep_models`, which re-attaches the models the setter
+  removed, and an unchanged angle is no longer assigned at all. Text boxes,
+  dimensions and barcodes inside a footprint are still dropped when the angle
+  really changes; that needs the upstream fix (kicad-python ca8af42f, not yet
+  released). A tripwire test skips with a pointer once an installed kipy
+  carries it.
+- **`autoroute` and `import_ses` no longer report success when nothing was
+  imported** (#417, @outstanda). `ImportSpecctraSES` and `ExportSpecctraDSN`
+  return `False` on failure, and the check `result is not True and result != 0`
+  let that through because `False == 0` in Python. Worse, a failed import has
+  already cleared the board's unlocked tracks in memory, and both tools then
+  saved that board and answered `success: true`. Failures are now reported,
+  nothing is saved, and the message says to reload the board before saving.
+  One cause this used to hide is fixed alongside: `ImportSpecctraSES` aborts
+  the whole import when the SES `(placement ...)` block names a reference that
+  is not on the board, which the reporter hit on KiCad 10.0.6 when the DSN
+  export renamed duplicate `REF**` references to `REF**_1`, `REF**_2`.
+  `autoroute` drops the placement block, since a headless run never moves
+  parts. `import_ses` drops only the entries whose reference is missing from
+  the board or not unique on it, so moves made in Freerouting's GUI still
+  apply.
+- **Freerouting runs on the Java the JAR actually needs, and finds it on macOS
+  and Windows** (#418, @outstanda).
+  The runtime check accepted any Java 21+, but Freerouting 2.4.x is compiled for
+  Java 25, so a Java 21 install passed `check_freerouting` and then every run died
+  with `UnsupportedClassVersionError`. The required release is now read from the
+  JAR's class-file version; the direct-run check, the error messages and the Docker
+  fallback image (`eclipse-temurin:<version>-jre`) all follow it, and
+  `check_freerouting` reports it as `java.required_version` (`java_21_ok` is kept
+  and now means "meets the JAR's requirement"). Java lookup also no longer stops at
+  the first `java` it sees: on macOS `/usr/bin/java` is a stub that exists without
+  any JRE, and Homebrew's `openjdk` is keg-only, so a working JDK was never found.
+  `JAVA_HOME`, `PATH`, Homebrew's `openjdk`, `/usr/bin/java` and `/usr/local/bin/java`
+  are now tried in order, and the first one new enough wins. `JAVA_HOME` is
+  resolved through PATHEXT, so `java.exe` under it is found on Windows too.
+- **`autoroute` keeps tracks out of the copper-to-edge clearance around board
+  holes** (#419, @outstanda).
+  KiCad exports internal Edge.Cuts circles (mounting holes, round cut-outs) to the
+  Specctra DSN as plain keepouts, and Freerouting clears those by the ordinary track
+  clearance only — 0.2 mm against KiCad's default 0.5 mm edge clearance — so routed
+  tracks ran ~0.2 mm from mounting holes and DRC flagged every one (8 violations on a
+  190 x 37 mm test board; Freerouting's own `router.copper_to_edge_clearance_um` gives
+  a byte-identical result). `autoroute` and `export_dsn` now grow circular keepouts
+  by the difference, sized so the polygon's edges — not just its vertices — clear the
+  hole; other keepouts are left alone. Same board afterwards: 0 edge violations.
+  The growth is measured against the default net class's clearance, so a net
+  class with a smaller clearance can still come slightly closer than the edge
+  clearance.
+- **`edit_component`'s footprint swap now actually replaces the footprint** (#399,
+  reported by @joseluu). Passing a new `footprint` rewrote the FPID library-ID
+  string via `SetFPID` and stopped there, so the pads, courtyard and silkscreen
+  stayed whatever the old footprint had. KiCad then reports `lib_footprint_mismatch`
+  plus unconnected pads once the pad counts differ. The handler now loads the new
+  footprint from the library and exchanges it in place, matching KiCad's own
+  `PCB_EDIT_FRAME::ExchangeFootprint()`: reference, value, position and orientation
+  carry over, and each new pad picks up the net of the old pad with the same
+  number.
 - **A missing kicad-skip no longer kills every tool at startup** (#389, @AmirF194).
   Six modules imported `from skip import Schematic` at their own top level.
   Two of them sit on the import chain `kicad_interface` -> `schematic_handlers`

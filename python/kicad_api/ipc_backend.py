@@ -40,6 +40,41 @@ MM_TO_NM = 1_000_000
 INCH_TO_NM = 25_400_000
 
 
+def _same_angle(a_deg: float, b_deg: float, tol: float = 1e-6) -> bool:
+    """True when two angles in degrees name the same orientation (mod 360)."""
+    delta = (a_deg - b_deg) % 360.0
+    return min(delta, 360.0 - delta) < tol
+
+
+def _set_orientation_keep_models(fp: Any, angle: Any) -> None:
+    """Set a FootprintInstance's orientation without losing its 3D models.
+
+    kipy's ``FootprintInstance.orientation`` setter (kicad-python 0.7.1 and
+    0.8.0) rotates the footprint's fields, pads, text, zones and shapes, then
+    rebuilds ``definition.items`` from only those types, so every
+    ``Footprint3DModel`` is dropped — even when the angle is unchanged. Pushing
+    that instance with ``update_items`` then strips the models from the live
+    board. Models carry no board-space geometry of their own, so re-attaching
+    them unrotated is exact.
+
+    Text boxes, dimensions and barcodes inside the footprint are dropped by the
+    same rebuild and cannot be restored this way (they would need rotating), so
+    an unchanged orientation is left alone rather than assigned. Upstream fixed
+    the setter in kicad-python ca8af42f (unreleased as of 2026-09-23).
+    """
+    if _same_angle(fp.orientation.degrees, angle.degrees):
+        return
+    models = list(fp.definition.models)
+    fp.orientation = angle
+    if not models:
+        return
+    defn = fp.definition
+    present = {m.filename for m in defn.models}
+    for model in models:
+        if model.filename not in present:
+            defn.add_item(model)
+
+
 class IPCBackend(KiCADBackend):
     """
     KiCAD IPC API backend for real-time UI synchronization.
@@ -905,7 +940,7 @@ class IPCBoardAPI(BoardAPI):
             target_fp.position = Vector2.from_xy(from_mm(x), from_mm(y))
 
             if rotation is not None:
-                target_fp.orientation = Angle.from_degrees(rotation)
+                _set_orientation_keep_models(target_fp, Angle.from_degrees(rotation))
 
             # Apply changes
             commit = board.begin_commit()
