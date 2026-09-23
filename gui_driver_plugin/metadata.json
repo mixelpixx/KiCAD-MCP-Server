@@ -1,0 +1,33 @@
+{
+  "$schema": "https://go.kicad.org/pcm/schemas/v2",
+  "name": "KiCad GUI Driver",
+  "description": "In-process wx GUI-driver helper: lets the KiCad MCP harness enumerate and trigger menus, AUI toolbar tools and plugin actions over a localhost JSON-lines socket.",
+  "description_full": "Starts a background listener on 127.0.0.1 (JSON lines, one request per line) inside pcbnew/eeschema. Commands (tree/click/run_plugin/wait_for/scrape/click_button/screenshot) are marshalled to the wx UI thread via wx.CallAfter; the listener thread never touches wx directly. This is the second channel to KiCad next to kipy: kipy = design content, gui-driver = chrome.",
+  "identifier": "com.github.rossvonfange.kicad-gui-driver",
+  "type": "plugin",
+  "author": {
+    "name": "Ross von Fange",
+    "contact": { "web": "https://github.com/rossvonfange" }
+  },
+  "maintainer": {
+    "name": "Ross von Fange",
+    "contact": { "web": "https://github.com/rossvonfange" }
+  },
+  "license": "GPL-3.0-or-later",
+  "resources": {
+    "homepage": "https://github.com/rossvonfange"
+  },
+  "tags": ["automation", "gui", "testing", "mcp"],
+  "versions": [
+    {
+      "version": "0.0.1",
+      "status": "development",
+      "kicad_version": "9.0",
+      "platforms": ["linux", "windows", "macos"],
+      "download_url": "https://example.invalid/kicad-gui-driver-0.0.1-pcm.zip",
+      "download_sha256": "TODO@build",
+      "download_size": 0,
+      "install_size": 0
+    }
+  ]
+}

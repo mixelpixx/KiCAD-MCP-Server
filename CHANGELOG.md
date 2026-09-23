@@ -6,6 +6,28 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Tools
 
+- **GUI driver: drive the live KiCad GUI** (#333, @rossvonfange) — eleven tools
+  that reach what the IPC and file APIs cannot: menus, AUI toolbars, dialogs and
+  action-plugin buttons. `kicad_gui_tree` lists menus and toolbar tools by name,
+  `kicad_gui_click` activates one, `kicad_run_action_plugin` triggers an
+  External Plugins entry, `kicad_gui_wait_for` waits for a window,
+  `kicad_gui_screenshot` captures a frame, and three playbooks build on them
+  (`kicad_pcb_snapshot`, `kicad_reload_and_open_plugin`, `kicad_run_drc`, which
+  scrapes the DRC dialog's results). On Linux, `kicad_gui_tree_atspi` and
+  `kicad_gui_click_atspi` read the accessibility bus with no code inside KiCad.
+
+  It is opt-in twice: `install_gui_driver` deploys a small helper plugin into
+  KiCad's plugin directory (nothing is installed as a side effect), and the
+  helper opens its channel only when `KICAD_GUI_DRIVER_ENABLE=1` is set in
+  KiCad's environment. The channel is TCP on 127.0.0.1 only, and every request
+  must carry a per-session token the helper writes to a file in the user's
+  KiCad configuration directory (mode 0600 on POSIX; on Windows the file is
+  under `%APPDATA%`, whose profile ACL keeps other users out). Request lines are
+  capped at 64 KiB before the token is checked, and a screenshot path must be an
+  absolute `.png` in an existing directory. `kicad_gui_tree` marks destructive
+  menu items, but `kicad_gui_click` does not gate them: it runs whatever it is
+  asked to. Hardening follow-ups are tracked in #412.
+
 - **Digi-Key Product Information V4 integration** — `digikey_search_parts`,
   `digikey_check_library_availability` and `digikey_test_connection`. The server
   had six JLCPCB tools and nothing for Digi-Key, so every stock check, lifecycle
