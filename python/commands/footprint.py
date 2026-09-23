@@ -503,12 +503,26 @@ class FootprintCreator:
 
     def list_footprint_libraries(self, search_paths: Optional[List[str]] = None) -> Dict[str, Any]:
         """List all .pretty libraries and their footprints."""
+        from utils.kicad_roots import kicad_install_roots
+
+        # A later directory replaces an earlier one on a library-name clash, so
+        # the list runs oldest KiCad first and per-user libraries last: the newest
+        # install's stock libraries win over older ones, and a user's own library
+        # of the same name wins over both. The discovered install roots (registry,
+        # Program Files, custom C:\KiCad\<ver>; #286) come after the fixed
+        # Program Files locations, oldest first, for the same reason.
         default_paths = [
-            r"C:\Program Files\KiCad\9.0\share\kicad\footprints",
             r"C:\Program Files\KiCad\8.0\share\kicad\footprints",
+            r"C:\Program Files\KiCad\9.0\share\kicad\footprints",
+            r"C:\Program Files\KiCad\10.0\share\kicad\footprints",
+            *[
+                str(root / "share" / "kicad" / "footprints")
+                for root in reversed(kicad_install_roots())
+            ],
             "/usr/share/kicad/footprints",
             "/usr/local/share/kicad/footprints",
             os.path.expanduser("~/Documents/KiCad/9.0/footprints"),
+            os.path.expanduser("~/Documents/KiCad/10.0/footprints"),
         ]
         paths = search_paths or default_paths
         libraries = {}

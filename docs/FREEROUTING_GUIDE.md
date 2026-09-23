@@ -38,11 +38,16 @@ The default location is `~/.kicad-mcp/freerouting.jar`. You can override this wi
 
 ### Java Runtime (Option A -- Direct Execution)
 
-Freerouting 2.x requires Java 21 or higher.
+Freerouting 2.x requires Java 21 or higher, and newer releases need more — Freerouting
+2.4.x is built for **Java 25**. The integration reads the required version from the JAR
+itself, so `check_freerouting` reports it as `java.required_version`.
 
 ```bash
-# Ubuntu/Debian
+# Ubuntu/Debian (use the version check_freerouting reports)
 sudo apt install openjdk-21-jre
+
+# macOS (Homebrew's JDK is keg-only, not on PATH — it is still found automatically)
+brew install openjdk
 
 # Verify
 java -version
@@ -50,21 +55,22 @@ java -version
 
 ### Docker or Podman (Option B -- No Java Install Needed)
 
-If you do not have Java 21+ installed, the integration automatically falls back to Docker or Podman using the `eclipse-temurin:21-jre` image.
+If you do not have a suitable Java installed, the integration automatically falls back to Docker or Podman using the `eclipse-temurin:<required version>-jre` image (`eclipse-temurin:21-jre` for Freerouting 2.0–2.3, `eclipse-temurin:25-jre` for 2.4.x).
 
 ```bash
-# Pull the image (one-time)
-docker pull eclipse-temurin:21-jre
+# Pull the image once: 25-jre for Freerouting 2.4.x, 21-jre for 2.0-2.3
+docker pull eclipse-temurin:25-jre
 
 # Or with Podman
-podman pull eclipse-temurin:21-jre
+podman pull eclipse-temurin:25-jre
 ```
 
 ### Automatic Runtime Detection
 
 The autorouter checks for runtimes in this order:
 
-1. Local Java 21+ (direct execution, fastest)
+1. Local Java meeting the JAR's requirement (direct execution, fastest) — checked in
+   `JAVA_HOME`, `PATH`, Homebrew's `openjdk`, `/usr/bin/java`, `/usr/local/bin/java`
 2. Docker (container execution)
 3. Podman (container execution)
 
@@ -119,6 +125,11 @@ Export the PCB to Specctra DSN format for manual routing workflows.
 | `boardPath` | string | No | Path to .kicad_pcb file (default: current board) |
 | `outputPath` | string | No | Output DSN file path (default: same directory as board) |
 
+Round holes and cut-outs on Edge.Cuts are written as keepouts enlarged to the board's
+copper-to-edge clearance. Freerouting otherwise keeps tracks away from them by the ordinary
+track clearance only, which puts routes inside the edge clearance around mounting holes.
+`autoroute` exports the DSN the same way.
+
 ### `import_ses`
 
 Import a routed Specctra SES file back into the PCB.
@@ -128,6 +139,17 @@ Import a routed Specctra SES file back into the PCB.
 |-----------|------|----------|-------------|
 | `sesPath` | string | Yes | Path to the .ses file to import |
 | `boardPath` | string | No | Path to .kicad_pcb file (default: current board) |
+
+KiCad aborts the whole import when the SES `(placement ...)` block names a reference that
+is not on the board, for example after the DSN export renamed duplicate `REF**` references
+to `REF**_1`, `REF**_2`. `import_ses` therefore drops the placement entries whose reference
+is missing from the board or not unique on it, and lists them in `placementSkipped`; the
+other entries still apply, so parts moved in Freerouting's GUI move on the board too.
+`autoroute` drops the whole block, since its headless run never moves parts.
+
+If KiCad still rejects the file, the tool returns `success: false`, both here and in
+`autoroute`, and saves nothing. A failed import has usually already removed the board's
+unlocked tracks in memory, so reopen the board from disk before saving.
 
 ---
 
@@ -189,13 +211,13 @@ Set `FREEROUTING_JAR` in your MCP client configuration to avoid specifying the p
 
 ### "Neither Java 21+ nor Docker found"
 
-Install either Java 21+ or Docker/Podman. See the Prerequisites section above.
+The number is the version your Freerouting JAR requires. Install that Java or Docker/Podman. See the Prerequisites section above.
 
-### "Java found but version < 21"
+### "Java found but version < 21" (or < 25)
 
-Freerouting 2.x requires Java 21+. Either:
+The Freerouting JAR needs a newer Java than the one found. Either:
 
-- Upgrade your Java installation
+- Upgrade your Java installation, or point `JAVA_HOME` at a newer one
 - Install Docker as a fallback
 
 ### Timeout Errors
@@ -231,4 +253,4 @@ sudo usermod -aG docker $USER
 
 - TypeScript tool definitions: `src/tools/freerouting.ts`
 - Python implementation: `python/commands/freerouting.py`
-- Tests: `python/tests/test_freerouting.py`
+- Tests: `tests/test_freerouting.py`
