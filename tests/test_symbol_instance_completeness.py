@@ -283,6 +283,77 @@ class TestHierarchicalPath:
         )
 
 
+@pytest.mark.unit
+class TestHierarchicalPathKicadSaved:
+    """Hierarchies as KiCad itself writes them.
+
+    KiCad 10 names the sheet-file property ``Sheetfile`` (no space) and keeps a
+    ``(sheet_instances ...)`` block in every sub-sheet, not only the root. The
+    MCP's own ``create_schematic`` also writes that block into new files. Neither
+    may cause a sub-sheet to be mistaken for the root: a part placed there with a
+    one-level ``/<sub-sheet-uuid>`` path is dropped from the netlist, taking the
+    whole sheet's components with it.
+    """
+
+    ROOT_UUID = "aaaa0000-0000-0000-0000-000000000001"
+    BLOCK_UUID = "bbbb0000-0000-0000-0000-000000000002"
+    CHILD_UUID = "cccc0000-0000-0000-0000-000000000003"
+
+    def _build(self, tmp_path: Path, sheetfile_key: str, child_has_sheet_instances: bool) -> tuple:
+        root = tmp_path / "design.kicad_sch"
+        child = tmp_path / "child.kicad_sch"
+        (tmp_path / "design.kicad_pro").write_text('{"meta":{"version":1}}', encoding="utf-8")
+        root.write_text(
+            '(kicad_sch (version 20260306) (generator "eeschema")\n'
+            f'  (uuid "{self.ROOT_UUID}")\n  (paper "A4")\n'
+            "  (lib_symbols)\n"
+            "  (sheet (at 50 50) (size 30 20)\n"
+            f'    (uuid "{self.BLOCK_UUID}")\n'
+            '    (property "Sheetname" "Child" (at 50 48 0) (effects (font (size 1.27 1.27))))\n'
+            f'    (property "{sheetfile_key}" "child.kicad_sch" (at 50 72 0)'
+            " (effects (font (size 1.27 1.27))))\n"
+            '    (instances (project "design" (path "/'
+            f'{self.ROOT_UUID}" (page "2"))))\n'
+            "  )\n"
+            '  (sheet_instances (path "/" (page "1")))\n)\n',
+            encoding="utf-8",
+        )
+        child_tail = (
+            '  (sheet_instances (path "/" (page "1")))\n' if child_has_sheet_instances else ""
+        )
+        child.write_text(
+            '(kicad_sch (version 20260306) (generator "eeschema")\n'
+            f'  (uuid "{self.CHILD_UUID}")\n  (paper "A4")\n'
+            f"  (lib_symbols)\n{child_tail})\n",
+            encoding="utf-8",
+        )
+        return root, child
+
+    @pytest.mark.parametrize("sheetfile_key", ["Sheetfile", "Sheet file"])
+    @pytest.mark.parametrize("child_has_sheet_instances", [True, False])
+    def test_child_path_is_hierarchical(
+        self, tmp_path: Any, sheetfile_key: str, child_has_sheet_instances: bool
+    ) -> None:
+        _, child = self._build(tmp_path, sheetfile_key, child_has_sheet_instances)
+        assert (
+            DynamicSymbolLoader()._build_instance_path(child)
+            == f"/{self.ROOT_UUID}/{self.BLOCK_UUID}"
+        )
+
+    @pytest.mark.parametrize("sheetfile_key", ["Sheetfile", "Sheet file"])
+    def test_root_path_unaffected(self, tmp_path: Any, sheetfile_key: str) -> None:
+        root, _ = self._build(tmp_path, sheetfile_key, True)
+        assert DynamicSymbolLoader()._build_instance_path(root) == f"/{self.ROOT_UUID}"
+
+    def test_unlinked_sheet_with_sheet_instances_keeps_own_uuid(self, tmp_path: Any) -> None:
+        # Not referenced by the project root: the one-level fallback still applies,
+        # and add_hierarchical_sheet repairs it once the sheet is linked.
+        _, child = self._build(tmp_path, "Sheetfile", True)
+        orphan = tmp_path / "orphan.kicad_sch"
+        orphan.write_text(child.read_text(encoding="utf-8"), encoding="utf-8")
+        assert DynamicSymbolLoader()._build_instance_path(orphan) == f"/{self.CHILD_UUID}"
+
+
 # --------------------------------------------------------------------------- #
 # End-to-end structural round-trip via kicad-cli (skipped if unavailable)
 # --------------------------------------------------------------------------- #
