@@ -78,7 +78,7 @@ def _ses_from_cmd(cmd):
 @pytest.fixture(autouse=True)
 def _java_on_path(monkeypatch):
     """Tests mock subprocess, so command building must not require a JRE."""
-    monkeypatch.setattr(fr_mod, "_find_java", lambda: "java")
+    monkeypatch.setattr(fr_mod, "_find_java", lambda *a, **k: "java")
 
 
 @pytest.fixture()
