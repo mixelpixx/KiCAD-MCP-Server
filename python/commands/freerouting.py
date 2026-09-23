@@ -5,17 +5,19 @@ Exports the board to Specctra DSN format, runs Freerouting CLI,
 and imports the routed SES file back into the board.
 
 Supports two execution modes:
-  - Direct: java -jar freerouting.jar (requires Java 21+)
-  - Docker: docker run eclipse-temurin:21-jre (requires Docker)
+  - Direct: java -jar freerouting.jar (Java version read from the JAR; 2.x needs 21+)
+  - Docker: docker run eclipse-temurin:<that version>-jre (requires Docker)
 """
 
 import logging
+import math
 import os
 import re
 import shutil
 import subprocess
 import tempfile
 import time
+import zipfile
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -30,7 +32,8 @@ DEFAULT_FREEROUTING_JAR = os.environ.get(
     os.path.join(os.path.expanduser("~"), ".kicad-mcp", "freerouting.jar"),
 )
 
-DOCKER_IMAGE = "eclipse-temurin:21-jre"
+# Java release a Freerouting 2.x JAR needs when it cannot be read from the JAR itself
+DEFAULT_REQUIRED_JAVA = 21
 
 # Default schedule of `-mp` (max passes) values used when ``attempts`` > 1.
 # Cycles through a range that empirically produces enough variation between
@@ -39,19 +42,224 @@ DOCKER_IMAGE = "eclipse-temurin:21-jre"
 DEFAULT_PASS_SCHEDULE = [50, 60, 65, 70, 75, 80, 85, 90, 55, 95]
 
 
-def _find_java() -> Optional[str]:
-    """Find java executable on the system."""
-    java = shutil.which("java")
-    if java:
-        return java
-    for candidate in [
+def _jar_required_java(jar_path: str) -> int:
+    """Java release the Freerouting JAR was compiled for.
+
+    Read from the class-file major version of the JAR's Main-Class (Java release =
+    major - 44). Freerouting 2.4.x targets Java 25 (major 69), so a fixed "21+"
+    check passes a JRE that then dies with UnsupportedClassVersionError.
+    Falls back to DEFAULT_REQUIRED_JAVA when the JAR cannot be read.
+    """
+    try:
+        with zipfile.ZipFile(jar_path) as jar:
+            manifest = jar.read("META-INF/MANIFEST.MF").decode("utf-8", "replace")
+            main = next(
+                line.split(":", 1)[1].strip()
+                for line in manifest.splitlines()
+                if line.startswith("Main-Class:")
+            )
+            header = jar.read(main.replace(".", "/") + ".class")[:8]
+        if header[:4] == b"\xca\xfe\xba\xbe":
+            return max(DEFAULT_REQUIRED_JAVA, int.from_bytes(header[6:8], "big") - 44)
+    except Exception:
+        pass
+    return DEFAULT_REQUIRED_JAVA
+
+
+def _docker_image(required_java: int) -> str:
+    """Temurin JRE image for the Java release the Freerouting JAR needs (never below 21)."""
+    return f"eclipse-temurin:{max(required_java, DEFAULT_REQUIRED_JAVA)}-jre"
+
+
+def _find_java(required: int = DEFAULT_REQUIRED_JAVA) -> Optional[str]:
+    """Find a java executable, preferring one that runs Java ``required``+.
+
+    The first hit is often unusable: on macOS ``/usr/bin/java`` is a stub that
+    exists with no JRE installed, and a Homebrew JDK is keg-only (not on PATH).
+    Falls back to the first executable found so callers can report its version.
+    """
+    candidates: List[str] = []
+    java_home = os.environ.get("JAVA_HOME")
+    if java_home:
+        # shutil.which resolves java.exe on Windows through PATHEXT; a bare
+        # os.path.join(JAVA_HOME, "bin", "java") never exists there.
+        home_java = shutil.which("java", path=os.path.join(java_home, "bin"))
+        if home_java:
+            candidates.append(home_java)
+    which = shutil.which("java")
+    if which:
+        candidates.append(which)
+    candidates += [
+        "/opt/homebrew/opt/openjdk/bin/java",
+        "/usr/local/opt/openjdk/bin/java",
         "/usr/bin/java",
         "/usr/local/bin/java",
-        os.path.expandvars("$JAVA_HOME/bin/java"),
-    ]:
-        if os.path.isfile(candidate):
+    ]
+    found = [c for c in dict.fromkeys(candidates) if c == which or os.path.isfile(c)]
+    for candidate in found:
+        if _java_version_ok(candidate, required):
             return candidate
-    return None
+    return found[0] if found else None
+
+
+def _api_ok(result: Any) -> bool:
+    """True when a pcbnew Specctra export/import call reports success.
+
+    ``ExportSpecctraDSN``/``ImportSpecctraSES`` return a bool (``0`` on some older
+    builds). Because ``False == 0`` in Python, the previous
+    ``result is not True and result != 0`` check read a failed call as success.
+    """
+    return result is True or (type(result) is int and result == 0)
+
+
+def _sexpr_end(text: str, start: int) -> int:
+    """Index just past the parenthesised expression that opens at ``text[start]``.
+
+    Parentheses inside double-quoted strings are ignored (Specctra files quote
+    names with ``"``, and a component or net name may contain a paren). Returns
+    -1 when the expression never closes.
+    """
+    depth = 0
+    in_string = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if ch == '"':
+            in_string = not in_string
+        elif in_string:
+            continue
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+    return -1
+
+
+_PLACEMENT_RE = re.compile(r"\(placement(?=[\s)])")
+_PLACE_RE = re.compile(r'\(place\s+("[^"]*"|[^\s()]+)')
+
+
+def _strip_ses_placement(ses_text: str) -> str:
+    """Drop the SES ``(placement ...)`` block before import.
+
+    ``ImportSpecctraSES`` looks up every placed component by reference and aborts
+    the whole import (returning False) when one is missing, for example when the
+    DSN export renamed duplicate ``REF**`` references to ``REF**_1``,
+    ``REF**_2``. Used by ``autoroute``, whose headless Freerouting run never moves
+    parts, so the block carries nothing the import needs. ``import_ses`` handles
+    SES files that may come from Freerouting's GUI, where parts can be moved, and
+    uses :func:`_prune_ses_placement` instead.
+    """
+    m = _PLACEMENT_RE.search(ses_text)
+    if not m:
+        return ses_text
+    end = _sexpr_end(ses_text, m.start())
+    if end < 0:
+        return ses_text
+    return ses_text[: m.start()] + ses_text[end:]
+
+
+def _prune_ses_placement(ses_text: str, board_refs: Iterable[str]) -> Tuple[str, List[str]]:
+    """Drop only the placement entries KiCad cannot resolve.
+
+    Keeps every ``(place <ref> ...)`` whose reference occurs exactly once on the
+    board, so a part moved or flipped in Freerouting's GUI is still applied, and
+    drops the entries naming a reference that is missing from the board or not
+    unique on it (either would abort the whole import). A ``(component ...)``
+    group left without entries is dropped too. Returns the text and the dropped
+    references.
+    """
+    m = _PLACEMENT_RE.search(ses_text)
+    if not m:
+        return ses_text, []
+    block_end = _sexpr_end(ses_text, m.start())
+    if block_end < 0:
+        return ses_text, []
+
+    counts: Dict[str, int] = {}
+    for ref in board_refs:
+        counts[ref] = counts.get(ref, 0) + 1
+
+    block = ses_text[m.start() : block_end]
+    dropped: List[str] = []
+    out: List[str] = []
+    pos = 0
+    for comp in re.finditer(r"\(component(?=[\s)])", block):
+        if comp.start() < pos:
+            continue  # nested inside a component group already handled
+        comp_end = _sexpr_end(block, comp.start())
+        if comp_end < 0:
+            break
+        group = block[comp.start() : comp_end]
+        kept_parts: List[str] = []
+        gpos = 0
+        kept_any = False
+        for place in _PLACE_RE.finditer(group):
+            if place.start() < gpos:
+                continue
+            place_end = _sexpr_end(group, place.start())
+            if place_end < 0:
+                break
+            ref = place.group(1).strip('"')
+            kept_parts.append(group[gpos : place.start()])
+            if counts.get(ref, 0) == 1:
+                kept_parts.append(group[place.start() : place_end])
+                kept_any = True
+            else:
+                dropped.append(ref)
+            gpos = place_end
+        kept_parts.append(group[gpos:])
+        out.append(block[pos : comp.start()])
+        if kept_any:
+            out.append("".join(kept_parts))
+        pos = comp_end
+    out.append(block[pos:])
+    if not dropped:
+        return ses_text, []
+    return ses_text[: m.start()] + "".join(out) + ses_text[block_end:], dropped
+
+
+_TRACKS_CLEARED_NOTE = (
+    "An SES import that fails after parsing has usually already removed the "
+    "board's unlocked tracks, so the board in memory may have lost them; nothing "
+    "was saved. Reopen the board from disk before saving or routing again."
+)
+
+
+_DSN_KEEPOUT_RE = re.compile(r'(\(keepout "[^"]*" \(polygon signal 0\s+)([-\d.\s]+?)(\))')
+
+
+def _grow_hole_keepouts(dsn_text: str, grow_um: float) -> str:
+    """Enlarge circular board-level keepouts (Edge.Cuts holes) by ``grow_um``.
+
+    KiCad exports internal Edge.Cuts circles (mounting holes, cut-outs) as plain
+    keepouts, which Freerouting clears by the ordinary track clearance only — so
+    routes land well inside the board's copper-to-edge clearance. Non-circular
+    keepouts are left untouched.
+    """
+    if grow_um <= 0:
+        return dsn_text
+
+    def _repl(m: "re.Match[str]") -> str:
+        nums = [float(v) for v in m.group(2).split()]
+        pts = list(zip(nums[0::2], nums[1::2]))
+        if len(set(pts)) < 12:  # KiCad polygonises circles finely; rectangles are 4-5 points
+            return m.group(0)
+        # bbox centre: vertex averages are skewed by uneven arc steps and the closing point
+        cx = (min(p[0] for p in pts) + max(p[0] for p in pts)) / 2
+        cy = (min(p[1] for p in pts) + max(p[1] for p in pts)) / 2
+        radii = [((x - cx) ** 2 + (y - cy) ** 2) ** 0.5 for x, y in pts]
+        if min(radii) <= 0 or max(radii) / min(radii) > 1.05:
+            return m.group(0)
+        r = sum(radii) / len(radii)
+        n = len(set(pts))
+        # a polygon's edges sit inside its vertices: size it so the apothem clears r + grow
+        k = (r + grow_um) / math.cos(math.pi / n) / r
+        grown = "  ".join(f"{cx + (x - cx) * k:.1f} {cy + (y - cy) * k:.1f}" for x, y in pts)
+        return f"{m.group(1)}{grown}{m.group(3)}"
+
+    return _DSN_KEEPOUT_RE.sub(_repl, dsn_text)
 
 
 def _find_docker() -> Optional[str]:
@@ -75,8 +283,8 @@ def _docker_available() -> bool:
         return False
 
 
-def _java_version_ok(java_exe: str) -> bool:
-    """Check if local Java is version 21+."""
+def _java_version_ok(java_exe: str, required: int = DEFAULT_REQUIRED_JAVA) -> bool:
+    """Check if local Java is version ``required``+."""
     try:
         proc = subprocess.run(
             [java_exe, "-version"],
@@ -90,7 +298,7 @@ def _java_version_ok(java_exe: str) -> bool:
             if "version" in line:
                 ver = line.split('"')[1] if '"' in line else ""
                 major = int(ver.split(".")[0])
-                return major >= 21
+                return major >= required
     except Exception:
         pass
     return False
@@ -113,6 +321,7 @@ def _build_freerouting_cmd(
     valid routed board, not an artefact of MT optimisation.
     """
     extra = ["-mt", "1"] if single_thread else []
+    required_java = _jar_required_java(jar_path)
     if use_docker:
         docker_exe = _find_docker()
         if docker_exe is None:
@@ -129,7 +338,7 @@ def _build_freerouting_cmd(
             f"{jar_path}:/app/{jar_name}:ro",
             "-v",
             f"{board_dir}:/work",
-            DOCKER_IMAGE,
+            _docker_image(required_java),
             "java",
             "-jar",
             f"/app/{jar_name}",
@@ -143,7 +352,7 @@ def _build_freerouting_cmd(
             *extra,
         ]
     else:
-        java_exe = _find_java()
+        java_exe = _find_java(required_java)
         if java_exe is None:
             raise RuntimeError("Java executable not found")
         return [
@@ -353,13 +562,32 @@ class FreeroutingCommands:
             logger.info(f"Applied project net classes to board: {report['applied']}")
         return report
 
+    def _apply_edge_clearance(self, dsn_path: str) -> None:
+        """Grow hole keepouts in the exported DSN to the board's copper-to-edge clearance."""
+        try:
+            ds = self.board.GetDesignSettings()
+            edge_um = ds.m_CopperEdgeClearance / 1000.0
+            with open(dsn_path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+            if not re.search(r"\(unit um\)", text):  # KiCad writes um; anything else: leave it
+                return
+            m = re.search(r"\(rule\s*\(width [\d.]+\)\s*\(clearance ([\d.]+)\)", text)
+            track_um = float(m.group(1)) if m else 0.0
+            grown = _grow_hole_keepouts(text, edge_um - track_um)
+            if grown != text:
+                with open(dsn_path, "w", encoding="utf-8") as fh:
+                    fh.write(grown)
+        except Exception as e:
+            logger.warning(f"Edge-clearance keepout adjustment skipped: {e}")
+
     def _resolve_execution_mode(self, jar_path: str) -> Dict[str, Any]:
         """Determine how to run Freerouting: direct or docker.
 
         Returns dict with 'mode', 'use_docker', or 'error'.
         """
-        java_exe = _find_java()
-        if java_exe and _java_version_ok(java_exe):
+        required = _jar_required_java(jar_path)
+        java_exe = _find_java(required)
+        if java_exe and _java_version_ok(java_exe, required):
             return {"mode": "direct", "use_docker": False}
 
         if _docker_available():
@@ -369,15 +597,16 @@ class FreeroutingCommands:
             return {
                 "mode": "error",
                 "error": (
-                    f"Java found at {java_exe} but version < 21. "
-                    "Freerouting 2.x requires Java 21+. "
-                    "Install Java 21+ or Docker."
+                    f"Java found at {java_exe} but version < {required}. "
+                    f"{os.path.basename(jar_path)} requires Java {required}+. "
+                    f"Install Java {required}+ (or set JAVA_HOME to it) or Docker."
                 ),
             }
         return {
             "mode": "error",
             "error": (
-                "Neither Java 21+ nor Docker found. " "Install one of them to use Freerouting."
+                f"Neither Java {required}+ nor Docker found. "
+                "Install one of them to use Freerouting."
             ),
         }
 
@@ -567,7 +796,7 @@ class FreeroutingCommands:
         logger.info(f"Exporting DSN to {dsn_path}")
         try:
             result = pcbnew.ExportSpecctraDSN(self.board, dsn_path)
-            if result is not True and result != 0:
+            if not _api_ok(result):
                 return {
                     "success": False,
                     "message": "DSN export failed",
@@ -587,6 +816,7 @@ class FreeroutingCommands:
                 "errorDetails": f"Expected at: {dsn_path}",
             }
 
+        self._apply_edge_clearance(dsn_path)
         dsn_size = os.path.getsize(dsn_path)
         logger.info(f"DSN exported: {dsn_size} bytes")
 
@@ -750,15 +980,23 @@ class FreeroutingCommands:
             f"{ses_size} bytes (total {elapsed}s)"
         )
 
-        # Step 3: Import the winning SES
+        # Step 3: Import the winning SES. The placement block is stripped from a
+        # copy (a headless run never moves parts, and an unresolvable reference in
+        # the block aborts the whole import); the SES itself stays as Freerouting
+        # wrote it, which matters when keepArtifacts keeps it.
         logger.info(f"Importing SES from {ses_path}")
+        import_copy = ses_path + ".import.ses"
         try:
-            result = pcbnew.ImportSpecctraSES(self.board, ses_path)
-            if result is not True and result != 0:
+            with open(ses_path, "r", encoding="utf-8", errors="replace") as fh:
+                routed = _strip_ses_placement(fh.read())
+            with open(import_copy, "w", encoding="utf-8") as fh:
+                fh.write(routed)
+            result = pcbnew.ImportSpecctraSES(self.board, import_copy)
+            if not _api_ok(result):
                 return {
                     "success": False,
                     "message": "SES import failed",
-                    "errorDetails": f"ImportSpecctraSES returned: {result}",
+                    "errorDetails": f"ImportSpecctraSES returned: {result}. {_TRACKS_CLEARED_NOTE}",
                     "elapsed_seconds": elapsed,
                     "attempts": attempt_results,
                 }
@@ -766,10 +1004,15 @@ class FreeroutingCommands:
             return {
                 "success": False,
                 "message": "SES import failed",
-                "errorDetails": str(e),
+                "errorDetails": f"{e}. {_TRACKS_CLEARED_NOTE}",
                 "elapsed_seconds": elapsed,
                 "attempts": attempt_results,
             }
+        finally:
+            try:
+                os.remove(import_copy)
+            except OSError:
+                pass
 
         # Step 4: Save board
         try:
@@ -858,7 +1101,7 @@ class FreeroutingCommands:
 
         try:
             result = pcbnew.ExportSpecctraDSN(self.board, output_path)
-            if result is not True and result != 0:
+            if not _api_ok(result):
                 return {
                     "success": False,
                     "message": "DSN export failed",
@@ -871,6 +1114,8 @@ class FreeroutingCommands:
                 "errorDetails": str(e),
             }
 
+        if os.path.isfile(output_path):
+            self._apply_edge_clearance(output_path)
         file_size = os.path.getsize(output_path) if os.path.isfile(output_path) else 0
         return {
             "success": True,
@@ -933,43 +1178,57 @@ class FreeroutingCommands:
         # so pcbnew's exact-string lookup binds routed tracks to the real board
         # nets instead of creating phantom slashless duplicates (#246). Any
         # failure here falls back to importing the original file unchanged.
+        # Placement entries KiCad cannot resolve are dropped too: a reference
+        # missing from the board, or not unique on it, aborts the whole import.
+        # Entries that do resolve are kept, since a part moved in Freerouting's
+        # GUI must still move.
         import_path = ses_path
         reconciled_temp: Optional[str] = None
         remapped: List[str] = []
+        placement_skipped: List[str] = []
         try:
             board_net_names = self._board_net_names()
             with open(ses_path, "r", encoding="utf-8") as f:
                 ses_text = f.read()
             fixed_text, remapped = _reconcile_ses_net_names(ses_text, board_net_names)
-            if remapped:
+            board_refs = [fp.GetReference() for fp in self.board.GetFootprints()]
+            fixed_text, placement_skipped = _prune_ses_placement(fixed_text, board_refs)
+            if placement_skipped:
+                logger.warning(
+                    "Skipped SES placement for references missing or duplicated on the "
+                    "board: %s",
+                    sorted(set(placement_skipped)),
+                )
+            if fixed_text != ses_text:
                 fd, reconciled_temp = tempfile.mkstemp(
                     suffix=".ses", prefix="reconciled-", dir=os.path.dirname(ses_path) or None
                 )
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write(fixed_text)
                 import_path = reconciled_temp
-                logger.info(
-                    "Reconciled %d SES net name(s) to their '/'-prefixed board nets: %s",
-                    len(remapped),
-                    sorted(set(remapped)),
-                )
+                if remapped:
+                    logger.info(
+                        "Reconciled %d SES net name(s) to their '/'-prefixed board nets: %s",
+                        len(remapped),
+                        sorted(set(remapped)),
+                    )
         except Exception as e:
             logger.warning(f"SES net-name reconciliation skipped ({e}); importing original file")
             import_path = ses_path
 
         try:
             result = pcbnew.ImportSpecctraSES(self.board, import_path)
-            if result is not True and result != 0:
+            if not _api_ok(result):
                 return {
                     "success": False,
                     "message": "SES import failed",
-                    "errorDetails": (f"ImportSpecctraSES returned: {result}"),
+                    "errorDetails": f"ImportSpecctraSES returned: {result}. {_TRACKS_CLEARED_NOTE}",
                 }
         except Exception as e:
             return {
                 "success": False,
                 "message": "SES import failed",
-                "errorDetails": str(e),
+                "errorDetails": f"{e}. {_TRACKS_CLEARED_NOTE}",
             }
         finally:
             if reconciled_temp and os.path.isfile(reconciled_temp):
@@ -1001,16 +1260,20 @@ class FreeroutingCommands:
         if remapped:
             # Report the net-name repairs so callers can see the '/'-prefix fix ran.
             response["netsRemapped"] = sorted(set(remapped))
+        if placement_skipped:
+            # Those parts kept their board position; the routes imported anyway.
+            response["placementSkipped"] = sorted(set(placement_skipped))
         return response
 
     def check_freerouting(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Check if Freerouting and Java/Docker are available."""
         jar_path = params.get("freeroutingJar", DEFAULT_FREEROUTING_JAR)
 
-        # Check local Java
-        java_exe = _find_java()
+        # Check local Java against the release the JAR was built for
+        required = _jar_required_java(jar_path)
+        java_exe = _find_java(required)
         java_version = None
-        java_21_ok = False
+        java_ok = False
         if java_exe:
             try:
                 proc = subprocess.run(
@@ -1020,7 +1283,7 @@ class FreeroutingCommands:
                     timeout=10,
                 )
                 java_version = (proc.stderr or proc.stdout).strip().split("\n")[0]
-                java_21_ok = _java_version_ok(java_exe)
+                java_ok = _java_version_ok(java_exe, required)
             except Exception:
                 pass
 
@@ -1029,10 +1292,10 @@ class FreeroutingCommands:
         has_docker = _docker_available()
 
         jar_exists = os.path.isfile(jar_path)
-        ready = jar_exists and (java_21_ok or has_docker)
+        ready = jar_exists and (java_ok or has_docker)
 
         mode = "none"
-        if java_21_ok:
+        if java_ok:
             mode = "direct"
         elif has_docker:
             mode = "docker"
@@ -1044,12 +1307,17 @@ class FreeroutingCommands:
                 "found": java_exe is not None,
                 "path": java_exe,
                 "version": java_version,
-                "java_21_ok": java_21_ok,
+                # None when there is no JAR to read the requirement from; the
+                # checks above then fall back to DEFAULT_REQUIRED_JAVA.
+                "required_version": required if jar_exists else None,
+                "version_ok": java_ok,
+                # kept for existing callers; now means "meets the JAR's requirement"
+                "java_21_ok": java_ok,
             },
             "docker": {
                 "available": has_docker,
                 "path": docker_exe,
-                "image": DOCKER_IMAGE,
+                "image": _docker_image(required),
             },
             "freerouting": {
                 "jar_found": jar_exists,

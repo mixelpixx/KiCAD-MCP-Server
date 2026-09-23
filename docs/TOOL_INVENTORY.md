@@ -5,9 +5,9 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.7.0
-**Tools registered on the server:** 233
-**Tools indexed for keyword discovery:** 173 in 16 categories
-**Last updated:** 2026-09-06
+**Tools registered on the server:** 244
+**Tools indexed for keyword discovery:** 184 in 17 categories
+**Last updated:** 2026-09-23
 
 ## How to read this document
 
@@ -479,6 +479,26 @@ _Source: `src/tools/digikey-api.ts`_
 
 ---
 
+## gui-driver.ts (11 tools)
+
+_Source: `src/tools/gui-driver.ts`_
+
+| Tool                           | Description                                                                                                                   | Discovery    |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `kicad_gui_tree`               | Enumerate the live KiCad GUI via the in-process helper: menus/submenus (name + wx id) and AUI toolbars (id + tooltip).        | `gui-driver` |
+| `kicad_gui_click`              | Activate a menu item or AUI toolbar tool by name (as shown by kicad_gui_tree).                                                | `gui-driver` |
+| `kicad_run_action_plugin`      | Find the Tools > External Plugins submenu entry with the given name (e.g.                                                     | `gui-driver` |
+| `kicad_gui_wait_for`           | Poll until a shown top-level window whose title contains `title` exists (or timeout).                                         | `gui-driver` |
+| `kicad_gui_screenshot`         | Capture the driven frame's screen rectangle to a PNG and return its path.                                                     | `gui-driver` |
+| `kicad_pcb_snapshot`           | GUI playbook: trigger Zoom to Fit, wait for the repaint, screenshot the frame.                                                | `gui-driver` |
+| `kicad_reload_and_open_plugin` | GUI playbook (plugin dev/test loop): trigger Refresh Plugins, then open the named External-Plugins entry.                     | `gui-driver` |
+| `kicad_run_drc`                | GUI playbook: open the Design Rules Checker dialog, click 'Run DRC', then scrape the violations grid into structured results. | `gui-driver` |
+| `kicad_gui_tree_atspi`         | Backend B: dump KiCad's accessible widget tree (role + name) from the Linux a11y bus — zero in-KiCad code.                    | `gui-driver` |
+| `kicad_gui_click_atspi`        | Backend B: activate the first accessible node matching `name` (and optional role) via do_action.                              | `gui-driver` |
+| `install_gui_driver`           | Deploy the in-KiCad GUI-driver helper plugin into the user's KiCad plugin tree (opt-in).                                      | `gui-driver` |
+
+---
+
 ## Summary by source file
 
 | Source file              | Section                                | Tools   |
@@ -507,11 +527,12 @@ _Source: `src/tools/digikey-api.ts`_
 | `ui.ts`                  | KiCad UI and Backend                   | 3       |
 | `router.ts`              | Tool Discovery                         | 3       |
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
-| **Total**                |                                        | **233** |
+| `gui-driver.ts`          | gui-driver.ts                          | 11      |
+| **Total**                |                                        | **244** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 173 of the 233 registered tools.
+These are the categories `search_tools` searches. They cover 184 of the 244 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
@@ -531,6 +552,7 @@ These are the categories `search_tools` searches. They cover 173 of the 233 regi
 | `validation`               | 2             |
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
-| **Indexed total**          | **173**       |
+| `gui-driver`               | 11            |
+| **Indexed total**          | **184**       |
 | Registered but not indexed | 60            |
-| **Registered total**       | **233**       |
+| **Registered total**       | **244**       |
