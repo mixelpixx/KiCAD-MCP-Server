@@ -79,6 +79,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`connect_to_net` and `connect_passthrough` no longer place labels where a
+  moved pin used to be.** Both use one PinLocator kept for the life of the
+  worker, and PinLocator cached the parsed schematic, its S-expression and the
+  pin definitions by file path alone, never refreshing them. After a component
+  was moved or rotated (or its library symbol updated) in the same session,
+  they kept computing pin positions from the old file, so the net label and
+  wire stub landed at the old position: a floating label, reported as success.
+  The caches are now dropped whenever the file's modification time or size
+  changes.
 - **`launch_kicad_ui` and `list_footprint_libraries` find KiCad 10 and
   relocated installs on Windows** (#416, @DieterMayerOSS). Both kept their own
   fixed Program Files lists that stopped at 9.0, so with KiCad 9 and 10 side by
