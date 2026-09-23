@@ -54,6 +54,131 @@ def _find_java() -> Optional[str]:
     return None
 
 
+def _api_ok(result: Any) -> bool:
+    """True when a pcbnew Specctra export/import call reports success.
+
+    ``ExportSpecctraDSN``/``ImportSpecctraSES`` return a bool (``0`` on some older
+    builds). Because ``False == 0`` in Python, the previous
+    ``result is not True and result != 0`` check read a failed call as success.
+    """
+    return result is True or (type(result) is int and result == 0)
+
+
+def _sexpr_end(text: str, start: int) -> int:
+    """Index just past the parenthesised expression that opens at ``text[start]``.
+
+    Parentheses inside double-quoted strings are ignored (Specctra files quote
+    names with ``"``, and a component or net name may contain a paren). Returns
+    -1 when the expression never closes.
+    """
+    depth = 0
+    in_string = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if ch == '"':
+            in_string = not in_string
+        elif in_string:
+            continue
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+    return -1
+
+
+_PLACEMENT_RE = re.compile(r"\(placement(?=[\s)])")
+_PLACE_RE = re.compile(r'\(place\s+("[^"]*"|[^\s()]+)')
+
+
+def _strip_ses_placement(ses_text: str) -> str:
+    """Drop the SES ``(placement ...)`` block before import.
+
+    ``ImportSpecctraSES`` looks up every placed component by reference and aborts
+    the whole import (returning False) when one is missing, for example when the
+    DSN export renamed duplicate ``REF**`` references to ``REF**_1``,
+    ``REF**_2``. Used by ``autoroute``, whose headless Freerouting run never moves
+    parts, so the block carries nothing the import needs. ``import_ses`` handles
+    SES files that may come from Freerouting's GUI, where parts can be moved, and
+    uses :func:`_prune_ses_placement` instead.
+    """
+    m = _PLACEMENT_RE.search(ses_text)
+    if not m:
+        return ses_text
+    end = _sexpr_end(ses_text, m.start())
+    if end < 0:
+        return ses_text
+    return ses_text[: m.start()] + ses_text[end:]
+
+
+def _prune_ses_placement(ses_text: str, board_refs: Iterable[str]) -> Tuple[str, List[str]]:
+    """Drop only the placement entries KiCad cannot resolve.
+
+    Keeps every ``(place <ref> ...)`` whose reference occurs exactly once on the
+    board, so a part moved or flipped in Freerouting's GUI is still applied, and
+    drops the entries naming a reference that is missing from the board or not
+    unique on it (either would abort the whole import). A ``(component ...)``
+    group left without entries is dropped too. Returns the text and the dropped
+    references.
+    """
+    m = _PLACEMENT_RE.search(ses_text)
+    if not m:
+        return ses_text, []
+    block_end = _sexpr_end(ses_text, m.start())
+    if block_end < 0:
+        return ses_text, []
+
+    counts: Dict[str, int] = {}
+    for ref in board_refs:
+        counts[ref] = counts.get(ref, 0) + 1
+
+    block = ses_text[m.start() : block_end]
+    dropped: List[str] = []
+    out: List[str] = []
+    pos = 0
+    for comp in re.finditer(r"\(component(?=[\s)])", block):
+        if comp.start() < pos:
+            continue  # nested inside a component group already handled
+        comp_end = _sexpr_end(block, comp.start())
+        if comp_end < 0:
+            break
+        group = block[comp.start() : comp_end]
+        kept_parts: List[str] = []
+        gpos = 0
+        kept_any = False
+        for place in _PLACE_RE.finditer(group):
+            if place.start() < gpos:
+                continue
+            place_end = _sexpr_end(group, place.start())
+            if place_end < 0:
+                break
+            ref = place.group(1).strip('"')
+            kept_parts.append(group[gpos : place.start()])
+            if counts.get(ref, 0) == 1:
+                kept_parts.append(group[place.start() : place_end])
+                kept_any = True
+            else:
+                dropped.append(ref)
+            gpos = place_end
+        kept_parts.append(group[gpos:])
+        out.append(block[pos : comp.start()])
+        if kept_any:
+            out.append("".join(kept_parts))
+        pos = comp_end
+    out.append(block[pos:])
+    if not dropped:
+        return ses_text, []
+    return ses_text[: m.start()] + "".join(out) + ses_text[block_end:], dropped
+
+
+_TRACKS_CLEARED_NOTE = (
+    "An SES import that fails after parsing has usually already removed the "
+    "board's unlocked tracks, so the board in memory may have lost them; nothing "
+    "was saved. Reopen the board from disk before saving or routing again."
+)
+
+
 def _find_docker() -> Optional[str]:
     """Find docker executable on the system."""
     return shutil.which("docker") or shutil.which("podman")
@@ -567,7 +692,7 @@ class FreeroutingCommands:
         logger.info(f"Exporting DSN to {dsn_path}")
         try:
             result = pcbnew.ExportSpecctraDSN(self.board, dsn_path)
-            if result is not True and result != 0:
+            if not _api_ok(result):
                 return {
                     "success": False,
                     "message": "DSN export failed",
@@ -750,15 +875,23 @@ class FreeroutingCommands:
             f"{ses_size} bytes (total {elapsed}s)"
         )
 
-        # Step 3: Import the winning SES
+        # Step 3: Import the winning SES. The placement block is stripped from a
+        # copy (a headless run never moves parts, and an unresolvable reference in
+        # the block aborts the whole import); the SES itself stays as Freerouting
+        # wrote it, which matters when keepArtifacts keeps it.
         logger.info(f"Importing SES from {ses_path}")
+        import_copy = ses_path + ".import.ses"
         try:
-            result = pcbnew.ImportSpecctraSES(self.board, ses_path)
-            if result is not True and result != 0:
+            with open(ses_path, "r", encoding="utf-8", errors="replace") as fh:
+                routed = _strip_ses_placement(fh.read())
+            with open(import_copy, "w", encoding="utf-8") as fh:
+                fh.write(routed)
+            result = pcbnew.ImportSpecctraSES(self.board, import_copy)
+            if not _api_ok(result):
                 return {
                     "success": False,
                     "message": "SES import failed",
-                    "errorDetails": f"ImportSpecctraSES returned: {result}",
+                    "errorDetails": f"ImportSpecctraSES returned: {result}. {_TRACKS_CLEARED_NOTE}",
                     "elapsed_seconds": elapsed,
                     "attempts": attempt_results,
                 }
@@ -766,10 +899,15 @@ class FreeroutingCommands:
             return {
                 "success": False,
                 "message": "SES import failed",
-                "errorDetails": str(e),
+                "errorDetails": f"{e}. {_TRACKS_CLEARED_NOTE}",
                 "elapsed_seconds": elapsed,
                 "attempts": attempt_results,
             }
+        finally:
+            try:
+                os.remove(import_copy)
+            except OSError:
+                pass
 
         # Step 4: Save board
         try:
@@ -858,7 +996,7 @@ class FreeroutingCommands:
 
         try:
             result = pcbnew.ExportSpecctraDSN(self.board, output_path)
-            if result is not True and result != 0:
+            if not _api_ok(result):
                 return {
                     "success": False,
                     "message": "DSN export failed",
@@ -933,43 +1071,57 @@ class FreeroutingCommands:
         # so pcbnew's exact-string lookup binds routed tracks to the real board
         # nets instead of creating phantom slashless duplicates (#246). Any
         # failure here falls back to importing the original file unchanged.
+        # Placement entries KiCad cannot resolve are dropped too: a reference
+        # missing from the board, or not unique on it, aborts the whole import.
+        # Entries that do resolve are kept, since a part moved in Freerouting's
+        # GUI must still move.
         import_path = ses_path
         reconciled_temp: Optional[str] = None
         remapped: List[str] = []
+        placement_skipped: List[str] = []
         try:
             board_net_names = self._board_net_names()
             with open(ses_path, "r", encoding="utf-8") as f:
                 ses_text = f.read()
             fixed_text, remapped = _reconcile_ses_net_names(ses_text, board_net_names)
-            if remapped:
+            board_refs = [fp.GetReference() for fp in self.board.GetFootprints()]
+            fixed_text, placement_skipped = _prune_ses_placement(fixed_text, board_refs)
+            if placement_skipped:
+                logger.warning(
+                    "Skipped SES placement for references missing or duplicated on the "
+                    "board: %s",
+                    sorted(set(placement_skipped)),
+                )
+            if fixed_text != ses_text:
                 fd, reconciled_temp = tempfile.mkstemp(
                     suffix=".ses", prefix="reconciled-", dir=os.path.dirname(ses_path) or None
                 )
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write(fixed_text)
                 import_path = reconciled_temp
-                logger.info(
-                    "Reconciled %d SES net name(s) to their '/'-prefixed board nets: %s",
-                    len(remapped),
-                    sorted(set(remapped)),
-                )
+                if remapped:
+                    logger.info(
+                        "Reconciled %d SES net name(s) to their '/'-prefixed board nets: %s",
+                        len(remapped),
+                        sorted(set(remapped)),
+                    )
         except Exception as e:
             logger.warning(f"SES net-name reconciliation skipped ({e}); importing original file")
             import_path = ses_path
 
         try:
             result = pcbnew.ImportSpecctraSES(self.board, import_path)
-            if result is not True and result != 0:
+            if not _api_ok(result):
                 return {
                     "success": False,
                     "message": "SES import failed",
-                    "errorDetails": (f"ImportSpecctraSES returned: {result}"),
+                    "errorDetails": f"ImportSpecctraSES returned: {result}. {_TRACKS_CLEARED_NOTE}",
                 }
         except Exception as e:
             return {
                 "success": False,
                 "message": "SES import failed",
-                "errorDetails": str(e),
+                "errorDetails": f"{e}. {_TRACKS_CLEARED_NOTE}",
             }
         finally:
             if reconciled_temp and os.path.isfile(reconciled_temp):
@@ -1001,6 +1153,9 @@ class FreeroutingCommands:
         if remapped:
             # Report the net-name repairs so callers can see the '/'-prefix fix ran.
             response["netsRemapped"] = sorted(set(remapped))
+        if placement_skipped:
+            # Those parts kept their board position; the routes imported anyway.
+            response["placementSkipped"] = sorted(set(placement_skipped))
         return response
 
     def check_freerouting(self, params: Dict[str, Any]) -> Dict[str, Any]:

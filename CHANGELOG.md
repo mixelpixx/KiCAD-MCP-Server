@@ -139,6 +139,21 @@ All notable changes to the KiCAD MCP Server project are documented here.
   really changes; that needs the upstream fix (kicad-python ca8af42f, not yet
   released). A tripwire test skips with a pointer once an installed kipy
   carries it.
+- **`autoroute` and `import_ses` no longer report success when nothing was
+  imported** (#417, @outstanda). `ImportSpecctraSES` and `ExportSpecctraDSN`
+  return `False` on failure, and the check `result is not True and result != 0`
+  let that through because `False == 0` in Python. Worse, a failed import has
+  already cleared the board's unlocked tracks in memory, and both tools then
+  saved that board and answered `success: true`. Failures are now reported,
+  nothing is saved, and the message says to reload the board before saving.
+  One cause this used to hide is fixed alongside: `ImportSpecctraSES` aborts
+  the whole import when the SES `(placement ...)` block names a reference that
+  is not on the board, which the reporter hit on KiCad 10.0.6 when the DSN
+  export renamed duplicate `REF**` references to `REF**_1`, `REF**_2`.
+  `autoroute` drops the placement block, since a headless run never moves
+  parts. `import_ses` drops only the entries whose reference is missing from
+  the board or not unique on it, so moves made in Freerouting's GUI still
+  apply.
 - **`edit_component`'s footprint swap now actually replaces the footprint** (#399,
   reported by @joseluu). Passing a new `footprint` rewrote the FPID library-ID
   string via `SetFPID` and stopped there, so the pads, courtyard and silkscreen

@@ -129,6 +129,17 @@ Import a routed Specctra SES file back into the PCB.
 | `sesPath` | string | Yes | Path to the .ses file to import |
 | `boardPath` | string | No | Path to .kicad_pcb file (default: current board) |
 
+KiCad aborts the whole import when the SES `(placement ...)` block names a reference that
+is not on the board, for example after the DSN export renamed duplicate `REF**` references
+to `REF**_1`, `REF**_2`. `import_ses` therefore drops the placement entries whose reference
+is missing from the board or not unique on it, and lists them in `placementSkipped`; the
+other entries still apply, so parts moved in Freerouting's GUI move on the board too.
+`autoroute` drops the whole block, since its headless run never moves parts.
+
+If KiCad still rejects the file, the tool returns `success: false`, both here and in
+`autoroute`, and saves nothing. A failed import has usually already removed the board's
+unlocked tracks in memory, so reopen the board from disk before saving.
+
 ---
 
 ## Workflows
