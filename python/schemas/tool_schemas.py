@@ -3573,7 +3573,7 @@ GUI_DRIVER_TOOLS = [
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Output PNG path (temp file if omitted).",
+                    "description": "Absolute path of the .png file to write, in a directory that already exists (a temp file if omitted).",
                 },
                 **_GUI_FRAME_PROP,
             },
@@ -3588,7 +3588,7 @@ GUI_DRIVER_TOOLS = [
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Output PNG path (temp file if omitted).",
+                    "description": "Absolute path of the .png file to write, in a directory that already exists (a temp file if omitted).",
                 },
                 "settle": {
                     "type": "number",

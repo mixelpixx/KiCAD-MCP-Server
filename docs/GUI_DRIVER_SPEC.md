@@ -1,5 +1,9 @@
 # GUI-driver capability for the KiCad MCP harness — spec
 
+> Design notes from the original investigation (#333). The implementation lives in
+> `python/commands/gui_driver.py` (MCP tools and socket client) and `gui_driver_plugin/`
+> (the helper installed into KiCad).
+
 _Backlog spec, opened 2026-07-24. Proven value this session: AT-SPI both (a) demonstrated
 click-by-name on a live pcbnew and (b) DIAGNOSED the invisible-plugin-button bug by showing
 which ActionPlugins actually registered ("Git Plugin" present, "Open Loom"/"Open kiHarness"

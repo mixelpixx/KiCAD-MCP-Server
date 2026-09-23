@@ -33,6 +33,11 @@ from typing import Any, Callable, Dict, Optional
 DEFAULT_PORT = 8770
 PORT = int(os.environ.get("KICAD_GUI_DRIVER_PORT", DEFAULT_PORT))
 UI_CALL_TIMEOUT = 15.0  # seconds a queued UI call may take before we report back
+# Longest request line accepted, newline included. Requests are small JSON
+# objects (a command name and a few short strings); the cap exists because the
+# token is only checked once a whole line has been read, so without it any local
+# process could make the listener buffer an arbitrarily long line pre-auth.
+MAX_REQUEST_BYTES = 64 * 1024
 
 _server: Optional["_Server"] = None
 _server_lock = threading.Lock()
@@ -49,6 +54,15 @@ _server_lock = threading.Lock()
 # must echo it. A 0600 file is unreadable by other users and by the browser
 # sandbox, which is exactly the exposure this closes. NOTE: this MUST stay in
 # lock-step with the identical ``_token_path`` in ``python/commands/gui_driver.py``.
+#
+# Windows: POSIX mode bits are not enforced there (os.chmod only toggles the
+# read-only flag, so the file reports 0o666). The protection comes from where the
+# file lives instead: the default path is under %APPDATA%, which inherits the
+# user-profile ACL (the user, SYSTEM and Administrators only), so other users
+# cannot read it -- the same exposure 0600 closes on POSIX. Processes running as
+# the same user can read the token on every platform. Pointing
+# KICAD_GUI_DRIVER_TOKEN_FILE outside the profile moves that protection onto the
+# chosen directory's ACL.
 
 
 def _token_path() -> Path:
@@ -70,7 +84,11 @@ def _token_path() -> Path:
 
 
 def _write_token_file(token: str, path: Optional[Path] = None) -> Optional[Path]:
-    """Write ``token`` to a 0600 file; best-effort (never breaks listener start)."""
+    """Write ``token`` to a 0600 file; best-effort (never breaks listener start).
+
+    The mode applies on POSIX only; on Windows the directory ACL protects the
+    file (see the note above ``_token_path``).
+    """
     path = path if path is not None else _token_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -123,6 +141,28 @@ def wx_executor(fn: Callable[[], Any], timeout: float = UI_CALL_TIMEOUT) -> Any:
 # ---------------------------------------------------------------------------
 # command dispatch
 # ---------------------------------------------------------------------------
+
+
+def _checked_png_path(path: Any) -> str:
+    """Validate a client-supplied screenshot path before anything is written.
+
+    Any holder of the session token names the output file, so the write is kept
+    to what a screenshot needs: an absolute path ending in ``.png`` in a directory
+    that already exists. An existing symlink or non-file at that path is refused,
+    so the PNG data cannot be redirected onto some other file.
+    """
+    if not isinstance(path, str) or not path.strip():
+        raise ValueError("screenshot `path` must be a non-empty string")
+    target = Path(path)
+    if not target.is_absolute():
+        raise ValueError(f"screenshot `path` must be absolute, got {path!r}")
+    if target.suffix.lower() != ".png":
+        raise ValueError(f"screenshot `path` must end in .png, got {path!r}")
+    if not target.parent.is_dir():
+        raise ValueError(f"screenshot directory does not exist: {str(target.parent)!r}")
+    if target.is_symlink() or (target.exists() and not target.is_file()):
+        raise ValueError(f"refusing to write the screenshot to {path!r}: not a regular file")
+    return str(target)
 
 
 def _dispatch(request: Dict[str, Any], executor: Callable[..., Any]) -> Any:
@@ -207,7 +247,10 @@ def _dispatch(request: Dict[str, Any], executor: Callable[..., Any]) -> Any:
     if cmd == "screenshot":
         from . import driver
 
-        return executor(lambda: driver.screenshot(request.get("path"), frame_match=frame))
+        # Validated here, at the protocol boundary, so it holds for every client.
+        path = request.get("path")
+        checked = _checked_png_path(path) if path is not None else None
+        return executor(lambda: driver.screenshot(checked, frame_match=frame))
 
     raise ValueError(f"unknown cmd {cmd!r}")
 
@@ -231,12 +274,28 @@ class _Handler(socketserver.StreamRequestHandler):
     def handle(self) -> None:  # one connection, many JSON lines
         executor = self.server.executor  # type: ignore[attr-defined]
         expected = getattr(self.server, "token", None)
-        for raw in self.rfile:
+        while True:
+            # Bounded read: never buffer more than one maximum-size line, even
+            # for a client that has not authenticated yet.
+            raw = self.rfile.readline(MAX_REQUEST_BYTES + 1)
+            if not raw:
+                return  # client closed the connection
+            if len(raw) > MAX_REQUEST_BYTES:
+                self._reply(
+                    {
+                        "ok": False,
+                        "error": f"request line longer than {MAX_REQUEST_BYTES} bytes; "
+                        "closing the connection",
+                    }
+                )
+                return
             line = raw.decode("utf-8", "replace").strip()
             if not line:
                 continue
             try:
                 request = json.loads(line)
+                if not isinstance(request, dict):
+                    raise ValueError("request must be a JSON object")
                 if not _token_ok(request.get("token"), expected):
                     response = {
                         "ok": False,
@@ -247,11 +306,17 @@ class _Handler(socketserver.StreamRequestHandler):
                     response = {"ok": True, "result": result}
             except Exception as exc:  # noqa: BLE001 - protocol boundary
                 response = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-            try:
-                self.wfile.write((json.dumps(response) + "\n").encode("utf-8"))
-                self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
+            if not self._reply(response):
                 return
+
+    def _reply(self, response: Dict[str, Any]) -> bool:
+        """Write one response line; False when the client has gone away."""
+        try:
+            self.wfile.write((json.dumps(response) + "\n").encode("utf-8"))
+            self.wfile.flush()
+            return True
+        except (BrokenPipeError, ConnectionResetError):
+            return False
 
 
 class _Server(socketserver.ThreadingTCPServer):

@@ -5,7 +5,7 @@ EVERY function in this module MUST run on the wx UI thread (via the listener's
 calls in here directly.
 
 All of the mechanisms below were proven by live probes inside pcbnew
-(2026-07-24, see docs/GUI_DRIVER_FABLE_BRIEF.md in the MCP repo):
+(2026-07-24, see docs/GUI_DRIVER_SPEC.md in the MCP repo):
 
 * ``wx.GetTopLevelWindows()`` finds the ``PcbFrame``.
 * ``frame.GetMenuBar()`` + recursing ``menu.GetMenuItems()`` /

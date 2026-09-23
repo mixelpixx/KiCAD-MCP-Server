@@ -6,7 +6,7 @@ this repo; installs to ``3rdparty/plugins/<id>/``). The helper listens on
 object per line in, one ``{"ok": bool, ...}`` response line back. All wx work
 happens on KiCad's UI thread inside the helper; this side is pure sockets.
 
-Surface (locked decisions, docs/GUI_DRIVER_FABLE_BRIEF.md):
+Surface (locked decisions; design notes in docs/GUI_DRIVER_SPEC.md):
 
 * GENERIC scriptable surface — no curated allow-list. Agents look with
   ``kicad_gui_tree`` and act with ``kicad_gui_click`` by name.
@@ -85,7 +85,9 @@ def _read_token() -> Optional[str]:
 # changes; ensure_helper_installed() re-deploys on a marker mismatch, so
 # helper updates ship with the MCP with zero user steps.
 
-HELPER_VERSION = "0.0.2"  # 0.0.2: run_plugin triggers async (no UI-thread block/timeout)
+# 0.0.2: run_plugin triggers async (no UI-thread block/timeout)
+# 0.0.3: request lines capped before auth; screenshot paths validated
+HELPER_VERSION = "0.0.3"
 HELPER_IDENTIFIER = "com_github_rossvonfange_kicad-gui-driver"
 HELPER_VERSION_MARKER = "HELPER_VERSION"
 

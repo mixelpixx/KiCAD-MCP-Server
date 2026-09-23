@@ -6,7 +6,7 @@
  * enumerate and activate GUI chrome — menus, AUI toolbars, plugin buttons,
  * dialogs — plus a Linux AT-SPI fast-path. Every tool degrades gracefully
  * (returns {success:false} instantly) when the helper isn't reachable; the
- * Python side self-installs the helper on first call. Destructive menu names
+ * helper is deployed explicitly with install_gui_driver. Destructive menu names
  * are advisory-flagged with a "⚠ " prefix by kicad_gui_tree — never gated.
  */
 
@@ -73,7 +73,12 @@ export function registerGuiDriverTools(server: McpServer, callKicadScript: Funct
     "kicad_gui_screenshot",
     "Capture the driven frame's screen rectangle to a PNG and return its path.",
     {
-      path: z.string().optional().describe("Output PNG path (temp file if omitted)."),
+      path: z
+        .string()
+        .optional()
+        .describe(
+          "Absolute path of the .png file to write, in a directory that already exists (a temp file if omitted).",
+        ),
       frame,
     },
     async (args: { path?: string; frame?: string }) =>
@@ -85,7 +90,12 @@ export function registerGuiDriverTools(server: McpServer, callKicadScript: Funct
     "kicad_pcb_snapshot",
     "GUI playbook: trigger Zoom to Fit, wait for the repaint, screenshot the frame.",
     {
-      path: z.string().optional().describe("Output PNG path (temp file if omitted)."),
+      path: z
+        .string()
+        .optional()
+        .describe(
+          "Absolute path of the .png file to write, in a directory that already exists (a temp file if omitted).",
+        ),
       settle: z.number().optional().describe("Seconds to wait after zoom (default 0.5)."),
       frame,
     },

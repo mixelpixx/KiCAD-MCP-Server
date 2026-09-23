@@ -313,31 +313,33 @@ class TestSocketProtocol:
         assert "install_gui_driver" in out["error"]
 
 
+@pytest.fixture()
+def tok_helper(monkeypatch, tmp_path):
+    """The real listener with a session token set (the production configuration)."""
+    monkeypatch.setenv("KICAD_GUI_DRIVER_TOKEN_FILE", str(tmp_path / "tok"))
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "gui_driver_plugin"))
+    for mod in ("plugins", "plugins.listener", "plugins.driver"):
+        sys.modules.pop(mod, None)
+    fake = types.SimpleNamespace()
+    fake.full_tree = lambda frame=None: {"menus": [], "toolbars": []}
+    sys.modules["plugins.driver"] = fake
+    import plugins  # noqa: F401 — opt-in __init__ does NOT auto-start here
+
+    setattr(sys.modules["plugins"], "driver", fake)
+    from plugins import listener
+
+    listener.stop()
+    port = listener.start(port=0, executor=lambda fn, timeout=None: fn(), token="s3cret-token")
+    assert port
+    monkeypatch.setenv("KICAD_GUI_DRIVER_PORT", str(port))
+    yield types.SimpleNamespace(port=port, token="s3cret-token")
+    listener.stop()
+    for mod in ("plugins", "plugins.listener", "plugins.driver"):
+        sys.modules.pop(mod, None)
+
+
 class TestSessionToken:
     """The token-gated channel only accepts the caller holding the minted secret."""
-
-    @pytest.fixture()
-    def tok_helper(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("KICAD_GUI_DRIVER_TOKEN_FILE", str(tmp_path / "tok"))
-        monkeypatch.syspath_prepend(str(REPO_ROOT / "gui_driver_plugin"))
-        for mod in ("plugins", "plugins.listener", "plugins.driver"):
-            sys.modules.pop(mod, None)
-        fake = types.SimpleNamespace()
-        fake.full_tree = lambda frame=None: {"menus": [], "toolbars": []}
-        sys.modules["plugins.driver"] = fake
-        import plugins  # noqa: F401 — opt-in __init__ does NOT auto-start here
-
-        setattr(sys.modules["plugins"], "driver", fake)
-        from plugins import listener
-
-        listener.stop()
-        port = listener.start(port=0, executor=lambda fn, timeout=None: fn(), token="s3cret-token")
-        assert port
-        monkeypatch.setenv("KICAD_GUI_DRIVER_PORT", str(port))
-        yield types.SimpleNamespace(port=port, token="s3cret-token")
-        listener.stop()
-        for mod in ("plugins", "plugins.listener", "plugins.driver"):
-            sys.modules.pop(mod, None)
 
     def _raw(self, port, obj):
         with socket.create_connection(("127.0.0.1", port)) as conn:
@@ -360,12 +362,126 @@ class TestSessionToken:
         # the real client reads the token file the listener wrote and gets in
         assert GuiDriverCommands().kicad_gui_tree({})["success"] is True
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="POSIX mode bits are not enforced on Windows; the profile ACL protects "
+        "the default token path there (see test_default_token_path_matches_client)",
+    )
     def test_token_file_is_mode_0600(self, tok_helper, tmp_path):
         import stat
 
         tf = tmp_path / "tok"
         assert tf.read_text().strip() == tok_helper.token
         assert stat.S_IMODE(tf.stat().st_mode) == 0o600
+
+    def test_token_file_holds_the_token(self, tok_helper, tmp_path):
+        assert (tmp_path / "tok").read_text().strip() == tok_helper.token
+
+    @pytest.mark.parametrize(
+        "platform, expected_rel",
+        [
+            ("win32", "Roaming/kicad/gui_driver_8770.token"),
+            ("darwin", "Library/Preferences/kicad/gui_driver_8770.token"),
+            ("linux", ".local/share/kicad/gui_driver_8770.token"),
+        ],
+    )
+    def test_default_token_path_matches_client(
+        self, tok_helper, monkeypatch, tmp_path, platform, expected_rel
+    ):
+        """Listener (writer) and MCP client (reader) must agree on the default path,
+        and on Windows it must sit under %APPDATA%: that directory's inherited
+        profile ACL is what keeps other users out, since 0600 is not enforced there."""
+        from plugins import listener
+
+        monkeypatch.delenv("KICAD_GUI_DRIVER_TOKEN_FILE", raising=False)
+        monkeypatch.setenv("KICAD_GUI_DRIVER_PORT", "8770")
+        monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+        monkeypatch.setattr(sys, "platform", platform)
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+
+        written = listener._token_path()
+        assert written == gui_driver._token_path()
+        assert written.relative_to(tmp_path).as_posix() == expected_rel
+
+
+class TestListenerHardening:
+    """Merge-time fixes from the #333 security review: a bounded pre-auth read and
+    a validated screenshot path. Both run against the real listener over loopback."""
+
+    def _send(self, port, payload: bytes):
+        with socket.create_connection(("127.0.0.1", port), timeout=10) as conn:
+            conn.sendall(payload)
+            reader = conn.makefile("rb")
+            first = reader.readline()
+            rest = reader.read()  # the listener closes the connection after an oversize line
+        return json.loads(first), rest
+
+    def test_oversize_line_is_refused_before_auth_and_connection_closed(self, tok_helper):
+        from plugins import listener
+
+        # no newline at all: an unbounded readline would keep buffering
+        response, rest = self._send(tok_helper.port, b"x" * (listener.MAX_REQUEST_BYTES + 100))
+        assert response["ok"] is False
+        assert "longer than" in response["error"]
+        assert rest == b""
+
+    def test_line_at_the_limit_is_still_read(self, tok_helper):
+        from plugins import listener
+
+        request = {"cmd": "ping", "token": tok_helper.token, "pad": ""}
+        base = len(json.dumps(request)) + 1  # + newline
+        request["pad"] = "p" * (listener.MAX_REQUEST_BYTES - base)
+        line = (json.dumps(request) + "\n").encode("utf-8")
+        assert len(line) == listener.MAX_REQUEST_BYTES
+        with socket.create_connection(("127.0.0.1", tok_helper.port), timeout=10) as conn:
+            conn.sendall(line)
+            response = json.loads(conn.makefile("rb").readline())
+        assert response["ok"] is True and response["result"]["pong"] is True
+
+    def test_non_object_request_is_an_error_line(self, tok_helper):
+        with socket.create_connection(("127.0.0.1", tok_helper.port), timeout=10) as conn:
+            conn.sendall(b"[1, 2]\n")
+            response = json.loads(conn.makefile("rb").readline())
+        assert response["ok"] is False and "JSON object" in response["error"]
+
+    @pytest.mark.parametrize(
+        "bad, why",
+        [
+            ("relative.png", "absolute"),
+            ("{tmp}/shot.txt", ".png"),
+            ("{tmp}/missing-dir/shot.png", "does not exist"),
+            ("{tmp}/a-directory.png", "not a regular file"),
+            ("", "non-empty"),
+        ],
+    )
+    def test_screenshot_path_is_validated(self, helper, tmp_path, bad, why):
+        (tmp_path / "a-directory.png").mkdir()
+        path = bad.replace("{tmp}", str(tmp_path))
+        out = GuiDriverCommands().kicad_gui_screenshot({"path": path})
+        assert out["success"] is False
+        assert why in out["error"]
+
+    def test_screenshot_symlink_is_refused(self, helper, tmp_path):
+        victim = tmp_path / "victim.kicad_pcb"
+        victim.write_text("board")
+        link = tmp_path / "shot.png"
+        try:
+            link.symlink_to(victim)
+        except (OSError, NotImplementedError):
+            pytest.skip("creating symlinks needs extra privileges on this platform")
+        out = GuiDriverCommands().kicad_gui_screenshot({"path": str(link)})
+        assert out["success"] is False and "not a regular file" in out["error"]
+        assert victim.read_text() == "board"
+
+    def test_valid_screenshot_path_reaches_the_driver(self, helper, tmp_path):
+        target = tmp_path / "Board Shot.PNG"
+        out = GuiDriverCommands().kicad_gui_screenshot({"path": str(target)})
+        assert out["success"] is True
+        assert out["path"] == str(target)
+
+    def test_screenshot_without_path_still_uses_a_temp_file(self, helper):
+        out = GuiDriverCommands().kicad_gui_screenshot({})
+        assert out["success"] is True
 
 
 class TestInstallOptIn:
@@ -413,7 +529,8 @@ class TestPluginDirResolution:
         self._fake_kicad_tree(tmp_path, ".local/share/kicad")
         dirs = kicad_plugin_dirs(platform="linux", environ={}, home=tmp_path)
         assert [d.parts[-3] for d in dirs] == ["8.0", "9.0"]
-        assert all(str(d).endswith("3rdparty/plugins") for d in dirs)
+        # as_posix(): the assertion is about path shape, not the host separator
+        assert all(d.as_posix().endswith("3rdparty/plugins") for d in dirs)
         assert str(dirs[0]).startswith(str(tmp_path / ".local/share/kicad"))
 
     def test_windows_uses_appdata(self, tmp_path):
@@ -433,7 +550,7 @@ class TestPluginDirResolution:
         self._fake_kicad_tree(tmp_path, "Library/Preferences/kicad")
         dirs = kicad_plugin_dirs(platform="darwin", environ={}, home=tmp_path)
         assert len(dirs) == 2
-        assert "Library/Preferences/kicad" in str(dirs[0])
+        assert "Library/Preferences/kicad" in dirs[0].as_posix()
 
     def test_no_kicad_installed_is_empty(self, tmp_path):
         assert kicad_plugin_dirs(platform="linux", environ={}, home=tmp_path) == []
