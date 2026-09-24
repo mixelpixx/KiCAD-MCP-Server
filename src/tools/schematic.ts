@@ -1268,7 +1268,9 @@ edit_schematic_component and set its value to an empty string.`,
   // Annotate schematic
   server.tool(
     "annotate_schematic",
-    "Assign reference designators to unannotated components (R? → R1, R2, ...). Must be called before tools that require known references.",
+    "Assign reference designators to unannotated components (R? → R1, R2, ...). Must be called before tools that require known references. " +
+      "Numbers are unique across the whole project, each use of a sheet that is placed more than once gets its own, " +
+      "and the units of a multi-unit part share one.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
     },
@@ -1281,7 +1283,12 @@ edit_schematic_component and set its value to an empty string.`,
             content: [{ type: "text", text: "All components are already annotated." }],
           };
         }
-        const lines = annotated.map((a: any) => `  ${a.oldReference} → ${a.newReference}`);
+        // A sheet used more than once gives the part a reference per use (#432).
+        const lines = annotated.map((a: any) => {
+          const others = (a.instances || []).slice(1).map((i: any) => i.reference);
+          const note = others.length ? ` (other uses of the sheet: ${others.join(", ")})` : "";
+          return `  ${a.oldReference} → ${a.newReference}${note}`;
+        });
         return {
           content: [
             {

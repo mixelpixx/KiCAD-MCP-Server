@@ -31,7 +31,7 @@ from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.project_settings_guard import preserve_project_settings
 from utils.sexpr_format import dumps as kicad_dumps
 from utils.sexpr_format import escape_sexpr_string
-from utils.symbol_instances import instance_report
+from utils.symbol_instances import annotate_sheet, instance_report
 
 logger = logging.getLogger("kicad_interface")
 
@@ -2218,75 +2218,29 @@ class SchematicHandlersMixin:
             return {"success": False, "message": str(e)}
 
     def _handle_annotate_schematic(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Annotate unannotated components in schematic (R? -> R1, R2, ...)"""
+        """Annotate unannotated components in schematic (R? -> R1, R2, ...)
+
+        utils.symbol_instances.annotate_sheet does the work. This used kicad-skip's
+        setAllReferences, which wrote one number into every use of a sheet used
+        more than once, and it took the used numbers from this file only, so a
+        number already taken on another sheet was handed out again (#432). It
+        also gave each unit of a multi-unit part its own number.
+        """
         logger.info("Annotating schematic")
         try:
-            import re
-
             schematic_path = params.get("schematicPath")
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
+            if not Path(schematic_path).is_file():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
 
-            try:
-                schematic = SchematicManager.load_schematic(schematic_path)
-            except SchematicLoadError as e:
-                return e.to_response()
-
-            # Collect existing references by prefix
-            existing_refs = {}  # prefix -> set of numbers
-            unannotated = []  # (symbol, prefix)
-
-            for symbol in schematic.symbol:
-                if not hasattr(symbol.property, "Reference"):
-                    continue
-                ref = symbol.property.Reference.value
-                if ref.startswith("_TEMPLATE"):
-                    continue
-
-                # Split reference into prefix and number
-                match = re.match(r"^([A-Za-z_]+)(\d+)$", ref)
-                if match:
-                    prefix = match.group(1)
-                    num = int(match.group(2))
-                    if prefix not in existing_refs:
-                        existing_refs[prefix] = set()
-                    existing_refs[prefix].add(num)
-                elif ref.endswith("?"):
-                    prefix = ref[:-1]
-                    unannotated.append((symbol, prefix))
-
-            if not unannotated:
+            annotated = annotate_sheet(Path(schematic_path))
+            if not annotated:
                 return {
                     "success": True,
                     "annotated": [],
                     "message": "All components already annotated",
                 }
-
-            annotated = []
-            for symbol, prefix in unannotated:
-                if prefix not in existing_refs:
-                    existing_refs[prefix] = set()
-
-                # Find next available number
-                next_num = 1
-                while next_num in existing_refs[prefix]:
-                    next_num += 1
-
-                old_ref = symbol.property.Reference.value
-                new_ref = f"{prefix}{next_num}"
-                symbol.setAllReferences(new_ref)
-                existing_refs[prefix].add(next_num)
-
-                uuid_val = str(symbol.uuid.value) if hasattr(symbol, "uuid") else ""
-                annotated.append(
-                    {
-                        "uuid": uuid_val,
-                        "oldReference": old_ref,
-                        "newReference": new_ref,
-                    }
-                )
-
-            SchematicManager.save_schematic(schematic, schematic_path)
             return {"success": True, "annotated": annotated}
 
         except Exception as e:
