@@ -15,6 +15,7 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from commands.library_tables import global_table_path, no_global_table_message
 from utils.sexpr_format import escape_sexpr_string
 
 logger = logging.getLogger("kicad_interface")
@@ -557,7 +558,9 @@ class FootprintCreator:
             Optional description string.
         scope : str
             "project" (writes fp-lib-table next to .kicad_pro) or
-            "global"  (writes to ~/.config/kicad/9.0/fp-lib-table).
+            "global"  (adds to the newest KiCad version's existing global
+            fp-lib-table, e.g. kicad/10.0 under %APPDATA% or ~/.config;
+            fails if KiCad has not created one yet).
         project_path : str or None
             Path to the .kicad_pro file or its directory (needed for scope="project").
 
@@ -582,28 +585,20 @@ class FootprintCreator:
                 table_dir = pretty.parent
             table_path = table_dir / "fp-lib-table"
         else:  # global
-            cfg_dirs = [
-                Path(os.environ.get("APPDATA", "")) / "kicad" / "9.0",
-                Path.home() / ".config" / "kicad" / "9.0",
-                Path.home() / ".local" / "share" / "kicad" / "9.0",
-            ]
-            table_path = None
-            for d in cfg_dirs:
-                candidate = d / "fp-lib-table"
-                if candidate.exists():
-                    table_path = candidate
-                    break
-            if table_path is None:
-                # Create in first writable config dir
-                for d in cfg_dirs:
-                    try:
-                        d.mkdir(parents=True, exist_ok=True)
-                        table_path = d / "fp-lib-table"
-                        break
-                    except OSError:
-                        continue
-            if table_path is None:
-                return {"success": False, "error": "Could not find or create global fp-lib-table"}
+            # The newest KiCad's own table (#425): only 9.0 used to be searched,
+            # and with none there a 9.0 table was created, which KiCad 10 never
+            # reads. See global_table_path for why a missing table is an error.
+            global_table = global_table_path("footprint")
+            if global_table is None:
+                return {
+                    "success": False,
+                    "error": no_global_table_message(
+                        "footprint",
+                        "KiCad creates it the first time it starts, so start KiCad once "
+                        "and retry, or register the library with scope='project'.",
+                    ),
+                }
+            table_path = global_table
 
         # Read existing table or start fresh
         if table_path.exists():

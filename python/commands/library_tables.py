@@ -58,10 +58,6 @@ _TABLES = {
     "footprint": ("fp-lib-table", "fp_lib_table"),
 }
 
-# Newest first: KiCad reads the config of the version that wrote it, and a
-# machine that has been upgraded keeps the older directories around.
-_KICAD_VERSIONS = ("10.0", "9.0", "8.0")
-
 _FIELDS = ("name", "type", "uri", "options", "descr")
 
 _VAR_RE = re.compile(r"\$\{([^}]+)\}")
@@ -86,16 +82,33 @@ class _Table(NamedTuple):
 
 def _kicad_config_dirs() -> List[Path]:
     """Candidate KiCad configuration directories, newest version first."""
-    home = Path.home()
-    roots = [
-        home / "AppData" / "Roaming" / "kicad",
-        home / ".config" / "kicad",
-        home / "Library" / "Preferences" / "kicad",
-    ]
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        roots.insert(0, Path(appdata) / "kicad")
-    return [root / version for version in _KICAD_VERSIONS for root in roots]
+    return PlatformHelper.kicad_config_dirs()
+
+
+def global_table_path(table_type: str) -> Optional[Path]:
+    """The machine-wide ``sym-lib-table`` / ``fp-lib-table``, or None.
+
+    The newest KiCad version's table wins: that is the one the installed KiCad
+    reads. Nothing here creates a table. KiCad offers to set up its default
+    libraries on first start only when the file is missing, so a table
+    written first, holding a single row, would leave that KiCad without any of
+    its stock libraries.
+    """
+    filename = _TABLES[table_type][0]
+    for directory in _kicad_config_dirs():
+        candidate = directory / filename
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def no_global_table_message(table_type: str, remedy: str) -> str:
+    """The error for a ``global_table_path`` miss: where it looked, then *remedy*."""
+    return (
+        f"No global {_TABLES[table_type][0]} found. Looked in: "
+        + ", ".join(str(d) for d in _kicad_config_dirs()[:4])
+        + f". {remedy}"
+    )
 
 
 def _backup(path: Path) -> Optional[str]:
@@ -338,19 +351,14 @@ def _table_path(
     if scope != "global":
         return None, None, None, f"scope must be 'project' or 'global', got {scope!r}"
 
-    for directory in _kicad_config_dirs():
-        candidate = directory / filename
-        if candidate.exists():
-            return candidate, table_type, None, None
+    candidate = global_table_path(table_type)
+    if candidate is not None:
+        return candidate, table_type, None, None
     return (
         None,
         None,
         None,
-        (
-            f"No global {filename} found. Looked in: "
-            + ", ".join(str(d) for d in _kicad_config_dirs()[:4])
-            + ". Pass tablePath to point at it directly."
-        ),
+        no_global_table_message(table_type, "Pass tablePath to point at it directly."),
     )
 
 

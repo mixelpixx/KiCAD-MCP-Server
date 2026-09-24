@@ -15,6 +15,10 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+#: KiCad releases whose per-version configuration directories are searched,
+#: newest first (see ``PlatformHelper.kicad_config_dirs``).
+KICAD_CONFIG_VERSIONS = ("10.0", "9.0", "8.0")
+
 
 class PlatformHelper:
     """Platform detection and path resolution utilities"""
@@ -352,6 +356,111 @@ class PlatformHelper:
         return paths_added
 
     @staticmethod
+    def kicad_config_dirs() -> List[Path]:
+        r"""KiCad's per-version user configuration directories, newest version first.
+
+        KiCad keeps its settings, including the global ``fp-lib-table`` and
+        ``sym-lib-table`` and ``kicad_common.json``, in ``<root>\<major.minor>``:
+        ``%APPDATA%\kicad`` on Windows, ``~/.config/kicad`` (or
+        ``$XDG_CONFIG_HOME/kicad``) on Linux, ``~/Library/Preferences/kicad`` on
+        macOS, or ``$KICAD_CONFIG_HOME`` when that is set. Each KiCad release
+        reads only its own version's directory, and an upgraded machine keeps the
+        older ones, so a lookup walks this list and takes the first hit. A
+        hard-coded ``9.0`` finds nothing on a machine that has only KiCad 10
+        (#425).
+        """
+        home = Path.home()
+        roots = [
+            Path(os.environ["KICAD_CONFIG_HOME"]) if os.environ.get("KICAD_CONFIG_HOME") else None,
+            Path(os.environ["APPDATA"]) / "kicad" if os.environ.get("APPDATA") else None,
+            home / "AppData" / "Roaming" / "kicad",
+            (
+                Path(os.environ["XDG_CONFIG_HOME"]) / "kicad"
+                if os.environ.get("XDG_CONFIG_HOME")
+                else None
+            ),
+            home / ".config" / "kicad",
+            home / "Library" / "Preferences" / "kicad",
+        ]
+        dirs: List[Path] = []
+        for version in KICAD_CONFIG_VERSIONS:
+            for root in roots:
+                if root is not None and root / version not in dirs:
+                    dirs.append(root / version)
+        return dirs
+
+    @staticmethod
+    def find_kicad_3rd_party_dir() -> Optional[str]:
+        """The directory ``${KICAD10_3RD_PARTY}`` and its siblings stand for.
+
+        That is where KiCad's Plugin and Content Manager installs libraries, and
+        library tables refer to them through the variable. Resolution order:
+
+        1. The shell environment: KICAD10_3RD_PARTY, KICAD9_3RD_PARTY,
+           KICAD8_3RD_PARTY, then KICAD_3RD_PARTY.
+        2. The newest KiCad configuration's own versioned variable, e.g.
+           KICAD10_3RD_PARTY in ``10.0/kicad_common.json`` (Preferences >
+           Configure Paths).
+        3. That version's default location, ``Documents/KiCad/<ver>/3rdparty``
+           on Windows and macOS or ``~/.local/share/kicad/<ver>/3rdparty`` on
+           Linux, then the other versions' defaults, newest first.
+
+        Steps 2 and 3 used to read only the 9.0 configuration and default to
+        9.0, so on a machine with only KiCad 10 the variable never resolved
+        unless it was set in the shell (#425).
+        """
+        for var in ("KICAD10_3RD_PARTY", "KICAD9_3RD_PARTY", "KICAD8_3RD_PARTY", "KICAD_3RD_PARTY"):
+            path = os.environ.get(var)
+            if path and os.path.isdir(path):
+                return path
+
+        version = None
+        for config_dir in PlatformHelper.kicad_config_dirs():
+            config_path = config_dir / "kicad_common.json"
+            if not config_path.is_file():
+                continue
+            version = config_dir.name
+            var = f"KICAD{version.split('.')[0]}_3RD_PARTY"
+            path = PlatformHelper._read_kicad_common_vars(config_path).get(var)
+            if path and os.path.isdir(path):
+                return path
+            break
+
+        versions = list(KICAD_CONFIG_VERSIONS)
+        if version in versions:
+            versions.remove(version)
+            versions.insert(0, version)
+        home = Path.home()
+        for ver in versions:
+            for candidate in (
+                home / "Documents" / "KiCad" / ver / "3rdparty",  # Windows, macOS
+                home / ".local" / "share" / "kicad" / ver / "3rdparty",  # Linux
+            ):
+                if candidate.is_dir():
+                    return str(candidate)
+
+        # Not a warning: most installs never use the PCM, and this runs once
+        # per library-table row.
+        logger.debug("Could not find KiCad 3rd party directory")
+        return None
+
+    @staticmethod
+    def _read_kicad_common_vars(config_path: Path) -> Dict[str, str]:
+        """``environment.vars`` of one kicad_common.json; {} if absent or unreadable.
+
+        KiCad writes ``"vars": null`` until the user adds a path variable.
+        """
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            vars_ = (config.get("environment") or {}).get("vars") or {}
+        except (OSError, ValueError, AttributeError):
+            return {}
+        if not isinstance(vars_, dict):
+            return {}
+        return {k: str(v) for k, v in vars_.items()}
+
+    @staticmethod
     def load_kicad_env_vars() -> Dict[str, str]:
         """
         Load user-defined environment variables from kicad_common.json.
@@ -359,36 +468,16 @@ class PlatformHelper:
         KiCad stores custom path variables (Preferences > Configure Paths) in
         kicad_common.json under environment.vars. These are referenced in
         sym-lib-table / fp-lib-table URIs, e.g. ``${SEEK}/mylib.kicad_sym``.
+        The newest KiCad version's file is the one read.
 
         Returns:
             Dict of variable name -> value (empty if not found or unreadable)
         """
-        import json
-
-        env_vars = {}
-        kicad_common_paths = [
-            Path.home() / "Library" / "Preferences" / "kicad" / "10.0" / "kicad_common.json",
-            Path.home() / "Library" / "Preferences" / "kicad" / "9.0" / "kicad_common.json",
-            Path.home() / "Library" / "Preferences" / "kicad" / "8.0" / "kicad_common.json",
-            Path.home() / ".config" / "kicad" / "10.0" / "kicad_common.json",
-            Path.home() / ".config" / "kicad" / "9.0" / "kicad_common.json",
-            Path.home() / ".config" / "kicad" / "8.0" / "kicad_common.json",
-            Path.home() / "AppData" / "Roaming" / "kicad" / "10.0" / "kicad_common.json",
-            Path.home() / "AppData" / "Roaming" / "kicad" / "9.0" / "kicad_common.json",
-            Path.home() / "AppData" / "Roaming" / "kicad" / "8.0" / "kicad_common.json",
-        ]
-        for config_path in kicad_common_paths:
-            if config_path.exists():
-                try:
-                    with open(config_path, "r") as f:
-                        config = json.load(f)
-                    vars_ = config.get("environment", {}).get("vars", {})
-                    if isinstance(vars_, dict):
-                        env_vars.update({k: str(v) for k, v in vars_.items()})
-                    break
-                except (json.JSONDecodeError, KeyError, TypeError):
-                    pass
-        return env_vars
+        for config_dir in PlatformHelper.kicad_config_dirs():
+            config_path = config_dir / "kicad_common.json"
+            if config_path.is_file():
+                return PlatformHelper._read_kicad_common_vars(config_path)
+        return {}
 
 
 # Convenience function for quick platform detection

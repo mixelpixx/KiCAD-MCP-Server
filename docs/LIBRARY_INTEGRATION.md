@@ -26,13 +26,15 @@ The library system automatically discovers both footprint and symbol libraries:
 **Footprint Libraries** - `LibraryManager` class:
 
 1. **Parsing fp-lib-table files:**
-   - Global: `~/.config/kicad/9.0/fp-lib-table`
+   - Global: `fp-lib-table` in the newest KiCad version's user config directory
+     (`~/.config/kicad/10.0/` on Linux, `%APPDATA%\kicad\10.0\` on Windows,
+     `~/Library/Preferences/kicad/10.0/` on macOS; then 9.0, then 8.0)
    - Project-specific: `project-dir/fp-lib-table`
 
 **Symbol Libraries** - `DynamicSymbolLoader` class (v2.2.2+):
 
 1. **Parsing sym-lib-table files:**
-   - Global: `~/.config/kicad/9.0/sym-lib-table`
+   - Global: `sym-lib-table` in the same directory as the global `fp-lib-table`
    - Project-local: `project-dir/sym-lib-table` (added v2.2.2)
 
 2. **Resolving environment variables:**
@@ -281,7 +283,7 @@ The system automatically detects KiCAD installations, but you can add custom lib
 
 ### Supported Platforms
 
-- ✅ **Linux:** `/usr/share/kicad/footprints`, `~/.config/kicad/9.0/`
+- ✅ **Linux:** `/usr/share/kicad/footprints`, `~/.config/kicad/<version>/`
 - ✅ **Windows:** `C:/Program Files/KiCAD/*/share/kicad/footprints`
 - ✅ **macOS:** `/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints`
 
@@ -394,7 +396,8 @@ rotation = module.GetOrientation().AsDegrees()
 
 1. Verify KiCAD is installed
 2. Open KiCAD and ensure libraries are configured
-3. Check `~/.config/kicad/9.0/fp-lib-table` exists
+3. Check that `fp-lib-table` exists in `~/.config/kicad/<version>/`
+   (`%APPDATA%\kicad\<version>\` on Windows)
 
 ### "Footprint not found"
 
