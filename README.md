@@ -41,6 +41,39 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 https://github.com/mixelpixx/arduino-ide
 
+## What's New in v2.8.1
+
+A patch release with three fixes for hierarchical schematics and KiCad
+10-only machines. They came out of reviewing the fixes that went into v2.8.0.
+
+### Parts on reused sheets get a reference per use
+
+- A sheet placed more than once gets an instance entry, with its own
+  reference, for every use. KiCad's complex_hierarchy demo uses one amplifier
+  sheet twice. Before, a part placed there had one entry, and kicad-cli listed
+  it twice with "schematic has annotation errors" (#428).
+- `annotate_schematic` numbers each use on its own and skips numbers already
+  used on other sheets of the project. It keeps the units of a multi-unit part
+  on one number and gives power symbols KiCad's leading zero (#432).
+- `add_schematic_component`, `batch_add_components` and `annotate_schematic`
+  report the reference in each use, so callers don't give those numbers to
+  other parts.
+- Sheets kept in a subdirectory now find their root, as in KiCad's
+  royalblue54L_feather demo, which keeps its sheets in `sch/`.
+  `add_hierarchical_sheet` writes correct paths at any depth (#428).
+
+### KiCad 10-only machines
+
+- Global library registration writes the newest KiCad version's table. It used
+  to create a 9.0 table that KiCad 10 never reads. With no global table yet it
+  now returns an error, because creating one would hide KiCad's stock libraries
+  (#425).
+- `${KICAD10_3RD_PARTY}` (Plugin and Content Manager libraries) resolves at its
+  default location. The cairo DLL is now found in KiCad 10 installs and custom
+  install folders (#425).
+
+Full details in the [CHANGELOG](CHANGELOG.md).
+
 ## What's New in v2.8.0
 
 ### A crashed or stuck worker comes back on its own
@@ -1729,7 +1762,7 @@ npm run format
 
 ## Project Status
 
-**Current Version:** 2.8.0
+**Current Version:** 2.8.1
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
@@ -1837,6 +1870,6 @@ If you use this project in your research or publication, please cite:
   author = {mixelpixx},
   year = {2026},
   url = {https://github.com/mixelpixx/KiCAD-MCP-Server},
-  version = {2.8.0}
+  version = {2.8.1}
 }
 ```

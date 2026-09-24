@@ -4,6 +4,8 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-09-23
+
 ### Bug Fixes
 
 - **KiCad 10: global library tables and PCM paths** (#425). Three lookups still
