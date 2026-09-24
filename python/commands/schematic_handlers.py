@@ -31,6 +31,7 @@ from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.project_settings_guard import preserve_project_settings
 from utils.sexpr_format import dumps as kicad_dumps
 from utils.sexpr_format import escape_sexpr_string
+from utils.symbol_instances import instance_report
 
 logger = logging.getLogger("kicad_interface")
 
@@ -312,6 +313,7 @@ class SchematicHandlersMixin:
                 "component_reference": reference,
                 "symbol_source": f"{library}:{comp_type}",
             }
+            response.update(instance_report(loader.placed_instances))
             try:
                 content = schematic_file.read_text(encoding="utf-8")
                 placed = _find_placed_symbol_position(content, reference)

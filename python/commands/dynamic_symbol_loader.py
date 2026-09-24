@@ -12,7 +12,7 @@ import os
 import re
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from utils.sexpr_format import (
     QUOTED_VALUE,
@@ -20,6 +20,8 @@ from utils.sexpr_format import (
     escape_sexpr_string,
     unescape_sexpr_string,
 )
+from utils.sheet_tree import instance_paths, project_name
+from utils.symbol_instances import references_for_new_symbol
 
 logger = logging.getLogger("kicad_interface")
 
@@ -82,6 +84,10 @@ class DynamicSymbolLoader:
     def __init__(self, project_path: Optional[Path] = None):
         self.symbol_cache = {}  # Cache: "lib:symbol" -> raw text block
         self.project_path = project_path  # Project directory for project-specific libraries
+        # (instance path, reference) of each use of the sheet, for the symbol
+        # create_component_instance placed last; more than one when the sheet
+        # is used more than once.
+        self.placed_instances: List[Tuple[str, str]] = []
 
     @staticmethod
     def clear_library_caches() -> None:
@@ -762,119 +768,14 @@ class DynamicSymbolLoader:
     # Instance-block helpers (project name, hierarchical path, pin uuids) #
     # ------------------------------------------------------------------ #
 
-    @staticmethod
-    def _read_root_uuid(content: str) -> str:
-        """Return a schematic's own top-level (uuid ...) value, or '' if absent."""
-        m = re.search(r'\(uuid\s+"?([0-9a-fA-F-]+)"?\)', content)
-        return m.group(1) if m else ""
-
     def _resolve_project_name(self, schematic_path: Path) -> str:
         """Return the KiCad project name recorded in (instances (project "<name>" ...)).
 
         KiCad uses the project (``.kicad_pro``) stem, not the literal string
-        ``"project"``. Derive it from the nearest ``.kicad_pro`` (searching the
-        schematic's directory then a few parents), falling back to the schematic's
-        own stem when no project file is found.
+        ``"project"``: the nearest ``.kicad_pro`` in the schematic's directory or
+        a few parents, else the schematic's own stem (utils.sheet_tree).
         """
-        try:
-            sch = Path(schematic_path).resolve()
-            search_dirs = [sch.parent] + list(sch.parent.parents)[:3]
-            for directory in search_dirs:
-                pros = sorted(directory.glob("*.kicad_pro"))
-                if pros:
-                    return pros[0].stem
-            return sch.stem
-        except Exception:
-            return Path(schematic_path).stem
-
-    def _iter_child_sheets(self, content: str) -> List[Tuple[str, str]]:
-        """Yield (sheet_block_uuid, sheet_file_rel) for each (sheet ...) in a schematic.
-
-        Skips (sheet_instances ...) — its token has no whitespace after ``sheet``.
-        KiCad writes the file property as ``Sheetfile``; ``Sheet file`` (the GUI
-        label, and what older MCP builds emitted) is accepted too.
-        """
-        results: List[Tuple[str, str]] = []
-        for m in re.finditer(r"\(sheet(?=\s)", content):
-            block = self._extract_paren_block(content, m.start())
-            um = re.search(r'\(uuid\s+"?([0-9a-fA-F-]+)"?\)', block)
-            fm = re.search(r'\(property\s+"Sheet ?file"\s+"([^"]+)"', block)
-            if um and fm:
-                results.append((um.group(1), fm.group(1).replace("\\", "/")))
-        return results
-
-    def _root_candidates(self, target: Path) -> List[Path]:
-        """Possible root .kicad_sch files for *target*'s project, most likely first.
-
-        The schematic named after a ``.kicad_pro`` in the same directory comes
-        first. After it come the schematics carrying ``(sheet_instances ...)``
-        that no other schematic references as a sub-sheet: ``create_schematic``
-        writes that block into every new file, so its presence alone does not
-        identify the root. Callers try the candidates in order and keep the first
-        one whose sheet tree actually reaches *target*, so a stray unlinked
-        schematic that sorts first cannot stand in for the real root.
-        """
-        candidates: List[Path] = []
-        try:
-            directory = target.parent
-            for pro in sorted(directory.glob("*.kicad_pro")):
-                cand = directory / f"{pro.stem}.kicad_sch"
-                if cand.exists():
-                    candidates.append(cand.resolve())
-            referenced: Set[Path] = set()
-            bearing: List[Path] = []
-            for cand in sorted(directory.glob("*.kicad_sch")):
-                try:
-                    text = cand.read_text(encoding="utf-8")
-                except Exception:
-                    continue
-                for _, rel in self._iter_child_sheets(text):
-                    referenced.add((cand.parent / rel).resolve())
-                if "(sheet_instances" in text:
-                    bearing.append(cand.resolve())
-            candidates += [c for c in bearing if c not in referenced and c not in candidates]
-        except Exception:
-            pass
-        return candidates
-
-    def _find_root_schematic(self, target: Path) -> Optional[Path]:
-        """The most likely root .kicad_sch for *target*'s project, or None."""
-        candidates = self._root_candidates(target)
-        return candidates[0] if candidates else None
-
-    def _sheet_chain_to(self, root: Path, target: Path) -> List[str]:
-        """Return the UUID chain [root_uuid, sheet_block_uuid, ...] from root to target.
-
-        Walks the root project's sheet tree breadth-first. Returns [] if target is not
-        reachable from root.
-        """
-        try:
-            root = root.resolve()
-            target = target.resolve()
-            root_content = root.read_text(encoding="utf-8")
-            root_uuid = self._read_root_uuid(root_content)
-            if not root_uuid:
-                return []
-            if root == target:
-                return [root_uuid]
-            visited = {root}
-            queue: List[Tuple[Path, str, List[str]]] = [(root, root_content, [root_uuid])]
-            while queue:
-                fpath, fcontent, chain = queue.pop(0)
-                for block_uuid, rel in self._iter_child_sheets(fcontent):
-                    child = (fpath.parent / rel).resolve()
-                    new_chain = chain + [block_uuid]
-                    if child == target:
-                        return new_chain
-                    if child.exists() and child not in visited:
-                        visited.add(child)
-                        try:
-                            queue.append((child, child.read_text(encoding="utf-8"), new_chain))
-                        except Exception:
-                            continue
-            return []
-        except Exception:
-            return []
+        return project_name(Path(schematic_path))
 
     @staticmethod
     def _read_sch_version(content: str) -> Optional[int]:
@@ -899,41 +800,31 @@ class DynamicSymbolLoader:
         version = cls._read_sch_version(content)
         return version is None or version >= _KICAD10_SCH_VERSION
 
-    def _build_instance_path(self, schematic_path: Path) -> str:
-        """Return the symbol instance path for symbols placed in ``schematic_path``.
+    def _build_instance_paths(self, schematic_path: Path) -> List[str]:
+        """Return the instance path of every use of ``schematic_path``.
 
-        - Root / flat schematic: ``/<root-sheet-uuid>`` where the UUID is the
-          schematic's own top-level (uuid ...).
-        - Child sheet in a hierarchy: the chain of sheet-instance UUIDs from the root,
-          ``/<root-uuid>/<sheet-block-uuid>[/...]``, reconstructed by walking the root
-          project's sheet tree.
-        - Unlinked child (no chain yet): one level using the sheet's own UUID;
-          add_hierarchical_sheet -> fix_subsheet_instances repairs it once linked.
+        - Root / flat schematic: ``/<root-sheet-uuid>``, the schematic's own
+          top-level (uuid ...).
+        - Sheet in a hierarchy: one path per use, each the chain of uuids from
+          the root, ``/<root-uuid>/<sheet-block-uuid>[/...]``. A sheet placed
+          twice has two, as does a sheet placed once inside one placed twice.
+        - Unlinked sheet (no root reaches it yet): one level with the sheet's
+          own uuid; add_hierarchical_sheet -> fix_subsheet_instances adds the
+          real paths once it is linked.
 
-        The hierarchy is resolved before any ``(sheet_instances ...)`` check:
-        ``create_schematic`` writes that block into every new file, so its
-        presence does not mean "this is the root", and treating a linked
-        sub-sheet as the root gave its parts a one-level path (#423). KiCad
-        writes the root's sheet-file property as ``Sheetfile``, which the chain
-        walk now also matches; before, a sub-sheet of a KiCad-saved root found
-        no chain and fell back to one level too.
-
-        A sheet instantiated more than once needs one path per instance; this
-        returns the first instance's path only.
+        The root is looked for in the sheet's directory and up to three parents
+        (utils.sheet_tree.root_candidates), so a sheet in a subdirectory of the
+        project finds it. ``create_schematic`` writes ``(sheet_instances ...)``
+        into every new file, so that block alone does not mark the root (#423).
         """
         try:
-            target = Path(schematic_path).resolve()
-            content = target.read_text(encoding="utf-8")
-            this_uuid = self._read_root_uuid(content)
-
-            for root in self._root_candidates(target):
-                chain = self._sheet_chain_to(root, target)
-                if chain:
-                    return "/" + "/".join(chain)
-
-            return f"/{this_uuid}" if this_uuid else "/"
+            return instance_paths(Path(schematic_path))[1]
         except Exception:
-            return "/"
+            return ["/"]
+
+    def _build_instance_path(self, schematic_path: Path) -> str:
+        """The first of ``_build_instance_paths``: the path of the sheet's first use."""
+        return self._build_instance_paths(schematic_path)[0]
 
     def _extract_symbol_pins(
         self, schematic_path: Path, library_name: str, symbol_name: str, unit: int
@@ -1163,16 +1054,29 @@ class DynamicSymbolLoader:
         pin_numbers = self._extract_symbol_pins(schematic_path, library_name, symbol_name, unit)
         pins_str = "\n".join(f'    (pin "{n}" (uuid "{uuid.uuid4()}"))' for n in pin_numbers)
 
-        # Real project name + hierarchical sheet path (not the "project" / "/" placeholders).
-        project_name = self._resolve_project_name(schematic_path)
-        instance_path = self._build_instance_path(schematic_path)
-        instances_str = (
-            "    (instances\n"
-            f'      (project "{escape_sexpr_string(project_name)}"\n'
-            f'        (path "{escape_sexpr_string(instance_path)}"\n'
-            f'          (reference "{escape_sexpr_string(reference)}")\n'
+        # Real project name + hierarchical sheet path (not the "project" / "/"
+        # placeholders), one (path ...) per use of the sheet (#428). A sheet
+        # used twice needs a reference of its own in each use: with a single
+        # entry, the second use has none, and the netlist loses one part and
+        # lists another twice. The first use gets the requested reference.
+        instance_project = self._resolve_project_name(schematic_path)
+        try:
+            instances = references_for_new_symbol(Path(schematic_path), reference, instance_project)
+        except Exception as e:
+            logger.warning(f"Instance paths for {schematic_path} not resolved ({e}); using '/'")
+            instances = [("/", reference)]
+        self.placed_instances = instances
+        path_entries = "".join(
+            f'        (path "{escape_sexpr_string(path)}"\n'
+            f'          (reference "{escape_sexpr_string(ref)}")\n'
             f"          (unit {unit})\n"
             "        )\n"
+            for path, ref in instances
+        )
+        instances_str = (
+            "    (instances\n"
+            f'      (project "{escape_sexpr_string(instance_project)}"\n'
+            f"{path_entries}"
             "      )\n"
             "    )"
         )

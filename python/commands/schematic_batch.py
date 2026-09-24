@@ -10,8 +10,7 @@ Tools that place / edit / connect many things in one call to avoid per-item roun
   - batch_add_and_connect:           place components and wire their nets in one call
 
 The command class is constructed with a reference to the KiCADInterface so it can reuse
-existing single-item handlers (add/edit/get_schematic_component), the footprint library,
-and the hierarchical-instance fixer when present.
+existing single-item handlers (add/edit/get_schematic_component) and the footprint library.
 """
 
 import logging
@@ -29,6 +28,7 @@ from commands.schematic_text_utils import (
     _move_property_in_block,
 )
 from commands.wire_manager import WireManager
+from utils.symbol_instances import add_missing_instances, instance_report
 
 logger = logging.getLogger("kicad_interface")
 
@@ -161,6 +161,7 @@ class SchematicBatchCommands:
                         "unit": unit,
                         "snapped_position": {"x": _snap(x), "y": _snap(y)},
                     }
+                    entry.update(instance_report(loader.placed_instances))
 
                     if footprint and self.iface.footprint_library.find_footprint(footprint) is None:
                         entry["footprint_warning"] = (
@@ -223,20 +224,15 @@ class SchematicBatchCommands:
                     logger.error(f"Error adding {reference} ({symbol}): {e}")
                     errors.append({"symbol": symbol, "reference": reference, "error": str(e)})
 
-            # If this schematic is a sub-sheet of another, fix hierarchical instance paths
-            # (best-effort; only when the interface provides the fixer).
-            hier = getattr(self.iface, "hierarchy_commands", None)
-            if hier is not None:
-                sch_name = schematic_file.name
-                for candidate in project_path.glob("*.kicad_sch"):
-                    if candidate.resolve() == schematic_file.resolve():
-                        continue
-                    try:
-                        candidate_content = candidate.read_text(encoding="utf-8")
-                        if sch_name in candidate_content:
-                            hier.fix_subsheet_instances(str(candidate), candidate_content)
-                    except Exception:
-                        pass
+            # Placement already writes an instance entry for every use of this
+            # sheet (#428). This fills in any symbol already on the sheet that
+            # lacks one, and only for this sheet: running the fixer over every
+            # parent that names it rewalked each parent's whole subtree.
+            # Best-effort.
+            try:
+                add_missing_instances([schematic_file])
+            except Exception as e:
+                logger.warning(f"Instance entries for {schematic_file} not checked: {e}")
 
             placement_bbox = None
             bbs = [r["body_bbox"] for r in results if "body_bbox" in r]

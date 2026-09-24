@@ -7,7 +7,8 @@ Tools:
   - create_hierarchical_subsheet: create a sub-sheet file and link it in one call
 
 The command class holds a back-reference to KiCADInterface so it can reuse the existing
-create_schematic handler, and exposes fix_subsheet_instances for the batch module to call.
+create_schematic handler. fix_subsheet_instances gives the symbols of a newly linked sheet
+their instance entries (utils.symbol_instances).
 """
 
 import logging
@@ -16,9 +17,9 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List
 
-import sexpdata
-from sexpdata import Symbol
 from utils.sexpr_format import QUOTED_VALUE, escape_sexpr_string, unescape_sexpr_string
+from utils.sheet_tree import sheet_tree, sub_sheets
+from utils.symbol_instances import add_missing_instances
 
 logger = logging.getLogger("kicad_interface")
 
@@ -510,91 +511,41 @@ class SchematicHierarchyCommands:
             return {"success": False, "message": str(e)}
 
     def fix_subsheet_instances(self, parent_path: str, parent_content: str) -> List[str]:
-        """Ensure every component in each referenced sub-sheet has an instances entry for the
-        sheet-block UUID, so ERC resolves references correctly. Returns modified sub-sheet paths.
+        """Give every symbol on the parent's sub-sheets an instance entry per use.
+
+        Runs after add_hierarchical_sheet links a sheet. Every placed symbol
+        needs one ``(path ...)`` entry for each use of its sheet, and the path
+        starts at the root: ``/<root>/<block>``
+        for a sheet on the root, ``/<root>/<block>/<block>`` one level down.
+        Sheets below the linked one are covered too, since linking a sheet adds
+        a use to everything under it.
+
+        This used to build ``/<parent>/<block>`` from the parent alone, which is
+        wrong below level 2. It matched only the ``Sheet file`` spelling, not
+        the ``Sheetfile`` KiCad writes, and it read the parent's uuid only when
+        unquoted. It also copied the existing reference into a second use of a
+        sheet, and left the sheets below the linked one alone (#428).
+
+        Returns the paths of the files rewritten.
         """
-        modified_sheets: List[str] = []
         try:
-            parent_file = Path(parent_path)
-            parent_data = sexpdata.loads(parent_content)
-
-            for item in parent_data:
-                if not (isinstance(item, list) and len(item) > 0 and item[0] == Symbol("sheet")):
+            parent = Path(parent_path)
+            sheets: List[Path] = []
+            seen = set()
+            for _block_uuid, name in sub_sheets(parent_content):
+                child = parent.parent / name
+                if not child.is_file():
+                    logger.warning(f"Sub-sheet not found: {child}")
                     continue
-
-                sheet_block_uuid = None
-                sheet_file_rel = None
-                for sub in item:
-                    if isinstance(sub, list) and len(sub) >= 2 and sub[0] == Symbol("uuid"):
-                        sheet_block_uuid = str(sub[1])
-                    elif (
-                        isinstance(sub, list)
-                        and len(sub) >= 3
-                        and sub[0] == Symbol("property")
-                        and sub[1] == "Sheet file"
-                    ):
-                        sheet_file_rel = str(sub[2])
-                if not sheet_block_uuid or not sheet_file_rel:
-                    continue
-
-                sub_sheet_path = parent_file.parent / sheet_file_rel
-                if not sub_sheet_path.exists():
-                    logger.warning(f"Sub-sheet not found: {sub_sheet_path}")
-                    continue
-
-                parent_uuid_match = re.search(r"\(uuid\s+([0-9a-fA-F-]+)\)", parent_content)
-                parent_uuid = parent_uuid_match.group(1) if parent_uuid_match else ""
-                target_path = (
-                    f"/{parent_uuid}/{sheet_block_uuid}" if parent_uuid else f"/{sheet_block_uuid}"
-                )
-
-                sub_content = sub_sheet_path.read_text(encoding="utf-8")
-
-                def _balanced_end(s: str, start: int) -> int:
-                    depth = 0
-                    for j in range(start, len(s)):
-                        if s[j] == "(":
-                            depth += 1
-                        elif s[j] == ")":
-                            depth -= 1
-                            if depth == 0:
-                                return j
-                    return len(s) - 1
-
-                result_parts: List[str] = []
-                pos = 0
-                changed = False
-                while True:
-                    idx = sub_content.find("(instances", pos)
-                    if idx == -1:
-                        result_parts.append(sub_content[pos:])
-                        break
-                    result_parts.append(sub_content[pos:idx])
-                    end = _balanced_end(sub_content, idx)
-                    block = sub_content[idx : end + 1]
-
-                    if target_path not in block:
-                        existing = re.search(r'\(reference\s+"([^"]+)"\)\s*\(unit\s+(\d+)\)', block)
-                        if existing:
-                            new_entry = (
-                                f'(path "{target_path}" (reference "{existing.group(1)}") '
-                                f"(unit {existing.group(2)}))"
-                            )
-                            proj_start = block.find("(project ")
-                            if proj_start != -1:
-                                proj_end = _balanced_end(block, proj_start)
-                                block = block[:proj_end] + " " + new_entry + block[proj_end:]
-                                changed = True
-                    result_parts.append(block)
-                    pos = end + 1
-
-                if changed:
-                    sub_sheet_path.write_text("".join(result_parts), encoding="utf-8")
-                    modified_sheets.append(str(sub_sheet_path))
-                    logger.info(
-                        f"Fixed instances in {sub_sheet_path} for sheet-block {sheet_block_uuid}"
-                    )
-
+                for sheet in sheet_tree(child):
+                    key = str(sheet.resolve())
+                    if key not in seen:
+                        seen.add(key)
+                        sheets.append(sheet)
+            modified = add_missing_instances(sheets)
+            for path in modified:
+                logger.info(f"Added hierarchical instance entries in {path}")
+            return modified
         except Exception as e:
             logger.error(f"Error fixing sub-sheet instances: {e}")
-        return modified_sheets
+            return []
