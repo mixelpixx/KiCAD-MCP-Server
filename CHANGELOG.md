@@ -60,6 +60,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
   holds two projects, the project name recorded with them is now the project
   whose root reaches the sheet.
 
+- **`annotate_schematic` gave duplicate references in a hierarchy** (#432). It
+  wrote one number into every use of a sheet placed more than once, and it took
+  the used numbers from the one file being annotated, so it reused numbers taken
+  on other sheets. On KiCad's complex_hierarchy demo, `kicad-cli` then listed
+  the part two or three times and warned about annotation errors. Each use now
+  gets its own number, and numbers are unique across the project. The units of a
+  multi-unit part share one number, where each unit used to get its own. Power
+  symbols get KiCad's leading zero (#PWR01). A use with no instance entry yet
+  gets one. The file is edited in place instead of being rewritten by
+  kicad-skip, which also crashed on a symbol without instance data. The tool's
+  output lists the reference in each use of the sheet.
+
 ## [2.8.0] - 2026-09-23
 
 ### New Tools

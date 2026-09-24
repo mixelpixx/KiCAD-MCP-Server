@@ -13,9 +13,10 @@ another appears twice, while ERC reports nothing (#428). So a placement needs
 an entry for every use, and each entry needs a reference that no other part in
 the project has.
 
-``references_for_new_symbol`` serves ``create_component_instance``, and
+``references_for_new_symbol`` serves ``create_component_instance``,
 ``add_missing_instances`` serves ``fix_subsheet_instances``, which runs when a
-sheet is linked into the hierarchy.
+sheet is linked into the hierarchy, and ``annotate_sheet`` serves
+``annotate_schematic`` (#432).
 """
 
 from __future__ import annotations
@@ -71,13 +72,20 @@ class ReferenceAllocator:
         if not m:
             return reference
         prefix, digits = m.groups()
+        return self.next_free(prefix, zero=len(digits) > 1 and digits.startswith("0"))
+
+    def next_free(self, prefix: str, zero: bool = False) -> str:
+        """*prefix* followed by the first number no part in the project uses.
+
+        *zero* writes the number with a leading zero, as KiCad does for power
+        symbols (#PWR01, #PWR010).
+        """
         numbers = self._numbers.setdefault(prefix, set())
         n = 1
         while n in numbers:
             n += 1
         numbers.add(n)
-        zero = "0" if len(digits) > 1 and digits.startswith("0") else ""
-        return f"{prefix}{zero}{n}"
+        return f"{prefix}{'0' if zero else ''}{n}"
 
 
 def project_references(root: Optional[Path], sheet: Path) -> Set[str]:
@@ -336,3 +344,168 @@ def add_missing_instances(sheets: Iterable[Path]) -> List[str]:
             write_text_atomic(Path(sheet), text, newline)
             modified.append(str(sheet))
     return modified
+
+
+# --------------------------------------------------------------------------- #
+# Annotation (#432)
+# --------------------------------------------------------------------------- #
+
+_LIB_SYMBOLS_HEAD = re.compile(r"\(lib_symbols[\s(]")
+_LIB_SYMBOL_HEAD = re.compile(rf"\(symbol\s+{QUOTED_VALUE}")
+_POWER_HEAD = re.compile(r"\(power[\s()]")
+_LIB_ID = re.compile(rf"\(lib_id\s+{QUOTED_VALUE}")
+_VALUE_FIELD = re.compile(rf'\(property\s+"Value"\s+{QUOTED_VALUE}')
+_UUID = re.compile(r'\(uuid\s+"?([^\s()"]+)"?\s*\)')
+
+
+def _power_lib_ids(text: str) -> Set[str]:
+    """lib_ids whose definition in ``lib_symbols`` is a power symbol."""
+    ids: Set[str] = set()
+    for offset in iter_child_offsets(text):
+        if not _LIB_SYMBOLS_HEAD.match(text, offset):
+            continue
+        block = text[offset : match_paren(text, offset) + 1]
+        for sym in iter_child_offsets(block):
+            m = _LIB_SYMBOL_HEAD.match(block, sym)
+            if not m:
+                continue
+            definition = block[sym : match_paren(block, sym) + 1]
+            if any(_POWER_HEAD.match(definition, c) for c in iter_child_offsets(definition)):
+                ids.add(unescape_sexpr_string(m.group(1)))
+        break
+    return ids
+
+
+class _Part(NamedTuple):
+    """A placed symbol as annotation sees it; offsets are into the file."""
+
+    start: int
+    end: int
+    uuid: str
+    lib_id: str
+    value: str
+    unit: str
+    field: str
+    #: The project's ``(path ...)`` entries; empty for a symbol without any.
+    entries: List[_Entry]
+
+
+def _read_part(text: str, start: int, end: int, project: str) -> _Part:
+    block = text[start:end]
+    head: Dict[str, str] = {}
+    for child in iter_child_offsets(block):
+        for key, pattern in (("uuid", _UUID), ("lib_id", _LIB_ID), ("unit", _UNIT)):
+            m = pattern.match(block, child)
+            if m and key not in head:
+                head[key] = m.group(1)
+    field = _REFERENCE_FIELD.search(block)
+    value = _VALUE_FIELD.search(block)
+    return _Part(
+        start=start,
+        end=end,
+        uuid=head.get("uuid", ""),
+        lib_id=unescape_sexpr_string(head.get("lib_id", "")),
+        value=unescape_sexpr_string(value.group(1)) if value else "",
+        unit=head.get("unit", "1"),
+        field=unescape_sexpr_string(field.group(1)) if field else "",
+        entries=_project_entries(block, project) or [],
+    )
+
+
+def _unannotated(reference: Optional[str]) -> bool:
+    """``R?`` is; ``R1``, a bare ``?`` and no reference at all are not."""
+    return reference is not None and reference.endswith("?") and bool(reference.rstrip("?"))
+
+
+def _replace_first(pattern: re.Pattern, text: str, replacement: str) -> str:
+    m = pattern.search(text)
+    return text if m is None else text[: m.start()] + replacement + text[m.end() :]
+
+
+def annotate_sheet(sheet: Path) -> List[Dict[str, Any]]:
+    """Number the unannotated references (``R?``) on *sheet*, per use of the sheet.
+
+    Each use of a sheet that is used more than once is numbered on its own:
+    one number written into every ``(path ...)`` entry gave both uses the same
+    reference, and kicad-cli then listed the part twice (#432). Numbers come
+    from the whole project (every sheet the root reaches), not from this file
+    alone, which reused numbers taken on other sheets. Within a use, the units
+    of one part share a number: unannotated symbols with the same lib_id and
+    value are packed together while the unit is free, as KiCad's annotator
+    does, so a dual op-amp placed as two ``U?`` units becomes one U1 rather
+    than two half-used packages. Parts are numbered in file order, the uses in
+    sheet order, and power symbols get KiCad's leading zero (#PWR01).
+
+    A use that has no entry yet gets one first (add_missing_instances). Only
+    reference tokens change: an entry's ``(reference ...)``, and the Reference
+    field when it was unannotated, which takes the first use's reference.
+    Returns one item per symbol changed.
+    """
+    sheet = Path(sheet)
+    add_missing_instances([sheet])
+    root, paths = instance_paths(sheet)
+    project = project_name(sheet)
+    text, newline = read_text_preserve_newline(sheet)
+    allocator = ReferenceAllocator(project_references(root, sheet))
+    power = _power_lib_ids(text)
+    parts = [_read_part(text, start, end, project) for start, end in _placed_symbols(text)]
+
+    def reference_at(part: _Part, path: str) -> Optional[str]:
+        for entry in part.entries:
+            if entry.path == path:
+                return entry.reference
+        if any(entry.path in paths for entry in part.entries):
+            return None  # it has entries for this sheet's uses, not for this one
+        # No instance data for this sheet (none at all, or another project's):
+        # KiCad falls back to the Reference field.
+        return part.field if path == paths[0] else None
+
+    # Packages opened by this run: (path, lib_id, value) -> [(reference, units)].
+    packages: Dict[Tuple[str, str, str], List[Tuple[str, Set[str]]]] = {}
+    numbered: Dict[int, Dict[str, str]] = {}
+    for path in paths:
+        for index, part in enumerate(parts):
+            current = reference_at(part, path)
+            if current is None or not _unannotated(current):
+                continue
+            open_packages = packages.setdefault((path, part.lib_id, part.value), [])
+            for reference, units in open_packages:
+                if part.unit not in units:
+                    units.add(part.unit)
+                    break
+            else:
+                reference = allocator.next_free(current.rstrip("?"), zero=part.lib_id in power)
+                open_packages.append((reference, {part.unit}))
+            numbered.setdefault(index, {})[path] = reference
+
+    annotated: List[Dict[str, Any]] = []
+    edits: List[Tuple[int, int, str]] = []
+    for index, new in sorted(numbered.items()):
+        part = parts[index]
+        block = text[part.start : part.end]
+        for entry in sorted(part.entries, key=lambda e: e.start, reverse=True):
+            if entry.path in new:
+                token = f'(reference "{escape_sexpr_string(new[entry.path])}")'
+                segment = _replace_first(_REFERENCE, block[entry.start : entry.end], token)
+                block = block[: entry.start] + segment + block[entry.end :]
+        first_use = new.get(paths[0]) or reference_at(part, paths[0]) or next(iter(new.values()))
+        if _unannotated(part.field):
+            token = f'(property "Reference" "{escape_sexpr_string(first_use)}"'
+            block = _replace_first(_REFERENCE_FIELD, block, token)
+        edits.append((part.start, part.end, block))
+        item: Dict[str, Any] = {
+            "uuid": part.uuid,
+            "oldReference": part.field,
+            "newReference": first_use,
+        }
+        if len(paths) > 1:
+            item["instances"] = [
+                {"path": p, "reference": new.get(p) or reference_at(part, p) or ""} for p in paths
+            ]
+        annotated.append(item)
+
+    if edits:
+        for start, end, block in reversed(edits):
+            text = text[:start] + block + text[end:]
+        write_text_atomic(sheet, text, newline)
+    return annotated
