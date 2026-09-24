@@ -1,0 +1,72 @@
+name: Release
+
+# Runs when a version tag (v2.8.2, v2.9.0-rc.1, ...) is pushed. It checks the
+# tag, publishes the GitHub release with notes from the README's "What's New"
+# section (scripts/release-notes.mjs), and moves the stable branch, which is
+# what the README tells users to install, to the release. Prerelease tags get a
+# GitHub prerelease and leave stable alone. docs/RELEASING.md has the process.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      - name: Check the tag
+        id: tag
+        run: |
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+          commit=$(git rev-parse "$tag^{commit}")
+          package=$(node -p "require('./package.json').version")
+          if [ "$version" != "$package" ]; then
+            echo "::error::Tag $tag does not match the package.json version $package."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$commit" origin/main; then
+            echo "::error::Tag $tag points at $commit, which is not on main."
+            exit 1
+          fi
+          previous=$(git describe --tags --abbrev=0 --match 'v*' "$commit^" 2>/dev/null || true)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+          echo "Releasing $tag ($commit); previous release: ${previous:-none}"
+
+      - name: Write the release notes
+        run: node scripts/release-notes.mjs "${{ steps.tag.outputs.version }}" "${{ steps.tag.outputs.previous }}" > release-notes.md
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; leaving it as it is."
+            exit 0
+          fi
+          prerelease=""
+          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file release-notes.md $prerelease
+
+      # A plain push, so stable only ever moves forward: releasing a version
+      # older than the one stable holds fails here instead of rewinding it.
+      - name: Move stable to the release
+        if: ${{ !contains(github.ref_name, '-') }}
+        run: git push origin "${{ steps.tag.outputs.commit }}:refs/heads/stable"

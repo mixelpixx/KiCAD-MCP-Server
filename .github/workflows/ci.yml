@@ -436,3 +436,33 @@ jobs:
       - name: Validate JSON files
         run: |
           find . -name "*.json" -not -path "./node_modules/*" -not -path "./dist/*" | xargs -I {} sh -c 'python3 -m json.tool {} > /dev/null && echo "✓ {}" || echo "✗ {}"'
+
+  # The single status check branch protection requires on main. Matrix jobs
+  # report one check per leg with the versions in the name ("Python Tests
+  # (ubuntu-22.04, 3.9)"), so requiring those directly would break the rule
+  # whenever the matrix changes; this job succeeds only when every job above
+  # did. docs/RELEASING.md describes the protection rules.
+  ci-passed:
+    name: CI passed
+    if: always()
+    needs:
+      - typescript-tests
+      - python-tests
+      - integration-tests
+      - docker-build
+      - code-quality
+      - docs-check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check that every job succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then
+              echo "::error::A CI job ended with '$result'."
+              exit 1
+            fi
+          done

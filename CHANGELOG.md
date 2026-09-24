@@ -4,6 +4,29 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Tooling
+
+- **Release staging: protected `main`, a `stable` branch, and release
+  automation.** Changes were merged by pushing to `main`, which had no branch
+  protection. Every install path in the README cloned `main`, so each merge
+  reached users as soon as it landed. Releases were cut by hand, and the version
+  number lives in nine places that drifted (the README citation said 2.3.0 for
+  five releases).
+  - `main` now requires a pull request whose `CI passed` check succeeds and
+    which is up to date with `main`. `CI passed` is a new CI job that succeeds
+    only when every other job did, so the rule survives matrix changes.
+  - A new `stable` branch holds the latest release, and the README install
+    steps clone it.
+  - `npm run release -- <version>` writes the version everywhere, sets the
+    citation year and cuts the CHANGELOG.
+  - Pushing a `v*` tag runs a Release workflow. It checks the tag, publishes
+    the GitHub release with notes from the README's "What's New" section
+    (`npm run release:notes`) and moves `stable`.
+  - `tests-ts/release-tooling.test.ts` fails CI when a version string disagrees
+    with `package.json`.
+
+  The process is described in `docs/RELEASING.md`.
+
 ## [2.8.1] - 2026-09-23
 
 ### Bug Fixes

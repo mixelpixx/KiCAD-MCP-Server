@@ -49,7 +49,7 @@
 3. 克隆并构建：
 
 ```bash
-git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
+git clone --branch stable https://github.com/mixelpixx/KiCAD-MCP-Server.git  # stable：最新发布版本；main：还包含尚未发布的修复
 cd KiCAD-MCP-Server
 npm install
 npm run build

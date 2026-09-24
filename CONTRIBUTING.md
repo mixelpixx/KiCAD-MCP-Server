@@ -407,6 +407,12 @@ npx eslint src/
 6. **Address Feedback** - Make requested changes
 7. **Merge** - Maintainer will merge when approved
 
+Pull requests target `main`. It is protected: a pull request can merge only
+when the `CI passed` check succeeds and the branch is up to date with `main`.
+If `main` has moved, update your branch; CI then runs again on the combined
+code. Releases are cut from `main` and published to the `stable` branch, as
+described in [docs/RELEASING.md](docs/RELEASING.md).
+
 ### PR Checklist
 
 - [ ] Code follows style guidelines

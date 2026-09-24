@@ -931,6 +931,11 @@ Choose one:
 
 ## Installation
 
+These steps install the latest release from the `stable` branch, which only
+moves when a version is released. `main` also has fixes that are not released
+yet; clone without `--branch stable` to use it. To update an install later, run
+`git pull` in the clone, then `npm install` and `npm run build` again.
+
 ### Linux (Ubuntu/Debian)
 
 ```bash
@@ -944,7 +949,7 @@ curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
 # Clone and build
-git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
+git clone --branch stable https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd KiCAD-MCP-Server
 npm install
 pip3 install -r requirements.txt
@@ -959,7 +964,7 @@ python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"
 **Automated Setup (Recommended):**
 
 ```powershell
-git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
+git clone --branch stable https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd KiCAD-MCP-Server
 .\setup-windows.ps1
 ```
@@ -992,7 +997,7 @@ See [Platform Guide](docs/PLATFORM_GUIDE.md) for detailed instructions, and
 brew install node@20
 
 # Clone repository
-git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
+git clone --branch stable https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd KiCAD-MCP-Server
 
 # Create virtual environment using KiCAD's bundled Python

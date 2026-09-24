@@ -49,7 +49,7 @@ Beschreibe was du bauen möchtest — und lass die KI die EDA-Arbeit übernehmen
 3. Klonen und bauen:
 
 ```bash
-git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
+git clone --branch stable https://github.com/mixelpixx/KiCAD-MCP-Server.git  # stable: neuestes Release; main: auch noch unveröffentlichte Korrekturen
 cd KiCAD-MCP-Server
 npm install
 npm run build
