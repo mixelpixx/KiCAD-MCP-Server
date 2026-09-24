@@ -356,6 +356,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
   (2.7.0, #373) removed the collision between sibling servers; the handler
   now also treats a failed rollover as best effort, keeps writing to the
   current file, warns once on stderr, and retries a minute later.
+- **The Python worker is restarted when it exits or wedges** (#390, @siddolo;
+  closes the respawn half of #405). Once the worker process had died, or a
+  command had hung inside pcbnew past its timeout, every later tool call
+  failed with "Python process for KiCAD scripting is not running" (or timed
+  out behind the wedged one) until the MCP server was restarted by hand. The
+  bridge now rejects the in-flight request with the exit or timeout error,
+  kills the worker if it is still there, spawns a replacement, and resumes
+  the queue once the new worker reports ready. Two limits keep this from
+  hiding a broken setup: a worker that dies before its ready handshake during
+  the initial start fails the start instead of being respawned, and a worker
+  that needs restarting more than three times in five minutes stays down,
+  with the reason logged, until the server itself is restarted. A restarted
+  worker starts empty, so the next board or schematic call reports that
+  nothing is loaded and the project has to be opened again.
 
 ### Tooling
 
