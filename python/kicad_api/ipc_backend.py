@@ -693,9 +693,34 @@ class IPCBoardAPI(BoardAPI):
             logger.error(f"Failed to place component: {e}")
             return False
 
+    def _board_file_path(self) -> Optional[str]:
+        """Absolute path of the board this API is bound to, or None.
+
+        Read from kipy's own document specifier for that board (project
+        directory plus board file name), so it names the board the commit will
+        go to rather than whichever PCB document is listed first.
+        """
+        try:
+            board = self._get_board()
+            name = str(getattr(board, "name", "") or "")
+            root = str(getattr(board.get_project(), "path", "") or "")
+        except Exception as e:
+            logger.debug(f"Could not read the bound board's path over IPC: {e}")
+            return None
+        if not name:
+            return None
+        return os.path.join(root, name) if root else name
+
     def _load_footprint_from_library(self, footprint_path: str) -> Any:
         """
         Load a footprint from the library using pcbnew SWIG API.
+
+        The library is resolved through the same fp-lib-table parsing the SWIG
+        path uses (``commands.library.LibraryManager``: the global table plus the
+        bound project's own table), then loaded with ``FootprintLoad(path, name)``.
+        The previous lookup went through ``pcbnew.GetGlobalFootprintLib()``, which
+        KiCad 10 removed, so every call raised AttributeError and place_component
+        quietly fell back to a placeholder footprint (#378).
 
         Args:
             footprint_path: Either "Library:FootprintName" or just "FootprintName"
@@ -705,45 +730,25 @@ class IPCBoardAPI(BoardAPI):
         """
         try:
             import pcbnew
-
-            # Parse library and footprint name
-            if ":" in footprint_path:
-                lib_name, fp_name = footprint_path.split(":", 1)
-            else:
-                # Try to find the footprint in all libraries
-                lib_name = None
-                fp_name = footprint_path
-
-            # Get the footprint library table
-            fp_lib_table = pcbnew.GetGlobalFootprintLib()
-
-            if lib_name:
-                # Load from specific library
-                try:
-                    loaded_fp = pcbnew.FootprintLoad(fp_lib_table, lib_name, fp_name)
-                    if loaded_fp:
-                        logger.info(f"Loaded footprint '{fp_name}' from library '{lib_name}'")
-                        return loaded_fp
-                except Exception as e:
-                    logger.warning(f"Could not load from {lib_name}: {e}")
-            else:
-                # Search all libraries for the footprint
-                lib_names = fp_lib_table.GetLogicalLibs()
-                for lib in lib_names:
-                    try:
-                        loaded_fp = pcbnew.FootprintLoad(fp_lib_table, lib, fp_name)
-                        if loaded_fp:
-                            logger.info(f"Found footprint '{fp_name}' in library '{lib}'")
-                            return loaded_fp
-                    except:
-                        continue
-
-            logger.warning(f"Footprint '{footprint_path}' not found in any library")
-            return None
-
+            from commands.library import LibraryManager
         except ImportError:
             logger.warning("pcbnew not available - cannot load footprints from library")
             return None
+
+        try:
+            board_path = self._board_file_path()
+            project_dir = Path(board_path).parent if board_path else None
+            found = LibraryManager(project_dir).find_footprint(footprint_path)
+            if not found:
+                logger.warning(f"Footprint '{footprint_path}' not found in any library")
+                return None
+            library_path, fp_name = found
+            loaded_fp = pcbnew.FootprintLoad(library_path, fp_name)
+            if not loaded_fp:
+                logger.warning(f"FootprintLoad returned nothing for '{fp_name}' in {library_path}")
+                return None
+            logger.info(f"Loaded footprint '{fp_name}' from {library_path}")
+            return loaded_fp
         except Exception as e:
             logger.error(f"Error loading footprint from library: {e}")
             return None
@@ -766,23 +771,14 @@ class IPCBoardAPI(BoardAPI):
         try:
             import pcbnew
 
-            # Get the board file path from IPC to load via pcbnew
             board = self._get_board()
 
-            # Get the pcbnew board instance
-            # We need to get the actual board file path
-            project = board.get_project()
-            board_path = None
-
-            # Try to get the board path from kipy
-            try:
-                docs = self._kicad.get_open_documents()
-                for doc in docs:
-                    if hasattr(doc, "path") and str(doc.path).endswith(".kicad_pcb"):
-                        board_path = str(doc.path)
-                        break
-            except Exception as e:
-                logger.debug(f"Could not get board path from IPC: {e}")
+            # The board file behind the live document. This used to call
+            # get_open_documents() without a document type, which kipy rejects
+            # with a TypeError, so the path was never found and placement fell
+            # through to pcbnew.GetBoard() -- None outside KiCad's own process --
+            # and from there to a placeholder footprint (#378).
+            board_path = self._board_file_path()
 
             if board_path and os.path.exists(board_path):
                 # Load board via pcbnew

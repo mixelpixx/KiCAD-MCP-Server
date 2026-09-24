@@ -101,6 +101,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **IPC `place_component` places the library footprint again on KiCad 10**
+  (takes over #378 by @AlloyPlane). With the KiCad GUI open, placement went
+  through two calls that no longer exist in the form the code used:
+  `pcbnew.GetGlobalFootprintLib()`, which KiCad 10 removed, and
+  `get_open_documents()` without a document type, which kipy rejects. Both
+  failures were caught and logged, and the component fell through to the
+  placeholder path instead. Footprints are now resolved through the same
+  fp-lib-table parsing the file-based path uses, including the project's own
+  table, and the board file comes from the kipy board the call is bound to.
+  #378's hard-coded `D:\kicad` search paths, its extra command timeouts and its
+  `ping()` replacement were not carried over.
 - **Symbols placed on a linked sub-sheet get KiCad's hierarchical instance
   path** (#423 and #424, @zerthimon). The instance-path builder treated any
   schematic carrying `(sheet_instances ...)` as the root, and
