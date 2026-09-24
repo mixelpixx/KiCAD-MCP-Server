@@ -4,10 +4,10 @@
      run `npm run build && npm run docs:tools` instead. Descriptions already
      in this file are preserved, so improving the wording here is safe. -->
 
-**Version:** 2.7.0
+**Version:** 2.8.0
 **Tools registered on the server:** 244
 **Tools indexed for keyword discovery:** 184 in 17 categories
-**Last updated:** 2026-09-23
+**Last updated:** 2026-09-24
 
 ## How to read this document
 

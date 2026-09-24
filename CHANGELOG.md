@@ -4,6 +4,8 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-09-23
+
 ### New Tools
 
 - **GUI driver: drive the live KiCad GUI** (#333, @rossvonfange) — eleven tools
@@ -28,7 +30,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
   menu items, but `kicad_gui_click` does not gate them: it runs whatever it is
   asked to. Hardening follow-ups are tracked in #412.
 
-- **Digi-Key Product Information V4 integration** — `digikey_search_parts`,
+- **Digi-Key Product Information V4 integration** (#368, @karu2003) — `digikey_search_parts`,
   `digikey_check_library_availability` and `digikey_test_connection`. The server
   had six JLCPCB tools and nothing for Digi-Key, so every stock check, lifecycle
   check and replacement hunt happened in one-off scripts outside it.
@@ -85,7 +87,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
-- **`set_net_color`** (#375): set or clear an individual net's display color
+- **`set_net_color`** (#375, @JMcordobamendez): set or clear an individual net's display color
   override — the PCB editor's "Net colors" panel, previously not reachable
   by any tool. `net_settings.net_colors` has no SWIG counterpart
   (`NETINFO_ITEM` has no color getter/setter), so this is pure `.kicad_pro`
@@ -94,7 +96,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
   remove the override and revert to the automatic/class color. Cosmetic
   only — does not affect routing or design rules.
 
-- **`batch_add_components` accepts `unit`.** `add_schematic_component` had it,
+- **`batch_add_components` accepts `unit`** (#391, @komar3456). `add_schematic_component` had it,
   the batch did not, so a five-unit FPGA had to be placed one call per unit —
   the round-trips the batch exists to avoid. Each entry now names its unit;
   entries sharing a reference are the units of one part.
@@ -113,7 +115,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
   #378's hard-coded `D:\kicad` search paths, its extra command timeouts and its
   `ping()` replacement were not carried over.
 - **`connect_to_net` and `connect_passthrough` no longer place labels where a
-  moved pin used to be.** Both use one PinLocator kept for the life of the
+  moved pin used to be** (#427). Both use one PinLocator kept for the life of the
   worker, and PinLocator cached the parsed schematic, its S-expression and the
   pin definitions by file path alone, never refreshing them. After a component
   was moved or rotated (or its library symbol updated) in the same session,
@@ -321,7 +323,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
   callers had to follow up with `rotate_schematic_component`; both are read
   now. The escaping half of #351 had already landed in #354.
 
-- **Placed symbols lost the library's field visibility.** `Reference` and
+- **Placed symbols lost the library's field visibility** (#391, @komar3456). `Reference` and
   `Value` were written visible unconditionally, ignoring the `(hide yes)` the
   library symbol carries. Power symbols hide `Reference` by convention — a
   `#PWR101` designator tells a reader nothing — so every ground and rail symbol
@@ -332,7 +334,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
   matched as a token, so a field whose _value_ contains the word "hide" is not
   mistaken for a hidden field.
 
-- **Net labels snapped to a pin faced the wrong way.** KiCad pairs label angle
+- **Net labels snapped to a pin faced the wrong way** (#391, @komar3456). KiCad pairs label angle
   0/90 with `justify left` and 180/270 with `justify right`; a label anchored at
   a pin endpoint has to run along the pin's outward direction or its text lies
   across the symbol body. `add_schematic_net_label` defaulted to angle 0
@@ -344,7 +346,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
   the four orientations KiCad allows. An explicit `orientation` still wins.
 
 - **Dragging a component broke its routing and left its no-connect flags
-  behind.** Moving or rotating a symbol updated only the wire endpoint touching
+  behind** (#391, @komar3456). Moving or rotating a symbol updated only the wire endpoint touching
   each pin. A trace routed pin → corner → corner → pin is a chain of separate
   two-point segments, so the first segment came out diagonal and its bend landed
   off-grid — reported afterwards as `endpoint_off_grid` on a trace nobody
@@ -360,7 +362,8 @@ All notable changes to the KiCAD MCP Server project are documented here.
   counts both outcomes (`wiresStraightened`, `wiresLeftDiagonal`,
   `noConnectsMoved`); `straightenWires: false` opts out.
 
-- **A single unit of a multi-unit part could not be addressed.** Every unit of
+- **A single unit of a multi-unit part could not be addressed** (#391,
+  @komar3456). Every unit of
   a multi-unit symbol is placed as its own `(symbol ...)` block under one shared
   reference, so `move_schematic_component`, `rotate_schematic_component` and
   `delete_schematic_component` acted on whichever block came first in the file —

@@ -41,6 +41,75 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 https://github.com/mixelpixx/arduino-ide
 
+## What's New in v2.8.0
+
+### A crashed or stuck worker comes back on its own
+
+One bad request could end the Python worker, and a command that hung inside
+pcbnew blocked every call queued behind it. Either way, every later tool call
+failed until the MCP server was restarted by hand. Now a request whose response
+cannot be sent gets an error instead of ending the worker (#405), and the
+bridge restarts a worker that exits or wedges, failing only the call in flight
+(#390, @siddolo). A worker that keeps crashing stays down after three restarts
+in five minutes instead of respawning forever. On Windows, a log file locked by
+another program no longer silences logging, and a missing kicad-skip now
+disables only the schematic tools that need it (#389, @AmirF194).
+
+### Schematic edits land where KiCad expects them
+
+- Parts placed on a sub-sheet get the hierarchical instance path KiCad writes
+  (#423, @zerthimon).
+- `connect_to_net` no longer puts a label where a moved part's pin used to be
+  (#427).
+- `add_schematic_wire` reports an endpoint that did not snap to a pin instead
+  of calling a floating wire a success (#404, reported by @andersresen).
+- One unit of a multi-unit part can be moved, rotated or deleted on its own,
+  dragging keeps wiring orthogonal and carries no-connect flags along, net
+  labels face the way their pin does, and placed symbols keep the library's
+  field visibility (#391, @komar3456).
+- `edit_component` really swaps the footprint, keeping nets, the schematic
+  link, attributes and the lock (#411, @AmirF194).
+- `sync_schematic_to_board` reads only the design's own sheets and keeps
+  unlabeled nets (#400, #402), and placing a symbol no longer writes KiCad
+  10-only attributes into KiCad 8 or 9 schematics (#351).
+
+### GUI driver, opt-in
+
+Eleven tools drive KiCad's live GUI: menus, toolbars, dialogs and
+action-plugin buttons (#333, @rossvonfange). Nothing is installed until you run
+`install_gui_driver`, and the helper listens only when
+`KICAD_GUI_DRIVER_ENABLE=1` is set, on 127.0.0.1, with a per-session token.
+
+### KiCad 10, IPC and Freerouting
+
+- IPC placement on KiCad 10 places the real library footprint again (#378,
+  @AlloyPlane), and IPC rotation keeps 3D models (#422, @Putpluto).
+- KiCad 10 and custom install folders are found on Windows (#416,
+  @DieterMayerOSS; setup scripts: #356, @LiJoeAllen), and a KiCad started from
+  `PATH` is detected on Linux (#401, @famez).
+- The `PCB_VIA::GetWidth` assert dialog on KiCad 9 and 10 is gone, and KiCad 8
+  works again (#398, @scorp508).
+- `autoroute` and `import_ses` report a failed import instead of success, the
+  Java version is read from the Freerouting JAR, and routed tracks keep the
+  edge clearance around mounting holes (#417, #418, #419, @outstanda).
+
+### Faster net listing
+
+`list_schematic_nets` and `generate_netlist` resolve every net in one pass per
+sheet: about ten times faster on KiCad's demo projects, with identical results
+(#394, @markszente).
+
+### New tools
+
+- **GUI driver**: the eleven tools above.
+- **Digi-Key**: `digikey_search_parts`, `digikey_check_library_availability`,
+  `digikey_test_connection` (#368, @karu2003).
+- **`set_net_color`** (#375, @JMcordobamendez).
+
+`search_tools` now indexes 184 of the 244 registered tools, in 17 categories.
+
+Full details in the [CHANGELOG](CHANGELOG.md).
+
 ## What's New in v2.7.0
 
 ### The bridge no longer crosses its wires
@@ -1660,7 +1729,7 @@ npm run format
 
 ## Project Status
 
-**Current Version:** 2.7.0
+**Current Version:** 2.8.0
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
@@ -1766,8 +1835,8 @@ If you use this project in your research or publication, please cite:
 @software{kicad_mcp_server,
   title = {KiCAD MCP Server: AI-Assisted PCB Design},
   author = {mixelpixx},
-  year = {2025},
+  year = {2026},
   url = {https://github.com/mixelpixx/KiCAD-MCP-Server},
-  version = {2.3.0}
+  version = {2.8.0}
 }
 ```
