@@ -113,3 +113,16 @@ def test_unchanged_file_is_served_from_cache(tmp_path, monkeypatch):
     for pin in ("1", "2", "1"):
         locator.get_pin_location(sheet.path, "R1", pin)
     assert len(loads) == 1
+
+
+def test_memoizing_locator_also_sees_an_edit(tmp_path):
+    # #429 added an opt-in per-symbol memo; the stamp check from #427 must
+    # clear it too, so even a memoizing locator never answers from before an
+    # edit (the two were merged together, and this pins how they combine).
+    sheet = _Sheet(tmp_path)
+    sheet.place(100.0, 100.0)
+    locator = PinLocator(memoize_pins=True)
+    assert locator.get_all_symbol_pins(sheet.path, "R1")["1"] == pytest.approx([100.0, 96.19])
+
+    sheet.place(150.0, 100.0)
+    assert locator.get_all_symbol_pins(sheet.path, "R1")["1"] == pytest.approx([150.0, 96.19])

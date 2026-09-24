@@ -121,6 +121,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
   wire stub landed at the old position: a floating label, reported as success.
   The caches are now dropped whenever the file's modification time or size
   changes.
+- **`list_schematic_nets` and `generate_netlist` no longer take minutes on a
+  large schematic** (takes over #394 by @markszente). Net connectivity was
+  recomputed from scratch for every net: each per-net query re-parsed the
+  schematic (dozens of `sexpdata.loads` calls per net), rebuilt the wire graph
+  and re-located every component pin through a fresh `PinLocator`. On a flat
+  119-component, 44-net schematic `list_schematic_nets` took over 90 seconds.
+  Nets are now resolved in one pass per sheet (`get_connections_for_nets`):
+  each sheet is parsed, wired and pin-located once per call and shared by every
+  net, and `get_connections_for_net` is a single-net wrapper over it. That
+  schematic now lists in under 3 seconds with identical results. The parse
+  cache and the per-symbol pin memo live for one call only, so an edit between
+  two tool calls is always seen. Netlist nets now come out sorted by name.
 - **Symbols placed on a linked sub-sheet get KiCad's hierarchical instance
   path** (#423 and #424, @zerthimon). The instance-path builder treated any
   schematic carrying `(sheet_instances ...)` as the root, and
@@ -376,6 +388,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
   (2.7.0, #373) removed the collision between sibling servers; the handler
   now also treats a failed rollover as best effort, keeps writing to the
   current file, warns once on stderr, and retries a minute later.
+
 - **The Python worker is restarted when it exits or wedges** (#390, @siddolo;
   closes the respawn half of #405). Once the worker process had died, or a
   command had hung inside pcbnew past its timeout, every later tool call
