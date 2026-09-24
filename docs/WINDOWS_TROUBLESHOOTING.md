@@ -210,7 +210,7 @@ and per-user KiCAD installs:
 2. **Or clone to user directory:**
    ```powershell
    cd $HOME\Documents
-   git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
+   git clone --branch stable https://github.com/mixelpixx/KiCAD-MCP-Server.git
    cd KiCAD-MCP-Server
    .\setup-windows.ps1
    ```

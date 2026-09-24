@@ -72,11 +72,14 @@ Describe what you want to build — and let AI handle the EDA work. Place compon
 3. Clone and build:
 
 ```bash
-git clone https://github.com/mixelpixx/KiCAD-MCP-Server.git
+git clone --branch stable https://github.com/mixelpixx/KiCAD-MCP-Server.git
 cd KiCAD-MCP-Server
 npm install
 npm run build
 ```
+
+`stable` is the latest release; `main` also has fixes that are not released
+yet.
 
 4. Configure your AI client — see [Platform Guide](../docs/PLATFORM_GUIDE.md)
 
