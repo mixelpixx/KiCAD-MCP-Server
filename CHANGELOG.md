@@ -4,6 +4,34 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- **Parts on a sheet used more than once, or kept in a subdirectory, get
+  KiCad's instance paths** (#428). A placed symbol records its reference once
+  per use of its sheet, each under a path from the root sheet. Three cases were
+  still wrong after #424:
+  - A sheet used more than once got one entry, for its first use only. With
+    KiCad 10.0.5 the netlist then lists the part twice and `kicad-cli` warns
+    about annotation errors, while ERC reports nothing. Each use now gets its
+    own entry and its own reference: the requested one in the first use, the
+    first free number with the same prefix in each other use, shared by all
+    units of one part. `add_schematic_component` and `batch_add_components`
+    list them under `instances` so the caller does not reuse them.
+  - A sheet in a subdirectory of the project never found the root and got a
+    one-level path. The root is now looked for up to three directories up; KiCad's
+    royalblue54L_feather demo keeps every sub-sheet in `sch/`.
+  - `fix_subsheet_instances`, which runs when `add_hierarchical_sheet` links a
+    sheet, matched only the `Sheet file` spelling and not the `Sheetfile` KiCad
+    writes. It built its path from the parent alone, which is wrong below the
+    second level, copied the existing reference into a second use of a sheet,
+    and skipped the sheets below the one linked. It now uses the same path
+    logic as placement.
+
+  The paths were checked against KiCad's own demo projects: for all 111 demo
+  sheets that hold symbols, they are the paths KiCad wrote. When one directory
+  holds two projects, the project name recorded with them is now the project
+  whose root reaches the sheet.
+
 ## [2.8.0] - 2026-09-23
 
 ### New Tools
