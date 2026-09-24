@@ -13,11 +13,11 @@ KiCAD 9 .kicad_sym format:
 """
 
 import logging
-import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from commands.library_tables import global_table_path, no_global_table_message
 from utils.sexpr_format import escape_sexpr_string
 
 logger = logging.getLogger("kicad_interface")
@@ -277,7 +277,8 @@ class SymbolCreator:
         ----------
         library_path : str  – path to the .kicad_sym file
         library_name : str  – nickname (default: file stem)
-        scope : str         – "project" or "global"
+        scope : str         – "project" or "global" (the newest KiCad version's
+                              existing global sym-lib-table)
         project_path : str  – .kicad_pro or directory (for scope=project)
         """
         sym_path = Path(library_path)
@@ -292,26 +293,20 @@ class SymbolCreator:
                 table_dir = sym_path.parent
             table_path = table_dir / "sym-lib-table"
         else:
-            cfg_dirs = [
-                Path(os.environ.get("APPDATA", "")) / "kicad" / "9.0",
-                Path.home() / ".config" / "kicad" / "9.0",
-            ]
-            table_path = None
-            for d in cfg_dirs:
-                candidate = d / "sym-lib-table"
-                if candidate.exists():
-                    table_path = candidate
-                    break
-            if table_path is None:
-                for d in cfg_dirs:
-                    try:
-                        d.mkdir(parents=True, exist_ok=True)
-                        table_path = d / "sym-lib-table"
-                        break
-                    except OSError:
-                        continue
-            if table_path is None:
-                return {"success": False, "error": "Could not find/create global sym-lib-table"}
+            # The newest KiCad's own table (#425): only 9.0 used to be searched,
+            # and with none there a 9.0 table was created, which KiCad 10 never
+            # reads. See global_table_path for why a missing table is an error.
+            global_table = global_table_path("symbol")
+            if global_table is None:
+                return {
+                    "success": False,
+                    "error": no_global_table_message(
+                        "symbol",
+                        "KiCad creates it the first time it starts, so start KiCad once "
+                        "and retry, or register the library with scope='project'.",
+                    ),
+                }
+            table_path = global_table
 
         if table_path.exists():
             content = table_path.read_text(encoding="utf-8")

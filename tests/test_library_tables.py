@@ -393,6 +393,7 @@ def test_global_scope_reports_no_table_when_the_config_has_none(tmp_path, monkey
 
 
 def test_kicad_config_dirs_prefers_appdata_and_the_newest_version(tmp_path, monkeypatch):
+    monkeypatch.delenv("KICAD_CONFIG_HOME", raising=False)  # would come first
     monkeypatch.setenv("APPDATA", str(tmp_path))
     dirs = library_tables._kicad_config_dirs()
     assert dirs[0] == tmp_path / "kicad" / "10.0"

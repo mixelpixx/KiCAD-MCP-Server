@@ -25,12 +25,13 @@ other platforms return an empty list, and callers keep their existing per-OS
 logic there.
 """
 
+import itertools
 import logging
 import os
 import platform
 import re
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Iterable, Iterator, List, Optional, Tuple
 
 logger = logging.getLogger("kicad_interface")
 
@@ -184,3 +185,41 @@ def reset_cache() -> None:
     """Clear the cached install-root discovery (primarily for tests)."""
     global _cached_roots
     _cached_roots = None
+
+
+def ensure_cairo_on_path(extra_dirs: Iterable[str] = ()) -> Optional[str]:
+    """Put the first directory holding ``cairo-2.dll`` at the head of PATH.
+
+    cairocffi loads the library with ``ffi.dlopen("cairo-2")``, which searches
+    PATH. KiCad's own Python runs with KiCad's ``bin`` there already; a venv
+    does not, and a venv is the layout the TypeScript launcher prefers. Every
+    KiCad install ships the DLL in its ``bin`` directory, so after
+    *extra_dirs* each install root is tried, newest first. The list used to
+    stop at ``Program Files\\KiCad\\9.0`` and ``8.0``, which missed KiCad 10
+    and every custom install root (#425).
+
+    Returns the directory now on PATH, or None when no candidate has the DLL.
+    Windows-only in practice: the caller gates on the platform, and the
+    install-root discovery returns nothing elsewhere.
+    """
+
+    def install_bins() -> Iterator[str]:
+        # A generator function, not a generator expression: the expression
+        # would call kicad_install_roots() (a registry walk) on creation even
+        # when a caller's directory already has the DLL.
+        for root in kicad_install_roots():
+            yield str(root / "bin")
+
+    for directory in itertools.chain(extra_dirs, install_bins()):
+        if not directory or not (Path(directory) / "cairo-2.dll").is_file():
+            continue
+        current = os.environ.get("PATH", "")
+        on_path = {
+            os.path.normcase(os.path.normpath(entry))
+            for entry in current.split(os.pathsep)
+            if entry
+        }
+        if os.path.normcase(os.path.normpath(directory)) not in on_path:
+            os.environ["PATH"] = directory + os.pathsep + current
+        return directory
+    return None

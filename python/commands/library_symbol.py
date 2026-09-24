@@ -215,24 +215,27 @@ class SymbolLibraryManager:
 
         Handles:
         - ${KICAD9_SYMBOL_DIR} -> /Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols
-        - ${KICAD9_3RD_PARTY} -> ~/Documents/KiCad/9.0/3rdparty
+        - ${KICAD10_3RD_PARTY} -> ~/Documents/KiCad/10.0/3rdparty
         - ${KIPRJMOD} -> project directory
         - Relative paths
         - Absolute paths
         """
         resolved = uri
 
-        # Common KiCAD environment variables
+        # Common KiCAD environment variables. Each finder runs once per URI,
+        # not once per variable name.
+        symbol_dir = self._find_kicad_symbol_dir()
+        third_party_dir = self._find_3rd_party_dir()
         env_vars = {
-            "KICAD10_SYMBOL_DIR": self._find_kicad_symbol_dir(),
-            "KICAD9_SYMBOL_DIR": self._find_kicad_symbol_dir(),
-            "KICAD8_SYMBOL_DIR": self._find_kicad_symbol_dir(),
-            "KICAD_SYMBOL_DIR": self._find_kicad_symbol_dir(),
-            "KICAD10_3RD_PARTY": self._find_3rd_party_dir(),
-            "KICAD9_3RD_PARTY": self._find_3rd_party_dir(),
-            "KICAD8_3RD_PARTY": self._find_3rd_party_dir(),
-            "KICAD_3RD_PARTY": self._find_3rd_party_dir(),
-            "KISYSSYM": self._find_kicad_symbol_dir(),
+            "KICAD10_SYMBOL_DIR": symbol_dir,
+            "KICAD9_SYMBOL_DIR": symbol_dir,
+            "KICAD8_SYMBOL_DIR": symbol_dir,
+            "KICAD_SYMBOL_DIR": symbol_dir,
+            "KICAD10_3RD_PARTY": third_party_dir,
+            "KICAD9_3RD_PARTY": third_party_dir,
+            "KICAD8_3RD_PARTY": third_party_dir,
+            "KICAD_3RD_PARTY": third_party_dir,
+            "KISYSSYM": symbol_dir,
         }
 
         # Merge user-defined env vars from kicad_common.json
@@ -291,28 +294,12 @@ class SymbolLibraryManager:
         return None
 
     def _find_3rd_party_dir(self) -> Optional[str]:
-        """Find KiCAD 3rd party library directory (PCM installed libs)"""
-        possible_paths = [
-            str(Path.home() / "Documents" / "KiCad" / "10.0" / "3rdparty"),
-            str(Path.home() / "Documents" / "KiCad" / "9.0" / "3rdparty"),
-            str(Path.home() / "Documents" / "KiCad" / "8.0" / "3rdparty"),
-        ]
+        """Find KiCAD 3rd party library directory (PCM installed libs).
 
-        # Check environment variable
-        if "KICAD10_3RD_PARTY" in os.environ:
-            possible_paths.insert(0, os.environ["KICAD10_3RD_PARTY"])
-        if "KICAD9_3RD_PARTY" in os.environ:
-            possible_paths.insert(0, os.environ["KICAD9_3RD_PARTY"])
-        if "KICAD8_3RD_PARTY" in os.environ:
-            possible_paths.insert(0, os.environ["KICAD8_3RD_PARTY"])
-        if "KICAD_3RD_PARTY" in os.environ:
-            possible_paths.insert(0, os.environ["KICAD_3RD_PARTY"])
-
-        for path in possible_paths:
-            if os.path.isdir(path):
-                return path
-
-        return None
+        Shared with the footprint side; see
+        PlatformHelper.find_kicad_3rd_party_dir for the resolution order.
+        """
+        return PlatformHelper.find_kicad_3rd_party_dir()
 
     def _parse_kicad_sym_file(self, library_path: str, library_name: str) -> List[SymbolInfo]:
         """

@@ -4,6 +4,36 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- **KiCad 10: global library tables and PCM paths** (#425). Three lookups still
+  assumed KiCad 9's configuration directory, and on a machine with only KiCad 10
+  they failed without an error:
+  - `register_footprint_library` and `register_symbol_library` with
+    `scope: "global"` searched only `kicad/9.0`. With no table there they created
+    one and reported success, but KiCad 10 never reads it. With `APPDATA` unset,
+    as on Linux and macOS, the first candidate was even a relative `kicad/9.0`
+    under the server's working directory. Both now add to the newest KiCad
+    version's existing table, and fail when there is none. KiCad sets up its
+    stock libraries on first start only when that table is missing, so a
+    created table holding one row would hide all of them.
+  - `${KICAD10_3RD_PARTY}` (libraries installed by the Plugin and Content
+    Manager) did not resolve at its default location unless it was set in the
+    shell, because the footprint side read only the 9.0 configuration and
+    defaulted to 9.0. The symbol and footprint managers now share one lookup:
+    the shell, then the newest configuration's own variable, then that version's
+    default location. The symbol side also gains the Linux default,
+    `~/.local/share/kicad/<version>/3rdparty`.
+  - The Windows `cairo-2.dll` preload looked only in `Program Files\KiCad\9.0`
+    and `8.0`. It now tries the `bin` directory of every discovered KiCad
+    install, newest first, so a server running from a venv finds KiCad 10's
+    DLL.
+
+  `KICAD_CONFIG_HOME` is honoured when set. The "Could not find KiCad 3rd party
+  directory" message is now debug-level. It was logged four times for every
+  footprint-table row, 85,568 times in one worker log on the machine this was
+  tested on.
+
 ## [2.8.0] - 2026-09-23
 
 ### New Tools

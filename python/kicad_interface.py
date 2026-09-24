@@ -22,18 +22,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 # Fix cairo DLL loading on Windows before any cairocffi import.
 # cairocffi uses cffi's ffi.dlopen('cairo-2') which needs the DLL on PATH.
+# utils.kicad_roots needs only the standard library, so it can run this early.
 if sys.platform == "win32":
-    for _bin_dir in [
-        os.environ.get("PYTHONPATH", ""),
-        str(Path(sys.executable).parent),
-        r"C:\Program Files\KiCad\9.0\bin",
-        r"C:\Program Files\KiCad\8.0\bin",
-    ]:
-        if _bin_dir and (Path(_bin_dir) / "cairo-2.dll").is_file():
-            _current_path = os.environ.get("PATH", "")
-            if _bin_dir not in _current_path:
-                os.environ["PATH"] = _bin_dir + os.pathsep + _current_path
-            break
+    from utils.kicad_roots import ensure_cairo_on_path
+
+    ensure_cairo_on_path([os.environ.get("PYTHONPATH", ""), str(Path(sys.executable).parent)])
 
 import sexpdata
 from annotations import AnnotationLoader
