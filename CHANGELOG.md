@@ -112,6 +112,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
   table, and the board file comes from the kipy board the call is bound to.
   #378's hard-coded `D:\kicad` search paths, its extra command timeouts and its
   `ping()` replacement were not carried over.
+- **`connect_to_net` and `connect_passthrough` no longer place labels where a
+  moved pin used to be.** Both use one PinLocator kept for the life of the
+  worker, and PinLocator cached the parsed schematic, its S-expression and the
+  pin definitions by file path alone, never refreshing them. After a component
+  was moved or rotated (or its library symbol updated) in the same session,
+  they kept computing pin positions from the old file, so the net label and
+  wire stub landed at the old position: a floating label, reported as success.
+  The caches are now dropped whenever the file's modification time or size
+  changes.
 - **Symbols placed on a linked sub-sheet get KiCad's hierarchical instance
   path** (#423 and #424, @zerthimon). The instance-path builder treated any
   schematic carrying `(sheet_instances ...)` as the root, and
