@@ -203,11 +203,14 @@ class TestInstanceWritesAreEscaped:
         source = path.read_text(encoding="utf-8")
         assert raw_write not in source, f"{raw_write} is still emitted raw (#336)"
 
-    @pytest.mark.parametrize("field", ["Sheet name", "Sheet file"])
+    @pytest.mark.parametrize("field", ["Sheetname", "Sheetfile"])
     def test_hierarchy_sheet_properties_are_escaped(self, field):
         path = Path(__file__).parent.parent / "python" / "commands" / "schematic_hierarchy.py"
         source = path.read_text(encoding="utf-8")
-        var = "sheet_name" if field == "Sheet name" else "rel_str"
+        var = "sheet_name" if field == "Sheetname" else "rel_str"
+        assert (
+            f'(property "{field}" "{{escape_sexpr_string({var})}}"' in source
+        ), f"{field} is no longer written through escape_sexpr_string (#336)"
         assert (
             f'(property "{field}" "{{{var}}}"' not in source
         ), f"{field} is still emitted raw (#336)"

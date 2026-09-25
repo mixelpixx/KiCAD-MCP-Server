@@ -39,10 +39,13 @@ class TestAddHierarchicalSheet:
         assert r["page"] == 2  # next page after existing "1"
         content = parent.read_text()
         assert "(sheet " in content
-        assert '"Sheet name" "Power"' in content
-        assert '"Sheet file" "sub.kicad_sch"' in content
-        # a sheet_instances path entry for the new sheet block was added
-        assert f'/{ "abcd-1234" }/{ r["sheet_uuid"] }' in content
+        assert '"Sheetname" "Power"' in content
+        assert '"Sheetfile" "sub.kicad_sch"' in content
+        # the page lives in the sheet block, keyed by the path to the parent
+        assert '(path "/abcd-1234" (page "2"))' in content
+        # and the root's sheet_instances keeps only the root entry
+        si = content[content.index("(sheet_instances") :]
+        assert r["sheet_uuid"] not in si
 
     def test_sheet_block_starts_its_own_line(self, tmp_path):
         """#298: rfind gives a raw char offset; when (sheet_instances does not
