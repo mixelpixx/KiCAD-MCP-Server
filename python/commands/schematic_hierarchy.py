@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from utils.sexpr_format import QUOTED_VALUE, escape_sexpr_string, unescape_sexpr_string
-from utils.sheet_tree import sheet_tree, sub_sheets
+from utils.sheet_tree import instance_paths, project_name, sheet_tree, sub_sheets
 from utils.symbol_instances import add_missing_instances
 
 logger = logging.getLogger("kicad_interface")
@@ -60,64 +60,78 @@ class SchematicHierarchyCommands:
             name_x, name_y = round(x + 2.54, 4), round(y - 1.27, 4)
             file_x, file_y = round(x + 2.54, 4), round(y + h + 1.27, 4)
 
+            # KiCad files a sheet's page number inside its (sheet ...) block,
+            # once per use of the parent: (instances (project "<name>"
+            # (path "/<chain to the parent>" (page "N")))). The root's
+            # (sheet_instances ...) holds only (path "/" (page "1")).
+            root, parent_paths = instance_paths(parent_file)
+            project = project_name(parent_file)
+            page_files = sheet_tree(root) if root is not None else [parent_file]
+            used_pages = [1]
+            for sheet in page_files:
+                try:
+                    text = Path(sheet).read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                used_pages += [int(p) for p in re.findall(r'\(page\s+"(\d+)"\)', text)]
+            next_page = max(used_pages) + 1
+            pages = list(range(next_page, next_page + len(parent_paths)))
+            instance_entries = "".join(
+                f'        (path "{path}" (page "{page}"))\n'
+                for path, page in zip(parent_paths, pages)
+            )
+
             sheet_block = (
                 f"  (sheet (at {x} {y}) (size {w} {h}) (fields_autoplaced yes)\n"
                 f"    (stroke (width 0.0006) (type default))\n"
                 f"    (fill (color 0 0 0 0.0000))\n"
                 f'    (uuid "{sheet_block_uuid}")\n'
-                f'    (property "Sheet name" "{escape_sexpr_string(sheet_name)}"'
+                f'    (property "Sheetname" "{escape_sexpr_string(sheet_name)}"'
                 f" (at {name_x} {name_y} 0)\n"
                 f"      (effects (font (size 1.27 1.27)) (justify left bottom))\n"
                 f"    )\n"
-                f'    (property "Sheet file" "{escape_sexpr_string(rel_str)}"'
+                f'    (property "Sheetfile" "{escape_sexpr_string(rel_str)}"'
                 f" (at {file_x} {file_y} 0)\n"
-                f"      (effects (font (size 1.27 1.27)) (justify left bottom))\n"
+                f"      (effects (font (size 1.27 1.27)) (justify left top))\n"
+                f"    )\n"
+                f"    (instances\n"
+                f'      (project "{escape_sexpr_string(project)}"\n'
+                f"{instance_entries}"
+                f"      )\n"
                 f"    )\n"
                 f"  )\n"
             )
 
             content = parent_file.read_text(encoding="utf-8")
-            parent_uuid_match = re.search(r"\(uuid\s+([0-9a-fA-F-]+)\)", content)
-            parent_uuid = parent_uuid_match.group(1) if parent_uuid_match else ""
-            existing_pages = re.findall(r'\(page\s+"(\d+)"\)', content)
-            next_page = max((int(p) for p in existing_pages), default=0) + 1
-
-            instance_path = (
-                f"/{parent_uuid}/{sheet_block_uuid}" if parent_uuid else f"/{sheet_block_uuid}"
-            )
-            path_entry = f'    (path "{instance_path}" (page "{next_page}"))\n'
 
             insert_at = content.rfind("(sheet_instances")
             if insert_at == -1:
-                return {"success": False, "message": "Could not find (sheet_instances in schematic"}
-            # rfind returns a raw character offset; on files where
-            # (sheet_instances does not start its own line (sexpdata-written
-            # schematics keep several forms on one line) splicing there lands
-            # the sheet block mid-line, where line-based consumers like
-            # add_sheet_pin can never find it (#298). Snap to a line boundary.
-            line_start = content.rfind("\n", 0, insert_at) + 1
-            if content[line_start:insert_at].strip():
-                # (sheet_instances shares its line with earlier content:
-                # break the line so the sheet block and (sheet_instances each
-                # start a line of their own.
-                content = content[:insert_at] + "\n" + sheet_block + "  " + content[insert_at:]
+                # A sub-sheet written without (sheet_instances ...): insert
+                # before the file's closing parenthesis.
+                insert_at = content.rstrip().rfind(")")
+                if insert_at <= 0:
+                    return {"success": False, "message": "Could not parse schematic"}
+                line_start = content.rfind("\n", 0, insert_at) + 1
+                if content[line_start:insert_at].strip():
+                    content = content[:insert_at] + "\n" + sheet_block + content[insert_at:]
+                else:
+                    content = content[:line_start] + sheet_block + content[line_start:]
             else:
-                # (sheet_instances starts its line: insert the block at the
-                # line start so (sheet_instances keeps its own indentation.
-                content = content[:line_start] + sheet_block + content[line_start:]
-
-            si_start = content.rfind("(sheet_instances")
-            depth = 0
-            si_close = len(content) - 1
-            for i in range(si_start, len(content)):
-                if content[i] == "(":
-                    depth += 1
-                elif content[i] == ")":
-                    depth -= 1
-                    if depth == 0:
-                        si_close = i
-                        break
-            content = content[:si_close] + path_entry + "  " + content[si_close:]
+                # rfind returns a raw character offset; on files where
+                # (sheet_instances does not start its own line (sexpdata-written
+                # schematics keep several forms on one line) splicing there lands
+                # the sheet block mid-line, where line-based consumers like
+                # add_sheet_pin can never find it (#298). Snap to a line boundary.
+                line_start = content.rfind("\n", 0, insert_at) + 1
+                if content[line_start:insert_at].strip():
+                    # (sheet_instances shares its line with earlier content:
+                    # break the line so the sheet block and (sheet_instances each
+                    # start a line of their own.
+                    content = content[:insert_at] + "\n" + sheet_block + "  " + content[insert_at:]
+                else:
+                    # (sheet_instances starts its line: insert the block at the
+                    # line start so (sheet_instances keeps its own indentation.
+                    content = content[:line_start] + sheet_block + content[line_start:]
 
             parent_file.write_text(content, encoding="utf-8")
 
@@ -129,7 +143,8 @@ class SchematicHierarchyCommands:
                 "sheet_uuid": sheet_block_uuid,
                 "sheet_name": sheet_name,
                 "subsheet_path": rel_str,
-                "page": next_page,
+                "page": pages[0],
+                "pages": pages,
             }
 
         except Exception as e:
@@ -162,11 +177,13 @@ class SchematicHierarchyCommands:
     def remove_hierarchical_sheet(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Remove a hierarchical-sheet reference from a parent schematic.
 
-        Identify the sheet by sheetName (matches the 'Sheetname'/'Sheet name'
-        property) or by subsheetPath (matches the 'Sheetfile'/'Sheet file'
-        property basename). Removes the (sheet ...) block and any matching
-        (path .../<uuid>) entry in (sheet_instances). The reverse of
-        add_hierarchical_sheet. Does NOT delete the sub-sheet file on disk.
+        Identify the sheet by sheetName (matches the 'Sheetname' property, or
+        the 'Sheet name' spelling older MCP builds wrote) or by subsheetPath
+        (matches the 'Sheetfile'/'Sheet file' property basename). Removes the
+        (sheet ...) block, which carries the sheet's page entries in its
+        nested (instances ...), plus any (path .../<uuid>) entry older MCP
+        builds put in (sheet_instances). The reverse of add_hierarchical_sheet.
+        Does NOT delete the sub-sheet file on disk.
         """
         logger.info("Removing hierarchical sheet")
         try:
@@ -225,7 +242,7 @@ class SchematicHierarchyCommands:
             new_content = content[:start] + content[end:]
             new_content = re.sub(r"\n[ \t]*\n[ \t]*\n", "\n\n", new_content)
 
-            removed_instance = False
+            removed_instance = "(instances" in block
             if sheet_uuid:
                 new_content, n = re.subn(
                     r'[ \t]*\(path\s+"[^"]*'
@@ -234,7 +251,7 @@ class SchematicHierarchyCommands:
                     "",
                     new_content,
                 )
-                removed_instance = n > 0
+                removed_instance = removed_instance or n > 0
 
             parent_file.write_text(new_content, encoding="utf-8")
 
@@ -325,8 +342,9 @@ class SchematicHierarchyCommands:
         """Find the (sheet ...) block identified by sheetName or subsheetPath.
 
         Matching mirrors remove_hierarchical_sheet: sheetName against the
-        modern 'Sheet name' or legacy 'Sheetname' property, subsheetPath by
-        'Sheet file'/'Sheetfile' basename. Returns (start, end) or None.
+        'Sheetname' property KiCad writes (or the 'Sheet name' spelling older
+        MCP builds wrote), subsheetPath by 'Sheetfile'/'Sheet file' basename.
+        Returns (start, end) or None.
         """
         target_base = Path(subsheet_path).name if subsheet_path else None
         for start, end in self._find_sheet_blocks(content):
@@ -349,7 +367,7 @@ class SchematicHierarchyCommands:
         Text-surgery insertion into the (sheet ...) block, preserving the
         file's formatting. The property is created (hidden by default) if it
         does not exist, otherwise its value is updated in place. The built-in
-        "Sheet name"/"Sheet file" properties cannot be set here — use
+        "Sheetname"/"Sheetfile" properties cannot be set here — use
         add/remove_hierarchical_sheet to manage the sheet link itself.
         """
         logger.info("Setting hierarchical sheet property")
