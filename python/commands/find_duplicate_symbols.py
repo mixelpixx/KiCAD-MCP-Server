@@ -277,8 +277,8 @@ def _read_sheet_references(text: str) -> List[str]:
             if not child_head or child_head.group(1) != "property":
                 continue
             key, after = _read_string(block, child_head.end())
-            # KiCad 7 wrote "Sheetfile", 8+ writes "Sheet file"; _norm_key
-            # makes them the same lookup.
+            # KiCad writes "Sheetfile"; older MCP builds wrote "Sheet file".
+            # _norm_key makes them the same lookup.
             if key and _norm_key(key) == "SHEETFILE":
                 value, _ = _read_string(block, after)
                 if value:
