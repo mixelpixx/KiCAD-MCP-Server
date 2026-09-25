@@ -445,6 +445,51 @@ class PlatformHelper:
         return None
 
     @staticmethod
+    def find_kicad_template_dir() -> Optional[str]:
+        """The directory ``${KICAD10_TEMPLATE_DIR}`` and its siblings stand for.
+
+        KiCad 10's global library tables hold a single ``(type "Table")`` row,
+        ``(uri "${KICAD10_TEMPLATE_DIR}/sym-lib-table")``, that stands for every
+        stock library; the table it names lives in KiCad's ``template``
+        directory. Like the symbol and footprint directories, KiCad defines the
+        variable internally, so it is in neither ``kicad_common.json`` nor the
+        process environment unless the user set it.
+
+        Resolution order: the shell environment (KICAD10_TEMPLATE_DIR,
+        KICAD9_TEMPLATE_DIR, KICAD8_TEMPLATE_DIR, then KICAD_TEMPLATE_DIR), then
+        ``share/kicad/template`` under each discovered install root, then the
+        Linux and macOS system locations.
+        """
+        for var in (
+            "KICAD10_TEMPLATE_DIR",
+            "KICAD9_TEMPLATE_DIR",
+            "KICAD8_TEMPLATE_DIR",
+            "KICAD_TEMPLATE_DIR",
+        ):
+            path = os.environ.get(var)
+            if path and os.path.isdir(path):
+                return path
+
+        candidates: List[Path] = []
+        try:
+            from utils.kicad_roots import kicad_install_roots
+
+            candidates += [root / "share" / "kicad" / "template" for root in kicad_install_roots()]
+        except Exception:
+            pass
+        candidates += [
+            Path("/usr/share/kicad/template"),
+            Path("/usr/local/share/kicad/template"),
+            Path("/Applications/KiCad/KiCad.app/Contents/SharedSupport/template"),
+        ]
+        for candidate in candidates:
+            if candidate.is_dir():
+                return str(candidate)
+
+        logger.debug("Could not find KiCad template directory")
+        return None
+
+    @staticmethod
     def _read_kicad_common_vars(config_path: Path) -> Dict[str, str]:
         """``environment.vars`` of one kicad_common.json; {} if absent or unreadable.
 

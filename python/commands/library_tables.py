@@ -271,6 +271,22 @@ def _builtin_path_vars(table_type: str) -> Dict[str, str]:
     path_vars: Dict[str, str] = {}
     if base:
         path_vars.update({name: base for name in base_names})
+    template = PlatformHelper.find_kicad_template_dir()
+    if template:
+        # KiCad 10's stock table row, ${KICAD10_TEMPLATE_DIR}/sym-lib-table.
+        # Unresolved, it counts as "0 libraries" and the warning before
+        # removing it understates what that removal unregisters.
+        path_vars.update(
+            {
+                name: template
+                for name in (
+                    "KICAD10_TEMPLATE_DIR",
+                    "KICAD9_TEMPLATE_DIR",
+                    "KICAD8_TEMPLATE_DIR",
+                    "KICAD_TEMPLATE_DIR",
+                )
+            }
+        )
     if third_party:
         path_vars.update(
             {

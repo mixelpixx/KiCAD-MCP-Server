@@ -10,7 +10,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from utils.kicad_roots import kicad_install_roots
 from utils.platform_helper import PlatformHelper
@@ -81,7 +81,12 @@ class LibraryManager:
 
         return None
 
-    def _parse_fp_lib_table(self, table_path: Path) -> None:
+    def _parse_fp_lib_table(
+        self,
+        table_path: Path,
+        _seen: Optional[Set[str]] = None,
+        _vars: Optional[Dict[str, Optional[str]]] = None,
+    ) -> None:
         """
         Parse fp-lib-table file
 
@@ -89,7 +94,17 @@ class LibraryManager:
         (fp_lib_table
           (lib (name "Library_Name")(type KiCad)(uri "${KICAD9_FOOTPRINT_DIR}/Library.pretty")(options "")(descr "Description"))
         )
+
+        A ``(type "Table")`` row names another table to read in its place.
+        KiCad 10's global table is one such row,
+        ``${KICAD10_TEMPLATE_DIR}/fp-lib-table``, standing for every stock
+        library, so its URI goes through the same variable resolution as a
+        library's. ``_seen`` stops a table that includes itself; ``_vars`` is
+        the path-variable map, built once for the whole load.
         """
+        seen = _seen if _seen is not None else set()
+        seen.add(os.path.realpath(table_path))
+        path_vars = _vars if _vars is not None else self._path_vars()
         try:
             with open(table_path, "r") as f:
                 content = f.read()
@@ -109,16 +124,19 @@ class LibraryManager:
                 uri = match.group(5) or match.group(6)
 
                 if lib_type.lower() == "table":
-                    table_uri = uri
-                    if os.path.isabs(table_uri) and os.path.isfile(table_uri):
-                        logger.info(f"  Following Table reference: {nickname} -> {table_uri}")
-                        self._parse_fp_lib_table(Path(table_uri))
+                    table_uri = self._resolve_uri(uri, path_vars)
+                    if table_uri and os.path.isfile(table_uri):
+                        if os.path.realpath(table_uri) in seen:
+                            logger.warning(f"  Skipping Table reference already read: {nickname}")
+                        else:
+                            logger.info(f"  Following Table reference: {nickname} -> {table_uri}")
+                            self._parse_fp_lib_table(Path(table_uri), seen, path_vars)
                     else:
-                        logger.warning(f"  Could not resolve Table URI: {table_uri}")
+                        logger.warning(f"  Could not resolve Table URI: {uri}")
                     continue
 
                 # Resolve environment variables in URI
-                resolved_uri = self._resolve_uri(uri)
+                resolved_uri = self._resolve_uri(uri, path_vars)
 
                 if resolved_uri:
                     self.libraries[nickname] = resolved_uri
@@ -129,25 +147,18 @@ class LibraryManager:
         except Exception as e:
             logger.error(f"Error parsing fp-lib-table at {table_path}: {e}")
 
-    def _resolve_uri(self, uri: str) -> Optional[str]:
-        """
-        Resolve environment variables and paths in library URI
+    def _path_vars(self) -> Dict[str, Optional[str]]:
+        """Every path variable an fp-lib-table URI can reference.
 
-        Handles:
-        - ${KICAD9_FOOTPRINT_DIR} -> /usr/share/kicad/footprints
-        - ${KICAD8_FOOTPRINT_DIR} -> /usr/share/kicad/footprints
-        - ${KIPRJMOD} -> project directory
-        - Relative paths
-        - Absolute paths
+        Computed once per table load and shared by every row: each finder
+        reads the filesystem (``load_kicad_env_vars`` and the 3rd-party finder
+        both re-read kicad_common.json), and a stock KiCad 10 table has 150+
+        rows once its ``(type "Table")`` row is followed.
         """
-        # Replace environment variables
-        resolved = uri
-
-        # Common KiCAD environment variables. Each finder runs once per URI,
-        # not once per variable name.
         footprint_dir = self._find_kicad_footprint_dir()
         third_party_dir = self._find_kicad_3rdparty_dir()
-        env_vars = {
+        template_dir = PlatformHelper.find_kicad_template_dir()
+        env_vars: Dict[str, Optional[str]] = {
             "KICAD10_FOOTPRINT_DIR": footprint_dir,
             "KICAD9_FOOTPRINT_DIR": footprint_dir,
             "KICAD8_FOOTPRINT_DIR": footprint_dir,
@@ -157,6 +168,10 @@ class LibraryManager:
             "KICAD9_3RD_PARTY": third_party_dir,
             "KICAD8_3RD_PARTY": third_party_dir,
             "KICAD_3RD_PARTY": third_party_dir,
+            "KICAD10_TEMPLATE_DIR": template_dir,
+            "KICAD9_TEMPLATE_DIR": template_dir,
+            "KICAD8_TEMPLATE_DIR": template_dir,
+            "KICAD_TEMPLATE_DIR": template_dir,
         }
 
         # Merge user-defined env vars from kicad_common.json
@@ -165,6 +180,27 @@ class LibraryManager:
         # Project directory
         if self.project_path:
             env_vars["KIPRJMOD"] = str(self.project_path)
+        return env_vars
+
+    def _resolve_uri(
+        self, uri: str, path_vars: Optional[Dict[str, Optional[str]]] = None
+    ) -> Optional[str]:
+        """
+        Resolve environment variables and paths in library URI
+
+        Handles:
+        - ${KICAD9_FOOTPRINT_DIR} -> /usr/share/kicad/footprints
+        - ${KICAD8_FOOTPRINT_DIR} -> /usr/share/kicad/footprints
+        - ${KICAD10_TEMPLATE_DIR} -> KiCad's template directory (stock tables)
+        - ${KIPRJMOD} -> project directory
+        - Relative paths
+        - Absolute paths
+
+        ``path_vars`` is the map from ``_path_vars``; table parsing passes one
+        map for every row instead of rebuilding it per URI.
+        """
+        resolved = uri
+        env_vars = path_vars if path_vars is not None else self._path_vars()
 
         # Replace environment variables
         for var, value in env_vars.items():
