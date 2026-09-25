@@ -64,6 +64,13 @@ logger = logging.getLogger("kicad_interface")
 # Both halves of the pair matter, and so does their ORDER: escaping quotes
 # without escaping backslashes first is a no-op on exactly the values that
 # break.
+#
+# Line breaks are escaped too, as ``\n`` and ``\r``, the way KiCad's own writer
+# (OUTPUTFORMATTER::Quotes) does. KiCad's lexer reads a file line by line, so
+# a raw newline inside a quoted token leaves the string unterminated. In the
+# root schematic that fails the load ("Failed to load schematic"). In a
+# sub-sheet it is silent: eeschema and kicad-cli leave the whole sheet out of
+# the design, kicad-cli still exits 0, and ERC reports nothing.
 
 #: Matches one KiCad double-quoted token, capturing the raw (still-escaped)
 #: contents. Use with :func:`unescape_sexpr_string` on the captured group.
@@ -147,21 +154,44 @@ def iter_child_offsets(block: str, depth: int = 2):
         i += 1
 
 
+# The four characters KiCad's writer escapes. A tab is written as it is.
+_ESCAPES = str.maketrans({"\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r"})
+
+# What KiCad's lexer (DSNLEXER) decodes after a backslash. Any other character
+# keeps its backslash, as in KiCad. KiCad also reads octal and \x escapes,
+# which its writer never produces; those are left as they are.
+_UNESCAPES = {
+    "\\": "\\",
+    '"': '"',
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+    "a": "\a",
+    "b": "\b",
+    "f": "\f",
+    "v": "\v",
+}
+_ESCAPE_SEQUENCE = re.compile(r"\\(.)", re.DOTALL)
+
+
 def escape_sexpr_string(value: str) -> str:
     """Escape a string for insertion into a KiCad double-quoted token.
 
-    Backslash first, then quote -- reversing the order double-escapes the
-    backslash that :func:`unescape_sexpr_string` then removes.
+    Backslash, quote, line feed and carriage return, exactly as KiCad writes
+    them. Done in one pass, so the backslash an escape adds is never escaped
+    again.
     """
-    return value.replace("\\", "\\\\").replace('"', '\\"')
+    return value.translate(_ESCAPES)
 
 
 def unescape_sexpr_string(value: str) -> str:
-    """Inverse of :func:`escape_sexpr_string`.
+    """Decode a quoted token's contents the way KiCad reads them.
 
-    Quote first, then backslash -- the mirror image of the escape order.
+    One left-to-right pass: chained replacements would read the escaped
+    backslash in ``C:\\\\new`` (the path ``C:\\new``) as a backslash followed
+    by the escape ``\\n``, and turn it into a line break.
     """
-    return value.replace('\\"', '"').replace("\\\\", "\\")
+    return _ESCAPE_SEQUENCE.sub(lambda m: _UNESCAPES.get(m.group(1), m.group(0)), value)
 
 
 # Formatting constants, mirrored from KiCad's Prettify().

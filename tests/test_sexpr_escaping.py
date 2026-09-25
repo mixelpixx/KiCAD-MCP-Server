@@ -125,6 +125,7 @@ class TestCallSitesAreConverted:
         "schematic_text_utils.py",
         "datasheet_manager.py",
         "schematic_hierarchy.py",
+        "schematic_handlers.py",  # get_schematic_component's field reader
     ]
 
     @pytest.mark.parametrize("filename", CONVERTED)

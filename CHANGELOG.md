@@ -33,6 +33,22 @@ All notable changes to the KiCAD MCP Server project are documented here.
   without `(sheet_instances ...)`, which is every sub-sheet KiCad saves, no
   longer fails with "Could not find (sheet_instances in schematic". Files
   with either spelling are still read.
+- **A line break in a value made KiCad drop the whole sheet** (found through
+  @zerthimon's report in #423). Values the server writes into a quoted token
+  went through `escape_sexpr_string`, which escaped only the backslash and the
+  quote. KiCad writes a line break as `\n` and reads a file line by line, so a
+  raw line break left the token unterminated. A multi-line Description set
+  with `edit_schematic_component`, a sheet property or a library symbol
+  property made a root schematic fail to load. In a sub-sheet it left the
+  whole sheet out of the design without an error: on KiCad's
+  complex_hierarchy demo, one such value took the netlist from 68 components
+  to 10 while kicad-cli still exited 0. Line feeds and carriage returns are
+  now escaped the way KiCad writes them and decoded the way KiCad reads them.
+  - Hierarchical label and sheet pin names, and the name and value
+    `add_library_symbol_property` writes, were not escaped at all.
+  - `get_schematic_component` read field values with a pattern that stopped
+    at an escaped quote, so a field such as `power:GND`'s Description went
+    missing from its result. It now returns every field, decoded.
 
 ### Tooling
 

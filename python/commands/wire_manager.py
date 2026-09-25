@@ -17,6 +17,7 @@ from typing import Any, List, Optional, Tuple
 import sexpdata
 from sexpdata import Symbol
 from utils.sexpr_format import dumps as kicad_dumps
+from utils.sexpr_format import escape_sexpr_string
 
 logger = logging.getLogger("kicad_interface")
 
@@ -97,7 +98,7 @@ def _make_hierarchical_label_text(
     uid = str(uuid.uuid4())
     justify = "right" if orientation == 180 else "left"
     return (
-        f'\t(hierarchical_label "{text}"\n'
+        f'\t(hierarchical_label "{escape_sexpr_string(text)}"\n'
         f"\t\t(shape {shape})\n"
         f"\t\t(at {position[0]} {position[1]} {orientation})\n"
         f"\t\t(effects\n"
@@ -124,7 +125,7 @@ def _make_sheet_pin_text(
     uid = str(uuid.uuid4())
     justify = "left" if orientation == 0 else "right"
     return (
-        f'\t\t(pin "{pin_name}" {pin_type}\n'
+        f'\t\t(pin "{escape_sexpr_string(pin_name)}" {pin_type}\n'
         f"\t\t\t(at {position[0]} {position[1]} {orientation})\n"
         f'\t\t\t(uuid "{uid}")\n'
         f"\t\t\t(effects\n"
@@ -1095,15 +1096,9 @@ class WireManager:
     ) -> bool:
         """Add a free-form text annotation (SCH_TEXT) to a KiCad schematic."""
         try:
-            # KiCad's parser rejects raw newlines inside quoted string literals,
-            # so escape them along with backslashes and quotes. Order matters:
-            # backslashes first, otherwise we double-escape our own escapes.
-            text_escaped = (
-                text.replace("\\", "\\\\")
-                .replace('"', '\\"')
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-            )
+            # KiCad's parser rejects raw newlines inside quoted string literals;
+            # the shared helper escapes them with backslashes and quotes.
+            text_escaped = escape_sexpr_string(text)
             uid = str(uuid.uuid4())
             font_attrs = f"\n\t\t\t\t(size {font_size} {font_size})"
             if bold:
@@ -1172,9 +1167,10 @@ class WireManager:
         Returns (modified_content, success).
         """
         # KiCad writes the property as "Sheetname"; add_hierarchical_sheet
-        # wrote "Sheet name" (with a space) before #437. Match either.
+        # wrote "Sheet name" (with a space) before #437. Match either. The
+        # name is compared in its escaped form, as it appears in the file.
         sheetname_pattern = re.compile(
-            r'\(property\s+"Sheet\s?name"\s+"' + re.escape(sheet_name) + r'"'
+            r'\(property\s+"Sheet\s?name"\s+"' + re.escape(escape_sexpr_string(sheet_name)) + r'"'
         )
 
         # \b keeps (sheet_instances from matching ("_" is a word character).
