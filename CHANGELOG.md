@@ -4,6 +4,36 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- **KiCad 10: the stock symbol and footprint libraries were not found** (#438
+  and #439, @zerthimon). KiCad 10's global `sym-lib-table` and `fp-lib-table`
+  hold a single `(type "Table")` row that points to a second table listing
+  every stock library. The loaders followed that row only when its URI was
+  already an absolute path. KiCad can also write it as
+  `${KICAD10_TEMPLATE_DIR}/sym-lib-table`, a variable KiCad defines internally,
+  and then `search_symbols` found none of the stock libraries,
+  `list_library_symbols` failed for `Device`, and the warning before removing
+  the row said it stood for 0 libraries. The row's URI is now resolved like
+  any other, the template directory is found from the KiCad install, and a
+  table already read is skipped, so a table that includes itself cannot loop.
+  The 223 stock symbol and 155 footprint libraries are found on KiCad 10.0.6
+  on Linux and on KiCad 10.0.5 on Windows. The path variables are now built
+  once per table load instead of once per row, which took a table load from
+  about 460 ms to 4 ms.
+- **`add_hierarchical_sheet` wrote a sheet block KiCad rewrites** (#436 and
+  #437, @zerthimon). The block used the property names `Sheet name` and
+  `Sheet file`, where KiCad writes `Sheetname` and `Sheetfile`, and the page
+  number went into the root's `(sheet_instances ...)`, where KiCad keeps only
+  page 1. KiCad 10 flagged the block when the project was opened and rewrote
+  it on save. The block now carries its own `(instances ...)` entry under the
+  project name, with one path and page for each use of the parent sheet, and
+  page numbers are unique across the project instead of within the parent
+  file. The parent's uuid is read when quoted, as KiCad writes it. A parent
+  without `(sheet_instances ...)`, which is every sub-sheet KiCad saves, no
+  longer fails with "Could not find (sheet_instances in schematic". Files
+  with either spelling are still read.
+
 ### Tooling
 
 - **Release staging: protected `main`, a `stable` branch, and release

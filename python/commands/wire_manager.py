@@ -1171,8 +1171,8 @@ class WireManager:
 
         Returns (modified_content, success).
         """
-        # KiCad 7-9 stores the property as "Sheetname"; KiCad 10 renamed it
-        # to "Sheet name" (with space). Match either to stay compatible.
+        # KiCad writes the property as "Sheetname"; add_hierarchical_sheet
+        # wrote "Sheet name" (with a space) before #437. Match either.
         sheetname_pattern = re.compile(
             r'\(property\s+"Sheet\s?name"\s+"' + re.escape(sheet_name) + r'"'
         )
