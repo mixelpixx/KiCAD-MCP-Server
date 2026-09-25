@@ -335,8 +335,12 @@ class SchematicHierarchyCommands:
 
     @staticmethod
     def _escape_sexpr_string(value: str) -> str:
-        """Escape a string for a double-quoted s-expression token."""
-        return value.replace("\\", "\\\\").replace('"', '\\"')
+        """Escape a string for a double-quoted s-expression token.
+
+        Delegates to the shared helper, which also escapes line breaks; a
+        private copy here once missed them.
+        """
+        return escape_sexpr_string(value)
 
     def _match_sheet_block(self, content, sheet_name, subsheet_path):
         """Find the (sheet ...) block identified by sheetName or subsheetPath.

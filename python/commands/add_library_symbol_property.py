@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from utils.sexpr_format import prettify
+from utils.sexpr_format import escape_sexpr_string, prettify
 
 
 def _find_symbol_in_lib_symbols(
@@ -18,7 +18,7 @@ def _find_symbol_in_lib_symbols(
     if lib_start == -1:
         return None
 
-    marker = f'(symbol "{full}"'
+    marker = f'(symbol "{escape_sexpr_string(full)}"'
     sym_start = content.find(marker, lib_start)
     if sym_start == -1:
         return None
@@ -37,16 +37,23 @@ def _find_symbol_in_lib_symbols(
 
 def _has_property(symbol_block: str, prop_name: str) -> bool:
     """Check if a property already exists in a symbol block."""
-    return bool(re.search(rf'\(property\s+"{re.escape(prop_name)}"', symbol_block))
+    name = re.escape(escape_sexpr_string(prop_name))
+    return bool(re.search(rf'\(property\s+"{name}"', symbol_block))
 
 
 def _property_s_expr(
     name: str, value: str, pos: dict[str, float] | None = None, hide: bool = False
 ) -> str:
-    """Build a (property ...) s-expression string."""
+    """Build a (property ...) s-expression string.
+
+    Name and value are escaped: an unescaped quote ends the token early, and a
+    raw line break leaves it unterminated, so KiCad cannot load the file.
+    """
     x = pos.get("x", 0) if pos else 0
     y = pos.get("y", 0) if pos else 0
-    parts = [f'(property "{name}" "{value}" (at {x} {y} 0)']
+    name_text = escape_sexpr_string(name)
+    value_text = escape_sexpr_string(value)
+    parts = [f'(property "{name_text}" "{value_text}" (at {x} {y} 0)']
     if hide:
         parts.append("(hide yes)")
     parts.append("(effects (font (size 1.27 1.27)))")
@@ -79,7 +86,7 @@ def add_library_symbol_property(params: dict[str, Any]) -> dict[str, Any]:
 
     if _has_property(block, prop_name):
         old = re.search(
-            rf'(\(property\s+"{re.escape(prop_name)}"[^)]*(?:\([^)]*\))*[^)]*\s*\n?\s*(?:\(hide[^)]*\)\s*\n?\s*)?(?:\(effects[^)]*(?:\([^)]*\))*[^)]*\))?\s*\))',
+            rf'(\(property\s+"{re.escape(escape_sexpr_string(prop_name))}"[^)]*(?:\([^)]*\))*[^)]*\s*\n?\s*(?:\(hide[^)]*\)\s*\n?\s*)?(?:\(effects[^)]*(?:\([^)]*\))*[^)]*\))?\s*\))',
             block,
             re.DOTALL,
         )

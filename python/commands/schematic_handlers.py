@@ -29,8 +29,9 @@ from utils.board_items import clone_footprint
 from utils.interactive_schematic import reload_kicad_schematic
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.project_settings_guard import preserve_project_settings
+from utils.sexpr_format import QUOTED_VALUE
 from utils.sexpr_format import dumps as kicad_dumps
-from utils.sexpr_format import escape_sexpr_string
+from utils.sexpr_format import escape_sexpr_string, unescape_sexpr_string
 from utils.symbol_instances import annotate_sheet, instance_report
 
 logger = logging.getLogger("kicad_interface")
@@ -1089,15 +1090,22 @@ class SchematicHandlersMixin:
             else:
                 comp_pos = None
 
-            # Extract all properties with their at positions
+            # Extract all properties with their at positions. Name and value
+            # are read escape-aware and decoded (#336): with "([^"]*)" a value
+            # holding an escaped quote did not match and the field went
+            # missing, and a line break came back as a backslash and an "n".
             prop_pattern = re.compile(
-                r'\(property\s+"([^"]*)"\s+"([^"]*)"\s+\(at\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s*\)'
+                r"\(property\s+"
+                + QUOTED_VALUE
+                + r"\s+"
+                + QUOTED_VALUE
+                + r"\s+\(at\s+([\d\.\-]+)\s+([\d\.\-]+)\s+([\d\.\-]+)\s*\)"
             )
             fields = {}
             for m in prop_pattern.finditer(block_text):
                 name, value, x, y, angle = (
-                    m.group(1),
-                    m.group(2),
+                    unescape_sexpr_string(m.group(1)),
+                    unescape_sexpr_string(m.group(2)),
                     m.group(3),
                     m.group(4),
                     m.group(5),
