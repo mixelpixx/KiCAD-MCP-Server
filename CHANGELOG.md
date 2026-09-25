@@ -4,6 +4,8 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+## [2.8.2] - 2026-09-25
+
 ### Bug Fixes
 
 - **KiCad 10: the stock symbol and footprint libraries were not found** (#438
