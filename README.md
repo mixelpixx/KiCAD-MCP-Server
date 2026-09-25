@@ -41,6 +41,53 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 https://github.com/mixelpixx/arduino-ide
 
+## What's New in v2.8.2
+
+A patch release with three fixes. KiCad 10's stock libraries are found on
+installs where the global library table refers to them through a variable. New
+sheets are written the way KiCad writes them. A line break in a value no longer
+makes KiCad drop a sheet. Thanks to @zerthimon, who reported and fixed the
+first two and traced the third.
+
+### KiCad 10's stock libraries
+
+- KiCad 10's global library tables hold one row that points to KiCad's own
+  table of stock libraries. Where that row uses `${KICAD10_TEMPLATE_DIR}`, as
+  on Linux, the server found none of them: `search_symbols` came back empty and
+  `list_library_symbols` failed for `Device`. The row is now followed, so all
+  223 symbol and 155 footprint libraries are found (#438, #439).
+- Loading a library table went from about half a second to a few milliseconds,
+  because path variables are now resolved once per table instead of once per
+  row.
+
+### Hierarchical sheets
+
+- `add_hierarchical_sheet` writes a sheet the way KiCad does. It uses the
+  `Sheetname` and `Sheetfile` property names, and puts the page number inside
+  the sheet block, once for each use of the parent sheet. KiCad 10 flagged the
+  old format when the project was opened (#436, #437).
+- Page numbers are unique across the project, and adding a sheet inside a
+  sub-sheet no longer fails.
+
+### Line breaks in values
+
+- A multi-line value, such as a Description set with
+  `edit_schematic_component`, was written with a raw line break that KiCad
+  cannot read. In a sub-sheet, KiCad then left the whole sheet out of the
+  design without an error. On KiCad's complex_hierarchy demo, one such value
+  took the netlist from 68 components to 10. Line breaks are now written the
+  way KiCad writes them (#441).
+- `get_schematic_component` returns fields whose values contain quotes, such
+  as the Description of KiCad's stock GND symbol. Before, those fields were
+  missing from its result.
+
+### Installing
+
+- The install instructions now clone the `stable` branch, which holds the
+  latest release. `main` may carry fixes that are not released yet.
+
+Full details in the [CHANGELOG](CHANGELOG.md).
+
 ## What's New in v2.8.1
 
 A patch release with three fixes for hierarchical schematics and KiCad
@@ -1767,7 +1814,7 @@ npm run format
 
 ## Project Status
 
-**Current Version:** 2.8.1
+**Current Version:** 2.8.2
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
@@ -1875,6 +1922,6 @@ If you use this project in your research or publication, please cite:
   author = {mixelpixx},
   year = {2026},
   url = {https://github.com/mixelpixx/KiCAD-MCP-Server},
-  version = {2.8.1}
+  version = {2.8.2}
 }
 ```
