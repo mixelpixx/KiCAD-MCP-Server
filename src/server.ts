@@ -10,6 +10,7 @@ import { existsSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import { logger } from "./logger.js";
 import { computeCommandTimeout, DEFAULT_COMMAND_TIMEOUT_MS } from "./command-timeout.js";
+import { commandPolicyError, type OperatingMode } from "./operating-mode.js";
 
 // Import tool registration functions
 import { registerProjectTools } from "./tools/project.js";
@@ -243,6 +244,7 @@ export class KiCADMcpServer {
   /** Start times of recent automatic worker restarts (crash-loop budget). */
   private restartTimes: number[] = [];
   private kicadScriptPath: string;
+  private operatingMode: OperatingMode;
   private stdioTransport!: StdioServerTransport;
   private requestQueue: Array<{
     request: {
@@ -289,12 +291,17 @@ export class KiCADMcpServer {
    * @param kicadScriptPath Path to the Python KiCAD interface script
    * @param logLevel Log level for the server
    */
-  constructor(kicadScriptPath: string, logLevel: "error" | "warn" | "info" | "debug" = "info") {
+  constructor(
+    kicadScriptPath: string,
+    logLevel: "error" | "warn" | "info" | "debug" = "info",
+    operatingMode: OperatingMode = "write",
+  ) {
     // Set up the logger
     logger.setLogLevel(logLevel);
 
     // Check if KiCAD script exists
     this.kicadScriptPath = kicadScriptPath;
+    this.operatingMode = operatingMode;
     if (!existsSync(this.kicadScriptPath)) {
       throw new Error(`KiCAD interface script not found: ${this.kicadScriptPath}`);
     }
@@ -314,6 +321,7 @@ export class KiCADMcpServer {
 
     // Register tools, resources, and prompts
     this.registerAll();
+    logger.info(`KiCAD operating mode: ${this.operatingMode}`);
   }
 
   /**
@@ -855,6 +863,13 @@ export class KiCADMcpServer {
    */
   private async callKicadScript(command: string, params: any): Promise<any> {
     return new Promise((resolve, reject) => {
+      const policyError = commandPolicyError(command, this.operatingMode);
+      if (policyError) {
+        logger.warn(policyError);
+        reject(new Error(policyError));
+        return;
+      }
+
       // Check if Python process is running
       if (!this.pythonProcess && !this.restartPromise) {
         logger.error("Python process is not running");

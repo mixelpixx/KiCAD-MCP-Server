@@ -8,6 +8,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { z } from "zod";
 import { logger } from "./logger.js";
+import { isOperatingMode, type OperatingMode } from "./operating-mode.js";
 
 // Get the current directory
 const __filename = fileURLToPath(import.meta.url);
@@ -18,18 +19,22 @@ const DEFAULT_CONFIG_PATH = join(dirname(__dirname), "config", "default-config.j
 
 const LOG_LEVEL_VALUES = ["error", "warn", "info", "debug"] as const;
 const LogLevelSchema = z.enum(LOG_LEVEL_VALUES);
+const OperatingModeSchema = z.enum(["readonly", "write", "manufacturing", "experimental"]);
 
 /**
  * Server configuration schema
  */
 const ConfigSchema = z.object({
   name: z.string().default("kicad-mcp-server"),
-  version: z.string().default("2.4.0"),
+  version: z.string().default("2.8.2"),
   description: z.string().default("MCP server for KiCAD PCB design operations"),
   pythonPath: z.string().optional(),
   kicadPath: z.string().optional(),
   logLevel: LogLevelSchema.default("info"),
   logDir: z.string().optional(),
+  // Keep the existing unrestricted workflow unless the user opts into a
+  // narrower policy. This makes the safety change backwards-compatible.
+  operatingMode: OperatingModeSchema.default("write"),
 });
 
 /**
@@ -66,6 +71,21 @@ function getEnvLogLevel(): Config["logLevel"] | undefined {
   return undefined;
 }
 
+function getEnvOperatingMode(): OperatingMode | undefined {
+  const rawMode = process.env.KICAD_MCP_OPERATING_MODE;
+  if (!rawMode) return undefined;
+
+  const mode = rawMode.trim().toLowerCase();
+  if (isOperatingMode(mode)) return mode;
+
+  logger.warn(
+    `Ignoring invalid KICAD_MCP_OPERATING_MODE value: ${rawMode}. Expected one of: ${OPERATING_MODES_TEXT}`,
+  );
+  return undefined;
+}
+
+const OPERATING_MODES_TEXT = ["readonly", "write", "manufacturing", "experimental"].join(", ");
+
 /**
  * Apply environment-based overrides on top of a loaded config. The env log
  * level (if set) wins over the file/default so users can control verbosity
@@ -73,10 +93,15 @@ function getEnvLogLevel(): Config["logLevel"] | undefined {
  */
 function applyEnvironmentOverrides(config: Config): Config {
   const envLogLevel = getEnvLogLevel();
-  if (!envLogLevel) {
+  const envOperatingMode = getEnvOperatingMode();
+  if (!envLogLevel && !envOperatingMode) {
     return config;
   }
-  return { ...config, logLevel: envLogLevel };
+  return {
+    ...config,
+    ...(envLogLevel ? { logLevel: envLogLevel } : {}),
+    ...(envOperatingMode ? { operatingMode: envOperatingMode } : {}),
+  };
 }
 
 /**

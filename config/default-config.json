@@ -1,9 +1,10 @@
 {
   "name": "kicad-mcp-server",
-  "version": "1.0.0",
+  "version": "2.8.2",
   "description": "MCP server for KiCAD PCB design operations",
   "pythonPath": "",
   "kicadPath": "",
   "logLevel": "info",
-  "logDir": ""
+  "logDir": "",
+  "operatingMode": "write"
 }
