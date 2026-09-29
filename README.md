@@ -1006,6 +1006,29 @@ npm run build
 python3 -c "import pcbnew; print(pcbnew.GetBuildVersion())"
 ```
 
+#### Automated Claude Desktop configuration
+
+After installing the dependencies and building the project, use the Linux setup
+script to detect KiCad's Python bindings and safely merge the MCP entry into
+Claude Desktop's configuration. It preserves virtual-environment package
+precedence and checks Python dependencies using the generated environment:
+
+```bash
+./setup-linux.sh --verify
+./setup-linux.sh --dry-run
+./setup-linux.sh --apply
+```
+
+`--verify` fails if a dependency is missing or cannot be imported and prints an
+installation command for the selected Python interpreter. `--dry-run` previews
+the configuration and reports dependency problems; `--apply` requires those
+problems to be fixed before writing the configuration.
+
+The default configuration path is
+`${XDG_CONFIG_HOME:-~/.config}/Claude/claude_desktop_config.json`. Use
+`--claude-config PATH` for a client using the same JSON format or a nonstandard location, and set
+`KICAD_PYTHON=/path/to/python3` if KiCad's Python cannot be detected automatically.
+
 ### Windows 10/11
 
 **Automated Setup (Recommended):**
