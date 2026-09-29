@@ -2,7 +2,7 @@
 
 This guide explains the differences between using KiCAD MCP Server on Linux, macOS, and Windows platforms.
 
-**Last Updated:** 2026-04-11
+**Last Updated:** 2026-09-28
 
 ---
 
@@ -11,8 +11,8 @@ This guide explains the differences between using KiCAD MCP Server on Linux, mac
 | Feature                  | Linux                     | Windows                         | macOS                   |
 | ------------------------ | ------------------------- | ------------------------------- | ----------------------- |
 | **Primary Support**      | Full (tested extensively) | Community tested                | Community tested        |
-| **Setup Complexity**     | Moderate                  | Easy (automated script)         | Easy (automated script) |
-| **Prerequisites**        | Manual package management | Automated detection             | Automated detection     |
+| **Setup Complexity**     | Easy (automated script)   | Easy (automated script)         | Easy (automated script) |
+| **Prerequisites**        | Automated detection       | Automated detection             | Automated detection     |
 | **KiCAD Python Access**  | System paths              | Bundled with KiCAD              | Bundled with KiCAD      |
 | **Path Separators**      | Forward slash (/)         | Backslash (\\) or forward slash | Forward slash (/)       |
 | **Virtual Environments** | Recommended               | Optional                        | Optional                |
@@ -30,16 +30,24 @@ This guide explains the differences between using KiCAD MCP Server on Linux, mac
 - Better tested and documented
 - More predictable Python environments
 - Standard Unix paths
+- Automated environment detection and Claude Desktop configuration
 
 **Process:**
 
-1. Install KiCAD 9.0 via package manager (apt, dnf, pacman)
+1. Install KiCAD 9.0 or higher via package manager (apt, dnf, pacman)
 2. Install Node.js via package manager or nvm
 3. Clone repository
-4. Install dependencies manually
+4. Install dependencies
 5. Build project
-6. Configure MCP client
-7. Set PYTHONPATH environment variable
+6. Run `setup-linux.sh`:
+   - `bash setup-linux.sh --verify` — check detected paths and import all Python dependencies
+   - `bash setup-linux.sh --dry-run` — preview the merged Claude Desktop config
+   - `bash setup-linux.sh --apply` — write the configuration
+
+The script keeps virtual-environment packages ahead of system KiCad modules.
+Missing or broken dependencies cause `--verify` and `--apply` to fail with an
+installation command for the selected interpreter. Install dependencies and
+rerun `--verify` before applying the configuration.
 
 **Typical paths:**
 
