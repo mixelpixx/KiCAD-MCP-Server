@@ -4,6 +4,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Tooling
+
+- **Release runs for the same tag no longer race.** Pushing the v2.8.2 tag
+  started two identical Release runs a second apart. The second found the
+  release already published and `stable` already moved, so nothing went wrong.
+  If the two had overlapped, both would have tried to create the release;
+  GitHub accepts only one, so the other run would have failed on a good
+  release. Runs for the same tag now wait for each other.
+
 ## [2.8.2] - 2026-09-25
 
 ### Bug Fixes

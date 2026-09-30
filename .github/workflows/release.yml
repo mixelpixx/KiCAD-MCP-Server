@@ -13,6 +13,15 @@ on:
 permissions:
   contents: write
 
+# One push of the v2.8.2 tag started two identical runs, a second apart. Both
+# check whether the release exists and then create it, so two runs that overlap
+# can both try, and GitHub accepts only one. Runs for the same tag now wait for
+# each other: the later one finds the release published and stable moved, and
+# changes nothing.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     name: Publish release
