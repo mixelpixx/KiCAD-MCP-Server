@@ -4,26 +4,25 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import {
   directToolNames,
+  discoveryToolNames,
   getRegistryStats,
   getRoutedToolNames,
   toolCategories,
 } from "../src/tools/registry.js";
 
-// Every tool registered with server.tool() should also appear in the registry.
-// If it does not, it is callable only by a client that already knows the name:
-// search_tools cannot find it, and getRegistryStats() does not count it.
+// Every tool registered with server.tool() must also appear in the registry.
+// If it does not, search_tools cannot find it, getRegistryStats() does not
+// count it, and in toolbox mode (src/tools/toolboxes.ts) no toolbox can show
+// it, so a client cannot reach it at all.
 //
 // This slipped through twice in one day -- #340 shipped import_pcb and #342
 // shipped three schematic-hierarchy tools, all unregistered. The README count
 // guard could not catch it, because omitting the registration leaves the README
 // and the registry consistently wrong at the same number.
 //
-// Measuring found 75 pre-existing cases, so this is a RATCHET, not a clean
-// gate: the known set is frozen below and any NEW omission fails. Shrinking
-// the list is tracked separately -- do not add to it to make CI pass.
-//
-// #345 gave the symbol-library tools their own "symbol_library" category,
-// shrinking this baseline from 75 to 60.
+// This started as a ratchet over 75 pre-existing omissions. #345 gave the
+// symbol-library tools their own category (75 -> 60), and the toolbox change
+// placed the last 60, so it is now a plain gate.
 //
 // Parsing source text is deliberate: the point is to compare what is wired
 // into the server against what the registry claims, so reading the registry
@@ -31,73 +30,8 @@ import {
 
 const TOOLS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "tools");
 
-// Frozen baseline of tools registered on the server but absent from the
-// registry. Every entry here is a tool users cannot discover via search_tools.
-const KNOWN_UNREGISTERED = new Set([
-  "add_component_3d_model",
-  "add_footprint_3d_model",
-  "add_gnd_stitching_vias",
-  "add_schematic_hierarchical_label",
-  "add_sheet_pin",
-  "align_components",
-  "check_courtyard_overlaps",
-  "copy_routing_pattern",
-  "create_footprint",
-  "create_netclass",
-  "delete_schematic_component",
-  "delete_trace",
-  "download_jlcpcb_database",
-  "duplicate_component",
-  "edit_footprint_pad",
-  "edit_schematic_component",
-  "enrich_datasheets",
-  "find_orphaned_wires",
-  "find_overlapping_elements",
-  "find_wires_crossing_symbols",
-  "get_category_tools",
-  "get_component_list",
-  "get_component_pads",
-  "get_datasheet_url",
-  "get_elements_in_region",
-  "get_jlcpcb_database_stats",
-  "get_jlcpcb_part",
-  "get_net_at_point",
-  "get_nets_list",
-  "get_pad_position",
-  "get_schematic_component",
-  "get_schematic_pin_locations",
-  "get_schematic_view_region",
-  "import_3d_model",
-  "import_eagle_project",
-  "import_svg_logo",
-  "list_floating_labels",
-  "list_footprint_libraries",
-  "list_tool_categories",
-  "modify_trace",
-  "move_schematic_net_label",
-  "place_component_array",
-  "query_traces",
-  "query_zones",
-  "refill_zones",
-  "register_footprint_library",
-  "remove_schematic_component_property",
-  "route_arc_trace",
-  "route_differential_pair",
-  "route_pad_to_pad",
-  "run_erc",
-  "save_as",
-  "search_jlcpcb_parts",
-  "search_tools",
-  "set_footprint_type",
-  "set_schematic_component_property",
-  "snap_to_grid",
-  "suggest_jlcpcb_alternatives",
-  "suggest_placement",
-  "suggest_schematic_declutter",
-]);
-
 function registeredToolNames(): Set<string> {
-  return new Set<string>([...getRoutedToolNames(), ...directToolNames]);
+  return new Set<string>([...getRoutedToolNames(), ...directToolNames, ...discoveryToolNames]);
 }
 
 function serverToolNames(): Map<string, string> {
@@ -122,30 +56,20 @@ describe("registry completeness", () => {
     expect(serverToolNames().size).toBeGreaterThan(150);
   });
 
-  it("no NEW tool is registered on the server but missing from the registry", () => {
+  it("every tool registered on the server is in the registry", () => {
     const registered = registeredToolNames();
-    const novel: string[] = [];
+    const missing: string[] = [];
     for (const [name, file] of serverToolNames()) {
-      if (registered.has(name) || KNOWN_UNREGISTERED.has(name)) continue;
-      novel.push(`${name} (${file})`);
+      if (!registered.has(name)) missing.push(`${name} (${file})`);
     }
 
     expect(
-      novel,
+      missing,
       "These tools are registered on the MCP server but missing from " +
-        "src/tools/registry.ts, so search_tools cannot discover them. Add each " +
-        "to a toolCategories entry (routed) or to directToolNames " +
-        "(always-visible essentials). Do not add them to KNOWN_UNREGISTERED.",
+        "src/tools/registry.ts, so search_tools cannot find them and toolbox " +
+        "mode hides them. Add each to the toolCategories entry it belongs to, " +
+        "or to directToolNames if it must always be visible.",
     ).toEqual([]);
-  });
-
-  it("the known-unregistered baseline does not grow", () => {
-    const registered = registeredToolNames();
-    const stillMissing = [...serverToolNames().keys()].filter((n) => !registered.has(n));
-    expect(
-      stillMissing.length,
-      "Baseline should shrink as tools get registered, never grow.",
-    ).toBeLessThanOrEqual(KNOWN_UNREGISTERED.size);
   });
 
   it("every registry entry is actually registered on the server", () => {
@@ -162,7 +86,7 @@ describe("registry completeness", () => {
     // That overlap is intended; double-counting it is not. total_tools used to
     // be routed.length + direct.length, overstating the headline figure (and
     // therefore the README) by exactly those seven.
-    const distinct = new Set<string>(directToolNames);
+    const distinct = new Set<string>([...directToolNames, ...discoveryToolNames]);
     for (const category of toolCategories) {
       for (const tool of category.tools) distinct.add(tool);
     }

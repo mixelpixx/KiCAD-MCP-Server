@@ -23,9 +23,11 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 244 tools registered, 184 of them indexed for keyword discovery
-- 184 tools across 17 categories with JSON Schema validation
+- 247 tools registered, every one of them indexed for keyword discovery
+- 247 tools across 20 categories with JSON Schema validation
 - Keyword tool discovery via `search_tools` / `get_category_tools`
+- Optional toolboxes: start with a 37-tool core and open the rest by category,
+  to save context and stay under client tool limits
 - 23 dynamic resources exposing project state
 - Complete schematic workflow with 65 tools (authoring, batch edits, hierarchy, layout) and dynamic symbol loading (~10,000 symbols)
 - Freerouting autorouter integration (Java, Docker, or Podman)
@@ -618,29 +620,59 @@ configuration command and backend options.
 ### Tool Discovery
 
 Every tool is registered individually, so an MCP client can call any of them by
-name. On top of that, most tools are indexed so an assistant can find one by
-keyword instead of guessing:
+name. Every tool is also indexed, so an assistant can find one by keyword
+instead of guessing:
 
-- **32 essential tools** that `search_tools` surfaces first, covering the
+- **33 core tools** that `search_tools` surfaces first, covering the
   operations nearly every session needs
-- **184 tools indexed across 17 categories** (board, component, export, drc,
-  schematic, library, symbol_library, symbol_pins, schematic_hierarchy,
-  schematic_layout, schematic_batch, routing, autoroute, validation,
-  parts-registry, digikey, gui-driver)
-- **3 discovery tools**:
+- **20 categories** (board, component, export, drc, schematic, library,
+  symbol_library, symbol_pins, schematic_hierarchy, schematic_layout,
+  schematic_batch, routing, autoroute, validation, parts-registry, digikey,
+  gui-driver, footprint, import, jlcpcb)
+- **Discovery tools**:
   - `list_tool_categories` - Browse all available categories
   - `get_category_tools` - View tools in a specific category
   - `search_tools` - Find tools by keyword
 
-The remaining 60 registered tools are not indexed yet. They work exactly the
-same when called by name; they simply do not appear in `search_tools` results.
-
 **Why this matters:** the assistant can locate the right tool for your task by
-keyword rather than inventing a name. Note that discovery does _not_ reduce
-context: every tool schema is still sent to the client. An earlier design hid
-tools behind an `execute_tool` dispatcher to save context; it was removed
-because the model then invented schemas it had never been shown. See
-[ROUTER_ARCHITECTURE.md](docs/ROUTER_ARCHITECTURE.md) for that history.
+keyword rather than inventing a name. Discovery on its own does _not_ reduce
+context: by default every tool schema is still sent to the client. Toolboxes,
+below, do.
+
+### Toolboxes
+
+The full set is about 250 tool definitions. Every one a client loads costs
+context, and some clients cap the count: VS Code Copilot stops at 128 tools.
+Set `KICAD_MCP_TOOLBOXES` in the server's environment to load only what you
+need. Each category above is a toolbox.
+
+| Setting                                 | What the client sees                                                           |
+| --------------------------------------- | ------------------------------------------------------------------------------ |
+| not set, or `all`                       | Every tool, as before                                                          |
+| `core`                                  | The 33 core tools, `search_tools`, and the toolbox controls (37 tools)         |
+| a list, such as `schematic,drc,routing` | The same, plus those toolboxes from the start (names match case-insensitively) |
+
+With toolboxes on, the assistant gets three controls in place of
+`list_tool_categories` and `get_category_tools`:
+
+- `list_toolboxes` - every toolbox with its description, its tools, and whether it is open
+- `open_toolbox` - add one or more toolboxes' tools to the tool list
+- `close_toolbox` - remove them again to free context
+
+Opened tools are ordinary tools with their real schemas: the server tells the
+client its tool list changed, and the client reads it again. How quickly they
+can be used depends on the client:
+
+- **Claude Code, VS Code Copilot:** from your next message. The assistant
+  opens a toolbox and says so; your reply lets it continue.
+- **Claude Desktop:** only after a restart, because it does not re-read the
+  list. Name the toolboxes you need in `KICAD_MCP_TOOLBOXES` instead.
+
+An earlier design saved context by hiding tools behind an `execute_tool`
+dispatcher. It was removed because the model then invented arguments for tools
+whose schemas it had never been shown; toolboxes avoid that by never calling a
+tool indirectly. See [ROUTER_ARCHITECTURE.md](docs/ROUTER_ARCHITECTURE.md) for
+that history.
 
 **Usage is seamless:** Just ask naturally - "export gerber files" or "add mounting holes" - and Claude will find and call the appropriate tools automatically.
 
@@ -702,10 +734,10 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. **184 tools** are additionally indexed into 17 functional categories, so `search_tools` and `get_category_tools` can find one by keyword.
+The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. All **247 tools** are also indexed into 20 functional categories, so `search_tools` and `get_category_tools` can find one by keyword, and each category doubles as a [toolbox](#toolboxes).
 
 The lists below are a curated tour of the most useful tools, not the full set.
-For the complete, generated reference of all 244 tools -- including how each one
+For the complete, generated reference of all 247 tools -- including how each one
 is discovered -- see [Tool Inventory](docs/TOOL_INVENTORY.md).
 
 ### Project Management (12 tools)

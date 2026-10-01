@@ -211,13 +211,55 @@ For any MCP-compatible client that supports STDIO transport:
 
 ### Optional
 
-| Variable          | Description                                       | Default        |
-| ----------------- | ------------------------------------------------- | -------------- |
-| `LOG_LEVEL`       | Logging verbosity                                 | `info`         |
-| `NODE_ENV`        | Node environment                                  | `development`  |
-| `KICAD_BACKEND`   | Force backend (`swig` or `ipc`)                   | Auto-detect    |
-| `KICAD_MCP_DEV`   | Enable developer mode (auto-save logs to project) | `0` (disabled) |
-| `FREEROUTING_JAR` | Path to FreeRouting JAR file for autorouting      | Not set        |
+| Variable              | Description                                                                        | Default              |
+| --------------------- | ---------------------------------------------------------------------------------- | -------------------- |
+| `LOG_LEVEL`           | Logging verbosity                                                                  | `info`               |
+| `NODE_ENV`            | Node environment                                                                   | `development`        |
+| `KICAD_BACKEND`       | Force backend (`swig` or `ipc`)                                                    | Auto-detect          |
+| `KICAD_MCP_DEV`       | Enable developer mode (auto-save logs to project)                                  | `0` (disabled)       |
+| `FREEROUTING_JAR`     | Path to FreeRouting JAR file for autorouting                                       | Not set              |
+| `KICAD_MCP_TOOLBOXES` | Load only some tools: `core`, or toolbox names such as `schematic,drc` (see below) | Not set (every tool) |
+
+### Toolboxes (`KICAD_MCP_TOOLBOXES`)
+
+By default the server offers all of its roughly 250 tools. That costs context
+in every conversation, and VS Code Copilot refuses more than 128 tools.
+`KICAD_MCP_TOOLBOXES` loads a smaller set:
+
+- `core`: the 33 core tools (projects, placement, the most used schematic and
+  board operations), `search_tools`, and the toolbox controls `list_toolboxes`,
+  `open_toolbox` and `close_toolbox`. The assistant opens the toolboxes a task
+  needs.
+- A comma-separated list of toolboxes, for example `schematic,schematic_batch,drc`:
+  the same, with those toolboxes open from the start.
+
+The toolbox names are the tool categories; `list_toolboxes` lists them with
+their tools. The README's [Toolboxes](../README.md#toolboxes) section has the
+full list.
+
+Whether a toolbox the assistant opens can be used straight away depends on the
+client, because the client has to re-read the server's tool list:
+
+| Client                       | After `open_toolbox`                                    |
+| ---------------------------- | ------------------------------------------------------- |
+| Claude Code, VS Code Copilot | The new tools can be used from your next message        |
+| Claude Desktop               | Not until restart; list the toolboxes you need up front |
+
+Example for Claude Desktop, with the schematic toolboxes always loaded:
+
+```json
+{
+  "mcpServers": {
+    "kicad": {
+      "command": "node",
+      "args": ["/path/to/KiCAD-MCP-Server/dist/index.js"],
+      "env": {
+        "KICAD_MCP_TOOLBOXES": "schematic,schematic_batch,schematic_hierarchy"
+      }
+    }
+  }
+}
+```
 
 ---
 
