@@ -12,6 +12,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
   If the two had overlapped, both would have tried to create the release;
   GitHub accepts only one, so the other run would have failed on a good
   release. Runs for the same tag now wait for each other.
+- **MCP SDK 1.31.0, and `npm audit` is clean for production dependencies.**
+  The SDK moves from 1.29.0 to 1.31.0, the newest release of the 1.x line.
+  For a stdio server like this one, the changes are clearer messages when a
+  tool call's arguments fail validation, a fix for zod 3.25 literals, and a
+  10 MB limit on a single incoming message (the largest batch requests are far
+  below it). `npm audit fix` then updated ten packages within their allowed
+  ranges, which clears all six advisories in production dependencies. Those
+  were in the SDK's HTTP server support and in Express, none of which this
+  server runs. The development-only packages with non-breaking fixes were
+  updated the same way. The five advisories left are in the test toolchain and
+  need a vitest major upgrade, so they wait for a change of their own.
 
 ## [2.8.2] - 2026-09-25
 
