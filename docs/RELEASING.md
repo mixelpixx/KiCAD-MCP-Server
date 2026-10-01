@@ -73,7 +73,9 @@ released, and users who clone `stable` do not see them until the next release.
    - publishes the GitHub release from `scripts/release-notes.mjs`;
    - moves `stable` to the tag.
 
-   Follow it on the repository's Actions tab.
+   Follow it on the repository's Actions tab. A tag push can start the
+   workflow twice, as it did for v2.8.2. The second run waits for the first,
+   then finds the release published and `stable` moved, and changes nothing.
 
 A tag with a suffix, such as `v2.9.0-rc.1`, is published as a GitHub
 prerelease and does not move `stable`. The release script and the notes are
