@@ -36,6 +36,12 @@ import { registerEagleTools } from "./tools/eagle.js";
 import { registerPcbImportTools } from "./tools/pcb-import.js";
 import { registerValidationTools } from "./tools/validation.js";
 import { registerRouterTools } from "./tools/router.js";
+import {
+  parseToolboxSetting,
+  registerToolboxTools,
+  ToolboxManager,
+  TOOLBOXES_ENV,
+} from "./tools/toolboxes.js";
 import { registerGuiDriverTools } from "./tools/gui-driver.js";
 
 // Import resource registration functions
@@ -243,6 +249,8 @@ export class KiCADMcpServer {
   /** Start times of recent automatic worker restarts (crash-loop budget). */
   private restartTimes: number[] = [];
   private kicadScriptPath: string;
+  /** Which registered tools a client sees; set up in registerAll(). */
+  private toolboxes!: ToolboxManager;
   private stdioTransport!: StdioServerTransport;
   private requestQueue: Array<{
     request: {
@@ -322,8 +330,22 @@ export class KiCADMcpServer {
   private registerAll(): void {
     logger.info("Registering KiCAD tools, resources, and prompts...");
 
-    // Register router tools FIRST (for tool discovery and execution)
-    registerRouterTools(this.server, this.callKicadScript.bind(this));
+    // Toolboxes decide which registered tools a client sees (toolboxes.ts). The
+    // manager has to see every registration, so it wraps the server first.
+    this.toolboxes = new ToolboxManager(
+      this.server,
+      parseToolboxSetting(process.env[TOOLBOXES_ENV]),
+    );
+    this.toolboxes.captureRegistrations();
+    if (this.toolboxes.setting.mode === "toolboxes" && this.toolboxes.setting.unknown.length > 0) {
+      logger.warn(
+        `${TOOLBOXES_ENV}: ignoring unknown toolbox name(s): ${this.toolboxes.setting.unknown.join(", ")}`,
+      );
+    }
+
+    // Register the discovery tools first
+    registerRouterTools(this.server, this.callKicadScript.bind(this), this.toolboxes);
+    registerToolboxTools(this.server, this.toolboxes);
 
     // Register all tools
     registerProjectTools(this.server, this.callKicadScript.bind(this));
@@ -363,7 +385,9 @@ export class KiCADMcpServer {
     registerDesignPrompts(this.server);
     registerFootprintPrompts(this.server);
 
+    this.toolboxes.applyVisibility();
     logger.info("All KiCAD tools, resources, and prompts registered");
+    logger.info(this.toolboxes.describe());
   }
 
   /**

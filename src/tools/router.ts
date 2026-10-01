@@ -22,14 +22,20 @@ import {
   searchTools as registrySearchTools,
   getRegistryStats,
 } from "./registry.js";
+import type { ToolboxManager } from "./toolboxes.js";
 
 // Command function type for KiCAD script calls
 type CommandFunction = (command: string, params: Record<string, unknown>) => Promise<any>;
 
 /**
- * Register all router tools with the MCP server
+ * Register all router tools with the MCP server. With `toolboxes` in toolbox
+ * mode, search_tools also says whether each match's toolbox is open.
  */
-export function registerRouterTools(server: McpServer, _callKicadScript: CommandFunction): void {
+export function registerRouterTools(
+  server: McpServer,
+  _callKicadScript: CommandFunction,
+  toolboxes?: ToolboxManager,
+): void {
   logger.info("Registering router tools");
 
   // ============================================================================
@@ -139,16 +145,29 @@ export function registerRouterTools(server: McpServer, _callKicadScript: Command
     async ({ query }) => {
       logger.debug(`Searching tools for: ${query}`);
 
-      const matches = registrySearchTools(query);
+      const toolboxMode = toolboxes?.toolboxMode === true;
+      const matches = registrySearchTools(query).map((match) =>
+        toolboxMode && getCategory(match.category)
+          ? { ...match, toolbox_open: toolboxes!.isOpen(match.category) }
+          : match,
+      );
+      const inClosedToolbox = matches.some((m) => "toolbox_open" in m && !m.toolbox_open);
+
+      let note = "Call a matching tool directly by name with its own parameters.";
+      if (matches.length === 0) {
+        note = toolboxMode
+          ? "No tools found matching your query. Try list_toolboxes to browse the toolboxes."
+          : "No tools found matching your query. Try list_tool_categories to browse all categories.";
+      } else if (inClosedToolbox) {
+        note +=
+          " A match whose toolbox_open is false is not in your tool list yet: open its toolbox (the category) with open_toolbox first.";
+      }
 
       const result = {
         query: query,
         count: matches.length,
         matches: matches,
-        note:
-          matches.length > 0
-            ? "Call a matching tool directly by name with its own parameters."
-            : "No tools found matching your query. Try list_tool_categories to browse all categories.",
+        note,
       };
 
       return {

@@ -4,6 +4,31 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Features
+
+- **Toolboxes: start with a core of tools and open the rest by category**
+  (#446). The server offers 247 tools, every definition a client loads costs
+  context, and VS Code Copilot refuses more than 128. With
+  `KICAD_MCP_TOOLBOXES=core`, a client starts with 37 tools: the 33 core tools,
+  `search_tools`, and three new controls, `list_toolboxes`, `open_toolbox` and
+  `close_toolbox`. Each tool category is a toolbox. Naming toolboxes instead,
+  as in `KICAD_MCP_TOOLBOXES=schematic,drc`, opens them from the start. Without
+  the setting nothing changes.
+  - Opened tools are ordinary tools with their real schemas. The server
+    enables them and sends one `notifications/tools/list_changed`, and the
+    client reads the list again; nothing is called indirectly. The
+    `execute_tool` dispatcher of the first design was removed because the
+    model invented arguments for tools it had never been shown.
+  - Claude Code and VS Code Copilot can use opened tools from the user's next
+    message. Claude Desktop does not re-read the tool list until it restarts,
+    so there the toolboxes go in the setting.
+  - The 60 tools that were in no category now have one, so `search_tools`
+    finds every tool and every tool belongs to a toolbox (#345). Three new
+    categories hold some of them: `footprint` (footprint creation and 3D
+    models), `import` (Eagle and other vendor formats; `import_pcb` moves
+    here from `board`) and `jlcpcb` (the JLCPCB catalog and LCSC datasheets).
+    `save_as` joins the core tools.
+
 ### Tooling
 
 - **Release runs for the same tag no longer race.** Pushing the v2.8.2 tag
