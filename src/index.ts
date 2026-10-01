@@ -29,7 +29,7 @@ async function main() {
     const kicadScriptPath = join(dirname(__dirname), "python", "kicad_interface.py");
 
     // Create the server
-    const server = new KiCADMcpServer(kicadScriptPath, config.logLevel);
+    const server = new KiCADMcpServer(kicadScriptPath, config.logLevel, config.operatingMode);
 
     // Start the server
     await server.start();

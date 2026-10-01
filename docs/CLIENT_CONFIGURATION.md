@@ -217,6 +217,7 @@ For any MCP-compatible client that supports STDIO transport:
 | `NODE_ENV`        | Node environment                                  | `development`  |
 | `KICAD_BACKEND`   | Force backend (`swig` or `ipc`)                   | Auto-detect    |
 | `KICAD_MCP_DEV`   | Enable developer mode (auto-save logs to project) | `0` (disabled) |
+| `KICAD_MCP_OPERATING_MODE` | Execution policy: `readonly`, `write`, `manufacturing`, or `experimental` | `write` |
 | `FREEROUTING_JAR` | Path to FreeRouting JAR file for autorouting      | Not set        |
 
 ---

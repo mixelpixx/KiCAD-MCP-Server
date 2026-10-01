@@ -1859,6 +1859,7 @@ Logs default to `INFO` and the file is size-capped so it can't grow without boun
 | `KICAD_MCP_LOG_MAX_BYTES`           | `10485760` (10 MB) | Max size per log file before it rotates; `0` disables rotation.                      |
 | `KICAD_MCP_LOG_BACKUP_COUNT`        | `3`                | Number of rotated backups to keep.                                                   |
 | `KICAD_MCP_DEBUG_SKIP`              | unset              | Set to `1` to re-enable the verbose kicad-skip parser DEBUG logs (muted by default). |
+| `KICAD_MCP_OPERATING_MODE`          | `write`            | Execution policy: `readonly` permits inspection and ERC/DRC only; `manufacturing` permits inspection plus exports; `write` preserves normal behavior; `experimental` has no policy restrictions. |
 
 See [ROADMAP.md](docs/ROADMAP.md) for planned features.
 
