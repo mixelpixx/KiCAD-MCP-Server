@@ -16,6 +16,33 @@ from utils.board_items import delete_board_item
 logger = logging.getLogger("kicad_interface")
 
 
+def _payload_in_unit(payload: Any, unit: str) -> Any:
+    """Convert every ``{"unit": "mm", ...}`` sub-dict of a payload to ``unit``.
+
+    Only dicts that declare ``"unit": "mm"`` are scaled, so counts and codes
+    elsewhere in the payload (``netCode``) are never touched.
+    """
+    from commands.routing import LENGTH_UNITS_MM
+
+    if unit == "mm":
+        return payload
+    if isinstance(payload, list):
+        return [_payload_in_unit(item, unit) for item in payload]
+    if not isinstance(payload, dict):
+        return payload
+    if payload.get("unit") == "mm":
+        scale = LENGTH_UNITS_MM[unit]
+        return {
+            key: (
+                value / scale
+                if isinstance(value, (int, float)) and not isinstance(value, bool)
+                else value
+            )
+            for key, value in payload.items()
+        } | {"unit": unit}
+    return {key: _payload_in_unit(value, unit) for key, value in payload.items()}
+
+
 class ComponentCommands(PlacementOptimizerCommands):
     """Handles component-related KiCAD operations"""
 
@@ -1010,14 +1037,25 @@ class ComponentCommands(PlacementOptimizerCommands):
             return {"success": False, "message": "Failed to get pads", "errorDetails": str(e)}
 
     def get_net_pads(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Return every pad attached to a net name or net code."""
+        """Return every pad attached to a net name or net code.
+
+        Positions, sizes, drill sizes and bounding boxes are reported in
+        ``unit`` (mm, mil or inch; default mm). The zod schema declared
+        ``unit`` and the handler ignored it, always answering in mm (#407).
+        """
         try:
+            from commands.routing import length_unit_error
+
             if not self.board:
                 return {
                     "success": False,
                     "message": "No board is loaded",
                     "errorDetails": "Load or create a board first",
                 }
+            unit = params.get("unit") or "mm"
+            unit_error = length_unit_error(unit)
+            if unit_error:
+                return unit_error
             net = params.get("net")
             net_code = params.get("netCode")
             if net is None and net_code is None:
@@ -1033,13 +1071,14 @@ class ComponentCommands(PlacementOptimizerCommands):
                         continue
                     if net_code is not None and pad.GetNetCode() != net_code:
                         continue
-                    pads.append(self._pad_payload(fp, pad))
+                    pads.append(_payload_in_unit(self._pad_payload(fp, pad), unit))
             return {
                 "success": True,
                 "net": net,
                 "netCode": net_code,
                 "padCount": len(pads),
                 "pads": pads,
+                "unit": unit,
             }
         except Exception as e:
             logger.error(f"Error getting net pads: {str(e)}")

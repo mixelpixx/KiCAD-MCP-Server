@@ -353,8 +353,11 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
       includeStats: z
         .boolean()
         .optional()
-        .describe("Include statistics (track count, total length, etc.)"),
-      unit: z.enum(["mm", "mil", "inch"]).optional().describe("Unit for length measurements"),
+        .describe("Add per-net stats: track count, total track length and via count"),
+      unit: z
+        .enum(["mm", "mil", "inch"])
+        .optional()
+        .describe("Unit for track lengths (default: mm)"),
     },
     async (args: any) => {
       const result = await callKicadScript("get_nets_list", args);

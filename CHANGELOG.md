@@ -4,6 +4,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- **`get_nets_list` returns the statistics it advertises, and `get_net_pads`
+  answers in the unit asked for (#407).** `get_nets_list` declared
+  `includeStats` and `unit`, and this reference documented the track count,
+  via count and total length they would add, but the handler read neither and
+  never returned statistics. With `includeStats` each net now carries
+  `stats` (`trackCount`, `trackLength`, `viaCount`) with lengths in `unit`.
+  The IPC handler reports the same fields from the live board. `get_net_pads`
+  declared `unit` and always answered in mm. Positions, sizes, drill sizes and
+  bounding boxes now follow it. Both tools reject an unknown unit instead of
+  quietly using mm. Calls without these parameters return exactly what they
+  did before.
+
 ### Tooling
 
 - **Release runs for the same tag no longer race.** Pushing the v2.8.2 tag

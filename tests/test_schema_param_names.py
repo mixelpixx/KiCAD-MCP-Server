@@ -64,8 +64,6 @@ KNOWN_ZOD_UNREAD: Dict[str, Set[str]] = {
     "align_components": {"alignmentType", "referenceComponent"},
     "duplicate_component": {"count", "offset"},
     "get_footprint_info": {"library_name"},
-    "get_net_pads": {"unit"},
-    "get_nets_list": {"includeStats", "unit"},
     "list_libraries": {"search_paths"},
     "list_library_footprints": {"filter", "limit"},
     "place_component_array": {"columnSpacing", "footprint", "rowSpacing", "startReference"},

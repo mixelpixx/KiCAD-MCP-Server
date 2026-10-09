@@ -17,6 +17,49 @@ from utils.board_items import delete_board_item
 logger = logging.getLogger("kicad_interface")
 
 
+# --- Length units for query results (#407) --------------------------------
+#
+# Millimetres per unit. Shared by the SWIG and IPC handlers of get_nets_list so
+# both report statistics the same way.
+LENGTH_UNITS_MM = {"mm": 1.0, "mil": 0.0254, "inch": 25.4}
+
+
+def length_unit_error(unit: Any) -> Optional[Dict[str, Any]]:
+    """Error payload for an unsupported unit, or None when the unit is valid."""
+    if unit in LENGTH_UNITS_MM:
+        return None
+    return {
+        "success": False,
+        "message": "Invalid unit",
+        "errorDetails": f"unit must be one of {sorted(LENGTH_UNITS_MM)}, got {unit!r}",
+    }
+
+
+def net_stats(
+    tracks: List[Tuple[str, float]], vias: List[str], unit: str = "mm"
+) -> Dict[str, Dict[str, Any]]:
+    """Per-net track count, total track length and via count.
+
+    ``tracks`` holds ``(net name, length in mm)`` pairs and ``vias`` holds net
+    names. Lengths are returned in ``unit``.
+    """
+    stats: Dict[str, Dict[str, Any]] = {}
+
+    def entry(net: str) -> Dict[str, Any]:
+        return stats.setdefault(net, {"trackCount": 0, "trackLength": 0.0, "viaCount": 0})
+
+    for net, length_mm in tracks:
+        item = entry(net)
+        item["trackCount"] += 1
+        item["trackLength"] += length_mm
+    for net in vias:
+        entry(net)["viaCount"] += 1
+    scale = LENGTH_UNITS_MM[unit]
+    for item in stats.values():
+        item["trackLength"] = round(item["trackLength"] / scale, 6)
+    return stats
+
+
 # --- Net class project-file persistence (KiCad 7+) ------------------------
 #
 # Net class *definitions* live in the project file (``<project>.kicad_pro`` ->
@@ -946,7 +989,12 @@ class RoutingCommands:
         }
 
     def get_nets_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get a list of all nets in the PCB"""
+        """Get a list of all nets in the PCB.
+
+        With ``includeStats`` each net also carries ``stats`` (track count,
+        total track length in ``unit``, via count). Both parameters are
+        declared by the zod schema and used to be ignored (#407).
+        """
         try:
             if not self.board:
                 return {
@@ -954,6 +1002,12 @@ class RoutingCommands:
                     "message": "No board is loaded",
                     "errorDetails": "Load or create a board first",
                 }
+
+            include_stats = bool(params.get("includeStats", False))
+            unit = params.get("unit") or "mm"
+            unit_error = length_unit_error(unit)
+            if unit_error:
+                return unit_error
 
             nets = []
             netinfo = self.board.GetNetInfo()
@@ -968,7 +1022,20 @@ class RoutingCommands:
                         }
                     )
 
-            return {"success": True, "nets": nets}
+            if not include_stats:
+                return {"success": True, "nets": nets}
+
+            tracks, vias = [], []
+            for item in self.board.GetTracks():
+                if item.Type() == pcbnew.PCB_VIA_T:
+                    vias.append(item.GetNetname())
+                else:  # straight tracks and arcs; GetLength() is the arc length for arcs
+                    tracks.append((item.GetNetname(), item.GetLength() / 1_000_000))
+            stats = net_stats(tracks, vias, unit)
+            empty = {"trackCount": 0, "trackLength": 0.0, "viaCount": 0}
+            for net in nets:
+                net["stats"] = dict(stats.get(net["name"], empty))
+            return {"success": True, "nets": nets, "unit": unit}
 
         except Exception as e:
             logger.error(f"Error getting nets list: {str(e)}")
