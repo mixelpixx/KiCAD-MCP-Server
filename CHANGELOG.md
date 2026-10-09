@@ -4,6 +4,23 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- **`route_differential_pair` works from Node, and its gap is the gap (#407).**
+  The zod schema declared `positivePad`, `negativePad`, `positiveNet` and
+  `negativeNet`; the handler read `startPos`, `endPos`, `netPos` and `netNeg`,
+  so every call from a Node-fronted client answered "Missing parameters". The
+  JSON-RPC schema declared a third set (`positiveName`, `negativeName`,
+  `points`). Two pads cannot describe a segment anyway, so both schemas now
+  declare what the handler routes, a centreline from `startPos` to `endPos`,
+  and the handler reads `positiveNet` / `negativeNet`, keeping `netPos` /
+  `netNeg` for existing callers. Once calls got through, a second fault showed:
+  each trace was offset by `gap / 2`, which spaces the centrelines by `gap` and
+  leaves only `gap - width` of copper between them. With the README's own
+  example (0.2 mm width, 0.15 mm gap) the two traces overlapped by 0.05 mm,
+  shorting the pair. The offset is now `(gap + width) / 2`, so `gap` is the
+  edge-to-edge spacing KiCad's differential pair rules mean by it.
+
 ### Tooling
 
 - **Release runs for the same tag no longer race.** Pushing the v2.8.2 tag

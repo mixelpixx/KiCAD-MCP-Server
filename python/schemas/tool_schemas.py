@@ -1839,15 +1839,40 @@ ROUTING_TOOLS = [
     {
         "name": "route_differential_pair",
         "title": "Route Differential Pair",
-        "description": "Routes a differential signal pair with matched lengths and spacing.",
+        "description": (
+            "Routes a differential pair as two parallel straight segments. startPos and "
+            "endPos are the pair's centreline; looking from start to end on the board "
+            "(y down), the positive trace runs on the right and the negative on the "
+            "left, each offset by (gap + width) / 2."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "positiveName": {
+                "startPos": {
+                    "type": "object",
+                    "description": "Start of the pair's centreline",
+                    "properties": {
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "unit": {"type": "string", "enum": ["mm", "mil", "inch"]},
+                    },
+                    "required": ["x", "y"],
+                },
+                "endPos": {
+                    "type": "object",
+                    "description": "End of the pair's centreline",
+                    "properties": {
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "unit": {"type": "string", "enum": ["mm", "mil", "inch"]},
+                    },
+                    "required": ["x", "y"],
+                },
+                "positiveNet": {
                     "type": "string",
                     "description": "Positive signal net name",
                 },
-                "negativeName": {
+                "negativeNet": {
                     "type": "string",
                     "description": "Negative signal net name",
                 },
@@ -1858,21 +1883,10 @@ ROUTING_TOOLS = [
                 },
                 "gap": {
                     "type": "number",
-                    "description": "Gap between traces in millimeters",
-                },
-                "points": {
-                    "type": "array",
-                    "description": "Waypoints for the pair routing",
-                    "items": {
-                        "type": "array",
-                        "items": {"type": "number"},
-                        "minItems": 2,
-                        "maxItems": 2,
-                    },
-                    "minItems": 2,
+                    "description": "Edge-to-edge gap between the two traces in millimeters",
                 },
             },
-            "required": ["positiveName", "negativeName", "width", "gap", "points"],
+            "required": ["startPos", "endPos", "positiveNet", "negativeNet"],
         },
     },
 ]

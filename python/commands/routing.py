@@ -1939,8 +1939,11 @@ class RoutingCommands:
 
             start_pos = params.get("startPos")
             end_pos = params.get("endPos")
-            net_pos = params.get("netPos")
-            net_neg = params.get("netNeg")
+            # The schemas declare `positiveNet` / `negativeNet` (#407); `netPos` /
+            # `netNeg` are the keys this handler historically read, kept so
+            # existing callers keep working.
+            net_pos = params.get("positiveNet") or params.get("netPos")
+            net_neg = params.get("negativeNet") or params.get("netNeg")
             layer = params.get("layer", "F.Cu")
             width = params.get("width")
             gap = params.get("gap")
@@ -1949,7 +1952,7 @@ class RoutingCommands:
                 return {
                     "success": False,
                     "message": "Missing parameters",
-                    "errorDetails": "startPos, endPos, netPos, and netNeg are required",
+                    "errorDetails": "startPos, endPos, positiveNet, and negativeNet are required",
                 }
 
             # Get layer ID
@@ -2007,9 +2010,19 @@ class RoutingCommands:
             # Convert to nm
             gap_nm = int(gap * 1000000)
 
-            # Calculate offsets
-            offset_x = int(px * gap_nm / 2)
-            offset_y = int(py * gap_nm / 2)
+            if width:
+                trace_width_nm = int(width * 1000000)
+            else:
+                # Get default width from design rules or net class
+                trace_width_nm = self.board.GetDesignSettings().GetCurrentTrackWidth()
+
+            # `gap` is the edge-to-edge spacing, as KiCad's differential pair
+            # rules define it, so the centrelines sit (gap + width) / 2 either
+            # side of the path. Offsetting by gap / 2 left only gap - width of
+            # copper between the traces, and overlapped them when width >= gap.
+            offset_nm = (gap_nm + trace_width_nm) / 2
+            offset_x = int(px * offset_nm)
+            offset_y = int(py * offset_nm)
 
             # Create positive and negative trace points
             pos_start = pcbnew.VECTOR2I(
@@ -2035,16 +2048,8 @@ class RoutingCommands:
             neg_track.SetLayer(layer_id)
             neg_track.SetNet(net_neg_obj)
 
-            # Set width
-            if width:
-                trace_width_nm = int(width * 1000000)
-                pos_track.SetWidth(trace_width_nm)
-                neg_track.SetWidth(trace_width_nm)
-            else:
-                # Get default width from design rules or net class
-                trace_width = self.board.GetDesignSettings().GetCurrentTrackWidth()
-                pos_track.SetWidth(trace_width)
-                neg_track.SetWidth(trace_width)
+            pos_track.SetWidth(trace_width_nm)
+            neg_track.SetWidth(trace_width_nm)
 
             # Add tracks to board
             self.board.Add(pos_track)

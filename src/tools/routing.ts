@@ -456,23 +456,25 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   // Route differential pair tool
   server.tool(
     "route_differential_pair",
-    "Route a differential pair between two sets of points.",
+    "Route a differential pair as two parallel straight segments. startPos and endPos are the pair's centreline; looking from start to end on the board (y down), the positive trace runs on the right and the negative on the left, each offset by (gap + width) / 2.",
     {
-      positivePad: z
+      startPos: z
         .object({
-          reference: z.string(),
-          pad: z.string(),
+          x: z.number(),
+          y: z.number(),
+          unit: z.enum(["mm", "mil", "inch"]).optional(),
         })
-        .describe("Positive pad (component and pad number)"),
-      negativePad: z
+        .describe("Start of the pair's centreline"),
+      endPos: z
         .object({
-          reference: z.string(),
-          pad: z.string(),
+          x: z.number(),
+          y: z.number(),
+          unit: z.enum(["mm", "mil", "inch"]).optional(),
         })
-        .describe("Negative pad (component and pad number)"),
+        .describe("End of the pair's centreline"),
       layer: z.string().describe("PCB layer"),
       width: z.number().describe("Trace width in mm"),
-      gap: z.number().describe("Gap between traces in mm"),
+      gap: z.number().describe("Edge-to-edge gap between the two traces in mm"),
       positiveNet: z.string().describe("Positive net name"),
       negativeNet: z.string().describe("Negative net name"),
     },
