@@ -330,10 +330,14 @@ def _build_freerouting_cmd(
         dsn_name = os.path.basename(dsn_path)
         ses_name = os.path.basename(ses_path)
         jar_name = os.path.basename(jar_path)
+        user_args = []
+        if hasattr(os, "getuid"):
+            user_args = ["-u", f"{os.getuid()}:{os.getgid()}"]
         return [
             docker_exe,
             "run",
             "--rm",
+            *user_args,
             "-v",
             f"{jar_path}:/app/{jar_name}:ro",
             "-v",
