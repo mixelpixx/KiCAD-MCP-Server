@@ -413,6 +413,7 @@ try:
     )
     from commands.pcb_import import PcbImportCommands
     from commands.project import ProjectCommands
+    from commands.footprints_in_region import RegionFootprintCommands
     from commands.routing import RoutingCommands
     from commands.schematic import SchematicLoadError, SchematicManager
     from commands.schematic_batch import SchematicBatchCommands
@@ -484,6 +485,7 @@ class KiCADInterface(SchematicHandlersMixin):
         self.board_commands = BoardCommands(self.board)
         self.board_origin_commands = BoardOriginCommands()
         self.component_commands = ComponentCommands(self.board, self.footprint_library)
+        self.region_footprint_commands = RegionFootprintCommands(self.board)
         self.routing_commands = RoutingCommands(self.board)
         self.freerouting_commands = FreeroutingCommands(self.board)
         self.eagle_commands = EagleCommands()
@@ -595,6 +597,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "add_via": self.routing_commands.add_via,
             "delete_trace": self.routing_commands.delete_trace,
             "query_traces": self.routing_commands.query_traces,
+            "get_footprints_in_region": self.region_footprint_commands.get_footprints_in_region,
             "query_zones": self.routing_commands.query_zones,
             "add_gnd_stitching_vias": self.routing_commands.add_gnd_stitching_vias,
             "modify_trace": self.routing_commands.modify_trace,
@@ -1602,6 +1605,7 @@ class KiCADInterface(SchematicHandlersMixin):
         self.project_commands.board = self.board
         self.board_commands.board = self.board
         self.component_commands.board = self.board
+        self.region_footprint_commands.board = self.board
         self.routing_commands.board = self.board
         self.design_rule_commands.board = self.board
         self.export_commands.board = self.board

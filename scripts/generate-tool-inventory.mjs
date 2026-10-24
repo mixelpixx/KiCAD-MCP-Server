@@ -71,6 +71,7 @@ const SECTIONS = [
   ["pcb-import.ts", "PCB Import"],
   ["ui.ts", "KiCad UI and Backend"],
   ["router.ts", "Tool Discovery"],
+  ["footprints-in-region.ts", "Footprints in a Region"],
 ];
 
 /**

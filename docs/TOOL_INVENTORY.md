@@ -5,9 +5,9 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.8.2
-**Tools registered on the server:** 244
-**Tools indexed for keyword discovery:** 184 in 17 categories
-**Last updated:** 2026-09-24
+**Tools registered on the server:** 245
+**Tools indexed for keyword discovery:** 185 in 18 categories
+**Last updated:** 2026-10-24
 
 ## How to read this document
 
@@ -467,6 +467,16 @@ _Source: `src/tools/router.ts`_
 
 ---
 
+## Footprints in a Region (1 tools)
+
+_Source: `src/tools/footprints-in-region.ts`_
+
+| Tool                       | Description                               | Discovery  |
+| -------------------------- | ----------------------------------------- | ---------- |
+| `get_footprints_in_region` | List footprints inside a board rectangle. | `analysis` |
+
+---
+
 ## digikey-api.ts (3 tools)
 
 _Source: `src/tools/digikey-api.ts`_
@@ -501,38 +511,39 @@ _Source: `src/tools/gui-driver.ts`_
 
 ## Summary by source file
 
-| Source file              | Section                                | Tools   |
-| ------------------------ | -------------------------------------- | ------- |
-| `project.ts`             | Project and Board Files                | 12      |
-| `board.ts`               | Board Management                       | 19      |
-| `component.ts`           | Component Management                   | 28      |
-| `routing.ts`             | Routing                                | 17      |
-| `design-rules.ts`        | Design Rules and DRC                   | 7       |
-| `export.ts`              | Export and Fabrication Output          | 27      |
-| `schematic.ts`           | Schematic                              | 46      |
-| `schematic-batch.ts`     | Schematic Batch Operations             | 9       |
-| `schematic-hierarchy.ts` | Hierarchical Sheets                    | 5       |
-| `schematic-layout.ts`    | Schematic Layout and Cosmetics         | 5       |
-| `validation.ts`          | File Validation                        | 2       |
-| `library.ts`             | Footprint Libraries and Library Tables | 7       |
-| `library-symbol.ts`      | Symbol Libraries                       | 9       |
-| `footprint.ts`           | Footprint Creator                      | 7       |
-| `symbol-creator.ts`      | Symbol Creator                         | 8       |
-| `datasheet.ts`           | Datasheet Tools                        | 2       |
-| `jlcpcb-api.ts`          | JLCPCB Integration                     | 5       |
-| `parts-registry.ts`      | Parts Registry                         | 3       |
-| `freerouting.ts`         | Freerouting Autorouter                 | 4       |
-| `eagle.ts`               | Eagle Import                           | 1       |
-| `pcb-import.ts`          | PCB Import                             | 1       |
-| `ui.ts`                  | KiCad UI and Backend                   | 3       |
-| `router.ts`              | Tool Discovery                         | 3       |
-| `digikey-api.ts`         | digikey-api.ts                         | 3       |
-| `gui-driver.ts`          | gui-driver.ts                          | 11      |
-| **Total**                |                                        | **244** |
+| Source file               | Section                                | Tools   |
+| ------------------------- | -------------------------------------- | ------- |
+| `project.ts`              | Project and Board Files                | 12      |
+| `board.ts`                | Board Management                       | 19      |
+| `component.ts`            | Component Management                   | 28      |
+| `routing.ts`              | Routing                                | 17      |
+| `design-rules.ts`         | Design Rules and DRC                   | 7       |
+| `export.ts`               | Export and Fabrication Output          | 27      |
+| `schematic.ts`            | Schematic                              | 46      |
+| `schematic-batch.ts`      | Schematic Batch Operations             | 9       |
+| `schematic-hierarchy.ts`  | Hierarchical Sheets                    | 5       |
+| `schematic-layout.ts`     | Schematic Layout and Cosmetics         | 5       |
+| `validation.ts`           | File Validation                        | 2       |
+| `library.ts`              | Footprint Libraries and Library Tables | 7       |
+| `library-symbol.ts`       | Symbol Libraries                       | 9       |
+| `footprint.ts`            | Footprint Creator                      | 7       |
+| `symbol-creator.ts`       | Symbol Creator                         | 8       |
+| `datasheet.ts`            | Datasheet Tools                        | 2       |
+| `jlcpcb-api.ts`           | JLCPCB Integration                     | 5       |
+| `parts-registry.ts`       | Parts Registry                         | 3       |
+| `freerouting.ts`          | Freerouting Autorouter                 | 4       |
+| `eagle.ts`                | Eagle Import                           | 1       |
+| `pcb-import.ts`           | PCB Import                             | 1       |
+| `ui.ts`                   | KiCad UI and Backend                   | 3       |
+| `router.ts`               | Tool Discovery                         | 3       |
+| `footprints-in-region.ts` | Footprints in a Region                 | 1       |
+| `digikey-api.ts`          | digikey-api.ts                         | 3       |
+| `gui-driver.ts`           | gui-driver.ts                          | 11      |
+| **Total**                 |                                        | **245** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 184 of the 244 registered tools.
+These are the categories `search_tools` searches. They cover 185 of the 245 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
@@ -553,6 +564,7 @@ These are the categories `search_tools` searches. They cover 184 of the 244 regi
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
 | `gui-driver`               | 11            |
-| **Indexed total**          | **184**       |
+| `analysis`                 | 1             |
+| **Indexed total**          | **185**       |
 | Registered but not indexed | 60            |
-| **Registered total**       | **244**       |
+| **Registered total**       | **245**       |

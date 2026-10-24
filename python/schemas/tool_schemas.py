@@ -3868,6 +3868,42 @@ GUI_DRIVER_TOOLS = [
     },
 ]
 
+# Read-only geometry for a PDN or EMC review. One entry per tool so a
+# later query can extend this list without changing the copper editor.
+ANALYSIS_TOOLS = [
+    {
+        "name": "get_footprints_in_region",
+        "title": "Get Footprints in Region",
+        "description": (
+            "List footprints inside a board rectangle. A footprint is included when "
+            "its anchor or any pad centre lies inside the box. Each hit returns the "
+            "reference, value, position, layer name, and the net of every pad."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "boundingBox": {
+                    "type": "object",
+                    "description": "Inclusive rectangle. unit defaults to mm.",
+                    "properties": {
+                        "x1": {"type": "number"},
+                        "y1": {"type": "number"},
+                        "x2": {"type": "number"},
+                        "y2": {"type": "number"},
+                        "unit": {
+                            "type": "string",
+                            "enum": ["mm", "mil", "inch"],
+                            "default": "mm",
+                        },
+                    },
+                    "required": ["x1", "y1", "x2", "y2"],
+                },
+            },
+            "required": ["boundingBox"],
+        },
+    },
+]
+
 TOOL_SCHEMAS: Dict[str, Any] = {}
 
 # Combine all tool categories
@@ -3884,6 +3920,7 @@ for tool in (
     + VALIDATION_TOOLS
     + DIGIKEY_TOOLS
     + GUI_DRIVER_TOOLS
+    + ANALYSIS_TOOLS
 ):
     TOOL_SCHEMAS[tool["name"]] = tool
 
