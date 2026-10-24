@@ -394,6 +394,7 @@ try:
     from commands.export import ExportCommands
     from commands.find_duplicate_symbols import find_duplicate_symbols
     from commands.footprint import FootprintCreator
+    from commands.footprints_in_region import RegionFootprintCommands
     from commands.freerouting import FreeroutingCommands
     from commands.gui_driver import GuiDriverCommands
     from commands.hierarchical_place import HierarchicalPlaceCommands
@@ -413,7 +414,6 @@ try:
     )
     from commands.pcb_import import PcbImportCommands
     from commands.project import ProjectCommands
-    from commands.footprints_in_region import RegionFootprintCommands
     from commands.routing import RoutingCommands
     from commands.schematic import SchematicLoadError, SchematicManager
     from commands.schematic_batch import SchematicBatchCommands
