@@ -8,7 +8,7 @@ the thickness of every stackup entry, in millimetres.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from commands.analysis_geom import (
     as_float,
@@ -91,8 +91,36 @@ def _text(item: Any, method: str, index: int) -> Optional[str]:
     return None
 
 
+def _failure(message: str, details: str) -> Dict[str, Any]:
+    return {"success": False, "message": message, "errorDetails": details}
+
+
+def _tolerance(
+    params: Dict[str, Any], key: str, default: float
+) -> Tuple[float, Optional[Dict[str, Any]]]:
+    if key not in params or params[key] is None:
+        return default, None
+    value = as_float(params[key])
+    if value is None or value < 0:
+        return 0.0, _failure(f"{key} must be zero or greater", key)
+    return value, None
+
+
+def _difference(
+    index: Any, layer: Any, field: str, actual: Any, expected: Any, delta: Any
+) -> Dict[str, Any]:
+    return {
+        "index": index,
+        "layer": layer,
+        "field": field,
+        "actual": actual,
+        "expected": expected,
+        "delta": delta,
+    }
+
+
 class StackupCommands:
-    """Read-only stackup query. Holds the board the interface last loaded."""
+    """Read-only stackup query and recipe check. Holds the board the interface last loaded."""
 
     def __init__(self, board: Any) -> None:
         self.board = board
@@ -115,6 +143,170 @@ class StackupCommands:
                 "message": "Failed to read stackup",
                 "errorDetails": str(exc),
             }
+
+    def check_stackup(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Compare the board stackup with a recipe supplied by the caller.
+
+        Each entry in ``expected`` names a row by ``index`` or ``layer`` and
+        may give ``type``, ``thicknessMm``, and ``epsilonR``. Thickness uses
+        ``thicknessToleranceMm`` (default 0.001 mm). Permittivity uses
+        ``epsilonTolerance`` (default 0.01). A difference inside the tolerance
+        is not a mismatch.
+        """
+        if not self.board:
+            return no_board()
+        try:
+            return self._check(params)
+        except Exception as exc:
+            logger.error(f"check_stackup failed: {exc}")
+            return {
+                "success": False,
+                "message": "Failed to check stackup",
+                "errorDetails": str(exc),
+            }
+
+    def _check(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        expected = params.get("expected")
+        if not isinstance(expected, list) or not expected:
+            return _failure(
+                "expected must list at least one row",
+                "expected",
+            )
+        thickness_tol, error = _tolerance(params, "thicknessToleranceMm", 0.001)
+        if error is not None:
+            return error
+        epsilon_tol, error = _tolerance(params, "epsilonTolerance", 0.01)
+        if error is not None:
+            return error
+
+        current = self._read()
+        if not current.get("success"):
+            return current
+
+        mismatches: List[Dict[str, Any]] = []
+        for row in expected:
+            if not isinstance(row, dict):
+                return _failure("each expected row must be an object", "expected")
+            entry, error, missing = self._locate(current["layers"], row)
+            if error is not None:
+                return error
+            if missing or entry is None:
+                mismatches.append(
+                    _difference(
+                        row.get("index"),
+                        row.get("layer"),
+                        "layer",
+                        None,
+                        row.get("layer", row.get("index")),
+                        None,
+                    )
+                )
+                continue
+            row_diffs, error = self._differences(entry, row, thickness_tol, epsilon_tol)
+            if error is not None:
+                return error
+            mismatches.extend(row_diffs)
+
+        return {
+            "success": True,
+            "ok": not mismatches,
+            "mismatchCount": len(mismatches),
+            "mismatches": mismatches,
+        }
+
+    def _locate(
+        self, layers: List[Dict[str, Any]], row: Dict[str, Any]
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], bool]:
+        raw_index = row.get("index")
+        index = None
+        if raw_index is not None:
+            index = as_int(raw_index)
+            if index is None:
+                return None, _failure("index must be an integer", "index"), False
+        layer = row.get("layer")
+        if layer is not None and (not isinstance(layer, str) or not layer):
+            return None, _failure("layer must be a string", "layer"), False
+        if index is None and layer is None:
+            return (
+                None,
+                _failure(
+                    "each expected row needs an index or a layer",
+                    "index or layer",
+                ),
+                False,
+            )
+
+        chosen: Optional[Dict[str, Any]] = None
+        if index is not None:
+            if index < 0 or index >= len(layers):
+                return None, None, True
+            chosen = layers[index]
+        if isinstance(layer, str):
+            hits = [
+                entry
+                for entry in layers
+                if entry.get("canonical") == layer or entry.get("name") == layer
+            ]
+            if len(hits) > 1:
+                return (
+                    None,
+                    _failure(
+                        f"More than one stackup row is named {layer}",
+                        "layer",
+                    ),
+                    False,
+                )
+            if not hits:
+                return None, None, True
+            if chosen is not None and hits[0]["index"] != chosen["index"]:
+                return (
+                    None,
+                    _failure(
+                        "index and layer name different rows",
+                        "pass the index of that layer, or the layer on its own",
+                    ),
+                    False,
+                )
+            chosen = hits[0]
+        return chosen, None, False
+
+    def _differences(
+        self,
+        entry: Dict[str, Any],
+        row: Dict[str, Any],
+        thickness_tol: float,
+        epsilon_tol: float,
+    ) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        found: List[Dict[str, Any]] = []
+        label = entry.get("canonical") or entry.get("name")
+        if "type" in row and row["type"] is not None:
+            if not isinstance(row["type"], str):
+                return [], _failure("type must be a string", "type")
+            if row["type"] != entry.get("type"):
+                found.append(
+                    _difference(entry["index"], label, "type", entry.get("type"), row["type"], None)
+                )
+        if "thicknessMm" in row and row["thicknessMm"] is not None:
+            expected = as_float(row["thicknessMm"])
+            if expected is None:
+                return [], _failure("thicknessMm must be a number", "thicknessMm")
+            actual = entry.get("thicknessMm")
+            if actual is None or abs(actual - expected) > thickness_tol:
+                delta = None if actual is None else actual - expected
+                found.append(
+                    _difference(entry["index"], label, "thicknessMm", actual, expected, delta)
+                )
+        if "epsilonR" in row and row["epsilonR"] is not None:
+            expected_eps = as_float(row["epsilonR"])
+            if expected_eps is None:
+                return [], _failure("epsilonR must be a number", "epsilonR")
+            actual_eps = entry.get("epsilonR")
+            if actual_eps is None or abs(actual_eps - expected_eps) > epsilon_tol:
+                delta = None if actual_eps is None else actual_eps - expected_eps
+                found.append(
+                    _difference(entry["index"], label, "epsilonR", actual_eps, expected_eps, delta)
+                )
+        return found, None
 
     def _read(self) -> Dict[str, Any]:
         settings_fn = getattr(self.board, "GetDesignSettings", None)

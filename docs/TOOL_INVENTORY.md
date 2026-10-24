@@ -5,8 +5,8 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.8.2
-**Tools registered on the server:** 245
-**Tools indexed for keyword discovery:** 185 in 18 categories
+**Tools registered on the server:** 246
+**Tools indexed for keyword discovery:** 186 in 18 categories
 **Last updated:** 2026-10-24
 
 ## How to read this document
@@ -467,13 +467,14 @@ _Source: `src/tools/router.ts`_
 
 ---
 
-## Stackup (1 tools)
+## Stackup (2 tools)
 
 _Source: `src/tools/stackup.ts`_
 
-| Tool          | Description             | Discovery  |
-| ------------- | ----------------------- | ---------- |
-| `get_stackup` | Read the board stackup. | `analysis` |
+| Tool            | Description                              | Discovery  |
+| --------------- | ---------------------------------------- | ---------- |
+| `get_stackup`   | Read the board stackup.                  | `analysis` |
+| `check_stackup` | Compare the board stackup with a recipe. | `analysis` |
 
 ---
 
@@ -536,14 +537,14 @@ _Source: `src/tools/gui-driver.ts`_
 | `pcb-import.ts`          | PCB Import                             | 1       |
 | `ui.ts`                  | KiCad UI and Backend                   | 3       |
 | `router.ts`              | Tool Discovery                         | 3       |
-| `stackup.ts`             | Stackup                                | 1       |
+| `stackup.ts`             | Stackup                                | 2       |
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
 | `gui-driver.ts`          | gui-driver.ts                          | 11      |
-| **Total**                |                                        | **245** |
+| **Total**                |                                        | **246** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 185 of the 245 registered tools.
+These are the categories `search_tools` searches. They cover 186 of the 246 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
@@ -564,7 +565,7 @@ These are the categories `search_tools` searches. They cover 185 of the 245 regi
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
 | `gui-driver`               | 11            |
-| `analysis`                 | 1             |
-| **Indexed total**          | **185**       |
+| `analysis`                 | 2             |
+| **Indexed total**          | **186**       |
 | Registered but not indexed | 60            |
-| **Registered total**       | **245**       |
+| **Registered total**       | **246**       |

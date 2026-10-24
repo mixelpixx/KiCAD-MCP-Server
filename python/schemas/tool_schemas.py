@@ -3882,6 +3882,44 @@ ANALYSIS_TOOLS = [
         ),
         "inputSchema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "check_stackup",
+        "title": "Check Board Stackup",
+        "description": (
+            "Compare the board stackup with a recipe. Each expected row names a layer "
+            "by index or by name and may give type, thicknessMm, and epsilonR. "
+            "thicknessToleranceMm defaults to 0.001 mm and epsilonTolerance defaults "
+            "to 0.01. The result lists every field that is outside its tolerance."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "expected": {
+                    "type": "array",
+                    "description": "Rows to compare. Each row needs index or layer.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "index": {"type": "integer"},
+                            "layer": {"type": "string"},
+                            "type": {"type": "string"},
+                            "thicknessMm": {"type": "number"},
+                            "epsilonR": {"type": "number"},
+                        },
+                    },
+                },
+                "thicknessToleranceMm": {
+                    "type": "number",
+                    "description": "Allowed thickness difference in millimetres. Default 0.001.",
+                },
+                "epsilonTolerance": {
+                    "type": "number",
+                    "description": "Allowed relative-permittivity difference. Default 0.01.",
+                },
+            },
+            "required": ["expected"],
+        },
+    },
 ]
 
 TOOL_SCHEMAS: Dict[str, Any] = {}
