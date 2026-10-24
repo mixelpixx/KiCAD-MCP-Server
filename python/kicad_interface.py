@@ -411,9 +411,9 @@ try:
         remove_library_table_entry,
         set_library_table_uri,
     )
+    from commands.net_copper import NetCopperCommands
     from commands.pcb_import import PcbImportCommands
     from commands.project import ProjectCommands
-    from commands.net_copper import NetCopperCommands
     from commands.routing import RoutingCommands
     from commands.schematic import SchematicLoadError, SchematicManager
     from commands.schematic_batch import SchematicBatchCommands
