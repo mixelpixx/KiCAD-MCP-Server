@@ -414,7 +414,6 @@ try:
     from commands.pcb_import import PcbImportCommands
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
-    from commands.via_summary import ViaSummaryCommands
     from commands.schematic import SchematicLoadError, SchematicManager
     from commands.schematic_batch import SchematicBatchCommands
     from commands.schematic_declutter import SchematicDeclutterCommands
@@ -428,6 +427,7 @@ try:
     from commands.symbol_schematic import SymbolSchematicCommands
     from commands.update_symbol_from_library import update_symbol_from_library
     from commands.validate_kicad_files import validate_schematic, validate_symbol_library
+    from commands.via_summary import ViaSummaryCommands
 
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
