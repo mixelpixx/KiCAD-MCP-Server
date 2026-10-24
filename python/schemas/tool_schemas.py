@@ -3868,6 +3868,22 @@ GUI_DRIVER_TOOLS = [
     },
 ]
 
+# Read-only geometry for a PDN or EMC review. One entry per tool so a
+# later query can extend this list without changing the copper editor.
+ANALYSIS_TOOLS = [
+    {
+        "name": "get_stackup",
+        "title": "Get Board Stackup",
+        "description": (
+            "Read the board stackup. Returns each copper, dielectric, mask, and silk "
+            "entry with its thickness in millimetres. Layer names are the names stored "
+            "on the board, so a renamed layer such as 'Top Side' is returned beside the "
+            "canonical F.Cu name."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+]
+
 TOOL_SCHEMAS: Dict[str, Any] = {}
 
 # Combine all tool categories
@@ -3884,6 +3900,7 @@ for tool in (
     + VALIDATION_TOOLS
     + DIGIKEY_TOOLS
     + GUI_DRIVER_TOOLS
+    + ANALYSIS_TOOLS
 ):
     TOOL_SCHEMAS[tool["name"]] = tool
 

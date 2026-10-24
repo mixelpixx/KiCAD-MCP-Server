@@ -414,6 +414,7 @@ try:
     from commands.pcb_import import PcbImportCommands
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
+    from commands.stackup import StackupCommands
     from commands.schematic import SchematicLoadError, SchematicManager
     from commands.schematic_batch import SchematicBatchCommands
     from commands.schematic_declutter import SchematicDeclutterCommands
@@ -485,6 +486,7 @@ class KiCADInterface(SchematicHandlersMixin):
         self.board_origin_commands = BoardOriginCommands()
         self.component_commands = ComponentCommands(self.board, self.footprint_library)
         self.routing_commands = RoutingCommands(self.board)
+        self.stackup_commands = StackupCommands(self.board)
         self.freerouting_commands = FreeroutingCommands(self.board)
         self.eagle_commands = EagleCommands()
         self.symbol_schematic_commands = SymbolSchematicCommands()
@@ -596,6 +598,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "delete_trace": self.routing_commands.delete_trace,
             "query_traces": self.routing_commands.query_traces,
             "query_zones": self.routing_commands.query_zones,
+            "get_stackup": self.stackup_commands.get_stackup,
             "add_gnd_stitching_vias": self.routing_commands.add_gnd_stitching_vias,
             "modify_trace": self.routing_commands.modify_trace,
             "copy_routing_pattern": self.routing_commands.copy_routing_pattern,
@@ -1603,6 +1606,7 @@ class KiCADInterface(SchematicHandlersMixin):
         self.board_commands.board = self.board
         self.component_commands.board = self.board
         self.routing_commands.board = self.board
+        self.stackup_commands.board = self.board
         self.design_rule_commands.board = self.board
         self.export_commands.board = self.board
         self.freerouting_commands.board = self.board

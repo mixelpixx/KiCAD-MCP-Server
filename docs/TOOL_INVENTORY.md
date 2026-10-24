@@ -5,9 +5,9 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.8.2
-**Tools registered on the server:** 244
-**Tools indexed for keyword discovery:** 184 in 17 categories
-**Last updated:** 2026-09-24
+**Tools registered on the server:** 245
+**Tools indexed for keyword discovery:** 185 in 18 categories
+**Last updated:** 2026-10-24
 
 ## How to read this document
 
@@ -467,6 +467,16 @@ _Source: `src/tools/router.ts`_
 
 ---
 
+## Stackup (1 tools)
+
+_Source: `src/tools/stackup.ts`_
+
+| Tool          | Description             | Discovery  |
+| ------------- | ----------------------- | ---------- |
+| `get_stackup` | Read the board stackup. | `analysis` |
+
+---
+
 ## digikey-api.ts (3 tools)
 
 _Source: `src/tools/digikey-api.ts`_
@@ -526,13 +536,14 @@ _Source: `src/tools/gui-driver.ts`_
 | `pcb-import.ts`          | PCB Import                             | 1       |
 | `ui.ts`                  | KiCad UI and Backend                   | 3       |
 | `router.ts`              | Tool Discovery                         | 3       |
+| `stackup.ts`             | Stackup                                | 1       |
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
 | `gui-driver.ts`          | gui-driver.ts                          | 11      |
-| **Total**                |                                        | **244** |
+| **Total**                |                                        | **245** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 184 of the 244 registered tools.
+These are the categories `search_tools` searches. They cover 185 of the 245 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
@@ -553,6 +564,7 @@ These are the categories `search_tools` searches. They cover 184 of the 244 regi
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
 | `gui-driver`               | 11            |
-| **Indexed total**          | **184**       |
+| `analysis`                 | 1             |
+| **Indexed total**          | **185**       |
 | Registered but not indexed | 60            |
-| **Registered total**       | **244**       |
+| **Registered total**       | **245**       |
