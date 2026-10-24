@@ -3868,6 +3868,60 @@ GUI_DRIVER_TOOLS = [
     },
 ]
 
+# Read-only geometry for a PDN or EMC review. One entry per tool so a
+# later query can extend this list without changing the copper editor.
+ANALYSIS_TOOLS = [
+    {
+        "name": "summarize_vias",
+        "title": "Summarize Vias",
+        "description": (
+            "Count vias without listing them. Returns the via count, how many run "
+            "from F.Cu to B.Cu, a drill histogram, and the layer spans. Filter by "
+            "net, rectangle, drill, or layer name."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {
+                    "type": "string",
+                    "description": "Only vias on this net, for example GND",
+                },
+                "boundingBox": {
+                    "type": "object",
+                    "description": "Only vias whose centre lies inside this rectangle",
+                    "properties": {
+                        "x1": {"type": "number"},
+                        "y1": {"type": "number"},
+                        "x2": {"type": "number"},
+                        "y2": {"type": "number"},
+                        "unit": {
+                            "type": "string",
+                            "enum": ["mm", "mil", "inch"],
+                            "default": "mm",
+                        },
+                    },
+                },
+                "drillMin": {
+                    "type": "number",
+                    "description": "Minimum drill diameter in millimetres, inclusive",
+                },
+                "drillMax": {
+                    "type": "number",
+                    "description": "Maximum drill diameter in millimetres, inclusive",
+                },
+                "startLayer": {
+                    "type": "string",
+                    "description": "Match the via start layer by board name or canonical name",
+                },
+                "endLayer": {
+                    "type": "string",
+                    "description": "Match the via end layer by board name or canonical name",
+                },
+            },
+        },
+    },
+]
+
 TOOL_SCHEMAS: Dict[str, Any] = {}
 
 # Combine all tool categories
@@ -3884,6 +3938,7 @@ for tool in (
     + VALIDATION_TOOLS
     + DIGIKEY_TOOLS
     + GUI_DRIVER_TOOLS
+    + ANALYSIS_TOOLS
 ):
     TOOL_SCHEMAS[tool["name"]] = tool
 

@@ -277,6 +277,11 @@ export const toolCategories: ToolCategory[] = [
       "kicad_gui_click_atspi",
     ],
   },
+  {
+    name: "analysis",
+    description: "Read-only board geometry for PDN and EMC review.",
+    tools: ["summarize_vias"],
+  },
 ];
 
 /**
