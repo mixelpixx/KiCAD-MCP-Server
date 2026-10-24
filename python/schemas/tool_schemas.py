@@ -3868,8 +3868,8 @@ GUI_DRIVER_TOOLS = [
     },
 ]
 
-# Read-only geometry for a PDN or EMC review. One entry per tool so a
-# later query can extend this list without changing the copper editor.
+# Board geometry for a PDN or EMC review. One entry per tool so a later
+# query can extend this list without changing the copper editor.
 ANALYSIS_TOOLS = [
     {
         "name": "get_stackup",
@@ -3881,6 +3881,49 @@ ANALYSIS_TOOLS = [
             "canonical F.Cu name."
         ),
         "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "set_stackup_layer",
+        "title": "Set Stackup Layer",
+        "description": (
+            "Set the thickness of one stackup row, and for a dielectric its material, "
+            "relative permittivity, and loss tangent. The row is an index from get_stackup "
+            "or a layer name such as F.Cu or the name stored on the board. Only the fields "
+            "passed in are changed. sublayer selects a dielectric piece and defaults to 0."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "type": "integer",
+                    "description": "Row index from get_stackup.",
+                },
+                "layer": {
+                    "type": "string",
+                    "description": "Canonical name such as F.Cu, or the name stored on the board.",
+                },
+                "sublayer": {
+                    "type": "integer",
+                    "description": "Dielectric sublayer. Defaults to 0.",
+                },
+                "thicknessMm": {
+                    "type": "number",
+                    "description": "Thickness of this sublayer in millimetres.",
+                },
+                "epsilonR": {
+                    "type": "number",
+                    "description": "Relative permittivity. Dielectric rows only.",
+                },
+                "lossTangent": {
+                    "type": "number",
+                    "description": "Loss tangent. Dielectric rows only.",
+                },
+                "material": {
+                    "type": "string",
+                    "description": "Material name. Dielectric rows only.",
+                },
+            },
+        },
     },
 ]
 

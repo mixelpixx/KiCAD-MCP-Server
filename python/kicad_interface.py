@@ -599,6 +599,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "query_traces": self.routing_commands.query_traces,
             "query_zones": self.routing_commands.query_zones,
             "get_stackup": self.stackup_commands.get_stackup,
+            "set_stackup_layer": self.stackup_commands.set_stackup_layer,
             "add_gnd_stitching_vias": self.routing_commands.add_gnd_stitching_vias,
             "modify_trace": self.routing_commands.modify_trace,
             "copy_routing_pattern": self.routing_commands.copy_routing_pattern,

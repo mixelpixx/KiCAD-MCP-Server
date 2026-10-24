@@ -279,8 +279,8 @@ export const toolCategories: ToolCategory[] = [
   },
   {
     name: "analysis",
-    description: "Read-only board geometry for PDN and EMC review.",
-    tools: ["get_stackup"],
+    description: "Board geometry for PDN and EMC review.",
+    tools: ["get_stackup", "set_stackup_layer"],
   },
 ];
 
