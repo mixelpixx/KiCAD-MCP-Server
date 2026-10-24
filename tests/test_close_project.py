@@ -64,6 +64,7 @@ def _make_interface(board: Any, project_commands: Any) -> Any:
         "design_rule_commands",
         "export_commands",
         "freerouting_commands",
+        "stackup_commands",
     ):
         setattr(iface, name, types.SimpleNamespace(board=board))
     # Per-project session state populated by a real open/create.
