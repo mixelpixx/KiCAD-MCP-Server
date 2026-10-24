@@ -43,7 +43,7 @@ class _Extent:
         right = nm_to_mm(self._side(box, "GetRight"))
         top = nm_to_mm(self._side(box, "GetTop"))
         bottom = nm_to_mm(self._side(box, "GetBottom"))
-        if None in (left, right, top, bottom):
+        if left is None or right is None or top is None or bottom is None:
             return
         self.add(min(left, right), min(top, bottom))
         self.add(max(left, right), max(top, bottom))
