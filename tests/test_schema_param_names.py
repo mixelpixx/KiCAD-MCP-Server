@@ -69,7 +69,6 @@ KNOWN_ZOD_UNREAD: Dict[str, Set[str]] = {
     "list_libraries": {"search_paths"},
     "list_library_footprints": {"filter", "limit"},
     "place_component_array": {"columnSpacing", "footprint", "rowSpacing", "startReference"},
-    "route_differential_pair": {"negativeNet", "negativePad", "positiveNet", "positivePad"},
     "set_design_rules": {"courtyardClearance", "requireCourtyard"},
 }
 
@@ -83,7 +82,6 @@ KNOWN_JSONRPC_UNREAD: Dict[str, Set[str]] = {
     "export_pdf": {"colorMode"},
     "get_footprint_info": {"footprint"},
     "place_component_array": {"footprint", "startNumber", "startX", "startY"},
-    "route_differential_pair": {"negativeName", "points", "positiveName"},
     "route_trace": {"netName", "points"},
     "run_drc": {"includeWarnings"},
     "search_footprints": {"query"},
