@@ -4,6 +4,8 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+## [2.8.3] - 2026-10-25
+
 ### New Features
 
 - **Linux setup helper**: `setup-linux.sh` detects KiCad's Python bindings,

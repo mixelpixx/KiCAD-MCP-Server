@@ -4,7 +4,7 @@
      run `npm run build && npm run docs:tools` instead. Descriptions already
      in this file are preserved, so improving the wording here is safe. -->
 
-**Version:** 2.8.2
+**Version:** 2.8.3
 **Tools registered on the server:** 247
 **Tools indexed for keyword discovery:** 247 in 20 categories
 **Last updated:** 2026-10-01

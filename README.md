@@ -43,6 +43,46 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 https://github.com/mixelpixx/arduino-ide
 
+## What's New in v2.8.3
+
+Toolboxes to keep the tool list small, a Linux setup script, and a batch of
+fixes. Thanks to @cornellana, @YORROY123, @reinauer and @ToThePointTechDev.
+
+### Toolboxes
+
+- Set `KICAD_MCP_TOOLBOXES=core` and a client starts with 37 tools instead of
+  about 250: the core tools, `search_tools`, and `list_toolboxes`,
+  `open_toolbox` and `close_toolbox`. The assistant opens the toolboxes a task
+  needs. Name toolboxes in the setting, such as `schematic,drc`, to have them
+  open from the start; Claude Desktop needs that, because it doesn't re-read
+  the tool list until it restarts. Without the setting nothing changes. See
+  [Toolboxes](#toolboxes).
+- Every tool now has a category, so `search_tools` finds all of them (#345).
+
+### Setup
+
+- `setup-linux.sh` detects KiCad's Python, checks the dependencies in the
+  environment it will configure, and merges the server into Claude Desktop's
+  config with a backup, like `setup-macos.sh` (#445, @reinauer).
+
+### Fixes
+
+- `export_gerber` writes the files it reports. On the SWIG backend it wrote
+  none while listing every layer (#455, #456, @cornellana).
+- `download_jlcpcb_database` gets the time a download needs, reports the real
+  error when it fails, and no longer mixes cached yaqwsx volumes from different
+  days (#454).
+- A tool call made while the server is still starting waits instead of failing
+  with "Python process ... is not running" (#453).
+- Courtyard checks test each outline of a multi-outline courtyard separately
+  (#406, #452, @YORROY123).
+- `route_differential_pair` reads the parameters its schema declares, and
+  `gap` is the edge-to-edge spacing; `get_nets_list` returns the statistics it
+  advertises, and `get_net_pads` honours `unit` (#450, #451, @YORROY123).
+- MCP SDK 1.31.0 (from 1.29.0).
+
+Full details in the [CHANGELOG](CHANGELOG.md).
+
 ## What's New in v2.8.2
 
 A patch release with three fixes. KiCad 10's stock libraries are found on
@@ -1872,7 +1912,7 @@ npm run format
 
 ## Project Status
 
-**Current Version:** 2.8.2
+**Current Version:** 2.8.3
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
@@ -1980,6 +2020,6 @@ If you use this project in your research or publication, please cite:
   author = {mixelpixx},
   year = {2026},
   url = {https://github.com/mixelpixx/KiCAD-MCP-Server},
-  version = {2.8.2}
+  version = {2.8.3}
 }
 ```
