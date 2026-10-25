@@ -37,7 +37,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TOOLS_DIR = join(ROOT, "src", "tools");
 const DOC_PATH = join(ROOT, "docs", "TOOL_INVENTORY.md");
 
-const { toolCategories, directToolNames, getRegistryStats } = await import(
+const { toolCategories, directToolNames, discoveryToolNames, getRegistryStats } = await import(
   new URL("../dist/tools/registry.js", import.meta.url).href
 );
 
@@ -162,6 +162,7 @@ function accessFor(name) {
   if (category && isDirect) return `Essential + \`${category.name}\``;
   if (category) return `\`${category.name}\``;
   if (isDirect) return "Essential";
+  if (discoveryToolNames.includes(name)) return "Discovery";
   return "Not indexed";
 }
 
@@ -218,23 +219,27 @@ function render() {
   out.push("## How to read this document");
   out.push("");
   out.push("Every tool listed here is registered with `server.tool()`, which means an MCP");
-  out.push("client can call it by name at any time. There is no router that hides tools.");
+  out.push("client can call it by name. By default every tool is visible. With");
+  out.push("`KICAD_MCP_TOOLBOXES` set, each category is a toolbox: a client sees the");
+  out.push("Essential tools, `search_tools` and the toolbox controls, plus the tools of the");
+  out.push("toolboxes that are open (see the README's Toolboxes section).");
   out.push("");
   out.push("The **Discovery** column says how an assistant can *find* the tool when it does");
   out.push("not already know the name:");
   out.push("");
   out.push("- **`category`** - the tool is indexed in that category, so `search_tools` and");
-  out.push("  `get_category_tools` can return it.");
+  out.push("  `get_category_tools` can return it. The category is also its toolbox.");
   out.push("- **Essential** - the tool is in the always-visible essentials list in");
   out.push("  `src/tools/registry.ts`.");
   out.push("- **Essential + `category`** - both of the above. A small number of very common");
   out.push("  schematic tools are deliberately in both lists.");
-  out.push(`- **Not indexed** - the tool works, but \`search_tools\` cannot find it yet.`);
-  out.push(
-    `  There are ${notIndexed} of these. A test in \`tests-ts/registry-completeness.test.ts\``,
-  );
-  out.push("  freezes this number so it can only shrink; adding a category entry for one of");
-  out.push("  them is a welcome contribution.");
+  out.push("- **Discovery** - one of the tools that find the others: `search_tools`, the");
+  out.push("  category browsers and the toolbox controls.");
+  if (notIndexed > 0) {
+    out.push(`- **Not indexed** - the tool works, but \`search_tools\` cannot find it, and in`);
+    out.push(`  toolbox mode no toolbox shows it. There are ${notIndexed} of these, and`);
+    out.push("  `tests-ts/registry-completeness.test.ts` fails until each has a category.");
+  }
   out.push("");
   out.push("---");
   out.push("");

@@ -26,7 +26,8 @@ export interface ToolCategory {
 export const toolCategories: ToolCategory[] = [
   {
     name: "board",
-    description: "Board configuration: layers, mounting holes, zones, visualization",
+    description:
+      "Board configuration: layers, mounting holes, text and graphics, SVG logos, zones, visualization",
     tools: [
       "add_layer",
       "set_active_layer",
@@ -36,29 +37,39 @@ export const toolCategories: ToolCategory[] = [
       "list_graphics",
       "delete_graphic",
       "update_graphic",
+      "import_svg_logo",
       "add_zone",
       "get_board_extents",
       "get_board_2d_view",
       "set_board_origin",
       "get_board_origin",
       "launch_kicad_ui",
-      "import_pcb",
     ],
   },
   {
     name: "component",
-    description: "Advanced component operations: edit, delete, search, group, annotate",
+    description:
+      "Advanced component operations: edit, delete, duplicate, arrays and alignment, search, pads, courtyard and placement checks, placement suggestions, group, annotate",
     tools: [
       "rotate_component",
       "delete_component",
       "edit_component",
+      "duplicate_component",
+      "place_component_array",
+      "align_components",
+      "set_footprint_type",
       "find_component",
+      "get_component_list",
       "get_component_properties",
+      "get_component_pads",
+      "get_pad_position",
       "get_pads",
       "get_net_pads",
       "get_ratsnest",
       "estimate_airwire_lengths",
       "check_placement_clearance",
+      "check_courtyard_overlaps",
+      "suggest_placement",
       "move_footprint_text",
       "add_component_annotation",
       "group_components",
@@ -106,6 +117,7 @@ export const toolCategories: ToolCategory[] = [
       "set_design_rules",
       "get_design_rules",
       "run_drc",
+      "create_netclass",
       "assign_net_to_class",
       "set_layer_constraints",
       "check_clearance",
@@ -115,7 +127,7 @@ export const toolCategories: ToolCategory[] = [
   {
     name: "schematic",
     description:
-      "Schematic operations: create, inspect, add/edit/delete components, wire connections, netlists, annotation",
+      "Schematic operations: create, inspect, add/edit/delete components and their properties, wire connections, net labels, netlists, annotation, ERC",
     tools: [
       "create_schematic",
       "add_schematic_component",
@@ -143,13 +155,28 @@ export const toolCategories: ToolCategory[] = [
       "export_schematic_pdf",
       "add_schematic_text",
       "list_schematic_texts",
+      // Kept after the original entries so search_tools results, which follow
+      // this order, stay as they were.
+      "get_schematic_component",
+      "edit_schematic_component",
+      "set_schematic_component_property",
+      "remove_schematic_component_property",
+      "delete_schematic_component",
+      "get_schematic_pin_locations",
+      "move_schematic_net_label",
+      "get_net_at_point",
+      "get_schematic_view_region",
+      "run_erc",
     ],
   },
   {
     name: "library",
-    description: "Footprint library access: search, browse, get footprint information",
+    description:
+      "Footprint library access: register and list footprint libraries, search, browse, get footprint information, maintain library tables",
     tools: [
       "list_libraries",
+      "list_footprint_libraries",
+      "register_footprint_library",
       "search_footprints",
       "list_library_footprints",
       "get_footprint_info",
@@ -193,11 +220,13 @@ export const toolCategories: ToolCategory[] = [
   {
     name: "schematic_hierarchy",
     description:
-      "Hierarchical schematic sheets: insert/remove a sheet, scaffold a sub-sheet, read and write sheet properties",
+      "Hierarchical schematic sheets: insert/remove a sheet, scaffold a sub-sheet, add hierarchical labels and sheet pins, read and write sheet properties",
     tools: [
       "add_hierarchical_sheet",
       "remove_hierarchical_sheet",
       "create_hierarchical_subsheet",
+      "add_schematic_hierarchical_label",
+      "add_sheet_pin",
       "set_sheet_property",
       "get_sheet_properties",
     ],
@@ -205,13 +234,20 @@ export const toolCategories: ToolCategory[] = [
   {
     name: "schematic_layout",
     description:
-      "Schematic field placement and geometry lint: move Ref/Value fields, autoplace them clear of bodies and labels, and find/snap off-grid coordinates",
+      "Schematic layout and lint: move and autoplace Ref/Value fields, suggest decluttering, find overlapping elements, wires crossing symbols, floating labels and orphaned wires, inspect a region, and find/snap off-grid coordinates",
     tools: [
       "set_schematic_property_position",
       "batch_set_schematic_property_positions",
       "autoplace_schematic_fields",
+      "suggest_schematic_declutter",
       "lint_schematic_cosmetic",
       "lint_offgrid",
+      "snap_to_grid",
+      "find_overlapping_elements",
+      "find_wires_crossing_symbols",
+      "list_floating_labels",
+      "find_orphaned_wires",
+      "get_elements_in_region",
     ],
   },
   {
@@ -229,8 +265,24 @@ export const toolCategories: ToolCategory[] = [
   },
   {
     name: "routing",
-    description: "Advanced routing operations: vias, copper pours, net display colors",
-    tools: ["add_via", "add_copper_pour", "set_net_color"],
+    description:
+      "Tracks, vias, zones and nets: route arcs, pad-to-pad and differential pairs; modify, delete, query and copy routing; vias, stitching vias, copper pours and zone refill; net list and net colors",
+    tools: [
+      "route_arc_trace",
+      "route_pad_to_pad",
+      "route_differential_pair",
+      "modify_trace",
+      "delete_trace",
+      "query_traces",
+      "copy_routing_pattern",
+      "add_via",
+      "add_gnd_stitching_vias",
+      "add_copper_pour",
+      "query_zones",
+      "refill_zones",
+      "get_nets_list",
+      "set_net_color",
+    ],
   },
   {
     name: "autoroute",
@@ -242,6 +294,38 @@ export const toolCategories: ToolCategory[] = [
     description:
       "File integrity checks: locate structural damage in schematics and symbol libraries before KiCad refuses to open them",
     tools: ["validate_schematic", "validate_symbol_library"],
+  },
+  {
+    name: "footprint",
+    description:
+      "Footprint creation and 3D models: create a footprint, edit its pads, copy a 3D model into the project, attach 3D models to footprint files or to placed footprints",
+    tools: [
+      "create_footprint",
+      "edit_footprint_pad",
+      "import_3d_model",
+      "add_footprint_3d_model",
+      "add_component_3d_model",
+    ],
+  },
+  {
+    name: "import",
+    description:
+      "Import designs from other tools: Eagle projects, and vendor PCB files (PADS, Altium, Eagle, CADSTAR, Fabmaster, P-CAD, SolidWorks PCB, Allegro)",
+    tools: ["import_eagle_project", "import_pcb"],
+  },
+  {
+    name: "jlcpcb",
+    description:
+      "JLCPCB/LCSC parts: download and search the local JLCPCB catalog, part details and stats, cheaper or in-stock alternatives, and LCSC datasheet lookup and enrichment",
+    tools: [
+      "download_jlcpcb_database",
+      "get_jlcpcb_database_stats",
+      "search_jlcpcb_parts",
+      "get_jlcpcb_part",
+      "suggest_jlcpcb_alternatives",
+      "get_datasheet_url",
+      "enrich_datasheets",
+    ],
   },
   {
     name: "parts-registry",
@@ -280,8 +364,9 @@ export const toolCategories: ToolCategory[] = [
 ];
 
 /**
- * Direct tools that are always visible (not routed)
- * These are the most frequently used tools
+ * Core tools: always visible, including in toolbox mode (see toolboxes.ts),
+ * where they are what a client sees before it opens any toolbox.
+ * These are the most frequently used tools.
  */
 export const directToolNames = [
   // Project lifecycle
@@ -291,6 +376,7 @@ export const directToolNames = [
   "reload_board",
   "close_project",
   "save_project",
+  "save_as",
   "save_board",
   "is_dirty",
   "discard_or_reload",
@@ -327,6 +413,23 @@ export const directToolNames = [
   // UI management
   "get_backend_state",
   "check_kicad_ui",
+];
+
+/**
+ * Tools that find other tools. All six are always registered; which of them a
+ * client sees depends on the toolbox setting (see toolboxes.ts):
+ * - every tool visible (the default): search_tools and the two category
+ *   browsers; the toolbox controls are hidden, since nothing is closed;
+ * - toolbox mode: search_tools and the three toolbox controls; list_toolboxes
+ *   replaces the two category browsers.
+ */
+export const discoveryToolNames = [
+  "search_tools",
+  "list_tool_categories",
+  "get_category_tools",
+  "list_toolboxes",
+  "open_toolbox",
+  "close_toolbox",
 ];
 
 // Build lookup maps at module load time
@@ -382,13 +485,14 @@ export function getRoutedToolNames(): string[] {
 }
 
 /**
- * Distinct tool names across categories and the direct list.
+ * Distinct tool names across categories, the direct list and the discovery
+ * tools: every tool the server registers.
  *
  * The headline "N tools" figure must come from here, not from
  * routed.length + direct.length — that sum double-counts the overlap above.
  */
 export function getDistinctToolNames(): string[] {
-  return [...new Set([...getRoutedToolNames(), ...directToolNames])];
+  return [...new Set([...getRoutedToolNames(), ...directToolNames, ...discoveryToolNames])];
 }
 
 /**
@@ -430,6 +534,16 @@ export function searchTools(query: string): SearchResult[] {
     }
   }
 
+  for (const toolName of discoveryToolNames) {
+    if (toolName.toLowerCase().includes(q)) {
+      matches.push({
+        category: "discovery",
+        tool: toolName,
+        description: `${toolName} (finds and organizes the other tools)`,
+      });
+    }
+  }
+
   // Search routed tools by name and category
   for (const category of toolCategories) {
     const categoryMatch =
@@ -460,6 +574,7 @@ export function getRegistryStats() {
     total_categories: toolCategories.length,
     total_routed_tools: routedToolCount,
     total_direct_tools: directToolCount,
+    total_discovery_tools: discoveryToolNames.length,
     // Distinct, not routed+direct: seven tools are in both lists on purpose,
     // and summing overstated the headline count by exactly those seven.
     total_tools: getDistinctToolNames().length,
