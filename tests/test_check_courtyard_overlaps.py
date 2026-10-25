@@ -268,3 +268,117 @@ def test_board_outline_override_replaces_edge_cuts_bbox():
     # U1's right edge at x=7 violates the override (right edge x=5)
     assert len(out["boundary_violations"]) == 1
     assert out["boundary_violations"][0]["exceeds"]["right"] == pytest.approx(2.0)
+
+
+# ---------------------------------------------------------------------------
+# Courtyards with several disjoint outlines (#406)
+# ---------------------------------------------------------------------------
+
+
+def _mock_box(x1, y1, x2, y2):
+    box = MagicMock()
+    box.GetLeft.return_value = _mm_to_nm(x1)
+    box.GetTop.return_value = _mm_to_nm(y1)
+    box.GetRight.return_value = _mm_to_nm(x2)
+    box.GetBottom.return_value = _mm_to_nm(y2)
+    return box
+
+
+def _make_multi_outline_fp(ref, x_mm, y_mm, outlines):
+    """Mock footprint whose courtyard is several outlines.
+
+    ``outlines`` holds (x1, y1, x2, y2) boxes relative to the footprint
+    position. ``BBox()`` reports their union, as SHAPE_POLY_SET does, and
+    ``Outline(i).BBox()`` reports outline i.
+    """
+    fp = _make_fp(ref, x_mm, y_mm)
+    absolute = [(x_mm + a, y_mm + b, x_mm + c, y_mm + d) for a, b, c, d in outlines]
+    ct = MagicMock()
+    ct.OutlineCount.return_value = len(absolute)
+    ct.BBox.return_value = _mock_box(
+        min(o[0] for o in absolute),
+        min(o[1] for o in absolute),
+        max(o[2] for o in absolute),
+        max(o[3] for o in absolute),
+    )
+    chains = []
+    for o in absolute:
+        chain = MagicMock()
+        chain.BBox.return_value = _mock_box(*o)
+        chains.append(chain)
+    ct.Outline.side_effect = lambda i: chains[i]
+    fp.GetCourtyard.return_value = ct
+    return fp
+
+
+# Two header rows 20 x 2 mm, 10 mm apart: the module's courtyard covers
+# y = 0..2 and y = 10..12 (relative), leaving y = 2..10 free underneath.
+_TWO_ROWS = [(0, 0, 20, 2), (0, 10, 20, 12)]
+
+
+@pytest.mark.unit
+def test_part_in_gap_between_courtyard_outlines_is_not_an_overlap():
+    module = _make_multi_outline_fp("A1", 10, 10, _TWO_ROWS)
+    probe = _make_fp("R1", 20, 16, 1.0, 0.5)  # y 15.5..16.5, inside the 12..20 gap
+    out = _cmd(_make_board([module, probe])).check_courtyard_overlaps({})
+    assert out["success"], out
+    assert out["overlaps"] == [], "a part in the gap between outlines is not an overlap"
+
+
+@pytest.mark.unit
+def test_part_on_one_courtyard_outline_reports_that_outline():
+    module = _make_multi_outline_fp("A1", 10, 10, _TWO_ROWS)
+    probe = _make_fp("R1", 20, 12, 1.0, 1.0)  # y 11..13, x 19..21 -> crosses row 1 (y 10..12)
+    out = _cmd(_make_board([module, probe])).check_courtyard_overlaps({})
+    assert len(out["overlaps"]) == 1
+    o = out["overlaps"][0]
+    assert {o["a"], o["b"]} == {"A1", "R1"}
+    assert o["overlap_x_mm"] == pytest.approx(2.0)
+    assert o["overlap_y_mm"] == pytest.approx(1.0)
+    assert o["bbox"] == {"x1": 19.0, "y1": 11.0, "x2": 21.0, "y2": 12.0, "unit": "mm"}
+
+
+@pytest.mark.unit
+def test_two_multi_outline_footprints_overlap_only_through_their_outlines():
+    a = _make_multi_outline_fp("A1", 10, 10, _TWO_ROWS)
+    # Same module shifted 5 mm down: its rows sit at y 15..17 and 25..27,
+    # inside A1's gap and below A1. The combined boxes (y 10..22, 15..27)
+    # intersect; no pair of outlines does.
+    b = _make_multi_outline_fp("A2", 10, 15, _TWO_ROWS)
+    out = _cmd(_make_board([a, b], outline_mm=(0, 0, 50, 50))).check_courtyard_overlaps({})
+    assert out["overlaps"] == []
+
+
+@pytest.mark.unit
+def test_margin_applies_to_each_courtyard_outline():
+    module = _make_multi_outline_fp("A1", 10, 10, _TWO_ROWS)
+    probe = _make_fp("R1", 20, 16, 1.0, 0.5)  # 3.5 mm from row 0 (y 12) and row 1 (y 20)
+    board = _make_board([module, probe])
+    assert _cmd(board).check_courtyard_overlaps({"margin": 1.5})["overlaps"] == []
+    out = _cmd(board).check_courtyard_overlaps({"margin": 2.0})
+    assert len(out["overlaps"]) == 1, "4 mm of combined margin closes a 3.5 mm gap"
+
+
+@pytest.mark.unit
+def test_virtual_position_moves_every_courtyard_outline():
+    module = _make_multi_outline_fp("A1", 10, 10, _TWO_ROWS)
+    probe = _make_fp("R1", 20, 30, 1.0, 0.5)  # y 29.5..30.5, below the module
+    board = _make_board([module, probe], outline_mm=(0, 0, 50, 50))
+    assert _cmd(board).check_courtyard_overlaps({})["overlaps"] == []
+
+    # Move A1 so its gap (relative y 2..10) lands on the probe: still clear.
+    gap = _cmd(board).check_courtyard_overlaps({"positions": {"A1": [10.0, 24.0]}})
+    assert gap["overlaps"] == []
+
+    # Move A1 so its second row (relative y 10..12) lands on the probe.
+    row = _cmd(board).check_courtyard_overlaps({"positions": {"A1": [10.0, 19.0]}})
+    assert len(row["overlaps"]) == 1
+    module.SetPosition.assert_not_called()
+
+
+@pytest.mark.unit
+def test_boundary_check_still_uses_the_combined_courtyard():
+    module = _make_multi_outline_fp("A1", 10, 10, _TWO_ROWS)  # y 10..22
+    out = _cmd(_make_board([module], outline_mm=(0, 0, 50, 21))).check_courtyard_overlaps({})
+    assert len(out["boundary_violations"]) == 1
+    assert out["boundary_violations"][0]["exceeds"] == {"bottom": pytest.approx(1.0)}
