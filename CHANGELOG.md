@@ -51,6 +51,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
   example (0.2 mm width, 0.15 mm gap) the two traces overlapped by 0.05 mm,
   shorting the pair. The offset is now `(gap + width) / 2`, so `gap` is the
   edge-to-edge spacing KiCad's differential pair rules mean by it.
+- **`get_nets_list` returns the statistics it advertises, and `get_net_pads`
+  answers in the unit asked for (#407).** `get_nets_list` declared
+  `includeStats` and `unit`, and this reference documented the track count,
+  via count and total length they would add, but the handler read neither and
+  never returned statistics. With `includeStats` each net now carries
+  `stats` (`trackCount`, `trackLength`, `viaCount`) with lengths in `unit`.
+  The IPC handler reports the same fields from the live board. `get_net_pads`
+  declared `unit` and always answered in mm. Positions, sizes, drill sizes and
+  bounding boxes now follow it. Both tools reject an unknown unit instead of
+  quietly using mm. Calls without these parameters return exactly what they
+  did before.
 
 ### Tooling
 

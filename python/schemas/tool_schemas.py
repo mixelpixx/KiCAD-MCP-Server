@@ -895,7 +895,15 @@ COMPONENT_TOOLS = [
         "description": "Returns every pad attached to a net name or net code.",
         "inputSchema": {
             "type": "object",
-            "properties": {"net": {"type": "string"}, "netCode": {"type": "number"}},
+            "properties": {
+                "net": {"type": "string"},
+                "netCode": {"type": "number"},
+                "unit": {
+                    "type": "string",
+                    "enum": ["mm", "mil", "inch"],
+                    "description": "Unit for positions, sizes and bounding boxes (default: mm)",
+                },
+            },
         },
     },
     {
@@ -1739,7 +1747,20 @@ ROUTING_TOOLS = [
         "name": "get_nets_list",
         "title": "List All Nets",
         "description": "Returns a list of all electrical nets defined on the board.",
-        "inputSchema": {"type": "object", "properties": {}},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "includeStats": {
+                    "type": "boolean",
+                    "description": "Add per-net track count, total track length and via count",
+                },
+                "unit": {
+                    "type": "string",
+                    "enum": ["mm", "mil", "inch"],
+                    "description": "Unit for track lengths (default: mm)",
+                },
+            },
+        },
     },
     {
         "name": "create_netclass",

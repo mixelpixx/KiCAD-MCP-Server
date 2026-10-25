@@ -228,17 +228,22 @@ Get a list of all nets in the PCB with optional statistics.
 
 **Parameters:**
 
-| Parameter    | Type    | Required | Description                                          |
-| ------------ | ------- | -------- | ---------------------------------------------------- |
-| includeStats | boolean | No       | Include statistics (track count, total length, etc.) |
-| unit         | string  | No       | Unit for length measurements: "mm" or "inch"         |
+| Parameter    | Type    | Required | Description                                               |
+| ------------ | ------- | -------- | --------------------------------------------------------- |
+| includeStats | boolean | No       | Add per-net track count, total track length and via count |
+| unit         | string  | No       | Unit for track lengths: "mm" (default), "mil" or "inch"   |
 
 **Usage Notes:**
 
 - Returns all nets present in the board
-- Statistics include track count, via count, and total trace length
+- With `includeStats`, each net gets
+  `"stats": {"trackCount": 2, "trackLength": 25.4, "viaCount": 1}` and the
+  response gets `"unit"`. Nets with no copper report zeros.
+- `trackLength` sums straight tracks and arcs (arc length). On the IPC
+  backend only straight segments are counted, because the IPC backend's
+  `get_tracks()` returns straight segments only.
+- An unsupported `unit` is an error rather than silently treated as mm
 - Useful for verifying net connectivity and routing completeness
-- Length measurements default to mm
 
 **Example:**
 
