@@ -62,22 +62,30 @@ class ExportCommands:
             plot_opts.SetCreateGerberJobFile(generate_map_file)
             plot_opts.SetSubtractMaskFromSilk(True)
 
+            # Each Gerber layer is its own file: PlotLayer() writes nothing
+            # unless a plot file was opened for it first.
+            def plot_gerber_layer(layer_id: int, layer_name: str) -> None:
+                plotter.SetLayer(layer_id)
+                plotter.OpenPlotfile(
+                    layer_name.replace(".", "_"), pcbnew.PLOT_FORMAT_GERBER, layer_name
+                )
+                plotter.PlotLayer()
+
             # Plot specified layers or all copper layers
             plotted_layers = []
             if layers:
                 for layer_name in layers:
                     layer_id = self.board.GetLayerID(layer_name)
                     if layer_id >= 0:
-                        plotter.SetLayer(layer_id)
-                        plotter.PlotLayer()
+                        plot_gerber_layer(layer_id, layer_name)
                         plotted_layers.append(layer_name)
             else:
                 for layer_id in range(pcbnew.PCB_LAYER_ID_COUNT):
                     if self.board.IsLayerEnabled(layer_id):
                         layer_name = self.board.GetLayerName(layer_id)
-                        plotter.SetLayer(layer_id)
-                        plotter.PlotLayer()
+                        plot_gerber_layer(layer_id, layer_name)
                         plotted_layers.append(layer_name)
+            plotter.ClosePlot()
 
             # Generate drill files if requested
             drill_files = []
