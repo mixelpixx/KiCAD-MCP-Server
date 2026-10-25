@@ -29,6 +29,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
     here from `board`) and `jlcpcb` (the JLCPCB catalog and LCSC datasheets).
     `save_as` joins the core tools.
 
+### Bug Fixes
+
+- **Tool calls during server start-up wait instead of failing** (#453,
+  reported by @ToThePointTechDev). The server connects the MCP transport first
+  and then checks that pcbnew imports, which takes from 100 ms to a few
+  seconds, before it starts the Python worker. A tool call in that window found
+  no worker and no restart in progress, and failed with "Python process for
+  KiCAD scripting is not running". supergateway sends its first call right
+  after initializing and hit this every time. Calls now queue from the moment
+  start-up begins and run once the worker is ready; if start-up fails, they are
+  rejected with the start-up error instead of waiting forever.
+
 ### Tooling
 
 - **Release runs for the same tag no longer race.** Pushing the v2.8.2 tag

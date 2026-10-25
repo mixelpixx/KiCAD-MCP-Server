@@ -246,6 +246,13 @@ export class KiCADMcpServer {
   private pythonEnv: NodeJS.ProcessEnv | null = null;
   private restartPromise: Promise<void> | null = null;
   private stopping = false;
+  /**
+   * True from start() until the first worker is spawned. start() connects the
+   * transport, then runs a pcbnew import check before spawning; a tool call in
+   * that window has no worker and no restart to wait for, so it is queued
+   * rather than rejected (#453).
+   */
+  private starting = false;
   /** Start times of recent automatic worker restarts (crash-loop budget). */
   private restartTimes: number[] = [];
   private kicadScriptPath: string;
@@ -559,6 +566,7 @@ export class KiCADMcpServer {
     try {
       logger.info("Starting KiCAD MCP server...");
       this.stopping = false;
+      this.starting = true;
       this.restartTimes = [];
 
       // ——— Phase 0: connect MCP transport BEFORE anything else ———
@@ -607,6 +615,8 @@ export class KiCADMcpServer {
       };
 
       this.spawnPythonProcess();
+      // A worker exists now; queued calls run once it reports READY.
+      this.starting = false;
 
       // ——— Phase 2: wait for Python READY ———
       logger.info("Waiting for Python process to be ready...");
@@ -626,7 +636,10 @@ export class KiCADMcpServer {
 
       logger.info("KiCAD MCP server started and ready");
     } catch (error) {
+      this.starting = false;
       logger.error(`Failed to start KiCAD MCP server: ${error}`);
+      // Calls queued during start-up would otherwise wait forever.
+      this.rejectQueuedRequests(error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
@@ -880,7 +893,7 @@ export class KiCADMcpServer {
   private async callKicadScript(command: string, params: any): Promise<any> {
     return new Promise((resolve, reject) => {
       // Check if Python process is running
-      if (!this.pythonProcess && !this.restartPromise) {
+      if (!this.pythonProcess && !this.restartPromise && !this.starting) {
         logger.error("Python process is not running");
         reject(new Error("Python process for KiCAD scripting is not running"));
         return;
