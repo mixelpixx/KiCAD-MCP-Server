@@ -282,6 +282,27 @@ def test_download_database_falls_through_when_no_source_available(tmp_path, monk
     assert result["success"] is False
     assert "errors" in result and len(result["errors"]) >= 1
     assert any("cdfer" in e for e in result["errors"])
+    # The real reason is in the message the client sees, not only in the log.
+    assert "network down" in result["message"]
+
+
+def test_download_database_message_mentions_7z_only_when_missing(tmp_path, monkeypatch):
+    """#454: a yaqwsx failure with 7z installed used to answer "install a 7z CLI"."""
+    monkeypatch.setattr(
+        jlcpcb_downloader.PlatformHelper, "get_data_dir", staticmethod(lambda: tmp_path)
+    )
+
+    def _boom(*a, **k):
+        raise RuntimeError("7z extraction failed: Headers Error")
+
+    monkeypatch.setattr(jlcpcb_downloader, "download_yaqwsx", _boom)
+    monkeypatch.setattr(jlcpcb_downloader, "_find_7z", lambda: "7z")
+
+    result = jlcpcb_downloader.download_database(prefer_source="yaqwsx")
+
+    assert result["success"] is False
+    assert "Headers Error" in result["message"]
+    assert "7z CLI" not in result["message"]
 
 
 def test_download_database_prefer_cdfer_converts(tmp_path, monkeypatch):
@@ -424,6 +445,23 @@ def _fake_run_factory(num_volumes, calls=None):
     return _run
 
 
+def _fake_head_factory(num_volumes, build="Sat, 25 Oct 2026 16:03:00 GMT", size=2000):
+    """Stand-in for _head: volumes 1..num_volumes and cache.zip exist upstream
+    with ``size`` bytes, cache.zip carries ``build`` as Last-Modified, and the
+    volume past the last one is a 404."""
+
+    def _head(url):
+        name = url.rsplit("/", 1)[-1]
+        if name == "cache.zip":
+            return {"status": 200, "size": size, "last_modified": build}
+        m = re.fullmatch(r"cache\.z(\d+)", name)
+        if m and int(m.group(1)) <= num_volumes:
+            return {"status": 200, "size": size, "last_modified": build}
+        return {"status": 404, "size": None, "last_modified": None}
+
+    return _head
+
+
 def test_yaqwsx_autodetects_volume_count_past_old_caps(tmp_path, monkeypatch):
     """The loop must fetch every real volume and stop at the first 404 — not a fixed cap.
 
@@ -435,6 +473,7 @@ def test_yaqwsx_autodetects_volume_count_past_old_caps(tmp_path, monkeypatch):
     monkeypatch.setattr(jlcpcb_downloader, "_find_7z", lambda: "7z")
     monkeypatch.setattr(jlcpcb_downloader.shutil, "which", lambda name: "/usr/bin/" + name)
     monkeypatch.setattr(subprocess, "run", _fake_run_factory(40))
+    monkeypatch.setattr(jlcpcb_downloader, "_head", _fake_head_factory(40))
 
     cache = tmp_path / "cache"
     out = jlcpcb_downloader.download_yaqwsx(cache)
@@ -450,9 +489,9 @@ def test_yaqwsx_autodetects_volume_count_past_old_caps(tmp_path, monkeypatch):
 
 
 def test_yaqwsx_skips_existing_volumes_on_rerun(tmp_path, monkeypatch):
-    """Re-running with all volumes already present must not re-download them.
+    """Re-running with every volume of the current build complete downloads nothing.
 
-    Only the single 404 probe for the volume past the last one should hit curl.
+    The end of the archive is found with a HEAD 404, so not even a probe hits curl.
     """
     import subprocess
 
@@ -461,17 +500,88 @@ def test_yaqwsx_skips_existing_volumes_on_rerun(tmp_path, monkeypatch):
     for i in range(1, 41):
         (cache / f"cache.z{i:02d}").write_bytes(b"x" * 2000)
     (cache / "cache.zip").write_bytes(b"x" * 2000)
+    (cache / ".yaqwsx-build").write_text("Sat, 25 Oct 2026 16:03:00 GMT", encoding="utf-8")
 
     monkeypatch.setattr(jlcpcb_downloader, "_find_7z", lambda: "7z")
     monkeypatch.setattr(jlcpcb_downloader.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(jlcpcb_downloader, "_head", _fake_head_factory(40))
     calls: list = []
     monkeypatch.setattr(subprocess, "run", _fake_run_factory(40, calls=calls))
 
     out = jlcpcb_downloader.download_yaqwsx(cache)
 
     assert out.exists()
-    # No existing volume re-downloaded and cache.zip skipped — only the z41 404 probe.
-    assert calls == [f"{jlcpcb_downloader.YAQWSX_BASE_URL}/cache.z41"]
+    assert calls == []
+
+
+def test_yaqwsx_discards_volumes_from_an_older_build(tmp_path, monkeypatch):
+    """#454: yaqwsx republishes the archive daily with same-size volumes, so
+    volumes from yesterday's build plus today's cache.zip made an archive 7z
+    rejected. A changed build stamp empties the cache and fetches everything."""
+    import subprocess
+
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    for i in range(1, 5):
+        (cache / f"cache.z{i:02d}").write_bytes(b"o" * 2000)
+    (cache / "cache.zip").write_bytes(b"o" * 2000)
+    (cache / ".yaqwsx-build").write_text("Fri, 24 Oct 2026 16:03:00 GMT", encoding="utf-8")
+
+    monkeypatch.setattr(jlcpcb_downloader, "_find_7z", lambda: "7z")
+    monkeypatch.setattr(jlcpcb_downloader.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(jlcpcb_downloader, "_head", _fake_head_factory(3))
+    calls: list = []
+    monkeypatch.setattr(subprocess, "run", _fake_run_factory(3, calls=calls))
+
+    jlcpcb_downloader.download_yaqwsx(cache)
+
+    base = jlcpcb_downloader.YAQWSX_BASE_URL
+    assert calls == [
+        f"{base}/cache.z01",
+        f"{base}/cache.z02",
+        f"{base}/cache.z03",
+        f"{base}/cache.zip",
+    ]
+    assert not (cache / "cache.z04").exists()  # the old build had one more volume
+    assert (cache / ".yaqwsx-build").read_text(encoding="utf-8") == "Sat, 25 Oct 2026 16:03:00 GMT"
+
+
+def test_yaqwsx_resumes_a_truncated_volume(tmp_path, monkeypatch):
+    """A volume cut short (a timeout killed the worker mid-download, #454) used to
+    be kept because it was over 1000 bytes. Only a volume of the published size
+    is kept now; a shorter one is handed back to curl, which resumes it."""
+    import subprocess
+
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "cache.z01").write_bytes(b"x" * 2000)
+    (cache / "cache.z02").write_bytes(b"x" * 1500)  # truncated
+    (cache / "cache.zip").write_bytes(b"x" * 2000)
+    (cache / ".yaqwsx-build").write_text("Sat, 25 Oct 2026 16:03:00 GMT", encoding="utf-8")
+
+    monkeypatch.setattr(jlcpcb_downloader, "_find_7z", lambda: "7z")
+    monkeypatch.setattr(jlcpcb_downloader.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(jlcpcb_downloader, "_head", _fake_head_factory(2))
+    calls: list = []
+    monkeypatch.setattr(subprocess, "run", _fake_run_factory(2, calls=calls))
+
+    jlcpcb_downloader.download_yaqwsx(cache)
+
+    assert calls == [f"{jlcpcb_downloader.YAQWSX_BASE_URL}/cache.z02"]
+
+
+def test_yaqwsx_failed_volume_download_is_an_error(tmp_path, monkeypatch):
+    """A volume upstream has but curl could not fetch must fail the source, not be
+    taken for the end of the archive (that is what a HEAD 404 now says)."""
+    import subprocess
+
+    monkeypatch.setattr(jlcpcb_downloader, "_find_7z", lambda: "7z")
+    monkeypatch.setattr(jlcpcb_downloader.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(jlcpcb_downloader, "_head", _fake_head_factory(3))
+    monkeypatch.setattr(subprocess, "run", _fake_run_factory(1))  # curl fails from z02 on
+
+    with pytest.raises(RuntimeError, match="cache.z02"):
+        jlcpcb_downloader.download_yaqwsx(tmp_path / "cache")
 
 
 def test_yaqwsx_max_volumes_is_a_high_safety_guard():
@@ -536,6 +646,7 @@ def test_download_yaqwsx_uses_resolved_absolute_7z_path(tmp_path, monkeypatch):
         return r
 
     monkeypatch.setattr(subprocess, "run", _run)
+    monkeypatch.setattr(jlcpcb_downloader, "_head", _fake_head_factory(1))
 
     out = jlcpcb_downloader.download_yaqwsx(tmp_path / "cache")
 
