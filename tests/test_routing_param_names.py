@@ -160,3 +160,122 @@ def test_add_net_accepts_legacy_class_key(new_net):
     result = RoutingCommands(board).add_net({"name": "VBUS", "class": "Power"})
     assert result["success"], result
     assert new_net.net_class is power
+
+
+# --- route_differential_pair (#407) -----------------------------------------
+
+
+class _Vec:
+    def __init__(self, x: int, y: int):
+        self.x = x
+        self.y = y
+
+
+class _PairTrack:
+    def __init__(self, board):
+        self.start = self.end = self.net = self.width = None
+
+    def SetStart(self, p) -> None:
+        self.start = p
+
+    def SetEnd(self, p) -> None:
+        self.end = p
+
+    def SetLayer(self, layer_id) -> None:
+        pass
+
+    def SetNet(self, net) -> None:
+        self.net = net
+
+    def SetWidth(self, width_nm: int) -> None:
+        self.width = width_nm
+
+    def GetWidth(self) -> int:
+        return self.width
+
+
+class _PairNets(dict):
+    def has_key(self, name: str) -> bool:
+        return name in self
+
+
+class _PairNetInfo:
+    def __init__(self, nets):
+        self._nets = nets
+
+    def NetsByName(self):
+        return self._nets
+
+
+class _PairBoard:
+    def __init__(self):
+        self.added = []
+        self._netinfo = _PairNetInfo(_PairNets({"USB_DP": "net+", "USB_DN": "net-"}))
+
+    def GetLayerID(self, name: str) -> int:
+        return 0
+
+    def GetNetInfo(self):
+        return self._netinfo
+
+    def Add(self, item) -> None:
+        self.added.append(item)
+
+
+@pytest.fixture
+def pair_board(monkeypatch):
+    monkeypatch.setattr(routing_mod.pcbnew, "VECTOR2I", _Vec)
+    monkeypatch.setattr(routing_mod.pcbnew, "PCB_TRACK", _PairTrack)
+    return _PairBoard()
+
+
+def _pair_params(**overrides):
+    params = {
+        "startPos": {"x": 10, "y": 20, "unit": "mm"},
+        "endPos": {"x": 30, "y": 20, "unit": "mm"},
+        "layer": "F.Cu",
+        "width": 0.2,
+        "gap": 0.15,
+        "positiveNet": "USB_DP",
+        "negativeNet": "USB_DN",
+    }
+    params.update(overrides)
+    return params
+
+
+def test_differential_pair_honours_schema_net_names(pair_board):
+    """``positiveNet`` / ``negativeNet`` are what both schemas declare."""
+    result = RoutingCommands(pair_board).route_differential_pair(_pair_params())
+    assert result["success"], result
+    pos, neg = pair_board.added
+    assert (pos.net, neg.net) == ("net+", "net-")
+
+
+def test_differential_pair_accepts_legacy_net_keys(pair_board):
+    params = _pair_params(netPos="USB_DP", netNeg="USB_DN")
+    del params["positiveNet"], params["negativeNet"]
+    result = RoutingCommands(pair_board).route_differential_pair(params)
+    assert result["success"], result
+
+
+def test_differential_pair_error_names_the_documented_keys(pair_board):
+    params = _pair_params()
+    del params["positiveNet"]
+    result = RoutingCommands(pair_board).route_differential_pair(params)
+    assert not result["success"]
+    assert "positiveNet" in result["errorDetails"]
+
+
+def test_differential_pair_gap_is_edge_to_edge(pair_board):
+    """With width 0.2 and gap 0.15 the copper between the traces must be 0.15 mm.
+
+    Offsetting each centreline by gap / 2 left gap - width = -0.05 mm: the
+    traces overlapped, shorting the pair.
+    """
+    result = RoutingCommands(pair_board).route_differential_pair(_pair_params())
+    assert result["success"], result
+    pos, neg = pair_board.added
+    centre_spacing = abs(pos.start.y - neg.start.y)
+    assert centre_spacing - pos.width == 150_000
+    assert pos.start.y > neg.start.y  # positive on the right of +x in y-down
+    assert pos.end.y == pos.start.y and neg.end.y == neg.start.y
