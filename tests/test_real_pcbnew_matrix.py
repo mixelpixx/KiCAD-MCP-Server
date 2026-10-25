@@ -97,6 +97,7 @@ def test_check_courtyard_overlaps_uses_each_courtyard_outline_with_real_pcbnew()
     )
     assert [{o["a"], o["b"]} for o in hit["overlaps"]] == [{"A1", "R1"}]
 
+
 def _add_segment(board, layer, start_mm, end_mm, width_mm=0.25):
     import pcbnew
 

@@ -37,8 +37,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
-- **`route_differential_pair` works from Node, and its gap is the gap (#407).**
-  The zod schema declared `positivePad`, `negativePad`, `positiveNet` and
+- **`export_gerber` writes the Gerber files it reports** (#455 and #456,
+  @cornellana). On the SWIG backend it plotted each layer without opening a
+  plot file first, so no file was written, and it still listed every layer as
+  exported. Each layer now gets its own file, closed properly, with the names
+  `kicad-cli pcb export gerbers` uses. A KiCad demo board went from 0 files to 20. `export_gerbers` and `export_gerber_single` use kicad-cli and were not
+  affected.
+- **Courtyard checks see multi-outline courtyards** (#406 reported by
+  @joseluu, #452 by @YORROY123). A footprint whose courtyard is several
+  separate outlines, such as an M.2 or MCU header module, was tested as one
+  box around all of them, so `check_courtyard_overlaps` and placement saw
+  collisions in the gaps between the outlines. Each outline is now tested as
+  its own box.
+- **`route_differential_pair` works from Node, and its gap is the gap** (#407,
+  #450 by @YORROY123). The zod schema declared `positivePad`, `negativePad`, `positiveNet` and
   `negativeNet`; the handler read `startPos`, `endPos`, `netPos` and `netNeg`,
   so every call from a Node-fronted client answered "Missing parameters". The
   JSON-RPC schema declared a third set (`positiveName`, `negativeName`,
@@ -52,8 +64,8 @@ All notable changes to the KiCAD MCP Server project are documented here.
   shorting the pair. The offset is now `(gap + width) / 2`, so `gap` is the
   edge-to-edge spacing KiCad's differential pair rules mean by it.
 - **`get_nets_list` returns the statistics it advertises, and `get_net_pads`
-  answers in the unit asked for (#407).** `get_nets_list` declared
-  `includeStats` and `unit`, and this reference documented the track count,
+  answers in the unit asked for** (#407, #451 by @YORROY123). `get_nets_list`
+  declared `includeStats` and `unit`, and this reference documented the track count,
   via count and total length they would add, but the handler read neither and
   never returned statistics. With `includeStats` each net now carries
   `stats` (`trackCount`, `trackLength`, `viaCount`) with lengths in `unit`.
