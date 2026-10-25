@@ -46,6 +46,23 @@ All notable changes to the KiCAD MCP Server project are documented here.
   after initializing and hit this every time. Calls now queue from the moment
   start-up begins and run once the worker is ready; if start-up fails, they are
   rejected with the start-up error instead of waiting forever.
+- **`download_jlcpcb_database` completes, and says why when it doesn't**
+  (#454, reported by @ToThePointTechDev). Both sources download and convert
+  fine; three things around them failed.
+  - The command ran under the 30-second default timeout, which a catalog
+    download always exceeds, so the worker was restarted part way through and
+    the files were cut short. It now has an hour.
+  - The failure message was fixed text ("install a 7z CLI…"), even when 7z was
+    installed; the real exception went only to the worker log. The message now
+    leads with each source's error, mentions 7z only when it is missing, and
+    the tool reports an error instead of a normal result.
+  - yaqwsx republishes its split archive daily with volumes of identical size,
+    and the cache kept any volume over 1000 bytes. Volumes from an older or
+    interrupted download mixed with a new `cache.zip` gave an archive 7z
+    rejected. The cache now records which build it holds and starts over when
+    upstream has rebuilt, and keeps a volume only at its published size,
+    resuming a shorter one.
+  - The size hints were corrected: CDFER is about 400 MB, yaqwsx about 230 MB.
 - **`export_gerber` writes the Gerber files it reports** (#455 and #456,
   @cornellana). On the SWIG backend it plotted each layer without opening a
   plot file first, so no file was written, and it still listed every layer as
