@@ -6,6 +6,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **Linux setup helper**: `setup-linux.sh` detects KiCad's Python bindings,
+  verifies runtime dependencies, previews Claude Desktop configuration, and
+  merges its server entry while preserving unrelated settings and backing up
+  the original file. Generated paths keep virtual-environment packages ahead
+  of system modules to avoid mixed CFFI versions. `--verify` and `--apply`
+  reject missing or broken dependencies in the generated environment.
 - **Toolboxes: start with a core of tools and open the rest by category**
   (#446). The server offers 247 tools, every definition a client loads costs
   context, and VS Code Copilot refuses more than 128. With
