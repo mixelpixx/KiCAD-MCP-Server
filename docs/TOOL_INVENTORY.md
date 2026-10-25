@@ -5,28 +5,29 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.8.2
-**Tools registered on the server:** 244
-**Tools indexed for keyword discovery:** 184 in 17 categories
-**Last updated:** 2026-09-24
+**Tools registered on the server:** 247
+**Tools indexed for keyword discovery:** 247 in 20 categories
+**Last updated:** 2026-10-01
 
 ## How to read this document
 
 Every tool listed here is registered with `server.tool()`, which means an MCP
-client can call it by name at any time. There is no router that hides tools.
+client can call it by name. By default every tool is visible. With
+`KICAD_MCP_TOOLBOXES` set, each category is a toolbox: a client sees the
+Essential tools, `search_tools` and the toolbox controls, plus the tools of the
+toolboxes that are open (see the README's Toolboxes section).
 
 The **Discovery** column says how an assistant can _find_ the tool when it does
 not already know the name:
 
 - **`category`** - the tool is indexed in that category, so `search_tools` and
-  `get_category_tools` can return it.
+  `get_category_tools` can return it. The category is also its toolbox.
 - **Essential** - the tool is in the always-visible essentials list in
   `src/tools/registry.ts`.
 - **Essential + `category`** - both of the above. A small number of very common
   schematic tools are deliberately in both lists.
-- **Not indexed** - the tool works, but `search_tools` cannot find it yet.
-  There are 60 of these. A test in `tests-ts/registry-completeness.test.ts`
-  freezes this number so it can only shrink; adding a category entry for one of
-  them is a welcome contribution.
+- **Discovery** - one of the tools that find the others: `search_tools`, the
+  category browsers and the toolbox controls.
 
 ---
 
@@ -34,20 +35,20 @@ not already know the name:
 
 _Source: `src/tools/project.ts`_
 
-| Tool                | Description                                                                                                       | Discovery   |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------- |
-| `create_project`    | Create a new KiCAD project (.kicad_pro, .kicad_pcb, .kicad_sch)                                                   | Essential   |
-| `open_project`      | Open an existing KiCAD project                                                                                    | Essential   |
-| `open_board`        | Open a specific .kicad_pcb board file and refresh the MCP in-memory board state.                                  | Essential   |
-| `reload_board`      | Reload the current or specified .kicad_pcb from disk, discarding stale in-memory board state.                     | Essential   |
-| `close_project`     | Close the currently loaded KiCAD project: optionally save, then drop the in-memory board and clear session state. | Essential   |
-| `save_project`      | Save the current project                                                                                          | Essential   |
-| `save_board`        | Save the current PCB board.                                                                                       | Essential   |
-| `save_as`           | Save the current PCB board to a new .kicad_pcb path.                                                              | Not indexed |
-| `is_dirty`          | Return whether the MCP knows the loaded board has unsaved memory changes or external disk changes.                | Essential   |
-| `discard_or_reload` | Discard the current in-memory PCB state and reload the board from disk.                                           | Essential   |
-| `get_project_info`  | Get project metadata and information                                                                              | Essential   |
-| `snapshot_project`  | Save a named checkpoint snapshot (renders PDF, saves step label)                                                  | Essential   |
+| Tool                | Description                                                                                                       | Discovery |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------- | --------- |
+| `create_project`    | Create a new KiCAD project (.kicad_pro, .kicad_pcb, .kicad_sch)                                                   | Essential |
+| `open_project`      | Open an existing KiCAD project                                                                                    | Essential |
+| `open_board`        | Open a specific .kicad_pcb board file and refresh the MCP in-memory board state.                                  | Essential |
+| `reload_board`      | Reload the current or specified .kicad_pcb from disk, discarding stale in-memory board state.                     | Essential |
+| `close_project`     | Close the currently loaded KiCAD project: optionally save, then drop the in-memory board and clear session state. | Essential |
+| `save_project`      | Save the current project                                                                                          | Essential |
+| `save_board`        | Save the current PCB board.                                                                                       | Essential |
+| `save_as`           | Save the current PCB board to a new .kicad_pcb path.                                                              | Essential |
+| `is_dirty`          | Return whether the MCP knows the loaded board has unsaved memory changes or external disk changes.                | Essential |
+| `discard_or_reload` | Discard the current in-memory PCB state and reload the board from disk.                                           | Essential |
+| `get_project_info`  | Get project metadata and information                                                                              | Essential |
+| `snapshot_project`  | Save a named checkpoint snapshot (renders PDF, saves step label)                                                  | Essential |
 
 ---
 
@@ -55,27 +56,27 @@ _Source: `src/tools/project.ts`_
 
 _Source: `src/tools/board.ts`_
 
-| Tool                    | Description                                                                                         | Discovery   |
-| ----------------------- | --------------------------------------------------------------------------------------------------- | ----------- |
-| `set_board_size`        | Set PCB dimensions (width, height, unit)                                                            | Essential   |
-| `set_board_origin`      | Set the auxiliary (drill/place) origin and/or grid origin of a .kicad_pcb.                          | `board`     |
-| `get_board_origin`      | Read back the auxiliary (drill/place) origin and grid origin of a .kicad_pcb in mm.                 | `board`     |
-| `add_layer`             | Add copper/technical/signal layer                                                                   | `board`     |
-| `set_active_layer`      | Change the active working layer                                                                     | `board`     |
-| `get_board_info`        | Get board metadata and properties                                                                   | Essential   |
-| `get_layer_list`        | List all layers on the board                                                                        | `board`     |
-| `add_board_outline`     | Add board outline (rectangle, circle, polygon, rounded_rectangle)                                   | Essential   |
-| `clear_board_outline`   | Delete all Edge.Cuts graphics from the current PCB board.                                           | Essential   |
-| `replace_board_outline` | Replace the current Edge.Cuts board outline with a rectangle, rounded rectangle, circle or polygon. | Essential   |
-| `list_graphics`         | List PCB graphic/drawing items such as gr_line, gr_arc, gr_rect, gr_text and dimensions.            | `board`     |
-| `delete_graphic`        | Delete a PCB graphic/drawing item by UUID.                                                          | `board`     |
-| `update_graphic`        | Update common properties of a PCB graphic/drawing item by UUID.                                     | `board`     |
-| `add_mounting_hole`     | Add mounting hole with optional pad                                                                 | `board`     |
-| `add_board_text`        | Add text annotation to board                                                                        | `board`     |
-| `add_zone`              | Add copper zone/pour with clearance settings                                                        | `board`     |
-| `get_board_extents`     | Get bounding box of board                                                                           | `board`     |
-| `get_board_2d_view`     | Render 2D board view (PNG/JPG/SVG)                                                                  | `board`     |
-| `import_svg_logo`       | Import SVG file as polygons on silkscreen layer                                                     | Not indexed |
+| Tool                    | Description                                                                                         | Discovery |
+| ----------------------- | --------------------------------------------------------------------------------------------------- | --------- |
+| `set_board_size`        | Set PCB dimensions (width, height, unit)                                                            | Essential |
+| `set_board_origin`      | Set the auxiliary (drill/place) origin and/or grid origin of a .kicad_pcb.                          | `board`   |
+| `get_board_origin`      | Read back the auxiliary (drill/place) origin and grid origin of a .kicad_pcb in mm.                 | `board`   |
+| `add_layer`             | Add copper/technical/signal layer                                                                   | `board`   |
+| `set_active_layer`      | Change the active working layer                                                                     | `board`   |
+| `get_board_info`        | Get board metadata and properties                                                                   | Essential |
+| `get_layer_list`        | List all layers on the board                                                                        | `board`   |
+| `add_board_outline`     | Add board outline (rectangle, circle, polygon, rounded_rectangle)                                   | Essential |
+| `clear_board_outline`   | Delete all Edge.Cuts graphics from the current PCB board.                                           | Essential |
+| `replace_board_outline` | Replace the current Edge.Cuts board outline with a rectangle, rounded rectangle, circle or polygon. | Essential |
+| `list_graphics`         | List PCB graphic/drawing items such as gr_line, gr_arc, gr_rect, gr_text and dimensions.            | `board`   |
+| `delete_graphic`        | Delete a PCB graphic/drawing item by UUID.                                                          | `board`   |
+| `update_graphic`        | Update common properties of a PCB graphic/drawing item by UUID.                                     | `board`   |
+| `add_mounting_hole`     | Add mounting hole with optional pad                                                                 | `board`   |
+| `add_board_text`        | Add text annotation to board                                                                        | `board`   |
+| `add_zone`              | Add copper zone/pour with clearance settings                                                        | `board`   |
+| `get_board_extents`     | Get bounding box of board                                                                           | `board`   |
+| `get_board_2d_view`     | Render 2D board view (PNG/JPG/SVG)                                                                  | `board`   |
+| `import_svg_logo`       | Import SVG file as polygons on silkscreen layer                                                     | `board`   |
 
 ---
 
@@ -91,27 +92,27 @@ _Source: `src/tools/component.ts`_
 | `rotate_component`          | Rotate component (absolute angle)                                                                                                           | `component` |
 | `delete_component`          | Remove component from board                                                                                                                 | `component` |
 | `edit_component`            | Edit component properties (reference, value, footprint)                                                                                     | `component` |
-| `set_footprint_type`        | Set the placement type (through_hole / smd / unspecified) and optional exclusion flags on a placed PCB footprint.                           | Not indexed |
+| `set_footprint_type`        | Set the placement type (through_hole / smd / unspecified) and optional exclusion flags on a placed PCB footprint.                           | `component` |
 | `find_component`            | Search components by reference or value                                                                                                     | `component` |
 | `get_component_properties`  | Get all properties of a component                                                                                                           | `component` |
 | `add_component_annotation`  | Add annotation/comment to component                                                                                                         | `component` |
 | `group_components`          | Group multiple components together                                                                                                          | `component` |
 | `replace_component`         | Replace component with different footprint                                                                                                  | `component` |
-| `get_component_pads`        | Get all pad information for a component                                                                                                     | Not indexed |
+| `get_component_pads`        | Get all pad information for a component                                                                                                     | `component` |
 | `get_pads`                  | Return pads for one PCB component, selected refs, or all components, including XY, layer, size and net.                                     | `component` |
 | `get_net_pads`              | Return every PCB pad attached to a net name or net code.                                                                                    | `component` |
 | `get_component_geometry`    | Return separated footprint geometry bboxes: body, pads, courtyard, keepout, fab, silk and text.                                             | Essential   |
-| `get_component_list`        | List all components with optional filters                                                                                                   | Not indexed |
-| `get_pad_position`          | Get precise position of a specific pad                                                                                                      | Not indexed |
+| `get_component_list`        | List all components with optional filters                                                                                                   | `component` |
+| `get_pad_position`          | Get precise position of a specific pad                                                                                                      | `component` |
 | `get_ratsnest`              | Estimate ratsnest/airwire segments and lengths from current pad positions grouped by net.                                                   | `component` |
 | `estimate_airwire_lengths`  | Alias for get_ratsnest: estimate airwire segments and lengths by net.                                                                       | `component` |
 | `check_placement_clearance` | Classify placement conflicts as body overlap, courtyard overlap, keepout violation, silk/text overlap or pad clearance.                     | `component` |
 | `move_footprint_text`       | Move or update a footprint Reference/Value/user text field without moving the footprint.                                                    | `component` |
-| `place_component_array`     | Place array of components (rows x columns)                                                                                                  | Not indexed |
-| `align_components`          | Align components (horizontal, vertical, grid)                                                                                               | Not indexed |
-| `check_courtyard_overlaps`  | Detect courtyard overlaps between footprints and (optionally) flag courtyards that extend past the board outline.                           | Not indexed |
-| `suggest_placement`         | Propose an optimized PCB footprint placement that shortens net length, orients parts toward their partners, and removes courtyard overlaps. | Not indexed |
-| `duplicate_component`       | Duplicate component with offset                                                                                                             | Not indexed |
+| `place_component_array`     | Place array of components (rows x columns)                                                                                                  | `component` |
+| `align_components`          | Align components (horizontal, vertical, grid)                                                                                               | `component` |
+| `check_courtyard_overlaps`  | Detect courtyard overlaps between footprints and (optionally) flag courtyards that extend past the board outline.                           | `component` |
+| `suggest_placement`         | Propose an optimized PCB footprint placement that shortens net length, orients parts toward their partners, and removes courtyard overlaps. | `component` |
+| `duplicate_component`       | Duplicate component with offset                                                                                                             | `component` |
 | `hierarchical_place`        | Cluster a board's footprints by their schematic-sheet hierarchy (the HierPlace algorithm).                                                  | `component` |
 
 ---
@@ -120,25 +121,25 @@ _Source: `src/tools/component.ts`_
 
 _Source: `src/tools/routing.ts`_
 
-| Tool                      | Description                                                                                                                                     | Discovery   |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| `add_net`                 | Create a new net on the PCB                                                                                                                     | Essential   |
-| `route_trace`             | Route trace segment between XY points (single layer)                                                                                            | Essential   |
-| `route_arc_trace`         | Route a copper arc trace defined by start/mid/end points.                                                                                       | Not indexed |
-| `add_via`                 | Add via (through/blind/buried)                                                                                                                  | `routing`   |
-| `add_copper_pour`         | Add copper pour / ground plane                                                                                                                  | `routing`   |
-| `delete_trace`            | Delete traces by UUID, position, or bulk by net                                                                                                 | Not indexed |
-| `query_traces`            | Query/filter traces by net, layer, or bounding box                                                                                              | Not indexed |
-| `query_zones`             | Query copper zones (filled pours) on the board with optional filters by net, layer, or bounding box.                                            | Not indexed |
-| `add_gnd_stitching_vias`  | Drop GND stitching vias across the board with collision checking against every non-GND segment, via, and pad on every copper layer (PTH vias... | Not indexed |
-| `get_nets_list`           | List all nets with statistics                                                                                                                   | Not indexed |
-| `modify_trace`            | Modify existing trace (width, layer, net)                                                                                                       | Not indexed |
-| `create_netclass`         | Create net class with custom rules                                                                                                              | Not indexed |
-| `set_net_color`           | Set or clear a net's display color override (the PCB editor's 'Net colors' panel).                                                              | `routing`   |
-| `route_differential_pair` | Route differential pair traces                                                                                                                  | Not indexed |
-| `refill_zones`            | Refill all copper zones                                                                                                                         | Not indexed |
-| `route_pad_to_pad`        | Route trace between two pads with auto-via insertion                                                                                            | Not indexed |
-| `copy_routing_pattern`    | Copy routing from source to target component groups                                                                                             | Not indexed |
+| Tool                      | Description                                                                                                                                     | Discovery |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `add_net`                 | Create a new net on the PCB                                                                                                                     | Essential |
+| `route_trace`             | Route trace segment between XY points (single layer)                                                                                            | Essential |
+| `route_arc_trace`         | Route a copper arc trace defined by start/mid/end points.                                                                                       | `routing` |
+| `add_via`                 | Add via (through/blind/buried)                                                                                                                  | `routing` |
+| `add_copper_pour`         | Add copper pour / ground plane                                                                                                                  | `routing` |
+| `delete_trace`            | Delete traces by UUID, position, or bulk by net                                                                                                 | `routing` |
+| `query_traces`            | Query/filter traces by net, layer, or bounding box                                                                                              | `routing` |
+| `query_zones`             | Query copper zones (filled pours) on the board with optional filters by net, layer, or bounding box.                                            | `routing` |
+| `add_gnd_stitching_vias`  | Drop GND stitching vias across the board with collision checking against every non-GND segment, via, and pad on every copper layer (PTH vias... | `routing` |
+| `get_nets_list`           | List all nets with statistics                                                                                                                   | `routing` |
+| `modify_trace`            | Modify existing trace (width, layer, net)                                                                                                       | `routing` |
+| `create_netclass`         | Create net class with custom rules                                                                                                              | `drc`     |
+| `set_net_color`           | Set or clear a net's display color override (the PCB editor's 'Net colors' panel).                                                              | `routing` |
+| `route_differential_pair` | Route differential pair traces                                                                                                                  | `routing` |
+| `refill_zones`            | Refill all copper zones                                                                                                                         | `routing` |
+| `route_pad_to_pad`        | Route trace between two pads with auto-via insertion                                                                                            | `routing` |
+| `copy_routing_pattern`    | Copy routing from source to target component groups                                                                                             | `routing` |
 
 ---
 
@@ -202,18 +203,18 @@ _Source: `src/tools/schematic.ts`_
 | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
 | `create_schematic`                    | Create a new schematic file                                                                                                                          | `schematic`             |
 | `add_schematic_component`             | Add component to schematic (symbol from library)                                                                                                     | Essential + `schematic` |
-| `delete_schematic_component`          | Remove component from schematic                                                                                                                      | Not indexed             |
-| `edit_schematic_component`            | Edit footprint, value, reference, label positions, and arbitrary custom properties (MPN, Manufacturer, DigiKey, …)                                   | Not indexed             |
-| `set_schematic_component_property`    | Add or update a single custom property (BOM/sourcing field) on a component                                                                           | Not indexed             |
-| `remove_schematic_component_property` | Delete a single custom property from a component                                                                                                     | Not indexed             |
-| `get_schematic_component`             | Get component info: built-in fields + all custom properties + label positions                                                                        | Not indexed             |
+| `delete_schematic_component`          | Remove component from schematic                                                                                                                      | `schematic`             |
+| `edit_schematic_component`            | Edit footprint, value, reference, label positions, and arbitrary custom properties (MPN, Manufacturer, DigiKey, …)                                   | `schematic`             |
+| `set_schematic_component_property`    | Add or update a single custom property (BOM/sourcing field) on a component                                                                           | `schematic`             |
+| `remove_schematic_component_property` | Delete a single custom property from a component                                                                                                     | `schematic`             |
+| `get_schematic_component`             | Get component info: built-in fields + all custom properties + label positions                                                                        | `schematic`             |
 | `add_schematic_wire`                  | Add wire segment between two points                                                                                                                  | `schematic`             |
 | `add_schematic_net_label`             | Add net label to schematic                                                                                                                           | Essential + `schematic` |
 | `add_no_connect`                      | Add no-connect flag (X marker) to an unconnected pin                                                                                                 | `schematic`             |
 | `connect_to_net`                      | Connect component pin to named net                                                                                                                   | Essential + `schematic` |
 | `get_net_connections`                 | Get all connections for a net                                                                                                                        | `schematic`             |
 | `get_wire_connections`                | Get all connections at a wire endpoint                                                                                                               | `schematic`             |
-| `get_schematic_pin_locations`         | Get pin locations for a component                                                                                                                    | Not indexed             |
+| `get_schematic_pin_locations`         | Get pin locations for a component                                                                                                                    | `schematic`             |
 | `connect_passthrough`                 | Connect all matching pins between two connectors                                                                                                     | Essential + `schematic` |
 | `list_schematic_components`           | List all components in schematic                                                                                                                     | Essential + `schematic` |
 | `list_schematic_nets`                 | List all nets in schematic                                                                                                                           | `schematic`             |
@@ -224,28 +225,28 @@ _Source: `src/tools/schematic.ts`_
 | `annotate_schematic`                  | Auto-annotate reference designators                                                                                                                  | Essential + `schematic` |
 | `delete_schematic_wire`               | Delete wire segment                                                                                                                                  | `schematic`             |
 | `delete_schematic_net_label`          | Delete net label                                                                                                                                     | `schematic`             |
-| `move_schematic_net_label`            | Move net label to new position                                                                                                                       | Not indexed             |
+| `move_schematic_net_label`            | Move net label to new position                                                                                                                       | `schematic`             |
 | `export_schematic_svg`                | Export schematic to SVG                                                                                                                              | `schematic`             |
 | `export_schematic_pdf`                | Export schematic to PDF                                                                                                                              | `schematic`             |
 | `get_schematic_view`                  | Render schematic as image (PNG/SVG)                                                                                                                  | `schematic`             |
-| `run_erc`                             | Run electrical rule check                                                                                                                            | Not indexed             |
+| `run_erc`                             | Run electrical rule check                                                                                                                            | `schematic`             |
 | `generate_netlist`                    | Generate netlist from schematic                                                                                                                      | `schematic`             |
 | `sync_schematic_to_board`             | Sync schematic components/nets to PCB (F8 equivalent)                                                                                                | Essential + `schematic` |
 | `backannotate_footprints`             | Copy footprint assignments from a .kicad_pcb back into the schematic's Footprint fields — the reverse of sync_schematic_to_board.                    | `schematic`             |
 | `create_board_from_schematic`         | Create a new .kicad_pcb file from a schematic, then update the PCB from that schematic so footprints and nets are present.                           | Essential               |
-| `get_schematic_view_region`           | Render a specific region of the schematic as image                                                                                                   | Not indexed             |
-| `find_overlapping_elements`           | Find schematic elements that visually overlap                                                                                                        | Not indexed             |
-| `get_elements_in_region`              | Get all elements inside an XY bounding box                                                                                                           | Not indexed             |
-| `find_wires_crossing_symbols`         | Find wires that cross through symbol bodies (DRC helper)                                                                                             | Not indexed             |
-| `list_floating_labels`                | List net labels not connected to any wire                                                                                                            | Not indexed             |
-| `find_orphaned_wires`                 | Find wire segments not connected at one or both ends                                                                                                 | Not indexed             |
-| `snap_to_grid`                        | Snap an XY coordinate to the nearest schematic grid point                                                                                            | Not indexed             |
+| `get_schematic_view_region`           | Render a specific region of the schematic as image                                                                                                   | `schematic`             |
+| `find_overlapping_elements`           | Find schematic elements that visually overlap                                                                                                        | `schematic_layout`      |
+| `get_elements_in_region`              | Get all elements inside an XY bounding box                                                                                                           | `schematic_layout`      |
+| `find_wires_crossing_symbols`         | Find wires that cross through symbol bodies (DRC helper)                                                                                             | `schematic_layout`      |
+| `list_floating_labels`                | List net labels not connected to any wire                                                                                                            | `schematic_layout`      |
+| `find_orphaned_wires`                 | Find wire segments not connected at one or both ends                                                                                                 | `schematic_layout`      |
+| `snap_to_grid`                        | Snap an XY coordinate to the nearest schematic grid point                                                                                            | `schematic_layout`      |
 | `lint_offgrid`                        | Report every off-grid connection-relevant coordinate in a schematic — wire/bus endpoints, symbol origins, label/junction/no_connect anchors — and... | `schematic_layout`      |
-| `get_net_at_point`                    | Get the net name at an XY coordinate                                                                                                                 | Not indexed             |
-| `add_schematic_hierarchical_label`    | Add hierarchical label for multi-sheet connections                                                                                                   | Not indexed             |
+| `get_net_at_point`                    | Get the net name at an XY coordinate                                                                                                                 | `schematic`             |
+| `add_schematic_hierarchical_label`    | Add hierarchical label for multi-sheet connections                                                                                                   | `schematic_hierarchy`   |
 | `list_schematic_texts`                | List all text annotations (with optional filter)                                                                                                     | `schematic`             |
 | `add_schematic_text`                  | Add free-form text annotation to schematic                                                                                                           | `schematic`             |
-| `add_sheet_pin`                       | Add a sheet pin to a hierarchical sheet symbol                                                                                                       | Not indexed             |
+| `add_sheet_pin`                       | Add a sheet pin to a hierarchical sheet symbol                                                                                                       | `schematic_hierarchy`   |
 
 ---
 
@@ -291,7 +292,7 @@ _Source: `src/tools/schematic-layout.ts`_
 | `batch_set_schematic_property_positions` | Move many Reference/Value field labels in a single file read/write — far faster than repeated set_schematic_property_position calls.                  | `schematic_layout` |
 | `autoplace_schematic_fields`             | Automatically reposition every component's Reference and Value field so they sit outside the component body AND outside any net labels attached to... | `schematic_layout` |
 | `lint_schematic_cosmetic`                | Netlist-safe cosmetic cleanup of a .kicad_sch, applied as raw-text edits that never move a symbol, pin, wire, junction, or label anchor.              | `schematic_layout` |
-| `suggest_schematic_declutter`            | Re-orient overlapping net/global labels so their text lands in free space and becomes readable.                                                       | Not indexed        |
+| `suggest_schematic_declutter`            | Re-orient overlapping net/global labels so their text lands in free space and becomes readable.                                                       | `schematic_layout` |
 
 ---
 
@@ -346,13 +347,13 @@ _Source: `src/tools/footprint.ts`_
 
 | Tool                         | Description                                                                                                                                     | Discovery   |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| `create_footprint`           | Create custom .kicad_mod footprint (SMD/THT pads, courtyard, silkscreen)                                                                        | Not indexed |
-| `add_footprint_3d_model`     | Attach (or replace) a 3D model — .step/.stp/.wrl — to a .kicad_mod footprint file.                                                              | Not indexed |
-| `import_3d_model`            | Copy a 3D model file (.step/.stp/.wrl/.x3d/.iges) into the project's \*.3dshapes library folder and return a portable ${KIPRJMOD}/...           | Not indexed |
-| `add_component_3d_model`     | Attach a 3D model to one or more PLACED footprints on the open board, live via the KiCAD IPC API (changes appear instantly, no file conflicts). | Not indexed |
-| `edit_footprint_pad`         | Edit pad in existing footprint (size, position, drill, shape)                                                                                   | Not indexed |
-| `register_footprint_library` | Register .pretty library in fp-lib-table                                                                                                        | Not indexed |
-| `list_footprint_libraries`   | List available .pretty libraries                                                                                                                | Not indexed |
+| `create_footprint`           | Create custom .kicad_mod footprint (SMD/THT pads, courtyard, silkscreen)                                                                        | `footprint` |
+| `add_footprint_3d_model`     | Attach (or replace) a 3D model — .step/.stp/.wrl — to a .kicad_mod footprint file.                                                              | `footprint` |
+| `import_3d_model`            | Copy a 3D model file (.step/.stp/.wrl/.x3d/.iges) into the project's \*.3dshapes library folder and return a portable ${KIPRJMOD}/...           | `footprint` |
+| `add_component_3d_model`     | Attach a 3D model to one or more PLACED footprints on the open board, live via the KiCAD IPC API (changes appear instantly, no file conflicts). | `footprint` |
+| `edit_footprint_pad`         | Edit pad in existing footprint (size, position, drill, shape)                                                                                   | `footprint` |
+| `register_footprint_library` | Register .pretty library in fp-lib-table                                                                                                        | `library`   |
+| `list_footprint_libraries`   | List available .pretty libraries                                                                                                                | `library`   |
 
 ---
 
@@ -377,10 +378,10 @@ _Source: `src/tools/symbol-creator.ts`_
 
 _Source: `src/tools/datasheet.ts`_
 
-| Tool                | Description                                         | Discovery   |
-| ------------------- | --------------------------------------------------- | ----------- |
-| `enrich_datasheets` | Fill missing datasheet URLs using LCSC part numbers | Not indexed |
-| `get_datasheet_url` | Get LCSC datasheet URL for a component              | Not indexed |
+| Tool                | Description                                         | Discovery |
+| ------------------- | --------------------------------------------------- | --------- |
+| `enrich_datasheets` | Fill missing datasheet URLs using LCSC part numbers | `jlcpcb`  |
+| `get_datasheet_url` | Get LCSC datasheet URL for a component              | `jlcpcb`  |
 
 ---
 
@@ -388,13 +389,13 @@ _Source: `src/tools/datasheet.ts`_
 
 _Source: `src/tools/jlcpcb-api.ts`_
 
-| Tool                          | Description                                             | Discovery   |
-| ----------------------------- | ------------------------------------------------------- | ----------- |
-| `download_jlcpcb_database`    | Download 2.5M+ parts catalog to local SQLite database   | Not indexed |
-| `search_jlcpcb_parts`         | Search parts by specs (category, package, library type) | Not indexed |
-| `get_jlcpcb_part`             | Get detailed part info with pricing                     | Not indexed |
-| `get_jlcpcb_database_stats`   | Get database statistics                                 | Not indexed |
-| `suggest_jlcpcb_alternatives` | Find cheaper or in-stock alternatives                   | Not indexed |
+| Tool                          | Description                                             | Discovery |
+| ----------------------------- | ------------------------------------------------------- | --------- |
+| `download_jlcpcb_database`    | Download 2.5M+ parts catalog to local SQLite database   | `jlcpcb`  |
+| `search_jlcpcb_parts`         | Search parts by specs (category, package, library type) | `jlcpcb`  |
+| `get_jlcpcb_part`             | Get detailed part info with pricing                     | `jlcpcb`  |
+| `get_jlcpcb_database_stats`   | Get database statistics                                 | `jlcpcb`  |
+| `suggest_jlcpcb_alternatives` | Find cheaper or in-stock alternatives                   | `jlcpcb`  |
 
 ---
 
@@ -427,9 +428,9 @@ _Source: `src/tools/freerouting.ts`_
 
 _Source: `src/tools/eagle.ts`_
 
-| Tool                   | Description                                                              | Discovery   |
-| ---------------------- | ------------------------------------------------------------------------ | ----------- |
-| `import_eagle_project` | Import an Eagle project (.brd + .sch) and convert it to a KiCad project. | Not indexed |
+| Tool                   | Description                                                              | Discovery |
+| ---------------------- | ------------------------------------------------------------------------ | --------- |
+| `import_eagle_project` | Import an Eagle project (.brd + .sch) and convert it to a KiCad project. | `import`  |
 
 ---
 
@@ -439,7 +440,7 @@ _Source: `src/tools/pcb-import.ts`_
 
 | Tool         | Description                                                                                                                                        | Discovery |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| `import_pcb` | Import a vendor PCB file (PADS, Altium, Eagle, CADSTAR, Fabmaster, P-CAD, SolidWorks PCB, or a binary Cadence Allegro .brd) and convert it to a... | `board`   |
+| `import_pcb` | Import a vendor PCB file (PADS, Altium, Eagle, CADSTAR, Fabmaster, P-CAD, SolidWorks PCB, or a binary Cadence Allegro .brd) and convert it to a... | `import`  |
 
 ---
 
@@ -459,11 +460,11 @@ _Source: `src/tools/ui.ts`_
 
 _Source: `src/tools/router.ts`_
 
-| Tool                   | Description                          | Discovery   |
-| ---------------------- | ------------------------------------ | ----------- |
-| `list_tool_categories` | Browse all available tool categories | Not indexed |
-| `get_category_tools`   | View tools in a specific category    | Not indexed |
-| `search_tools`         | Find tools by keyword                | Not indexed |
+| Tool                   | Description                          | Discovery |
+| ---------------------- | ------------------------------------ | --------- |
+| `list_tool_categories` | Browse all available tool categories | Discovery |
+| `get_category_tools`   | View tools in a specific category    | Discovery |
+| `search_tools`         | Find tools by keyword                | Discovery |
 
 ---
 
@@ -499,6 +500,18 @@ _Source: `src/tools/gui-driver.ts`_
 
 ---
 
+## toolboxes.ts (3 tools)
+
+_Source: `src/tools/toolboxes.ts`_
+
+| Tool             | Description                                                                                                    | Discovery |
+| ---------------- | -------------------------------------------------------------------------------------------------------------- | --------- |
+| `list_toolboxes` | List the toolboxes: groups of related KiCad tools, each with a description, its tools, and whether it is open. | Discovery |
+| `open_toolbox`   | Open one or more toolboxes (see list_toolboxes) to add their tools to your tool list.                          | Discovery |
+| `close_toolbox`  | Close one or more toolboxes to remove their tools from your tool list and free context.                        | Discovery |
+
+---
+
 ## Summary by source file
 
 | Source file              | Section                                | Tools   |
@@ -528,31 +541,35 @@ _Source: `src/tools/gui-driver.ts`_
 | `router.ts`              | Tool Discovery                         | 3       |
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
 | `gui-driver.ts`          | gui-driver.ts                          | 11      |
-| **Total**                |                                        | **244** |
+| `toolboxes.ts`           | toolboxes.ts                           | 3       |
+| **Total**                |                                        | **247** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 184 of the 244 registered tools.
+These are the categories `search_tools` searches. They cover 247 of the 247 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
 | `board`                    | 15            |
-| `component`                | 15            |
+| `component`                | 24            |
 | `export`                   | 27            |
-| `drc`                      | 7             |
-| `schematic`                | 26            |
-| `library`                  | 7             |
+| `drc`                      | 8             |
+| `schematic`                | 36            |
+| `library`                  | 9             |
 | `symbol_library`           | 17            |
 | `symbol_pins`              | 3             |
-| `schematic_hierarchy`      | 5             |
-| `schematic_layout`         | 5             |
+| `schematic_hierarchy`      | 7             |
+| `schematic_layout`         | 12            |
 | `schematic_batch`          | 6             |
-| `routing`                  | 3             |
+| `routing`                  | 14            |
 | `autoroute`                | 4             |
 | `validation`               | 2             |
+| `footprint`                | 5             |
+| `import`                   | 2             |
+| `jlcpcb`                   | 7             |
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
 | `gui-driver`               | 11            |
-| **Indexed total**          | **184**       |
-| Registered but not indexed | 60            |
-| **Registered total**       | **244**       |
+| **Indexed total**          | **247**       |
+| Registered but not indexed | 0             |
+| **Registered total**       | **247**       |

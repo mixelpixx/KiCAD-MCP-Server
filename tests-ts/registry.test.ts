@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   directToolNames,
+  discoveryToolNames,
   getAllCategories,
   getCategory,
   getRegistryStats,
@@ -113,11 +114,14 @@ describe("tool registry — stats", () => {
     expect(stats.total_categories).toBe(getAllCategories().length);
     expect(stats.total_routed_tools).toBe(getRoutedToolNames().length);
     expect(stats.total_direct_tools).toBe(directToolNames.length);
+    expect(stats.total_discovery_tools).toBe(discoveryToolNames.length);
     // NOT routed + direct: seven schematic essentials are deliberately in both
     // lists, and summing double-counted them (overstating the README by 7).
-    const distinct = new Set([...getRoutedToolNames(), ...directToolNames]);
+    const distinct = new Set([...getRoutedToolNames(), ...directToolNames, ...discoveryToolNames]);
     expect(stats.total_tools).toBe(distinct.size);
-    expect(stats.total_tools).toBeLessThan(stats.total_routed_tools + stats.total_direct_tools);
+    expect(stats.total_tools).toBeLessThan(
+      stats.total_routed_tools + stats.total_direct_tools + stats.total_discovery_tools,
+    );
   });
 
   it("getRegistryStats per-category counts match category.tools.length", () => {
