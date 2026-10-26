@@ -472,6 +472,18 @@ BOARD_TOOLS = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "get_stackup",
+        "title": "Get Board Stackup",
+        "description": (
+            "Read the board stackup from the board file. Returns each copper, dielectric, "
+            "mask, and silk entry with its thickness in millimetres. Layer names are the "
+            "names stored on the board, so a renamed layer such as 'Top Side' is returned "
+            "beside the canonical F.Cu name. pcbnew does not expose the stackup, so this "
+            "reads the (stackup ...) section of the .kicad_pcb file."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "get_board_info",
         "title": "Get Board Information",
         "description": "Retrieves comprehensive board information including dimensions, layer count, component count, and design rules.",
