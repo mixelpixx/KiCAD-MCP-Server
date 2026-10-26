@@ -202,6 +202,24 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
     },
   );
 
+  server.tool(
+    "get_stackup",
+    "Read the board stackup from the board file. Returns each copper, dielectric, mask, and silk entry with its thickness in millimetres. Layer names are the names stored on the board, so a renamed layer such as 'Top Side' is returned beside the canonical F.Cu name.",
+    {},
+    async () => {
+      logger.debug("Reading board stackup");
+      const result = await callKicadScript("get_stackup", {});
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
   // ------------------------------------------------------
   // Add Board Outline Tool
   // ------------------------------------------------------
