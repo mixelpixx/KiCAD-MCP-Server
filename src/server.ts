@@ -35,8 +35,13 @@ import { registerFreeroutingTools } from "./tools/freerouting.js";
 import { registerEagleTools } from "./tools/eagle.js";
 import { registerPcbImportTools } from "./tools/pcb-import.js";
 import { registerValidationTools } from "./tools/validation.js";
-import { registerNetCopperTools } from "./tools/net-copper.js";
 import { registerRouterTools } from "./tools/router.js";
+import {
+  parseToolboxSetting,
+  registerToolboxTools,
+  ToolboxManager,
+  TOOLBOXES_ENV,
+} from "./tools/toolboxes.js";
 import { registerGuiDriverTools } from "./tools/gui-driver.js";
 
 // Import resource registration functions
@@ -241,9 +246,18 @@ export class KiCADMcpServer {
   private pythonEnv: NodeJS.ProcessEnv | null = null;
   private restartPromise: Promise<void> | null = null;
   private stopping = false;
+  /**
+   * True from start() until the first worker is spawned. start() connects the
+   * transport, then runs a pcbnew import check before spawning; a tool call in
+   * that window has no worker and no restart to wait for, so it is queued
+   * rather than rejected (#453).
+   */
+  private starting = false;
   /** Start times of recent automatic worker restarts (crash-loop budget). */
   private restartTimes: number[] = [];
   private kicadScriptPath: string;
+  /** Which registered tools a client sees; set up in registerAll(). */
+  private toolboxes!: ToolboxManager;
   private stdioTransport!: StdioServerTransport;
   private requestQueue: Array<{
     request: {
@@ -303,7 +317,7 @@ export class KiCADMcpServer {
     // Initialize the MCP server
     this.server = new McpServer({
       name: "kicad-mcp-server",
-      version: "2.8.2",
+      version: "2.8.3",
       description: "MCP server for KiCAD PCB design operations",
     });
     // Create the ready promise (resolved when Python sends {"type":"ready"})
@@ -323,8 +337,22 @@ export class KiCADMcpServer {
   private registerAll(): void {
     logger.info("Registering KiCAD tools, resources, and prompts...");
 
-    // Register router tools FIRST (for tool discovery and execution)
-    registerRouterTools(this.server, this.callKicadScript.bind(this));
+    // Toolboxes decide which registered tools a client sees (toolboxes.ts). The
+    // manager has to see every registration, so it wraps the server first.
+    this.toolboxes = new ToolboxManager(
+      this.server,
+      parseToolboxSetting(process.env[TOOLBOXES_ENV]),
+    );
+    this.toolboxes.captureRegistrations();
+    if (this.toolboxes.setting.mode === "toolboxes" && this.toolboxes.setting.unknown.length > 0) {
+      logger.warn(
+        `${TOOLBOXES_ENV}: ignoring unknown toolbox name(s): ${this.toolboxes.setting.unknown.join(", ")}`,
+      );
+    }
+
+    // Register the discovery tools first
+    registerRouterTools(this.server, this.callKicadScript.bind(this), this.toolboxes);
+    registerToolboxTools(this.server, this.toolboxes);
 
     // Register all tools
     registerProjectTools(this.server, this.callKicadScript.bind(this));
@@ -351,8 +379,6 @@ export class KiCADMcpServer {
     registerEagleTools(this.server, this.callKicadScript.bind(this));
     registerPcbImportTools(this.server, this.callKicadScript.bind(this));
     registerValidationTools(this.server, this.callKicadScript.bind(this));
-    registerNetCopperTools(this.server, this.callKicadScript.bind(this));
-
     // Register all resources
     registerProjectResources(this.server, this.callKicadScript.bind(this));
     registerBoardResources(this.server, this.callKicadScript.bind(this));
@@ -365,7 +391,9 @@ export class KiCADMcpServer {
     registerDesignPrompts(this.server);
     registerFootprintPrompts(this.server);
 
+    this.toolboxes.applyVisibility();
     logger.info("All KiCAD tools, resources, and prompts registered");
+    logger.info(this.toolboxes.describe());
   }
 
   /**
@@ -537,6 +565,7 @@ export class KiCADMcpServer {
     try {
       logger.info("Starting KiCAD MCP server...");
       this.stopping = false;
+      this.starting = true;
       this.restartTimes = [];
 
       // ——— Phase 0: connect MCP transport BEFORE anything else ———
@@ -585,6 +614,8 @@ export class KiCADMcpServer {
       };
 
       this.spawnPythonProcess();
+      // A worker exists now; queued calls run once it reports READY.
+      this.starting = false;
 
       // ——— Phase 2: wait for Python READY ———
       logger.info("Waiting for Python process to be ready...");
@@ -604,7 +635,10 @@ export class KiCADMcpServer {
 
       logger.info("KiCAD MCP server started and ready");
     } catch (error) {
+      this.starting = false;
       logger.error(`Failed to start KiCAD MCP server: ${error}`);
+      // Calls queued during start-up would otherwise wait forever.
+      this.rejectQueuedRequests(error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
@@ -858,7 +892,7 @@ export class KiCADMcpServer {
   private async callKicadScript(command: string, params: any): Promise<any> {
     return new Promise((resolve, reject) => {
       // Check if Python process is running
-      if (!this.pythonProcess && !this.restartPromise) {
+      if (!this.pythonProcess && !this.restartPromise && !this.starting) {
         logger.error("Python process is not running");
         reject(new Error("Python process for KiCAD scripting is not running"));
         return;

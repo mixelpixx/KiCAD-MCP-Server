@@ -186,12 +186,12 @@ class NetCopperCommands:
         return names
 
     def _remember_layer(self, layers: Set[str], layer_id: Optional[int]) -> None:
-        name = user_layer_name(self.board, layer_id) or canonical_layer_name(layer_id)
+        name = user_layer_name(self.board, layer_id) or canonical_layer_name(self.board, layer_id)
         if name:
             layers.add(name)
 
     def _append_layer(self, names: List[str], layer_id: Optional[int]) -> None:
-        name = user_layer_name(self.board, layer_id) or canonical_layer_name(layer_id)
+        name = user_layer_name(self.board, layer_id) or canonical_layer_name(self.board, layer_id)
         if name and name not in names:
             names.append(name)
 
