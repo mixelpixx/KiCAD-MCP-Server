@@ -29,6 +29,7 @@
 
 import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { allowedInMode, READ_ONLY_TOOLS, type OperatingMode } from "./operating-mode.js";
 import { directToolNames, getAllCategories, getCategory, getToolCategory } from "./registry.js";
 
 export const TOOLBOXES_ENV = "KICAD_MCP_TOOLBOXES";
@@ -92,6 +93,8 @@ export class ToolboxManager {
   constructor(
     private readonly server: McpServer,
     readonly setting: ToolboxSetting,
+    /** The operating mode (operating-mode.ts); a tool must pass both. */
+    readonly mode: OperatingMode = "write",
   ) {
     if (setting.mode === "toolboxes") {
       for (const toolbox of setting.preload) this.open.add(toolbox);
@@ -131,8 +134,14 @@ export class ToolboxManager {
       .filter((name) => this.open.has(name));
   }
 
-  /** Whether a tool is in the client's list under the current setting. */
+  /** Whether the operating mode lets a client use `tool` at all. */
+  allowed(tool: string): boolean {
+    return allowedInMode(tool, this.mode);
+  }
+
+  /** Whether a tool is in the client's list under the current settings. */
   isVisible(tool: string): boolean {
+    if (!this.allowed(tool)) return false;
     if (this.setting.mode === "all") return !TOOLBOX_CONTROLS.has(tool);
     if (CORE.has(tool) || TOOLBOX_CONTROLS.has(tool)) return true;
     if (CATEGORY_BROWSERS.has(tool)) return false;
@@ -157,6 +166,19 @@ export class ToolboxManager {
     }
     if (changed > 0) this.server.sendToolListChanged();
     return changed;
+  }
+
+  /**
+   * Mark the read-only tools with MCP's readOnlyHint annotation, whatever the
+   * mode, so clients that use it (for example to skip an approval prompt) see
+   * the same classification the readonly mode enforces.
+   */
+  annotateReadOnly(): void {
+    for (const [name, handle] of this.handles) {
+      if (READ_ONLY_TOOLS.has(name)) {
+        handle.annotations = { ...(handle.annotations ?? {}), readOnlyHint: true };
+      }
+    }
   }
 
   visibleToolNames(): string[] {
@@ -192,12 +214,15 @@ export class ToolboxManager {
   /** One line for the server log. */
   describe(): string {
     const visible = this.visibleToolNames().length;
+    const mode = this.mode === "write" ? "" : ` in ${this.mode} mode`;
     if (this.setting.mode === "all") {
-      return `All ${visible} tools visible (set ${TOOLBOXES_ENV} to use toolboxes)`;
+      return this.mode === "write"
+        ? `All ${visible} tools visible (set ${TOOLBOXES_ENV} to use toolboxes)`
+        : `${visible} of ${this.handles.size} tools visible${mode}`;
     }
     const open = this.openToolboxes();
     return (
-      `Toolbox mode: ${visible} of ${this.handles.size} tools visible; ` +
+      `Toolbox mode${mode}: ${visible} of ${this.handles.size} tools visible; ` +
       `open toolboxes: ${open.length > 0 ? open.join(", ") : "none"}`
     );
   }
@@ -224,15 +249,21 @@ export function registerToolboxTools(server: McpServer, toolboxes: ToolboxManage
     {},
     async () =>
       json({
+        operating_mode: toolboxes.mode,
         open_toolboxes: toolboxes.openToolboxes(),
-        toolboxes: getAllCategories().map((category) => ({
-          name: category.name,
-          description: category.description,
-          open: toolboxes.isOpen(category.name),
-          tool_count: category.tools.length,
-          tools: category.tools,
-        })),
-        core_tools: directToolNames,
+        // Only the tools the operating mode allows; in readonly mode a
+        // toolbox can be empty.
+        toolboxes: getAllCategories().map((category) => {
+          const tools = category.tools.filter((tool) => toolboxes.allowed(tool));
+          return {
+            name: category.name,
+            description: category.description,
+            open: toolboxes.isOpen(category.name),
+            tool_count: tools.length,
+            tools,
+          };
+        }),
+        core_tools: directToolNames.filter((tool) => toolboxes.allowed(tool)),
         note: "Open the toolboxes a task needs with open_toolbox before calling their tools. A tool in a closed toolbox is rejected as disabled.",
       }),
   );
@@ -260,10 +291,12 @@ export function registerToolboxTools(server: McpServer, toolboxes: ToolboxManage
           tools: Object.fromEntries(
             ready.map((name) => [
               name,
-              (getCategory(name)?.tools ?? []).map((tool) => ({
-                name: tool,
-                description: toolboxes.shortDescription(tool),
-              })),
+              (getCategory(name)?.tools ?? [])
+                .filter((tool) => toolboxes.allowed(tool))
+                .map((tool) => ({
+                  name: tool,
+                  description: toolboxes.shortDescription(tool),
+                })),
             ]),
           ),
           ...(change.changed.length > 0 ? { note: AFTER_OPENING } : {}),

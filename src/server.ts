@@ -42,6 +42,7 @@ import {
   ToolboxManager,
   TOOLBOXES_ENV,
 } from "./tools/toolboxes.js";
+import { OPERATING_MODE_ENV, parseOperatingMode } from "./tools/operating-mode.js";
 import { registerGuiDriverTools } from "./tools/gui-driver.js";
 
 // Import resource registration functions
@@ -339,9 +340,17 @@ export class KiCADMcpServer {
 
     // Toolboxes decide which registered tools a client sees (toolboxes.ts). The
     // manager has to see every registration, so it wraps the server first.
+    const operatingMode = parseOperatingMode(process.env[OPERATING_MODE_ENV]);
+    if (operatingMode.unrecognised !== undefined) {
+      logger.error(
+        `${OPERATING_MODE_ENV}=${operatingMode.unrecognised} is not a mode ` +
+          `(write, readonly, manufacturing); using readonly`,
+      );
+    }
     this.toolboxes = new ToolboxManager(
       this.server,
       parseToolboxSetting(process.env[TOOLBOXES_ENV]),
+      operatingMode.mode,
     );
     this.toolboxes.captureRegistrations();
     if (this.toolboxes.setting.mode === "toolboxes" && this.toolboxes.setting.unknown.length > 0) {
@@ -392,6 +401,7 @@ export class KiCADMcpServer {
     registerDesignPrompts(this.server);
     registerFootprintPrompts(this.server);
 
+    this.toolboxes.annotateReadOnly();
     this.toolboxes.applyVisibility();
     logger.info("All KiCAD tools, resources, and prompts registered");
     logger.info(this.toolboxes.describe());
