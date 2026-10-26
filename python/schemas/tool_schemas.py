@@ -472,6 +472,56 @@ BOARD_TOOLS = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "get_stackup",
+        "title": "Get Board Stackup",
+        "description": (
+            "Read the board stackup from the board file. Returns each copper, dielectric, "
+            "mask, and silk entry with its thickness in millimetres. Layer names are the "
+            "names stored on the board, so a renamed layer such as 'Top Side' is returned "
+            "beside the canonical F.Cu name. pcbnew does not expose the stackup, so this "
+            "reads the (stackup ...) section of the .kicad_pcb file."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "set_stackup_layer",
+        "title": "Set Stackup Layer",
+        "description": (
+            "Write one stackup row into the board file. Identify the row by index from "
+            "get_stackup or by a layer name such as F.Cu or the name stored on the board. "
+            "thicknessMm changes that row. epsilonR, lossTangent, and material apply only "
+            "to a dielectric. sublayer selects a dielectric piece and defaults to 0. "
+            "pcbnew cannot edit the stackup, so this rewrites the (stackup ...) section."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer", "description": "Row index from get_stackup"},
+                "layer": {
+                    "type": "string",
+                    "description": "Canonical name such as F.Cu, or the name stored on the board",
+                },
+                "sublayer": {
+                    "type": "integer",
+                    "description": "Dielectric sublayer. Defaults to 0",
+                },
+                "thicknessMm": {
+                    "type": "number",
+                    "description": "Thickness of this sublayer in millimetres",
+                },
+                "epsilonR": {
+                    "type": "number",
+                    "description": "Relative permittivity. Dielectric rows only",
+                },
+                "lossTangent": {
+                    "type": "number",
+                    "description": "Loss tangent. Dielectric rows only",
+                },
+                "material": {"type": "string", "description": "Material name. Dielectric rows only"},
+            },
+        },
+    },
+    {
         "name": "get_board_info",
         "title": "Get Board Information",
         "description": "Retrieves comprehensive board information including dimensions, layer count, component count, and design rules.",
@@ -895,7 +945,15 @@ COMPONENT_TOOLS = [
         "description": "Returns every pad attached to a net name or net code.",
         "inputSchema": {
             "type": "object",
-            "properties": {"net": {"type": "string"}, "netCode": {"type": "number"}},
+            "properties": {
+                "net": {"type": "string"},
+                "netCode": {"type": "number"},
+                "unit": {
+                    "type": "string",
+                    "enum": ["mm", "mil", "inch"],
+                    "description": "Unit for positions, sizes and bounding boxes (default: mm)",
+                },
+            },
         },
     },
     {
@@ -1739,7 +1797,20 @@ ROUTING_TOOLS = [
         "name": "get_nets_list",
         "title": "List All Nets",
         "description": "Returns a list of all electrical nets defined on the board.",
-        "inputSchema": {"type": "object", "properties": {}},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "includeStats": {
+                    "type": "boolean",
+                    "description": "Add per-net track count, total track length and via count",
+                },
+                "unit": {
+                    "type": "string",
+                    "enum": ["mm", "mil", "inch"],
+                    "description": "Unit for track lengths (default: mm)",
+                },
+            },
+        },
     },
     {
         "name": "create_netclass",
@@ -1839,15 +1910,40 @@ ROUTING_TOOLS = [
     {
         "name": "route_differential_pair",
         "title": "Route Differential Pair",
-        "description": "Routes a differential signal pair with matched lengths and spacing.",
+        "description": (
+            "Routes a differential pair as two parallel straight segments. startPos and "
+            "endPos are the pair's centreline; looking from start to end on the board "
+            "(y down), the positive trace runs on the right and the negative on the "
+            "left, each offset by (gap + width) / 2."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "positiveName": {
+                "startPos": {
+                    "type": "object",
+                    "description": "Start of the pair's centreline",
+                    "properties": {
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "unit": {"type": "string", "enum": ["mm", "mil", "inch"]},
+                    },
+                    "required": ["x", "y"],
+                },
+                "endPos": {
+                    "type": "object",
+                    "description": "End of the pair's centreline",
+                    "properties": {
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "unit": {"type": "string", "enum": ["mm", "mil", "inch"]},
+                    },
+                    "required": ["x", "y"],
+                },
+                "positiveNet": {
                     "type": "string",
                     "description": "Positive signal net name",
                 },
-                "negativeName": {
+                "negativeNet": {
                     "type": "string",
                     "description": "Negative signal net name",
                 },
@@ -1858,21 +1954,10 @@ ROUTING_TOOLS = [
                 },
                 "gap": {
                     "type": "number",
-                    "description": "Gap between traces in millimeters",
-                },
-                "points": {
-                    "type": "array",
-                    "description": "Waypoints for the pair routing",
-                    "items": {
-                        "type": "array",
-                        "items": {"type": "number"},
-                        "minItems": 2,
-                        "maxItems": 2,
-                    },
-                    "minItems": 2,
+                    "description": "Edge-to-edge gap between the two traces in millimeters",
                 },
             },
-            "required": ["positiveName", "negativeName", "width", "gap", "points"],
+            "required": ["startPos", "endPos", "positiveNet", "negativeNet"],
         },
     },
 ]
@@ -3868,65 +3953,6 @@ GUI_DRIVER_TOOLS = [
     },
 ]
 
-# Board geometry for a PDN or EMC review. One entry per tool so a later
-# query can extend this list without changing the copper editor.
-ANALYSIS_TOOLS = [
-    {
-        "name": "get_stackup",
-        "title": "Get Board Stackup",
-        "description": (
-            "Read the board stackup. Returns each copper, dielectric, mask, and silk "
-            "entry with its thickness in millimetres. Layer names are the names stored "
-            "on the board, so a renamed layer such as 'Top Side' is returned beside the "
-            "canonical F.Cu name."
-        ),
-        "inputSchema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "set_stackup_layer",
-        "title": "Set Stackup Layer",
-        "description": (
-            "Set the thickness of one stackup row, and for a dielectric its material, "
-            "relative permittivity, and loss tangent. The row is an index from get_stackup "
-            "or a layer name such as F.Cu or the name stored on the board. Only the fields "
-            "passed in are changed. sublayer selects a dielectric piece and defaults to 0."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "index": {
-                    "type": "integer",
-                    "description": "Row index from get_stackup.",
-                },
-                "layer": {
-                    "type": "string",
-                    "description": "Canonical name such as F.Cu, or the name stored on the board.",
-                },
-                "sublayer": {
-                    "type": "integer",
-                    "description": "Dielectric sublayer. Defaults to 0.",
-                },
-                "thicknessMm": {
-                    "type": "number",
-                    "description": "Thickness of this sublayer in millimetres.",
-                },
-                "epsilonR": {
-                    "type": "number",
-                    "description": "Relative permittivity. Dielectric rows only.",
-                },
-                "lossTangent": {
-                    "type": "number",
-                    "description": "Loss tangent. Dielectric rows only.",
-                },
-                "material": {
-                    "type": "string",
-                    "description": "Material name. Dielectric rows only.",
-                },
-            },
-        },
-    },
-]
-
 TOOL_SCHEMAS: Dict[str, Any] = {}
 
 # Combine all tool categories
@@ -3943,7 +3969,6 @@ for tool in (
     + VALIDATION_TOOLS
     + DIGIKEY_TOOLS
     + GUI_DRIVER_TOOLS
-    + ANALYSIS_TOOLS
 ):
     TOOL_SCHEMAS[tool["name"]] = tool
 

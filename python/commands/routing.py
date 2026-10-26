@@ -17,6 +17,49 @@ from utils.board_items import delete_board_item
 logger = logging.getLogger("kicad_interface")
 
 
+# --- Length units for query results (#407) --------------------------------
+#
+# Millimetres per unit. Shared by the SWIG and IPC handlers of get_nets_list so
+# both report statistics the same way.
+LENGTH_UNITS_MM = {"mm": 1.0, "mil": 0.0254, "inch": 25.4}
+
+
+def length_unit_error(unit: Any) -> Optional[Dict[str, Any]]:
+    """Error payload for an unsupported unit, or None when the unit is valid."""
+    if unit in LENGTH_UNITS_MM:
+        return None
+    return {
+        "success": False,
+        "message": "Invalid unit",
+        "errorDetails": f"unit must be one of {sorted(LENGTH_UNITS_MM)}, got {unit!r}",
+    }
+
+
+def net_stats(
+    tracks: List[Tuple[str, float]], vias: List[str], unit: str = "mm"
+) -> Dict[str, Dict[str, Any]]:
+    """Per-net track count, total track length and via count.
+
+    ``tracks`` holds ``(net name, length in mm)`` pairs and ``vias`` holds net
+    names. Lengths are returned in ``unit``.
+    """
+    stats: Dict[str, Dict[str, Any]] = {}
+
+    def entry(net: str) -> Dict[str, Any]:
+        return stats.setdefault(net, {"trackCount": 0, "trackLength": 0.0, "viaCount": 0})
+
+    for net, length_mm in tracks:
+        item = entry(net)
+        item["trackCount"] += 1
+        item["trackLength"] += length_mm
+    for net in vias:
+        entry(net)["viaCount"] += 1
+    scale = LENGTH_UNITS_MM[unit]
+    for item in stats.values():
+        item["trackLength"] = round(item["trackLength"] / scale, 6)
+    return stats
+
+
 # --- Net class project-file persistence (KiCad 7+) ------------------------
 #
 # Net class *definitions* live in the project file (``<project>.kicad_pro`` ->
@@ -946,7 +989,12 @@ class RoutingCommands:
         }
 
     def get_nets_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get a list of all nets in the PCB"""
+        """Get a list of all nets in the PCB.
+
+        With ``includeStats`` each net also carries ``stats`` (track count,
+        total track length in ``unit``, via count). Both parameters are
+        declared by the zod schema and used to be ignored (#407).
+        """
         try:
             if not self.board:
                 return {
@@ -954,6 +1002,12 @@ class RoutingCommands:
                     "message": "No board is loaded",
                     "errorDetails": "Load or create a board first",
                 }
+
+            include_stats = bool(params.get("includeStats", False))
+            unit = params.get("unit") or "mm"
+            unit_error = length_unit_error(unit)
+            if unit_error:
+                return unit_error
 
             nets = []
             netinfo = self.board.GetNetInfo()
@@ -968,7 +1022,20 @@ class RoutingCommands:
                         }
                     )
 
-            return {"success": True, "nets": nets}
+            if not include_stats:
+                return {"success": True, "nets": nets}
+
+            tracks, vias = [], []
+            for item in self.board.GetTracks():
+                if item.Type() == pcbnew.PCB_VIA_T:
+                    vias.append(item.GetNetname())
+                else:  # straight tracks and arcs; GetLength() is the arc length for arcs
+                    tracks.append((item.GetNetname(), item.GetLength() / 1_000_000))
+            stats = net_stats(tracks, vias, unit)
+            empty = {"trackCount": 0, "trackLength": 0.0, "viaCount": 0}
+            for net in nets:
+                net["stats"] = dict(stats.get(net["name"], empty))
+            return {"success": True, "nets": nets, "unit": unit}
 
         except Exception as e:
             logger.error(f"Error getting nets list: {str(e)}")
@@ -1939,8 +2006,11 @@ class RoutingCommands:
 
             start_pos = params.get("startPos")
             end_pos = params.get("endPos")
-            net_pos = params.get("netPos")
-            net_neg = params.get("netNeg")
+            # The schemas declare `positiveNet` / `negativeNet` (#407); `netPos` /
+            # `netNeg` are the keys this handler historically read, kept so
+            # existing callers keep working.
+            net_pos = params.get("positiveNet") or params.get("netPos")
+            net_neg = params.get("negativeNet") or params.get("netNeg")
             layer = params.get("layer", "F.Cu")
             width = params.get("width")
             gap = params.get("gap")
@@ -1949,7 +2019,7 @@ class RoutingCommands:
                 return {
                     "success": False,
                     "message": "Missing parameters",
-                    "errorDetails": "startPos, endPos, netPos, and netNeg are required",
+                    "errorDetails": "startPos, endPos, positiveNet, and negativeNet are required",
                 }
 
             # Get layer ID
@@ -2007,9 +2077,19 @@ class RoutingCommands:
             # Convert to nm
             gap_nm = int(gap * 1000000)
 
-            # Calculate offsets
-            offset_x = int(px * gap_nm / 2)
-            offset_y = int(py * gap_nm / 2)
+            if width:
+                trace_width_nm = int(width * 1000000)
+            else:
+                # Get default width from design rules or net class
+                trace_width_nm = self.board.GetDesignSettings().GetCurrentTrackWidth()
+
+            # `gap` is the edge-to-edge spacing, as KiCad's differential pair
+            # rules define it, so the centrelines sit (gap + width) / 2 either
+            # side of the path. Offsetting by gap / 2 left only gap - width of
+            # copper between the traces, and overlapped them when width >= gap.
+            offset_nm = (gap_nm + trace_width_nm) / 2
+            offset_x = int(px * offset_nm)
+            offset_y = int(py * offset_nm)
 
             # Create positive and negative trace points
             pos_start = pcbnew.VECTOR2I(
@@ -2035,16 +2115,8 @@ class RoutingCommands:
             neg_track.SetLayer(layer_id)
             neg_track.SetNet(net_neg_obj)
 
-            # Set width
-            if width:
-                trace_width_nm = int(width * 1000000)
-                pos_track.SetWidth(trace_width_nm)
-                neg_track.SetWidth(trace_width_nm)
-            else:
-                # Get default width from design rules or net class
-                trace_width = self.board.GetDesignSettings().GetCurrentTrackWidth()
-                pos_track.SetWidth(trace_width)
-                neg_track.SetWidth(trace_width)
+            pos_track.SetWidth(trace_width_nm)
+            neg_track.SetWidth(trace_width_nm)
 
             # Add tracks to board
             self.board.Add(pos_track)

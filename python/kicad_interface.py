@@ -10,6 +10,7 @@ JSON and returns responses via stdout also as JSON.
 import hashlib
 import json
 import logging
+import math
 import os
 import shutil
 import sys
@@ -1244,6 +1245,22 @@ class KiCADInterface(SchematicHandlersMixin):
                         # because the on-disk file changed externally, surface
                         # a warning to the caller so they don't believe their
                         # mutation was persisted.
+                        # set_stackup_layer already wrote the (stackup) section,
+                        # which pcbnew cannot edit. Reload that file first so
+                        # this save sees our write instead of refusing it as an
+                        # external change, and so the in-memory board matches.
+                        if (
+                            command == "set_stackup_layer"
+                            and isinstance(result, dict)
+                            and result.get("success")
+                            and not self._reload_stackup_file()
+                        ):
+                            result.setdefault("warnings", []).append(
+                                "Stackup was written to the board file, but the "
+                                "in-memory board could not be reloaded. Auto-save "
+                                "was skipped so it would not overwrite that file."
+                            )
+                            return result
                         save_status = self._auto_save_board()
                         self._last_auto_save_status = save_status
                         if isinstance(result, dict) and not save_status.get("saved"):
@@ -1281,6 +1298,10 @@ class KiCADInterface(SchematicHandlersMixin):
         # add_layer mutates the copper stackup in memory; without auto-save it
         # reported success and wrote nothing to disk (#222).
         "add_layer",
+        # Writes the (stackup) section of the .kicad_pcb. pcbnew has no
+        # setter for it, so the command edits the file and the handler above
+        # reloads before this auto-save runs.
+        "set_stackup_layer",
         "place_component",
         "move_component",
         "rotate_component",
@@ -1658,6 +1679,26 @@ class KiCADInterface(SchematicHandlersMixin):
         if first is None:
             return True
         return all(hasattr(first, m) for m in self._ITEM_HEALTH_METHODS)
+
+    def _reload_stackup_file(self) -> bool:
+        """Reload the board after set_stackup_layer writes its file.
+
+        The stackup is not writable through pcbnew, so the command edits the
+        ``.kicad_pcb`` directly. Auto-save would then see a foreign change and
+        refuse, or save the old in-memory board over the edit. Loading the
+        file back makes the following save persist the new stackup.
+        """
+        path = self._current_board_path()
+        if not path:
+            return False
+        board = self._safe_load_board(path)
+        if board is None:
+            return False
+        self.board = board
+        self.project_commands.board = board
+        self._update_command_handlers()
+        self._record_board_signature()
+        return True
 
     def _safe_load_board(self, path: str) -> Optional[Any]:
         """Load a board from disk, recovering from SWIG dehydration if pcbnew is broken.
@@ -5608,11 +5649,38 @@ print("ok")
             return {"success": False, "message": str(e)}
 
     def _ipc_get_nets_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """IPC handler for get_nets_list - gets nets with real-time data"""
-        try:
-            nets = self.ipc_board_api.get_nets()
+        """IPC handler for get_nets_list - gets nets with real-time data.
 
-            return {"success": True, "nets": nets, "count": len(nets)}
+        ``includeStats`` / ``unit`` give the same per-net ``stats`` as the SWIG
+        handler, computed from the live board's tracks and vias.
+        ``ipc_board_api.get_tracks()`` returns straight segments only, so arc
+        tracks are not counted on this path.
+        """
+        try:
+            from commands.routing import length_unit_error, net_stats
+
+            unit = params.get("unit") or "mm"
+            unit_error = length_unit_error(unit)
+            if unit_error:
+                return unit_error
+
+            nets = self.ipc_board_api.get_nets()
+            if not params.get("includeStats", False):
+                return {"success": True, "nets": nets, "count": len(nets)}
+
+            tracks = [
+                (
+                    t["net"],
+                    math.hypot(t["end"]["x"] - t["start"]["x"], t["end"]["y"] - t["start"]["y"]),
+                )
+                for t in self.ipc_board_api.get_tracks()
+            ]
+            vias = [v["net"] for v in self.ipc_board_api.get_vias()]
+            stats = net_stats(tracks, vias, unit)
+            empty = {"trackCount": 0, "trackLength": 0.0, "viaCount": 0}
+            for net in nets:
+                net["stats"] = dict(stats.get(net["name"], empty))
+            return {"success": True, "nets": nets, "count": len(nets), "unit": unit}
         except Exception as e:
             logger.error(f"IPC get_nets_list error: {e}")
             return {"success": False, "message": str(e)}
@@ -6458,7 +6526,7 @@ def main() -> None:
                                 "serverInfo": {
                                     "name": "kicad-mcp-server",
                                     "title": "KiCAD PCB Design Assistant",
-                                    "version": "2.8.2",
+                                    "version": "2.8.3",
                                 },
                                 "instructions": "AI-assisted PCB design with KiCAD. Use tools to create projects, design boards, place components, route traces, and export manufacturing files.",
                             },
