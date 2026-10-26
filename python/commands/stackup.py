@@ -1,98 +1,301 @@
 """Read the board stackup for a PDN or EMC solve.
 
-padne and openEMS both need the copper thickness and the dielectric gap.
-``get_board_info`` only returns layer names, so a custom name such as
-``Top Side`` was previously recovered by reading the ``.kicad_pcb`` text.
-This command returns those names next to the canonical ``F.Cu`` name and
-the thickness of every stackup entry, in millimetres.
+``get_board_info`` only returns layer names. Copper thickness and the
+dielectric gap live in the ``(stackup ...)`` section of the ``.kicad_pcb``
+file. KiCad 10's pcbnew bindings do not expose that data: ``GetStackup`` is
+missing, and ``GetStackupDescriptor()`` returns an opaque object. This command
+reads the file instead, which is how the rest of the server handles data SWIG
+does not surface.
 """
 
 import logging
+import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from commands.analysis_geom import (
-    as_float,
-    as_int,
-    layer_fields,
-    nm_to_mm,
-    no_board,
-)
+from utils.sexpr_format import iter_child_offsets, match_paren, unescape_sexpr_string
 
 logger = logging.getLogger("kicad_interface")
 
-_TYPE_BY_INT = {
-    1: "copper",
-    2: "dielectric",
-    3: "solderpaste",
-    4: "soldermask",
-    5: "silkscreen",
-}
+_VALUE = re.compile(
+    r"\(\s*[A-Za-z0-9_]+\s+"
+    r"(?:\"((?:[^\"\\]|\\.)*)\"|([-+0-9.eE]+)|([A-Za-z_][A-Za-z0-9_]*))"
+    r"\s*\)",
+    re.DOTALL,
+)
+_LAYER_TOKEN = re.compile(r"\(\s*layer\s+\"((?:[^\"\\]|\\.)*)\"")
+_LIST_HEAD = re.compile(r"\(\s*([A-Za-z0-9_]+)")
 
 
-def _item_type(item: Any) -> str:
-    """Map a BOARD_STACKUP_ITEM type enum to a short name."""
-    raw = item.GetType()
-    number = as_int(raw)
-    if number is not None:
-        return _TYPE_BY_INT.get(number, "undefined")
-    text = str(getattr(raw, "name", raw)).upper()
-    for label in _TYPE_BY_INT.values():
-        if label.upper() in text:
-            return label
+def _failure(message: str, details: str) -> Dict[str, Any]:
+    return {"success": False, "message": message, "errorDetails": details}
+
+
+def _no_board() -> Dict[str, Any]:
+    return _failure("No board is loaded", "Load or create a board first")
+
+
+def _as_int(value: Any) -> Optional[int]:
+    """Return ``value`` when it is a real integer, never a bool or a mock."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _as_float(text: Optional[str]) -> Optional[float]:
+    if text is None:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _kind(type_text: Optional[str]) -> str:
+    """Map a stackup ``(type ...)`` string onto the short name callers expect."""
+    if not type_text:
+        return "undefined"
+    text = type_text.lower()
+    if text == "copper":
+        return "copper"
+    if text in ("core", "prepreg") or "dielectric" in text:
+        return "dielectric"
+    if "mask" in text:
+        return "soldermask"
+    if "paste" in text:
+        return "solderpaste"
+    if "silk" in text:
+        return "silkscreen"
     return "undefined"
 
 
-def _call_nm(item: Any, method: str, index: int) -> Optional[int]:
-    """Call a thickness accessor that may or may not take a sublayer index."""
-    fn = getattr(item, method, None)
-    if not callable(fn):
-        return None
-    try:
-        return as_int(fn(index))
-    except TypeError:
-        if index != 0:
-            return None
-        try:
-            return as_int(fn())
-        except TypeError:
-            return None
-
-
-def _sublayer_count(item: Any) -> int:
-    """How many dielectric sublayers this stackup entry holds. Copper is one."""
-    for name in ("GetSublayersCount", "GetDielectricLayerCount"):
-        fn = getattr(item, name, None)
-        if not callable(fn):
+def _find_list(text: str, head: str, start: int = 0) -> Optional[Tuple[int, int]]:
+    """Return the inclusive span of the first ``(head ...)`` list."""
+    token = "(" + head
+    in_string = False
+    i = start
+    limit = len(text)
+    while i < limit:
+        ch = text[i]
+        if in_string:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == '"':
+                in_string = False
+            i += 1
             continue
-        try:
-            count = as_int(fn())
-        except TypeError:
-            count = None
-        if count is not None and count > 0:
-            return count
-    return 1
+        if ch == '"':
+            in_string = True
+            i += 1
+            continue
+        if text.startswith(token, i):
+            after = i + len(token)
+            if after >= limit or text[after] in " \t\r\n)":
+                close = match_paren(text, i)
+                if close < 0:
+                    return None
+                return i, close
+        i += 1
+    return None
 
 
-def _text(item: Any, method: str, index: int) -> Optional[str]:
-    fn = getattr(item, method, None)
+def _child_lists(block: str) -> List[str]:
+    """Text of each list nested directly inside ``block``."""
+    found: List[str] = []
+    for offset in iter_child_offsets(block):
+        close = match_paren(block, offset)
+        if close < 0:
+            continue
+        found.append(block[offset : close + 1])
+    return found
+
+
+def _list_head(block: str) -> str:
+    match = _LIST_HEAD.match(block)
+    return match.group(1) if match else ""
+
+
+def _list_value(block: str) -> Optional[str]:
+    """The single atom of ``(thickness 0.035)`` or ``(material "FR4")``."""
+    match = _VALUE.match(block)
+    if not match:
+        return None
+    quoted, number, symbol = match.group(1), match.group(2), match.group(3)
+    if quoted is not None:
+        return unescape_sexpr_string(quoted)
+    return number if number is not None else symbol
+
+
+def _parse_layer(block: str) -> Optional[Dict[str, Any]]:
+    """One ``(layer ...)`` row. Dielectric sublayers repeat thickness and loss."""
+    match = _LAYER_TOKEN.match(block)
+    if not match:
+        return None
+    token = unescape_sexpr_string(match.group(1))
+    type_text: Optional[str] = None
+    sublayers: List[Dict[str, Any]] = []
+    current: Optional[Dict[str, Any]] = None
+    for child in _child_lists(block):
+        head = _list_head(child)
+        value = _list_value(child)
+        if head == "type":
+            type_text = value
+            continue
+        if head == "thickness":
+            current = {}
+            thickness = _as_float(value)
+            if thickness is not None:
+                current["thicknessMm"] = thickness
+            sublayers.append(current)
+            continue
+        if current is None or value is None:
+            continue
+        if head == "material":
+            current["material"] = value
+        elif head == "epsilon_r":
+            epsilon = _as_float(value)
+            if epsilon is not None:
+                current["epsilonR"] = epsilon
+        elif head == "loss_tangent":
+            loss = _as_float(value)
+            if loss is not None:
+                current["lossTangent"] = loss
+    return {"token": token, "typeText": type_text, "sublayers": sublayers}
+
+
+def _board_thickness_mm(text: str) -> Optional[float]:
+    """``(general (thickness ...))`` is the board thickness KiCad stores, in mm."""
+    found = _find_list(text, "general")
+    if found is None:
+        return None
+    block = text[found[0] : found[1] + 1]
+    for child in _child_lists(block):
+        if _list_head(child) == "thickness":
+            return _as_float(_list_value(child))
+    return None
+
+
+def _call_str(board: Any, method: str, argument: Any) -> Optional[str]:
+    fn = getattr(board, method, None)
     if not callable(fn):
         return None
     try:
-        value = fn(index)
-    except TypeError:
-        if index != 0:
-            return None
-        try:
-            value = fn()
-        except TypeError:
-            return None
+        value = fn(argument)
+    except Exception:
+        return None
     if isinstance(value, str) and value:
         return value
     return None
 
 
-def _failure(message: str, details: str) -> Dict[str, Any]:
-    return {"success": False, "message": message, "errorDetails": details}
+def _layer_id(board: Any, token: str) -> Optional[int]:
+    """Resolve a canonical stackup name such as ``F.Cu`` through the board."""
+    fn = getattr(board, "GetLayerID", None)
+    if not callable(fn):
+        return None
+    try:
+        parsed = _as_int(fn(token))
+    except Exception:
+        return None
+    # UNDEFINED_LAYER comes back negative, or as a huge unsigned value.
+    if parsed is None or parsed < 0 or parsed > 128:
+        return None
+    return parsed
+
+
+def _name_fields(board: Any, token: str) -> Dict[str, Any]:
+    """Board name beside the canonical name. A dielectric row has neither."""
+    if token.lower().startswith("dielectric"):
+        return {}
+    layer_id = _layer_id(board, token)
+    if layer_id is None:
+        return {"canonical": token}
+    fields: Dict[str, Any] = {"layerId": layer_id, "canonical": token}
+    standard = _call_str(board, "GetStandardLayerName", layer_id)
+    user = _call_str(board, "GetLayerName", layer_id)
+    if standard:
+        fields["canonical"] = standard
+    if user:
+        fields["name"] = user
+    return fields
+
+
+def _entry(board: Any, index: int, row: Dict[str, Any]) -> Dict[str, Any]:
+    kind = _kind(row.get("typeText"))
+    pieces: List[Dict[str, Any]] = [piece for piece in row["sublayers"] if piece]
+    entry: Dict[str, Any] = {"index": index, "type": kind}
+    entry.update(_name_fields(board, row["token"]))
+    total = 0.0
+    saw = False
+    for piece in pieces:
+        thickness = piece.get("thicknessMm")
+        if isinstance(thickness, (int, float)):
+            total += float(thickness)
+            saw = True
+    if saw:
+        entry["thicknessMm"] = total
+    if kind == "dielectric" and pieces:
+        first = pieces[0]
+        for key in ("epsilonR", "lossTangent", "material"):
+            if key in first:
+                entry[key] = first[key]
+        if len(pieces) > 1:
+            entry["sublayers"] = pieces
+    return entry
+
+
+def read_stackup_text(board: Any, text: str) -> Dict[str, Any]:
+    """Parse a ``.kicad_pcb`` document and return the get_stackup payload."""
+    found = _find_list(text, "stackup")
+    if found is None:
+        return _failure(
+            "Board has no stackup",
+            "The board file has no (stackup ...) section",
+        )
+    block = text[found[0] : found[1] + 1]
+    layers: List[Dict[str, Any]] = []
+    for child in _child_lists(block):
+        if _list_head(child) != "layer":
+            continue
+        row = _parse_layer(child)
+        if row is None:
+            continue
+        layers.append(_entry(board, len(layers), row))
+
+    result: Dict[str, Any] = {
+        "success": True,
+        "copperCount": sum(1 for entry in layers if entry.get("type") == "copper"),
+        "layers": layers,
+    }
+    stored = _board_thickness_mm(text)
+    if stored is not None:
+        result["boardThicknessMm"] = stored
+    else:
+        total = sum(entry["thicknessMm"] for entry in layers if "thicknessMm" in entry)
+        if total:
+            result["boardThicknessMm"] = total
+    return result
+
+
+def _param_number(
+    params: Dict[str, Any], key: str
+) -> Tuple[Optional[float], Optional[Dict[str, Any]]]:
+    if key not in params or params[key] is None:
+        return None, None
+    value = params[key]
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None, _failure(f"{key} must be a number", key)
+    return float(value), None
+
+
+def _param_int(params: Dict[str, Any], key: str) -> Tuple[Optional[int], Optional[Dict[str, Any]]]:
+    if key not in params or params[key] is None:
+        return None, None
+    value = params[key]
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None, _failure(f"{key} must be an integer", key)
+    return value, None
 
 
 def _tolerance(
@@ -100,8 +303,10 @@ def _tolerance(
 ) -> Tuple[float, Optional[Dict[str, Any]]]:
     if key not in params or params[key] is None:
         return default, None
-    value = as_float(params[key])
-    if value is None or value < 0:
+    value, error = _param_number(params, key)
+    if error is not None or value is None:
+        return 0.0, error
+    if value < 0:
         return 0.0, _failure(f"{key} must be zero or greater", key)
     return value, None
 
@@ -119,8 +324,129 @@ def _difference(
     }
 
 
+def _locate(
+    layers: List[Dict[str, Any]], row: Dict[str, Any]
+) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], bool]:
+    index, error = _param_int(row, "index")
+    if error is not None:
+        return None, error, False
+    layer = row.get("layer")
+    if layer is not None and (not isinstance(layer, str) or not layer):
+        return None, _failure("layer must be a string", "layer"), False
+    if index is None and layer is None:
+        return (
+            None,
+            _failure("each expected row needs an index or a layer", "index or layer"),
+            False,
+        )
+
+    chosen: Optional[Dict[str, Any]] = None
+    if index is not None:
+        if index < 0 or index >= len(layers):
+            return None, None, True
+        chosen = layers[index]
+    if isinstance(layer, str):
+        hits = [
+            entry
+            for entry in layers
+            if entry.get("canonical") == layer or entry.get("name") == layer
+        ]
+        if len(hits) > 1:
+            return None, _failure(f"More than one stackup row is named {layer}", "layer"), False
+        if not hits:
+            return None, None, True
+        if chosen is not None and hits[0]["index"] != chosen["index"]:
+            return (
+                None,
+                _failure(
+                    "index and layer name different rows",
+                    "pass the index of that layer, or the layer on its own",
+                ),
+                False,
+            )
+        chosen = hits[0]
+    return chosen, None, False
+
+
+def _row_differences(
+    entry: Dict[str, Any],
+    row: Dict[str, Any],
+    thickness_tol: float,
+    epsilon_tol: float,
+) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    found: List[Dict[str, Any]] = []
+    label = entry.get("canonical") or entry.get("name")
+    if "type" in row and row["type"] is not None:
+        if not isinstance(row["type"], str):
+            return [], _failure("type must be a string", "type")
+        if row["type"] != entry.get("type"):
+            found.append(
+                _difference(entry["index"], label, "type", entry.get("type"), row["type"], None)
+            )
+    if "thicknessMm" in row and row["thicknessMm"] is not None:
+        expected, error = _param_number(row, "thicknessMm")
+        if error is not None:
+            return [], error
+        actual = entry.get("thicknessMm")
+        if actual is None or abs(actual - expected) > thickness_tol:
+            delta = None if actual is None else actual - expected
+            found.append(_difference(entry["index"], label, "thicknessMm", actual, expected, delta))
+    if "epsilonR" in row and row["epsilonR"] is not None:
+        expected_eps, error = _param_number(row, "epsilonR")
+        if error is not None:
+            return [], error
+        actual_eps = entry.get("epsilonR")
+        if actual_eps is None or abs(actual_eps - expected_eps) > epsilon_tol:
+            delta = None if actual_eps is None else actual_eps - expected_eps
+            found.append(
+                _difference(entry["index"], label, "epsilonR", actual_eps, expected_eps, delta)
+            )
+    return found, None
+
+
+def compare_stackup(current: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:
+    """Attach a recipe comparison to a successful get_stackup result."""
+    expected = params.get("expected")
+    if not isinstance(expected, list) or not expected:
+        return _failure("expected must list at least one row", "expected")
+    thickness_tol, error = _tolerance(params, "thicknessToleranceMm", 0.001)
+    if error is not None:
+        return error
+    epsilon_tol, error = _tolerance(params, "epsilonTolerance", 0.01)
+    if error is not None:
+        return error
+    mismatches: List[Dict[str, Any]] = []
+    for row in expected:
+        if not isinstance(row, dict):
+            return _failure("each expected row must be an object", "expected")
+        entry, error, missing = _locate(current["layers"], row)
+        if error is not None:
+            return error
+        if missing or entry is None:
+            mismatches.append(
+                _difference(
+                    row.get("index"),
+                    row.get("layer"),
+                    "layer",
+                    None,
+                    row.get("layer", row.get("index")),
+                    None,
+                )
+            )
+            continue
+        row_diffs, error = _row_differences(entry, row, thickness_tol, epsilon_tol)
+        if error is not None:
+            return error
+        mismatches.extend(row_diffs)
+    compared = dict(current)
+    compared["ok"] = not mismatches
+    compared["mismatchCount"] = len(mismatches)
+    compared["mismatches"] = mismatches
+    return compared
+
+
 class StackupCommands:
-    """Read-only stackup query and recipe check. Holds the board the interface last loaded."""
+    """Read-only stackup query. Holds the board the interface last loaded."""
 
     def __init__(self, board: Any) -> None:
         self.board = board
@@ -128,304 +454,49 @@ class StackupCommands:
     def get_stackup(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return copper and dielectric thicknesses and the board's layer names.
 
-        ``params`` is unused: the tool takes no arguments. The name is part
-        of the command-handler signature the dispatcher always passes.
+        Pass ``expected`` to compare the stackup with a recipe in the same call.
+        Each row names a layer by ``index`` or ``layer`` and may give ``type``,
+        ``thicknessMm``, and ``epsilonR``. Thickness uses ``thicknessToleranceMm``
+        (default 0.001 mm). Permittivity uses ``epsilonTolerance`` (default 0.01).
         """
-        del params
         if not self.board:
-            return no_board()
+            return _no_board()
         try:
-            return self._read()
+            current = self._read()
         except Exception as exc:
             logger.error(f"get_stackup failed: {exc}")
-            return {
-                "success": False,
-                "message": "Failed to read stackup",
-                "errorDetails": str(exc),
-            }
-
-    def check_stackup(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Compare the board stackup with a recipe supplied by the caller.
-
-        Each entry in ``expected`` names a row by ``index`` or ``layer`` and
-        may give ``type``, ``thicknessMm``, and ``epsilonR``. Thickness uses
-        ``thicknessToleranceMm`` (default 0.001 mm). Permittivity uses
-        ``epsilonTolerance`` (default 0.01). A difference inside the tolerance
-        is not a mismatch.
-        """
-        if not self.board:
-            return no_board()
-        try:
-            return self._check(params)
-        except Exception as exc:
-            logger.error(f"check_stackup failed: {exc}")
-            return {
-                "success": False,
-                "message": "Failed to check stackup",
-                "errorDetails": str(exc),
-            }
-
-    def _check(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        expected = params.get("expected")
-        if not isinstance(expected, list) or not expected:
-            return _failure(
-                "expected must list at least one row",
-                "expected",
-            )
-        thickness_tol, error = _tolerance(params, "thicknessToleranceMm", 0.001)
-        if error is not None:
-            return error
-        epsilon_tol, error = _tolerance(params, "epsilonTolerance", 0.01)
-        if error is not None:
-            return error
-
-        current = self._read()
-        if not current.get("success"):
+            return _failure("Failed to read stackup", str(exc))
+        if not current.get("success") or "expected" not in params or params.get("expected") is None:
             return current
-
-        mismatches: List[Dict[str, Any]] = []
-        for row in expected:
-            if not isinstance(row, dict):
-                return _failure("each expected row must be an object", "expected")
-            entry, error, missing = self._locate(current["layers"], row)
-            if error is not None:
-                return error
-            if missing or entry is None:
-                mismatches.append(
-                    _difference(
-                        row.get("index"),
-                        row.get("layer"),
-                        "layer",
-                        None,
-                        row.get("layer", row.get("index")),
-                        None,
-                    )
-                )
-                continue
-            row_diffs, error = self._differences(entry, row, thickness_tol, epsilon_tol)
-            if error is not None:
-                return error
-            mismatches.extend(row_diffs)
-
-        return {
-            "success": True,
-            "ok": not mismatches,
-            "mismatchCount": len(mismatches),
-            "mismatches": mismatches,
-        }
-
-    def _locate(
-        self, layers: List[Dict[str, Any]], row: Dict[str, Any]
-    ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], bool]:
-        raw_index = row.get("index")
-        index = None
-        if raw_index is not None:
-            index = as_int(raw_index)
-            if index is None:
-                return None, _failure("index must be an integer", "index"), False
-        layer = row.get("layer")
-        if layer is not None and (not isinstance(layer, str) or not layer):
-            return None, _failure("layer must be a string", "layer"), False
-        if index is None and layer is None:
-            return (
-                None,
-                _failure(
-                    "each expected row needs an index or a layer",
-                    "index or layer",
-                ),
-                False,
-            )
-
-        chosen: Optional[Dict[str, Any]] = None
-        if index is not None:
-            if index < 0 or index >= len(layers):
-                return None, None, True
-            chosen = layers[index]
-        if isinstance(layer, str):
-            hits = [
-                entry
-                for entry in layers
-                if entry.get("canonical") == layer or entry.get("name") == layer
-            ]
-            if len(hits) > 1:
-                return (
-                    None,
-                    _failure(
-                        f"More than one stackup row is named {layer}",
-                        "layer",
-                    ),
-                    False,
-                )
-            if not hits:
-                return None, None, True
-            if chosen is not None and hits[0]["index"] != chosen["index"]:
-                return (
-                    None,
-                    _failure(
-                        "index and layer name different rows",
-                        "pass the index of that layer, or the layer on its own",
-                    ),
-                    False,
-                )
-            chosen = hits[0]
-        return chosen, None, False
-
-    def _differences(
-        self,
-        entry: Dict[str, Any],
-        row: Dict[str, Any],
-        thickness_tol: float,
-        epsilon_tol: float,
-    ) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
-        found: List[Dict[str, Any]] = []
-        label = entry.get("canonical") or entry.get("name")
-        if "type" in row and row["type"] is not None:
-            if not isinstance(row["type"], str):
-                return [], _failure("type must be a string", "type")
-            if row["type"] != entry.get("type"):
-                found.append(
-                    _difference(entry["index"], label, "type", entry.get("type"), row["type"], None)
-                )
-        if "thicknessMm" in row and row["thicknessMm"] is not None:
-            expected = as_float(row["thicknessMm"])
-            if expected is None:
-                return [], _failure("thicknessMm must be a number", "thicknessMm")
-            actual = entry.get("thicknessMm")
-            if actual is None or abs(actual - expected) > thickness_tol:
-                delta = None if actual is None else actual - expected
-                found.append(
-                    _difference(entry["index"], label, "thicknessMm", actual, expected, delta)
-                )
-        if "epsilonR" in row and row["epsilonR"] is not None:
-            expected_eps = as_float(row["epsilonR"])
-            if expected_eps is None:
-                return [], _failure("epsilonR must be a number", "epsilonR")
-            actual_eps = entry.get("epsilonR")
-            if actual_eps is None or abs(actual_eps - expected_eps) > epsilon_tol:
-                delta = None if actual_eps is None else actual_eps - expected_eps
-                found.append(
-                    _difference(entry["index"], label, "epsilonR", actual_eps, expected_eps, delta)
-                )
-        return found, None
+        return compare_stackup(current, params)
 
     def _read(self) -> Dict[str, Any]:
-        settings_fn = getattr(self.board, "GetDesignSettings", None)
-        if not callable(settings_fn):
-            return {
-                "success": False,
-                "message": "Board has no design settings",
-                "errorDetails": "GetDesignSettings is not available",
-            }
-        settings = settings_fn()
-        stack_fn = getattr(settings, "GetStackup", None)
-        if not callable(stack_fn):
-            return {
-                "success": False,
-                "message": "Board has no stackup",
-                "errorDetails": "GetDesignSettings().GetStackup is not available",
-            }
-        stack = stack_fn()
-        count = as_int(stack.GetCount())
-        if count is None:
-            return {
-                "success": False,
-                "message": "Stackup has no layer count",
-                "errorDetails": "BOARD_STACKUP.GetCount did not return an integer",
-            }
+        path = self._board_path()
+        if path is None:
+            return _failure(
+                "Board has no file",
+                "The loaded board has no .kicad_pcb path to read the stackup from",
+            )
+        file_path = Path(path)
+        if not file_path.is_file():
+            return _failure(
+                "Board file is missing",
+                f"Cannot read stackup from {path}",
+            )
+        try:
+            text = file_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            return _failure("Failed to read board file", str(exc))
+        return read_stackup_text(self.board, text)
 
-        layers: List[Dict[str, Any]] = []
-        thickness_sum_nm = 0
-        saw_thickness = False
-        for index in range(count):
-            item = stack.GetLayer(index)
-            entry = self._entry(item, index)
-            layers.append(entry)
-            if entry.get("thicknessNm") is not None:
-                thickness_sum_nm += entry["thicknessNm"]
-                saw_thickness = True
-
-        for entry in layers:
-            entry.pop("thicknessNm", None)
-
-        result: Dict[str, Any] = {
-            "success": True,
-            "copperCount": sum(1 for entry in layers if entry.get("type") == "copper"),
-            "layers": layers,
-        }
-        board_nm = self._board_thickness_nm(settings)
-        if board_nm is not None:
-            result["boardThicknessMm"] = board_nm / 1_000_000
-        elif saw_thickness:
-            result["boardThicknessMm"] = thickness_sum_nm / 1_000_000
-        return result
-
-    def _board_thickness_nm(self, settings: Any) -> Optional[int]:
-        getter = getattr(settings, "GetBoardThickness", None)
+    def _board_path(self) -> Optional[str]:
+        getter = getattr(self.board, "GetFileName", None)
         if not callable(getter):
             return None
         try:
-            return as_int(getter())
-        except TypeError:
+            path = getter()
+        except Exception:
             return None
-
-    def _entry(self, item: Any, index: int) -> Dict[str, Any]:
-        kind = _item_type(item)
-        layer_id = None
-        layer_fn = getattr(item, "GetBrdLayerId", None)
-        if callable(layer_fn):
-            try:
-                layer_id = as_int(layer_fn())
-            except TypeError:
-                layer_id = None
-
-        sublayers = _sublayer_count(item)
-        pieces: List[Dict[str, Any]] = []
-        total_nm = 0
-        saw = False
-        for sub in range(sublayers):
-            piece: Dict[str, Any] = {}
-            thick = _call_nm(item, "GetThickness", sub)
-            if thick is not None:
-                piece["thicknessMm"] = nm_to_mm(thick)
-                total_nm += thick
-                saw = True
-            if kind == "dielectric":
-                epsilon = self._number(item, "GetEpsilonR", sub)
-                loss = self._number(item, "GetLossTangent", sub)
-                material = _text(item, "GetMaterial", sub)
-                if epsilon is not None:
-                    piece["epsilonR"] = epsilon
-                if loss is not None:
-                    piece["lossTangent"] = loss
-                if material is not None:
-                    piece["material"] = material
-            if piece:
-                pieces.append(piece)
-
-        entry: Dict[str, Any] = {"index": index, "type": kind}
-        entry.update(layer_fields(self.board, layer_id))
-        if saw:
-            entry["thicknessMm"] = total_nm / 1_000_000
-            entry["thicknessNm"] = total_nm
-        if kind == "dielectric" and pieces:
-            first = pieces[0]
-            for key in ("epsilonR", "lossTangent", "material"):
-                if key in first:
-                    entry[key] = first[key]
-            if sublayers > 1:
-                entry["sublayers"] = pieces
-        return entry
-
-    def _number(self, item: Any, method: str, index: int) -> Optional[float]:
-        fn = getattr(item, method, None)
-        if not callable(fn):
-            return None
-        try:
-            return as_float(fn(index))
-        except TypeError:
-            if index != 0:
-                return None
-            try:
-                return as_float(fn())
-            except TypeError:
-                return None
+        if isinstance(path, str) and path:
+            return path
+        return None

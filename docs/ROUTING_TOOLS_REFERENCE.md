@@ -145,33 +145,37 @@ Add a via to the PCB.
 
 ### route_differential_pair
 
-Route a differential pair between two sets of points.
+Route a differential pair as two parallel straight segments.
 
 **Parameters:**
 
-| Parameter   | Type   | Required | Description                                |
-| ----------- | ------ | -------- | ------------------------------------------ |
-| positivePad | object | Yes      | Positive pad with reference and pad number |
-| negativePad | object | Yes      | Negative pad with reference and pad number |
-| layer       | string | Yes      | PCB layer                                  |
-| width       | number | Yes      | Trace width in mm                          |
-| gap         | number | Yes      | Gap between traces in mm                   |
-| positiveNet | string | Yes      | Positive net name                          |
-| negativeNet | string | Yes      | Negative net name                          |
+| Parameter   | Type   | Required | Description                                     |
+| ----------- | ------ | -------- | ----------------------------------------------- |
+| startPos    | object | Yes      | Start of the pair's centreline: `{x, y, unit?}` |
+| endPos      | object | Yes      | End of the pair's centreline: `{x, y, unit?}`   |
+| layer       | string | Yes      | PCB layer                                       |
+| width       | number | Yes      | Trace width in mm                               |
+| gap         | number | Yes      | Edge-to-edge gap between the two traces in mm   |
+| positiveNet | string | Yes      | Positive net name                               |
+| negativeNet | string | Yes      | Negative net name                               |
 
 **Usage Notes:**
 
 - Used for high-speed signals like USB, Ethernet, HDMI, etc.
 - Maintains controlled impedance through consistent trace width and gap
-- Both traces are routed in parallel with specified separation
-- Pad object format: `{"reference": "U1", "pad": "1"}`
+- Each trace's centreline is offset (gap + width) / 2 from the path, so the
+  copper between them is exactly `gap`
+- Looking from `startPos` to `endPos` on the board (y down), the positive trace
+  runs on the right and the negative on the left
+- The segments are straight and do not end on pads; join them to the pads with
+  `route_trace` or `route_pad_to_pad`
 
 **Example:**
 
 ```json
 {
-  "positivePad": { "reference": "J1", "pad": "2" },
-  "negativePad": { "reference": "J1", "pad": "3" },
+  "startPos": { "x": 20, "y": 30, "unit": "mm" },
+  "endPos": { "x": 45, "y": 30, "unit": "mm" },
   "layer": "F.Cu",
   "width": 0.2,
   "gap": 0.2,
@@ -224,17 +228,22 @@ Get a list of all nets in the PCB with optional statistics.
 
 **Parameters:**
 
-| Parameter    | Type    | Required | Description                                          |
-| ------------ | ------- | -------- | ---------------------------------------------------- |
-| includeStats | boolean | No       | Include statistics (track count, total length, etc.) |
-| unit         | string  | No       | Unit for length measurements: "mm" or "inch"         |
+| Parameter    | Type    | Required | Description                                               |
+| ------------ | ------- | -------- | --------------------------------------------------------- |
+| includeStats | boolean | No       | Add per-net track count, total track length and via count |
+| unit         | string  | No       | Unit for track lengths: "mm" (default), "mil" or "inch"   |
 
 **Usage Notes:**
 
 - Returns all nets present in the board
-- Statistics include track count, via count, and total trace length
+- With `includeStats`, each net gets
+  `"stats": {"trackCount": 2, "trackLength": 25.4, "viaCount": 1}` and the
+  response gets `"unit"`. Nets with no copper report zeros.
+- `trackLength` sums straight tracks and arcs (arc length). On the IPC
+  backend only straight segments are counted, because the IPC backend's
+  `get_tracks()` returns straight segments only.
+- An unsupported `unit` is an error rather than silently treated as mm
 - Useful for verifying net connectivity and routing completeness
-- Length measurements default to mm
 
 **Example:**
 
@@ -490,8 +499,8 @@ For high-speed differential signals like USB D+ and D-:
 {
   "tool": "route_differential_pair",
   "params": {
-    "positivePad": {"reference": "U1", "pad": "14"},
-    "negativePad": {"reference": "U1", "pad": "15"},
+    "startPos": {"x": 20, "y": 30, "unit": "mm"},
+    "endPos": {"x": 45, "y": 30, "unit": "mm"},
     "layer": "F.Cu",
     "width": 0.2,
     "gap": 0.2,

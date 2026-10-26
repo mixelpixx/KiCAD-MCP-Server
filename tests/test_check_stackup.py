@@ -1,7 +1,7 @@
-"""Unit tests for check_stackup.
+"""Recipe comparison is an optional argument of get_stackup.
 
-A recipe is the stackup a fab or a solver expects. The check reports each
-field that is outside its tolerance and does not edit the board.
+A separate check_stackup tool would spend a slot against client tool limits.
+The same comparison rides along when the caller passes ``expected``.
 """
 
 from types import SimpleNamespace
@@ -12,48 +12,63 @@ from commands.stackup import StackupCommands
 pytestmark = pytest.mark.unit
 
 
-def _item(type_id, layer_id, thickness_nm, **extra):
-    def _at(index, value):
-        if index != 0:
-            raise AssertionError(f"unexpected sublayer {index}")
-        return value
-
-    return SimpleNamespace(
-        GetType=lambda: type_id,
-        GetBrdLayerId=lambda: layer_id,
-        GetThickness=lambda index=0: _at(index, thickness_nm),
-        GetSublayersCount=lambda: 1,
-        GetEpsilonR=lambda index=0: _at(index, extra.get("epsilon")),
-        GetLossTangent=lambda index=0: _at(index, extra.get("loss")),
-        GetMaterial=lambda index=0: _at(index, extra.get("material")),
+_BOARD = """\
+(kicad_pcb (version 20240108) (generator "pcbnew")
+  (general
+    (thickness 1.61)
+  )
+  (setup
+    (stackup
+      (layer "F.Cu"
+        (type "copper")
+        (thickness 0.035)
+      )
+      (layer "dielectric 1"
+        (type "core")
+        (thickness 0.139)
+        (material "FR4")
+        (epsilon_r 4.5)
+        (loss_tangent 0.02)
+      )
+      (layer "B.Cu"
+        (type "copper")
+        (thickness 0.035)
+      )
     )
+  )
+)
+"""
 
 
-def _commands(items, names, board_thickness_nm=1_610_000):
-    settings = SimpleNamespace(
-        GetStackup=lambda: SimpleNamespace(
-            GetCount=lambda: len(items), GetLayer=lambda i: items[i]
-        ),
-        GetBoardThickness=lambda: board_thickness_nm,
-    )
+def _commands(tmp_path):
+    path = tmp_path / "board.kicad_pcb"
+    path.write_text(_BOARD, encoding="utf-8")
+    ids = {"F.Cu": 0, "B.Cu": 2, "Top Side": 0}
+    user = {0: "Top Side", 2: "B.Cu"}
+    standard = {0: "F.Cu", 2: "B.Cu"}
+
+    def layer_id(name):
+        return ids.get(name, -1)
+
     board = SimpleNamespace(
-        GetDesignSettings=lambda: settings,
-        GetLayerName=lambda layer_id: names[layer_id],
+        GetFileName=lambda: str(path),
+        GetLayerID=layer_id,
+        GetLayerName=lambda layer_id: user[layer_id],
+        GetStandardLayerName=lambda layer_id: standard[layer_id],
     )
     return StackupCommands(board)
 
 
-def _sample():
-    items = [
-        _item(1, 0, 35_000),
-        _item(2, -1, 139_000, epsilon=4.5, loss=0.02, material="FR4"),
-        _item(1, 31, 35_000),
-    ]
-    return _commands(items, {0: "Top Side", 31: "Bottom Side"})
+def test_reading_without_a_recipe_has_no_comparison(tmp_path):
+    result = _commands(tmp_path).get_stackup({})
+    assert result["success"] is True
+    assert result["copperCount"] == 2
+    assert "ok" not in result
+    assert "mismatches" not in result
 
 
-def test_matching_recipe_is_ok():
-    result = _sample().check_stackup(
+def test_matching_recipe_is_ok(tmp_path):
+    result = _commands(tmp_path).get_stackup(
         {
             "expected": [
                 {"layer": "Top Side", "type": "copper", "thicknessMm": 0.035},
@@ -64,17 +79,14 @@ def test_matching_recipe_is_ok():
     )
     assert result["success"] is True
     assert result["ok"] is True
+    assert result["mismatchCount"] == 0
     assert result["mismatches"] == []
+    assert result["layers"][0]["name"] == "Top Side"
 
 
-def test_thickness_and_epsilon_outside_tolerance():
-    result = _sample().check_stackup(
-        {
-            "expected": [
-                {"layer": "F.Cu", "thicknessMm": 0.018},
-                {"index": 1, "epsilonR": 4.2},
-            ]
-        }
+def test_thickness_and_epsilon_outside_tolerance(tmp_path):
+    result = _commands(tmp_path).get_stackup(
+        {"expected": [{"layer": "F.Cu", "thicknessMm": 0.018}, {"index": 1, "epsilonR": 4.2}]}
     )
     assert result["success"] is True
     assert result["ok"] is False
@@ -86,26 +98,25 @@ def test_thickness_and_epsilon_outside_tolerance():
     assert by_field["epsilonR"]["delta"] == pytest.approx(0.3)
 
 
-def test_one_micron_is_inside_the_default_tolerance():
-    result = _sample().check_stackup({"expected": [{"layer": "Top Side", "thicknessMm": 0.0355}]})
+def test_one_micron_is_inside_the_default_tolerance(tmp_path):
+    result = _commands(tmp_path).get_stackup(
+        {"expected": [{"layer": "Top Side", "thicknessMm": 0.0355}]}
+    )
     assert result["ok"] is True
 
 
-def test_wider_tolerance_accepts_a_copper_weight_step():
-    """A caller who only cares about the dielectric can loosen the copper check."""
-    strict = _sample().check_stackup({"expected": [{"layer": "F.Cu", "thicknessMm": 0.018}]})
-    loose = _sample().check_stackup(
-        {
-            "expected": [{"layer": "F.Cu", "thicknessMm": 0.018}],
-            "thicknessToleranceMm": 0.02,
-        }
+def test_wider_tolerance_accepts_a_copper_weight_step(tmp_path):
+    commands = _commands(tmp_path)
+    strict = commands.get_stackup({"expected": [{"layer": "F.Cu", "thicknessMm": 0.018}]})
+    loose = commands.get_stackup(
+        {"expected": [{"layer": "F.Cu", "thicknessMm": 0.018}], "thicknessToleranceMm": 0.02}
     )
     assert strict["ok"] is False
     assert loose["ok"] is True
 
 
-def test_wrong_type_and_a_missing_layer():
-    result = _sample().check_stackup(
+def test_wrong_type_and_a_missing_layer(tmp_path):
+    result = _commands(tmp_path).get_stackup(
         {
             "expected": [
                 {"layer": "F.Cu", "type": "dielectric"},
@@ -123,14 +134,14 @@ def test_wrong_type_and_a_missing_layer():
     assert missing["expected"] == "In1.Cu"
 
 
-def test_empty_recipe_is_an_error():
-    result = _sample().check_stackup({"expected": []})
+def test_empty_recipe_is_an_error(tmp_path):
+    result = _commands(tmp_path).get_stackup({"expected": []})
     assert result["success"] is False
     assert result["message"] == "expected must list at least one row"
 
 
 def test_no_board():
-    result = StackupCommands(None).check_stackup(
+    result = StackupCommands(None).get_stackup(
         {"expected": [{"layer": "F.Cu", "thicknessMm": 0.035}]}
     )
     assert result["success"] is False

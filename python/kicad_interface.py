@@ -10,6 +10,7 @@ JSON and returns responses via stdout also as JSON.
 import hashlib
 import json
 import logging
+import math
 import os
 import shutil
 import sys
@@ -599,7 +600,6 @@ class KiCADInterface(SchematicHandlersMixin):
             "query_traces": self.routing_commands.query_traces,
             "query_zones": self.routing_commands.query_zones,
             "get_stackup": self.stackup_commands.get_stackup,
-            "check_stackup": self.stackup_commands.check_stackup,
             "add_gnd_stitching_vias": self.routing_commands.add_gnd_stitching_vias,
             "modify_trace": self.routing_commands.modify_trace,
             "copy_routing_pattern": self.routing_commands.copy_routing_pattern,
@@ -5608,11 +5608,38 @@ print("ok")
             return {"success": False, "message": str(e)}
 
     def _ipc_get_nets_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """IPC handler for get_nets_list - gets nets with real-time data"""
-        try:
-            nets = self.ipc_board_api.get_nets()
+        """IPC handler for get_nets_list - gets nets with real-time data.
 
-            return {"success": True, "nets": nets, "count": len(nets)}
+        ``includeStats`` / ``unit`` give the same per-net ``stats`` as the SWIG
+        handler, computed from the live board's tracks and vias.
+        ``ipc_board_api.get_tracks()`` returns straight segments only, so arc
+        tracks are not counted on this path.
+        """
+        try:
+            from commands.routing import length_unit_error, net_stats
+
+            unit = params.get("unit") or "mm"
+            unit_error = length_unit_error(unit)
+            if unit_error:
+                return unit_error
+
+            nets = self.ipc_board_api.get_nets()
+            if not params.get("includeStats", False):
+                return {"success": True, "nets": nets, "count": len(nets)}
+
+            tracks = [
+                (
+                    t["net"],
+                    math.hypot(t["end"]["x"] - t["start"]["x"], t["end"]["y"] - t["start"]["y"]),
+                )
+                for t in self.ipc_board_api.get_tracks()
+            ]
+            vias = [v["net"] for v in self.ipc_board_api.get_vias()]
+            stats = net_stats(tracks, vias, unit)
+            empty = {"trackCount": 0, "trackLength": 0.0, "viaCount": 0}
+            for net in nets:
+                net["stats"] = dict(stats.get(net["name"], empty))
+            return {"success": True, "nets": nets, "count": len(nets), "unit": unit}
         except Exception as e:
             logger.error(f"IPC get_nets_list error: {e}")
             return {"success": False, "message": str(e)}
@@ -6458,7 +6485,7 @@ def main() -> None:
                                 "serverInfo": {
                                     "name": "kicad-mcp-server",
                                     "title": "KiCAD PCB Design Assistant",
-                                    "version": "2.8.2",
+                                    "version": "2.8.3",
                                 },
                                 "instructions": "AI-assisted PCB design with KiCAD. Use tools to create projects, design boards, place components, route traces, and export manufacturing files.",
                             },

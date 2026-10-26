@@ -38,7 +38,8 @@ KiCAD-MCP-Server/
     logger.ts                 # Logging configuration
     tools/                    # Tool definitions (one file per category)
       registry.ts             # Tool category definitions and lookup
-      router.ts               # Router tools (list/search/execute)
+      router.ts               # Discovery tools (list categories, search)
+      toolboxes.ts            # Toolbox mode: which tools a client sees
       project.ts              # Project management tools
       board.ts                # Board operations tools
       component.ts            # Component tools
@@ -142,17 +143,32 @@ Every tool is registered individually with `server.tool()`, so any MCP client ca
 call any tool by name. The registry exists to help an assistant _find_ a tool it
 does not already know about:
 
-- `registry.ts` defines the categories and the small "essentials" list that
-  `search_tools` ranks first. It currently indexes 169 of the 229 registered
-  tools across 15 categories.
-- `router.ts` provides 3 discovery tools: `list_tool_categories`,
-  `get_category_tools` and `search_tools`.
-- Nothing is hidden behind a dispatcher. An earlier design routed calls through
+- `registry.ts` defines the categories, the small "essentials" (core) list that
+  `search_tools` ranks first, and the discovery tools. It indexes every
+  registered tool; `tests-ts/registry-completeness.test.ts` fails CI for a tool
+  that is registered but in no category.
+- `router.ts` provides `list_tool_categories`, `get_category_tools` and
+  `search_tools`.
+- Nothing is called through a dispatcher. An earlier design routed calls through
   an `execute_tool` meta-tool; that was rolled back because clients could not
   see the real tool schemas. See `docs/ROUTER_ARCHITECTURE.md` for that history.
-- A tool that is registered but missing from the registry still works, it is
-  simply harder to discover. `tests-ts/registry-completeness.test.ts` freezes
-  the number of such tools so it can only shrink.
+
+### Toolboxes (`src/tools/toolboxes.ts`)
+
+With `KICAD_MCP_TOOLBOXES` set, each category is a toolbox, and a client sees
+only the core tools, `search_tools` and the toolbox controls (`list_toolboxes`,
+`open_toolbox`, `close_toolbox`) plus the tools of open toolboxes. Unset, every
+tool is visible.
+
+- `ToolboxManager` wraps `server.tool()` and `server.registerTool()` before any
+  tool is registered and keeps each returned `RegisteredTool`.
+- Visibility is the SDK's own `enabled` flag, which it applies to `tools/list`
+  and `tools/call`. Opening or closing a toolbox flips the flags and sends one
+  `notifications/tools/list_changed`, so the client re-reads its list and gets
+  the real schemas.
+- Clients differ in when they act on that notification: Claude Code and VS Code
+  Copilot from the user's next message, Claude Desktop only after a restart.
+  Toolboxes named in the setting are open from the start in every client.
 
 ### Python Subprocess Communication
 
@@ -238,7 +254,7 @@ server.tool(
 
 ### Step 2: Add to Registry (if routed)
 
-If the tool should be discoverable via the router (not always visible), add it to a category in `src/tools/registry.ts`:
+Every tool must be in the registry: add it to the category it belongs to in `src/tools/registry.ts`, which also makes it part of that toolbox (or to `directToolNames` if it must always be visible, even in toolbox mode). `tests-ts/registry-completeness.test.ts` fails for a tool that is in neither:
 
 ```typescript
 {
@@ -313,7 +329,8 @@ Key test files:
 ## Key Design Decisions
 
 - **TypeScript + Python split**: TypeScript handles MCP protocol (well-supported SDK), Python handles KiCAD (only available API)
-- **Keyword discovery instead of routing**: all 229 tools stay individually callable; the registry indexes 169 of them so `search_tools` can find one without the client reading every schema
+- **Keyword discovery instead of routing**: every tool stays individually callable, and the registry indexes all of them so `search_tools` can find one without the client reading every schema
+- **Toolboxes as real tools**: toolbox mode hides and shows registered tools through the SDK's `enabled` flag and `tools/list_changed`, rather than calling hidden tools through a dispatcher, so the model always sees a tool's real schema
 - **Auto-save**: Every board-modifying SWIG operation auto-saves to prevent data loss
 - **Dynamic symbol loading**: Works around kicad-skip's inability to create symbols from scratch
 - **S-expression wire injection**: Works around kicad-skip's inability to create wires
@@ -326,7 +343,8 @@ Key test files:
 | ------------------------------------------ | ----------------------------------- |
 | `src/server.ts`                            | MCP server, subprocess management   |
 | `src/tools/registry.ts`                    | Tool categories and organization    |
-| `src/tools/router.ts`                      | Router meta-tools                   |
+| `src/tools/router.ts`                      | Discovery tools                     |
+| `src/tools/toolboxes.ts`                   | Toolbox mode and its controls       |
 | `python/kicad_interface.py`                | Python entry point, command routing |
 | `python/kicad_api/factory.py`              | Backend selection                   |
 | `python/commands/dynamic_symbol_loader.py` | Symbol injection system             |

@@ -472,6 +472,45 @@ BOARD_TOOLS = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "get_stackup",
+        "title": "Get Board Stackup",
+        "description": (
+            "Read the board stackup from the board file. Returns each copper, dielectric, "
+            "mask, and silk entry with its thickness in millimetres. Layer names are the "
+            "names stored on the board, so a renamed layer such as 'Top Side' is returned "
+            "beside the canonical F.Cu name. pcbnew does not expose the stackup, so this "
+            "reads the (stackup ...) section of the .kicad_pcb file. Pass expected to "
+            "compare those rows with a recipe in the same call."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "expected": {
+                    "type": "array",
+                    "description": "Rows to compare. Each row needs index or layer. Omit to only read.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "index": {"type": "integer"},
+                            "layer": {"type": "string"},
+                            "type": {"type": "string"},
+                            "thicknessMm": {"type": "number"},
+                            "epsilonR": {"type": "number"},
+                        },
+                    },
+                },
+                "thicknessToleranceMm": {
+                    "type": "number",
+                    "description": "Allowed thickness difference in millimetres. Default 0.001.",
+                },
+                "epsilonTolerance": {
+                    "type": "number",
+                    "description": "Allowed relative-permittivity difference. Default 0.01.",
+                },
+            },
+        },
+    },
+    {
         "name": "get_board_info",
         "title": "Get Board Information",
         "description": "Retrieves comprehensive board information including dimensions, layer count, component count, and design rules.",
@@ -895,7 +934,15 @@ COMPONENT_TOOLS = [
         "description": "Returns every pad attached to a net name or net code.",
         "inputSchema": {
             "type": "object",
-            "properties": {"net": {"type": "string"}, "netCode": {"type": "number"}},
+            "properties": {
+                "net": {"type": "string"},
+                "netCode": {"type": "number"},
+                "unit": {
+                    "type": "string",
+                    "enum": ["mm", "mil", "inch"],
+                    "description": "Unit for positions, sizes and bounding boxes (default: mm)",
+                },
+            },
         },
     },
     {
@@ -1739,7 +1786,20 @@ ROUTING_TOOLS = [
         "name": "get_nets_list",
         "title": "List All Nets",
         "description": "Returns a list of all electrical nets defined on the board.",
-        "inputSchema": {"type": "object", "properties": {}},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "includeStats": {
+                    "type": "boolean",
+                    "description": "Add per-net track count, total track length and via count",
+                },
+                "unit": {
+                    "type": "string",
+                    "enum": ["mm", "mil", "inch"],
+                    "description": "Unit for track lengths (default: mm)",
+                },
+            },
+        },
     },
     {
         "name": "create_netclass",
@@ -1839,15 +1899,40 @@ ROUTING_TOOLS = [
     {
         "name": "route_differential_pair",
         "title": "Route Differential Pair",
-        "description": "Routes a differential signal pair with matched lengths and spacing.",
+        "description": (
+            "Routes a differential pair as two parallel straight segments. startPos and "
+            "endPos are the pair's centreline; looking from start to end on the board "
+            "(y down), the positive trace runs on the right and the negative on the "
+            "left, each offset by (gap + width) / 2."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "positiveName": {
+                "startPos": {
+                    "type": "object",
+                    "description": "Start of the pair's centreline",
+                    "properties": {
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "unit": {"type": "string", "enum": ["mm", "mil", "inch"]},
+                    },
+                    "required": ["x", "y"],
+                },
+                "endPos": {
+                    "type": "object",
+                    "description": "End of the pair's centreline",
+                    "properties": {
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "unit": {"type": "string", "enum": ["mm", "mil", "inch"]},
+                    },
+                    "required": ["x", "y"],
+                },
+                "positiveNet": {
                     "type": "string",
                     "description": "Positive signal net name",
                 },
-                "negativeName": {
+                "negativeNet": {
                     "type": "string",
                     "description": "Negative signal net name",
                 },
@@ -1858,21 +1943,10 @@ ROUTING_TOOLS = [
                 },
                 "gap": {
                     "type": "number",
-                    "description": "Gap between traces in millimeters",
-                },
-                "points": {
-                    "type": "array",
-                    "description": "Waypoints for the pair routing",
-                    "items": {
-                        "type": "array",
-                        "items": {"type": "number"},
-                        "minItems": 2,
-                        "maxItems": 2,
-                    },
-                    "minItems": 2,
+                    "description": "Edge-to-edge gap between the two traces in millimeters",
                 },
             },
-            "required": ["positiveName", "negativeName", "width", "gap", "points"],
+            "required": ["startPos", "endPos", "positiveNet", "negativeNet"],
         },
     },
 ]
@@ -3868,60 +3942,6 @@ GUI_DRIVER_TOOLS = [
     },
 ]
 
-# Read-only geometry for a PDN or EMC review. One entry per tool so a
-# later query can extend this list without changing the copper editor.
-ANALYSIS_TOOLS = [
-    {
-        "name": "get_stackup",
-        "title": "Get Board Stackup",
-        "description": (
-            "Read the board stackup. Returns each copper, dielectric, mask, and silk "
-            "entry with its thickness in millimetres. Layer names are the names stored "
-            "on the board, so a renamed layer such as 'Top Side' is returned beside the "
-            "canonical F.Cu name."
-        ),
-        "inputSchema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "check_stackup",
-        "title": "Check Board Stackup",
-        "description": (
-            "Compare the board stackup with a recipe. Each expected row names a layer "
-            "by index or by name and may give type, thicknessMm, and epsilonR. "
-            "thicknessToleranceMm defaults to 0.001 mm and epsilonTolerance defaults "
-            "to 0.01. The result lists every field that is outside its tolerance."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "expected": {
-                    "type": "array",
-                    "description": "Rows to compare. Each row needs index or layer.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "index": {"type": "integer"},
-                            "layer": {"type": "string"},
-                            "type": {"type": "string"},
-                            "thicknessMm": {"type": "number"},
-                            "epsilonR": {"type": "number"},
-                        },
-                    },
-                },
-                "thicknessToleranceMm": {
-                    "type": "number",
-                    "description": "Allowed thickness difference in millimetres. Default 0.001.",
-                },
-                "epsilonTolerance": {
-                    "type": "number",
-                    "description": "Allowed relative-permittivity difference. Default 0.01.",
-                },
-            },
-            "required": ["expected"],
-        },
-    },
-]
-
 TOOL_SCHEMAS: Dict[str, Any] = {}
 
 # Combine all tool categories
@@ -3938,7 +3958,6 @@ for tool in (
     + VALIDATION_TOOLS
     + DIGIKEY_TOOLS
     + GUI_DRIVER_TOOLS
-    + ANALYSIS_TOOLS
 ):
     TOOL_SCHEMAS[tool["name"]] = tool
 
