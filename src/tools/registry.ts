@@ -27,11 +27,12 @@ export const toolCategories: ToolCategory[] = [
   {
     name: "board",
     description:
-      "Board configuration: layers, mounting holes, text and graphics, SVG logos, zones, visualization",
+      "Board configuration: layers, stackup, mounting holes, text and graphics, SVG logos, zones, visualization",
     tools: [
       "add_layer",
       "set_active_layer",
       "get_layer_list",
+      "get_stackup",
       "add_mounting_hole",
       "add_board_text",
       "list_graphics",
@@ -360,11 +361,6 @@ export const toolCategories: ToolCategory[] = [
       "kicad_gui_tree_atspi",
       "kicad_gui_click_atspi",
     ],
-  },
-  {
-    name: "analysis",
-    description: "Read-only board geometry for PDN and EMC review.",
-    tools: ["get_stackup"],
   },
 ];
 

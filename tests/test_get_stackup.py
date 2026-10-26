@@ -1,8 +1,8 @@
 """Unit tests for get_stackup.
 
-The stackup is what a DC copper solve and a near-field model both need:
-copper thickness, the dielectric gap, and the layer name stored on the
-board. These tests mock pcbnew so they run without KiCad installed.
+KiCad 10's pcbnew bindings cannot read a BOARD_STACKUP, so the command reads
+the ``(stackup ...)`` section of the ``.kicad_pcb`` file. These tests use a
+file snippet and a board that has no GetStackup method.
 """
 
 from types import SimpleNamespace
@@ -13,97 +13,107 @@ from commands.stackup import StackupCommands
 pytestmark = pytest.mark.unit
 
 
-def _item(type_id, layer_id, thickness_nm, **extra):
-    """One BOARD_STACKUP_ITEM. Thickness is nanometres, as pcbnew returns it."""
-
-    def _at(index, value):
-        if index != 0:
-            raise AssertionError(f"unexpected sublayer {index}")
-        return value
-
-    return SimpleNamespace(
-        GetType=lambda: type_id,
-        GetBrdLayerId=lambda: layer_id,
-        GetThickness=lambda index=0: _at(index, thickness_nm),
-        GetSublayersCount=lambda: 1,
-        GetEpsilonR=lambda index=0: _at(index, extra.get("epsilon")),
-        GetLossTangent=lambda index=0: _at(index, extra.get("loss")),
-        GetMaterial=lambda index=0: _at(index, extra.get("material")),
+_BOARD = """\
+(kicad_pcb (version 20240108) (generator "pcbnew")
+  (general
+    (thickness 1.61)
+  )
+  (paper "A4")
+  (layers
+    (0 "Top Side" signal)
+    (2 "Bottom Side" signal)
+  )
+  (setup
+    (stackup
+      (layer "F.SilkS"
+        (type "Top Silk Screen")
+      )
+      (layer "F.Cu"
+        (type "copper")
+        (thickness 0.035)
+      )
+      (layer "dielectric 1"
+        (type "core")
+        (thickness 0.1)
+        (material "FR4 (170)")
+        (epsilon_r 4.0)
+        (loss_tangent 0.02)
+        (thickness 0.039)
+        (material "prepreg")
+        (epsilon_r 3.5)
+        (loss_tangent 0.01)
+      )
+      (layer "B.Cu"
+        (type "copper")
+        (thickness 0.035)
+      )
+      (copper_finish "None")
+      (dielectric_constraints no)
     )
+  )
+)
+"""
 
 
-def _board(items, names, board_thickness_nm=None):
-    settings = SimpleNamespace(
-        GetStackup=lambda: SimpleNamespace(
-            GetCount=lambda: len(items), GetLayer=lambda i: items[i]
-        ),
-        GetBoardThickness=(lambda: board_thickness_nm) if board_thickness_nm is not None else None,
-    )
-    if board_thickness_nm is None:
-        # Attribute missing, not a mock that would answer anything.
-        del settings.GetBoardThickness
-    return SimpleNamespace(
-        GetDesignSettings=lambda: settings,
-        GetLayerName=lambda layer_id: names[layer_id],
-    )
+def _board(path, *, with_names=True):
+    """A loaded board whose only stackup access is the file on disk."""
+    ids = {"F.Cu": 0, "B.Cu": 2, "Top Side": 0, "Bottom Side": 2}
+    user = {0: "Top Side", 2: "Bottom Side"}
+    standard = {0: "F.Cu", 2: "B.Cu"}
+
+    def layer_id(name):
+        return ids.get(name, -1)
+
+    board = SimpleNamespace(GetFileName=lambda: path, GetLayerID=layer_id)
+    if with_names:
+        board.GetLayerName = lambda layer_id: user[layer_id]
+        board.GetStandardLayerName = lambda layer_id: standard[layer_id]
+    return board
 
 
-def test_custom_names_and_dielectric_gap():
-    """A renamed outer layer keeps its board name next to F.Cu, and 139 µm is 0.139 mm."""
-    items = [
-        _item(1, 0, 35_000),
-        _item(2, -1, 139_000, epsilon=4.5, loss=0.02, material="FR4"),
-        _item(1, 31, 35_000),
-    ]
-    names = {0: "Top Side", 31: "Bottom Side"}
-    result = StackupCommands(_board(items, names, board_thickness_nm=1_610_000)).get_stackup({})
+def test_file_stackup_keeps_custom_names_and_sums_sublayers(tmp_path):
+    """A renamed outer layer stays beside F.Cu, and 0.1 + 0.039 mm is 0.139 mm."""
+    path = tmp_path / "board.kicad_pcb"
+    path.write_text(_BOARD, encoding="utf-8")
+    result = StackupCommands(_board(str(path))).get_stackup({})
 
     assert result["success"] is True
     assert result["copperCount"] == 2
     assert result["boardThicknessMm"] == pytest.approx(1.61)
-    top, gap, bottom = result["layers"]
+    silk, top, gap, bottom = result["layers"]
+    assert silk["type"] == "silkscreen"
+    assert silk["canonical"] == "F.SilkS"
+    assert "thicknessMm" not in silk
     assert top["type"] == "copper"
     assert top["name"] == "Top Side"
     assert top["canonical"] == "F.Cu"
+    assert top["layerId"] == 0
     assert top["thicknessMm"] == pytest.approx(0.035)
     assert gap["type"] == "dielectric"
     assert gap["thicknessMm"] == pytest.approx(0.139)
-    assert gap["epsilonR"] == pytest.approx(4.5)
+    assert gap["epsilonR"] == pytest.approx(4.0)
     assert gap["lossTangent"] == pytest.approx(0.02)
-    assert gap["material"] == "FR4"
+    assert gap["material"] == "FR4 (170)"
     assert "name" not in gap
+    assert gap["sublayers"][1]["material"] == "prepreg"
+    assert gap["sublayers"][1]["epsilonR"] == pytest.approx(3.5)
     assert bottom["canonical"] == "B.Cu"
     assert bottom["name"] == "Bottom Side"
+    assert bottom["layerId"] == 2
 
 
-def test_dielectric_sublayers_are_summed():
-    """Two dielectric sublayers add. The total is what a plane-to-ground gap uses."""
-    gap = _item(2, -1, 0)
-    gap.GetSublayersCount = lambda: 2
-
-    def thickness(index):
-        return {0: 100_000, 1: 39_000}[index]
-
-    def epsilon(index):
-        return {0: 4.0, 1: 3.5}[index]
-
-    gap.GetThickness = thickness
-    gap.GetEpsilonR = epsilon
-    gap.GetLossTangent = lambda index: 0.01
-    gap.GetMaterial = lambda index: "FR4" if index == 0 else "prepreg"
-
-    result = StackupCommands(_board([gap], {})).get_stackup({})
-    entry = result["layers"][0]
-    assert entry["thicknessMm"] == pytest.approx(0.139)
-    assert entry["sublayers"][1]["material"] == "prepreg"
-    assert result["boardThicknessMm"] == pytest.approx(0.139)
-
-
-def test_missing_stackup_is_an_error():
-    board = SimpleNamespace(GetDesignSettings=lambda: SimpleNamespace())
-    result = StackupCommands(board).get_stackup({})
+def test_missing_stackup_section_is_an_error(tmp_path):
+    path = tmp_path / "empty.kicad_pcb"
+    path.write_text("(kicad_pcb (version 20240108) (general (thickness 1.6)))\n", encoding="utf-8")
+    result = StackupCommands(_board(str(path))).get_stackup({})
     assert result["success"] is False
     assert result["message"] == "Board has no stackup"
+
+
+def test_missing_file_is_an_error(tmp_path):
+    result = StackupCommands(_board(str(tmp_path / "gone.kicad_pcb"))).get_stackup({})
+    assert result["success"] is False
+    assert result["message"] == "Board file is missing"
 
 
 def test_no_board():

@@ -20,4 +20,3 @@ export { registerFreeroutingTools } from "./freerouting.js";
 export { registerPartsRegistryTools } from "./parts-registry.js";
 export { registerValidationTools } from "./validation.js";
 export { registerDigiKeyApiTools } from "./digikey-api.js";
-export { registerStackupTools } from "./stackup.js";
