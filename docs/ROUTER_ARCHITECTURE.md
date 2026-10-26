@@ -2,10 +2,16 @@
 
 > **⚠ Historical design document.** The gating half of this design was
 > deliberately rolled back in 2026-03 and `execute_tool` was deleted in
-> 2026-05. Nothing is hidden from the client today and no context is saved.
-> What remains is a search/browse catalogue. Read
+> 2026-05. What remained was a search/browse catalogue. Read
 > [Status: discovery only](#status-discovery-only-no-context-reduction)
 > below before treating anything here as current behaviour.
+>
+> **Context reduction is back, as toolboxes (2026-10).** With
+> `KICAD_MCP_TOOLBOXES` set, a client starts with the core tools and opens
+> categories as toolboxes. Unlike this design, an opened tool is a real tool
+> with its real schema: the server enables it and tells the client its tool
+> list changed, and nothing is called through a dispatcher. See the README's
+> Toolboxes section and `src/tools/toolboxes.ts`.
 
 ## Overview
 

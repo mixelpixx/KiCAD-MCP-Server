@@ -895,7 +895,15 @@ COMPONENT_TOOLS = [
         "description": "Returns every pad attached to a net name or net code.",
         "inputSchema": {
             "type": "object",
-            "properties": {"net": {"type": "string"}, "netCode": {"type": "number"}},
+            "properties": {
+                "net": {"type": "string"},
+                "netCode": {"type": "number"},
+                "unit": {
+                    "type": "string",
+                    "enum": ["mm", "mil", "inch"],
+                    "description": "Unit for positions, sizes and bounding boxes (default: mm)",
+                },
+            },
         },
     },
     {
@@ -1526,6 +1534,56 @@ ROUTING_TOOLS = [
         },
     },
     {
+        "name": "summarize_vias",
+        "title": "Summarize Vias",
+        "description": (
+            "Count vias without listing them. Returns the via count, how many run "
+            "from F.Cu to B.Cu, a drill histogram, and the layer spans. Filter by "
+            "net, rectangle, drill, or layer name. Layer names come from the board, "
+            "so B.Cu matches KiCad 9 and 10 as well as a renamed bottom layer."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {
+                    "type": "string",
+                    "description": "Only vias on this net, for example GND",
+                },
+                "boundingBox": {
+                    "type": "object",
+                    "description": "Only vias whose centre lies inside this rectangle",
+                    "properties": {
+                        "x1": {"type": "number"},
+                        "y1": {"type": "number"},
+                        "x2": {"type": "number"},
+                        "y2": {"type": "number"},
+                        "unit": {
+                            "type": "string",
+                            "enum": ["mm", "mil", "inch"],
+                            "default": "mm",
+                        },
+                    },
+                },
+                "drillMin": {
+                    "type": "number",
+                    "description": "Minimum drill diameter in millimetres, inclusive",
+                },
+                "drillMax": {
+                    "type": "number",
+                    "description": "Maximum drill diameter in millimetres, inclusive",
+                },
+                "startLayer": {
+                    "type": "string",
+                    "description": "Match the via start layer by board name or canonical name",
+                },
+                "endLayer": {
+                    "type": "string",
+                    "description": "Match the via end layer by board name or canonical name",
+                },
+            },
+        },
+    },
+    {
         "name": "query_zones",
         "title": "Query Zones",
         "description": "Queries copper zones (filled pours) on the board with optional filters by net, layer, or bounding box. Returns one entry per zone with net, layers, priority, fill state, and bounding box. Useful for auditing power planes and GND pours, which 'query_traces' does not include.",
@@ -1739,7 +1797,20 @@ ROUTING_TOOLS = [
         "name": "get_nets_list",
         "title": "List All Nets",
         "description": "Returns a list of all electrical nets defined on the board.",
-        "inputSchema": {"type": "object", "properties": {}},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "includeStats": {
+                    "type": "boolean",
+                    "description": "Add per-net track count, total track length and via count",
+                },
+                "unit": {
+                    "type": "string",
+                    "enum": ["mm", "mil", "inch"],
+                    "description": "Unit for track lengths (default: mm)",
+                },
+            },
+        },
     },
     {
         "name": "create_netclass",
@@ -1839,15 +1910,40 @@ ROUTING_TOOLS = [
     {
         "name": "route_differential_pair",
         "title": "Route Differential Pair",
-        "description": "Routes a differential signal pair with matched lengths and spacing.",
+        "description": (
+            "Routes a differential pair as two parallel straight segments. startPos and "
+            "endPos are the pair's centreline; looking from start to end on the board "
+            "(y down), the positive trace runs on the right and the negative on the "
+            "left, each offset by (gap + width) / 2."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "positiveName": {
+                "startPos": {
+                    "type": "object",
+                    "description": "Start of the pair's centreline",
+                    "properties": {
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "unit": {"type": "string", "enum": ["mm", "mil", "inch"]},
+                    },
+                    "required": ["x", "y"],
+                },
+                "endPos": {
+                    "type": "object",
+                    "description": "End of the pair's centreline",
+                    "properties": {
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "unit": {"type": "string", "enum": ["mm", "mil", "inch"]},
+                    },
+                    "required": ["x", "y"],
+                },
+                "positiveNet": {
                     "type": "string",
                     "description": "Positive signal net name",
                 },
-                "negativeName": {
+                "negativeNet": {
                     "type": "string",
                     "description": "Negative signal net name",
                 },
@@ -1858,21 +1954,10 @@ ROUTING_TOOLS = [
                 },
                 "gap": {
                     "type": "number",
-                    "description": "Gap between traces in millimeters",
-                },
-                "points": {
-                    "type": "array",
-                    "description": "Waypoints for the pair routing",
-                    "items": {
-                        "type": "array",
-                        "items": {"type": "number"},
-                        "minItems": 2,
-                        "maxItems": 2,
-                    },
-                    "minItems": 2,
+                    "description": "Edge-to-edge gap between the two traces in millimeters",
                 },
             },
-            "required": ["positiveName", "negativeName", "width", "gap", "points"],
+            "required": ["startPos", "endPos", "positiveNet", "negativeNet"],
         },
     },
 ]
@@ -3868,60 +3953,6 @@ GUI_DRIVER_TOOLS = [
     },
 ]
 
-# Read-only geometry for a PDN or EMC review. One entry per tool so a
-# later query can extend this list without changing the copper editor.
-ANALYSIS_TOOLS = [
-    {
-        "name": "summarize_vias",
-        "title": "Summarize Vias",
-        "description": (
-            "Count vias without listing them. Returns the via count, how many run "
-            "from F.Cu to B.Cu, a drill histogram, and the layer spans. Filter by "
-            "net, rectangle, drill, or layer name."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "net": {
-                    "type": "string",
-                    "description": "Only vias on this net, for example GND",
-                },
-                "boundingBox": {
-                    "type": "object",
-                    "description": "Only vias whose centre lies inside this rectangle",
-                    "properties": {
-                        "x1": {"type": "number"},
-                        "y1": {"type": "number"},
-                        "x2": {"type": "number"},
-                        "y2": {"type": "number"},
-                        "unit": {
-                            "type": "string",
-                            "enum": ["mm", "mil", "inch"],
-                            "default": "mm",
-                        },
-                    },
-                },
-                "drillMin": {
-                    "type": "number",
-                    "description": "Minimum drill diameter in millimetres, inclusive",
-                },
-                "drillMax": {
-                    "type": "number",
-                    "description": "Maximum drill diameter in millimetres, inclusive",
-                },
-                "startLayer": {
-                    "type": "string",
-                    "description": "Match the via start layer by board name or canonical name",
-                },
-                "endLayer": {
-                    "type": "string",
-                    "description": "Match the via end layer by board name or canonical name",
-                },
-            },
-        },
-    },
-]
-
 TOOL_SCHEMAS: Dict[str, Any] = {}
 
 # Combine all tool categories
@@ -3938,7 +3969,6 @@ for tool in (
     + VALIDATION_TOOLS
     + DIGIKEY_TOOLS
     + GUI_DRIVER_TOOLS
-    + ANALYSIS_TOOLS
 ):
     TOOL_SCHEMAS[tool["name"]] = tool
 

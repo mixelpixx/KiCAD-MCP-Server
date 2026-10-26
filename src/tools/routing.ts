@@ -225,6 +225,45 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
     },
   );
 
+  server.tool(
+    "summarize_vias",
+    "Count vias on the board without listing them. Returns the via count, how many run from F.Cu to B.Cu, a drill histogram, and the layer spans. Filter by net, rectangle, drill, or layer name. A stitched ground net can hold thousands of vias; this summary is the census a PDN review needs.",
+    {
+      net: z.string().optional().describe("Only vias on this net, for example GND"),
+      boundingBox: z
+        .object({
+          x1: z.number(),
+          y1: z.number(),
+          x2: z.number(),
+          y2: z.number(),
+          unit: z.enum(["mm", "mil", "inch"]).optional(),
+        })
+        .optional()
+        .describe("Rectangle. Only vias whose centre lies inside are counted."),
+      drillMin: z.number().optional().describe("Minimum drill diameter in millimetres, inclusive"),
+      drillMax: z.number().optional().describe("Maximum drill diameter in millimetres, inclusive"),
+      startLayer: z
+        .string()
+        .optional()
+        .describe("Match the via start layer by the board's name or the canonical name"),
+      endLayer: z
+        .string()
+        .optional()
+        .describe("Match the via end layer by the board's name or the canonical name"),
+    },
+    async (args) => {
+      const result = await callKicadScript("summarize_vias", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
   // Query zones tool
   server.tool(
     "query_zones",
@@ -353,8 +392,11 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
       includeStats: z
         .boolean()
         .optional()
-        .describe("Include statistics (track count, total length, etc.)"),
-      unit: z.enum(["mm", "mil", "inch"]).optional().describe("Unit for length measurements"),
+        .describe("Add per-net stats: track count, total track length and via count"),
+      unit: z
+        .enum(["mm", "mil", "inch"])
+        .optional()
+        .describe("Unit for track lengths (default: mm)"),
     },
     async (args: any) => {
       const result = await callKicadScript("get_nets_list", args);
@@ -456,23 +498,25 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
   // Route differential pair tool
   server.tool(
     "route_differential_pair",
-    "Route a differential pair between two sets of points.",
+    "Route a differential pair as two parallel straight segments. startPos and endPos are the pair's centreline; looking from start to end on the board (y down), the positive trace runs on the right and the negative on the left, each offset by (gap + width) / 2.",
     {
-      positivePad: z
+      startPos: z
         .object({
-          reference: z.string(),
-          pad: z.string(),
+          x: z.number(),
+          y: z.number(),
+          unit: z.enum(["mm", "mil", "inch"]).optional(),
         })
-        .describe("Positive pad (component and pad number)"),
-      negativePad: z
+        .describe("Start of the pair's centreline"),
+      endPos: z
         .object({
-          reference: z.string(),
-          pad: z.string(),
+          x: z.number(),
+          y: z.number(),
+          unit: z.enum(["mm", "mil", "inch"]).optional(),
         })
-        .describe("Negative pad (component and pad number)"),
+        .describe("End of the pair's centreline"),
       layer: z.string().describe("PCB layer"),
       width: z.number().describe("Trace width in mm"),
-      gap: z.number().describe("Gap between traces in mm"),
+      gap: z.number().describe("Edge-to-edge gap between the two traces in mm"),
       positiveNet: z.string().describe("Positive net name"),
       negativeNet: z.string().describe("Negative net name"),
     },

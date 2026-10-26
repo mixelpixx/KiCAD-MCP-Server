@@ -5,9 +5,16 @@ import {
   LONG_COMMAND_TIMEOUT_MS,
   LONG_RUNNING_COMMANDS,
   AUTOROUTE_OVERHEAD_MS,
+  JLCPCB_DOWNLOAD_TIMEOUT_MS,
 } from "../src/command-timeout.js";
 
 describe("computeCommandTimeout", () => {
+  it("gives the JLCPCB catalog download an hour (#454)", () => {
+    // Under the 30 s default the worker was restarted mid-download.
+    expect(computeCommandTimeout("download_jlcpcb_database", {})).toBe(JLCPCB_DOWNLOAD_TIMEOUT_MS);
+    expect(JLCPCB_DOWNLOAD_TIMEOUT_MS).toBeGreaterThan(LONG_COMMAND_TIMEOUT_MS);
+  });
+
   it("gives ordinary commands the short default", () => {
     expect(computeCommandTimeout("get_board_info", {})).toBe(DEFAULT_COMMAND_TIMEOUT_MS);
     expect(computeCommandTimeout("place_component", { x: 1 })).toBe(DEFAULT_COMMAND_TIMEOUT_MS);
