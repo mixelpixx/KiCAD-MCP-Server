@@ -141,3 +141,43 @@ def test_export_gerber_writes_a_file_for_every_reported_layer(tmp_path: Path) ->
     # D01 is an interpolation: the track and the four outline edges were drawn.
     assert (out_dir / "gerber_smoke-F_Cu.gbr").read_text().count("D01*") == 1
     assert (out_dir / "gerber_smoke-Edge_Cuts.gbr").read_text().count("D01*") == 4
+
+
+def _plot_smoke_board(tmp_path: Path):
+    import pcbnew
+
+    board = pcbnew.BOARD()
+    corners = [(0, 0), (20, 0), (20, 10), (0, 10)]
+    for start, end in zip(corners, corners[1:] + corners[:1]):
+        _add_segment(board, pcbnew.Edge_Cuts, start, end, width_mm=0.1)
+    _add_segment(board, pcbnew.F_Cu, (2, 5), (18, 5))
+    board_path = tmp_path / "plot_smoke.kicad_pcb"
+    pcbnew.SaveBoard(str(board_path), board)
+    return pcbnew.LoadBoard(str(board_path))
+
+
+def test_export_svg_writes_the_file_it_reports(tmp_path: Path) -> None:
+    from commands.export import ExportCommands
+
+    board = _plot_smoke_board(tmp_path)
+    result = ExportCommands(board).export_svg(
+        {"outputPath": str(tmp_path / "out" / "board.svg"), "layers": ["F.Cu", "Edge.Cuts"]}
+    )
+
+    assert result["success"] is True, result
+    svg = Path(result["file"]["path"])
+    assert svg.name == "plot_smoke-board.svg"
+    assert svg.is_file()
+    assert "</svg>" in svg.read_text()  # ClosePlot() finished the document
+
+
+def test_export_pdf_writes_the_file_it_reports(tmp_path: Path) -> None:
+    from commands.export import ExportCommands
+
+    board = _plot_smoke_board(tmp_path)
+    result = ExportCommands(board).export_pdf({"outputPath": str(tmp_path / "out" / "board.pdf")})
+
+    assert result["success"] is True, result
+    pdf = Path(result["file"]["path"])
+    assert pdf.name == "plot_smoke-board.pdf"
+    assert pdf.read_bytes().startswith(b"%PDF")

@@ -4,6 +4,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- **`export_svg` writes the SVG it reports** (#467). It plotted without
+  opening a plot file first, the same mistake #456 fixed in `export_gerber`,
+  so no file was written while the reply said success. It now writes one SVG
+  with the requested layers and returns the file KiCad actually wrote, which
+  is named `<board>-<name>.svg` like the PDF export. Both `export_svg` and
+  `export_pdf` now take that name from KiCad and fail if the file is missing,
+  instead of reporting a path nobody checked.
+
 ## [2.8.3] - 2026-10-25
 
 ### New Features
