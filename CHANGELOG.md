@@ -4,6 +4,23 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Features
+
+- **Operating modes: a readonly mode for review agents, and a manufacturing
+  mode** (#443 and #444, @b0gdaniy). `KICAD_MCP_OPERATING_MODE=readonly`
+  leaves only the tools that cannot change the design, the project, libraries
+  or KiCad's settings, nor drive its GUI. `manufacturing` adds the export
+  tools. Unset, or `write`, nothing changes.
+  - The mode names and the idea are from #443. The implementation differs in
+    two ways. Each read-only tool is on an explicit list, checked against its
+    handler, instead of being picked out by a `get_`/`list_`/`find_` name
+    prefix, so a new tool stays hidden until someone reviews it. And
+    disallowed tools are removed from the tool list through the same switch
+    toolboxes use, instead of being listed and then refused.
+  - A value the server doesn't recognise counts as `readonly`.
+  - The mode combines with `KICAD_MCP_TOOLBOXES`, and read-only tools carry
+    MCP's `readOnlyHint` annotation in every mode.
+
 ### Bug Fixes
 
 - **`export_svg` writes the SVG it reports** (#467). It plotted without

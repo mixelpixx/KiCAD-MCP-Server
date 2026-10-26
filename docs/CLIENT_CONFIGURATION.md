@@ -211,14 +211,15 @@ For any MCP-compatible client that supports STDIO transport:
 
 ### Optional
 
-| Variable              | Description                                                                        | Default              |
-| --------------------- | ---------------------------------------------------------------------------------- | -------------------- |
-| `LOG_LEVEL`           | Logging verbosity                                                                  | `info`               |
-| `NODE_ENV`            | Node environment                                                                   | `development`        |
-| `KICAD_BACKEND`       | Force backend (`swig` or `ipc`)                                                    | Auto-detect          |
-| `KICAD_MCP_DEV`       | Enable developer mode (auto-save logs to project)                                  | `0` (disabled)       |
-| `FREEROUTING_JAR`     | Path to FreeRouting JAR file for autorouting                                       | Not set              |
-| `KICAD_MCP_TOOLBOXES` | Load only some tools: `core`, or toolbox names such as `schematic,drc` (see below) | Not set (every tool) |
+| Variable                   | Description                                                                                                                                                                                            | Default              |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------- |
+| `LOG_LEVEL`                | Logging verbosity                                                                                                                                                                                      | `info`               |
+| `NODE_ENV`                 | Node environment                                                                                                                                                                                       | `development`        |
+| `KICAD_BACKEND`            | Force backend (`swig` or `ipc`)                                                                                                                                                                        | Auto-detect          |
+| `KICAD_MCP_DEV`            | Enable developer mode (auto-save logs to project)                                                                                                                                                      | `0` (disabled)       |
+| `FREEROUTING_JAR`          | Path to FreeRouting JAR file for autorouting                                                                                                                                                           | Not set              |
+| `KICAD_MCP_TOOLBOXES`      | Load only some tools: `core`, or toolbox names such as `schematic,drc` (see below)                                                                                                                     | Not set (every tool) |
+| `KICAD_MCP_OPERATING_MODE` | `readonly` or `manufacturing` to limit the assistant to reading, or reading plus exports; see the README's [Operating modes](../README.md#operating-modes). An unrecognised value counts as `readonly` | Not set (`write`)    |
 
 ### Toolboxes (`KICAD_MCP_TOOLBOXES`)
 
