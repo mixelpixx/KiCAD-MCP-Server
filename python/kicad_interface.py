@@ -5449,6 +5449,27 @@ print("ok")
     def _ipc_get_component_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for get_component_list"""
         try:
+            # Pad centres and pad nets are not on the IPC footprint list. The
+            # loaded board answers both, and the same path applies the rectangle
+            # and layer filters so the live session matches the file backend.
+            wants_board = bool(
+                params.get("includePads")
+                or params.get("matchPadCenter")
+                or params.get("boundingBox") is not None
+                or params.get("layer")
+            )
+            if wants_board and self.board:
+                result = self.component_commands.get_component_list(params)
+                if result.get("success"):
+                    result["count"] = len(result.get("components", []))
+                return result
+            if params.get("includePads") or params.get("matchPadCenter"):
+                return {
+                    "success": False,
+                    "message": "includePads and matchPadCenter need the loaded board",
+                    "errorDetails": "No board is loaded",
+                }
+
             components = self.ipc_board_api.list_components()
 
             # If IPC didn't provide bounding boxes, enrich from SWIG backend

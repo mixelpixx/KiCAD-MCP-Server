@@ -825,8 +825,37 @@ COMPONENT_TOOLS = [
     {
         "name": "get_component_list",
         "title": "List All Components",
-        "description": "Returns a list of all components on the board with their properties.",
-        "inputSchema": {"type": "object", "properties": {}},
+        "description": (
+            "Returns components on the board. boundingBox keeps footprints whose anchor "
+            "is inside the rectangle. matchPadCenter also keeps a footprint when any pad "
+            "centre is inside. includePads adds each pad's number, net, and position. "
+            "layer matches the board name or the canonical name such as B.Cu."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "layer": {"type": "string", "description": "Filter by layer name, such as F.Cu"},
+                "boundingBox": {
+                    "type": "object",
+                    "description": "Inclusive rectangle. The footprint anchor must lie inside",
+                    "properties": {
+                        "x1": {"type": "number"},
+                        "y1": {"type": "number"},
+                        "x2": {"type": "number"},
+                        "y2": {"type": "number"},
+                        "unit": {"type": "string", "enum": ["mm", "mil", "inch"]},
+                    },
+                },
+                "matchPadCenter": {
+                    "type": "boolean",
+                    "description": "Also match a footprint when any pad centre is inside boundingBox",
+                },
+                "includePads": {
+                    "type": "boolean",
+                    "description": "Add pads with number, net, and position",
+                },
+            },
+        },
     },
     {
         "name": "get_component_geometry",
