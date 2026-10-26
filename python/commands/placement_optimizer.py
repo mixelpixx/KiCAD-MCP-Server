@@ -19,8 +19,10 @@ eye against the ratsnest:
     4. Snap to grid and return *proposed* {ref:[x,y,rot]} positions. It does
        NOT modify the board unless ``apply=true``.
 
-It reuses ComponentCommands._footprint_courtyard_bbox so the collision model is
-identical to check_courtyard_overlaps (AABB on the real courtyard polygon).
+It reuses ComponentCommands._footprint_courtyard_bbox (AABB on the real
+courtyard polygon). check_courtyard_overlaps uses the same boxes, except that a
+courtyard with several disjoint outlines is tested one box per outline there;
+this module keeps the combined box, which only over-spaces such footprints.
 Intended loop:
 
     suggest_placement(dryRun) -> check_courtyard_overlaps(positions=...) ->

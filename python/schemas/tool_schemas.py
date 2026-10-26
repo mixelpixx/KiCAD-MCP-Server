@@ -825,8 +825,37 @@ COMPONENT_TOOLS = [
     {
         "name": "get_component_list",
         "title": "List All Components",
-        "description": "Returns a list of all components on the board with their properties.",
-        "inputSchema": {"type": "object", "properties": {}},
+        "description": (
+            "Returns components on the board. boundingBox keeps footprints whose anchor "
+            "is inside the rectangle. matchPadCenter also keeps a footprint when any pad "
+            "centre is inside. includePads adds each pad's number, net, and position. "
+            "layer matches the board name or the canonical name such as B.Cu."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "layer": {"type": "string", "description": "Filter by layer name, such as F.Cu"},
+                "boundingBox": {
+                    "type": "object",
+                    "description": "Inclusive rectangle. The footprint anchor must lie inside",
+                    "properties": {
+                        "x1": {"type": "number"},
+                        "y1": {"type": "number"},
+                        "x2": {"type": "number"},
+                        "y2": {"type": "number"},
+                        "unit": {"type": "string", "enum": ["mm", "mil", "inch"]},
+                    },
+                },
+                "matchPadCenter": {
+                    "type": "boolean",
+                    "description": "Also match a footprint when any pad centre is inside boundingBox",
+                },
+                "includePads": {
+                    "type": "boolean",
+                    "description": "Add pads with number, net, and position",
+                },
+            },
+        },
     },
     {
         "name": "get_component_geometry",
@@ -895,7 +924,15 @@ COMPONENT_TOOLS = [
         "description": "Returns every pad attached to a net name or net code.",
         "inputSchema": {
             "type": "object",
-            "properties": {"net": {"type": "string"}, "netCode": {"type": "number"}},
+            "properties": {
+                "net": {"type": "string"},
+                "netCode": {"type": "number"},
+                "unit": {
+                    "type": "string",
+                    "enum": ["mm", "mil", "inch"],
+                    "description": "Unit for positions, sizes and bounding boxes (default: mm)",
+                },
+            },
         },
     },
     {
@@ -1739,7 +1776,20 @@ ROUTING_TOOLS = [
         "name": "get_nets_list",
         "title": "List All Nets",
         "description": "Returns a list of all electrical nets defined on the board.",
-        "inputSchema": {"type": "object", "properties": {}},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "includeStats": {
+                    "type": "boolean",
+                    "description": "Add per-net track count, total track length and via count",
+                },
+                "unit": {
+                    "type": "string",
+                    "enum": ["mm", "mil", "inch"],
+                    "description": "Unit for track lengths (default: mm)",
+                },
+            },
+        },
     },
     {
         "name": "create_netclass",
@@ -1839,15 +1889,40 @@ ROUTING_TOOLS = [
     {
         "name": "route_differential_pair",
         "title": "Route Differential Pair",
-        "description": "Routes a differential signal pair with matched lengths and spacing.",
+        "description": (
+            "Routes a differential pair as two parallel straight segments. startPos and "
+            "endPos are the pair's centreline; looking from start to end on the board "
+            "(y down), the positive trace runs on the right and the negative on the "
+            "left, each offset by (gap + width) / 2."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "positiveName": {
+                "startPos": {
+                    "type": "object",
+                    "description": "Start of the pair's centreline",
+                    "properties": {
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "unit": {"type": "string", "enum": ["mm", "mil", "inch"]},
+                    },
+                    "required": ["x", "y"],
+                },
+                "endPos": {
+                    "type": "object",
+                    "description": "End of the pair's centreline",
+                    "properties": {
+                        "x": {"type": "number"},
+                        "y": {"type": "number"},
+                        "unit": {"type": "string", "enum": ["mm", "mil", "inch"]},
+                    },
+                    "required": ["x", "y"],
+                },
+                "positiveNet": {
                     "type": "string",
                     "description": "Positive signal net name",
                 },
-                "negativeName": {
+                "negativeNet": {
                     "type": "string",
                     "description": "Negative signal net name",
                 },
@@ -1858,21 +1933,10 @@ ROUTING_TOOLS = [
                 },
                 "gap": {
                     "type": "number",
-                    "description": "Gap between traces in millimeters",
-                },
-                "points": {
-                    "type": "array",
-                    "description": "Waypoints for the pair routing",
-                    "items": {
-                        "type": "array",
-                        "items": {"type": "number"},
-                        "minItems": 2,
-                        "maxItems": 2,
-                    },
-                    "minItems": 2,
+                    "description": "Edge-to-edge gap between the two traces in millimeters",
                 },
             },
-            "required": ["positiveName", "negativeName", "width", "gap", "points"],
+            "required": ["startPos", "endPos", "positiveNet", "negativeNet"],
         },
     },
 ]
@@ -3868,42 +3932,6 @@ GUI_DRIVER_TOOLS = [
     },
 ]
 
-# Read-only geometry for a PDN or EMC review. One entry per tool so a
-# later query can extend this list without changing the copper editor.
-ANALYSIS_TOOLS = [
-    {
-        "name": "get_footprints_in_region",
-        "title": "Get Footprints in Region",
-        "description": (
-            "List footprints inside a board rectangle. A footprint is included when "
-            "its anchor or any pad centre lies inside the box. Each hit returns the "
-            "reference, value, position, layer name, and the net of every pad."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "boundingBox": {
-                    "type": "object",
-                    "description": "Inclusive rectangle. unit defaults to mm.",
-                    "properties": {
-                        "x1": {"type": "number"},
-                        "y1": {"type": "number"},
-                        "x2": {"type": "number"},
-                        "y2": {"type": "number"},
-                        "unit": {
-                            "type": "string",
-                            "enum": ["mm", "mil", "inch"],
-                            "default": "mm",
-                        },
-                    },
-                    "required": ["x1", "y1", "x2", "y2"],
-                },
-            },
-            "required": ["boundingBox"],
-        },
-    },
-]
-
 TOOL_SCHEMAS: Dict[str, Any] = {}
 
 # Combine all tool categories
@@ -3920,7 +3948,6 @@ for tool in (
     + VALIDATION_TOOLS
     + DIGIKEY_TOOLS
     + GUI_DRIVER_TOOLS
-    + ANALYSIS_TOOLS
 ):
     TOOL_SCHEMAS[tool["name"]] = tool
 

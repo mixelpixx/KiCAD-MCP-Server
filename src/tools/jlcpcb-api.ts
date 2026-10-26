@@ -13,9 +13,9 @@ export function registerJLCPCBApiTools(server: McpServer, callKicadScript: Funct
     `Download the JLCPCB parts catalog to a local SQLite database for fast offline search.
 
 Sources (no API credentials required by default):
-  - cdfer (default): in-stock subset (~600k parts, ~1.5 GB download). Single file,
+  - cdfer (default): in-stock subset (~480k parts, ~400 MB download). Single file,
     no extra tools — the most reliable path, especially on Windows.
-  - yaqwsx: the FULL catalog (all parts incl. out-of-stock, ~10 GB extracted).
+  - yaqwsx: the FULL catalog (all parts incl. out-of-stock, ~2.9M parts, ~230 MB download).
     Use source="yaqwsx" if you specifically want everything. Requires a 7z CLI.
   - official: official JLCPCB API, used only if JLCPCB_APP_ID/JLCPCB_API_KEY/
     JLCPCB_API_SECRET are set.
@@ -33,7 +33,7 @@ force=true to refresh.`,
         .optional()
         .describe(
           'Force one source. "cdfer" (default) = in-stock subset, no 7z needed. ' +
-            '"yaqwsx" = FULL ~10GB catalog (needs a 7z CLI). "official" = JLCPCB API (needs creds).',
+            '"yaqwsx" = FULL catalog, ~2.9M parts (needs a 7z CLI). "official" = JLCPCB API (needs creds).',
         ),
     },
     async (args: { force?: boolean; source?: "cdfer" | "yaqwsx" | "official" }) => {
@@ -70,6 +70,7 @@ force=true to refresh.`,
             text: `✗ Failed to download JLCPCB database: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );

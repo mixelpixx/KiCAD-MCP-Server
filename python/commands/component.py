@@ -15,6 +15,58 @@ from utils.board_items import delete_board_item
 
 logger = logging.getLogger("kicad_interface")
 
+_BOX_UNIT_TO_MM = {"mm": 1.0, "mil": 0.0254, "inch": 25.4}
+
+
+def _query_box(bbox: Any) -> Tuple[Optional[Tuple[float, float, float, float]], Optional[str]]:
+    """Inclusive millimetre rectangle from a ``boundingBox`` argument."""
+    if not isinstance(bbox, dict):
+        return None, "boundingBox must be an object with x1, y1, x2, y2"
+    unit = bbox.get("unit") or "mm"
+    scale = _BOX_UNIT_TO_MM.get(unit)
+    if scale is None:
+        return None, f"Unsupported boundingBox unit '{unit}'"
+    try:
+        x1 = float(bbox["x1"]) * scale
+        y1 = float(bbox["y1"]) * scale
+        x2 = float(bbox["x2"]) * scale
+        y2 = float(bbox["y2"]) * scale
+    except (KeyError, TypeError, ValueError):
+        return None, "boundingBox requires numeric x1, y1, x2, y2"
+    return (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)), None
+
+
+def _point_inside(x: float, y: float, box: Tuple[float, float, float, float]) -> bool:
+    x1, y1, x2, y2 = box
+    return x1 <= x <= x2 and y1 <= y <= y2
+
+
+def _payload_in_unit(payload: Any, unit: str) -> Any:
+    """Convert every ``{"unit": "mm", ...}`` sub-dict of a payload to ``unit``.
+
+    Only dicts that declare ``"unit": "mm"`` are scaled, so counts and codes
+    elsewhere in the payload (``netCode``) are never touched.
+    """
+    from commands.routing import LENGTH_UNITS_MM
+
+    if unit == "mm":
+        return payload
+    if isinstance(payload, list):
+        return [_payload_in_unit(item, unit) for item in payload]
+    if not isinstance(payload, dict):
+        return payload
+    if payload.get("unit") == "mm":
+        scale = LENGTH_UNITS_MM[unit]
+        return {
+            key: (
+                value / scale
+                if isinstance(value, (int, float)) and not isinstance(value, bool)
+                else value
+            )
+            for key, value in payload.items()
+        } | {"unit": unit}
+    return {key: _payload_in_unit(value, unit) for key, value in payload.items()}
+
 
 class ComponentCommands(PlacementOptimizerCommands):
     """Handles component-related KiCAD operations"""
@@ -779,8 +831,78 @@ class ComponentCommands(PlacementOptimizerCommands):
                 "errorDetails": str(e),
             }
 
+    def _component_on_layer(self, module: Any, wanted: str) -> bool:
+        """True when ``wanted`` is the board's layer name or the canonical one."""
+        try:
+            layer_id = module.GetLayer()
+        except Exception:
+            return False
+        try:
+            if self.board.GetLayerName(layer_id) == wanted:
+                return True
+        except Exception:
+            pass
+        standard = getattr(self.board, "GetStandardLayerName", None)
+        if not callable(standard):
+            return False
+        try:
+            name = standard(layer_id)
+        except Exception:
+            return False
+        return isinstance(name, str) and name == wanted
+
+    def _component_pads(self, module: Any) -> List[Dict[str, Any]]:
+        """Pad number, net, and centre. Empty when the footprint has no pad list."""
+        getter = getattr(module, "Pads", None)
+        if not callable(getter):
+            return []
+        try:
+            raw_pads = list(getter())
+        except TypeError:
+            return []
+        pads: List[Dict[str, Any]] = []
+        for pad in raw_pads:
+            try:
+                position = pad.GetPosition()
+                x_mm = position.x / 1000000
+                y_mm = position.y / 1000000
+            except Exception:
+                x_mm = None
+                y_mm = None
+            number = ""
+            for method in ("GetNumber", "GetPadName", "GetName"):
+                fn = getattr(pad, method, None)
+                if not callable(fn):
+                    continue
+                try:
+                    text = fn()
+                except Exception:
+                    continue
+                if isinstance(text, str) and text:
+                    number = text
+                    break
+            net = ""
+            net_fn = getattr(pad, "GetNetname", None)
+            if callable(net_fn):
+                try:
+                    net_text = net_fn()
+                except Exception:
+                    net_text = ""
+                if isinstance(net_text, str):
+                    net = net_text
+            pads.append({"number": number, "net": net, "x": x_mm, "y": y_mm})
+        pads.sort(key=lambda row: row["number"])
+        return pads
+
     def get_component_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get a list of all components on the board"""
+        """Get a list of components on the board.
+
+        ``boundingBox`` keeps footprints whose anchor lies inside the rectangle.
+        ``matchPadCenter`` also keeps a footprint when any pad centre is inside,
+        which is how a shield can catches a part whose body sits outside the can.
+        ``includePads`` adds each pad's number, net, and position. ``layer``
+        matches the name stored on the board or the canonical name (``B.Cu``).
+        """
         try:
             if not self.board:
                 return {
@@ -789,11 +911,46 @@ class ComponentCommands(PlacementOptimizerCommands):
                     "errorDetails": "Load or create a board first",
                 }
 
+            raw_box = params.get("boundingBox")
+            box = None
+            if raw_box is not None:
+                box, error = _query_box(raw_box)
+                if error:
+                    return {"success": False, "message": error, "errorDetails": error}
+            layer = params.get("layer")
+            if layer is not None and not isinstance(layer, str):
+                return {
+                    "success": False,
+                    "message": "layer must be a string",
+                    "errorDetails": "layer",
+                }
+            include_pads = bool(params.get("includePads"))
+            match_pads = bool(params.get("matchPadCenter"))
+
             components = []
             for module in self.board.GetFootprints():
+                if layer and not self._component_on_layer(module, layer):
+                    continue
                 pos = module.GetPosition()
                 x_mm = pos.x / 1000000
                 y_mm = pos.y / 1000000
+                pads = (
+                    self._component_pads(module)
+                    if include_pads or (match_pads and box is not None)
+                    else None
+                )
+                if box is not None:
+                    anchor_inside = _point_inside(x_mm, y_mm, box)
+                    pad_inside = bool(
+                        match_pads
+                        and pads
+                        and any(
+                            pad["x"] is not None and _point_inside(pad["x"], pad["y"], box)
+                            for pad in pads
+                        )
+                    )
+                    if not anchor_inside and not pad_inside:
+                        continue
 
                 bbox = module.GetBoundingBox()
                 bbox_data = {
@@ -806,17 +963,18 @@ class ComponentCommands(PlacementOptimizerCommands):
                     "unit": "mm",
                 }
 
-                components.append(
-                    {
-                        "reference": module.GetReference(),
-                        "value": module.GetValue(),
-                        "footprint": module.GetFPIDAsString(),
-                        "position": {"x": x_mm, "y": y_mm, "unit": "mm"},
-                        "rotation": module.GetOrientation().AsDegrees(),
-                        "layer": self.board.GetLayerName(module.GetLayer()),
-                        "boundingBox": bbox_data,
-                    }
-                )
+                row = {
+                    "reference": module.GetReference(),
+                    "value": module.GetValue(),
+                    "footprint": module.GetFPIDAsString(),
+                    "position": {"x": x_mm, "y": y_mm, "unit": "mm"},
+                    "rotation": module.GetOrientation().AsDegrees(),
+                    "layer": self.board.GetLayerName(module.GetLayer()),
+                    "boundingBox": bbox_data,
+                }
+                if include_pads:
+                    row["pads"] = pads or []
+                components.append(row)
 
             return {"success": True, "components": components}
 
@@ -1010,14 +1168,25 @@ class ComponentCommands(PlacementOptimizerCommands):
             return {"success": False, "message": "Failed to get pads", "errorDetails": str(e)}
 
     def get_net_pads(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Return every pad attached to a net name or net code."""
+        """Return every pad attached to a net name or net code.
+
+        Positions, sizes, drill sizes and bounding boxes are reported in
+        ``unit`` (mm, mil or inch; default mm). The zod schema declared
+        ``unit`` and the handler ignored it, always answering in mm (#407).
+        """
         try:
+            from commands.routing import length_unit_error
+
             if not self.board:
                 return {
                     "success": False,
                     "message": "No board is loaded",
                     "errorDetails": "Load or create a board first",
                 }
+            unit = params.get("unit") or "mm"
+            unit_error = length_unit_error(unit)
+            if unit_error:
+                return unit_error
             net = params.get("net")
             net_code = params.get("netCode")
             if net is None and net_code is None:
@@ -1033,13 +1202,14 @@ class ComponentCommands(PlacementOptimizerCommands):
                         continue
                     if net_code is not None and pad.GetNetCode() != net_code:
                         continue
-                    pads.append(self._pad_payload(fp, pad))
+                    pads.append(_payload_in_unit(self._pad_payload(fp, pad), unit))
             return {
                 "success": True,
                 "net": net,
                 "netCode": net_code,
                 "padCount": len(pads),
                 "pads": pads,
+                "unit": unit,
             }
         except Exception as e:
             logger.error(f"Error getting net pads: {str(e)}")
@@ -1955,23 +2125,38 @@ class ComponentCommands(PlacementOptimizerCommands):
                 bbox = self._footprint_courtyard_bbox(fp, virtual.get(ref))
                 if bbox is None:
                     continue
+                # A courtyard drawn as several disjoint outlines (e.g. one
+                # rectangle per header row, leaving the area under a module
+                # free) is tested one box per outline, so a part placed in
+                # the gap is not reported. The combined bbox is still what
+                # the boundary check uses.
+                boxes = self._footprint_courtyard_outline_boxes(fp, virtual.get(ref)) or [bbox]
                 # Expand by margin
                 if margin_mm:
-                    x1, y1, x2, y2 = bbox
-                    bbox = (x1 - margin_mm, y1 - margin_mm, x2 + margin_mm, y2 + margin_mm)
-                entries.append((ref, bbox))
+                    bbox = self._expand_box(bbox, margin_mm)
+                    boxes = [self._expand_box(b, margin_mm) for b in boxes]
+                entries.append((ref, bbox, boxes))
 
             # Pairwise overlap (AABB intersect — matches KiCad DRC's
-            # courtyard-overlap detection model).
+            # courtyard-overlap detection model). Two footprints overlap when
+            # any outline box of one overlaps any outline box of the other;
+            # the largest such intersection is reported.
             overlaps = []
             entries_sorted = sorted(entries, key=lambda e: e[0])
             for i in range(len(entries_sorted)):
-                a_ref, a = entries_sorted[i]
+                a_ref, _, a_boxes = entries_sorted[i]
                 for j in range(i + 1, len(entries_sorted)):
-                    b_ref, b = entries_sorted[j]
-                    if a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]:
-                        ox = min(a[2], b[2]) - max(a[0], b[0])
-                        oy = min(a[3], b[3]) - max(a[1], b[1])
+                    b_ref, _, b_boxes = entries_sorted[j]
+                    hit = None
+                    for a in a_boxes:
+                        for b in b_boxes:
+                            if a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]:
+                                ox = min(a[2], b[2]) - max(a[0], b[0])
+                                oy = min(a[3], b[3]) - max(a[1], b[1])
+                                if hit is None or ox * oy > hit[2] * hit[3]:
+                                    hit = (a, b, ox, oy)
+                    if hit is not None:
+                        a, b, ox, oy = hit
                         overlaps.append(
                             {
                                 "a": a_ref,
@@ -1993,7 +2178,7 @@ class ComponentCommands(PlacementOptimizerCommands):
             boundary_violations = []
             if include_boundary and outline_bbox is not None:
                 ox1, oy1, ox2, oy2 = outline_bbox
-                for ref, bbox in entries_sorted:
+                for ref, bbox, _ in entries_sorted:
                     x1, y1, x2, y2 = bbox
                     exceeds = {}
                     if x1 < ox1 - 1e-6:
@@ -2436,7 +2621,47 @@ class ComponentCommands(PlacementOptimizerCommands):
             except Exception:
                 return None
 
-        x1, y1, x2, y2 = (self._nm_to_mm(v) for v in bbox_nm)
+        return self._reanchor_box(fp, tuple(self._nm_to_mm(v) for v in bbox_nm), override_pos)
+
+    def _footprint_courtyard_outline_boxes(self, fp, override_pos):
+        """Return one courtyard box per outline, in mm, or None.
+
+        Only footprints whose courtyard polygon set has more than one outline
+        get per-outline boxes; a single-outline courtyard (or no courtyard)
+        returns None and the caller keeps the combined bbox. The courtyard
+        layer is chosen the same way as in _footprint_courtyard_bbox, and a
+        virtual position is applied to each box the same way.
+        """
+        for layer in (pcbnew.F_CrtYd, pcbnew.B_CrtYd):
+            try:
+                ct = fp.GetCourtyard(layer)
+                if ct is None:
+                    continue
+                n = ct.OutlineCount()
+                if n <= 0:
+                    continue
+                if n == 1:
+                    return None
+                boxes = []
+                for i in range(n):
+                    box = ct.Outline(i).BBox()
+                    nm = (box.GetLeft(), box.GetTop(), box.GetRight(), box.GetBottom())
+                    boxes.append(
+                        self._reanchor_box(fp, tuple(self._nm_to_mm(v) for v in nm), override_pos)
+                    )
+                return boxes
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _expand_box(box, margin):
+        x1, y1, x2, y2 = box
+        return (x1 - margin, y1 - margin, x2 + margin, y2 + margin)
+
+    def _reanchor_box(self, fp, box_mm, override_pos):
+        """Move a box (mm) with its footprint to a virtual [x, y[, rot]]."""
+        x1, y1, x2, y2 = box_mm
 
         if override_pos is None:
             return (x1, y1, x2, y2)

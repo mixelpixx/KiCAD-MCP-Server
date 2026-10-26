@@ -45,6 +45,14 @@ export const LONG_RUNNING_COMMANDS = [
 export const AUTOROUTE_OVERHEAD_MS = 120_000;
 
 /**
+ * `download_jlcpcb_database` fetches a 230-400 MB catalog and converts it to
+ * SQLite: 30 s at best, many minutes on a slow link (one 50 MiB volume took
+ * about 8 minutes for the reporter of #454). Under the 30 s default the bridge
+ * gave up and restarted the worker mid-download, which cut the files short.
+ */
+export const JLCPCB_DOWNLOAD_TIMEOUT_MS = 3_600_000;
+
+/**
  * How long the Node side waits for `command` before abandoning the request.
  *
  * `autoroute` is computed rather than fixed: its Python side takes a
@@ -66,6 +74,9 @@ export function computeCommandTimeout(command: string, params?: unknown): number
     return Math.max(budgetMs, LONG_COMMAND_TIMEOUT_MS);
   }
 
+  if (command === "download_jlcpcb_database") {
+    return JLCPCB_DOWNLOAD_TIMEOUT_MS;
+  }
   if ((LONG_RUNNING_COMMANDS as readonly string[]).includes(command)) {
     return LONG_COMMAND_TIMEOUT_MS;
   }

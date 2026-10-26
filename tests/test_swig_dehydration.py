@@ -179,7 +179,6 @@ def _wire_open_project(iface: Any, board_to_assign: Any, board_path: str) -> Non
         "design_rule_commands",
         "export_commands",
         "freerouting_commands",
-        "region_footprint_commands",
     ):
         setattr(iface, attr, MagicMock())
     # Provide minimal command_routes so handle_command can route
@@ -263,7 +262,6 @@ def test_auto_save_recovers_when_save_leaves_board_dehydrated():
         "design_rule_commands",
         "export_commands",
         "freerouting_commands",
-        "region_footprint_commands",
     ):
         setattr(iface, attr, MagicMock())
 

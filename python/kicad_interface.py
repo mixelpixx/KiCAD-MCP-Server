@@ -10,6 +10,7 @@ JSON and returns responses via stdout also as JSON.
 import hashlib
 import json
 import logging
+import math
 import os
 import shutil
 import sys
@@ -394,7 +395,6 @@ try:
     from commands.export import ExportCommands
     from commands.find_duplicate_symbols import find_duplicate_symbols
     from commands.footprint import FootprintCreator
-    from commands.footprints_in_region import RegionFootprintCommands
     from commands.freerouting import FreeroutingCommands
     from commands.gui_driver import GuiDriverCommands
     from commands.hierarchical_place import HierarchicalPlaceCommands
@@ -485,7 +485,6 @@ class KiCADInterface(SchematicHandlersMixin):
         self.board_commands = BoardCommands(self.board)
         self.board_origin_commands = BoardOriginCommands()
         self.component_commands = ComponentCommands(self.board, self.footprint_library)
-        self.region_footprint_commands = RegionFootprintCommands(self.board)
         self.routing_commands = RoutingCommands(self.board)
         self.freerouting_commands = FreeroutingCommands(self.board)
         self.eagle_commands = EagleCommands()
@@ -597,7 +596,6 @@ class KiCADInterface(SchematicHandlersMixin):
             "add_via": self.routing_commands.add_via,
             "delete_trace": self.routing_commands.delete_trace,
             "query_traces": self.routing_commands.query_traces,
-            "get_footprints_in_region": self.region_footprint_commands.get_footprints_in_region,
             "query_zones": self.routing_commands.query_zones,
             "add_gnd_stitching_vias": self.routing_commands.add_gnd_stitching_vias,
             "modify_trace": self.routing_commands.modify_trace,
@@ -1605,7 +1603,6 @@ class KiCADInterface(SchematicHandlersMixin):
         self.project_commands.board = self.board
         self.board_commands.board = self.board
         self.component_commands.board = self.board
-        self.region_footprint_commands.board = self.board
         self.routing_commands.board = self.board
         self.design_rule_commands.board = self.board
         self.export_commands.board = self.board
@@ -5452,6 +5449,27 @@ print("ok")
     def _ipc_get_component_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for get_component_list"""
         try:
+            # Pad centres and pad nets are not on the IPC footprint list. The
+            # loaded board answers both, and the same path applies the rectangle
+            # and layer filters so the live session matches the file backend.
+            wants_board = bool(
+                params.get("includePads")
+                or params.get("matchPadCenter")
+                or params.get("boundingBox") is not None
+                or params.get("layer")
+            )
+            if wants_board and self.board:
+                result = self.component_commands.get_component_list(params)
+                if result.get("success"):
+                    result["count"] = len(result.get("components", []))
+                return result
+            if params.get("includePads") or params.get("matchPadCenter"):
+                return {
+                    "success": False,
+                    "message": "includePads and matchPadCenter need the loaded board",
+                    "errorDetails": "No board is loaded",
+                }
+
             components = self.ipc_board_api.list_components()
 
             # If IPC didn't provide bounding boxes, enrich from SWIG backend
@@ -5607,11 +5625,38 @@ print("ok")
             return {"success": False, "message": str(e)}
 
     def _ipc_get_nets_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """IPC handler for get_nets_list - gets nets with real-time data"""
-        try:
-            nets = self.ipc_board_api.get_nets()
+        """IPC handler for get_nets_list - gets nets with real-time data.
 
-            return {"success": True, "nets": nets, "count": len(nets)}
+        ``includeStats`` / ``unit`` give the same per-net ``stats`` as the SWIG
+        handler, computed from the live board's tracks and vias.
+        ``ipc_board_api.get_tracks()`` returns straight segments only, so arc
+        tracks are not counted on this path.
+        """
+        try:
+            from commands.routing import length_unit_error, net_stats
+
+            unit = params.get("unit") or "mm"
+            unit_error = length_unit_error(unit)
+            if unit_error:
+                return unit_error
+
+            nets = self.ipc_board_api.get_nets()
+            if not params.get("includeStats", False):
+                return {"success": True, "nets": nets, "count": len(nets)}
+
+            tracks = [
+                (
+                    t["net"],
+                    math.hypot(t["end"]["x"] - t["start"]["x"], t["end"]["y"] - t["start"]["y"]),
+                )
+                for t in self.ipc_board_api.get_tracks()
+            ]
+            vias = [v["net"] for v in self.ipc_board_api.get_vias()]
+            stats = net_stats(tracks, vias, unit)
+            empty = {"trackCount": 0, "trackLength": 0.0, "viaCount": 0}
+            for net in nets:
+                net["stats"] = dict(stats.get(net["name"], empty))
+            return {"success": True, "nets": nets, "count": len(nets), "unit": unit}
         except Exception as e:
             logger.error(f"IPC get_nets_list error: {e}")
             return {"success": False, "message": str(e)}
@@ -6457,7 +6502,7 @@ def main() -> None:
                                 "serverInfo": {
                                     "name": "kicad-mcp-server",
                                     "title": "KiCAD PCB Design Assistant",
-                                    "version": "2.8.2",
+                                    "version": "2.8.3",
                                 },
                                 "instructions": "AI-assisted PCB design with KiCAD. Use tools to create projects, design boards, place components, route traces, and export manufacturing files.",
                             },
