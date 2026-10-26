@@ -517,7 +517,10 @@ BOARD_TOOLS = [
                     "type": "number",
                     "description": "Loss tangent. Dielectric rows only",
                 },
-                "material": {"type": "string", "description": "Material name. Dielectric rows only"},
+                "material": {
+                    "type": "string",
+                    "description": "Material name. Dielectric rows only",
+                },
             },
         },
     },
