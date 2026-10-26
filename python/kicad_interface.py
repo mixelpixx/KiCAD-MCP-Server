@@ -412,6 +412,7 @@ try:
         remove_library_table_entry,
         set_library_table_uri,
     )
+    from commands.net_copper import NetCopperCommands
     from commands.pcb_import import PcbImportCommands
     from commands.project import ProjectCommands
     from commands.routing import RoutingCommands
@@ -485,6 +486,7 @@ class KiCADInterface(SchematicHandlersMixin):
         self.board_commands = BoardCommands(self.board)
         self.board_origin_commands = BoardOriginCommands()
         self.component_commands = ComponentCommands(self.board, self.footprint_library)
+        self.net_copper_commands = NetCopperCommands(self.board)
         self.routing_commands = RoutingCommands(self.board)
         self.freerouting_commands = FreeroutingCommands(self.board)
         self.eagle_commands = EagleCommands()
@@ -596,6 +598,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "add_via": self.routing_commands.add_via,
             "delete_trace": self.routing_commands.delete_trace,
             "query_traces": self.routing_commands.query_traces,
+            "summarize_net_copper": self.net_copper_commands.summarize_net_copper,
             "query_zones": self.routing_commands.query_zones,
             "add_gnd_stitching_vias": self.routing_commands.add_gnd_stitching_vias,
             "modify_trace": self.routing_commands.modify_trace,
@@ -1603,6 +1606,7 @@ class KiCADInterface(SchematicHandlersMixin):
         self.project_commands.board = self.board
         self.board_commands.board = self.board
         self.component_commands.board = self.board
+        self.net_copper_commands.board = self.board
         self.routing_commands.board = self.board
         self.design_rule_commands.board = self.board
         self.export_commands.board = self.board

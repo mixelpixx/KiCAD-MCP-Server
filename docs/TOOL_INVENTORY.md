@@ -5,9 +5,9 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.8.3
-**Tools registered on the server:** 247
-**Tools indexed for keyword discovery:** 247 in 20 categories
-**Last updated:** 2026-10-01
+**Tools registered on the server:** 248
+**Tools indexed for keyword discovery:** 248 in 20 categories
+**Last updated:** 2026-10-26
 
 ## How to read this document
 
@@ -117,7 +117,7 @@ _Source: `src/tools/component.ts`_
 
 ---
 
-## Routing (17 tools)
+## Routing (18 tools)
 
 _Source: `src/tools/routing.ts`_
 
@@ -130,6 +130,7 @@ _Source: `src/tools/routing.ts`_
 | `add_copper_pour`         | Add copper pour / ground plane                                                                                                                  | `routing` |
 | `delete_trace`            | Delete traces by UUID, position, or bulk by net                                                                                                 | `routing` |
 | `query_traces`            | Query/filter traces by net, layer, or bounding box                                                                                              | `routing` |
+| `summarize_net_copper`    | Summarize one net's copper without listing every track, via, and zone.                                                                          | `routing` |
 | `query_zones`             | Query copper zones (filled pours) on the board with optional filters by net, layer, or bounding box.                                            | `routing` |
 | `add_gnd_stitching_vias`  | Drop GND stitching vias across the board with collision checking against every non-GND segment, via, and pad on every copper layer (PTH vias... | `routing` |
 | `get_nets_list`           | List all nets with statistics                                                                                                                   | `routing` |
@@ -519,7 +520,7 @@ _Source: `src/tools/toolboxes.ts`_
 | `project.ts`             | Project and Board Files                | 12      |
 | `board.ts`               | Board Management                       | 19      |
 | `component.ts`           | Component Management                   | 28      |
-| `routing.ts`             | Routing                                | 17      |
+| `routing.ts`             | Routing                                | 18      |
 | `design-rules.ts`        | Design Rules and DRC                   | 7       |
 | `export.ts`              | Export and Fabrication Output          | 27      |
 | `schematic.ts`           | Schematic                              | 46      |
@@ -542,11 +543,11 @@ _Source: `src/tools/toolboxes.ts`_
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
 | `gui-driver.ts`          | gui-driver.ts                          | 11      |
 | `toolboxes.ts`           | toolboxes.ts                           | 3       |
-| **Total**                |                                        | **247** |
+| **Total**                |                                        | **248** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 247 of the 247 registered tools.
+These are the categories `search_tools` searches. They cover 248 of the 248 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
@@ -561,7 +562,7 @@ These are the categories `search_tools` searches. They cover 247 of the 247 regi
 | `schematic_hierarchy`      | 7             |
 | `schematic_layout`         | 12            |
 | `schematic_batch`          | 6             |
-| `routing`                  | 14            |
+| `routing`                  | 15            |
 | `autoroute`                | 4             |
 | `validation`               | 2             |
 | `footprint`                | 5             |
@@ -570,6 +571,6 @@ These are the categories `search_tools` searches. They cover 247 of the 247 regi
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
 | `gui-driver`               | 11            |
-| **Indexed total**          | **247**       |
+| **Indexed total**          | **248**       |
 | Registered but not indexed | 0             |
-| **Registered total**       | **247**       |
+| **Registered total**       | **248**       |

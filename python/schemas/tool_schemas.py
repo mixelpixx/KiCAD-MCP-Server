@@ -1534,6 +1534,26 @@ ROUTING_TOOLS = [
         },
     },
     {
+        "name": "summarize_net_copper",
+        "title": "Summarize Net Copper",
+        "description": (
+            "Summarize one net's copper without listing every track, via, and zone. "
+            "Returns the three counts, the layers involved, the bounding box, and a "
+            "shape: vias_only, tracks_only, zones_only, empty, or mixed. Layer names "
+            "come from the board, so B.Cu is the KiCad 9 and 10 bottom copper layer."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {
+                    "type": "string",
+                    "description": "Net name, for example GND or NetL2_1",
+                },
+            },
+            "required": ["net"],
+        },
+    },
+    {
         "name": "query_zones",
         "title": "Query Zones",
         "description": "Queries copper zones (filled pours) on the board with optional filters by net, layer, or bounding box. Returns one entry per zone with net, layers, priority, fill state, and bounding box. Useful for auditing power planes and GND pours, which 'query_traces' does not include.",
