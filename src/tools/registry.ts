@@ -266,7 +266,7 @@ export const toolCategories: ToolCategory[] = [
   {
     name: "routing",
     description:
-      "Tracks, vias, zones and nets: route arcs, pad-to-pad and differential pairs; modify, delete, query and copy routing; vias, stitching vias, copper pours and zone refill; net list and net colors",
+      "Tracks, vias, zones and nets: route arcs, pad-to-pad and differential pairs; modify, delete, query and copy routing; via census, stitching vias, copper pours and zone refill; net list and net colors",
     tools: [
       "route_arc_trace",
       "route_pad_to_pad",
@@ -274,6 +274,7 @@ export const toolCategories: ToolCategory[] = [
       "modify_trace",
       "delete_trace",
       "query_traces",
+      "summarize_vias",
       "copy_routing_pattern",
       "add_via",
       "add_gnd_stitching_vias",

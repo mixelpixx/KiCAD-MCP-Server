@@ -1534,6 +1534,56 @@ ROUTING_TOOLS = [
         },
     },
     {
+        "name": "summarize_vias",
+        "title": "Summarize Vias",
+        "description": (
+            "Count vias without listing them. Returns the via count, how many run "
+            "from F.Cu to B.Cu, a drill histogram, and the layer spans. Filter by "
+            "net, rectangle, drill, or layer name. Layer names come from the board, "
+            "so B.Cu matches KiCad 9 and 10 as well as a renamed bottom layer."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {
+                    "type": "string",
+                    "description": "Only vias on this net, for example GND",
+                },
+                "boundingBox": {
+                    "type": "object",
+                    "description": "Only vias whose centre lies inside this rectangle",
+                    "properties": {
+                        "x1": {"type": "number"},
+                        "y1": {"type": "number"},
+                        "x2": {"type": "number"},
+                        "y2": {"type": "number"},
+                        "unit": {
+                            "type": "string",
+                            "enum": ["mm", "mil", "inch"],
+                            "default": "mm",
+                        },
+                    },
+                },
+                "drillMin": {
+                    "type": "number",
+                    "description": "Minimum drill diameter in millimetres, inclusive",
+                },
+                "drillMax": {
+                    "type": "number",
+                    "description": "Maximum drill diameter in millimetres, inclusive",
+                },
+                "startLayer": {
+                    "type": "string",
+                    "description": "Match the via start layer by board name or canonical name",
+                },
+                "endLayer": {
+                    "type": "string",
+                    "description": "Match the via end layer by board name or canonical name",
+                },
+            },
+        },
+    },
+    {
         "name": "query_zones",
         "title": "Query Zones",
         "description": "Queries copper zones (filled pours) on the board with optional filters by net, layer, or bounding box. Returns one entry per zone with net, layers, priority, fill state, and bounding box. Useful for auditing power planes and GND pours, which 'query_traces' does not include.",
