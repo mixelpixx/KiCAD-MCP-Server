@@ -472,6 +472,45 @@ BOARD_TOOLS = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "get_stackup",
+        "title": "Get Board Stackup",
+        "description": (
+            "Read the board stackup from the board file. Returns each copper, dielectric, "
+            "mask, and silk entry with its thickness in millimetres. Layer names are the "
+            "names stored on the board, so a renamed layer such as 'Top Side' is returned "
+            "beside the canonical F.Cu name. pcbnew does not expose the stackup, so this "
+            "reads the (stackup ...) section of the .kicad_pcb file. Pass expected to "
+            "compare those rows with a recipe in the same call."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "expected": {
+                    "type": "array",
+                    "description": "Rows to compare. Each row needs index or layer. Omit to only read.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "index": {"type": "integer"},
+                            "layer": {"type": "string"},
+                            "type": {"type": "string"},
+                            "thicknessMm": {"type": "number"},
+                            "epsilonR": {"type": "number"},
+                        },
+                    },
+                },
+                "thicknessToleranceMm": {
+                    "type": "number",
+                    "description": "Allowed thickness difference in millimetres. Default 0.001.",
+                },
+                "epsilonTolerance": {
+                    "type": "number",
+                    "description": "Allowed relative-permittivity difference. Default 0.01.",
+                },
+            },
+        },
+    },
+    {
         "name": "get_board_info",
         "title": "Get Board Information",
         "description": "Retrieves comprehensive board information including dimensions, layer count, component count, and design rules.",
