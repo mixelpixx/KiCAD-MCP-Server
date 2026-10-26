@@ -341,5 +341,113 @@ Based on the provided information and optimization goals, suggest specific, acti
     }),
   );
 
+  // ------------------------------------------------------
+  // PDN DC Review Prompt
+  // ------------------------------------------------------
+  server.prompt(
+    "pdn_dc_review",
+    {
+      board_copper: z
+        .string()
+        .describe(
+          "Stackup read from the board file, GND via count and drill, and the previous copper peaks if a solve already exists",
+        ),
+      load_path: z
+        .string()
+        .describe(
+          "Rails, source pins, load pins, and the datasheet rows used to derive each current",
+        ),
+    },
+    () => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `You're reviewing a board power-distribution network from a DC copper solve. The solve is not a field solver. It does not include cavity resonances or measured capacitor bias.
+
+{{board_copper}}
+{{load_path}}
+
+Report three quantities separately. Do not fold them into one score:
+
+1. Copper drop, in mV, inside one copper island.
+2. Current density, in mA/mm, on mesh triangles larger than 0.01 mm².
+3. Copper temperature rise, in °C, from the IPC-2221 estimate.
+
+525 mA/mm is 15 A/mm² in 35 µm copper. It marks crowding. It is not a thermal limit.
+
+Derive each load current before using it. Show the arithmetic: power, voltage, efficiency, and the datasheet row. Do not invent an efficiency or a current the datasheet does not support. Split a path into the segments that exist, such as a bead, a switcher, and a connector. Current leaves at the from-pins and returns at the to-pins.
+
+Read the stackup from the board file and use the layer names stored on the board. Do not invent a dielectric table the file does not contain.
+
+Lead with the worst remaining spot and its number. Then name the spots that moved against the previous via count, when one is recorded, and the spots that did not. State the via count, the drill, and whether the vias go through every copper layer. More stitching can flatten the return field and still leave a spur or a millivolt drop where it was.
+
+For an impedance curve, label the frequency axis, the milliohm axis, the capacitor bank after DC-bias derating, and the plane-to-ground gap used for the inductance. A target such as 50 mV / 50 mA is 1 Ω only when that step is the load. Do not draw a target the curve never approaches. Nominal microfarads on the schematic are not the effective capacitance.
+
+The solver copy is not the design. Do not edit the parent project from the solver.`,
+          },
+        },
+      ],
+    }),
+  );
+
+  // ------------------------------------------------------
+  // EMV Shield Review Prompt
+  // ------------------------------------------------------
+  server.prompt(
+    "emv_shield_review",
+    {
+      shield_geometry: z
+        .string()
+        .describe(
+          "Shield outline, clip positions, and the loop rectangle in can-local millimetres",
+        ),
+      comparison: z
+        .string()
+        .describe(
+          "The two named geometries being subtracted, with the outside-can median and the probe values",
+        ),
+    },
+    () => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `You're reviewing radiated EMC of a board shield from a near-field solve. EMV here means EMC. The result is |E| per ampere of loop current. It is not a chamber level and it is not dBµV/m. Do not invent a CISPR number.
+
+{{shield_geometry}}
+{{comparison}}
+
+Suppression is a field ratio, not a power ratio:
+
+dB = 20·log10(E_old / E_new)
+
+Positive dB means the new geometry is quieter. Negative dB means it is louder at that cell. A loud patch on the source itself means the source moved there. Read the sign from 20·log10(old / new) before describing a colour. Quote the median outside the can and the probe values. The ends of the colour bar are the scale, not the result. Ignore a cell when the old field is below 0.3 V/m per A, so a noise cell cannot spike the ratio.
+
+The mesh is a uniform 0.5 mm grid. A 0.3 mm wall and the lip gap are one cell, so absolute leakage is pessimistic. The ranking between two named runs is the result. Say which two geometries were subtracted. A change in clip count, a loop moved onto measured part positions, and a can compared with no can are three different results. Do not relabel one as another.
+
+A 0.2 mm via on an already solid ground plane does not change this model. To represent a shorter return path, move the loop onto the measured part positions and say so. Do not write that the vias produced the decibels.
+
+Four clips can make the outside louder than no can, from a slot resonance. A fitted can is not shielding by itself.
+
+These layout rules are already settled:
+
+1. Do not pour a switch node on a second inner layer or on the bottom. One inner trace between ground planes is the smaller loop.
+2. A via belongs in the capacitor ground pad that faces the switch pin, not in a bulk row that is already stitched.
+3. Housing springs only work on bare metal.
+4. Unplug debug and UART cables for the radiated test. Once the seam clips are dense, a cable is the remaining radiator, not the can.
+5. Do not duplicate a shielded inductor's switch nets when those nets already have vias only, and no tracks and no zones.
+6. Do not add a second pi filter on a rail that already has one. Leave a feedthrough that is already on the rail.
+7. Parts on another board stay out of the assessment. A cable interface stays out unless that cable is fitted.
+
+Take coordinates from the board file. Can-local millimetres are the board position minus the can centre. Snap loop corners to the 0.5 mm grid. Do not edit the KiCad project from the simulator.`,
+          },
+        },
+      ],
+    }),
+  );
+
   logger.info("Design prompts registered");
 }
