@@ -422,6 +422,7 @@ try:
     from commands.schematic_hierarchy import SchematicHierarchyCommands
     from commands.schematic_lint import SchematicLintCommands
     from commands.set_symbol_pin_type import set_symbol_pin_type
+    from commands.stackup import StackupCommands
     from commands.symbol_creator import SymbolCreator
     from commands.symbol_pins import SymbolPinCommands
     from commands.symbol_repair import SymbolRepairCommands
@@ -486,6 +487,7 @@ class KiCADInterface(SchematicHandlersMixin):
         self.board_origin_commands = BoardOriginCommands()
         self.component_commands = ComponentCommands(self.board, self.footprint_library)
         self.routing_commands = RoutingCommands(self.board)
+        self.stackup_commands = StackupCommands(self.board)
         self.freerouting_commands = FreeroutingCommands(self.board)
         self.eagle_commands = EagleCommands()
         self.symbol_schematic_commands = SymbolSchematicCommands()
@@ -597,6 +599,8 @@ class KiCADInterface(SchematicHandlersMixin):
             "delete_trace": self.routing_commands.delete_trace,
             "query_traces": self.routing_commands.query_traces,
             "query_zones": self.routing_commands.query_zones,
+            "get_stackup": self.stackup_commands.get_stackup,
+            "set_stackup_layer": self.stackup_commands.set_stackup_layer,
             "add_gnd_stitching_vias": self.routing_commands.add_gnd_stitching_vias,
             "modify_trace": self.routing_commands.modify_trace,
             "copy_routing_pattern": self.routing_commands.copy_routing_pattern,
@@ -1241,6 +1245,22 @@ class KiCADInterface(SchematicHandlersMixin):
                         # because the on-disk file changed externally, surface
                         # a warning to the caller so they don't believe their
                         # mutation was persisted.
+                        # set_stackup_layer already wrote the (stackup) section,
+                        # which pcbnew cannot edit. Reload that file first so
+                        # this save sees our write instead of refusing it as an
+                        # external change, and so the in-memory board matches.
+                        if (
+                            command == "set_stackup_layer"
+                            and isinstance(result, dict)
+                            and result.get("success")
+                            and not self._reload_stackup_file()
+                        ):
+                            result.setdefault("warnings", []).append(
+                                "Stackup was written to the board file, but the "
+                                "in-memory board could not be reloaded. Auto-save "
+                                "was skipped so it would not overwrite that file."
+                            )
+                            return result
                         save_status = self._auto_save_board()
                         self._last_auto_save_status = save_status
                         if isinstance(result, dict) and not save_status.get("saved"):
@@ -1278,6 +1298,10 @@ class KiCADInterface(SchematicHandlersMixin):
         # add_layer mutates the copper stackup in memory; without auto-save it
         # reported success and wrote nothing to disk (#222).
         "add_layer",
+        # Writes the (stackup) section of the .kicad_pcb. pcbnew has no
+        # setter for it, so the command edits the file and the handler above
+        # reloads before this auto-save runs.
+        "set_stackup_layer",
         "place_component",
         "move_component",
         "rotate_component",
@@ -1604,6 +1628,7 @@ class KiCADInterface(SchematicHandlersMixin):
         self.board_commands.board = self.board
         self.component_commands.board = self.board
         self.routing_commands.board = self.board
+        self.stackup_commands.board = self.board
         self.design_rule_commands.board = self.board
         self.export_commands.board = self.board
         self.freerouting_commands.board = self.board
@@ -1654,6 +1679,26 @@ class KiCADInterface(SchematicHandlersMixin):
         if first is None:
             return True
         return all(hasattr(first, m) for m in self._ITEM_HEALTH_METHODS)
+
+    def _reload_stackup_file(self) -> bool:
+        """Reload the board after set_stackup_layer writes its file.
+
+        The stackup is not writable through pcbnew, so the command edits the
+        ``.kicad_pcb`` directly. Auto-save would then see a foreign change and
+        refuse, or save the old in-memory board over the edit. Loading the
+        file back makes the following save persist the new stackup.
+        """
+        path = self._current_board_path()
+        if not path:
+            return False
+        board = self._safe_load_board(path)
+        if board is None:
+            return False
+        self.board = board
+        self.project_commands.board = board
+        self._update_command_handlers()
+        self._record_board_signature()
+        return True
 
     def _safe_load_board(self, path: str) -> Optional[Any]:
         """Load a board from disk, recovering from SWIG dehydration if pcbnew is broken.

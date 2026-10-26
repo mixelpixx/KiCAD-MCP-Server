@@ -5,9 +5,9 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.8.3
-**Tools registered on the server:** 247
-**Tools indexed for keyword discovery:** 247 in 20 categories
-**Last updated:** 2026-10-01
+**Tools registered on the server:** 249
+**Tools indexed for keyword discovery:** 249 in 20 categories
+**Last updated:** 2026-10-26
 
 ## How to read this document
 
@@ -52,31 +52,33 @@ _Source: `src/tools/project.ts`_
 
 ---
 
-## Board Management (19 tools)
+## Board Management (21 tools)
 
 _Source: `src/tools/board.ts`_
 
-| Tool                    | Description                                                                                         | Discovery |
-| ----------------------- | --------------------------------------------------------------------------------------------------- | --------- |
-| `set_board_size`        | Set PCB dimensions (width, height, unit)                                                            | Essential |
-| `set_board_origin`      | Set the auxiliary (drill/place) origin and/or grid origin of a .kicad_pcb.                          | `board`   |
-| `get_board_origin`      | Read back the auxiliary (drill/place) origin and grid origin of a .kicad_pcb in mm.                 | `board`   |
-| `add_layer`             | Add copper/technical/signal layer                                                                   | `board`   |
-| `set_active_layer`      | Change the active working layer                                                                     | `board`   |
-| `get_board_info`        | Get board metadata and properties                                                                   | Essential |
-| `get_layer_list`        | List all layers on the board                                                                        | `board`   |
-| `add_board_outline`     | Add board outline (rectangle, circle, polygon, rounded_rectangle)                                   | Essential |
-| `clear_board_outline`   | Delete all Edge.Cuts graphics from the current PCB board.                                           | Essential |
-| `replace_board_outline` | Replace the current Edge.Cuts board outline with a rectangle, rounded rectangle, circle or polygon. | Essential |
-| `list_graphics`         | List PCB graphic/drawing items such as gr_line, gr_arc, gr_rect, gr_text and dimensions.            | `board`   |
-| `delete_graphic`        | Delete a PCB graphic/drawing item by UUID.                                                          | `board`   |
-| `update_graphic`        | Update common properties of a PCB graphic/drawing item by UUID.                                     | `board`   |
-| `add_mounting_hole`     | Add mounting hole with optional pad                                                                 | `board`   |
-| `add_board_text`        | Add text annotation to board                                                                        | `board`   |
-| `add_zone`              | Add copper zone/pour with clearance settings                                                        | `board`   |
-| `get_board_extents`     | Get bounding box of board                                                                           | `board`   |
-| `get_board_2d_view`     | Render 2D board view (PNG/JPG/SVG)                                                                  | `board`   |
-| `import_svg_logo`       | Import SVG file as polygons on silkscreen layer                                                     | `board`   |
+| Tool                    | Description                                                                                                                         | Discovery |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `set_board_size`        | Set PCB dimensions (width, height, unit)                                                                                            | Essential |
+| `set_board_origin`      | Set the auxiliary (drill/place) origin and/or grid origin of a .kicad_pcb.                                                          | `board`   |
+| `get_board_origin`      | Read back the auxiliary (drill/place) origin and grid origin of a .kicad_pcb in mm.                                                 | `board`   |
+| `add_layer`             | Add copper/technical/signal layer                                                                                                   | `board`   |
+| `set_active_layer`      | Change the active working layer                                                                                                     | `board`   |
+| `get_board_info`        | Get board metadata and properties                                                                                                   | Essential |
+| `get_layer_list`        | List all layers on the board                                                                                                        | `board`   |
+| `get_stackup`           | Read the board stackup from the board file.                                                                                         | `board`   |
+| `set_stackup_layer`     | Set the thickness of one stackup row in the board file, and for a dielectric its material, relative permittivity, and loss tangent. | `board`   |
+| `add_board_outline`     | Add board outline (rectangle, circle, polygon, rounded_rectangle)                                                                   | Essential |
+| `clear_board_outline`   | Delete all Edge.Cuts graphics from the current PCB board.                                                                           | Essential |
+| `replace_board_outline` | Replace the current Edge.Cuts board outline with a rectangle, rounded rectangle, circle or polygon.                                 | Essential |
+| `list_graphics`         | List PCB graphic/drawing items such as gr_line, gr_arc, gr_rect, gr_text and dimensions.                                            | `board`   |
+| `delete_graphic`        | Delete a PCB graphic/drawing item by UUID.                                                                                          | `board`   |
+| `update_graphic`        | Update common properties of a PCB graphic/drawing item by UUID.                                                                     | `board`   |
+| `add_mounting_hole`     | Add mounting hole with optional pad                                                                                                 | `board`   |
+| `add_board_text`        | Add text annotation to board                                                                                                        | `board`   |
+| `add_zone`              | Add copper zone/pour with clearance settings                                                                                        | `board`   |
+| `get_board_extents`     | Get bounding box of board                                                                                                           | `board`   |
+| `get_board_2d_view`     | Render 2D board view (PNG/JPG/SVG)                                                                                                  | `board`   |
+| `import_svg_logo`       | Import SVG file as polygons on silkscreen layer                                                                                     | `board`   |
 
 ---
 
@@ -517,7 +519,7 @@ _Source: `src/tools/toolboxes.ts`_
 | Source file              | Section                                | Tools   |
 | ------------------------ | -------------------------------------- | ------- |
 | `project.ts`             | Project and Board Files                | 12      |
-| `board.ts`               | Board Management                       | 19      |
+| `board.ts`               | Board Management                       | 21      |
 | `component.ts`           | Component Management                   | 28      |
 | `routing.ts`             | Routing                                | 17      |
 | `design-rules.ts`        | Design Rules and DRC                   | 7       |
@@ -542,15 +544,15 @@ _Source: `src/tools/toolboxes.ts`_
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
 | `gui-driver.ts`          | gui-driver.ts                          | 11      |
 | `toolboxes.ts`           | toolboxes.ts                           | 3       |
-| **Total**                |                                        | **247** |
+| **Total**                |                                        | **249** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 247 of the 247 registered tools.
+These are the categories `search_tools` searches. They cover 249 of the 249 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
-| `board`                    | 15            |
+| `board`                    | 17            |
 | `component`                | 24            |
 | `export`                   | 27            |
 | `drc`                      | 8             |
@@ -570,6 +572,6 @@ These are the categories `search_tools` searches. They cover 247 of the 247 regi
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
 | `gui-driver`               | 11            |
-| **Indexed total**          | **247**       |
+| **Indexed total**          | **249**       |
 | Registered but not indexed | 0             |
-| **Registered total**       | **247**       |
+| **Registered total**       | **249**       |

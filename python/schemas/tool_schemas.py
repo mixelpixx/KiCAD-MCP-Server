@@ -472,6 +472,59 @@ BOARD_TOOLS = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "get_stackup",
+        "title": "Get Board Stackup",
+        "description": (
+            "Read the board stackup from the board file. Returns each copper, dielectric, "
+            "mask, and silk entry with its thickness in millimetres. Layer names are the "
+            "names stored on the board, so a renamed layer such as 'Top Side' is returned "
+            "beside the canonical F.Cu name. pcbnew does not expose the stackup, so this "
+            "reads the (stackup ...) section of the .kicad_pcb file."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "set_stackup_layer",
+        "title": "Set Stackup Layer",
+        "description": (
+            "Write one stackup row into the board file. Identify the row by index from "
+            "get_stackup or by a layer name such as F.Cu or the name stored on the board. "
+            "thicknessMm changes that row. epsilonR, lossTangent, and material apply only "
+            "to a dielectric. sublayer selects a dielectric piece and defaults to 0. "
+            "pcbnew cannot edit the stackup, so this rewrites the (stackup ...) section."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer", "description": "Row index from get_stackup"},
+                "layer": {
+                    "type": "string",
+                    "description": "Canonical name such as F.Cu, or the name stored on the board",
+                },
+                "sublayer": {
+                    "type": "integer",
+                    "description": "Dielectric sublayer. Defaults to 0",
+                },
+                "thicknessMm": {
+                    "type": "number",
+                    "description": "Thickness of this sublayer in millimetres",
+                },
+                "epsilonR": {
+                    "type": "number",
+                    "description": "Relative permittivity. Dielectric rows only",
+                },
+                "lossTangent": {
+                    "type": "number",
+                    "description": "Loss tangent. Dielectric rows only",
+                },
+                "material": {
+                    "type": "string",
+                    "description": "Material name. Dielectric rows only",
+                },
+            },
+        },
+    },
+    {
         "name": "get_board_info",
         "title": "Get Board Information",
         "description": "Retrieves comprehensive board information including dimensions, layer count, component count, and design rules.",
