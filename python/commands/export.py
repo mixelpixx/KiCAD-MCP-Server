@@ -15,6 +15,23 @@ from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 logger = logging.getLogger("kicad_interface")
 
 
+def _plot_file_name(plotter: Any, board: Any, output_path: str, base_name: str, ext: str) -> str:
+    """The file an open plot is writing to.
+
+    KiCad names it ``<board>-<base_name>.<ext>`` in the output directory, so it
+    is not the path the caller asked for. PLOT_CONTROLLER.GetPlotFileName()
+    reports it exactly; the rebuilt name is the fallback when that is missing
+    or not a string (an older binding, or a test double).
+    """
+    getter = getattr(plotter, "GetPlotFileName", None)
+    if callable(getter):
+        name = getter()
+        if isinstance(name, str) and name:
+            return name
+    board_name = os.path.splitext(os.path.basename(board.GetFileName()))[0]
+    return os.path.join(os.path.dirname(output_path), f"{board_name}-{base_name}.{ext}")
+
+
 class ExportCommands:
     """Handles export-related KiCAD operations"""
 
@@ -233,14 +250,17 @@ class ExportCommands:
                         plotter.PlotLayer()
                         plotted_layers.append(layer_name)
 
-            # Close the plot file to finalize the PDF
+            # KiCad prefixes the board name to the file; ask it for the name
+            # rather than rebuilding it, then close the plot to finalize the PDF.
+            actual_output_path = _plot_file_name(plotter, self.board, output_path, base_name, "pdf")
             plotter.ClosePlot()
 
-            # KiCAD automatically prepends the board name to the output file
-            # Get the actual output filename that was created
-            board_name = os.path.splitext(os.path.basename(self.board.GetFileName()))[0]
-            actual_filename = f"{board_name}-{base_name}.pdf"
-            actual_output_path = os.path.join(os.path.dirname(output_path), actual_filename)
+            if not os.path.isfile(actual_output_path):
+                return {
+                    "success": False,
+                    "message": "Failed to export PDF file",
+                    "errorDetails": f"{actual_output_path} was not written",
+                }
 
             return {
                 "success": True,
@@ -298,27 +318,56 @@ class ExportCommands:
             plot_opts.SetPlotReference(include_components)
             plot_opts.SetBlackAndWhite(black_and_white)
 
-            # Plot specified layers or all enabled layers
+            # PlotLayer() draws into the file OpenPlotfile() opened; without
+            # one it writes nothing, and this used to report success anyway
+            # (#467, the export_gerber bug of #455). All layers go into one
+            # SVG, like export_pdf. KiCad prefixes the board name to the file.
+            base_name = os.path.splitext(os.path.basename(output_path))[0]
+            if not plotter.OpenPlotfile(base_name, pcbnew.PLOT_FORMAT_SVG, ""):
+                return {
+                    "success": False,
+                    "message": "Failed to export SVG file",
+                    "errorDetails": f"KiCad could not open a plot file in {os.path.dirname(output_path)}",
+                }
+
             plotted_layers = []
             if layers:
                 for layer_name in layers:
                     layer_id = self.board.GetLayerID(layer_name)
                     if layer_id >= 0:
                         plotter.SetLayer(layer_id)
-                        plotter.PlotLayer()
-                        plotted_layers.append(layer_name)
+                        if plotter.PlotLayer():
+                            plotted_layers.append(layer_name)
             else:
                 for layer_id in range(pcbnew.PCB_LAYER_ID_COUNT):
                     if self.board.IsLayerEnabled(layer_id):
                         layer_name = self.board.GetLayerName(layer_id)
                         plotter.SetLayer(layer_id)
-                        plotter.PlotLayer()
-                        plotted_layers.append(layer_name)
+                        if plotter.PlotLayer():
+                            plotted_layers.append(layer_name)
+
+            actual_output_path = _plot_file_name(plotter, self.board, output_path, base_name, "svg")
+            plotter.ClosePlot()
+
+            if not plotted_layers or not os.path.isfile(actual_output_path):
+                return {
+                    "success": False,
+                    "message": "Failed to export SVG file",
+                    "errorDetails": (
+                        "No layer was plotted"
+                        if not plotted_layers
+                        else f"{actual_output_path} was not written"
+                    ),
+                }
 
             return {
                 "success": True,
                 "message": "Exported SVG file",
-                "file": {"path": output_path, "layers": plotted_layers},
+                "file": {
+                    "path": actual_output_path,
+                    "requestedPath": output_path,
+                    "layers": plotted_layers,
+                },
             }
 
         except Exception as e:
