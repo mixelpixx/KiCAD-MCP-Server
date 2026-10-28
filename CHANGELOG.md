@@ -6,6 +6,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Schematic edits are refused while the schematic is open in KiCad** (#472).
+  KiCad keeps its own copy of an open schematic and does not reload it when
+  the file changes on disk, so saving there silently overwrote what the
+  schematic tools wrote. Commands that edit a schematic now ask KiCad over IPC
+  which schematic is open and refuse if it belongs to the same project. Set
+  `KICAD_ALLOW_OPEN_SCHEMATIC_EDITS=true` to allow them anyway; the opt-in
+  Windows reload (`KICAD_INTERACTIVE_SCHEMATIC`) is unaffected.
 - **`export_svg` writes the SVG it reports** (#467). It plotted without
   opening a plot file first, the same mistake #456 fixed in `export_gerber`,
   so no file was written while the reply said success. It now writes one SVG

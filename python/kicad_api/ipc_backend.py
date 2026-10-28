@@ -268,6 +268,28 @@ class IPCBackend(KiCADBackend):
             logger.debug(f"Could not read open documents via IPC: {e}")
         return None
 
+    def get_open_schematic_names(self) -> List[str]:
+        """File names of the root schematics open in the live KiCad GUI.
+
+        KiCad 10's IPC API can list open schematics but cannot edit, save or
+        reload them, and it reports only the root sheet's file name, without
+        the project path.
+        """
+        if not self.is_connected():
+            return []
+        try:
+            from kipy.proto.common.types import DocumentType
+
+            names = []
+            for doc in self._kicad.get_open_documents(DocumentType.DOCTYPE_SCHEMATIC):
+                name = str(getattr(doc, "board_filename", "") or "")
+                if name.endswith(".kicad_sch"):
+                    names.append(os.path.basename(name))
+            return names
+        except Exception as e:
+            logger.debug(f"Could not read open schematics via IPC: {e}")
+        return []
+
     def register_change_callback(self, callback: Callable) -> None:
         """Register a callback to be called when changes are made."""
         self._on_change_callbacks.append(callback)
