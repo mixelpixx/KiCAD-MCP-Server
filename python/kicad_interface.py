@@ -240,6 +240,8 @@ from utils.kicad_process import KiCADProcessManager, check_and_launch_kicad
 from utils.platform_helper import PlatformHelper
 from utils.project_settings_guard import preserve_project_settings
 
+from utils import interactive_schematic
+
 logger.info(f"Detecting KiCAD Python paths for {PlatformHelper.get_platform_name()}...")
 paths_added = PlatformHelper.add_kicad_to_python_path()
 
@@ -259,6 +261,13 @@ if AUTO_LAUNCH_KICAD:
 # KICAD_BACKEND can be: 'auto', 'ipc', or 'swig'
 KICAD_BACKEND = os.environ.get("KICAD_BACKEND", "auto").lower()
 logger.info(f"KiCAD backend preference: {KICAD_BACKEND}")
+
+# Schematic tools edit the .kicad_sch file on disk. When the schematic is open
+# in KiCad, saving there overwrites those edits, so they are refused unless
+# this is set (see _refuse_if_schematic_open).
+ALLOW_OPEN_SCHEMATIC_EDITS = (
+    os.environ.get("KICAD_ALLOW_OPEN_SCHEMATIC_EDITS", "false").lower() == "true"
+)
 
 # Try to use IPC backend first if available and preferred
 USE_IPC_BACKEND = False
@@ -1073,6 +1082,10 @@ class KiCADInterface(SchematicHandlersMixin):
         logger.debug(f"Command parameters: {params}")
 
         try:
+            refusal = self._refuse_if_schematic_open(command, params)
+            if refusal:
+                return refusal
+
             if command in self.IPC_CAPABLE_COMMANDS and self._session_allows_ipc():
                 self._try_enable_ipc_backend()
                 # An IPC-pinned session whose connection died (GUI closed)
@@ -1306,6 +1319,123 @@ class KiCADInterface(SchematicHandlersMixin):
         "connect_to_net",
         "set_footprint_type",
     }
+
+    # Commands that write a .kicad_sch file. They are refused while the target
+    # project's schematic is open in KiCad (_refuse_if_schematic_open).
+    _SCHEMATIC_MUTATING_COMMANDS = {
+        "add_hierarchical_sheet",
+        "add_no_connect",
+        "add_schematic_component",
+        "add_schematic_hierarchical_label",
+        "add_schematic_net_label",
+        "add_schematic_text",
+        "add_schematic_wire",
+        "add_sheet_pin",
+        "annotate_schematic",
+        "autoplace_schematic_fields",
+        "backannotate_footprints",
+        "batch_add_and_connect",
+        "batch_add_components",
+        "batch_add_no_connects",
+        "batch_connect",
+        "batch_edit_schematic_components",
+        "batch_set_schematic_property_positions",
+        "connect_passthrough",
+        "connect_to_net",
+        "create_hierarchical_subsheet",
+        "delete_schematic_component",
+        "delete_schematic_net_label",
+        "delete_schematic_wire",
+        "edit_schematic_component",
+        "enrich_datasheets",
+        "move_schematic_component",
+        "move_schematic_net_label",
+        "remove_hierarchical_sheet",
+        "remove_schematic_component_property",
+        "replace_instance_lib_ids",
+        "replace_schematic_component",
+        "rotate_schematic_component",
+        "set_schematic_component_property",
+        "set_schematic_property_position",
+        "set_sheet_property",
+        "snap_to_grid",
+        "update_symbol_from_library",
+    }
+
+    # Parameters naming the schematic a command edits, in lookup order.
+    _SCHEMATIC_PATH_PARAMS = ("schematicPath", "parentSchematicPath", "schematic_path")
+
+    @staticmethod
+    def _project_root_schematic_names(schematic_path: str) -> set:
+        """File names of the root schematic(s) of the project that owns a sheet.
+
+        KiCad reports only the root sheet's file name for an open schematic, so
+        a sub-sheet is matched through its project's .kicad_pro, looked up in
+        the sheet's directory and two levels above it.
+        """
+        path = Path(schematic_path)
+        for directory in [path.parent, *list(path.parent.parents)[:2]]:
+            projects = sorted(directory.glob("*.kicad_pro"))
+            if projects:
+                return {p.with_suffix(".kicad_sch").name for p in projects}
+        return {path.name}
+
+    def _open_schematic_names(self) -> List[str]:
+        """Root schematics open in the live KiCad GUI, or [] when unknown."""
+        backend = getattr(self, "ipc_backend", None)
+        if not (backend and backend.is_connected()):
+            if KICAD_BACKEND == "swig" or not KiCADProcessManager.is_running():
+                return []
+            # A separate connection, so a SWIG session stays as it is.
+            backend = getattr(self, "_schematic_probe_backend", None)
+            if backend is None or not backend.is_connected():
+                try:
+                    from kicad_api.ipc_backend import IPCBackend
+
+                    backend = IPCBackend()
+                    backend.connect()
+                except Exception as e:
+                    logger.debug(f"Cannot ask KiCad for open schematics: {e}")
+                    return []
+                self._schematic_probe_backend = backend
+        return backend.get_open_schematic_names()
+
+    def _refuse_if_schematic_open(
+        self, command: str, params: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Refuse a schematic edit while KiCad has that schematic open.
+
+        KiCad keeps its own copy of an open schematic and does not reload it
+        when the file changes on disk, so the GUI would show the old schematic
+        and saving there would overwrite the edit. KiCad 10's IPC API cannot
+        reload a schematic, but it does report which one is open.
+        """
+        if command not in self._SCHEMATIC_MUTATING_COMMANDS or ALLOW_OPEN_SCHEMATIC_EDITS:
+            return None
+        if interactive_schematic.INTERACTIVE_SCHEMATIC:
+            # The opt-in Windows reload asks KiCad to reload after each edit.
+            return None
+        target = next((params[k] for k in self._SCHEMATIC_PATH_PARAMS if params.get(k)), None)
+        if not target:
+            return None
+        open_names = set(self._open_schematic_names())
+        if not open_names & self._project_root_schematic_names(str(target)):
+            return None
+        return {
+            "success": False,
+            "message": (
+                f"Refusing {command}: the schematic is open in KiCad, which would "
+                "overwrite this edit when saved there"
+            ),
+            "errorDetails": (
+                "KiCad keeps its own copy of an open schematic and does not reload "
+                "changes made on disk. Save and close the schematic in KiCad, then "
+                "retry. Set KICAD_ALLOW_OPEN_SCHEMATIC_EDITS=true to allow edits "
+                "anyway."
+            ),
+            "schematicPath": str(target),
+            "schematicOpenInKicad": True,
+        }
 
     @staticmethod
     def _disk_signature(path: str) -> Optional[Tuple[int, str]]:
