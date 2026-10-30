@@ -16,6 +16,7 @@ from typing import Any, List, Optional, Tuple
 
 import sexpdata
 from sexpdata import Symbol
+from utils.file_io import read_text_preserve_newline, write_text_atomic
 from utils.sexpr_format import dumps as kicad_dumps
 from utils.sexpr_format import escape_sexpr_string
 
@@ -62,8 +63,7 @@ def _find_insertion_point(content: str) -> int:
 
 def _text_insert(file_path: Path, sexp_text: str) -> bool:
     """Insert S-expression text into a .kicad_sch file preserving formatting."""
-    with open(file_path, "r", encoding="utf-8") as f:
-        content = f.read()
+    content, newline = read_text_preserve_newline(file_path)
 
     insert_at = _find_insertion_point(content)
     # _find_insertion_point returns a raw character offset; on files where
@@ -78,8 +78,7 @@ def _text_insert(file_path: Path, sexp_text: str) -> bool:
         insert_at = line_start
     content = content[:insert_at] + sexp_text + content[insert_at:]
 
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(content)
+    write_text_atomic(file_path, content, newline)
     return True
 
 
@@ -322,8 +321,7 @@ class WireManager:
             True if successful, False otherwise
         """
         try:
-            with open(schematic_path, "r", encoding="utf-8") as f:
-                sch_content = f.read()
+            sch_content, newline = read_text_preserve_newline(schematic_path)
 
             sch_data = sexpdata.loads(sch_content)
 
@@ -358,8 +356,7 @@ class WireManager:
 
             sch_data.insert(sheet_instances_index, label_sexp)
 
-            with open(schematic_path, "w", encoding="utf-8") as f:
-                f.write(kicad_dumps(sch_data))
+            write_text_atomic(schematic_path, kicad_dumps(sch_data), newline)
 
             logger.info(f"Successfully added label '{text}' to {schematic_path.name}")
             return True
