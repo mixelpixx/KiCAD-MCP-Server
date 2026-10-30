@@ -19,7 +19,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from commands.freerouting import (
     FreeroutingCommands,
+    _build_freerouting_cmd,
     _docker_available,
+    _docker_is_rootless,
     _find_docker,
     _find_java,
     _java_version_ok,
@@ -544,6 +546,92 @@ class TestDockerAvailable:
         ):
             mock_run.return_value = MagicMock(returncode=1)
             assert _docker_available() is False
+
+
+class TestDockerIsRootless:
+    def test_rootful_docker(self) -> None:
+        """Docker daemon with no 'rootless' security option: run as root."""
+        with patch("commands.freerouting.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0, stdout='["name=apparmor","name=seccomp"]'
+            )
+            assert _docker_is_rootless("/usr/bin/docker") is False
+
+    def test_rootless_docker(self) -> None:
+        """Docker daemon reporting the 'rootless' security option."""
+        with patch("commands.freerouting.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0, stdout='["name=rootless","name=seccomp"]'
+            )
+            assert _docker_is_rootless("/usr/bin/docker") is True
+
+    def test_rootless_podman(self) -> None:
+        """Podman doesn't support docker's SecurityOptions template field
+        (first probe fails); falls back to the podman-specific field."""
+
+        def _side_effect(cmd, **kw):
+            if "{{json .SecurityOptions}}" in cmd:
+                return MagicMock(returncode=1, stdout="")
+            return MagicMock(returncode=0, stdout="true\n")
+
+        with patch("commands.freerouting.subprocess.run", side_effect=_side_effect):
+            assert _docker_is_rootless("/usr/bin/podman") is True
+
+    def test_rootful_podman(self) -> None:
+        def _side_effect(cmd, **kw):
+            if "{{json .SecurityOptions}}" in cmd:
+                return MagicMock(returncode=1, stdout="")
+            return MagicMock(returncode=0, stdout="false\n")
+
+        with patch("commands.freerouting.subprocess.run", side_effect=_side_effect):
+            assert _docker_is_rootless("/usr/bin/podman") is False
+
+    def test_both_probes_fail(self) -> None:
+        with patch("commands.freerouting.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stdout="")
+            assert _docker_is_rootless("/usr/bin/docker") is False
+
+    def test_probe_raises(self) -> None:
+        with patch(
+            "commands.freerouting.subprocess.run",
+            side_effect=OSError("not found"),
+        ):
+            assert _docker_is_rootless("/usr/bin/docker") is False
+
+
+class TestBuildFreeroutingCmdDockerUser:
+    """``-u`` must be added only when the engine is rootful: added it on a
+    rootless engine anyway runs Freerouting as an unrelated uid with no
+    write access to the bind-mounted /work directory."""
+
+    def test_rootful_engine_gets_user_arg(self, tmp_path: Path) -> None:
+        jar = tmp_path / "freerouting.jar"
+        jar.touch()
+        with (
+            patch("commands.freerouting._find_docker", return_value="/usr/bin/docker"),
+            patch("commands.freerouting._docker_is_rootless", return_value=False),
+            patch("commands.freerouting.os.getuid", return_value=1000, create=True),
+            patch("commands.freerouting.os.getgid", return_value=1000, create=True),
+        ):
+            cmd = _build_freerouting_cmd(
+                str(jar), str(tmp_path / "b.dsn"), str(tmp_path / "b.ses"), 10, use_docker=True
+            )
+        assert "-u" in cmd
+        assert cmd[cmd.index("-u") + 1] == "1000:1000"
+
+    def test_rootless_engine_skips_user_arg(self, tmp_path: Path) -> None:
+        jar = tmp_path / "freerouting.jar"
+        jar.touch()
+        with (
+            patch("commands.freerouting._find_docker", return_value="/usr/bin/podman"),
+            patch("commands.freerouting._docker_is_rootless", return_value=True),
+            patch("commands.freerouting.os.getuid", return_value=1000, create=True),
+            patch("commands.freerouting.os.getgid", return_value=1000, create=True),
+        ):
+            cmd = _build_freerouting_cmd(
+                str(jar), str(tmp_path / "b.dsn"), str(tmp_path / "b.ses"), 10, use_docker=True
+            )
+        assert "-u" not in cmd
 
 
 class TestJavaVersionOk:
