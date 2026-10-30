@@ -6,6 +6,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`add_via` reads the parameters its schemas declare** (#407). The SWIG
+  handler indexed `position["unit"]`, so a call without the optional `unit`
+  failed with `'unit'`. JSON-RPC calls (`x`, `y`, `diameter`, `netName`) were
+  refused as `Missing position`, and the IPC handler took `x`/`y` as mm
+  whatever their unit. Both handlers now share one parameter reader: `unit`
+  defaults to mm, the JSON-RPC names are accepted, a net that does not exist
+  is reported instead of leaving the via unconnected, and a `viaType` other
+  than `through` is refused instead of quietly adding a through via.
 - **`export_svg` writes the SVG it reports** (#467). It plotted without
   opening a plot file first, the same mistake #456 fixed in `export_gerber`,
   so no file was written while the reply said success. It now writes one SVG

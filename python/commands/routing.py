@@ -60,6 +60,58 @@ def net_stats(
     return stats
 
 
+# --- add_via parameters (#407) ---------------------------------------------
+#
+# The zod schema sends ``position: {x, y, unit?}``, ``net`` and ``viaType``;
+# the JSON-RPC schema sends ``x`` and ``y`` in mm, ``diameter``, ``drill`` and
+# ``netName``. ``size`` is the older name for the diameter. Shared by the SWIG
+# and IPC handlers so both accept the same calls.
+
+
+def via_request(
+    params: Dict[str, Any],
+) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Normalised add_via parameters, or an error payload.
+
+    Returns ``(request, None)`` with the position in mm, or ``(None, error)``.
+    ``diameter_mm`` and ``drill_mm`` are None when not given.
+    """
+    position = params.get("position")
+    if isinstance(position, dict):
+        x, y, unit = position.get("x"), position.get("y"), position.get("unit", "mm")
+    else:
+        x, y, unit = params.get("x"), params.get("y"), "mm"
+    if x is None or y is None:
+        return None, {
+            "success": False,
+            "message": "Missing position",
+            "errorDetails": "position {x, y, unit?} (or x and y in mm) is required",
+        }
+    unit_error = length_unit_error(unit)
+    if unit_error:
+        return None, unit_error
+    via_type = params.get("viaType", "through")
+    if via_type != "through":
+        # Blind, buried and micro vias need a layer pair that neither schema
+        # declares; refuse them rather than silently adding a through via.
+        return None, {
+            "success": False,
+            "message": "Unsupported via type",
+            "errorDetails": f"only through vias can be added, got viaType {via_type!r}",
+        }
+    scale = LENGTH_UNITS_MM[unit]
+    return {
+        "x": x,
+        "y": y,
+        "unit": unit,
+        "x_mm": x * scale,
+        "y_mm": y * scale,
+        "diameter_mm": params.get("diameter", params.get("size")),
+        "drill_mm": params.get("drill"),
+        "net": params.get("net") or params.get("netName"),
+    }, None
+
+
 # --- Net class project-file persistence (KiCad 7+) ------------------------
 #
 # Net class *definitions* live in the project file (``<project>.kicad_pro`` ->
@@ -778,31 +830,30 @@ class RoutingCommands:
                     "errorDetails": "Load or create a board first",
                 }
 
-            position = params.get("position")
-            size = params.get("size")
-            drill = params.get("drill")
-            net = params.get("net")
+            request, error = via_request(params)
+            if error:
+                return error
+            size = request["diameter_mm"]
+            drill = request["drill_mm"]
+            net = request["net"]
             from_layer = params.get("from_layer", "F.Cu")
             to_layer = params.get("to_layer", "B.Cu")
 
-            if not position:
-                return {
-                    "success": False,
-                    "message": "Missing position",
-                    "errorDetails": "position parameter is required",
-                }
+            net_obj = None
+            if net:
+                nets_map = self.board.GetNetInfo().NetsByName()
+                if not nets_map.has_key(net):
+                    return {
+                        "success": False,
+                        "message": "Net not found",
+                        "errorDetails": f"no net named {net!r} on the board",
+                    }
+                net_obj = nets_map[net]
 
             # Create via
             via = pcbnew.PCB_VIA(self.board)
-
-            # Set position
-            scale = (
-                1000000
-                if position["unit"] == "mm"
-                else (25400 if position["unit"] == "mil" else 25400000)
-            )  # mm, mil, or inch to nm
-            x_nm = int(position["x"] * scale)
-            y_nm = int(position["y"] * scale)
+            x_nm = int(round(request["x_mm"] * 1e6))
+            y_nm = int(round(request["y_mm"] * 1e6))
             via.SetPosition(pcbnew.VECTOR2I(x_nm, y_nm))
 
             # Set size and drill (default to board's current via settings)
@@ -821,13 +872,8 @@ class RoutingCommands:
                 }
             via.SetLayerPair(from_id, to_id)
 
-            # Set net if provided
-            if net:
-                netinfo = self.board.GetNetInfo()
-                nets_map = netinfo.NetsByName()
-                if nets_map.has_key(net):
-                    net_obj = nets_map[net]
-                    via.SetNet(net_obj)
+            if net_obj is not None:
+                via.SetNet(net_obj)
 
             # Add via to board
             self.board.Add(via)
@@ -837,9 +883,9 @@ class RoutingCommands:
                 "message": "Added via",
                 "via": {
                     "position": {
-                        "x": position["x"],
-                        "y": position["y"],
-                        "unit": position["unit"],
+                        "x": request["x"],
+                        "y": request["y"],
+                        "unit": request["unit"],
                     },
                     "size": _via_front_width(via) / 1000000,
                     "drill": via.GetDrill() / 1000000,
