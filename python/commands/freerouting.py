@@ -267,6 +267,39 @@ def _find_docker() -> Optional[str]:
     return shutil.which("docker") or shutil.which("podman")
 
 
+def _docker_is_rootless(docker_exe: str) -> bool:
+    """Check if the container runtime already maps container root to the
+    host user (rootless Docker or Podman).
+
+    In that mode, forcing ``-u <host-uid>`` runs Freerouting as a
+    subordinate uid that doesn't own the bind-mounted /work directory,
+    so the SES write fails outright instead of merely being root-owned.
+    """
+    try:
+        proc = subprocess.run(
+            [docker_exe, "info", "--format", "{{json .SecurityOptions}}"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if proc.returncode == 0:
+            return "rootless" in proc.stdout
+    except Exception:
+        pass
+    try:
+        proc = subprocess.run(
+            [docker_exe, "info", "--format", "{{.Host.Security.Rootless}}"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if proc.returncode == 0:
+            return proc.stdout.strip().lower() == "true"
+    except Exception:
+        pass
+    return False
+
+
 def _docker_available() -> bool:
     """Check if Docker/Podman is available and running."""
     docker = _find_docker()
@@ -331,7 +364,7 @@ def _build_freerouting_cmd(
         ses_name = os.path.basename(ses_path)
         jar_name = os.path.basename(jar_path)
         user_args = []
-        if hasattr(os, "getuid"):
+        if hasattr(os, "getuid") and not _docker_is_rootless(docker_exe):
             user_args = ["-u", f"{os.getuid()}:{os.getgid()}"]
         return [
             docker_exe,
