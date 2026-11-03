@@ -714,6 +714,28 @@ whose schemas it had never been shown; toolboxes avoid that by never calling a
 tool indirectly. See [ROUTER_ARCHITECTURE.md](docs/ROUTER_ARCHITECTURE.md) for
 that history.
 
+### Operating modes
+
+`KICAD_MCP_OPERATING_MODE` limits what the assistant can do, for example to let
+a review agent inspect a design without any way to change it:
+
+| Setting             | What the client gets                                                                                  |
+| ------------------- | ----------------------------------------------------------------------------------------------------- |
+| not set, or `write` | Every tool, as before                                                                                 |
+| `readonly`          | Only tools that cannot change the design, project, libraries or KiCad settings, nor drive KiCad's GUI |
+| `manufacturing`     | `readonly` plus the export tools (Gerber, drill, PDF, BOM, netlist, 3D and so on)                     |
+
+- Tools the mode doesn't allow are removed from the tool list, and the server
+  rejects calls to them.
+- Read-only tools may still write output files outside the design, such as a
+  DRC report or a rendered preview.
+- The mode combines with [toolboxes](#toolboxes): a tool is offered only when
+  both allow it.
+- A value the server doesn't recognise counts as `readonly`, so a typo never
+  grants write access.
+- Every read-only tool also carries MCP's `readOnlyHint` annotation, which some
+  clients use to skip approval prompts.
+
 **Usage is seamless:** Just ask naturally - "export gerber files" or "add mounting holes" - and Claude will find and call the appropriate tools automatically.
 
 ### NEEDS TESTING - REPORT ISSUES
