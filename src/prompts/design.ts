@@ -8,6 +8,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { logger } from "../logger.js";
+import { fillTemplate } from "./template.js";
 
 /**
  * Register design prompts with the MCP server
@@ -29,13 +30,14 @@ export function registerDesignPrompts(server: McpServer): void {
           "Information about the current PCB design, including board dimensions, layer stack-up, component placement, and routing details",
         ),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You're helping to review a PCB layout for potential issues and improvements. Here's information about the current PCB design:
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You're helping to review a PCB layout for potential issues and improvements. Here's information about the current PCB design:
 
 {{pcb_design_info}}
 
@@ -76,10 +78,10 @@ When reviewing the PCB layout, consider these key areas:
    - Solder mask considerations
 
 Based on the provided information, identify potential issues and suggest specific improvements to enhance the PCB design.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   // ------------------------------------------------------
@@ -94,13 +96,14 @@ Based on the provided information, identify potential issues and suggest specifi
           "Information about the PCB design requirements, including signal types, speed/frequency, power requirements, and any special considerations",
         ),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You're helping to plan an appropriate layer stack-up for a PCB design. Here's information about the design requirements:
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You're helping to plan an appropriate layer stack-up for a PCB design. Here's information about the design requirements:
 
 {{design_requirements}}
 
@@ -137,10 +140,10 @@ When planning a PCB layer stack-up, consider these important factors:
    - Mechanical stability
 
 Based on the provided requirements, recommend an appropriate layer stack-up, including the number of layers, their arrangement, material specifications, and thickness parameters. Explain the rationale behind your recommendations.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   // ------------------------------------------------------
@@ -155,13 +158,14 @@ Based on the provided requirements, recommend an appropriate layer stack-up, inc
           "Information about the PCB project requirements, including technology, speed/frequency, manufacturing capabilities, and any special considerations",
         ),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You're helping to develop appropriate design rules for a PCB project. Here's information about the project requirements:
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You're helping to develop appropriate design rules for a PCB project. Here's information about the project requirements:
 
 {{project_requirements}}
 
@@ -198,10 +202,10 @@ When developing PCB design rules, consider these key areas:
    - Teardrop specifications
 
 Based on the provided project requirements, recommend a comprehensive set of design rules that will ensure signal integrity, manufacturability, and reliability of the PCB. Provide specific values where appropriate and explain the rationale behind critical rules.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   // ------------------------------------------------------
@@ -216,13 +220,14 @@ Based on the provided project requirements, recommend a comprehensive set of des
           "Information about the circuit requirements, including functionality, performance needs, operating environment, and any special considerations",
         ),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You're helping with component selection for a PCB design. Here's information about the circuit requirements:
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You're helping with component selection for a PCB design. Here's information about the circuit requirements:
 
 {{circuit_requirements}}
 
@@ -263,10 +268,10 @@ When selecting components for a PCB design, consider these important factors:
    - Special handling requirements
 
 Based on the provided circuit requirements, recommend appropriate component types, packages, and specific considerations for this design. Provide guidance on critical component selections and explain the rationale behind your recommendations.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   // ------------------------------------------------------
@@ -286,13 +291,14 @@ Based on the provided circuit requirements, recommend appropriate component type
           "Specific goals for optimization, such as performance improvement, cost reduction, size reduction, or manufacturability enhancement",
         ),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You're helping to optimize a PCB design. Here's information about the current design and optimization goals:
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You're helping to optimize a PCB design. Here's information about the current design and optimization goals:
 
 {{design_info}}
 {{optimization_goals}}
@@ -335,10 +341,10 @@ When optimizing a PCB design, consider these key areas based on the stated goals
    - Connector and interface optimization
 
 Based on the provided information and optimization goals, suggest specific, actionable improvements to the PCB design. Prioritize your recommendations based on their potential impact and implementation feasibility.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   logger.info("Design prompts registered");
