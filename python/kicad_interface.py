@@ -1321,9 +1321,11 @@ class KiCADInterface(SchematicHandlersMixin):
     }
 
     # Commands that write a .kicad_sch file. They are refused while the target
-    # project's schematic is open in KiCad (_refuse_if_schematic_open).
+    # project's schematic is open in KiCad (_refuse_if_schematic_open). Those in
+    # _SCHEMATIC_WRITE_CONDITIONS write only when their parameters ask for it.
     _SCHEMATIC_MUTATING_COMMANDS = {
         "add_hierarchical_sheet",
+        "add_library_symbol_property",
         "add_no_connect",
         "add_schematic_component",
         "add_schematic_hierarchical_label",
@@ -1343,15 +1345,19 @@ class KiCADInterface(SchematicHandlersMixin):
         "connect_passthrough",
         "connect_to_net",
         "create_hierarchical_subsheet",
+        "create_schematic",
         "delete_schematic_component",
         "delete_schematic_net_label",
         "delete_schematic_wire",
         "edit_schematic_component",
         "enrich_datasheets",
+        "lint_offgrid",
+        "lint_schematic_cosmetic",
         "move_schematic_component",
         "move_schematic_net_label",
         "remove_hierarchical_sheet",
         "remove_schematic_component_property",
+        "repair_flat_symbols",
         "replace_instance_lib_ids",
         "replace_schematic_component",
         "rotate_schematic_component",
@@ -1359,32 +1365,78 @@ class KiCADInterface(SchematicHandlersMixin):
         "set_schematic_property_position",
         "set_sheet_property",
         "snap_to_grid",
+        "suggest_schematic_declutter",
         "update_symbol_from_library",
+    }
+
+    # Whether a call writes, read the same way and with the same defaults as
+    # each handler reads its parameters.
+    _SCHEMATIC_WRITE_CONDITIONS = {
+        "lint_offgrid": lambda p: bool(p.get("fix", False)),
+        "lint_schematic_cosmetic": lambda p: not bool(p.get("dryRun", False)),
+        "repair_flat_symbols": lambda p: not bool(p.get("dryRun", True))
+        and str(p.get("path", "")).endswith(".kicad_sch"),
+        "suggest_schematic_declutter": lambda p: bool(p.get("apply", False)),
     }
 
     # Parameters naming the schematic a command edits, in lookup order.
     _SCHEMATIC_PATH_PARAMS = ("schematicPath", "parentSchematicPath", "schematic_path")
 
-    @staticmethod
-    def _project_root_schematic_names(schematic_path: str) -> set:
-        """File names of the root schematic(s) of the project that owns a sheet.
+    @classmethod
+    def _schematic_write_targets(cls, command: str, params: Dict[str, Any]) -> List[str]:
+        """The .kicad_sch files a command call would write, [] if none."""
+        condition = cls._SCHEMATIC_WRITE_CONDITIONS.get(command)
+        if condition and not condition(params):
+            return []
+        if command == "repair_flat_symbols":
+            return [str(params["path"])]
+        if command == "create_schematic":
+            # Same output path as create_schematic: `path` is a .kicad_sch file
+            # or a directory. Only an existing file can be open and overwritten.
+            path, name = params.get("path"), str(params.get("name", ""))
+            if path and str(path).endswith(".kicad_sch"):
+                target = str(path)
+            else:
+                base = name if name.endswith(".kicad_sch") else f"{name}.kicad_sch"
+                target = os.path.join(str(path), base) if path else base
+            return [target] if os.path.exists(target) else []
+        if command == "update_symbol_from_library":
+            # Same selection as update_symbol_from_library.
+            if params.get("schematicPath"):
+                return [str(params["schematicPath"])]
+            if params.get("schematicPaths"):
+                return [str(p) for p in params["schematicPaths"]]
+            if params.get("projectsDir"):
+                return [
+                    str(p)
+                    for p in Path(params["projectsDir"]).glob("*/*.kicad_sch")
+                    if ".history" not in p.parts and "backup" not in p.parts
+                ]
+            return []
+        for key in cls._SCHEMATIC_PATH_PARAMS:
+            if params.get(key):
+                return [str(params[key])]
+        return []
 
-        KiCad reports only the root sheet's file name for an open schematic, so
-        a sub-sheet is matched through its project's .kicad_pro, looked up in
-        the sheet's directory and two levels above it.
+    @staticmethod
+    def _project_root_schematics(schematic_path: str) -> List[Path]:
+        """Root schematic(s) of the project that owns a sheet.
+
+        The project is the nearest .kicad_pro in the sheet's directory or above
+        it; without one, the sheet is its own root.
         """
-        path = Path(schematic_path)
-        for directory in [path.parent, *list(path.parent.parents)[:2]]:
+        path = Path(os.path.abspath(schematic_path))
+        for directory in [path.parent, *path.parent.parents]:
             projects = sorted(directory.glob("*.kicad_pro"))
             if projects:
-                return {p.with_suffix(".kicad_sch").name for p in projects}
-        return {path.name}
+                return [p.with_suffix(".kicad_sch") for p in projects]
+        return [path]
 
-    def _open_schematic_names(self) -> List[str]:
+    def _open_schematics(self) -> List[Dict[str, str]]:
         """Root schematics open in the live KiCad GUI, or [] when unknown."""
         backend = getattr(self, "ipc_backend", None)
         if not (backend and backend.is_connected()):
-            if KICAD_BACKEND == "swig" or not KiCADProcessManager.is_running():
+            if not KiCADProcessManager.is_running():
                 return []
             # A separate connection, so a SWIG session stays as it is.
             backend = getattr(self, "_schematic_probe_backend", None)
@@ -1398,7 +1450,24 @@ class KiCADInterface(SchematicHandlersMixin):
                     logger.debug(f"Cannot ask KiCad for open schematics: {e}")
                     return []
                 self._schematic_probe_backend = backend
-        return backend.get_open_schematic_names()
+        return backend.get_open_schematics()
+
+    @staticmethod
+    def _schematic_is_open(roots: List[Path], open_schematics: List[Dict[str, str]]) -> bool:
+        """Whether KiCad has one of these root schematics open.
+
+        A full path is compared when KiCad reports the project; otherwise only
+        the file name can be, which also matches a same-named project elsewhere.
+        """
+        root_paths = {os.path.normcase(str(r)) for r in roots}
+        root_names = {r.name for r in roots}
+        for doc in open_schematics:
+            if doc["path"]:
+                if os.path.normcase(os.path.abspath(doc["path"])) in root_paths:
+                    return True
+            elif doc["name"] in root_names:
+                return True
+        return False
 
     def _refuse_if_schematic_open(
         self, command: str, params: Dict[str, Any]
@@ -1415,11 +1484,21 @@ class KiCADInterface(SchematicHandlersMixin):
         if interactive_schematic.INTERACTIVE_SCHEMATIC:
             # The opt-in Windows reload asks KiCad to reload after each edit.
             return None
-        target = next((params[k] for k in self._SCHEMATIC_PATH_PARAMS if params.get(k)), None)
-        if not target:
+        targets = self._schematic_write_targets(command, params)
+        if not targets:
             return None
-        open_names = set(self._open_schematic_names())
-        if not open_names & self._project_root_schematic_names(str(target)):
+        open_schematics = self._open_schematics()
+        if not open_schematics:
+            return None
+        target = next(
+            (
+                t
+                for t in targets
+                if self._schematic_is_open(self._project_root_schematics(t), open_schematics)
+            ),
+            None,
+        )
+        if target is None:
             return None
         return {
             "success": False,
@@ -1433,7 +1512,7 @@ class KiCADInterface(SchematicHandlersMixin):
                 "retry. Set KICAD_ALLOW_OPEN_SCHEMATIC_EDITS=true to allow edits "
                 "anyway."
             ),
-            "schematicPath": str(target),
+            "schematicPath": target,
             "schematicOpenInKicad": True,
         }
 
