@@ -8,6 +8,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { logger } from "../logger.js";
+import { fillTemplate } from "./template.js";
 
 export function registerFootprintPrompts(server: McpServer): void {
   logger.info("Registering footprint prompts");
@@ -25,13 +26,14 @@ export function registerFootprintPrompts(server: McpServer): void {
         ),
       libraryPath: z.string().optional().describe("Target .pretty library path (optional)"),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You are a KiCAD footprint expert. Create a correct KiCAD 9 footprint using the create_footprint tool.
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You are a KiCAD footprint expert. Create a correct KiCAD 9 footprint using the create_footprint tool.
 
 ## Component to footprint
 {{component}}
@@ -92,10 +94,10 @@ export function registerFootprintPrompts(server: McpServer): void {
 | DIP-8     | 2.54 mm| dia 1.6, drill 0.8| THT, 100 mil grid            |
 
 Now create the footprint for: {{component}}`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   // ------------------------------------------------------
@@ -106,13 +108,14 @@ Now create the footprint for: {{component}}`,
     {
       footprintPath: z.string().describe("Path to the .kicad_mod file to review"),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `Review the footprint at {{footprintPath}} against IPC-7351 land pattern guidelines.
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `Review the footprint at {{footprintPath}} against IPC-7351 land pattern guidelines.
 
 Check:
 1. **Pad size** – is the copper area sufficient for soldering (not undersized)?
@@ -124,9 +127,9 @@ Check:
 7. **Anchor** – is the origin centred on the pad pattern?
 
 Use edit_footprint_pad to fix any issues found.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 }

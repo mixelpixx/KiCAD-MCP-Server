@@ -8,6 +8,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { logger } from "../logger.js";
+import { fillTemplate } from "./template.js";
 
 /**
  * Register component prompts with the MCP server
@@ -25,13 +26,14 @@ export function registerComponentPrompts(server: McpServer): void {
     {
       requirements: z.string().describe("Description of the circuit requirements and constraints"),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You're helping to select components for a circuit design. Given the following requirements:
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You're helping to select components for a circuit design. Given the following requirements:
 
 {{requirements}}
 
@@ -45,10 +47,10 @@ Suggest appropriate components with their values, ratings, and footprints. Consi
 - Performance specifications
 
 For each component type, recommend specific values and provide a brief explanation of your recommendation. If appropriate, suggest alternatives with different trade-offs.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   // ------------------------------------------------------
@@ -59,13 +61,14 @@ For each component type, recommend specific values and provide a brief explanati
     {
       components: z.string().describe("List of components to be placed on the PCB"),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You're helping with component placement for a PCB layout. Here are the components to place:
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You're helping with component placement for a PCB layout. Here are the components to place:
 
 {{components}}
 
@@ -92,10 +95,10 @@ Provide a strategy for optimal placement considering:
    - Consider component height distribution
 
 Group components functionally and suggest a logical arrangement. If possible, provide a rough sketch or description of component zones.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   // ------------------------------------------------------
@@ -108,13 +111,14 @@ Group components functionally and suggest a logical arrangement. If possible, pr
         .string()
         .describe("Information about the component that needs to be replaced"),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You're helping to find a replacement for a component that is unavailable or needs to be updated. Here's the original component information:
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You're helping to find a replacement for a component that is unavailable or needs to be updated. Here's the original component information:
 
 {{component_info}}
 
@@ -140,10 +144,10 @@ Consider these factors when suggesting replacements:
    - Lead time considerations
 
 Suggest suitable replacement options and explain the advantages and disadvantages of each. Include any circuit modifications that might be necessary.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   // ------------------------------------------------------
@@ -156,13 +160,14 @@ Suggest suitable replacement options and explain the advantages and disadvantage
         .string()
         .describe("Description of the component or circuit issue being troubleshooted"),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You're helping to troubleshoot an issue with a component or circuit section in a PCB design. Here's the issue description:
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You're helping to troubleshoot an issue with a component or circuit section in a PCB design. Here's the issue description:
 
 {{issue_description}}
 
@@ -189,10 +194,10 @@ Use the following systematic approach to diagnose the problem:
    - Review mechanical stress or vibration effects
 
 Based on the available information, suggest likely causes of the issue and recommend specific steps to diagnose and resolve the problem.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   // ------------------------------------------------------
@@ -208,13 +213,14 @@ Based on the available information, suggest likely causes of the issue and recom
             "(MPN, distributor part numbers, manufacturer, etc.).",
         ),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You are attaching sourcing and BOM metadata to schematic components. Here is the situation:
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You are attaching sourcing and BOM metadata to schematic components. Here is the situation:
 
 {{component_info}}
 
@@ -261,10 +267,10 @@ Hidden vs visible:
 Recommend the right set of properties for the components in the brief, generate
 the actual tool calls (with concrete values), and explain any sourcing trade-offs
 or substitutions you propose.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   // ------------------------------------------------------
@@ -277,13 +283,14 @@ or substitutions you propose.`,
         .string()
         .describe("Description of the circuit function and performance requirements"),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You're helping to calculate appropriate component values for a specific circuit function. Here's the circuit description and requirements:
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You're helping to calculate appropriate component values for a specific circuit function. Here's the circuit description and requirements:
 
 {{circuit_requirements}}
 
@@ -299,10 +306,10 @@ Follow these steps to determine the optimal component values:
    - Available standard values
 
 Present your calculations step-by-step, showing your work and explaining your reasoning. Recommend specific component values, explaining why they're appropriate for this application. If there are multiple valid approaches, discuss the trade-offs between them.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   logger.info("Component prompts registered");
