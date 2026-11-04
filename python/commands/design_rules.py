@@ -582,7 +582,12 @@ class DesignRuleCommands:
                     "--units",
                     "mm",
                 ]
-                cmd += self._drc_flags(params)
+                refill_requested = bool(params.get("refillZones", True))
+                refill_supported = (
+                    self._cli_supports_refill(kicad_cli) if refill_requested else False
+                )
+                drc_flags = self._drc_flags(params, refill_supported)
+                cmd += drc_flags
                 cmd.append(board_file)
 
                 logger.info(f"Running DRC command (timeout={timeout_sec}s): {' '.join(cmd)}")
@@ -596,12 +601,37 @@ class DesignRuleCommands:
                 )
 
                 if result.returncode != 0:
-                    logger.error(f"DRC command failed: {result.stderr}")
+                    details = self._cli_error_details(result)
+                    logger.error(f"DRC command failed: {details}")
                     return {
                         "success": False,
                         "message": "DRC command failed",
-                        "errorDetails": result.stderr,
+                        "errorDetails": details,
                     }
+
+                notes = []
+                warnings = []
+                zones_refilled = refill_requested and refill_supported
+                if zones_refilled:
+                    notes.append(
+                        "Zones were refilled for this check only; the refilled copper was not "
+                        "saved. Exports plot the saved fills, so run refill_zones and save the "
+                        "board before exporting."
+                    )
+                elif refill_requested:
+                    notes.append(
+                        "This kicad-cli has no --refill-zones (it arrived in KiCad 10), so DRC "
+                        "checked the zone fills saved in the board file."
+                    )
+                if params.get("schematicParity", False):
+                    sch = os.path.splitext(board_file)[0] + ".kicad_sch"
+                    out = (result.stdout or "") + (result.stderr or "")
+                    if "Failed to fetch schematic netlist" in out or not os.path.exists(sch):
+                        warnings.append(
+                            "Schematic parity did not run: kicad-cli could not load the "
+                            f"schematic ({os.path.basename(sch)} next to the board). Zero parity "
+                            "issues here does not mean board and schematic agree."
+                        )
 
                 # Read JSON output
                 with open(json_output, "r", encoding="utf-8") as f:
@@ -645,7 +675,7 @@ class DesignRuleCommands:
                         report_path,
                         "--units",
                         "mm",
-                        *self._drc_flags(params),
+                        *drc_flags,
                         board_file,
                     ]
                     subprocess.run(cmd_report, capture_output=True, timeout=timeout_sec)
@@ -660,6 +690,9 @@ class DesignRuleCommands:
                         "by_type": violation_counts,
                         "by_category": category_counts,
                     },
+                    "zonesRefilled": zones_refilled,
+                    "notes": notes,
+                    "warnings": warnings,
                     "violationsFile": violations_file,
                     "reportPath": report_path if report_path else None,
                 }
@@ -691,18 +724,49 @@ class DesignRuleCommands:
     # board with missing connections or schematic mismatches reported none of them.
     DRC_REPORT_CATEGORIES = ("violations", "unconnected_items", "schematic_parity")
 
+    _refill_support: Dict[str, bool] = {}
+
+    @classmethod
+    def _cli_supports_refill(cls, kicad_cli: str) -> bool:
+        """Whether this kicad-cli's ``pcb drc`` has ``--refill-zones`` (KiCad 10+), cached per path."""
+        if kicad_cli not in cls._refill_support:
+            import subprocess
+
+            try:
+                h = subprocess.run(
+                    [kicad_cli, "pcb", "drc", "--help"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                cls._refill_support[kicad_cli] = "--refill-zones" in (h.stdout or "") + (
+                    h.stderr or ""
+                )
+            except Exception:
+                cls._refill_support[kicad_cli] = False
+        return cls._refill_support[kicad_cli]
+
     @staticmethod
-    def _drc_flags(params: Dict[str, Any]) -> list:
+    def _cli_error_details(result) -> str:
+        """kicad-cli prints argument errors on stdout; return stderr, or stdout's tail when empty."""
+        err = (result.stderr or "").strip()
+        if err:
+            return err
+        return "\n".join((result.stdout or "").strip().splitlines()[-20:])
+
+    @staticmethod
+    def _drc_flags(params: Dict[str, Any], refill_supported: bool = True) -> list:
         """kicad-cli flags from run_drc params.
 
         ``refillZones`` (default True) matches the DRC dialog's default "Refill all zones
         before performing DRC". Without it a board whose fills are stale reports clearance
         errors against copper that a refill would move, and misses ones it would create.
+        It is only passed when this kicad-cli supports it (KiCad 10+).
         ``schematicParity`` (default False) adds the schematic-vs-board check; it needs the
         project's schematic next to the board.
         """
         flags = []
-        if params.get("refillZones", True):
+        if params.get("refillZones", True) and refill_supported:
             flags.append("--refill-zones")
         if params.get("schematicParity", False):
             flags.append("--schematic-parity")
