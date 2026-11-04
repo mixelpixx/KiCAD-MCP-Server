@@ -8,6 +8,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { logger } from "../logger.js";
+import { fillTemplate } from "./template.js";
 
 /**
  * Register routing prompts with the MCP server
@@ -29,13 +30,14 @@ export function registerRoutingPrompts(server: McpServer): void {
           "Information about the PCB board, including dimensions, layer stack-up, and components",
         ),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You're helping to develop a routing strategy for a PCB design. Here's information about the board:
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You're helping to develop a routing strategy for a PCB design. Here's information about the board:
 
 {{board_info}}
 
@@ -68,10 +70,10 @@ Consider the following aspects when developing your routing strategy:
    - Consider impedance control requirements
 
 Provide a comprehensive routing strategy that addresses these aspects, with specific recommendations for this particular board design.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   // ------------------------------------------------------
@@ -86,13 +88,14 @@ Provide a comprehensive routing strategy that addresses these aspects, with spec
           "Information about the differential pairs to be routed, including signal names, source and destination components, and speed/frequency requirements",
         ),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You're helping with routing differential pairs on a PCB. Here's information about the differential pairs:
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You're helping with routing differential pairs on a PCB. Here's information about the differential pairs:
 
 {{differential_pairs}}
 
@@ -124,10 +127,10 @@ When routing differential pairs, follow these best practices:
    - Place termination components close to the endpoints
 
 Based on the provided information, suggest specific routing approaches for these differential pairs, including recommended trace width, spacing, and any special considerations for this particular design.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   // ------------------------------------------------------
@@ -142,13 +145,14 @@ Based on the provided information, suggest specific routing approaches for these
           "Information about the high-speed signals to be routed, including signal names, source and destination components, and speed/frequency requirements",
         ),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You're helping with routing high-speed signals on a PCB. Here's information about the high-speed signals:
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You're helping with routing high-speed signals on a PCB. Here's information about the high-speed signals:
 
 {{high_speed_signals}}
 
@@ -181,10 +185,10 @@ When routing high-speed signals, consider these critical factors:
    - Account for capacitive loading from components and vias
 
 Based on the provided information, suggest specific routing approaches for these high-speed signals, including recommended trace width, layer assignment, and any special considerations for this particular design.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   // ------------------------------------------------------
@@ -199,13 +203,14 @@ Based on the provided information, suggest specific routing approaches for these
           "Information about the power requirements, including voltage rails, current needs, and components requiring power",
         ),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You're helping with designing the power distribution network for a PCB. Here's information about the power requirements:
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You're helping with designing the power distribution network for a PCB. Here's information about the power requirements:
 
 {{power_requirements}}
 
@@ -238,10 +243,10 @@ Consider these key aspects of power distribution network design:
    - Consider filtering for noise-sensitive circuits
 
 Based on the provided information, suggest a comprehensive power distribution strategy, including specific recommendations for plane usage, trace widths, decoupling, and any special considerations for this particular design.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   // ------------------------------------------------------
@@ -256,13 +261,14 @@ Based on the provided information, suggest a comprehensive power distribution st
           "Information about the PCB board, including layer count, thickness, and design requirements",
         ),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You're helping with planning via usage in a PCB design. Here's information about the board:
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You're helping with planning via usage in a PCB design. Here's information about the board:
 
 {{board_info}}
 
@@ -298,10 +304,10 @@ Consider these important aspects of via usage:
    - Tenting and plugging options
 
 Based on the provided information, recommend appropriate via strategies for this PCB design, including specific via types, sizes, and placement guidelines.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   logger.info("Routing prompts registered");
