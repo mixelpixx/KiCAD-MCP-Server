@@ -23,6 +23,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`run_drc` reports unconnected items and schematic-parity issues, and
+  refills zones first.** kicad-cli's JSON report keeps three lists, and only
+  `violations` was read, so missing connections (`unconnected_items`) and
+  schematic mismatches (`schematic_parity`) were never reported: a board with
+  unrouted nets could come back with no errors. All three are read now, the
+  summary counts them `by_category`, and each violation in the saved file
+  keeps its `category` and the `items` it names (description, uuid,
+  position), so a caller can see what is shorted or unconnected. DRC refills
+  zones before checking, as the DRC dialog does by default (`refillZones:
+  false` turns it off); on a 13-cell battery board with stale fills, about
+  400 of 584 reported violations were clearance errors against old fill
+  copper. `schematicParity: true` adds the schematic check.
 - **`export_svg` writes the SVG it reports** (#467). It plotted without
   opening a plot file first, the same mistake #456 fixed in `export_gerber`,
   so no file was written while the reply said success. It now writes one SVG

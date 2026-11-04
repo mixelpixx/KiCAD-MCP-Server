@@ -581,8 +581,9 @@ class DesignRuleCommands:
                     json_output,
                     "--units",
                     "mm",
-                    board_file,
                 ]
+                cmd += self._drc_flags(params)
+                cmd.append(board_file)
 
                 logger.info(f"Running DRC command (timeout={timeout_sec}s): {' '.join(cmd)}")
 
@@ -606,41 +607,9 @@ class DesignRuleCommands:
                 with open(json_output, "r", encoding="utf-8") as f:
                     drc_data = json.load(f)
 
-                # Parse violations from kicad-cli output
-                violations = []
-                violation_counts: dict[str, int] = {}
-                severity_counts = {"error": 0, "warning": 0, "info": 0}
-
-                for violation in drc_data.get("violations", []):
-                    vtype = violation.get("type", "unknown")
-                    vseverity = violation.get("severity", "error")
-
-                    # Extract location from first item's pos (kicad-cli JSON format)
-                    items = violation.get("items", [])
-                    loc_x, loc_y = 0, 0
-                    if items and "pos" in items[0]:
-                        loc_x = items[0]["pos"].get("x", 0)
-                        loc_y = items[0]["pos"].get("y", 0)
-
-                    violations.append(
-                        {
-                            "type": vtype,
-                            "severity": vseverity,
-                            "message": violation.get("description", ""),
-                            "location": {
-                                "x": loc_x,
-                                "y": loc_y,
-                                "unit": "mm",
-                            },
-                        }
-                    )
-
-                    # Count violations by type
-                    violation_counts[vtype] = violation_counts.get(vtype, 0) + 1
-
-                    # Count by severity
-                    if vseverity in severity_counts:
-                        severity_counts[vseverity] += 1
+                violations, violation_counts, severity_counts, category_counts = (
+                    self._parse_drc_report(drc_data)
+                )
 
                 # Determine where to save the violations file
                 board_dir = os.path.dirname(board_file)
@@ -656,6 +625,7 @@ class DesignRuleCommands:
                             "total_violations": len(violations),
                             "violation_counts": violation_counts,
                             "severity_counts": severity_counts,
+                            "category_counts": category_counts,
                             "violations": violations,
                         },
                         f,
@@ -675,6 +645,7 @@ class DesignRuleCommands:
                         report_path,
                         "--units",
                         "mm",
+                        *self._drc_flags(params),
                         board_file,
                     ]
                     subprocess.run(cmd_report, capture_output=True, timeout=timeout_sec)
@@ -687,6 +658,7 @@ class DesignRuleCommands:
                         "total": len(violations),
                         "by_severity": severity_counts,
                         "by_type": violation_counts,
+                        "by_category": category_counts,
                     },
                     "violationsFile": violations_file,
                     "reportPath": report_path if report_path else None,
@@ -714,6 +686,71 @@ class DesignRuleCommands:
                 "message": "Failed to run DRC",
                 "errorDetails": str(e),
             }
+
+    # kicad-cli's JSON report keeps three lists. Only "violations" was read before, so a
+    # board with missing connections or schematic mismatches reported none of them.
+    DRC_REPORT_CATEGORIES = ("violations", "unconnected_items", "schematic_parity")
+
+    @staticmethod
+    def _drc_flags(params: Dict[str, Any]) -> list:
+        """kicad-cli flags from run_drc params.
+
+        ``refillZones`` (default True) matches the DRC dialog's default "Refill all zones
+        before performing DRC". Without it a board whose fills are stale reports clearance
+        errors against copper that a refill would move, and misses ones it would create.
+        ``schematicParity`` (default False) adds the schematic-vs-board check; it needs the
+        project's schematic next to the board.
+        """
+        flags = []
+        if params.get("refillZones", True):
+            flags.append("--refill-zones")
+        if params.get("schematicParity", False):
+            flags.append("--schematic-parity")
+        return flags
+
+    @classmethod
+    def _parse_drc_report(cls, drc_data: Dict[str, Any]):
+        """Flatten a kicad-cli DRC JSON report.
+
+        Returns (violations, counts_by_type, counts_by_severity, counts_by_category). Each
+        violation keeps its ``category`` and the ``items`` it names (description, uuid, pos),
+        so a caller can tell WHAT is shorted or unconnected, not only where.
+        """
+        violations = []
+        violation_counts: Dict[str, int] = {}
+        severity_counts = {"error": 0, "warning": 0, "info": 0}
+        category_counts: Dict[str, int] = {}
+        for category in cls.DRC_REPORT_CATEGORIES:
+            for violation in drc_data.get(category, []) or []:
+                vtype = violation.get("type", "unknown")
+                vseverity = violation.get("severity", "error")
+                items = violation.get("items", []) or []
+                loc_x, loc_y = 0, 0
+                if items and "pos" in items[0]:
+                    loc_x = items[0]["pos"].get("x", 0)
+                    loc_y = items[0]["pos"].get("y", 0)
+                violations.append(
+                    {
+                        "type": vtype,
+                        "severity": vseverity,
+                        "category": category,
+                        "message": violation.get("description", ""),
+                        "location": {"x": loc_x, "y": loc_y, "unit": "mm"},
+                        "items": [
+                            {
+                                "description": it.get("description", ""),
+                                "uuid": it.get("uuid"),
+                                "pos": it.get("pos"),
+                            }
+                            for it in items
+                        ],
+                    }
+                )
+                violation_counts[vtype] = violation_counts.get(vtype, 0) + 1
+                if vseverity in severity_counts:
+                    severity_counts[vseverity] += 1
+                category_counts[category] = category_counts.get(category, 0) + 1
+        return violations, violation_counts, severity_counts, category_counts
 
     def _find_kicad_cli(self) -> Optional[str]:
         """Find kicad-cli executable via the centralized resolver.
