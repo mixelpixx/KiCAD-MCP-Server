@@ -29,10 +29,11 @@ if sys.platform == "win32":
 
     ensure_cairo_on_path([os.environ.get("PYTHONPATH", ""), str(Path(sys.executable).parent)])
 
-# Import pymupdf before anything imports pcbnew. Both are SWIG modules, and if
-# pymupdf loads second, pcbnew loops such as `for d in board.GetDrawings()`
-# fail with "'SwigPyIterator' object has no attribute 'next'" after the first
-# image render. See utils/swig_compat.py.
+# Import pymupdf before anything imports pcbnew. Both are SWIG modules, and on
+# builds that share a SWIG runtime, pymupdf loading second makes pcbnew loops
+# such as `for d in board.GetDrawings()` fail with "'SwigPyIterator' object has
+# no attribute 'next'" (#479). The view tools also re-register pcbnew's class
+# after importing pymupdf. See utils/swig_compat.py.
 from utils.swig_compat import preload_pymupdf
 
 preload_pymupdf()

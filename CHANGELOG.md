@@ -30,18 +30,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
   is named `<board>-<name>.svg` like the PDF export. Both `export_svg` and
   `export_pdf` now take that name from KiCad and fail if the file is missing,
   instead of reporting a path nobody checked.
-- **Board tools keep working after an image render.** `get_board_2d_view`
-  and the schematic view rasterize with pymupdf, which, like pcbnew, is a
-  SWIG module. Loaded after pcbnew, it replaced pcbnew's iterator class, so
-  every later loop over board drawings, tracks or footprint graphics failed
-  with `'SwigPyIterator' object has no attribute 'next'` until the server
-  restarted. `list_graphics` was the most visible casualty. The server now
-  imports pymupdf before pcbnew, which avoids the conflict.
-- **Prompts include the arguments you pass** (found while reviewing #470).
-  Every prompt's text marks its arguments with `{{name}}`, but no handler
-  filled them in, so the model received the literal `{{requirements}}` and the
-  user's text was dropped. All 18 prompts now substitute their arguments; an
-  optional one left out reads "(not provided)".
+- **Board tools keep working after an image render** (#479).
+  `get_board_2d_view` and the schematic view rasterize with pymupdf, which,
+  like pcbnew, is a SWIG module. On builds where both use the same SWIG
+  runtime version, they share one type table, and pymupdf loading after pcbnew
+  replaced pcbnew's iterator class. Every later loop over board drawings,
+  tracks or footprint graphics then failed with
+  `'SwigPyIterator' object has no attribute 'next'` until the server
+  restarted; `list_graphics` was the most visible casualty. If you never saw
+  that error, your build keeps the tables separate and was not affected (seen
+  with KiCad 9.0.8 from Ubuntu 26.04 and pymupdf 2.1). The server now imports
+  pymupdf before pcbnew, and both view tools re-register pcbnew's iterator
+  class after loading pymupdf, so the import order no longer matters.
 
 ## [2.8.3] - 2026-10-25
 
