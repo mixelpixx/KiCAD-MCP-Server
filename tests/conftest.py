@@ -31,8 +31,26 @@ os.environ.setdefault("KICAD_SKIP_SYMBOL_WARMUP", "1")
 # attribute access (pcbnew.BOARD, pcbnew.PCB_TRACK, …) returns a mock
 # rather than raising AttributeError.
 # ---------------------------------------------------------------------------
+
+
+class _ModuleStub(MagicMock):
+    """MagicMock that also keeps its child mocks in the instance ``__dict__``.
+
+    Since pytest 9.2, ``monkeypatch.setattr`` saves the old value only from the
+    instance ``__dict__``. A plain MagicMock keeps child mocks in
+    ``_mock_children``, so ``undo()`` deleted the patched name instead of
+    restoring it, and the stub then raised AttributeError for that name in
+    every later test.
+    """
+
+    def __getattr__(self, name: str):
+        child = super().__getattr__(name)
+        self.__dict__[name] = child
+        return child
+
+
 if os.environ.get("KICAD_USE_REAL_PCBNEW") != "1":
-    _pcbnew = MagicMock(name="pcbnew")
+    _pcbnew = _ModuleStub(name="pcbnew")
     _pcbnew.__file__ = "/fake/pcbnew.cpython-313-x86_64-linux-gnu.so"
     _pcbnew.__name__ = "pcbnew"
     _pcbnew.__spec__ = None
