@@ -29,6 +29,14 @@ if sys.platform == "win32":
 
     ensure_cairo_on_path([os.environ.get("PYTHONPATH", ""), str(Path(sys.executable).parent)])
 
+# Import pymupdf before anything imports pcbnew. Both are SWIG modules, and if
+# pymupdf loads second, pcbnew loops such as `for d in board.GetDrawings()`
+# fail with "'SwigPyIterator' object has no attribute 'next'" after the first
+# image render. See utils/swig_compat.py.
+from utils.swig_compat import preload_pymupdf
+
+preload_pymupdf()
+
 import sexpdata
 from annotations import AnnotationLoader
 from commands.schematic_handlers import SchematicHandlersMixin

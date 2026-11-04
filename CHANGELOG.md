@@ -30,6 +30,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
   is named `<board>-<name>.svg` like the PDF export. Both `export_svg` and
   `export_pdf` now take that name from KiCad and fail if the file is missing,
   instead of reporting a path nobody checked.
+- **Board tools keep working after an image render.** `get_board_2d_view`
+  and the schematic view rasterize with pymupdf, which, like pcbnew, is a
+  SWIG module. Loaded after pcbnew, it replaced pcbnew's iterator class, so
+  every later loop over board drawings, tracks or footprint graphics failed
+  with `'SwigPyIterator' object has no attribute 'next'` until the server
+  restarted. `list_graphics` was the most visible casualty. The server now
+  imports pymupdf before pcbnew, which avoids the conflict.
 
 ## [2.8.3] - 2026-10-25
 
