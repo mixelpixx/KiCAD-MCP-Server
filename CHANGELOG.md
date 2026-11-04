@@ -24,7 +24,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
 ### Bug Fixes
 
 - **`add_via` keeps the net it was given inside another net's zone.** It
-  created a non-free via, and KiCad gives a non-free via the net of the
+  created a non-free via, and KiCad 10 gives a non-free via the net of the
   copper it touches when the board is saved. A via placed inside a filled
   zone of another net, before anything of its own net reached it, was written
   to the file on the zone's net, while the reply named the requested one: on a

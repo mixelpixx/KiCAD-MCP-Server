@@ -201,8 +201,16 @@ def test_add_via_keeps_its_net_inside_another_nets_zone(tmp_path: Path) -> None:
     for x, y in ((0, 0), (20, 0), (20, 20), (0, 20)):
         outline.Append(pcbnew.FromMM(x), pcbnew.FromMM(y))
     board.Add(zone)
-    # A board on disk carries the zone's last fill: the via lands on filled copper.
+    # Save and reload before filling: ZONE_FILLER on a bare in-memory BOARD() segfaults on
+    # KiCad 9 (no project attached). A board on disk carries its last fill, so the via lands
+    # on filled copper, as it would on a real board.
+    seed = tmp_path / "seed.kicad_pcb"
+    pcbnew.SaveBoard(str(seed), board)
+    board = pcbnew.LoadBoard(str(seed))
     pcbnew.ZONE_FILLER(board).Fill(board.Zones())
+    # KiCad 9 drops nets that nothing uses when it saves; SIG has no items yet.
+    if not board.FindNet("SIG"):
+        board.Add(pcbnew.NETINFO_ITEM(board, "SIG"))
 
     result = RoutingCommands(board).add_via(
         {"position": {"x": 10, "y": 10, "unit": "mm"}, "net": "SIG"}
