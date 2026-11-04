@@ -181,3 +181,38 @@ def test_export_pdf_writes_the_file_it_reports(tmp_path: Path) -> None:
     pdf = Path(result["file"]["path"])
     assert pdf.name == "plot_smoke-board.pdf"
     assert pdf.read_bytes().startswith(b"%PDF")
+
+
+def test_add_via_keeps_its_net_inside_another_nets_zone(tmp_path: Path) -> None:
+    """A via placed on its own inside a zone of another net used to be written to the file on
+    the zone's net: a non-free via takes its net from the copper it touches when the board is
+    saved. add_via now makes a free via, as KiCad's Add Free-Standing Via does."""
+    import pcbnew
+    from commands.routing import RoutingCommands
+
+    board = pcbnew.BOARD()
+    for name in ("PLANE", "SIG"):
+        board.Add(pcbnew.NETINFO_ITEM(board, name))
+    zone = pcbnew.ZONE(board)
+    zone.SetLayer(pcbnew.B_Cu)
+    zone.SetNet(board.FindNet("PLANE"))
+    outline = zone.Outline()
+    outline.NewOutline()
+    for x, y in ((0, 0), (20, 0), (20, 20), (0, 20)):
+        outline.Append(pcbnew.FromMM(x), pcbnew.FromMM(y))
+    board.Add(zone)
+    # A board on disk carries the zone's last fill: the via lands on filled copper.
+    pcbnew.ZONE_FILLER(board).Fill(board.Zones())
+
+    result = RoutingCommands(board).add_via(
+        {"position": {"x": 10, "y": 10, "unit": "mm"}, "net": "SIG"}
+    )
+    assert result["success"] is True, result
+    assert result["via"]["net"] == "SIG"
+
+    path = tmp_path / "via_in_zone.kicad_pcb"
+    pcbnew.SaveBoard(str(path), board)
+    reloaded = pcbnew.LoadBoard(str(path))
+    vias = [t for t in reloaded.GetTracks() if t.GetClass() == "PCB_VIA"]
+    assert len(vias) == 1
+    assert vias[0].GetNetname() == "SIG", "the via was saved on the zone's net"
