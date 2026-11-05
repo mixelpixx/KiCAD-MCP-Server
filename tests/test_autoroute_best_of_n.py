@@ -10,6 +10,7 @@ actually invoking Freerouting or KiCad. Specifically:
   - The pass schedule wraps when attempts > len(schedule).
 """
 
+import os
 import sys
 import types
 from pathlib import Path
@@ -181,6 +182,10 @@ def test_best_of_three_picks_highest_scoring_ses(workdir, fake_jar):
 
 
 @pytest.mark.unit
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="os.replace() can't replace a read-only file on Windows",
+)
 def test_restore_succeeds_when_last_attempt_ses_is_read_only(workdir, fake_jar):
     """Restore must not need write permission on the pre-existing ses_path.
 
