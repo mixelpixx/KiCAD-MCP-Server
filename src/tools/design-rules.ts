@@ -138,6 +138,54 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
   );
 
   // ------------------------------------------------------
+  // Voltage-graded clearance / creepage rules
+  // ------------------------------------------------------
+  server.tool(
+    "set_voltage_clearance_rules",
+    `Write clearance and creepage rules graded by the working voltage between net classes, as a managed block in the board's .kicad_dru.
+
+Give each net class its worst-case voltage against one shared reference. The working voltage between two classes is then |Va - Vb|. Use 'pairs' to override that for classes in separate domains, for example across an isolation barrier. 'spacing' maps working voltage to the required clearance and (optionally) creepage. Choose its values from your standard (e.g. IPC-2221 or IEC 60664) and your coating or potting; the tool does not supply them.
+
+One rule is written per pair of classes, plus one per class against all other nets (at otherNetsVoltage, default 0 V). A re-run replaces the block and leaves other rules alone. The write is refused if the rest of the .kicad_dru does not parse, because KiCad silently ignores every rule in a file it cannot parse. Classes not defined in the project are reported in warnings. Rules apply from the next DRC run.`,
+    {
+      classes: z
+        .array(
+          z.object({
+            name: z.string().describe("Net class name (must exist in the project)"),
+            voltage: z.number().describe("Worst-case potential (V) against the shared reference"),
+          }),
+        )
+        .min(1)
+        .describe("Net classes and their voltages"),
+      spacing: z
+        .array(
+          z.object({
+            upTo: z.number().describe("Working voltage (V) this row covers, up to and including"),
+            clearance: z.number().describe("Minimum clearance (mm)"),
+            creepage: z.number().optional().describe("Minimum creepage (mm)"),
+          }),
+        )
+        .min(1)
+        .describe("Spacing table; spacing must not fall as voltage rises"),
+      pairs: z
+        .array(z.object({ a: z.string(), b: z.string(), voltage: z.number() }))
+        .optional()
+        .describe("Explicit working voltage (V) between two classes, overriding |Va - Vb|"),
+      otherNetsVoltage: z
+        .number()
+        .nullable()
+        .optional()
+        .describe("Potential of nets in none of the classes (default 0); null skips those rules"),
+      boardPath: z.string().optional().describe("Board .kicad_pcb (default: the loaded board)"),
+      dryRun: z.boolean().optional().describe("Return the planned rules without writing"),
+    },
+    async (args) => {
+      const result = await callKicadScript("set_voltage_clearance_rules", args);
+      return formatKicadResult(result);
+    },
+  );
+
+  // ------------------------------------------------------
   // Check Clearance Tool
   // ------------------------------------------------------
   server.tool(

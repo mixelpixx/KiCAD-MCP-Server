@@ -2241,6 +2241,41 @@ DESIGN_RULE_TOOLS = [
             "required": ["layer"],
         },
     },
+    {
+        "name": "set_voltage_clearance_rules",
+        "title": "Set Voltage Clearance Rules",
+        "description": (
+            "Writes clearance/creepage rules graded by working voltage between net classes "
+            "into a managed block of the board's .kicad_dru."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "classes": {
+                    "type": "array",
+                    "description": "[{name, voltage}]: worst-case potential per net class (V)",
+                    "items": {"type": "object"},
+                },
+                "spacing": {
+                    "type": "array",
+                    "description": "[{upTo, clearance, creepage?}]: working voltage (V) to spacing (mm)",
+                    "items": {"type": "object"},
+                },
+                "pairs": {
+                    "type": "array",
+                    "description": "[{a, b, voltage}]: explicit working voltage between two classes",
+                    "items": {"type": "object"},
+                },
+                "otherNetsVoltage": {
+                    "type": ["number", "null"],
+                    "description": "Potential of nets in no listed class (default 0); null skips",
+                },
+                "boardPath": {"type": "string", "description": "Board .kicad_pcb"},
+                "dryRun": {"type": "boolean", "description": "Plan only, write nothing"},
+            },
+            "required": ["classes", "spacing"],
+        },
+    },
 ]
 
 # =============================================================================

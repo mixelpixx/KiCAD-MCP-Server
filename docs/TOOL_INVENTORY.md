@@ -147,15 +147,16 @@ _Source: `src/tools/routing.ts`_
 
 _Source: `src/tools/design-rules.ts`_
 
-| Tool                    | Description                                                 | Discovery |
-| ----------------------- | ----------------------------------------------------------- | --------- |
-| `set_design_rules`      | Set global design rules (clearance, track width, via sizes) | `drc`     |
-| `get_design_rules`      | Get current design rules                                    | `drc`     |
-| `run_drc`               | Run design rule check                                       | `drc`     |
-| `assign_net_to_class`   | Assign net to a net class                                   | `drc`     |
-| `set_layer_constraints` | Set layer-specific constraints                              | `drc`     |
-| `check_clearance`       | Check clearance between two items                           | `drc`     |
-| `get_drc_violations`    | Get DRC violation list (filter by severity)                 | `drc`     |
+| Tool                          | Description                                                            | Discovery |
+| ----------------------------- | ---------------------------------------------------------------------- | --------- |
+| `set_design_rules`            | Set global design rules (clearance, track width, via sizes)            | `drc`     |
+| `get_design_rules`            | Get current design rules                                               | `drc`     |
+| `run_drc`                     | Run design rule check                                                  | `drc`     |
+| `assign_net_to_class`         | Assign net to a net class                                              | `drc`     |
+| `set_layer_constraints`       | Set layer-specific constraints                                         | `drc`     |
+| `set_voltage_clearance_rules` | Clearance/creepage rules graded by working voltage between net classes | `drc`     |
+| `check_clearance`             | Check clearance between two items                                      | `drc`     |
+| `get_drc_violations`          | Get DRC violation list (filter by severity)                            | `drc`     |
 
 ---
 
