@@ -102,6 +102,33 @@ def global_table_path(table_type: str) -> Optional[Path]:
     return None
 
 
+def global_table_for_reading(table_type: str) -> Optional[Path]:
+    """The table to *read* for the machine-wide libraries.
+
+    The user's global table (``global_table_path``) when there is one.
+    Otherwise this is a fresh install where KiCad has not yet created that
+    table: the GUI copies it from the stock ``template/sym-lib-table`` (or
+    ``fp-lib-table``) on first start. Until then, the template table is the
+    only list of the stock libraries, so it is returned so that listing and
+    search still see them.
+
+    Read-only. Writers must keep using ``global_table_path``; see its docstring
+    for why a table must never be created here.
+    """
+    found = global_table_path(table_type)
+    if found is not None:
+        return found
+    template_dir = PlatformHelper.find_kicad_template_dir()
+    if template_dir:
+        candidate = Path(template_dir) / _TABLES[table_type][0]
+        if candidate.exists():
+            logger.info(
+                f"No user {_TABLES[table_type][0]} yet; reading KiCad's stock table {candidate}"
+            )
+            return candidate
+    return None
+
+
 def no_global_table_message(table_type: str, remedy: str) -> str:
     """The error for a ``global_table_path`` miss: where it looked, then *remedy*."""
     return (

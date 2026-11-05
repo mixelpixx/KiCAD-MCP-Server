@@ -225,20 +225,15 @@ class DynamicSymbolLoader:
         return result
 
     def _global_sym_lib_table_paths(self) -> list:
-        """Candidate paths for the user-global sym-lib-table, newest version first."""
-        home = Path.home()
-        versions = ["10.0", "9.0", "8.0"]
-        bases = []
-        if os.name == "nt":
-            bases.append(home / "AppData" / "Roaming" / "kicad")
-        else:
-            bases.append(home / ".config" / "kicad")
-            bases.append(home / "Library" / "Preferences" / "kicad")  # macOS
-        candidates = []
-        for base in bases:
-            for v in versions:
-                candidates.append(base / v / "sym-lib-table")
-        return candidates
+        """The global sym-lib-table to search, as a list (empty when there is none).
+
+        Same discovery as ``SymbolLibraryManager``; see
+        ``library_tables.global_table_for_reading``.
+        """
+        from commands.library_tables import global_table_for_reading
+
+        table = global_table_for_reading("symbol")
+        return [table] if table is not None else []
 
     def _resolve_library_from_table(self, table_path: Path, library_name: str) -> Optional[Path]:
         """Parse a sym-lib-table file and return the resolved path for the given library nickname."""

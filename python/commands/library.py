@@ -58,28 +58,15 @@ class LibraryManager:
         logger.info(f"Loaded {len(self.libraries)} footprint libraries")
 
     def _get_global_fp_lib_table(self) -> Optional[Path]:
-        """Get path to global fp-lib-table file"""
-        # Try different possible locations
-        kicad_config_paths = [
-            Path.home() / ".config" / "kicad" / "10.0" / "fp-lib-table",
-            Path.home() / ".config" / "kicad" / "9.0" / "fp-lib-table",
-            Path.home() / ".config" / "kicad" / "8.0" / "fp-lib-table",
-            Path.home() / ".config" / "kicad" / "fp-lib-table",
-            # Windows paths
-            Path.home() / "AppData" / "Roaming" / "kicad" / "10.0" / "fp-lib-table",
-            Path.home() / "AppData" / "Roaming" / "kicad" / "9.0" / "fp-lib-table",
-            Path.home() / "AppData" / "Roaming" / "kicad" / "8.0" / "fp-lib-table",
-            # macOS paths
-            Path.home() / "Library" / "Preferences" / "kicad" / "10.0" / "fp-lib-table",
-            Path.home() / "Library" / "Preferences" / "kicad" / "9.0" / "fp-lib-table",
-            Path.home() / "Library" / "Preferences" / "kicad" / "8.0" / "fp-lib-table",
-        ]
+        """The global fp-lib-table to read.
 
-        for path in kicad_config_paths:
-            if path.exists():
-                return path
+        Shares discovery with the table editor: it honours ``KICAD_CONFIG_HOME``,
+        ``XDG_CONFIG_HOME`` and ``APPDATA``. Before KiCad has created a user
+        table, it falls back to KiCad's stock template table.
+        """
+        from commands.library_tables import global_table_for_reading
 
-        return None
+        return global_table_for_reading("footprint")
 
     def _parse_fp_lib_table(
         self,
