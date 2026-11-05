@@ -274,6 +274,7 @@ export const toolCategories: ToolCategory[] = [
       "modify_trace",
       "delete_trace",
       "query_traces",
+      "summarize_vias",
       "copy_routing_pattern",
       "add_via",
       "add_gnd_stitching_vias",
@@ -360,11 +361,6 @@ export const toolCategories: ToolCategory[] = [
       "kicad_gui_tree_atspi",
       "kicad_gui_click_atspi",
     ],
-  },
-  {
-    name: "analysis",
-    description: "Read-only board geometry for PDN and EMC review.",
-    tools: ["summarize_vias"],
   },
 ];
 

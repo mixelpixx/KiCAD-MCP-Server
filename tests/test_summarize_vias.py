@@ -41,18 +41,24 @@ def _track():
     return SimpleNamespace(Type=lambda: "TRACK", GetNetname=lambda: "GND")
 
 
-def _board(items):
-    names = {0: "Top Side", 1: "Inner Layer 1", 31: "Bottom Side"}
-    return SimpleNamespace(Tracks=lambda: items, GetLayerName=lambda layer_id: names[layer_id])
+def _board(items, user=None, standard=None):
+    # KiCad 9/10 copper ids: F.Cu=0, B.Cu=2, In1.Cu=4. KiCad 8's B.Cu=31 is wrong here.
+    user_names = user or {0: "Top Side", 2: "Bottom Side", 4: "Inner Layer 1"}
+    standard_names = standard or {0: "F.Cu", 2: "B.Cu", 4: "In1.Cu"}
+    return SimpleNamespace(
+        Tracks=lambda: items,
+        GetLayerName=lambda layer_id: user_names[layer_id],
+        GetStandardLayerName=lambda layer_id: standard_names[layer_id],
+    )
 
 
 def _sample():
     return _board(
         [
-            _via("GND", 1, 1, 0.2, 0, 31),
-            _via("GND", 2, 2, 0.2, 0, 31),
-            _via("GND", 8, 8, 0.2, 0, 1),
-            _via("VCC", 1, 1, 0.4, 0, 31),
+            _via("GND", 1, 1, 0.2, 0, 2),
+            _via("GND", 2, 2, 0.2, 0, 2),
+            _via("GND", 8, 8, 0.2, 0, 4),
+            _via("VCC", 1, 1, 0.4, 0, 2),
             _track(),
         ]
     )
@@ -95,6 +101,21 @@ def test_layer_filter_accepts_the_canonical_name():
     )
     assert result["viaCount"] == 3
     assert result["throughAllCopperCount"] == 3
+
+
+def test_renamed_bottom_layer_matches_b_cu_and_not_in2():
+    """KiCad 10's B.Cu is layer 2. The old table called that In2.Cu."""
+    board = _board(
+        [_via("GND", 1, 1, 0.3, 0, 2)],
+        user={0: "F.Cu", 2: "bottom_layer"},
+        standard={0: "F.Cu", 2: "B.Cu"},
+    )
+    by_canonical = ViaSummaryCommands(board).summarize_vias({"endLayer": "B.Cu"})
+    by_old_name = ViaSummaryCommands(board).summarize_vias({"endLayer": "In2.Cu"})
+    assert by_canonical["viaCount"] == 1
+    assert by_canonical["layerSpans"][0]["end"] == "bottom_layer"
+    assert by_canonical["layerSpans"][0]["canonicalEnd"] == "B.Cu"
+    assert by_old_name["viaCount"] == 0
 
 
 def test_bad_unit_and_missing_board():

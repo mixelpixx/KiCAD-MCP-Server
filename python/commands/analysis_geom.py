@@ -11,23 +11,6 @@ import pcbnew
 
 NM_PER_MM = 1_000_000
 
-# KiCad PCB_LAYER_ID. F_Cu is 0 and B_Cu is 31 on every KiCad 6+ build;
-# inner copper fills 1..30. The technical layers used by a stackup follow.
-_CANONICAL_LAYERS: Dict[int, str] = {
-    0: "F.Cu",
-    **{index: f"In{index}.Cu" for index in range(1, 31)},
-    31: "B.Cu",
-    32: "B.Adhes",
-    33: "F.Adhes",
-    34: "B.Paste",
-    35: "F.Paste",
-    36: "B.SilkS",
-    37: "F.SilkS",
-    38: "B.Mask",
-    39: "F.Mask",
-    44: "Edge.Cuts",
-}
-
 _UNIT_TO_MM = {"mm": 1.0, "mil": 0.0254, "inch": 25.4}
 
 
@@ -75,15 +58,40 @@ def front_copper_id() -> int:
 
 
 def back_copper_id() -> int:
-    """Layer id of the back copper (B.Cu)."""
-    return pcb_const("B_Cu", 31)
+    """Layer id of the back copper (B.Cu).
+
+    KiCad 9 and 10 number B.Cu as 2. KiCad 8 used 31, and a fallback of 31
+    makes a real bottom via look like an inner layer.
+    """
+    return pcb_const("B_Cu", 2)
 
 
-def canonical_layer_name(layer_id: Optional[int]) -> Optional[str]:
-    """KiCad's standard layer name for ``layer_id``, such as ``F.Cu``."""
-    if layer_id is None or layer_id < 0:
+def canonical_layer_name(board: Any, layer_id: Optional[int]) -> Optional[str]:
+    """KiCad's standard layer name, such as ``F.Cu``, from this board.
+
+    ``GetStandardLayerName`` follows the KiCad that loaded the board. A fixed
+    table does not: KiCad 8's B.Cu is 31 and KiCad 9/10's is 2, so the table
+    reported a real B.Cu via as ``In2.Cu``.
+    """
+    if (
+        board is None
+        or layer_id is None
+        or isinstance(layer_id, bool)
+        or not isinstance(layer_id, int)
+    ):
         return None
-    return _CANONICAL_LAYERS.get(layer_id)
+    if layer_id < 0:
+        return None
+    getter = getattr(board, "GetStandardLayerName", None)
+    if not callable(getter):
+        return None
+    try:
+        text = getter(layer_id)
+    except Exception:
+        return None
+    if isinstance(text, str) and text:
+        return text
+    return None
 
 
 def user_layer_name(board: Any, layer_id: Optional[int]) -> Optional[str]:
@@ -109,7 +117,7 @@ def layer_fields(board: Any, layer_id: Optional[int]) -> Dict[str, Any]:
         return fields
     fields["layerId"] = layer_id
     user = user_layer_name(board, layer_id)
-    canonical = canonical_layer_name(layer_id)
+    canonical = canonical_layer_name(board, layer_id)
     if user is not None:
         fields["name"] = user
     if canonical is not None:
@@ -123,7 +131,7 @@ def layer_matches(wanted: Optional[str], board: Any, layer_id: Optional[int]) ->
         return True
     if wanted == user_layer_name(board, layer_id):
         return True
-    return wanted == canonical_layer_name(layer_id)
+    return wanted == canonical_layer_name(board, layer_id)
 
 
 def bbox_mm(bbox: Any) -> Tuple[Optional[Tuple[float, float, float, float]], Optional[str]]:
