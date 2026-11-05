@@ -189,6 +189,10 @@ Claude:
 | `KICAD_ALLOW_OPEN_SCHEMATIC_EDITS` | `false`     | Allow schematic edits while the schematic is open in KiCad (refused by default: saving in KiCad would overwrite them)      |
 | `KICAD_EXECUTABLE`                 | auto-detect | Override KiCAD executable path                                                                                             |
 
+The open-schematic check only sees schematics opened from the KiCad project
+manager. KiCad's IPC API does not report a schematic opened in a standalone
+Eeschema window, so edits to it are not refused.
+
 ### Custom Executable Path
 
 If KiCAD is installed in a non-standard location:

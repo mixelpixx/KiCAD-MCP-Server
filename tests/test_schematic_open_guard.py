@@ -6,6 +6,7 @@ tools wrote. KiCad 10's IPC API cannot reload a schematic, but it reports
 which one is open.
 """
 
+import os
 import re
 import sys
 import types
@@ -234,6 +235,8 @@ def test_same_named_project_elsewhere_is_not_refused(project, tmp_path):
         ("lint_schematic_cosmetic", {"dryRun": True}, False),
         ("suggest_schematic_declutter", {}, False),
         ("suggest_schematic_declutter", {"apply": True}, True),
+        ("backannotate_footprints", {}, True),
+        ("backannotate_footprints", {"dryRun": True}, False),
     ],
 )
 def test_conditional_writers(project, command, params, refused):
@@ -243,6 +246,27 @@ def test_conditional_writers(project, command, params, refused):
 
     assert (result["success"] is False) is refused
     assert len(calls) == (0 if refused else 1)
+
+
+@pytest.mark.parametrize("params, refused", [({}, True), ({"dry_run": True}, False)])
+def test_enrich_datasheets_preview_allowed(project, params, refused):
+    params = {"schematic_path": str(project / "proj.kicad_sch"), **params}
+
+    result, calls = _run([_open("proj.kicad_sch")], "enrich_datasheets", params)
+
+    assert (result["success"] is False) is refused
+    assert len(calls) == (0 if refused else 1)
+
+
+def test_backannotate_with_only_the_board_checks_its_schematic(project):
+    result, calls = _run(
+        [_open("proj.kicad_sch")],
+        "backannotate_footprints",
+        {"boardPath": str(project / "proj.kicad_pcb")},
+    )
+
+    assert result["success"] is False
+    assert calls == []
 
 
 @pytest.mark.parametrize(
@@ -290,6 +314,15 @@ def test_create_schematic_over_an_open_file(project, exists):
     )
 
     assert (result["success"] is False) is exists
+
+
+@pytest.mark.parametrize("name, refused", [("proj", True), ("new", False)])
+def test_create_project_over_an_open_schematic(project, name, refused):
+    _, calls = _run(
+        [_open("proj.kicad_sch")], "create_project", {"name": name, "path": str(project)}
+    )
+
+    assert len(calls) == (0 if refused else 1)
 
 
 # --- keeping the list current ---------------------------------------------- #
@@ -394,9 +427,12 @@ def test_get_open_schematics_without_project_path(monkeypatch):
 
 
 def test_get_open_schematics_with_project_path(monkeypatch):
-    backend = _backend_with(monkeypatch, [_FakeDoc("proj.kicad_sch", "/home/u/proj")])
+    project_dir = os.path.join("home", "u", "proj")
+    backend = _backend_with(monkeypatch, [_FakeDoc("proj.kicad_sch", project_dir)])
 
-    assert backend.get_open_schematics() == [_open("proj.kicad_sch", "/home/u/proj/proj.kicad_sch")]
+    assert backend.get_open_schematics() == [
+        _open("proj.kicad_sch", os.path.join(project_dir, "proj.kicad_sch"))
+    ]
 
 
 def test_get_open_schematics_skips_other_documents(monkeypatch):

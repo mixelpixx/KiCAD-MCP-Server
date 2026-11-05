@@ -1345,6 +1345,7 @@ class KiCADInterface(SchematicHandlersMixin):
         "connect_passthrough",
         "connect_to_net",
         "create_hierarchical_subsheet",
+        "create_project",
         "create_schematic",
         "delete_schematic_component",
         "delete_schematic_net_label",
@@ -1372,6 +1373,8 @@ class KiCADInterface(SchematicHandlersMixin):
     # Whether a call writes, read the same way and with the same defaults as
     # each handler reads its parameters.
     _SCHEMATIC_WRITE_CONDITIONS = {
+        "backannotate_footprints": lambda p: not bool(p.get("dryRun", False)),
+        "enrich_datasheets": lambda p: not bool(p.get("dry_run", False)),
         "lint_offgrid": lambda p: bool(p.get("fix", False)),
         "lint_schematic_cosmetic": lambda p: not bool(p.get("dryRun", False)),
         "repair_flat_symbols": lambda p: not bool(p.get("dryRun", True))
@@ -1400,6 +1403,21 @@ class KiCADInterface(SchematicHandlersMixin):
                 base = name if name.endswith(".kicad_sch") else f"{name}.kicad_sch"
                 target = os.path.join(str(path), base) if path else base
             return [target] if os.path.exists(target) else []
+        if command == "create_project":
+            # Same project path as create_project, which copies a blank
+            # schematic over <name>.kicad_sch.
+            name = str(params.get("name") or params.get("projectName", "New_Project"))
+            project = os.path.join(str(params.get("path", os.getcwd())), name)
+            if not project.endswith(".kicad_pro"):
+                project += ".kicad_pro"
+            target = project.replace(".kicad_pro", ".kicad_sch")
+            return [target] if os.path.exists(target) else []
+        if command == "backannotate_footprints" and not params.get("schematicPath"):
+            # Without schematicPath it walks the sheet tree of the board's
+            # same-named root schematic.
+            if params.get("boardPath"):
+                return [str(Path(params["boardPath"]).with_suffix(".kicad_sch"))]
+            return []
         if command == "update_symbol_from_library":
             # Same selection as update_symbol_from_library.
             if params.get("schematicPath"):

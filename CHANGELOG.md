@@ -29,9 +29,11 @@ All notable changes to the KiCAD MCP Server project are documented here.
   schematic tools wrote. Commands that edit a schematic now ask KiCad over IPC
   which schematic is open and refuse if it belongs to the same project. Tools
   that write only on request (`lint_offgrid` with `fix`, `dryRun: false`,
-  `apply`) are refused only then, every file `update_symbol_from_library`
-  would write is checked, and `create_schematic` no longer replaces an open
-  schematic with an empty one. Set
+  `apply`) are refused only then, and previews (`dryRun`/`dry_run`) pass.
+  Every file `update_symbol_from_library` would write is checked,
+  `backannotate_footprints` without `schematicPath` checks the board's
+  schematic, and `create_schematic` and `create_project` no longer replace an
+  open schematic with an empty one. Set
   `KICAD_ALLOW_OPEN_SCHEMATIC_EDITS=true` to allow them anyway; the opt-in
   Windows reload (`KICAD_INTERACTIVE_SCHEMATIC`) is unaffected.
 - **`export_svg` writes the SVG it reports** (#467). It plotted without
