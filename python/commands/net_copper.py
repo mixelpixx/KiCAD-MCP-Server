@@ -111,6 +111,12 @@ class NetCopperCommands:
                 "message": "Missing net",
                 "errorDetails": "net is required",
             }
+        if not self._net_exists(net):
+            return {
+                "success": False,
+                "message": f"Net {net} was not found",
+                "errorDetails": "FindNet returned no net with that name",
+            }
         try:
             return self._summarize(net)
         except Exception as exc:
@@ -186,17 +192,32 @@ class NetCopperCommands:
         return names
 
     def _remember_layer(self, layers: Set[str], layer_id: Optional[int]) -> None:
-        name = user_layer_name(self.board, layer_id) or canonical_layer_name(layer_id)
+        name = user_layer_name(self.board, layer_id) or canonical_layer_name(self.board, layer_id)
         if name:
             layers.add(name)
 
     def _append_layer(self, names: List[str], layer_id: Optional[int]) -> None:
-        name = user_layer_name(self.board, layer_id) or canonical_layer_name(layer_id)
+        name = user_layer_name(self.board, layer_id) or canonical_layer_name(self.board, layer_id)
         if name and name not in names:
             names.append(name)
 
     def _layer_id(self, item: Any, method: str) -> Optional[int]:
         return as_int(self._call(item, method))
+
+    def _net_exists(self, net: str) -> bool:
+        """False only when the board can look the net up and it is absent.
+
+        A test double with no ``FindNet`` keeps the old census behaviour.
+        On a real board a misspelled name must not look like an empty net.
+        """
+        finder = getattr(self.board, "FindNet", None)
+        if not callable(finder):
+            return True
+        try:
+            found = finder(net)
+        except Exception:
+            return False
+        return found is not None
 
     def _net_name(self, item: Any) -> Optional[str]:
         name = self._call(item, "GetNetname")

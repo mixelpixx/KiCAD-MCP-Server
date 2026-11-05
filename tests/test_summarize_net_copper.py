@@ -29,7 +29,7 @@ def _pos(x, y):
     return SimpleNamespace(x=_mm(x), y=_mm(y))
 
 
-def _via(net, x, y, top=0, bottom=31):
+def _via(net, x, y, top=0, bottom=2):
     return SimpleNamespace(
         Type=lambda: "VIA",
         GetNetname=lambda: net,
@@ -65,13 +65,19 @@ def _zone(net, layer=0):
     return zone
 
 
-def _board(tracks, zones):
-    names = {0: "Top Side", 31: "Bottom Side"}
-    return SimpleNamespace(
+def _board(tracks, zones, find_net=None):
+    # KiCad 9/10: F.Cu is 0 and B.Cu is 2. KiCad 8's 31 is not B.Cu.
+    names = {0: "Top Side", 2: "Bottom Side"}
+    standard = {0: "F.Cu", 2: "B.Cu"}
+    board = SimpleNamespace(
         Tracks=lambda: tracks,
         Zones=lambda: zones,
         GetLayerName=lambda layer_id: names[layer_id],
+        GetStandardLayerName=lambda layer_id: standard[layer_id],
     )
+    if find_net is not None:
+        board.FindNet = find_net
+    return board
 
 
 def test_vias_only_has_no_tracks_and_no_zones():
@@ -110,6 +116,12 @@ def test_empty_net_and_missing_name():
     assert empty["shape"] == "empty"
     assert empty["boundingBox"] is None
     assert empty["viaCount"] == 0
+
+    unknown = NetCopperCommands(_board([], [], find_net=lambda name: None)).summarize_net_copper(
+        {"net": "GNDD"}
+    )
+    assert unknown["success"] is False
+    assert "GNDD" in unknown["message"]
 
     missing = NetCopperCommands(board).summarize_net_copper({})
     assert missing["success"] is False
