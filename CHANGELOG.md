@@ -23,6 +23,26 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`sync_schematic_to_board` and `create_board_from_schematic` take nets from
+  KiCad's own netlist.**
+  - **Before.** Pad nets came from a built-in walker that followed wires and
+    labels geometrically. It disagreed with KiCad whenever a net changed name
+    across a sheet boundary or a label sat mid-wire, and it wrote flat names
+    (`SWDIO`, not `/MCU/SWDIO`). On a real 77-part, 9-sheet board, 304 of 333
+    pads ended up on a net KiCad disagrees with, and KiCad's parity check
+    reported 349 issues, while the tool said success.
+  - **Now.** Nets come from `kicad-cli sch export netlist`, read in the
+    S-expression format because the XML writer unescapes names (`ADC7/PB6`
+    instead of KiCad's `ADC7{slash}PB6`). Each footprint is linked to its
+    symbol by path, and symbol values, fields and the BOM/DNP flags are carried
+    over, as KiCad's Update PCB does. The same board now has 0 pads that
+    disagree with KiCad and 3 parity issues, all in the design itself.
+  - **Also reported.** The reply says `netSource`. Pads that aren't pins of
+    their symbol have their net cleared (`pads_cleared`). Footprints that
+    differ from the symbol's are listed in `footprint_changes_pending`, not
+    swapped.
+  - **Fallback.** Without kicad-cli the built-in walker is still used, with a
+    warning.
 - **`export_svg` writes the SVG it reports** (#467). It plotted without
   opening a plot file first, the same mistake #456 fixed in `export_gerber`,
   so no file was written while the reply said success. It now writes one SVG
