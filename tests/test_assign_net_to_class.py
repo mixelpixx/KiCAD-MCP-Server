@@ -131,8 +131,8 @@ def test_persist_warns_on_malformed_json_and_leaves_file_intact(tmp_path):
 
 
 def _fake_net(name: str) -> MagicMock:
-    net = MagicMock(name=f"net_{name}")
-    net.SetClass = MagicMock()
+    # KiCad 8, 9 and 10 name the setter SetNetClass (SetClass is KiCad 6/7).
+    net = MagicMock(name=f"net_{name}", spec=["SetNetClass", "GetNetCode"])
     return net
 
 
@@ -163,7 +163,7 @@ def test_assign_net_to_class_success(tmp_path):
     result = DesignRuleCommands(board).assign_net_to_class({"net": "VCC_3V3", "netClass": "Power"})
     assert result["success"] is True
     assert result["persisted"] is True
-    net.SetClass.assert_called_once_with(netclass)
+    net.SetNetClass.assert_called_once_with(netclass)
     reloaded = json.loads(pro.read_text())
     assert reloaded["net_settings"]["netclass_assignments"]["VCC_3V3"] == ["Power"]
 
@@ -199,7 +199,7 @@ def test_assign_net_to_class_no_board_loaded():
 
 def test_assign_net_to_class_persists_even_when_swig_setclass_fails(tmp_path):
     board, pro, net, _netclass = _board_with_net_and_class(tmp_path)
-    net.SetClass.side_effect = RuntimeError("swig boom")
+    net.SetNetClass.side_effect = RuntimeError("swig boom")
     result = DesignRuleCommands(board).assign_net_to_class({"net": "VCC_3V3", "netClass": "Power"})
     assert result["success"] is True
     assert result["persisted"] is True
