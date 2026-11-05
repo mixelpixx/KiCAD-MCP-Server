@@ -3112,9 +3112,22 @@ class SchematicHandlersMixin:
 
             schematic_path = params.get("schematicPath")
             board_path = params.get("boardPath")
+            # dryRun: compute every change on a board loaded from disk and
+            # report it, without saving or touching the loaded board. The
+            # sync overwrites board values and fields with the schematic's;
+            # on a board edited after its last sync that discards data, so an
+            # agent should be able to see the list before it happens.
+            dry_run = bool(params.get("dryRun"))
+            warnings: List[str] = []
 
             # Determine board to work with
             board = None
+            if dry_run and not board_path and self.board:
+                board_path = self.board.GetFileName()
+                warnings.append(
+                    "dryRun previews against the board file on disk; unsaved edits to the "
+                    "loaded board are not included."
+                )
             if board_path:
                 board = self._safe_load_board(board_path)
                 if board is None:
@@ -3160,7 +3173,6 @@ class SchematicHandlersMixin:
             # geometric walker is only a fallback when kicad-cli is missing:
             # it disagrees with KiCad across sheet boundaries (see
             # utils/kicad_netlist.py).
-            warnings: List[str] = []
             sheets_scanned: list = []
             netlist = None
             kicad_cli = self._find_kicad_cli_static()
@@ -3218,6 +3230,10 @@ class SchematicHandlersMixin:
             assigned_pads = 0
             unmatched = []
             cleared_pads = []
+            # Pads whose net actually changes: "R1/2: OLD -> NEW" ("" = no net).
+            # pads_assigned counts every matched pad, changed or not, so a
+            # resync of an up-to-date board reports 333 assigned and 0 changed.
+            changed_pads: List[str] = []
             netlist_refs = {r for r, _ in pad_net_map} if netlist is not None else set()
             for fp in board.GetFootprints():
                 ref = fp.GetReference()
@@ -3227,6 +3243,9 @@ class SchematicHandlersMixin:
                     if key in pad_net_map:
                         net_name = pad_net_map[key]
                         if nets_by_name.has_key(net_name):
+                            old = pad.GetNetname() if pad.GetNetCode() > 0 else ""
+                            if old != net_name:
+                                changed_pads.append(f"{ref}/{pad_num}: {old!r} -> {net_name!r}")
                             pad.SetNet(nets_by_name[net_name])
                             assigned_pads += 1
                     elif ref in netlist_refs and str(pad_num) and pad.GetNetCode() > 0:
@@ -3235,13 +3254,14 @@ class SchematicHandlersMixin:
                     else:
                         unmatched.append(f"{ref}/{pad_num}")
 
-            with preserve_project_settings(board_path):
-                board.Save(board_path)
+            if not dry_run:
+                with preserve_project_settings(board_path):
+                    board.Save(board_path)
 
-            # If board was loaded fresh, update internal reference
-            if params.get("boardPath"):
-                self.board = board
-                self._update_command_handlers()
+                # If board was loaded fresh, update internal reference
+                if params.get("boardPath"):
+                    self.board = board
+                    self._update_command_handlers()
 
             logger.info(
                 f"sync_schematic_to_board: {len(added_nets)} nets added, "
@@ -3251,10 +3271,11 @@ class SchematicHandlersMixin:
             # Net-(REF-PadN) name), so an unmatched pad is one the schematic
             # does not wire at all, or a pad the symbol does not have. Report
             # all of them: a ten-entry sample buried a 25-pad failure (#400).
+            # In a preview the warnings below describe what the sync would do.
             if footprint_changes:
                 warnings.append(
                     f"{len(footprint_changes)} footprint(s) differ from their symbol's footprint "
-                    "and were not swapped: "
+                    "and are not swapped: "
                     + ", ".join(
                         f"{c['reference']} ({c['board']} -> {c['schematic']})"
                         for c in footprint_changes
@@ -3278,14 +3299,23 @@ class SchematicHandlersMixin:
                     sheet_names.append(Path(p).relative_to(root_dir).as_posix())
                 except ValueError:
                     sheet_names.append(Path(p).name)
+            counts = (
+                f"{len(added_footprints)} footprints added, {len(added_nets)} nets added, "
+                f"{len(changed_pads)} pad nets changed, {len(cleared_pads)} cleared, "
+                f"{len(updated_footprints)} footprints updated"
+            )
             return {
                 "success": True,
+                "dryRun": dry_run,
                 "message": (
-                    f"PCB updated from schematic: {len(added_footprints)} footprints added, "
-                    f"{len(added_nets)} nets added, {assigned_pads} pads assigned"
+                    f"Preview only, nothing saved. Would apply: {counts}"
+                    if dry_run
+                    else f"PCB updated from schematic: {counts} ({assigned_pads} pads assigned)"
                 ),
                 "sheets_scanned": sheet_names if net_source == "built-in" else netlist.sheets,
                 "netSource": net_source,
+                "pads_changed_count": len(changed_pads),
+                "pads_changed": changed_pads,
                 "footprints_linked": linked_footprints,
                 "footprints_updated": updated_footprints,
                 "footprint_changes_pending": footprint_changes,

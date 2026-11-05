@@ -199,13 +199,17 @@ def _require_kicad():
         pytest.skip("needs KICAD_USE_REAL_PCBNEW=1 and kicad-cli")
 
 
-def _sync(board_path: Path):
+def _sync(board_path: Path, **extra):
     from kicad_interface import KiCADInterface
 
     iface = KiCADInterface()
     handlers = getattr(iface, "schematic_handlers", iface)
     return handlers._handle_sync_schematic_to_board(
-        {"schematicPath": str(board_path.with_suffix(".kicad_sch")), "boardPath": str(board_path)}
+        {
+            "schematicPath": str(board_path.with_suffix(".kicad_sch")),
+            "boardPath": str(board_path),
+            **extra,
+        }
     )
 
 
@@ -258,6 +262,32 @@ def test_sync_matches_kicads_netlist_and_parity_is_clean(tmp_path, monkeypatch):
     assert any("MPN" in u for u in r["footprints_updated"])
 
     assert _parity(board_path) == []  # KiCad agrees with every pad, field and link
+
+
+@pytest.mark.integration
+@pytest.mark.real_pcbnew
+def test_dry_run_reports_the_changes_and_saves_nothing(tmp_path, monkeypatch):
+    _require_kicad()
+    monkeypatch.setenv("KICAD_SKIP_SYMBOL_WARMUP", "1")
+
+    board_path = _project(tmp_path / "p")
+    before = board_path.read_bytes()
+    preview = _sync(board_path, dryRun=True)
+    assert preview["success"], preview
+    assert preview["dryRun"] is True
+    assert preview["message"].startswith("Preview only, nothing saved")
+    assert board_path.read_bytes() == before  # not one byte written
+
+    applied = _sync(board_path)
+    assert applied["dryRun"] is False
+    # The preview lists exactly what the real sync then does.
+    for key in ("pads_changed", "footprints_updated", "footprints_linked", "nets_added"):
+        assert preview[key] == applied[key], key
+    assert "R1/2: '' -> '/CANH'" in applied["pads_changed"]
+
+    again = _sync(board_path, dryRun=True)  # an up-to-date board has nothing to change
+    assert again["pads_changed"] == [] and again["footprints_updated"] == []
+    assert again["pads_assigned"] == applied["pads_assigned"] > 0
 
 
 @pytest.mark.integration

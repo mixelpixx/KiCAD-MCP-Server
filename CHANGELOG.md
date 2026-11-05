@@ -21,6 +21,22 @@ All notable changes to the KiCAD MCP Server project are documented here.
   - The mode combines with `KICAD_MCP_TOOLBOXES`, and read-only tools carry
     MCP's `readOnlyHint` annotation in every mode.
 
+- **`sync_schematic_to_board` can preview (`dryRun: true`).** The sync
+  overwrites board values and fields with the schematic's and moves pads to
+  the schematic's nets, as KiCad's F8 does. On a board edited after its last
+  sync that discards data, and until now the list of changes came back only
+  after they were saved. With `dryRun` the same list comes back and nothing
+  is written (the board file is byte-identical afterwards).
+  - New in every reply: `pads_changed` (`"U6/1: 'Net-(U6-A)' ->
+    'unconnected-(U6-NC-Pad1)'"`), only the pads whose net actually
+    changes, plus `pads_changed_count` and `dryRun`. `pads_assigned` still
+    counts every matched pad, so an up-to-date board reports many assigned
+    and 0 changed.
+  - On a real 107-part board, the preview showed 39 value changes, 107
+    field updates and one pad that the sync would disconnect from a routed
+    net. The pad came from a symbol that defines pin 1 differently in two
+    units.
+
 ### Bug Fixes
 
 - **`sync_schematic_to_board` and `create_board_from_schematic` take nets from
