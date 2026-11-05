@@ -124,6 +124,34 @@ def match_paren(content: str, open_idx: int) -> int:
     return -1
 
 
+def paren_delta(text: str) -> int:
+    """Net nesting change across *text*: ``(`` count minus ``)`` count, outside quotes.
+
+    For scanners that walk a file line by line. KiCad never breaks a quoted
+    token across lines (a newline inside a string is written as ``\\n``), so
+    each line can be measured on its own.
+    """
+    delta = 0
+    in_string = False
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if in_string:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch == "(":
+            delta += 1
+        elif ch == ")":
+            delta -= 1
+        i += 1
+    return delta
+
+
 def iter_child_offsets(block: str, depth: int = 2):
     """Yield the offset of every list nested *depth* levels inside *block*.
 

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from commands.dynamic_symbol_loader import DynamicSymbolLoader
-from utils.sexpr_format import prettify
+from utils.sexpr_format import match_paren, prettify
 
 _MIRROR_SUFFIX = re.compile(r"__m\d+(?:_\d+)?$")
 
@@ -30,31 +30,18 @@ def _adapt_library_block_for_schematic(block: str) -> str:
 
 
 def _extract_paren_block(text: str, start: int) -> tuple[str, int]:
-    depth, i = 0, start
-    while i < len(text):
-        if text[i] == "(":
-            depth += 1
-        elif text[i] == ")":
-            depth -= 1
-            if depth == 0:
-                return text[start : i + 1], i + 1
-        i += 1
-    return text[start:], len(text)
+    end = match_paren(text, start)
+    if end == -1:
+        return text[start:], len(text)
+    return text[start : end + 1], end + 1
 
 
 def _lib_symbols_range(content: str) -> tuple[int, int] | None:
     lib_sym_start = content.find("(lib_symbols")
     if lib_sym_start == -1:
         return None
-    depth = 0
-    for i in range(lib_sym_start, len(content)):
-        if content[i] == "(":
-            depth += 1
-        elif content[i] == ")":
-            depth -= 1
-            if depth == 0:
-                return lib_sym_start, i
-    return None
+    end = match_paren(content, lib_sym_start)
+    return (lib_sym_start, end) if end != -1 else None
 
 
 def _lib_ids_in_lib_symbols(content: str, library_name: str) -> set[str]:
