@@ -23,6 +23,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **A sheet with exactly one hierarchical label no longer breaks board
+  creation.** kicad-skip returns a collection for two or more hierarchical
+  labels (or no-connects), but the bare element when there is exactly one.
+  `getattr(sch, kind, None) or []` then raised "__bool__ should return bool,
+  returned str", so `create_board_from_schematic` and
+  `sync_schematic_to_board` failed on such a project. Iterating the bare
+  element would also have walked its children instead of the items. A new
+  `utils.skip_items.skip_items(sch, kind)` always returns a list of items.
 - **`export_svg` writes the SVG it reports** (#467). It plotted without
   opening a plot file first, the same mistake #456 fixed in `export_gerber`,
   so no file was written while the reply said success. It now writes one SVG
