@@ -356,7 +356,7 @@ Based on the provided information and optimization goals, suggest specific, acti
       board_copper: z
         .string()
         .describe(
-          "Stackup read from the board file, GND via count and drill, and the previous copper peaks if a solve already exists",
+          "Notes already collected, if any. The review still reads the board with get_stackup, summarize_vias, and summarize_net_copper",
         ),
       load_path: z
         .string()
@@ -364,95 +364,101 @@ Based on the provided information and optimization goals, suggest specific, acti
           "Rails, source pins, load pins, and the datasheet rows used to derive each current",
         ),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You're reviewing a board power-distribution network from a DC copper solve. The solve is not a field solver. It does not include cavity resonances or measured capacitor bias.
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You're reviewing the DC power distribution of a board using only tools this server provides. This server does not run a DC copper solve, a mesh, or an impedance sweep. Do not invent millivolts, a current density, or a curve.
 
 {{board_copper}}
 {{load_path}}
 
-Report three quantities separately. Do not fold them into one score:
+Read the copper with these calls, and say which ones you used:
 
-1. Copper drop, in mV, inside one copper island.
-2. Current density, in mA/mm, on mesh triangles larger than 0.01 mm².
-3. Copper temperature rise, in °C, from the IPC-2221 estimate.
+1. get_stackup for copper thickness, the dielectric gap, and the layer names stored on the board. It reads the saved file. If that tool is absent, get_layer_list returns names only: say that the thickness is unknown.
+2. summarize_vias for the via count, the drill, and whether the vias run from F.Cu to B.Cu. Filter by the rail's net.
+3. summarize_net_copper for each power and ground net. An unknown net is an error. Do not treat it as a net with no copper.
+4. query_traces and query_zones when you need geometry those summaries do not include.
+
+Do not report copper drop, current density, or temperature from a mesh. You may estimate only when you show the formula and the inputs you actually read.
+
+For a plane, use IPC-2152. IPC-2221 is for an isolated trace. Applied to a plane it overstates the temperature rise, because nearby copper spreads the heat. Name the document and that limitation.
 
 525 mA/mm is 15 A/mm² in 35 µm copper. It marks crowding. It is not a thermal limit.
 
 Derive each load current before using it. Show the arithmetic: power, voltage, efficiency, and the datasheet row. Do not invent an efficiency or a current the datasheet does not support. Split a path into the segments that exist, such as a bead, a switcher, and a connector. Current leaves at the from-pins and returns at the to-pins.
 
-Read the stackup from the board file and use the layer names stored on the board. Do not invent a dielectric table the file does not contain.
+A target impedance is Z_target = dV_allowed / dI_step, where dI_step is the load's transient step, not its DC current. A result that never meets that target is a failure: say so. A DC inspection of the copper cannot produce an impedance-versus-frequency curve, so do not draw one from these tools. Nominal microfarads on the schematic are not the effective capacitance.
 
-Lead with the worst remaining spot and its number. Then name the spots that moved against the previous via count, when one is recorded, and the spots that did not. State the via count, the drill, and whether the vias go through every copper layer. More stitching can flatten the return field and still leave a spur or a millivolt drop where it was.
+The switch node is a high-dV/dt node. Keep it small and on the outer layer over unbroken ground. Loop area belongs to the hot loop, from the input capacitor to the FETs, not to the area of the switch node. Do not move the switch node onto an inner layer: that adds vias and capacitive coupling.
 
-For an impedance curve, label the frequency axis, the milliohm axis, the capacitor bank after DC-bias derating, and the plane-to-ground gap used for the inductance. A target such as 50 mV / 50 mA is 1 Ω only when that step is the load. Do not draw a target the curve never approaches. Nominal microfarads on the schematic are not the effective capacitance.
-
-The solver copy is not the design. Do not edit the parent project from the solver.`,
+Lead with the worst thing you can show from the tool results, and name the number. Do not edit the board while reviewing it.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   // ------------------------------------------------------
-  // EMV Shield Review Prompt
+  // EMC Shield Review Prompt
   // ------------------------------------------------------
   server.prompt(
-    "emv_shield_review",
+    "emc_shield_review",
     {
       shield_geometry: z
         .string()
         .describe(
-          "Shield outline, clip positions, and the loop rectangle in can-local millimetres",
+          "Shield outline, clip positions, and the loop rectangle, if the caller already measured them",
         ),
       comparison: z
         .string()
         .describe(
-          "The two named geometries being subtracted, with the outside-can median and the probe values",
+          "Optional supplied comparison of two geometries. This server does not compute a field",
         ),
     },
-    () => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `You're reviewing radiated EMC of a board shield from a near-field solve. EMV here means EMC. The result is |E| per ampere of loop current. It is not a chamber level and it is not dBµV/m. Do not invent a CISPR number.
+    (args) =>
+      fillTemplate(args, {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `You're reviewing radiated EMC of a board shield. Call it EMC. This server does not run a near-field solver or a chamber measurement. Do not invent a field value, a colour plot, or a CISPR number.
 
 {{shield_geometry}}
 {{comparison}}
 
-Suppression is a field ratio, not a power ratio:
+Take the geometry from the board:
+
+1. get_component_list with a boundingBox around the can. matchPadCenter keeps a part whose body sits outside the can but whose pad centre is inside. layer selects the side.
+2. get_stackup for the copper the return path uses, and summarize_vias for the via count and drill on that net.
+3. Coordinates are board millimetres. Can-local millimetres are the board position minus the can centre.
+
+If the caller pasted a field comparison, treat it as supplied data, not as something you computed. Suppression is a field ratio, not a power ratio:
 
 dB = 20·log10(E_old / E_new)
 
-Positive dB means the new geometry is quieter. Negative dB means it is louder at that cell. A loud patch on the source itself means the source moved there. Read the sign from 20·log10(old / new) before describing a colour. Quote the median outside the can and the probe values. The ends of the colour bar are the scale, not the result. Ignore a cell when the old field is below 0.3 V/m per A, so a noise cell cannot spike the ratio.
+Positive dB means the new geometry is quieter. Negative dB means it is louder. Read the sign from 20·log10(old / new) before describing the result. Quote the numbers the caller supplied. Do not invent a median or a probe value.
 
-The mesh is a uniform 0.5 mm grid. A 0.3 mm wall and the lip gap are one cell, so absolute leakage is pessimistic. The ranking between two named runs is the result. Say which two geometries were subtracted. A change in clip count, a loop moved onto measured part positions, and a can compared with no can are three different results. Do not relabel one as another.
+Via pitch around a can matters on a real board. Do not say that a via on a ground plane has no effect. Say what summarize_vias counted.
 
-A 0.2 mm via on an already solid ground plane does not change this model. To represent a shorter return path, move the loop onto the measured part positions and say so. Do not write that the vias produced the decibels.
+A fitted can is not shielding by itself. A few clips can leave a slot that is louder than no can.
 
-Four clips can make the outside louder than no can, from a slot resonance. A fitted can is not shielding by itself.
+These are general checks:
 
-These layout rules are already settled:
-
-1. Do not pour a switch node on a second inner layer or on the bottom. One inner trace between ground planes is the smaller loop.
+1. Keep a switch node small and on the outer layer over unbroken ground. The hot loop is the input capacitor to the FETs. Do not move the switch node onto an inner layer.
 2. A via belongs in the capacitor ground pad that faces the switch pin, not in a bulk row that is already stitched.
 3. Housing springs only work on bare metal.
-4. Unplug debug and UART cables for the radiated test. Once the seam clips are dense, a cable is the remaining radiator, not the can.
-5. Do not duplicate a shielded inductor's switch nets when those nets already have vias only, and no tracks and no zones.
-6. Do not add a second pi filter on a rail that already has one. Leave a feedthrough that is already on the rail.
-7. Parts on another board stay out of the assessment. A cable interface stays out unless that cable is fitted.
+4. Unplug debug and UART cables for a radiated test. A cable can be the remaining radiator once the seam is closed.
 
-Take coordinates from the board file. Can-local millimetres are the board position minus the can centre. Snap loop corners to the 0.5 mm grid. Do not edit the KiCad project from the simulator.`,
+Do not turn one project's choices, such as an existing filter or parts on another board, into rules for every board. Do not edit the KiCad project while reviewing it.`,
+            },
           },
-        },
-      ],
-    }),
+        ],
+      }),
   );
 
   logger.info("Design prompts registered");

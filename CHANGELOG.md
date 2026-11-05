@@ -4,6 +4,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New MCP Prompt
+
+- `pdn_dc_review` — Checklist for a DC power-distribution review using
+  `get_stackup`, `summarize_vias`, `summarize_net_copper`, `query_traces`, and
+  `query_zones`. It does not ask for a copper solve or an impedance curve this
+  server cannot produce. Target impedance is the allowed ripple divided by the
+  load's transient step.
+- `emc_shield_review` — Checklist for a shield review from the board geometry
+  (`get_component_list`, `get_stackup`, `summarize_vias`). It does not assume a
+  near-field solver. A caller may paste a comparison; the prompt does not
+  invent one.
+
 ### New Features
 
 - **Operating modes: a readonly mode for review agents, and a manufacturing
