@@ -65,7 +65,7 @@ _Source: `src/tools/board.ts`_
 | `set_active_layer`      | Change the active working layer                                                                     | `board`   |
 | `get_board_info`        | Get board metadata and properties                                                                   | Essential |
 | `get_layer_list`        | List all layers on the board                                                                        | `board`   |
-| `get_stackup`           | Read the board stackup from the board file.                                                         | `board`   |
+| `get_stackup`           | Read the stackup from the saved board file, including a locked thickness.                           | `board`   |
 | `add_board_outline`     | Add board outline (rectangle, circle, polygon, rounded_rectangle)                                   | Essential |
 | `clear_board_outline`   | Delete all Edge.Cuts graphics from the current PCB board.                                           | Essential |
 | `replace_board_outline` | Replace the current Edge.Cuts board outline with a rectangle, rounded rectangle, circle or polygon. | Essential |

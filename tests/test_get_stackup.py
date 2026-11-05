@@ -102,6 +102,23 @@ def test_file_stackup_keeps_custom_names_and_sums_sublayers(tmp_path):
     assert bottom["layerId"] == 2
 
 
+def test_locked_thickness_is_kept(tmp_path):
+    """KiCad writes ``(thickness 1.51 locked)`` when the row is locked in the editor."""
+    text = _BOARD.replace("(thickness 0.1)", "(thickness 1.51 locked)", 1)
+    path = tmp_path / "locked.kicad_pcb"
+    path.write_text(text, encoding="utf-8")
+    result = StackupCommands(_board(str(path))).get_stackup({})
+
+    assert result["success"] is True
+    gap = result["layers"][2]
+    assert gap["thicknessMm"] == pytest.approx(1.51 + 0.039)
+    assert gap["thicknessLocked"] is True
+    assert gap["sublayers"][0]["thicknessMm"] == pytest.approx(1.51)
+    assert gap["sublayers"][0]["thicknessLocked"] is True
+    assert "thicknessLocked" not in gap["sublayers"][1]
+    assert result["boardThicknessMm"] == pytest.approx(1.61)
+
+
 def test_missing_stackup_section_is_an_error(tmp_path):
     path = tmp_path / "empty.kicad_pcb"
     path.write_text("(kicad_pcb (version 20240108) (general (thickness 1.6)))\n", encoding="utf-8")

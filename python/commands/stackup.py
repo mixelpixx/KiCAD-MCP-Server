@@ -17,12 +17,15 @@ from utils.sexpr_format import iter_child_offsets, match_paren, unescape_sexpr_s
 
 logger = logging.getLogger("kicad_interface")
 
+# The first atom is the value. KiCad may follow a thickness with ``locked``
+# when that row is locked in the stackup editor: ``(thickness 1.51 locked)``.
 _VALUE = re.compile(
     r"\(\s*[A-Za-z0-9_]+\s+"
     r"(?:\"((?:[^\"\\]|\\.)*)\"|([-+0-9.eE]+)|([A-Za-z_][A-Za-z0-9_]*))"
-    r"\s*\)",
+    r"(?P<rest>.*?)\s*\)",
     re.DOTALL,
 )
+_LOCKED = re.compile(r"(?<![A-Za-z0-9_])locked(?![A-Za-z0-9_])")
 _LAYER_TOKEN = re.compile(r"\(\s*layer\s+\"((?:[^\"\\]|\\.)*)\"")
 _LIST_HEAD = re.compile(r"\(\s*([A-Za-z0-9_]+)")
 
@@ -117,7 +120,11 @@ def _list_head(block: str) -> str:
 
 
 def _list_value(block: str) -> Optional[str]:
-    """The single atom of ``(thickness 0.035)`` or ``(material "FR4")``."""
+    """The first atom of ``(thickness 0.035)`` or ``(material "FR4")``.
+
+    A trailing ``locked`` flag is ignored here and reported by
+    ``_thickness_locked``.
+    """
     match = _VALUE.match(block)
     if not match:
         return None
@@ -125,6 +132,14 @@ def _list_value(block: str) -> Optional[str]:
     if quoted is not None:
         return unescape_sexpr_string(quoted)
     return number if number is not None else symbol
+
+
+def _thickness_locked(block: str) -> bool:
+    """True when KiCad saved ``(thickness <mm> locked)`` for this row."""
+    match = _VALUE.match(block)
+    if not match:
+        return False
+    return _LOCKED.search(match.group("rest") or "") is not None
 
 
 def _parse_layer(block: str) -> Optional[Dict[str, Any]]:
@@ -147,6 +162,8 @@ def _parse_layer(block: str) -> Optional[Dict[str, Any]]:
             thickness = _as_float(value)
             if thickness is not None:
                 current["thicknessMm"] = thickness
+            if _thickness_locked(child):
+                current["thicknessLocked"] = True
             sublayers.append(current)
             continue
         if current is None or value is None:
@@ -235,6 +252,8 @@ def _entry(board: Any, index: int, row: Dict[str, Any]) -> Dict[str, Any]:
             saw = True
     if saw:
         entry["thicknessMm"] = total
+    if any(piece.get("thicknessLocked") for piece in pieces):
+        entry["thicknessLocked"] = True
     if kind == "dielectric" and pieces:
         first = pieces[0]
         for key in ("epsilonR", "lossTangent", "material"):

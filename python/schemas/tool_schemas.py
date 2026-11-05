@@ -475,11 +475,14 @@ BOARD_TOOLS = [
         "name": "get_stackup",
         "title": "Get Board Stackup",
         "description": (
-            "Read the board stackup from the board file. Returns each copper, dielectric, "
-            "mask, and silk entry with its thickness in millimetres. Layer names are the "
-            "names stored on the board, so a renamed layer such as 'Top Side' is returned "
-            "beside the canonical F.Cu name. pcbnew does not expose the stackup, so this "
-            "reads the (stackup ...) section of the .kicad_pcb file."
+            "Read the stackup from the saved board file, not the board open in memory. "
+            "Returns each copper, dielectric, mask, and silk entry with its thickness in "
+            "millimetres. A thickness the stackup editor has locked is returned as "
+            "thicknessMm plus thicknessLocked. Layer names are the names stored on the "
+            "board, so a renamed layer such as 'Top Side' is returned beside the canonical "
+            "F.Cu name. pcbnew does not expose the stackup, so this reads the "
+            "(stackup ...) section of the .kicad_pcb file. If an earlier save was refused, "
+            "the file can be older than the session."
         ),
         "inputSchema": {"type": "object", "properties": {}},
     },
