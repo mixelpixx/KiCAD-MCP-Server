@@ -2195,6 +2195,33 @@ DESIGN_RULE_TOOLS = [
         },
     },
     {
+        "name": "audit_via_nets",
+        "title": "Audit Via Nets Against a Reference",
+        "description": (
+            "Compares every via's net in the saved board with a reference board (a "
+            ".kicad_pcb file or a git revision such as HEAD) and lists vias whose net "
+            "changed, plus vias added, removed or moved. KiCad can silently change a via's "
+            "net on save, and DRC does not flag it."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "reference": {
+                    "type": "string",
+                    "description": (
+                        "A .kicad_pcb path, or a git revision of the same board file "
+                        "(HEAD, HEAD~1, a sha)"
+                    ),
+                },
+                "boardPath": {
+                    "type": "string",
+                    "description": "Board file to audit; defaults to the loaded board's file",
+                },
+            },
+            "required": ["reference"],
+        },
+    },
+    {
         "name": "check_clearance",
         "title": "Check Clearance",
         "description": "Checks the measured clearance between two PCB items against the board's minimum clearance design rule.",

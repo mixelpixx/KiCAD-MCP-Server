@@ -121,6 +121,7 @@ export const toolCategories: ToolCategory[] = [
       "assign_net_to_class",
       "set_layer_constraints",
       "check_clearance",
+      "audit_via_nets",
       "get_drc_violations",
     ],
   },

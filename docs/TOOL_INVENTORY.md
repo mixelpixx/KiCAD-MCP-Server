@@ -154,6 +154,7 @@ _Source: `src/tools/design-rules.ts`_
 | `run_drc`               | Run design rule check                                       | `drc`     |
 | `assign_net_to_class`   | Assign net to a net class                                   | `drc`     |
 | `set_layer_constraints` | Set layer-specific constraints                              | `drc`     |
+| `audit_via_nets`        | Compare via nets with a reference board or git revision     | `drc`     |
 | `check_clearance`       | Check clearance between two items                           | `drc`     |
 | `get_drc_violations`    | Get DRC violation list (filter by severity)                 | `drc`     |
 
