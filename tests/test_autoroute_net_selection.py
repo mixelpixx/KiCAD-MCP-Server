@@ -130,3 +130,51 @@ def test_autoroute_routes_only_the_selected_net(tmp_path):
     assert r["netsLeftOut"] == ["B"]
     routed = {t.GetNetname() for t in pcbnew.LoadBoard(str(path)).GetTracks()}
     assert routed == {"A"}
+
+
+WIRED = """(pcb x.dsn
+  (structure
+    (layer F.Cu (type signal))
+    (layer B.Cu (type signal))
+  )
+  (library
+    (padstack "Via[0-1]_600:300_um"
+      (shape (circle F.Cu 600))
+      (shape (circle B.Cu 600))
+    )
+  )
+  (network
+    (net "/HV PWR/CAN H"
+      (pins J5-4 U8-7)
+    )
+    (net "/MODULE CONTROLLER/SD CLK"
+      (pins U2-53 J4-5)
+    )
+  )
+  (wiring
+    (wire (path F.Cu 250  1000 -2000  5000 -2000)(net "/HV PWR/CAN H")(type route))
+    (via "Via[0-1]_600:300_um" 5000 -2000 (net "/HV PWR/CAN H")(type route))
+    (wire (path B.Cu 200  100 -100  900 -100)(net "/MODULE CONTROLLER/SD CLK")(type route))
+  )
+)
+"""
+
+
+def test_left_out_nets_copper_becomes_keepouts():
+    # Found routing in passes: a wire whose net is no longer in (network) is dropped by
+    # Freerouting, so a logic pass routed through the pack nets' tracks (79 shorts).
+    out, removed = filter_dsn_nets(WIRED, net_selector(["/MODULE*"], []))
+    assert removed == ["/HV PWR/CAN H"]
+    wiring = out[out.index("(wiring"):]
+    assert "CAN H" not in wiring  # gone from the wiring
+    assert "SD CLK" in wiring  # the routed net's own wire stays
+    structure = out[out.index("(structure"):out.index("(library")]
+    assert '(keepout "" (path F.Cu 250 1000 -2000  5000 -2000))' in structure
+    # the via blocks every copper layer, at its padstack's diameter
+    assert '(keepout "" (circle F.Cu 600 5000 -2000))' in structure
+    assert '(keepout "" (circle B.Cu 600 5000 -2000))' in structure
+
+
+def test_no_left_out_wiring_leaves_the_structure_alone():
+    out, removed = filter_dsn_nets(WIRED, net_selector([], []))
+    assert removed == [] and out == WIRED

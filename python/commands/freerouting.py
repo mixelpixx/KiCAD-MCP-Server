@@ -219,7 +219,77 @@ def filter_dsn_nets(dsn_text: str, keep) -> Tuple[str, List[str]]:
                     child = f"(class {cls} " + " ".join(kept) + "\n      " + rest
         out.append(child)
         i = k
-    return dsn_text[:start] + "".join(out) + dsn_text[end:], removed
+    text = dsn_text[:start] + "".join(out) + dsn_text[end:]
+    return _wiring_of_removed_nets_as_keepouts(text, set(removed)), removed
+
+
+def _wiring_of_removed_nets_as_keepouts(dsn_text: str, removed) -> str:
+    """Turn the existing wires and vias of left-out nets into keepouts.
+
+    A wire whose (net ...) is no longer in (network) is dropped by Freerouting, so the
+    copper of a left-out net was invisible to the router: a logic pass routed straight
+    through the pack nets' tracks (79 shorts on a real board). Each such wire becomes a
+    (keepout "" (path LAYER WIDTH ...)) and each via a circle keepout on every copper
+    layer, in the (structure) section; their pads were already obstacles.
+    """
+    if not removed:
+        return dsn_text
+    w = re.search(r"\(wiring(?=[\s)])", dsn_text)
+    st = re.search(r"\(structure(?=[\s)])", dsn_text)
+    if not w or not st:
+        return dsn_text
+    w_end = _sexpr_end(dsn_text, w.start())
+    st_end = _sexpr_end(dsn_text, st.start())
+    if w_end < 0 or st_end < 0:
+        return dsn_text
+    layers = re.findall(r"\(layer\s+(\S+)\s*\n?\s*\(type signal\)", dsn_text[st.start():st_end]) or \
+        re.findall(r"\(layer\s+([^\s()]+)", dsn_text[st.start():st_end])
+    diam = {}
+    for m in re.finditer(r'\(padstack\s+("[^"]*"|[^\s()]+)', dsn_text):
+        e = _sexpr_end(dsn_text, m.start())
+        c = re.search(r"\(circle\s+\S+\s+([\d.]+)", dsn_text[m.start():e])
+        if c:
+            diam[_unquote(m.group(1))] = c.group(1)
+    body = dsn_text[w.start():w_end]
+    kept, keepouts = [], []
+    i = len("(wiring")
+    kept.append(body[:i])
+    while i < len(body):
+        j = body.find("(", i)
+        if j < 0:
+            kept.append(body[i:])
+            break
+        kept.append(body[i:j])
+        k = _sexpr_end(body, j)
+        if k < 0:
+            kept.append(body[j:])
+            break
+        child = body[j:k]
+        net = re.search(r'\(net\s+("[^"]*"|[^\s()]+)\)', child)
+        if net and _unquote(net.group(1)) in removed:
+            path = re.search(r"\(path\s+(\S+)\s+([\d.]+)\s+([^()]*)\)", child)
+            via = re.match(r'\(via\s+("[^"]*"|[^\s()]+)\s+([-\d.]+)\s+([-\d.]+)', child)
+            if path:
+                keepouts.append(f'    (keepout "" (path {path.group(1)} {path.group(2)} {path.group(3).strip()}))\n')
+            elif via and _unquote(via.group(1)) in diam:
+                d = diam[_unquote(via.group(1))]
+                for layer in layers:
+                    keepouts.append(f'    (keepout "" (circle {layer} {d} {via.group(2)} {via.group(3)}))\n')
+            i = k
+            while i < len(body) and body[i] in " \t":
+                i += 1
+            if i < len(body) and body[i] == "\n":
+                i += 1
+            continue
+        kept.append(child)
+        i = k
+    new_wiring = "".join(kept)
+    text = dsn_text[: w.start()] + new_wiring + dsn_text[w_end:]
+    if keepouts:
+        st_end = _sexpr_end(text, st.start())
+        close = text.rfind(")", st.start(), st_end)
+        text = text[:close] + "".join(keepouts) + "  " + text[close:]
+    return text
 
 
 _PLACEMENT_RE = re.compile(r"\(placement(?=[\s)])")
@@ -322,7 +392,7 @@ def _snapshot_tracks(board, nets) -> List[Dict[str, Any]]:
             continue
         if t.GetClass() == "PCB_VIA":
             snap.append({"via": True, "net": name, "x": t.GetPosition().x, "y": t.GetPosition().y,
-                         "width": t.GetWidth(), "drill": t.GetDrillValue(),
+                         "width": t.GetWidth(t.TopLayer()), "drill": t.GetDrillValue(),
                          "top": t.TopLayer(), "bottom": t.BottomLayer(), "type": t.GetViaType()})
         elif t.GetClass() == "PCB_TRACK":
             snap.append({"via": False, "net": name, "x1": t.GetStart().x, "y1": t.GetStart().y,
