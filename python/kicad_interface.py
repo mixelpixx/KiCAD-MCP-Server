@@ -1042,11 +1042,10 @@ class KiCADInterface(SchematicHandlersMixin):
 
     @staticmethod
     def _normalize_ipc_layer_name(layer: Any) -> str:
-        """Convert KiCad IPC layer enum strings to common layer names."""
-        layer_name = str(layer)
-        if layer_name.startswith("BL_"):
-            return layer_name[3:].replace("_", ".")
-        return layer_name
+        """Convert a KiCad IPC layer enum to a canonical name such as ``B.Cu``."""
+        from kicad_api.ipc_backend import ipc_layer_name
+
+        return ipc_layer_name(layer)
 
     def _result_backend_for_command(self, command: str, result: Dict[str, Any]) -> str:
         """Return the backend label for a command result."""

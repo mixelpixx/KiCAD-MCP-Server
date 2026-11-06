@@ -130,6 +130,16 @@ def test_pads_sort_with_the_number_not_the_text():
     assert numbers == ["2", "10"]
 
 
+def test_ipc_layer_numbers_are_canonical_names():
+    """kipy reports fp.layer as 3 and 34, not F.Cu and B.Cu."""
+    from kicad_api.ipc_backend import ipc_layer_name
+
+    assert ipc_layer_name(3) == "F.Cu"
+    assert ipc_layer_name("34") == "B.Cu"
+    assert ipc_layer_name("BL_B_Cu") == "B.Cu"
+    assert ipc_layer_name("F.Cu") == "F.Cu"
+
+
 def test_live_row_filter_uses_the_row_position():
     from commands.component import row_inside_query
 
