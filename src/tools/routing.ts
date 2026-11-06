@@ -119,7 +119,10 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
         })
         .describe("Via position"),
       net: z.string().describe("Net name"),
-      viaType: z.string().optional().describe("Via type (through, blind, buried)"),
+      viaType: z
+        .string()
+        .optional()
+        .describe('Via type. Only "through" (the default) is supported; other types are refused'),
     },
     async (args: any) => {
       const result = await callKicadScript("add_via", args);

@@ -5144,25 +5144,31 @@ print("ok")
     def _ipc_add_via(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for add_via - adds via with real-time UI update"""
         try:
-            position = params.get("position", {})
-            x = position.get("x", 0) if isinstance(position, dict) else params.get("x", 0)
-            y = position.get("y", 0) if isinstance(position, dict) else params.get("y", 0)
+            from commands.routing import via_request
 
-            size = params.get("size", 0.8)
-            drill = params.get("drill", 0.4)
-            net = params.get("net")
+            request, error = via_request(params)
+            if error:
+                return error
+            size = request["diameter_mm"] or 0.8
+            drill = request["drill_mm"] or 0.4
+            net = request["net"]
             from_layer = params.get("from_layer", "F.Cu")
             to_layer = params.get("to_layer", "B.Cu")
 
             success = self.ipc_board_api.add_via(
-                x=x, y=y, diameter=size, drill=drill, net_name=net, via_type="through"
+                x=request["x_mm"],
+                y=request["y_mm"],
+                diameter=size,
+                drill=drill,
+                net_name=net,
+                via_type="through",
             )
 
             return {
                 "success": success,
                 "message": ("Added via (visible in KiCAD UI)" if success else "Failed to add via"),
                 "via": {
-                    "position": {"x": x, "y": y, "unit": "mm"},
+                    "position": {"x": request["x"], "y": request["y"], "unit": request["unit"]},
                     "size": size,
                     "drill": drill,
                     "from_layer": from_layer,
