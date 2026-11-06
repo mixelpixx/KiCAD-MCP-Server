@@ -23,6 +23,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`autoroute` keeps every outline of a keepout.** KiCad's Specctra export
+  writes only the first outline of a rule area, so a keepout drawn as several
+  polygons reached Freerouting as one. On a real high-voltage board a keepout
+  built from many voltage halos lost all but one, and Freerouting put logic
+  vias 0.4 mm from 400 V pads that needed 1.5 mm. The missing outlines are
+  now appended to the DSN in the form KiCad writes the first (`keepout`,
+  `wire_keepout` or `via_keepout` per the area's flags). Holes are still not
+  exported, which keeps copper out rather than letting it in.
+
 - **`export_svg` writes the SVG it reports** (#467). It plotted without
   opening a plot file first, the same mistake #456 fixed in `export_gerber`,
   so no file was written while the reply said success. It now writes one SVG

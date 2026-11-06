@@ -510,6 +510,52 @@ def _reconcile_ses_net_names(
     return _SES_NET_TOKEN_RE.sub(_repl, ses_text), remapped
 
 
+def _append_missing_keepouts(board, dsn_path) -> int:
+    """Add the rule-area outlines KiCad's Specctra export leaves out; returns how many.
+
+    ExportSpecctraDSN writes only the first outline of a rule area. A keepout area drawn
+    as several polygons (or one built from a union of halos) silently routes as if only
+    its first piece existed. Each further outline is appended in the same form KiCad
+    writes the first: (keepout|wire_keepout|via_keepout "" (polygon LAYER 0 x y ...)),
+    in micrometres with y negated. Holes are not exported (KiCad drops them too), which
+    errs on the side of keeping copper out.
+    """
+    import pcbnew
+
+    lines = []
+    for z in board.Zones():
+        if not z.GetIsRuleArea():
+            continue
+        tracks, vias = z.GetDoNotAllowTracks(), z.GetDoNotAllowVias()
+        if not (tracks or vias):
+            continue
+        kind = "keepout" if tracks and vias else ("wire_keepout" if tracks else "via_keepout")
+        outline = z.Outline()
+        if outline.OutlineCount() < 2:
+            continue
+        for layer in z.GetLayerSet().CuStack():
+            name = board.GetLayerName(layer)
+            for i in range(1, outline.OutlineCount()):
+                chain = outline.COutline(i)
+                pts = " ".join(
+                    f"{chain.CPoint(k).x / 1000:g} {-chain.CPoint(k).y / 1000:g}"
+                    for k in range(chain.PointCount())
+                )
+                lines.append(f'    ({kind} "" (polygon {name} 0 {pts}))\n')
+    if not lines:
+        return 0
+    text = Path(dsn_path).read_text(encoding="utf-8")
+    anchor = text.find("  (placement")
+    if anchor < 0:
+        return 0
+    # the structure section closes on the line before (placement
+    close = text.rfind("  )", 0, anchor)
+    if close < 0:
+        return 0
+    Path(dsn_path).write_text(text[:close] + "".join(lines) + text[close:], encoding="utf-8")
+    return len(lines)
+
+
 class FreeroutingCommands:
     """Handles Freerouting autoroute operations."""
 
@@ -802,6 +848,9 @@ class FreeroutingCommands:
                     "message": "DSN export failed",
                     "errorDetails": (f"ExportSpecctraDSN returned: {result}"),
                 }
+            added = _append_missing_keepouts(self.board, dsn_path)
+            if added:
+                logger.info(f"Added {added} rule-area outline(s) the DSN export left out")
         except Exception as e:
             return {
                 "success": False,
