@@ -3543,9 +3543,20 @@ class SchematicHandlersMixin:
                 if name == "Footprint":
                     continue
                 try:
-                    if fp.HasField(name) and fp.GetFieldText(name) == value:
+                    existed = fp.HasField(name)
+                    if existed and fp.GetFieldText(name) == value:
                         continue
                     fp.SetField(name, value)
+                    if not existed:
+                        # A new field arrives hidden on the side's Fab layer, as
+                        # KiCad's own update from schematic adds it. SetField makes
+                        # it visible on F.SilkS at the footprint origin: on a real
+                        # board that printed every MPN and datasheet URL across
+                        # the silkscreen.
+                        field = next((f for f in fp.GetFields() if f.GetName() == name), None)
+                        if field is not None:
+                            field.SetVisible(False)
+                            field.SetLayer(pcbnew.B_Fab if fp.IsFlipped() else pcbnew.F_Fab)
                     changes.append(f"field {name!r}")
                 except Exception as exc:  # binding differences across versions
                     logger.warning(f"could not set field {name!r} on {ref}: {exc}")

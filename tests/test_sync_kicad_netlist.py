@@ -256,6 +256,12 @@ def test_sync_matches_kicads_netlist_and_parity_is_clean(tmp_path, monkeypatch):
     values = {fp.GetReference(): fp.GetValue() for fp in board.GetFootprints()}
     assert values["R2"] == "22k"
     assert any("MPN" in u for u in r["footprints_updated"])
+    # A field the sync creates is hidden on Fab, not printed on the silkscreen.
+    for fp in board.GetFootprints():
+        for f in fp.GetFields():
+            if not (f.IsReference() or f.IsValue()) and f.GetName() in ("MPN", "MB P/N"):
+                assert not f.IsVisible(), (fp.GetReference(), f.GetName())
+                assert f.GetLayer() in (pcbnew.F_Fab, pcbnew.B_Fab), (fp.GetReference(), f.GetName())
 
     assert _parity(board_path) == []  # KiCad agrees with every pad, field and link
 
