@@ -61,6 +61,12 @@ export function registerFreeroutingTools(server: McpServer, callKicadScript: Fun
         .describe(
           "Keep the intermediate .dsn/.ses files next to the board after the run (default: false). Artifacts are staged in a temporary directory and removed on every exit — success, failure, or crash — unless this is set.",
         ),
+      signalLayers: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Copper layers tracks may use, e.g. ["F.Cu", "B.Cu"] on a board whose inner layers are planes. Every other copper layer gets a board-sized wire keepout in the DSN: vias still pass through, tracks stay off, so a plane is not cut into islands. Default: all layers.',
+        ),
     },
     async (args: any) => {
       const result = await callKicadScript("autoroute", args);

@@ -228,6 +228,41 @@ _TRACKS_CLEARED_NOTE = (
 
 
 _DSN_KEEPOUT_RE = re.compile(r'(\(keepout "[^"]*" \(polygon signal 0\s+)([-\d.\s]+?)(\))')
+_DSN_LAYER_RE = re.compile(r"\(layer\s+([^\s()]+)\s*\(type\s+(\w+)\)")
+_DSN_BOUNDARY_RE = re.compile(r"\(boundary\s*\(path\s+pcb\s+[\d.]+\s+([-\d.\s]+?)\)")
+
+
+def _restrict_signal_layers(dsn_text: str, signal_layers: List[str]) -> Tuple[str, List[str]]:
+    """Keep tracks off every copper layer not in ``signal_layers``.
+
+    KiCad exports every copper layer as ``(type signal)``, so Freerouting runs tracks
+    across inner plane layers. A long track cuts a plane into islands, and pads that
+    reach the plane through a via then show as unconnected (found on a 4-layer board:
+    In2 cut into 7 pieces, 26 plane pads open). For each other layer this adds a
+    ``wire_keepout`` covering the board boundary: tracks are kept out, vias still pass.
+    Returns the new text and the layers restricted. Unknown names in ``signal_layers``
+    are ignored; a DSN without a board boundary is returned unchanged.
+    """
+    st = dsn_text.find("(structure")
+    if st < 0 or not signal_layers:
+        return dsn_text, []
+    layers = [m.group(1) for m in _DSN_LAYER_RE.finditer(dsn_text, st)]
+    wanted = set(signal_layers)
+    restricted = [name for name in layers if name not in wanted]
+    if not restricted or len(restricted) == len(layers):
+        # nothing to restrict, or the caller named no real layer: refuse to block all
+        return dsn_text, []
+    bm = _DSN_BOUNDARY_RE.search(dsn_text, st)
+    if not bm:
+        return dsn_text, []
+    pts = " ".join(bm.group(1).split())
+    anchor = dsn_text.find("(placement", st)
+    if anchor < 0:
+        return dsn_text, []
+    close = dsn_text.rfind(")", st, anchor)  # the structure section's closing paren
+    add = "".join(f'    (wire_keepout "" (polygon {name} 0 {pts}))\n' for name in restricted)
+    line_start = dsn_text.rfind("\n", 0, close) + 1
+    return dsn_text[:line_start] + add + dsn_text[line_start:], restricted
 
 
 def _grow_hole_keepouts(dsn_text: str, grow_um: float) -> str:
@@ -817,6 +852,17 @@ class FreeroutingCommands:
             }
 
         self._apply_edge_clearance(dsn_path)
+        restricted_layers: List[str] = []
+        signal_layers = list(params.get("signalLayers") or [])
+        if signal_layers:
+            with open(dsn_path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+            text, restricted_layers = _restrict_signal_layers(text, signal_layers)
+            if restricted_layers:
+                with open(dsn_path, "w", encoding="utf-8") as fh:
+                    fh.write(text)
+            else:
+                logger.warning(f"signalLayers {signal_layers} restricted nothing")
         dsn_size = os.path.getsize(dsn_path)
         logger.info(f"DSN exported: {dsn_size} bytes")
 
@@ -1035,6 +1081,7 @@ class FreeroutingCommands:
             "success": True,
             "message": f"Autoroute completed in {elapsed}s",
             "mode": mode_label,
+            "tracksKeptOffLayers": restricted_layers,
             # Artifacts are staged in a temp dir and removed after the run
             # (#249); with keepArtifacts=true they are copied next to the
             # board and these fields point at the kept copies.
