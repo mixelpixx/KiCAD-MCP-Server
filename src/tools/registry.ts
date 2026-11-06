@@ -33,6 +33,7 @@ export const toolCategories: ToolCategory[] = [
       "set_active_layer",
       "get_layer_list",
       "get_stackup",
+      "set_stackup_layer",
       "add_mounting_hole",
       "add_board_text",
       "list_graphics",
