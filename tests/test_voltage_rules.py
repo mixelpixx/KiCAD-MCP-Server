@@ -295,3 +295,70 @@ def test_creepage_without_a_board_outline_is_warned(tmp_path):
         {"boardPath": str(board_path), "classes": CLASSES, "spacing": no_creepage, "dryRun": True}
     )
     assert not any("Edge.Cuts" in w for w in r["warnings"])
+
+
+def test_other_nets_rule_leaves_out_unwired_pins():
+    plan = plan_rules(CLASSES, TABLE, other_nets_voltage=0)
+    block = render_block(plan, [c["name"] for c in CLASSES])
+    others = [ln for ln in block.splitlines() if "-other" not in ln and "!(" in ln]
+    assert others and all("B.NetName != 'unconnected-*'" in ln for ln in others)
+
+
+@pytest.mark.integration
+@pytest.mark.real_pcbnew
+def test_kicad_skips_unwired_pin_nets_in_other_rules(tmp_path):
+    # An 800 V track 1.75 mm from KiCad's net for an unwired pin passes; the same
+    # gap to an ordinary low-voltage net fails V:STACK-other.
+    if os.environ.get("KICAD_USE_REAL_PCBNEW") != "1" or not shutil.which("kicad-cli"):
+        pytest.skip("needs KICAD_USE_REAL_PCBNEW=1 and kicad-cli")
+    import pcbnew
+
+    from commands.design_rules import DesignRuleCommands
+
+    found = {}
+    for neighbour in ("unconnected-(R1-Pad2)", "LOGICNET"):
+        d = tmp_path / neighbour.replace("(", "_").replace(")", "_")
+        d.mkdir()
+        board_path = d / "v.kicad_pcb"
+        board = pcbnew.BOARD()
+        for n, y in (("STACKNET", 10.0), (neighbour, 12.0)):
+            board.Add(pcbnew.NETINFO_ITEM(board, n))
+            t = pcbnew.PCB_TRACK(board)
+            t.SetLayer(pcbnew.F_Cu)
+            t.SetStart(pcbnew.VECTOR2I(0, pcbnew.FromMM(y)))
+            t.SetEnd(pcbnew.VECTOR2I(pcbnew.FromMM(20), pcbnew.FromMM(y)))
+            t.SetWidth(pcbnew.FromMM(0.25))
+            t.SetNet(board.FindNet(n))
+            board.Add(t)
+        for x1, y1, x2, y2 in ((-5, 0, 25, 0), (25, 0, 25, 20), (25, 20, -5, 20), (-5, 20, -5, 0)):
+            s = pcbnew.PCB_SHAPE(board)
+            s.SetShape(pcbnew.SHAPE_T_SEGMENT)
+            s.SetLayer(pcbnew.Edge_Cuts)
+            s.SetStart(pcbnew.VECTOR2I(pcbnew.FromMM(x1), pcbnew.FromMM(y1)))
+            s.SetEnd(pcbnew.VECTOR2I(pcbnew.FromMM(x2), pcbnew.FromMM(y2)))
+            board.Add(s)
+        pcbnew.SaveBoard(str(board_path), board)
+        nc = {"clearance": 0.2, "track_width": 0.25, "via_diameter": 0.6, "via_drill": 0.3}
+        (d / "v.kicad_pro").write_text(
+            json.dumps(
+                {
+                    "board": {"design_settings": {"rules": {"min_clearance": 0.1}}},
+                    "net_settings": {
+                        "classes": [{"name": n, **nc} for n in ("Default", "STACK")],
+                        "meta": {"version": 4},
+                        "netclass_patterns": [{"netclass": "STACK", "pattern": "STACKNET"}],
+                    },
+                }
+            )
+        )
+        r = DesignRuleCommands().set_voltage_clearance_rules(
+            {
+                "boardPath": str(board_path),
+                "classes": [{"name": "STACK", "voltage": 800}],
+                "spacing": TABLE,
+            }
+        )
+        assert r["success"], r
+        found[neighbour] = _rule_violations(board_path)
+    assert not any("V:STACK-other" in rule for _, rule in found["unconnected-(R1-Pad2)"])
+    assert any("V:STACK-other" in rule for _, rule in found["LOGICNET"])

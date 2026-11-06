@@ -17,6 +17,8 @@ KiCad behaviours this relies on, checked with ``kicad-cli pcb drc`` on KiCad
   either order, so one rule per unordered pair is enough.
 - ``(constraint creepage (min ...))`` is enforced and reported as "creepage".
 - ``#`` starts a comment.
+- String comparisons in conditions take ``*`` wildcards: ``B.NetName !=
+  'unconnected-*'`` leaves out KiCad's nets for unwired pins.
 - **A ``.kicad_dru`` that does not parse is ignored as a whole, silently.**
   kicad-cli exits 0 and reports no rule violations at all. A broken rule
   elsewhere in the file would therefore disable every rule written here, so
@@ -37,6 +39,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 BEGIN = "# kicad-mcp voltage rules: begin (managed by set_voltage_clearance_rules; edits here are replaced)"
 END = "# kicad-mcp voltage rules: end"
 RULE_PREFIX = "V:"
+# KiCad string comparisons in rule conditions take * and ? wildcards.
+UNCONNECTED = "unconnected-*"
 
 _CLASS_NAME_OK = re.compile(r"^[^'\"\\()\n\r]+$")
 
@@ -244,7 +248,11 @@ def render_block(plan: List[Dict[str, Any]], all_classes: Sequence[str]) -> str:
         a = e["a"]
         if e["b"] == "(other nets)":
             others = " || ".join(f"B.hasNetclass('{c}')" for c in all_classes)
-            condition = f"A.hasNetclass('{a}') && !({others})"
+            # KiCad names an unwired pin's net "unconnected-(R1-Pad2)". Such a
+            # pin floats with its own part, so it isn't "other nets" (low-voltage
+            # logic): without this a floating pin of a high-voltage part was held
+            # to the full spacing from that part's own pads.
+            condition = f"A.hasNetclass('{a}') && !({others}) && B.NetName != '{UNCONNECTED}'"
             name = f"{RULE_PREFIX}{a}-other"
         else:
             condition = f"A.hasNetclass('{a}') && B.hasNetclass('{e['b']}')"
