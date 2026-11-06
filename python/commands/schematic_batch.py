@@ -560,6 +560,29 @@ class SchematicBatchCommands:
             placed: List[Dict[str, Any]] = []
             failed: List[Dict[str, Any]] = []
             placed_positions: Dict[tuple, str] = {}
+            # Planned edits, applied in one read-modify-write after the loop.
+            # Resolving every pin first, while the file is unchanged, keeps the
+            # PinLocator cache valid; writing per pin reparsed the whole sheet
+            # two or three times per label (about 2.4 s per label on an
+            # 11,000-line sheet), so a dozen labels ran past the bridge timeout.
+            new_labels: List[tuple] = []  # (net, position, label_type, orientation)
+            new_wires: List[tuple] = []  # (start, end)
+            to_clear: List[tuple] = []  # (net, position) for replace=True
+
+            def _facing_planned(net_name, position, orientation, proximity_mm=14.0):
+                """A label planned earlier in this batch that faces *position*.
+
+                Mirrors _find_facing_label for labels not yet in the file, so a
+                pair of facing pins in one batch is still joined by a wire.
+                """
+                facing = (int(round(orientation)) % 360 + 180) % 360
+                px, py = float(position[0]), float(position[1])
+                for net, pos, kind, angle in new_labels:
+                    if kind != "label" or net != net_name or angle % 360 != facing:
+                        continue
+                    if ((pos[0] - px) ** 2 + (pos[1] - py) ** 2) ** 0.5 <= proximity_mm:
+                        return [pos[0], pos[1]]
+                return None
 
             for ref, pin_map in connections.items():
                 if not isinstance(pin_map, dict):
@@ -586,16 +609,17 @@ class SchematicBatchCommands:
                                 continue
 
                         pos_key = (round(float(position[0]), 2), round(float(position[1]), 2))
+                        entry = {
+                            "ref": ref,
+                            "pin": str(pin_id),
+                            "net": net_name,
+                            "position": {"x": position[0], "y": position[1]},
+                        }
                         if placed_positions.get(pos_key) == net_name:
-                            placed.append(
-                                {
-                                    "ref": ref,
-                                    "pin": str(pin_id),
-                                    "net": net_name,
-                                    "position": {"x": position[0], "y": position[1]},
-                                    "note": "deduped: label already placed at this coordinate for this net",
-                                }
+                            entry["note"] = (
+                                "deduped: label already placed at this coordinate for this net"
                             )
+                            placed.append(entry)
                             continue
 
                         # Orient the label along the pin's OUTWARD direction, the
@@ -613,67 +637,31 @@ class SchematicBatchCommands:
 
                         # Facing-label auto-wiring is only meaningful for local labels;
                         # global labels join their net by name (one placed per pin).
-                        existing_pos = (
-                            _find_facing_label(sch_path, net_name, position, orientation)
-                            if label_type == "label"
-                            else None
-                        )
+                        existing_pos = None
+                        if label_type == "label":
+                            existing_pos = _find_facing_label(
+                                sch_path, net_name, position, orientation
+                            ) or _facing_planned(net_name, position, orientation)
                         if existing_pos:
-                            if WireManager.add_wire(sch_path, list(position), existing_pos):
-                                placed.append(
-                                    {
-                                        "ref": ref,
-                                        "pin": str(pin_id),
-                                        "net": net_name,
-                                        "position": {"x": position[0], "y": position[1]},
-                                        "note": f"wired to existing label at ({existing_pos[0]},{existing_pos[1]})",
-                                    }
-                                )
-                                placed_positions[pos_key] = net_name
-                            else:
-                                failed.append(
-                                    {
-                                        "ref": ref,
-                                        "pin": str(pin_id),
-                                        "net": net_name,
-                                        "reason": "wire-to-existing-label failed",
-                                    }
-                                )
-                            continue
-
-                        if replace:
-                            WireManager.delete_label(
-                                sch_path, net_name, list(position), tolerance=0.5
+                            new_wires.append((list(position), existing_pos))
+                            entry["note"] = (
+                                f"wired to existing label at ({existing_pos[0]},{existing_pos[1]})"
                             )
-                            self._delete_labels_at(sch_path, position)
-
-                        if WireManager.add_label(
-                            sch_path,
-                            net_name,
-                            position,
-                            label_type=label_type,
-                            orientation=orientation,
-                        ):
-                            placed.append(
-                                {
-                                    "ref": ref,
-                                    "pin": str(pin_id),
-                                    "net": net_name,
-                                    "position": {"x": position[0], "y": position[1]},
-                                }
-                            )
-                            placed_positions[pos_key] = net_name
                         else:
-                            failed.append(
-                                {
-                                    "ref": ref,
-                                    "pin": str(pin_id),
-                                    "net": net_name,
-                                    "reason": "add_label failed",
-                                }
-                            )
+                            if replace:
+                                to_clear.append((net_name, list(position)))
+                            new_labels.append((net_name, position, label_type, orientation))
+                        placed.append(entry)
+                        placed_positions[pos_key] = net_name
                     except Exception as pin_err:
                         failed.append({"ref": ref, "pin": str(pin_id), "reason": str(pin_err)})
+
+            for net_name, position in to_clear:
+                WireManager.delete_label(sch_path, net_name, position, tolerance=0.5)
+                self._delete_labels_at(sch_path, position)
+            if not WireManager.add_labels_and_wires(sch_path, new_labels, new_wires):
+                failed.extend(dict(e, reason="writing the schematic failed") for e in placed)
+                placed = []
 
             result: Dict[str, Any] = {
                 "success": len(failed) == 0,

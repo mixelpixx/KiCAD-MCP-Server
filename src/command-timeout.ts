@@ -35,6 +35,16 @@ export const LONG_RUNNING_COMMANDS = [
   "list_schematic_labels",
   "get_schematic_view",
   "digikey_check_library_availability",
+  // Schematic batch edits scale with sheet size and item count. When one ran
+  // past the 30 s default the worker was restarted mid-batch and only part of
+  // the edit reached the file, while the caller was told the call had failed.
+  "batch_add_and_connect",
+  "batch_add_components",
+  "batch_add_no_connects",
+  "batch_connect",
+  "batch_edit_schematic_components",
+  "batch_move_components",
+  "batch_set_schematic_property_positions",
 ] as const;
 
 /**
