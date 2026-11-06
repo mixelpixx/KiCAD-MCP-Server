@@ -44,6 +44,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
   user's text was dropped. All 18 prompts now substitute their arguments; an
   optional one left out reads "(not provided)".
 
+### Tooling
+
+- **CI jobs time out instead of hanging for six hours.** No job in
+  `ci.yml` set `timeout-minutes`, so GitHub's 360-minute default applied. On
+  2026-11-06 a KiCad 10 integration leg on the #505 merge train sat in the
+  KiCad PPA install step for over 25 minutes (normally under 2) until it was
+  cancelled by hand, and the required `CI passed` check stayed pending the
+  whole time. Every job now has a limit of about 3x its slowest successful run
+  on `main` (10 minutes at least; 35 for the integration tests). The KiCad
+  install step also has its own 25-minute limit, apt drops a connection that
+  sends nothing for 60 seconds and retries the file, and each apt command is
+  retried up to 3 times. A timed-out job counts as failed, so `CI passed`
+  fails with it.
+
 ## [2.8.3] - 2026-10-25
 
 ### New Features
