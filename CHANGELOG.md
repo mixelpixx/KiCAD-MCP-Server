@@ -27,9 +27,9 @@ All notable changes to the KiCAD MCP Server project are documented here.
   sync that discards data, and until now the list of changes came back only
   after they were saved. With `dryRun` the same list comes back and nothing
   is written (the board file is byte-identical afterwards).
-  - New in every reply: `pads_changed` (`"U6/1: 'Net-(U6-A)' ->
-    'unconnected-(U6-NC-Pad1)'"`), only the pads whose net actually
-    changes, plus `pads_changed_count` and `dryRun`. `pads_assigned` still
+  - New in every reply: `pads_changed`, only the pads whose net actually
+    changes (for example `U6/1: 'Net-(U6-A)' -> 'unconnected-(U6-NC-Pad1)'`),
+    plus `pads_changed_count` and `dryRun`. `pads_assigned` still
     counts every matched pad, so an up-to-date board reports many assigned
     and 0 changed.
   - On a real 107-part board, the preview showed 39 value changes, 107
