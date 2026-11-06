@@ -55,6 +55,18 @@ export function registerFreeroutingTools(server: McpServer, callKicadScript: Fun
         .describe(
           "Per-attempt `--max-passes` values to cycle through (default: [50, 60, 65, 70, 75, 80, 85, 90, 55, 95]). The list wraps if `attempts` exceeds its length.",
         ),
+      routeNets: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Route only these nets (names or globs such as '/HV PWR/*'). Other nets stay on the board as obstacles but are left out of the routing job, so a board can be routed one isolation domain at a time.",
+        ),
+      excludeNets: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Leave these nets (names or globs) out of the routing job, e.g. high-current nets you will pour by hand.",
+        ),
       keepArtifacts: z
         .boolean()
         .optional()

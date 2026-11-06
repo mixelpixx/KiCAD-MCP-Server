@@ -136,6 +136,92 @@ def _sexpr_end(text: str, start: int) -> int:
     return -1
 
 
+_NAME_TOKEN_RE = re.compile(r'"[^"]*"|[^\s()"]+')
+
+
+def _unquote(token: str) -> str:
+    return token[1:-1] if len(token) >= 2 and token[0] == token[-1] == '"' else token
+
+
+def net_selector(route_nets: Iterable[str], exclude_nets: Iterable[str]):
+    """A predicate for net names from include and exclude glob lists.
+
+    Empty ``route_nets`` means every net; ``exclude_nets`` then removes some.
+    """
+    import fnmatch
+
+    include = [str(p) for p in route_nets or []]
+    exclude = [str(p) for p in exclude_nets or []]
+
+    def keep(name: str) -> bool:
+        if include and not any(fnmatch.fnmatchcase(name, p) for p in include):
+            return False
+        return not any(fnmatch.fnmatchcase(name, p) for p in exclude)
+
+    return keep
+
+
+def filter_dsn_nets(dsn_text: str, keep) -> Tuple[str, List[str]]:
+    """Drop the nets ``keep`` rejects from a Specctra DSN's (network) section.
+
+    Freerouting routes every net in (network). Removing a net's (net ...) block,
+    and its name from the (class ...) lists, leaves its pads and existing copper
+    on the board as obstacles but gives the router nothing to connect for it. So
+    a board can be routed one domain at a time: the pack-side nets first, inside
+    their own region, then the logic nets, without either crossing the other's
+    isolation gap. Returns the new text and the names removed.
+    """
+    m = re.search(r"\(network(?=[\s)])", dsn_text)
+    if not m:
+        return dsn_text, []
+    start = m.start()
+    end = _sexpr_end(dsn_text, start)
+    if end < 0:
+        return dsn_text, []
+    body = dsn_text[start:end]
+    out: List[str] = []
+    removed: List[str] = []
+    i = len("(network")
+    out.append(body[:i])
+    while i < len(body):
+        j = body.find("(", i)
+        if j < 0:
+            out.append(body[i:])
+            break
+        out.append(body[i:j])
+        k = _sexpr_end(body, j)
+        if k < 0:
+            out.append(body[j:])
+            break
+        child = body[j:k]
+        head = re.match(r"\((net|class)\s+", child)
+        if head and head.group(1) == "net":
+            name = _unquote(_NAME_TOKEN_RE.match(child, head.end()).group(0))
+            if not keep(name):
+                removed.append(name)
+                i = k
+                # Drop the line break and indent the block leaves behind.
+                while i < len(body) and body[i] in " \t":
+                    i += 1
+                if i < len(body) and body[i] == "\n":
+                    i += 1
+                continue
+        elif head and head.group(1) == "class":
+            # (class NAME net net ... (circuit ...) (rule ...)): filter the net names.
+            first_paren = child.find("(", 1)
+            names_part = child[head.end() : first_paren if first_paren > 0 else len(child)]
+            tokens = _NAME_TOKEN_RE.findall(names_part)
+            if tokens:
+                cls, nets = tokens[0], tokens[1:]
+                kept = [t for t in nets if keep(_unquote(t))]
+                if len(kept) != len(nets):
+                    rest = child[first_paren:] if first_paren > 0 else ")"
+                    child = f"(class {cls} " + " ".join(kept) + "\n      " + rest
+        out.append(child)
+        i = k
+    return dsn_text[:start] + "".join(out) + dsn_text[end:], removed
+
+
 _PLACEMENT_RE = re.compile(r"\(placement(?=[\s)])")
 _PLACE_RE = re.compile(r'\(place\s+("[^"]*"|[^\s()]+)')
 
@@ -730,7 +816,8 @@ class FreeroutingCommands:
         kept_paths: Dict[str, str] = {}
 
         try:
-            return self._autoroute_staged(
+            self._nets_left_out = None
+            staged = self._autoroute_staged(
                 params,
                 board_path=board_path,
                 board_dir=board_dir,
@@ -748,6 +835,10 @@ class FreeroutingCommands:
                 pass_schedule=pass_schedule,
                 use_docker=use_docker,
             )
+            if self._nets_left_out is not None and isinstance(staged, dict):
+                staged["netsLeftOut"] = self._nets_left_out
+                staged["netsLeftOutCount"] = len(self._nets_left_out)
+            return staged
         finally:
             # Runs on every exit -- success, failure return, or exception --
             # so no artefact can outlive the run unless explicitly kept.
@@ -817,6 +908,16 @@ class FreeroutingCommands:
             }
 
         self._apply_edge_clearance(dsn_path)
+        route_nets = list(params.get("routeNets") or [])
+        exclude_nets = list(params.get("excludeNets") or [])
+        if route_nets or exclude_nets:
+            with open(dsn_path, encoding="utf-8") as f:
+                dsn_text = f.read()
+            dsn_text, left_out = filter_dsn_nets(dsn_text, net_selector(route_nets, exclude_nets))
+            with open(dsn_path, "w", encoding="utf-8") as f:
+                f.write(dsn_text)
+            self._nets_left_out = left_out
+            logger.info(f"Net selection: {len(left_out)} net(s) left out of the DSN")
         dsn_size = os.path.getsize(dsn_path)
         logger.info(f"DSN exported: {dsn_size} bytes")
 
