@@ -112,6 +112,7 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set<string>([
   "get_design_rules",
   "get_drc_violations",
   "get_layer_list",
+  "get_stackup",
   "get_net_pads",
   "get_nets_list",
   "get_pad_position",

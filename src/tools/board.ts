@@ -202,6 +202,24 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
     },
   );
 
+  server.tool(
+    "get_stackup",
+    "Read the stackup from the saved board file, not the board open in memory. Returns each copper, dielectric, mask, and silk entry with its thickness in millimetres. A thickness the stackup editor has locked is returned as thicknessMm plus thicknessLocked. Layer names are the names stored on the board, so a renamed layer such as 'Top Side' is returned beside the canonical F.Cu name. If an earlier save was refused, the file can be older than the session.",
+    {},
+    async () => {
+      logger.debug("Reading board stackup");
+      const result = await callKicadScript("get_stackup", {});
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
   // ------------------------------------------------------
   // Add Board Outline Tool
   // ------------------------------------------------------
