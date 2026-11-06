@@ -65,7 +65,7 @@ export function registerFreeroutingTools(server: McpServer, callKicadScript: Fun
         .array(z.string())
         .optional()
         .describe(
-          'Copper layers tracks may use, e.g. ["F.Cu", "B.Cu"] on a board whose inner layers are planes. Every other copper layer gets a board-sized wire keepout in the DSN: vias still pass through, tracks stay off, so a plane is not cut into islands. Default: all layers.',
+          'Copper layers tracks may use, e.g. ["F.Cu", "In2.Cu", "B.Cu"] when In1 is a plane. The other copper layers are marked inactive in a Freerouting rules file (autoroute_settings layer_rule, passed with -dr): no tracks there, vias still pass through, so a plane is not cut into islands. Default: all layers.',
         ),
     },
     async (args: any) => {

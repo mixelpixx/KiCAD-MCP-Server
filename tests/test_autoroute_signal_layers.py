@@ -1,16 +1,18 @@
-"""signalLayers keeps tracks off plane layers.
+"""signalLayers keeps tracks off plane layers through Freerouting's own layer switch.
 
 KiCad exports every copper layer as (type signal), so Freerouting ran long tracks across
-the inner planes of a 4-layer board and cut In2 into 7 islands. The autoroute
-`signalLayers` option adds a board-sized wire_keepout on every other copper layer.
+the inner planes of a 4-layer board and cut In2 into 7 islands. `signalLayers` writes a
+rules file (-dr) whose autoroute_settings mark the other layers inactive.
+
+A board-sized wire_keepout was tried first and is the wrong tool: Freerouting 2.5 then
+skips its fanout stage and places no vias at all (same DSN, 3 passes: 0 vias / 111
+unrouted with the keepout; fanout escaped 244/304 pins without it). With the rules file
+In1 off: 80 vias, In2 used, no In1 tracks.
 """
 
-from commands.freerouting import _restrict_signal_layers
+from commands.freerouting import _build_freerouting_cmd, _signal_layer_rules
 
 DSN = """(pcb "b.dsn"
-  (parser
-    (host_cad "KiCad's Pcbnew")
-  )
   (resolution um 10)
   (unit um)
   (structure
@@ -39,13 +41,7 @@ DSN = """(pcb "b.dsn"
       )
     )
     (boundary
-      (path pcb 0  100 -100  200 -100
-            200 -200  100 -200  100 -100)
-    )
-    (via "Via[0-3]_600:300_um")
-    (rule
-      (width 200)
-      (clearance 200)
+      (path pcb 0  100 -100  200 -100  200 -200  100 -200  100 -100)
     )
   )
   (placement
@@ -54,28 +50,31 @@ DSN = """(pcb "b.dsn"
 """
 
 
-def test_inner_layers_get_a_wire_keepout_over_the_boundary():
-    out, restricted = _restrict_signal_layers(DSN, ["F.Cu", "B.Cu"])
-    assert restricted == ["In1.Cu", "In2.Cu"]
-    assert (
-        '(wire_keepout "" (polygon In1.Cu 0 100 -100 200 -100 200 -200 100 -200 100 -100))' in out
+def test_rules_switch_off_the_other_layers_only():
+    text, restricted = _signal_layer_rules(DSN, ["F.Cu", "In2.Cu", "B.Cu"])
+    assert restricted == ["In1.Cu"]
+    assert "(layer_rule In1.Cu (active off)" in text
+    for name in ("F.Cu", "In2.Cu", "B.Cu"):
+        assert f"(layer_rule {name} (active on)" in text
+    assert "(vias on)" in text
+    assert text.startswith("(rules PCB") and text.count("(") == text.count(")")
+    assert "keepout" not in text
+
+
+def test_nothing_to_restrict():
+    assert _signal_layer_rules(DSN, ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]) == (None, [])
+    assert _signal_layer_rules(DSN, []) == (None, [])
+    # a typo must not switch off every layer
+    assert _signal_layer_rules(DSN, ["Top"]) == (None, [])
+
+
+def test_rules_file_is_passed_to_freerouting(tmp_path, monkeypatch):
+    import commands.freerouting as fr
+
+    monkeypatch.setattr(fr, "_find_java", lambda *_: "java")
+    cmd = _build_freerouting_cmd(
+        "fr.jar", "/x/b.dsn", "/x/b.ses", 5, False, rules_path="/x/b.rules"
     )
-    assert '(wire_keepout "" (polygon In2.Cu 0 ' in out
-    assert "polygon F.Cu" not in out and "polygon B.Cu" not in out
-    # inside (structure ...), before (placement
-    assert out.index("wire_keepout") < out.index("(placement")
-    assert out.index("wire_keepout") > out.index("(rule")
-    # parens still balance
-    assert out.count("(") == out.count(")")
-
-
-def test_no_restriction_when_all_or_none_are_named():
-    assert _restrict_signal_layers(DSN, ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]) == (DSN, [])
-    assert _restrict_signal_layers(DSN, []) == (DSN, [])
-    # a typo must not keep tracks off every layer
-    assert _restrict_signal_layers(DSN, ["Top"]) == (DSN, [])
-
-
-def test_no_boundary_leaves_the_text_alone():
-    text = DSN.replace("(boundary", "(nothing")
-    assert _restrict_signal_layers(text, ["F.Cu"]) == (text, [])
+    assert cmd[cmd.index("-dr") + 1] == "/x/b.rules"
+    cmd = _build_freerouting_cmd("fr.jar", "/x/b.dsn", "/x/b.ses", 5, False)
+    assert "-dr" not in cmd

@@ -229,40 +229,46 @@ _TRACKS_CLEARED_NOTE = (
 
 _DSN_KEEPOUT_RE = re.compile(r'(\(keepout "[^"]*" \(polygon signal 0\s+)([-\d.\s]+?)(\))')
 _DSN_LAYER_RE = re.compile(r"\(layer\s+([^\s()]+)\s*\(type\s+(\w+)\)")
-_DSN_BOUNDARY_RE = re.compile(r"\(boundary\s*\(path\s+pcb\s+[\d.]+\s+([-\d.\s]+?)\)")
 
 
-def _restrict_signal_layers(dsn_text: str, signal_layers: List[str]) -> Tuple[str, List[str]]:
-    """Keep tracks off every copper layer not in ``signal_layers``.
+def _signal_layer_rules(dsn_text: str, signal_layers: List[str]) -> Tuple[Optional[str], List[str]]:
+    """Freerouting rules text that keeps tracks off every copper layer not in ``signal_layers``.
 
-    KiCad exports every copper layer as ``(type signal)``, so Freerouting runs tracks
-    across inner plane layers. A long track cuts a plane into islands, and pads that
-    reach the plane through a via then show as unconnected (found on a 4-layer board:
-    In2 cut into 7 pieces, 26 plane pads open). For each other layer this adds a
-    ``wire_keepout`` covering the board boundary: tracks are kept out, vias still pass.
-    Returns the new text and the layers restricted. Unknown names in ``signal_layers``
-    are ignored; a DSN without a board boundary is returned unchanged.
+    KiCad exports every copper layer as ``(type signal)``, so Freerouting runs tracks across
+    inner plane layers and cuts them into islands (found on a 4-layer board: In2 in 7 pieces,
+    26 plane pads open). The rules file's ``autoroute_settings`` carries one ``layer_rule``
+    per layer with ``(active on|off)``: an inactive layer gets no traces, vias still pass.
+
+    A board-sized ``wire_keepout`` looks equivalent but is not: Freerouting 2.5 then skips
+    its fanout stage and places no vias at all (A/B on the same DSN: 0 vias, 111 unrouted
+    with the keepout; fanout 244/304 pins without it). ``(type power)`` keeps vias but
+    switches on power-plane validation of the layer.
+
+    Returns (rules text, restricted layers); (None, []) when nothing would be restricted,
+    or when ``signal_layers`` names no real layer (a typo must not switch off every layer).
     """
     st = dsn_text.find("(structure")
     if st < 0 or not signal_layers:
-        return dsn_text, []
+        return None, []
     layers = [m.group(1) for m in _DSN_LAYER_RE.finditer(dsn_text, st)]
     wanted = set(signal_layers)
     restricted = [name for name in layers if name not in wanted]
     if not restricted or len(restricted) == len(layers):
-        # nothing to restrict, or the caller named no real layer: refuse to block all
-        return dsn_text, []
-    bm = _DSN_BOUNDARY_RE.search(dsn_text, st)
-    if not bm:
-        return dsn_text, []
-    pts = " ".join(bm.group(1).split())
-    anchor = dsn_text.find("(placement", st)
-    if anchor < 0:
-        return dsn_text, []
-    close = dsn_text.rfind(")", st, anchor)  # the structure section's closing paren
-    add = "".join(f'    (wire_keepout "" (polygon {name} 0 {pts}))\n' for name in restricted)
-    line_start = dsn_text.rfind("\n", 0, close) + 1
-    return dsn_text[:line_start] + add + dsn_text[line_start:], restricted
+        return None, []
+    rules = []
+    for i, name in enumerate(layers):
+        active = "off" if name in restricted else "on"
+        direction = "horizontal" if i % 2 == 0 else "vertical"
+        rules.append(
+            f"    (layer_rule {name} (active {active}) (preferred_direction {direction})"
+            " (preferred_direction_trace_costs 1.0) (against_preferred_direction_trace_costs 2.0))\n"
+        )
+    text = (
+        '(rules PCB "kicad-mcp"\n  (autoroute_settings\n    (fanout on)\n    (autoroute on)\n'
+        "    (postroute on)\n    (vias on)\n    (via_costs 50)\n    (plane_via_costs 5)\n"
+        "    (start_ripup_costs 100)\n    (start_pass_no 1)\n" + "".join(rules) + "  )\n)\n"
+    )
+    return text, restricted
 
 
 def _grow_hole_keepouts(dsn_text: str, grow_um: float) -> str:
@@ -346,6 +352,7 @@ def _build_freerouting_cmd(
     passes: int,
     use_docker: bool,
     single_thread: bool = False,
+    rules_path: Optional[str] = None,
 ) -> List[str]:
     """Build the command to run Freerouting.
 
@@ -356,6 +363,8 @@ def _build_freerouting_cmd(
     valid routed board, not an artefact of MT optimisation.
     """
     extra = ["-mt", "1"] if single_thread else []
+    if rules_path:
+        extra += ["-dr", rules_path]
     required_java = _jar_required_java(jar_path)
     if use_docker:
         docker_exe = _find_docker()
@@ -365,6 +374,10 @@ def _build_freerouting_cmd(
         dsn_name = os.path.basename(dsn_path)
         ses_name = os.path.basename(ses_path)
         jar_name = os.path.basename(jar_path)
+        if rules_path:
+            extra = [
+                a if a != rules_path else f"/work/{os.path.basename(rules_path)}" for a in extra
+            ]
         return [
             docker_exe,
             "run",
@@ -853,14 +866,15 @@ class FreeroutingCommands:
 
         self._apply_edge_clearance(dsn_path)
         restricted_layers: List[str] = []
+        rules_path: Optional[str] = None
         signal_layers = list(params.get("signalLayers") or [])
         if signal_layers:
             with open(dsn_path, "r", encoding="utf-8") as fh:
-                text = fh.read()
-            text, restricted_layers = _restrict_signal_layers(text, signal_layers)
-            if restricted_layers:
-                with open(dsn_path, "w", encoding="utf-8") as fh:
-                    fh.write(text)
+                rules_text, restricted_layers = _signal_layer_rules(fh.read(), signal_layers)
+            if rules_text:
+                rules_path = os.path.splitext(dsn_path)[0] + ".rules"
+                with open(rules_path, "w", encoding="utf-8") as fh:
+                    fh.write(rules_text)
             else:
                 logger.warning(f"signalLayers {signal_layers} restricted nothing")
         dsn_size = os.path.getsize(dsn_path)
@@ -894,6 +908,7 @@ class FreeroutingCommands:
                 attempt_passes,
                 use_docker,
                 single_thread=single_thread,
+                rules_path=rules_path,
             )
             logger.info(
                 f"Freerouting attempt {idx + 1}/{attempts} "
