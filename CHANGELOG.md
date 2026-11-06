@@ -42,6 +42,11 @@ All notable changes to the KiCAD MCP Server project are documented here.
   with KiCad 9.0.8 from Ubuntu 26.04 and pymupdf 2.1). The server now imports
   pymupdf before pcbnew, and both view tools re-register pcbnew's iterator
   class after loading pymupdf, so the import order no longer matters.
+- **Prompts include the arguments you pass** (found while reviewing #470).
+  Every prompt's text marks its arguments with `{{name}}`, but no handler
+  filled them in, so the model received the literal `{{requirements}}` and the
+  user's text was dropped. All 18 prompts now substitute their arguments; an
+  optional one left out reads "(not provided)".
 
 ## [2.8.3] - 2026-10-25
 
