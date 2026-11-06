@@ -122,7 +122,7 @@ def test_autoroute_routes_only_the_selected_net(tmp_path):
     pcbnew.SaveBoard(str(path), board)
     (tmp_path / "r.kicad_pro").write_text("{}\n")
 
-    cmd = FreeroutingCommands(pcbnew.LoadBoard(str(path)))
+    cmd = FreeroutingCommands(None)  # nothing loaded: boardPath alone must be enough
     r = cmd.autoroute(
         {"boardPath": str(path), "freeroutingJar": _jar(), "routeNets": ["A"], "timeout": 120}
     )

@@ -733,14 +733,31 @@ class FreeroutingCommands:
                 "errorDetails": "KiCAD Python API is required",
             }
 
+        board_path = params.get("boardPath")
+        # A boardPath that isn't the loaded board is loaded here. Before, the
+        # call refused when nothing was loaded, and with another board loaded
+        # it routed that board and saved it over boardPath.
+        if board_path and (
+            not self.board
+            or os.path.abspath(self.board.GetFileName() or "") != os.path.abspath(board_path)
+        ):
+            if not os.path.isfile(board_path):
+                return {"success": False, "message": f"Board file not found: {board_path}"}
+            try:
+                self.board = pcbnew.LoadBoard(board_path)
+            except Exception as e:
+                return {
+                    "success": False,
+                    "message": f"Failed to load board {board_path}",
+                    "errorDetails": str(e),
+                }
+
         if not self.board:
             return {
                 "success": False,
                 "message": "No board is loaded",
-                "errorDetails": "Load or create a board first",
+                "errorDetails": "Load or create a board first, or pass boardPath",
             }
-
-        board_path = params.get("boardPath")
         if not board_path:
             board_path = self.board.GetFileName()
 
