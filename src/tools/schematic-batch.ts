@@ -231,6 +231,12 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
         .optional()
         .default(false)
         .describe("Delete existing labels at each pin before placing (default false)"),
+      stubLength: z
+        .number()
+        .optional()
+        .describe(
+          "Draw a wire this long (mm) out of each pin and put the label at its end, so the label doesn't sit on the pin number and name. 2.54 is typical; default 0 (label on the pin).",
+        ),
     },
     async (args: any) => {
       const r = await callKicadScript("batch_connect", args);
@@ -272,6 +278,10 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
         .describe(
           "Label kind used to wire the nets: 'label' = sheet-local (default); 'global_label' = cross-sheet by name",
         ),
+      stubLength: z
+        .number()
+        .optional()
+        .describe("Wire stub (mm) between each pin and its label, as in batch_connect (default 0)"),
       origin_x: z.number().optional(),
       origin_y: z.number().optional(),
     },

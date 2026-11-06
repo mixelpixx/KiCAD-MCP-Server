@@ -528,6 +528,10 @@ class SchematicBatchCommands:
             schematic_path = params.get("schematicPath")
             connections = params.get("connections")
             replace = bool(params.get("replace", False))
+            # A label straight on the pin end sits over the pin number and name;
+            # stubLength draws a short wire out of the pin first and puts the
+            # label at its end, the way schematics are normally drawn.
+            stub = float(params.get("stubLength") or 0.0)
             label_type = params.get("labelType") or params.get("label_type") or "label"
             if label_type not in ("label", "global_label"):
                 return {
@@ -650,7 +654,18 @@ class SchematicBatchCommands:
                         else:
                             if replace:
                                 to_clear.append((net_name, list(position)))
-                            new_labels.append((net_name, position, label_type, orientation))
+                            label_at = position
+                            if stub > 0:
+                                dx, dy = {0: (1, 0), 90: (0, -1), 180: (-1, 0), 270: (0, 1)}[
+                                    orientation
+                                ]
+                                label_at = [
+                                    round(float(position[0]) + dx * stub, 4),
+                                    round(float(position[1]) + dy * stub, 4),
+                                ]
+                                new_wires.append((list(position), label_at))
+                                entry["label_position"] = {"x": label_at[0], "y": label_at[1]}
+                            new_labels.append((net_name, label_at, label_type, orientation))
                         placed.append(entry)
                         placed_positions[pos_key] = net_name
                     except Exception as pin_err:
@@ -814,6 +829,7 @@ class SchematicBatchCommands:
                         "schematicPath": schematic_path,
                         "connections": nets_per_ref,
                         "labelType": params.get("labelType") or params.get("label_type") or "label",
+                        "stubLength": params.get("stubLength") or 0,
                     }
                 )
 

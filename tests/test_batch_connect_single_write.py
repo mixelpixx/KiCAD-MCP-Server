@@ -159,3 +159,57 @@ def test_failed_write_reports_every_pin_failed(tmp_path, monkeypatch):
     )
     assert not r["success"]
     assert r["placed"] == [] and len(r["failed"]) == 2
+
+
+def test_stub_puts_the_label_off_the_pin_and_keeps_it_connected(tmp_path):
+    import shutil
+    import subprocess
+
+    f = _sheet(tmp_path)
+    r = SchematicBatchCommands(None).batch_connect(
+        {"schematicPath": str(f), "connections": {"R1": {"1": "LEFT"}}, "stubLength": 2.54}
+    )
+    assert r["success"], r
+    # R1 pin 1 is at (98.73, 100) and faces left, so the label moves 2.54 mm further left.
+    lbl = _items(f, "label")[0]
+    at = next(x for x in lbl if isinstance(x, list) and x[0] == sexpdata.Symbol("at"))
+    assert (round(float(at[1]), 2), round(float(at[2]), 2)) == (96.19, 100.0)
+    assert len(_items(f, "wire")) == 1
+    if shutil.which("kicad-cli"):
+        out = tmp_path / "n.net"
+        subprocess.run(
+            [
+                "kicad-cli",
+                "sch",
+                "export",
+                "netlist",
+                "--format",
+                "kicadsexpr",
+                "-o",
+                str(out),
+                str(f),
+            ],
+            capture_output=True,
+            check=True,
+        )
+        nets = sexpdata.loads(out.read_text())
+        net_block = next(
+            x for x in nets[1:] if isinstance(x, list) and x[0] == sexpdata.Symbol("nets")
+        )
+        on_left = [
+            n
+            for n in net_block[1:]
+            if any(
+                isinstance(f, list)
+                and f[0] == sexpdata.Symbol("name")
+                and str(f[1]).endswith("LEFT")
+                for f in n
+            )
+        ]
+        assert on_left, "no LEFT net"
+        nodes = [
+            {str(f[0]): str(f[1]) for f in node[1:] if isinstance(f, list)}
+            for node in on_left[0]
+            if isinstance(node, list) and node[0] == sexpdata.Symbol("node")
+        ]
+        assert {"ref": "R1", "pin": "1"}.items() <= nodes[0].items() if nodes else False
