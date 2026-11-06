@@ -355,6 +355,7 @@ Based on the provided information and optimization goals, suggest specific, acti
     {
       board_copper: z
         .string()
+        .optional()
         .describe(
           "Notes already collected, if any. The review still reads the board with get_stackup, summarize_vias, and summarize_net_copper",
         ),
@@ -415,6 +416,7 @@ Lead with the worst thing you can show from the tool results, and name the numbe
         ),
       comparison: z
         .string()
+        .optional()
         .describe(
           "Optional supplied comparison of two geometries. This server does not compute a field",
         ),
@@ -426,7 +428,7 @@ Lead with the worst thing you can show from the tool results, and name the numbe
             role: "user",
             content: {
               type: "text",
-              text: `You're reviewing radiated EMC of a board shield. Call it EMC. This server does not run a near-field solver or a chamber measurement. Do not invent a field value, a colour plot, or a CISPR number.
+              text: `You're reviewing radiated EMC of a board shield. This server does not run a near-field solver or a chamber measurement. Do not invent a field value, a colour plot, or a CISPR number.
 
 {{shield_geometry}}
 {{comparison}}
@@ -450,9 +452,8 @@ A fitted can is not shielding by itself. A few clips can leave a slot that is lo
 These are general checks:
 
 1. Keep a switch node small and on the outer layer over unbroken ground. The hot loop is the input capacitor to the FETs. Do not move the switch node onto an inner layer.
-2. A via belongs in the capacitor ground pad that faces the switch pin, not in a bulk row that is already stitched.
-3. Housing springs only work on bare metal.
-4. Unplug debug and UART cables for a radiated test. A cable can be the remaining radiator once the seam is closed.
+2. Housing springs only work on bare metal.
+3. Unplug debug and UART cables for a radiated test. A cable can be the remaining radiator once the seam is closed.
 
 Do not turn one project's choices, such as an existing filter or parts on another board, into rules for every board. Do not edit the KiCad project while reviewing it.`,
             },
