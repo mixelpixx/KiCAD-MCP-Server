@@ -204,11 +204,48 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
 
   server.tool(
     "get_stackup",
-    "Read the stackup from the saved board file, not the board open in memory. Returns each copper, dielectric, mask, and silk entry with its thickness in millimetres. A thickness the stackup editor has locked is returned as thicknessMm plus thicknessLocked. Layer names are the names stored on the board, so a renamed layer such as 'Top Side' is returned beside the canonical F.Cu name. If an earlier save was refused, the file can be older than the session.",
-    {},
-    async () => {
+    "Read the stackup from the saved board file, not the board open in memory. Returns each copper, dielectric, mask, and silk entry with its thickness in millimetres. A thickness the stackup editor has locked is returned as thicknessMm plus thicknessLocked. Layer names are the names stored on the board, so a renamed layer such as 'Top Side' is returned beside the canonical F.Cu name. If an earlier save was refused, the file can be older than the session. Pass expected to compare those rows with a recipe in the same call; thicknessToleranceMm defaults to 0.001 mm and epsilonTolerance defaults to 0.01.",
+    {
+      expected: z
+        .array(
+          z.object({
+            index: z.number().int().nonnegative().optional().describe("Row index from get_stackup"),
+            layer: z
+              .string()
+              .optional()
+              .describe("Canonical name such as F.Cu, or the name stored on the board"),
+            type: z
+              .enum([
+                "copper",
+                "dielectric",
+                "soldermask",
+                "solderpaste",
+                "silkscreen",
+                "undefined",
+              ])
+              .optional()
+              .describe("Expected row type"),
+            thicknessMm: z.number().optional().describe("Expected thickness in millimetres"),
+            epsilonR: z.number().optional().describe("Expected relative permittivity"),
+          }),
+        )
+        .min(1)
+        .optional()
+        .describe("Rows to compare. Each row needs index or layer. Omit to only read the stackup"),
+      thicknessToleranceMm: z
+        .number()
+        .nonnegative()
+        .optional()
+        .describe("Allowed thickness difference in millimetres. Default 0.001"),
+      epsilonTolerance: z
+        .number()
+        .nonnegative()
+        .optional()
+        .describe("Allowed relative-permittivity difference. Default 0.01"),
+    },
+    async (args) => {
       logger.debug("Reading board stackup");
-      const result = await callKicadScript("get_stackup", {});
+      const result = await callKicadScript("get_stackup", args);
       return {
         content: [
           {

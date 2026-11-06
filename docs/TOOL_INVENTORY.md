@@ -7,7 +7,7 @@
 **Version:** 2.8.3
 **Tools registered on the server:** 248
 **Tools indexed for keyword discovery:** 248 in 20 categories
-**Last updated:** 2026-10-26
+**Last updated:** 2026-11-05
 
 ## How to read this document
 
@@ -56,28 +56,28 @@ _Source: `src/tools/project.ts`_
 
 _Source: `src/tools/board.ts`_
 
-| Tool                    | Description                                                                                         | Discovery |
-| ----------------------- | --------------------------------------------------------------------------------------------------- | --------- |
-| `set_board_size`        | Set PCB dimensions (width, height, unit)                                                            | Essential |
-| `set_board_origin`      | Set the auxiliary (drill/place) origin and/or grid origin of a .kicad_pcb.                          | `board`   |
-| `get_board_origin`      | Read back the auxiliary (drill/place) origin and grid origin of a .kicad_pcb in mm.                 | `board`   |
-| `add_layer`             | Add copper/technical/signal layer                                                                   | `board`   |
-| `set_active_layer`      | Change the active working layer                                                                     | `board`   |
-| `get_board_info`        | Get board metadata and properties                                                                   | Essential |
-| `get_layer_list`        | List all layers on the board                                                                        | `board`   |
-| `get_stackup`           | Read the stackup from the saved board file, including a locked thickness.                           | `board`   |
-| `add_board_outline`     | Add board outline (rectangle, circle, polygon, rounded_rectangle)                                   | Essential |
-| `clear_board_outline`   | Delete all Edge.Cuts graphics from the current PCB board.                                           | Essential |
-| `replace_board_outline` | Replace the current Edge.Cuts board outline with a rectangle, rounded rectangle, circle or polygon. | Essential |
-| `list_graphics`         | List PCB graphic/drawing items such as gr_line, gr_arc, gr_rect, gr_text and dimensions.            | `board`   |
-| `delete_graphic`        | Delete a PCB graphic/drawing item by UUID.                                                          | `board`   |
-| `update_graphic`        | Update common properties of a PCB graphic/drawing item by UUID.                                     | `board`   |
-| `add_mounting_hole`     | Add mounting hole with optional pad                                                                 | `board`   |
-| `add_board_text`        | Add text annotation to board                                                                        | `board`   |
-| `add_zone`              | Add copper zone/pour with clearance settings                                                        | `board`   |
-| `get_board_extents`     | Get bounding box of board                                                                           | `board`   |
-| `get_board_2d_view`     | Render 2D board view (PNG/JPG/SVG)                                                                  | `board`   |
-| `import_svg_logo`       | Import SVG file as polygons on silkscreen layer                                                     | `board`   |
+| Tool                    | Description                                                                                                | Discovery |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------- | --------- |
+| `set_board_size`        | Set PCB dimensions (width, height, unit)                                                                   | Essential |
+| `set_board_origin`      | Set the auxiliary (drill/place) origin and/or grid origin of a .kicad_pcb.                                 | `board`   |
+| `get_board_origin`      | Read back the auxiliary (drill/place) origin and grid origin of a .kicad_pcb in mm.                        | `board`   |
+| `add_layer`             | Add copper/technical/signal layer                                                                          | `board`   |
+| `set_active_layer`      | Change the active working layer                                                                            | `board`   |
+| `get_board_info`        | Get board metadata and properties                                                                          | Essential |
+| `get_layer_list`        | List all layers on the board                                                                               | `board`   |
+| `get_stackup`           | Read the stackup from the saved board file, including a locked thickness, and optionally compare a recipe. | `board`   |
+| `add_board_outline`     | Add board outline (rectangle, circle, polygon, rounded_rectangle)                                          | Essential |
+| `clear_board_outline`   | Delete all Edge.Cuts graphics from the current PCB board.                                                  | Essential |
+| `replace_board_outline` | Replace the current Edge.Cuts board outline with a rectangle, rounded rectangle, circle or polygon.        | Essential |
+| `list_graphics`         | List PCB graphic/drawing items such as gr_line, gr_arc, gr_rect, gr_text and dimensions.                   | `board`   |
+| `delete_graphic`        | Delete a PCB graphic/drawing item by UUID.                                                                 | `board`   |
+| `update_graphic`        | Update common properties of a PCB graphic/drawing item by UUID.                                            | `board`   |
+| `add_mounting_hole`     | Add mounting hole with optional pad                                                                        | `board`   |
+| `add_board_text`        | Add text annotation to board                                                                               | `board`   |
+| `add_zone`              | Add copper zone/pour with clearance settings                                                               | `board`   |
+| `get_board_extents`     | Get bounding box of board                                                                                  | `board`   |
+| `get_board_2d_view`     | Render 2D board view (PNG/JPG/SVG)                                                                         | `board`   |
+| `import_svg_logo`       | Import SVG file as polygons on silkscreen layer                                                            | `board`   |
 
 ---
 

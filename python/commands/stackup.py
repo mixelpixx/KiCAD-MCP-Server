@@ -297,6 +297,178 @@ def read_stackup_text(board: Any, text: str) -> Dict[str, Any]:
     return result
 
 
+def _param_number(
+    params: Dict[str, Any], key: str
+) -> Tuple[Optional[float], Optional[Dict[str, Any]]]:
+    if key not in params or params[key] is None:
+        return None, None
+    value = params[key]
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None, _failure(f"{key} must be a number", key)
+    return float(value), None
+
+
+def _param_int(params: Dict[str, Any], key: str) -> Tuple[Optional[int], Optional[Dict[str, Any]]]:
+    if key not in params or params[key] is None:
+        return None, None
+    value = params[key]
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None, _failure(f"{key} must be an integer", key)
+    return value, None
+
+
+def _tolerance(
+    params: Dict[str, Any], key: str, default: float
+) -> Tuple[float, Optional[Dict[str, Any]]]:
+    if key not in params or params[key] is None:
+        return default, None
+    value, error = _param_number(params, key)
+    if error is not None or value is None:
+        return 0.0, error
+    if value < 0:
+        return 0.0, _failure(f"{key} must be zero or greater", key)
+    return value, None
+
+
+def _difference(
+    index: Any, layer: Any, field: str, actual: Any, expected: Any, delta: Any
+) -> Dict[str, Any]:
+    return {
+        "index": index,
+        "layer": layer,
+        "field": field,
+        "actual": actual,
+        "expected": expected,
+        "delta": delta,
+    }
+
+
+def _locate(
+    layers: List[Dict[str, Any]], row: Dict[str, Any]
+) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], bool]:
+    index, error = _param_int(row, "index")
+    if error is not None:
+        return None, error, False
+    layer = row.get("layer")
+    if layer is not None and (not isinstance(layer, str) or not layer):
+        return None, _failure("layer must be a string", "layer"), False
+    if index is None and layer is None:
+        return (
+            None,
+            _failure("each expected row needs an index or a layer", "index or layer"),
+            False,
+        )
+
+    chosen: Optional[Dict[str, Any]] = None
+    if index is not None:
+        if index < 0 or index >= len(layers):
+            return None, None, True
+        chosen = layers[index]
+    if isinstance(layer, str):
+        hits = [
+            entry
+            for entry in layers
+            if entry.get("canonical") == layer or entry.get("name") == layer
+        ]
+        if len(hits) > 1:
+            return None, _failure(f"More than one stackup row is named {layer}", "layer"), False
+        if not hits:
+            return None, None, True
+        if chosen is not None and hits[0]["index"] != chosen["index"]:
+            return (
+                None,
+                _failure(
+                    "index and layer name different rows",
+                    "pass the index of that layer, or the layer on its own",
+                ),
+                False,
+            )
+        chosen = hits[0]
+    return chosen, None, False
+
+
+def _row_differences(
+    entry: Dict[str, Any],
+    row: Dict[str, Any],
+    thickness_tol: float,
+    epsilon_tol: float,
+) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    found: List[Dict[str, Any]] = []
+    label = entry.get("canonical") or entry.get("name")
+    if "type" in row and row["type"] is not None:
+        if not isinstance(row["type"], str):
+            return [], _failure("type must be a string", "type")
+        if row["type"] != entry.get("type"):
+            found.append(
+                _difference(entry["index"], label, "type", entry.get("type"), row["type"], None)
+            )
+    if "thicknessMm" in row and row["thicknessMm"] is not None:
+        expected, error = _param_number(row, "thicknessMm")
+        if error is not None:
+            return [], error
+        actual = entry.get("thicknessMm")
+        if actual is None or abs(actual - expected) > thickness_tol:
+            delta = None if actual is None else actual - expected
+            found.append(_difference(entry["index"], label, "thicknessMm", actual, expected, delta))
+    if "epsilonR" in row and row["epsilonR"] is not None:
+        expected_eps, error = _param_number(row, "epsilonR")
+        if error is not None:
+            return [], error
+        pieces = entry.get("sublayers") or [{"epsilonR": entry.get("epsilonR")}]
+        for sublayer, piece in enumerate(pieces):
+            actual_eps = piece.get("epsilonR") if isinstance(piece, dict) else None
+            if actual_eps is None or abs(actual_eps - expected_eps) > epsilon_tol:
+                delta = None if actual_eps is None else actual_eps - expected_eps
+                difference = _difference(
+                    entry["index"], label, "epsilonR", actual_eps, expected_eps, delta
+                )
+                if len(pieces) > 1:
+                    difference["sublayer"] = sublayer
+                found.append(difference)
+    return found, None
+
+
+def compare_stackup(current: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:
+    """Attach a recipe comparison to a successful get_stackup result."""
+    expected = params.get("expected")
+    if not isinstance(expected, list) or not expected:
+        return _failure("expected must list at least one row", "expected")
+    thickness_tol, error = _tolerance(params, "thicknessToleranceMm", 0.001)
+    if error is not None:
+        return error
+    epsilon_tol, error = _tolerance(params, "epsilonTolerance", 0.01)
+    if error is not None:
+        return error
+    mismatches: List[Dict[str, Any]] = []
+    for row in expected:
+        if not isinstance(row, dict):
+            return _failure("each expected row must be an object", "expected")
+        entry, error, missing = _locate(current["layers"], row)
+        if error is not None:
+            return error
+        if missing or entry is None:
+            mismatches.append(
+                _difference(
+                    row.get("index"),
+                    row.get("layer"),
+                    "layer",
+                    None,
+                    row.get("layer", row.get("index")),
+                    None,
+                )
+            )
+            continue
+        row_diffs, error = _row_differences(entry, row, thickness_tol, epsilon_tol)
+        if error is not None:
+            return error
+        mismatches.extend(row_diffs)
+    compared = dict(current)
+    compared["ok"] = not mismatches
+    compared["mismatchCount"] = len(mismatches)
+    compared["mismatches"] = mismatches
+    return compared
+
+
 class StackupCommands:
     """Read-only stackup query. Holds the board the interface last loaded."""
 
@@ -306,17 +478,21 @@ class StackupCommands:
     def get_stackup(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return copper and dielectric thicknesses and the board's layer names.
 
-        ``params`` is unused. The name is part of the command-handler signature
-        the dispatcher always passes.
+        Pass ``expected`` to compare the stackup with a recipe in the same call.
+        Each row names a layer by ``index`` or ``layer`` and may give ``type``,
+        ``thicknessMm``, and ``epsilonR``. Thickness uses ``thicknessToleranceMm``
+        (default 0.001 mm). Permittivity uses ``epsilonTolerance`` (default 0.01).
         """
-        del params
         if not self.board:
             return _no_board()
         try:
-            return self._read()
+            current = self._read()
         except Exception as exc:
             logger.error(f"get_stackup failed: {exc}")
             return _failure("Failed to read stackup", str(exc))
+        if not current.get("success") or "expected" not in params or params.get("expected") is None:
+            return current
+        return compare_stackup(current, params)
 
     def _read(self) -> Dict[str, Any]:
         path = self._board_path()

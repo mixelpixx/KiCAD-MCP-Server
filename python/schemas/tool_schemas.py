@@ -482,9 +482,36 @@ BOARD_TOOLS = [
             "board, so a renamed layer such as 'Top Side' is returned beside the canonical "
             "F.Cu name. pcbnew does not expose the stackup, so this reads the "
             "(stackup ...) section of the .kicad_pcb file. If an earlier save was refused, "
-            "the file can be older than the session."
+            "the file can be older than the session. Pass expected to compare those rows "
+            "with a recipe in the same call."
         ),
-        "inputSchema": {"type": "object", "properties": {}},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "expected": {
+                    "type": "array",
+                    "description": "Rows to compare. Each row needs index or layer. Omit to only read.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "index": {"type": "integer"},
+                            "layer": {"type": "string"},
+                            "type": {"type": "string"},
+                            "thicknessMm": {"type": "number"},
+                            "epsilonR": {"type": "number"},
+                        },
+                    },
+                },
+                "thicknessToleranceMm": {
+                    "type": "number",
+                    "description": "Allowed thickness difference in millimetres. Default 0.001.",
+                },
+                "epsilonTolerance": {
+                    "type": "number",
+                    "description": "Allowed relative-permittivity difference. Default 0.01.",
+                },
+            },
+        },
     },
     {
         "name": "get_board_info",
