@@ -6,6 +6,22 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **`check_schematic_legibility`: what a reader trips over.** ERC and a
+  netlist prove a sheet is connected; they say nothing about whether a person
+  can read it. This boxes every symbol body, visible reference and value,
+  label and free text, and reports text over text (a symbol's own fields
+  included), text over another symbol's body, a field across its own outline,
+  body over body, items on the title block or outside the frame, and
+  upside-down text, each with its box in sheet mm.
+  - Calibrated against renders of a released three-sheet design: text
+    advance 0.95 x size per character; a field's angle and justification are
+    in the symbol's frame and go through its rotation, then its mirror. On
+    that design it reports 11 problems and each was confirmed on the render
+    (a value printed over a label, values struck by body outlines, a note
+    over a diode); `find_overlapping_elements` reports 0 on the same sheets,
+    since it compares positions, not the space text takes.
+  - Read-only; available in `readonly` mode.
+
 - **Operating modes: a readonly mode for review agents, and a manufacturing
   mode** (#443 and #444, @b0gdaniy). `KICAD_MCP_OPERATING_MODE=readonly`
   leaves only the tools that cannot change the design, the project, libraries

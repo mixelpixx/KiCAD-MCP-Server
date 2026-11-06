@@ -746,6 +746,7 @@ class KiCADInterface(SchematicHandlersMixin):
             # Schematic analysis tools (read-only)
             "get_schematic_view_region": self._handle_get_schematic_view_region,
             "find_overlapping_elements": self._handle_find_overlapping_elements,
+            "check_schematic_legibility": self._handle_check_schematic_legibility,
             "get_elements_in_region": self._handle_get_elements_in_region,
             "find_wires_crossing_symbols": self._handle_find_wires_crossing_symbols,
             "find_orphaned_wires": self._handle_find_orphaned_wires,
@@ -4702,6 +4703,28 @@ class KiCADInterface(SchematicHandlersMixin):
     # ===================================================================
     # Schematic analysis tools (read-only)
     # ===================================================================
+
+    def _handle_check_schematic_legibility(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Report what a reader would trip over on one sheet (see schematic_legibility)."""
+        try:
+            from pathlib import Path
+
+            from commands.schematic_legibility import check_legibility
+
+            schematic_path = params.get("schematicPath")
+            if not schematic_path:
+                return {"success": False, "message": "schematicPath is required"}
+            if not Path(schematic_path).exists():
+                return {"success": False, "message": f"Schematic not found: {schematic_path}"}
+            result = check_legibility(Path(schematic_path), int(params.get("maxProblems", 200)))
+            return {
+                "success": True,
+                **result,
+                "message": f"{result['total']} legibility problem(s)",
+            }
+        except Exception as e:
+            logger.error(f"Error checking schematic legibility: {e}")
+            return {"success": False, "message": str(e)}
 
     def _handle_find_overlapping_elements(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Detect spatially overlapping symbols, wires, and labels"""
