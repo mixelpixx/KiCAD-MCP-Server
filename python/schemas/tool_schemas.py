@@ -3997,6 +3997,25 @@ ANALYSIS_TOOLS = [
             },
         },
     },
+    {
+        "name": "summarize_net_copper",
+        "title": "Summarize Net Copper",
+        "description": (
+            "Summarize one net's copper without listing every track, via, and zone. "
+            "Returns the three counts, the layers involved, the bounding box, and a "
+            "shape: vias_only, tracks_only, zones_only, empty, or mixed."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {
+                    "type": "string",
+                    "description": "Net name, for example GND or NetL2_1",
+                },
+            },
+            "required": ["net"],
+        },
+    },
 ]
 
 TOOL_SCHEMAS: Dict[str, Any] = {}

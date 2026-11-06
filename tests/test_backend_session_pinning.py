@@ -567,6 +567,7 @@ class TestNewBoardLifecycleRouting:
             "freerouting_commands",
             "stackup_commands",
             "via_summary_commands",
+            "net_copper_commands",
         )
         for handler_name in board_handlers:
             handler = MagicMock()

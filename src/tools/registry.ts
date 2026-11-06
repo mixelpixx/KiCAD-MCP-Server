@@ -276,6 +276,7 @@ export const toolCategories: ToolCategory[] = [
       "delete_trace",
       "query_traces",
       "summarize_vias",
+      "summarize_net_copper",
       "copy_routing_pattern",
       "add_via",
       "add_gnd_stitching_vias",

@@ -132,6 +132,7 @@ _Source: `src/tools/routing.ts`_
 | `delete_trace`            | Delete traces by UUID, position, or bulk by net                                                                                                 | `routing` |
 | `query_traces`            | Query/filter traces by net, layer, or bounding box                                                                                              | `routing` |
 | `summarize_vias`          | Count vias on the board without listing them.                                                                                                   | `routing` |
+| `summarize_net_copper`    | Summarize one net's copper without listing every track, via, and zone.                                                                          | `routing` |
 | `query_zones`             | Query copper zones (filled pours) on the board with optional filters by net, layer, or bounding box.                                            | `routing` |
 | `add_gnd_stitching_vias`  | Drop GND stitching vias across the board with collision checking against every non-GND segment, via, and pad on every copper layer (PTH vias... | `routing` |
 | `get_nets_list`           | List all nets with statistics                                                                                                                   | `routing` |

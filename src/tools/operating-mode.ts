@@ -121,6 +121,7 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set<string>([
   "list_graphics",
   "query_traces",
   "summarize_vias",
+  "summarize_net_copper",
   "query_zones",
   "run_drc",
   // Schematic inspection. run_erc, generate_netlist and the view tools work in
