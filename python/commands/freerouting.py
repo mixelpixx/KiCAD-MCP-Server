@@ -306,6 +306,61 @@ def _prune_ses_placement(ses_text: str, board_refs: Iterable[str]) -> Tuple[str,
     return ses_text[: m.start()] + "".join(out) + ses_text[block_end:], dropped
 
 
+def _snapshot_tracks(board, nets) -> List[Dict[str, Any]]:
+    """Geometry of every track and via on the given nets, to re-create after an import.
+
+    ImportSpecctraSES clears all of the board's tracks and adds what the session holds.
+    A session from a DSN with nets left out (routeNets / excludeNets) holds none of
+    theirs, so importing it erased their routing: routing in passes (logic first, then
+    the pack nets) kept only the last pass.
+    """
+    nets = set(nets)
+    snap: List[Dict[str, Any]] = []
+    for t in board.GetTracks():
+        name = t.GetNetname()
+        if name not in nets:
+            continue
+        if t.GetClass() == "PCB_VIA":
+            snap.append({"via": True, "net": name, "x": t.GetPosition().x, "y": t.GetPosition().y,
+                         "width": t.GetWidth(), "drill": t.GetDrillValue(),
+                         "top": t.TopLayer(), "bottom": t.BottomLayer(), "type": t.GetViaType()})
+        elif t.GetClass() == "PCB_TRACK":
+            snap.append({"via": False, "net": name, "x1": t.GetStart().x, "y1": t.GetStart().y,
+                         "x2": t.GetEnd().x, "y2": t.GetEnd().y, "width": t.GetWidth(),
+                         "layer": t.GetLayer()})
+    return snap
+
+
+def _restore_tracks(board, snap) -> int:
+    """Re-create tracks and vias recorded by _snapshot_tracks; returns how many."""
+    import pcbnew
+
+    n = 0
+    for it in snap:
+        net = board.FindNet(it["net"])
+        if net is None:
+            continue
+        if it["via"]:
+            v = pcbnew.PCB_VIA(board)
+            v.SetPosition(pcbnew.VECTOR2I(it["x"], it["y"]))
+            v.SetViaType(it["type"])
+            v.SetLayerPair(it["top"], it["bottom"])
+            v.SetWidth(it["width"])
+            v.SetDrill(it["drill"])
+            v.SetNet(net)
+            board.Add(v)
+        else:
+            t = pcbnew.PCB_TRACK(board)
+            t.SetStart(pcbnew.VECTOR2I(it["x1"], it["y1"]))
+            t.SetEnd(pcbnew.VECTOR2I(it["x2"], it["y2"]))
+            t.SetWidth(it["width"])
+            t.SetLayer(it["layer"])
+            t.SetNet(net)
+            board.Add(t)
+        n += 1
+    return n
+
+
 _TRACKS_CLEARED_NOTE = (
     "An SES import that fails after parsing has usually already removed the "
     "board's unlocked tracks, so the board in memory may have lost them; nothing "
@@ -1109,7 +1164,11 @@ class FreeroutingCommands:
                 routed = _strip_ses_placement(fh.read())
             with open(import_copy, "w", encoding="utf-8") as fh:
                 fh.write(routed)
+            kept = _snapshot_tracks(self.board, self._nets_left_out) if self._nets_left_out else []
             result = pcbnew.ImportSpecctraSES(self.board, import_copy)
+            if kept and _api_ok(result):
+                restored = _restore_tracks(self.board, kept)
+                logger.info(f"Re-created {restored} track(s)/via(s) of the nets left out of the DSN")
             if not _api_ok(result):
                 return {
                     "success": False,
