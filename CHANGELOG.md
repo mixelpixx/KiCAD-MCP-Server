@@ -23,6 +23,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **No-connect flags and junctions now work on hierarchical child sheets.**
+  A child sheet has no `(sheet_instances)` block. `add_no_connect` returned
+  False there ("No sheet_instances section found"), so
+  `batch_add_no_connects` failed for every pin of every part below the root
+  sheet. `sync_junctions` skipped its insert, so no junction a child sheet
+  needed was ever written, and a tool-drawn T on a child sheet stayed open.
+  Both now append at the end of the sheet, as `add_label` and `add_wire`
+  already did. KiCad's ERC confirms a no-connect placed on a child sheet
+  clears that pin's `pin_not_connected`.
+
 - **`export_svg` writes the SVG it reports** (#467). It plotted without
   opening a plot file first, the same mistake #456 fixed in `export_gerber`,
   so no file was written while the reply said success. It now writes one SVG
