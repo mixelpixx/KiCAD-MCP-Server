@@ -31,6 +31,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
   defaults to mm, the JSON-RPC names are accepted, a net that does not exist
   is reported instead of leaving the via unconnected, and a `viaType` other
   than `through` is refused instead of quietly adding a through via.
+- **Autoroute with several attempts no longer crashes with `PermissionError`
+  on a rootful Docker engine** (#477). The best-of-N restore step copied the
+  winning SES over the existing file with `shutil.copy2`, which needs write
+  permission on that file; on a rootful Docker engine the file is still
+  owned by the container. It now writes to a sibling path and renames over
+  the existing file instead, which only needs write permission on the
+  directory.
 - **`export_svg` writes the SVG it reports** (#467). It plotted without
   opening a plot file first, the same mistake #456 fixed in `export_gerber`,
   so no file was written while the reply said success. It now writes one SVG
