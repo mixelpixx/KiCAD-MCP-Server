@@ -31,6 +31,46 @@ All notable changes to the KiCAD MCP Server project are documented here.
   defaults to mm, the JSON-RPC names are accepted, a net that does not exist
   is reported instead of leaving the via unconnected, and a `viaType` other
   than `through` is refused instead of quietly adding a through via.
+- **Autoroute with several attempts no longer crashes with `PermissionError`
+  on a rootful Docker engine** (#477). The best-of-N restore step copied the
+  winning SES over the existing file with `shutil.copy2`, which needs write
+  permission on that file; on a rootful Docker engine the file is still
+  owned by the container. It now writes to a sibling path and renames over
+  the existing file instead, which only needs write permission on the
+  directory.
+- **Schematic edits are refused while the schematic is open in KiCad** (#472).
+  KiCad keeps its own copy of an open schematic and does not reload it when
+  the file changes on disk, so saving there silently overwrote what the
+  schematic tools wrote. Commands that edit a schematic now ask KiCad over IPC
+  which schematic is open and refuse if it belongs to the same project. Tools
+  that write only on request (`lint_offgrid` with `fix`, `dryRun: false`,
+  `apply`) are refused only then, and previews (`dryRun`/`dry_run`) pass.
+  Every file `update_symbol_from_library` would write is checked,
+  `backannotate_footprints` without `schematicPath` checks the board's
+  schematic, and `create_schematic` and `create_project` no longer replace an
+  open schematic with an empty one. Set
+  `KICAD_ALLOW_OPEN_SCHEMATIC_EDITS=true` to allow them anyway; the opt-in
+  Windows reload (`KICAD_INTERACTIVE_SCHEMATIC`) is unaffected.
+- **`run_drc` reports unconnected items and schematic-parity issues, and
+  refills zones first on KiCad 10.** kicad-cli's JSON report keeps three
+  lists, and only `violations` was read, so missing connections
+  (`unconnected_items`) and schematic mismatches (`schematic_parity`) were
+  never reported: a board with unrouted nets could come back with no errors.
+  All three are read now, the summary counts them `by_category`, and each
+  violation in the saved file keeps its `category` and the `items` it names
+  (description, uuid, position). `get_drc_violations` uses `run_drc`, so its
+  counts now include unconnected items too.
+  - With KiCad 10 kicad-cli, DRC refills zones before checking, as the DRC
+    dialog does by default; on a 13-cell battery board with stale fills,
+    about 400 of 584 reported violations were clearance errors against old
+    fill copper. The refill is not saved: the reply says
+    `zonesRefilled: true` and notes that exports plot the saved fills.
+    `refillZones` set to false turns it off. KiCad 8 and 9 have no
+    `--refill-zones`, so there the check runs on the saved fills and says so
+    (`zonesRefilled: false`).
+  - `schematicParity` set to true adds the schematic check, with a warning
+    when kicad-cli could not load the schematic.
+  - A failed kicad-cli run reports stdout's last lines when stderr is empty.
 - **`export_svg` writes the SVG it reports** (#467). It plotted without
   opening a plot file first, the same mistake #456 fixed in `export_gerber`,
   so no file was written while the reply said success. It now writes one SVG
