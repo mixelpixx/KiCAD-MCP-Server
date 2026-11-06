@@ -306,3 +306,70 @@ def test_fallback_without_kicad_cli_says_so(tmp_path, monkeypatch):
     assert r["success"], r
     assert r["netSource"] == "built-in"
     assert any("built-in walker" in w for w in r["warnings"])
+
+
+def _rework_board(board_path: Path):
+    """R2 on the wrong footprint (0805, rotated, on the back), plus R9 (no symbol) and a board-only MH1."""
+    import pcbnew
+
+    fp_dir = next(
+        (
+            Path(os.environ[v])
+            for v in ("KICAD10_FOOTPRINT_DIR", "KICAD9_FOOTPRINT_DIR")
+            if v in os.environ
+        ),
+        Path("/usr/share/kicad/footprints"),
+    )
+    board = pcbnew.LoadBoard(str(board_path))
+    old = next(fp for fp in board.GetFootprints() if fp.GetReference() == "R2")
+    pos = old.GetPosition()
+    board.Remove(old)
+    r2 = pcbnew.FootprintLoad(str(fp_dir / "Resistor_SMD.pretty"), "R_0805_2012Metric")
+    r2.SetReference("R2")
+    r2.SetValue("22k")
+    r2.SetFPID(pcbnew.LIB_ID("Resistor_SMD", "R_0805_2012Metric"))
+    board.Add(r2)
+    r2.SetPosition(pos)
+    r2.Flip(r2.GetPosition(), False)
+    r2.SetOrientationDegrees(90)
+    for ref, x, board_only in (("R9", 25, False), ("MH1", 5, True)):
+        fp = pcbnew.FootprintLoad(str(fp_dir / "Resistor_SMD.pretty"), "R_0603_1608Metric")
+        fp.SetReference(ref)
+        if board_only:
+            fp.SetAttributes(fp.GetAttributes() | pcbnew.FP_BOARD_ONLY)
+        board.Add(fp)
+        fp.SetPosition(pcbnew.VECTOR2I(pcbnew.FromMM(x), pcbnew.FromMM(15)))
+    pcbnew.SaveBoard(str(board_path), board)
+    return pos
+
+
+@pytest.mark.integration
+@pytest.mark.real_pcbnew
+def test_replace_and_delete_footprints(tmp_path, monkeypatch):
+    _require_kicad()
+    monkeypatch.setenv("KICAD_SKIP_SYMBOL_WARMUP", "1")
+    import pcbnew
+
+    board_path = _project(tmp_path / "p")
+    pos = _rework_board(board_path)
+
+    plain = _sync(board_path, dryRun=True)
+    assert [c["reference"] for c in plain["footprint_changes_pending"]] == ["R2"]
+    assert plain["footprints_replaced"] == [] and plain["footprints_deleted"] == []
+
+    preview = _sync(board_path, dryRun=True, replaceFootprints=True, deleteUnusedFootprints=True)
+    assert [c["reference"] for c in preview["footprints_replaced"]] == ["R2"]
+    assert preview["footprints_deleted"] == ["R9"]
+
+    r = _sync(board_path, replaceFootprints=True, deleteUnusedFootprints=True)
+    assert r["success"], r
+    assert r["footprint_changes_pending"] == []
+    board = pcbnew.LoadBoard(str(board_path))
+    fps = {fp.GetReference(): fp for fp in board.GetFootprints()}
+    assert "R9" not in fps and "MH1" in fps  # board-only footprint kept
+    r2 = fps["R2"]
+    assert str(r2.GetFPID().GetLibItemName()) == "R_0603_1608Metric"
+    assert r2.GetPosition() == pos and r2.IsFlipped() and r2.GetOrientationDegrees() == 90
+    assert r2.GetPath().AsString() == f"/{SHEET}/{R2}"
+    assert {p.GetNumber(): p.GetNetname() for p in r2.Pads()}["1"] == "/CANH"
+    assert _parity(board_path) == []
