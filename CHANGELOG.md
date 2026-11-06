@@ -23,6 +23,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Every schematic tool that takes a `position` accepts `[x, y]` and
+  `{"x": .., "y": ..}`.** `add_schematic_text`, `add_schematic_hierarchical_label`
+  and `add_sheet_pin` took a list; a dict passed their length check and then
+  failed with "Failed to add text annotation". `delete_schematic_net_label`
+  took a dict; a list raised. Either shape now works everywhere, and a
+  malformed one is refused with a message naming both shapes.
+
 - **`export_svg` writes the SVG it reports** (#467). It plotted without
   opening a plot file first, the same mistake #456 fixed in `export_gerber`,
   so no file was written while the reply said success. It now writes one SVG
