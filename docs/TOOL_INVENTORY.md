@@ -118,7 +118,7 @@ _Source: `src/tools/component.ts`_
 
 ---
 
-## Routing (17 tools)
+## Routing (18 tools)
 
 _Source: `src/tools/routing.ts`_
 
@@ -131,6 +131,7 @@ _Source: `src/tools/routing.ts`_
 | `add_copper_pour`         | Add copper pour / ground plane                                                                                                                  | `routing` |
 | `delete_trace`            | Delete traces by UUID, position, or bulk by net                                                                                                 | `routing` |
 | `query_traces`            | Query/filter traces by net, layer, or bounding box                                                                                              | `routing` |
+| `summarize_vias`          | Count vias on the board without listing them.                                                                                                   | `routing` |
 | `query_zones`             | Query copper zones (filled pours) on the board with optional filters by net, layer, or bounding box.                                            | `routing` |
 | `add_gnd_stitching_vias`  | Drop GND stitching vias across the board with collision checking against every non-GND segment, via, and pad on every copper layer (PTH vias... | `routing` |
 | `get_nets_list`           | List all nets with statistics                                                                                                                   | `routing` |
@@ -520,7 +521,7 @@ _Source: `src/tools/toolboxes.ts`_
 | `project.ts`             | Project and Board Files                | 12      |
 | `board.ts`               | Board Management                       | 20      |
 | `component.ts`           | Component Management                   | 28      |
-| `routing.ts`             | Routing                                | 17      |
+| `routing.ts`             | Routing                                | 18      |
 | `design-rules.ts`        | Design Rules and DRC                   | 7       |
 | `export.ts`              | Export and Fabrication Output          | 27      |
 | `schematic.ts`           | Schematic                              | 46      |
@@ -562,7 +563,7 @@ These are the categories `search_tools` searches. They cover 248 of the 248 regi
 | `schematic_hierarchy`      | 7             |
 | `schematic_layout`         | 12            |
 | `schematic_batch`          | 6             |
-| `routing`                  | 14            |
+| `routing`                  | 15            |
 | `autoroute`                | 4             |
 | `validation`               | 2             |
 | `footprint`                | 5             |

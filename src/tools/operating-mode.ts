@@ -120,6 +120,7 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set<string>([
   "get_ratsnest",
   "list_graphics",
   "query_traces",
+  "summarize_vias",
   "query_zones",
   "run_drc",
   // Schematic inspection. run_erc, generate_netlist and the view tools work in

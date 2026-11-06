@@ -438,6 +438,7 @@ try:
     from commands.symbol_schematic import SymbolSchematicCommands
     from commands.update_symbol_from_library import update_symbol_from_library
     from commands.validate_kicad_files import validate_schematic, validate_symbol_library
+    from commands.via_summary import ViaSummaryCommands
 
     logger.info("Successfully imported all command handlers")
 except ImportError as e:
@@ -497,6 +498,7 @@ class KiCADInterface(SchematicHandlersMixin):
         self.component_commands = ComponentCommands(self.board, self.footprint_library)
         self.routing_commands = RoutingCommands(self.board)
         self.stackup_commands = StackupCommands(self.board)
+        self.via_summary_commands = ViaSummaryCommands(self.board)
         self.freerouting_commands = FreeroutingCommands(self.board)
         self.eagle_commands = EagleCommands()
         self.symbol_schematic_commands = SymbolSchematicCommands()
@@ -609,6 +611,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "query_traces": self.routing_commands.query_traces,
             "query_zones": self.routing_commands.query_zones,
             "get_stackup": self.stackup_commands.get_stackup,
+            "summarize_vias": self.via_summary_commands.summarize_vias,
             "add_gnd_stitching_vias": self.routing_commands.add_gnd_stitching_vias,
             "modify_trace": self.routing_commands.modify_trace,
             "copy_routing_pattern": self.routing_commands.copy_routing_pattern,
@@ -1835,6 +1838,7 @@ class KiCADInterface(SchematicHandlersMixin):
         self.component_commands.board = self.board
         self.routing_commands.board = self.board
         self.stackup_commands.board = self.board
+        self.via_summary_commands.board = self.board
         self.design_rule_commands.board = self.board
         self.export_commands.board = self.board
         self.freerouting_commands.board = self.board
