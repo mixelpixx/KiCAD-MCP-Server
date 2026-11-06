@@ -116,3 +116,16 @@ def test_upside_down_field(tmp_path):
 def test_hidden_fields_are_ignored(tmp_path):
     f = sheet(tmp_path, symbol("T:R", "R1", 100, 100, fields=[field("Value", "10K", 100, 100, hide=True)]))
     assert check_legibility(f)["total"] == 0
+
+
+def test_wire_through_text(tmp_path):
+    # A riser through a value (seen in a real design: through R18's "0.1%").
+    f = sheet(tmp_path, symbol("T:R", "R1", 100, 100, fields=[field("Value", "2.7M 0.1%", 102.03, 101.27, justify="left")])
+              + "\n(wire (pts (xy 107 90) (xy 107 110)))")
+    assert "text over wire" in kinds(f)
+
+
+def test_a_labels_own_wire_is_not_text_over_wire(tmp_path):
+    f = sheet(tmp_path, '(label "SDA" (at 50 50 0) (effects (font (size 1.27 1.27)) (justify left bottom)))\n'
+                        "(wire (pts (xy 50 50) (xy 70 50)))")
+    assert "text over wire" not in kinds(f)

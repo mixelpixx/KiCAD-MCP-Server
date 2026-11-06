@@ -9,6 +9,7 @@ and value, every net/global/hierarchical label and every free text, and reports:
 - text over another symbol's body
 - a symbol's own field across its outline, or over a small part's graphic
 - body over body
+- a wire through a text (a label's own wire only touches its edge)
 - anything on the title block (KiCad's default drawing sheet, approx.) or
   outside the page frame
 - a field stored at 180 degrees, or a free text at 180/270 (drawn upside down)
@@ -114,7 +115,12 @@ def text_box(x, y, angle, text, size, just, label=False, is_label=False):
         b0, b1 = -h / 2, h / 2
     # KiCad applies justify in screen terms after rotation: a 180-degree label with
     # justify right runs left of its anchor, so horizontal boxes are not flipped.
+    side = not label  # a local net label: text beside its wire whatever the justify
+    off = 0.2 * size[1]  # gap between wire and text, ~0.25 mm at 1.27 (rendered text then
+    #                      sits ~1.2 mm off the wire once the glyph's own bearing is added)
     if horiz:
+        if side:  # drawn above its wire, not centred on it
+            return (x + a0, y - h - off, x + a1, y - off)
         return (x + a0, y + b0, x + a1, y + b1)
     # Vertical text: "left" grows upward from the anchor, "right" downward.
     if "right" in just:
@@ -123,6 +129,8 @@ def text_box(x, y, angle, text, size, just, label=False, is_label=False):
         y0, y1 = -w, 0
     else:
         y0, y1 = -w / 2, w / 2
+    if side:  # drawn left of its wire
+        return (x - h - off, y + y0, x - off, y + y1)
     return (x - h / 2, y + y0, x + h / 2, y + y1)
 
 
@@ -277,11 +285,16 @@ def collect(path):
         texts.append((f"text:{lines[0][:20]}", (x0, y0, x0 + w, y0 + h), None))
         if int(round(a)) % 360 in (180, 270):
             upside.append((f"text:{lines[0][:20]}", (x - 1, y - 1, x + 1, y + 1)))
-    return (pw, ph), bodies, texts, upside
+    wires = []
+    for w in find(data, "wire"):
+        pts = first(w, "pts")
+        xy = [(float(q[1]), float(q[2])) for q in find(pts, "xy")] if pts else []
+        wires += list(zip(xy, xy[1:]))
+    return (pw, ph), bodies, texts, upside, wires
 
 
 def check(path):
-    (pw, ph), bodies, texts, upside = collect(path)
+    (pw, ph), bodies, texts, upside, wires = collect(path)
     frame = (10, 10, pw - 10, ph - 10)
     title = (pw - 122, ph - 47, pw - 10, ph - 10)  # KiCad default title block, approx.
     problems = [("upside down", n, b) for n, b in upside]
@@ -311,12 +324,22 @@ def check(path):
                 continue
             if overlap(tb, bb, pad=0.3):
                 problems.append(("text over body", f"{n} / {bn}", tb))
+    for n, tb, owner in texts:
+        # a wire through the middle of a text (not one that only touches its edge,
+        # as a label's own wire does)
+        ib = (tb[0] + 0.3, tb[1] + 0.3, tb[2] - 0.3, tb[3] - 0.3)
+        if ib[0] >= ib[2] or ib[1] >= ib[3]:
+            continue
+        for (ax, ay), (bx, by) in wires:
+            if ax == bx and ib[0] < ax < ib[2] and min(ay, by) < ib[3] and max(ay, by) > ib[1]:
+                problems.append(("text over wire", n, tb)); break
+            if ay == by and ib[1] < ay < ib[3] and min(ax, bx) < ib[2] and max(ax, bx) > ib[0]:
+                problems.append(("text over wire", n, tb)); break
     for i in range(len(bodies)):
         for j in range(i + 1, len(bodies)):
             if overlap(bodies[i][1], bodies[j][1], pad=0.3):
                 problems.append(("body over body", f"{bodies[i][0]} / {bodies[j][0]}", bodies[i][1]))
     return (pw, ph), problems
-
 
 def check_legibility(path, max_problems=200):
     """Run the check on one sheet; returns counts by kind and each problem's box."""
