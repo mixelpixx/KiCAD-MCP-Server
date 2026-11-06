@@ -44,6 +44,17 @@ _SYM_UNIT = Symbol("unit")
 _IU_PER_MM = 10000
 
 
+def _strictly_inside(p: Tuple[int, int], seg: Tuple[int, int, int, int]) -> bool:
+    """True when point *p* lies on segment *seg* (integer units), not at an end."""
+    px, py = p
+    x1, y1, x2, y2 = seg
+    if (px, py) in ((x1, y1), (x2, y2)):
+        return False
+    if (x2 - x1) * (py - y1) != (y2 - y1) * (px - x1):  # not collinear
+        return False
+    return min(x1, x2) <= px <= max(x1, x2) and min(y1, y2) <= py <= max(y1, y2)
+
+
 def _find_insertion_point(content: str) -> int:
     """Find the right place to insert new elements in a .kicad_sch file.
 
@@ -492,6 +503,24 @@ class WireManager:
         return endpoints
 
     @staticmethod
+    def _collect_wire_segments_iu(sch_data: list) -> List[Tuple[int, int, int, int]]:
+        """Every wire as (x1, y1, x2, y2) in KiCad internal units."""
+        segments = []
+        for item in sch_data:
+            parsed = WireManager._parse_wire(item)
+            if parsed is not None:
+                (x1, y1), (x2, y2), _, _ = parsed
+                segments.append(
+                    (
+                        round(x1 * _IU_PER_MM),
+                        round(y1 * _IU_PER_MM),
+                        round(x2 * _IU_PER_MM),
+                        round(y2 * _IU_PER_MM),
+                    )
+                )
+        return segments
+
+    @staticmethod
     def _get_existing_junctions(sch_data: list) -> dict:
         """Return {(iu_x, iu_y): index_in_sch_data} for every junction element."""
         result: dict = {}
@@ -694,8 +723,24 @@ class WireManager:
             (round(x * _IU_PER_MM), round(y * _IU_PER_MM)) for x, y in pin_positions
         )
 
+        # A wire end on the interior of another wire (a T drawn without
+        # splitting the through-wire) connects only with a junction there:
+        # without one KiCad leaves it open, and a junction already there was
+        # removed as stale. The through-wire counts as two connections, as
+        # its two halves would if KiCad's editor had split it. A pin sitting
+        # mid-wire is deliberately not counted: KiCad treats it as
+        # unconnected, and dotting it would change the netlist.
+        through_iu: Counter = Counter()
+        segments = WireManager._collect_wire_segments_iu(sch_data)
+        for iu in wire_iu:
+            through_iu[iu] = 2 * sum(1 for seg in segments if _strictly_inside(iu, seg))
+
         # wire_iu.items() guarantees wire_cnt >= 1, so no extra guard needed
-        needed_iu = {iu for iu, wire_cnt in wire_iu.items() if wire_cnt + pin_iu.get(iu, 0) >= 3}
+        needed_iu = {
+            iu
+            for iu, wire_cnt in wire_iu.items()
+            if wire_cnt + pin_iu.get(iu, 0) + through_iu[iu] >= 3
+        }
 
         existing = WireManager._get_existing_junctions(sch_data)
         existing_iu = set(existing.keys())

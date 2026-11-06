@@ -23,6 +23,21 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **A wire ending on the middle of another wire now gets its junction, and
+  keeps one it already has.** KiCad connects such a T only with a junction at
+  the meeting point. KiCad's editor splits the through-wire there, but wires
+  written by a tool usually aren't split. `sync_junctions` counted wire ends
+  only, so it added no junction (KiCad left the T open, and ERC reports
+  `unconnected_wire_endpoint`). Worse, it deleted a junction that was
+  already there, cutting a working connection. It runs on every `add_wire`,
+  `delete_wire`, move and rotate, so one edit anywhere on a sheet could
+  disconnect a T elsewhere on it.
+  - The through-wire now counts as two connections, as its halves would
+    if split.
+  - A pin sitting mid-wire is still not dotted: KiCad treats it as
+    unconnected, and a junction would change the netlist.
+  - A plain crossing is still not dotted.
+
 - **`export_svg` writes the SVG it reports** (#467). It plotted without
   opening a plot file first, the same mistake #456 fixed in `export_gerber`,
   so no file was written while the reply said success. It now writes one SVG
