@@ -231,7 +231,9 @@ _DSN_KEEPOUT_RE = re.compile(r'(\(keepout "[^"]*" \(polygon signal 0\s+)([-\d.\s
 _DSN_LAYER_RE = re.compile(r"\(layer\s+([^\s()]+)\s*\(type\s+(\w+)\)")
 
 
-def _signal_layer_rules(dsn_text: str, signal_layers: List[str]) -> Tuple[Optional[str], List[str]]:
+def _signal_layer_rules(
+    dsn_text: str, signal_layers: List[str], trace_costs: Optional[Dict[str, float]] = None
+) -> Tuple[Optional[str], List[str]]:
     """Freerouting rules text that keeps tracks off every copper layer not in ``signal_layers``.
 
     KiCad exports every copper layer as ``(type signal)``, so Freerouting runs tracks across
@@ -244,24 +246,33 @@ def _signal_layer_rules(dsn_text: str, signal_layers: List[str]) -> Tuple[Option
     with the keepout; fanout 244/304 pins without it). ``(type power)`` keeps vias but
     switches on power-plane validation of the layer.
 
-    Returns (rules text, restricted layers); (None, []) when nothing would be restricted,
-    or when ``signal_layers`` names no real layer (a typo must not switch off every layer).
+    ``trace_costs`` (layer -> factor, e.g. {"In1.Cu": 5}) keeps a layer usable but makes
+    traces there cost that many times more, for a plane layer that may carry the odd track
+    where nothing else fits. Costs alone (every layer active) also produce a rules file.
+
+    Returns (rules text, restricted layers); (None, []) when nothing would be restricted or
+    costed, or when ``signal_layers`` names no real layer (a typo must not switch off every
+    layer).
     """
     st = dsn_text.find("(structure")
-    if st < 0 or not signal_layers:
+    costs = {k: float(v) for k, v in (trace_costs or {}).items()}
+    if st < 0 or not (signal_layers or costs):
         return None, []
     layers = [m.group(1) for m in _DSN_LAYER_RE.finditer(dsn_text, st)]
-    wanted = set(signal_layers)
+    wanted = set(signal_layers) if signal_layers else set(layers)
     restricted = [name for name in layers if name not in wanted]
-    if not restricted or len(restricted) == len(layers):
+    if len(restricted) == len(layers):
+        return None, []
+    if not restricted and not any(name in costs for name in layers):
         return None, []
     rules = []
     for i, name in enumerate(layers):
         active = "off" if name in restricted else "on"
         direction = "horizontal" if i % 2 == 0 else "vertical"
+        k = costs.get(name, 1.0)
         rules.append(
             f"    (layer_rule {name} (active {active}) (preferred_direction {direction})"
-            " (preferred_direction_trace_costs 1.0) (against_preferred_direction_trace_costs 2.0))\n"
+            f" (preferred_direction_trace_costs {k:g}) (against_preferred_direction_trace_costs {2 * k:g}))\n"
         )
     text = (
         '(rules PCB "kicad-mcp"\n  (autoroute_settings\n    (fanout on)\n    (autoroute on)\n'
@@ -868,9 +879,12 @@ class FreeroutingCommands:
         restricted_layers: List[str] = []
         rules_path: Optional[str] = None
         signal_layers = list(params.get("signalLayers") or [])
-        if signal_layers:
+        trace_costs = dict(params.get("layerTraceCosts") or {})
+        if signal_layers or trace_costs:
             with open(dsn_path, "r", encoding="utf-8") as fh:
-                rules_text, restricted_layers = _signal_layer_rules(fh.read(), signal_layers)
+                rules_text, restricted_layers = _signal_layer_rules(
+                    fh.read(), signal_layers, trace_costs
+                )
             if rules_text:
                 rules_path = os.path.splitext(dsn_path)[0] + ".rules"
                 with open(rules_path, "w", encoding="utf-8") as fh:

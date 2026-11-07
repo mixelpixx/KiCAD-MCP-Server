@@ -78,3 +78,23 @@ def test_rules_file_is_passed_to_freerouting(tmp_path, monkeypatch):
     assert cmd[cmd.index("-dr") + 1] == "/x/b.rules"
     cmd = _build_freerouting_cmd("fr.jar", "/x/b.dsn", "/x/b.ses", 5, False)
     assert "-dr" not in cmd
+
+
+def test_trace_costs_keep_a_layer_but_price_it():
+    text, restricted = _signal_layer_rules(DSN, ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"], {"In1.Cu": 5})
+    assert restricted == []
+    assert "(layer_rule In1.Cu (active on)" in text
+    assert (
+        "(preferred_direction_trace_costs 5) (against_preferred_direction_trace_costs 10)" in text
+    )
+    assert (
+        "(layer_rule F.Cu (active on) (preferred_direction horizontal) (preferred_direction_trace_costs 1)"
+        in text
+    )
+
+
+def test_costs_without_signal_layers_and_with_restriction():
+    text, restricted = _signal_layer_rules(DSN, [], {"In2.Cu": 3})
+    assert restricted == [] and "(preferred_direction_trace_costs 3)" in text
+    text, restricted = _signal_layer_rules(DSN, ["F.Cu", "In2.Cu", "B.Cu"], {"In2.Cu": 3})
+    assert restricted == ["In1.Cu"] and "(layer_rule In1.Cu (active off)" in text

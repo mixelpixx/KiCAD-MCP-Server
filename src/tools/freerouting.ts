@@ -61,6 +61,12 @@ export function registerFreeroutingTools(server: McpServer, callKicadScript: Fun
         .describe(
           "Keep the intermediate .dsn/.ses files next to the board after the run (default: false). Artifacts are staged in a temporary directory and removed on every exit — success, failure, or crash — unless this is set.",
         ),
+      layerTraceCosts: z
+        .record(z.string(), z.number())
+        .optional()
+        .describe(
+          'Per-layer trace cost factor, e.g. {"In1.Cu": 5}: the layer stays usable but a track there costs that many times more, so a plane layer carries only the tracks that fit nowhere else. Combines with signalLayers; written to the same Freerouting rules file.',
+        ),
       signalLayers: z
         .array(z.string())
         .optional()
