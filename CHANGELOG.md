@@ -35,6 +35,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`import_eagle_project` no longer replaces a schematic that is open in
+  KiCad.** It writes `<output_dir>/<project_name>.kicad_sch` without checking
+  whether that file exists, so re-importing into an open project overwrote it
+  the way `create_project` did before #473. It is now refused like the other
+  schematic writers. The test that keeps the guarded list current scans every
+  tool file instead of only the schematic ones, so a writer added elsewhere
+  fails it until it is guarded or listed as not writing a schematic.
 - **A wire ending on the middle of another wire now gets its junction, and
   keeps one it already has.** KiCad connects such a T only with a junction at
   the meeting point. KiCad's editor splits the through-wire there, but wires
