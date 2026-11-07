@@ -18,6 +18,23 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **`audit_via_nets`: compare every via's net with a reference board.**
+  KiCad can change a via's net when it saves a board, with no error. DRC
+  doesn't flag it, because the board stays self-consistent, just wrong. Seen
+  on KiCad 10: a via inside a zone of another net took the zone's net, and
+  after an autorouter import a GND via came back on ISENSE_ADC and two VBAT
+  vias came back as GND (reported by @lewisfab). The reliable check is a
+  via-by-via comparison with a known-good version.
+  - The reference is a `.kicad_pcb` file or a git revision of the same file
+    (`HEAD`, `HEAD~1`, a sha). The board compared is the saved file, since
+    the change happens on save.
+  - Vias are matched by UUID, then by position and layer pair, since an
+    import can give vias new UUIDs.
+  - The reply lists each via whose net changed (position, layers, old and
+    new net, how it was matched), plus a count per transition such as
+    `"VBAT -> GND": 2`, and the vias added, removed and moved.
+  - Read-only, so it is available in `readonly` mode.
+
 - **Operating modes: a readonly mode for review agents, and a manufacturing
   mode** (#443 and #444, @b0gdaniy). `KICAD_MCP_OPERATING_MODE=readonly`
   leaves only the tools that cannot change the design, the project, libraries

@@ -390,6 +390,44 @@ class DesignRuleCommands:
                 "errorDetails": str(e),
             }
 
+    def audit_via_nets(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Compare every via's net in the saved board with a reference board.
+
+        ``reference`` is a board file or a git revision of the same file
+        (``HEAD``, ``HEAD~1``, a sha). The board compared is the file on disk,
+        because the failure this catches happens on save. See
+        ``utils/via_audit.py``.
+        """
+        from utils.via_audit import audit_via_nets
+
+        try:
+            reference = params.get("reference")
+            if not reference:
+                return {
+                    "success": False,
+                    "message": "Failed: reference is required (a board file or a git revision)",
+                }
+            board_path = params.get("boardPath")
+            note = None
+            if not board_path:
+                if not self.board or not self.board.GetFileName():
+                    return {
+                        "success": False,
+                        "message": "Failed: no boardPath given and no saved board is loaded",
+                    }
+                board_path = self.board.GetFileName()
+                note = (
+                    "Compared the board file on disk; unsaved edits to the loaded board "
+                    "are not included. Save first to audit them."
+                )
+            result = audit_via_nets(board_path, str(reference))
+            if note and result.get("success"):
+                result["note"] = note
+            return result
+        except Exception as e:
+            logger.error(f"Error auditing via nets: {e}")
+            return {"success": False, "message": "Failed to audit via nets", "errorDetails": str(e)}
+
     def check_clearance(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Check the measured clearance between two PCB items against the board's
         minimum clearance design rule.
