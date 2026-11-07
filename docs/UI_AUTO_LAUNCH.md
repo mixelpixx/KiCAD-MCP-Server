@@ -182,11 +182,16 @@ Claude:
 
 ### Environment Variables
 
-| Variable                      | Default     | Description                                                                                                                |
-| ----------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `KICAD_AUTO_LAUNCH`           | `false`     | Auto-launch KiCAD when needed                                                                                              |
-| `KICAD_INTERACTIVE_SCHEMATIC` | `false`     | Windows only: after MCP schematic edits, send Revert to reload from disk (PID-scoped; never auto-confirms discard dialogs) |
-| `KICAD_EXECUTABLE`            | auto-detect | Override KiCAD executable path                                                                                             |
+| Variable                           | Default     | Description                                                                                                                |
+| ---------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `KICAD_AUTO_LAUNCH`                | `false`     | Auto-launch KiCAD when needed                                                                                              |
+| `KICAD_INTERACTIVE_SCHEMATIC`      | `false`     | Windows only: after MCP schematic edits, send Revert to reload from disk (PID-scoped; never auto-confirms discard dialogs) |
+| `KICAD_ALLOW_OPEN_SCHEMATIC_EDITS` | `false`     | Allow schematic edits while the schematic is open in KiCad (refused by default: saving in KiCad would overwrite them)      |
+| `KICAD_EXECUTABLE`                 | auto-detect | Override KiCAD executable path                                                                                             |
+
+The open-schematic check only sees schematics opened from the KiCad project
+manager. KiCad's IPC API does not report a schematic opened in a standalone
+Eeschema window, so edits to it are not refused.
 
 ### Custom Executable Path
 
