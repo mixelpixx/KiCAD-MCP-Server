@@ -35,6 +35,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **STM32 and other symbols with parentheses in pin names load again.** KiCad
+  writes a `(` inside a quoted string as is, so the stock STM32 libraries have
+  pin names like `"PA13(JTMS"`. Twenty block scanners counted every `(` and
+  `)`, including those inside strings, so a single quoted `(` threw them off
+  to the end of the file. `list_symbol_pins`, `add_schematic_component` and
+  `import_symbol` failed on every `MCU_ST_STM32H5` symbol. Once such a symbol
+  was in a schematic, adding any other symbol type failed with "No
+  lib_symbols section found". The same miscount affected datasheet
+  enrichment, library property edits, symbol removal, `replace_instance_lib_ids`,
+  sheet lookups, `add_sheet_pin`, footprint pad and 3D-model edits, the
+  footprint parser and `.kicad_dru` rule lookup. They all use the string-aware
+  `match_paren` now, plus a new `paren_delta` for the scanners that read line
+  by line. (The matcher in `schematic_handlers` was already string-aware;
+  this brings every other scanner in line with it.)
 - **`add_via` reads the parameters its schemas declare** (#407). The SWIG
   handler indexed `position["unit"]`, so a call without the optional `unit`
   failed with `'unit'`. JSON-RPC calls (`x`, `y`, `diameter`, `netName`) were
