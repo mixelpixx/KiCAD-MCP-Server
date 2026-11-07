@@ -104,6 +104,10 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
 
     try:
         import fitz
+        from utils.swig_compat import restore_pcbnew_iterator
+
+        # pymupdf can replace pcbnew's SWIG iterator class; put it back (#479).
+        restore_pcbnew_iterator()
 
         doc = fitz.open(svg_path)
         page = doc[0]

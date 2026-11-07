@@ -10,6 +10,7 @@ actually invoking Freerouting or KiCad. Specifically:
   - The pass schedule wraps when attempts > len(schedule).
 """
 
+import os
 import sys
 import types
 from pathlib import Path
@@ -178,6 +179,58 @@ def test_best_of_three_picks_highest_scoring_ses(workdir, fake_jar):
     assert final_ses.count("(net ") == 8
     # The _best.ses snapshot must also be kept
     assert best_path.exists()
+
+
+@pytest.mark.unit
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="os.replace() can't replace a read-only file on Windows",
+)
+def test_restore_succeeds_when_last_attempt_ses_is_read_only(workdir, fake_jar):
+    """Restore must not need write permission on the pre-existing ses_path.
+
+    With rootful Docker and no -u, the last attempt's ses_path is owned by
+    the container; the host can still rename over it (dir permission) but
+    not truncate it in place (needs write permission on the file itself).
+    Mode 0o444 reproduces that same permission check without requiring an
+    actual uid mismatch.
+    """
+    cc = _make_cmds(workdir / "test.kicad_pcb")
+    _patch_exec_mode(cc)
+    ses_path = workdir / "test.ses"
+
+    # Per-attempt net counts: 5, 8, 7. Best is attempt 2 (8 nets); the
+    # last attempt (7 nets, read-only) is what's sitting at ses_path when
+    # the restore step runs.
+    counts = iter([5, 8, 7])
+
+    def fake_run(cmd, **kw):
+        n = next(counts)
+        out_path = _ses_from_cmd(cmd)
+        out_path.write_text(_make_ses(num_nets=n))
+        if n == 7:
+            out_path.chmod(0o444)
+        return types.SimpleNamespace(returncode=0, stdout=f"n={n}", stderr="")
+
+    fake_pcb = _stub_pcbnew()
+
+    with patch.object(fr_mod, "subprocess") as sp, patch.dict(sys.modules, {"pcbnew": fake_pcb}):
+        sp.run.side_effect = fake_run
+        sp.TimeoutExpired = TimeoutError
+        out = cc.autoroute(
+            {
+                "boardPath": str(workdir / "test.kicad_pcb"),
+                "freeroutingJar": str(fake_jar),
+                "attempts": 3,
+                # Copies the staged ses_path out to workdir so this test can
+                # read the restored content back.
+                "keepArtifacts": True,
+            }
+        )
+
+    assert out["success"], out
+    assert out["best_attempt"] == 2, "attempt 2 has 8 nets, should win"
+    assert ses_path.read_text().count("(net ") == 8
 
 
 @pytest.mark.unit
