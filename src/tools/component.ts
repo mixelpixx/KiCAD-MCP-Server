@@ -519,7 +519,7 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   // ------------------------------------------------------
   server.tool(
     "get_component_list",
-    "Return a list of all components on the PCB, optionally filtered by layer or bounding box region.",
+    "Return a list of all components on the PCB, optionally filtered by layer or bounding box region. matchPadCenter also keeps a footprint when any pad centre is inside the box. includePads adds each pad's number, net, and position.",
     {
       layer: z.string().optional().describe("Filter by layer (e.g., 'F.Cu', 'B.Cu')"),
       boundingBox: z
@@ -531,14 +531,26 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
           unit: z.enum(["mm", "inch", "mil"]).optional(),
         })
         .optional()
-        .describe("Filter by bounding box region"),
+        .describe("Filter by bounding box region. The footprint anchor must lie inside"),
+      matchPadCenter: z
+        .boolean()
+        .optional()
+        .describe(
+          "With boundingBox, also include a footprint when any pad centre is inside, even if the anchor is outside",
+        ),
+      includePads: z
+        .boolean()
+        .optional()
+        .describe("Add each footprint's pads with number, net, and position in millimetres"),
       unit: z.enum(["mm", "mil", "inch"]).optional().describe("Unit for coordinates (default: mm)"),
     },
-    async ({ layer, boundingBox, unit }) => {
+    async ({ layer, boundingBox, matchPadCenter, includePads, unit }) => {
       logger.debug("Getting component list");
       const result = await callKicadScript("get_component_list", {
         layer,
         boundingBox,
+        matchPadCenter,
+        includePads,
         unit: unit || "mm",
       });
 

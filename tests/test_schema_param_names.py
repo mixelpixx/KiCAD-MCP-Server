@@ -60,7 +60,6 @@ pytestmark = [
 # zod-declared (or object-literal-sent) keys the Python handler never reads.
 KNOWN_ZOD_UNREAD: Dict[str, Set[str]] = {
     "add_board_text": {"style"},
-    "add_via": {"viaType"},
     "align_components": {"alignmentType", "referenceComponent"},
     "duplicate_component": {"count", "offset"},
     "get_footprint_info": {"library_name"},
@@ -73,7 +72,6 @@ KNOWN_ZOD_UNREAD: Dict[str, Set[str]] = {
 # tool_schemas.py property names the Python handler never reads.
 KNOWN_JSONRPC_UNREAD: Dict[str, Set[str]] = {
     "add_schematic_component": {"symbol"},
-    "add_via": {"diameter", "netName"},
     "align_components": {"direction"},
     "duplicate_component": {"offsetX", "offsetY", "sourceReference"},
     "export_gerber": {"includeDrillFiles"},
