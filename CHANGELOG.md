@@ -35,6 +35,22 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Schematic batch edits no longer time out half-written.** `batch_connect`
+  (and `batch_add_and_connect`, which uses it) wrote the file once per pin,
+  re-parsing and re-serialising the whole sheet two or three times per
+  label. On a real 11,000-line sheet that was about 2.4 s per label, so a
+  12-pin part ran past the bridge's 30 s timeout. The bridge then restarted
+  the worker mid-batch: only some of the labels were written, and the caller
+  was told the call had failed, so a retry would duplicate the ones that
+  landed.
+  - Every pin is now resolved first, while the file is unchanged, and all
+    labels and wires are written in one read-modify-write. Four labels on
+    that sheet went from 9.6 s to 4.2 s, and the cost no longer grows with
+    the number of labels.
+  - Facing pins in the same batch are still joined by a wire.
+  - The schematic batch commands also get the long timeout, so a very large
+    sheet can't be cut off part-way.
+
 - **`add_via` reads the parameters its schemas declare** (#407). The SWIG
   handler indexed `position["unit"]`, so a call without the optional `unit`
   failed with `'unit'`. JSON-RPC calls (`x`, `y`, `diameter`, `netName`) were

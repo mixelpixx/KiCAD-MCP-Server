@@ -301,6 +301,81 @@ class WireManager:
             return False
 
     @staticmethod
+    def _make_label_sexp(
+        text: str, position: List[float], label_type: str, orientation: int
+    ) -> list:
+        """The S-expression of one net label, as add_label writes it."""
+        # Orientation-aware justify: KiCAD flips horizontal alignment for 180°/270°
+        justify_h = Symbol("right") if orientation in (180, 270) else Symbol("left")
+        justify_expr = [Symbol("justify"), justify_h]
+        if label_type == "label":
+            justify_expr.append(Symbol("bottom"))
+        return [
+            Symbol(label_type),
+            text,
+            [Symbol("at"), position[0], position[1], orientation],
+            [
+                Symbol("effects"),
+                [Symbol("font"), [Symbol("size"), 1.27, 1.27]],
+                justify_expr,
+            ],
+            [Symbol("uuid"), str(uuid.uuid4())],
+        ]
+
+    @staticmethod
+    def add_labels_and_wires(
+        schematic_path: Path,
+        labels: List[Tuple[str, List[float], str, int]],
+        wires: List[Tuple[List[float], List[float]]],
+    ) -> bool:
+        """Add several labels and wires in one read-modify-write of the file.
+
+        *labels* holds (text, position, label_type, orientation) tuples and
+        *wires* (start, end) pairs. The result is the same as calling add_label
+        and add_wire once per item, in that order, but the file is parsed and
+        written once instead of once per item. On a large sheet a parse plus a
+        write costs about a second, so a per-item batch of a dozen labels ran
+        past the bridge's 30 s timeout and the worker was restarted mid-batch,
+        leaving only some of the labels written.
+        """
+        if not labels and not wires:
+            return True
+        try:
+            with open(schematic_path, "r", encoding="utf-8") as f:
+                sch_data = sexpdata.loads(f.read())
+
+            new_items = [
+                WireManager._make_label_sexp(text, position, label_type, orientation)
+                for text, position, label_type, orientation in labels
+            ]
+            for start, end in wires:
+                for pt in (start, end):
+                    WireManager._break_wires_at_point(sch_data, pt)
+                new_items.append(WireManager._make_wire_sexp(start, end, 0, "default"))
+            # After _break_wires_at_point, so the index accounts for any split segments.
+            insert_at = next(
+                (
+                    i
+                    for i, item in enumerate(sch_data)
+                    if isinstance(item, list) and item and item[0] == _SYM_SHEET_INSTANCES
+                ),
+                len(sch_data),
+            )
+            sch_data[insert_at:insert_at] = new_items
+            if wires:
+                WireManager.sync_junctions(sch_data)
+
+            with open(schematic_path, "w", encoding="utf-8") as f:
+                f.write(kicad_dumps(sch_data))
+            logger.info(
+                f"Added {len(labels)} label(s) and {len(wires)} wire(s) to {schematic_path.name}"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Error adding labels and wires: {e}")
+            return False
+
+    @staticmethod
     def add_label(
         schematic_path: Path,
         text: str,
@@ -326,25 +401,7 @@ class WireManager:
                 sch_content = f.read()
 
             sch_data = sexpdata.loads(sch_content)
-
-            # Orientation-aware justify: KiCAD flips horizontal alignment for 180°/270°
-            justify_h = Symbol("right") if orientation in (180, 270) else Symbol("left")
-
-            justify_expr = [Symbol("justify"), justify_h]
-            if label_type == "label":
-                justify_expr.append(Symbol("bottom"))
-
-            label_sexp = [
-                Symbol(label_type),
-                text,
-                [Symbol("at"), position[0], position[1], orientation],
-                [
-                    Symbol("effects"),
-                    [Symbol("font"), [Symbol("size"), 1.27, 1.27]],
-                    justify_expr,
-                ],
-                [Symbol("uuid"), str(uuid.uuid4())],
-            ]
+            label_sexp = WireManager._make_label_sexp(text, position, label_type, orientation)
 
             sheet_instances_index = None
             for i, item in enumerate(sch_data):
