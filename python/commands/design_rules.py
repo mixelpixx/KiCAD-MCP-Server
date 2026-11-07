@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pcbnew
-from commands.routing import persist_net_assignment_to_project
+from commands.routing import (
+    persist_net_assignment_to_project,
+    register_membership_in_project_settings,
+    set_net_class_in_memory,
+)
 from utils.kicad_cli import kicad_cli_not_found_message, resolve_kicad_cli
 from utils.kicad_dru import (
     build_layer_constraint_rule,
@@ -289,7 +293,7 @@ class DesignRuleCommands:
         """Assign an existing net to an existing net class.
 
         Mirrors ``RoutingCommands.create_netclass``'s dual-write shape: a
-        best-effort in-memory ``NETINFO_ITEM.SetClass`` for the live SWIG
+        best-effort in-memory ``NETINFO_ITEM.SetNetClass`` for the live SWIG
         session, plus a durable write to the project's
         ``net_settings.netclass_assignments`` (KiCad 7+ net-class membership
         lives in ``.kicad_pro``, not the ``.kicad_pcb`` the SWIG board save
@@ -345,7 +349,7 @@ class DesignRuleCommands:
 
             in_memory_warning = None
             try:
-                net.SetClass(resolved)
+                set_net_class_in_memory(net, resolved)
             except Exception as exc:
                 in_memory_warning = f"in-memory net class assignment failed: {exc}"
                 logger.warning("assign_net_to_class: %s", in_memory_warning)
@@ -359,8 +363,13 @@ class DesignRuleCommands:
                 pro_path = None
 
             persist = persist_net_assignment_to_project(pro_path, net_name, class_name)
+            registration_warning = register_membership_in_project_settings(
+                self.board, net_name, class_name
+            )
 
-            warnings = [w for w in (in_memory_warning, persist.get("warning")) if w]
+            warnings = [
+                w for w in (in_memory_warning, registration_warning, persist.get("warning")) if w
+            ]
             if in_memory_warning and not persist.get("persisted"):
                 # Neither the live board nor the project file received the assignment.
                 return {

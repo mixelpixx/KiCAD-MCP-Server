@@ -35,6 +35,27 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Net classes and their nets reach KiCad, and the replies say what was
+  written.** Checked with KiCad's own DRC on 9.0.9 and 10.0.8.
+  - `create_netclass` with `nets` replied with the requested nets and
+    `persisted: true` while assigning none of them. The in-memory call was
+    `SetClass`, which KiCad 8 renamed to `SetNetClass`, and membership was
+    never written to the project. It now writes membership to the
+    `.kicad_pro` like `assign_net_to_class` does. It replies with
+    `netsAssigned` (written) and `netsNotAssigned` (not on the board, or not
+    writable), and `netClass.nets` lists only the assigned nets.
+  - On KiCad 9, `pcbnew.SaveBoard` rewrites the `.kicad_pro` from the board's
+    in-memory settings, so the next board save erased every class and
+    assignment the server had written to the file. Classes and memberships
+    are now also registered in those in-memory settings (`SetNetclass`, plus a
+    pattern assignment on the exact net name).
+  - `assign_net_to_class` right after `create_netclass` in the same session
+    failed with "Net class not found", because the class was added to a copy
+    of the class map. It now finds it.
+  - `add_net` with `netClass` reported "Failed to add net" after adding the
+    net (the same `SetClass` error). It now applies and persists the class,
+    reports `classPersisted`, and warns about an unknown class instead of
+    claiming it.
 - **`add_via` reads the parameters its schemas declare** (#407). The SWIG
   handler indexed `position["unit"]`, so a call without the optional `unit`
   failed with `'unit'`. JSON-RPC calls (`x`, `y`, `diameter`, `netName`) were

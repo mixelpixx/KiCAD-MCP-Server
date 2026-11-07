@@ -184,6 +184,92 @@ def test_export_pdf_writes_the_file_it_reports(tmp_path: Path) -> None:
     assert pdf.read_bytes().startswith(b"%PDF")
 
 
+def _two_track_project(tmp_path: Path):
+    """A project with HV_BUS and LV_SIG tracks 2 mm apart (1.75 mm copper gap)."""
+    import shutil
+
+    import pcbnew
+    from commands.project import ProjectCommands
+    from commands.routing import RoutingCommands
+
+    cli = shutil.which("kicad-cli")
+    if not cli:
+        pytest.skip("kicad-cli not on PATH")
+    made = ProjectCommands().create_project({"name": "netclass_drc", "path": str(tmp_path)})
+    board_path = Path(made["project"]["boardPath"])
+    board = pcbnew.LoadBoard(str(board_path))
+    routing = RoutingCommands(board)
+    for name in ("HV_BUS", "LV_SIG"):
+        assert routing.add_net({"name": name})["success"]
+    for name, y in (("HV_BUS", 10), ("LV_SIG", 12)):
+        track = pcbnew.PCB_TRACK(board)
+        track.SetLayer(pcbnew.F_Cu)
+        track.SetStart(pcbnew.VECTOR2I(pcbnew.FromMM(0), pcbnew.FromMM(y)))
+        track.SetEnd(pcbnew.VECTOR2I(pcbnew.FromMM(20), pcbnew.FromMM(y)))
+        track.SetWidth(pcbnew.FromMM(0.25))
+        track.SetNet(board.FindNet(name))
+        board.Add(track)
+    return board, board_path, cli
+
+
+def _drc_clearance_violations(cli: str, board, board_path: Path) -> list:
+    import json
+    import subprocess
+
+    import pcbnew
+
+    # On KiCad 9 this save also rewrites the .kicad_pro from the in-memory settings.
+    pcbnew.SaveBoard(str(board_path), board)
+    report = board_path.with_name("drc.json")
+    subprocess.run(
+        [cli, "pcb", "drc", "--format", "json", "-o", str(report), str(board_path)],
+        capture_output=True,
+        text=True,
+    )
+    return [v for v in json.loads(report.read_text())["violations"] if v["type"] == "clearance"]
+
+
+def test_create_netclass_assigns_nets_that_kicad_enforces(tmp_path: Path) -> None:
+    """create_netclass(nets=...) used to reply with the requested nets while writing none: the
+    in-memory call was SetClass, which KiCad 8+ renamed SetNetClass, and membership was never
+    written to the project. On KiCad 9 the next SaveBoard also erased the class itself from the
+    .kicad_pro. KiCad's own DRC is the judge: two tracks 1.75 mm apart pass at the default
+    clearance and fail once one of them is in a 5 mm class."""
+    import json
+
+    from commands.routing import RoutingCommands
+
+    board, board_path, cli = _two_track_project(tmp_path)
+    result = RoutingCommands(board).create_netclass(
+        {"name": "HV", "clearance": 5.0, "nets": ["HV_BUS", "NOT_ON_BOARD"]}
+    )
+    assert result["success"] is True, result
+    assert result["netsAssigned"] == ["HV_BUS"]
+    assert result["netsNotAssigned"] == ["NOT_ON_BOARD"]
+    assert result["netClass"]["nets"] == ["HV_BUS"]
+    assert "NOT_ON_BOARD" in result["warning"]
+    pro = json.loads(board_path.with_suffix(".kicad_pro").read_text())
+    assert pro["net_settings"]["netclass_assignments"]["HV_BUS"] == ["HV"]
+
+    clearance = _drc_clearance_violations(cli, board, board_path)
+    assert clearance, "KiCad did not apply the HV class: no clearance violation at 1.75 mm"
+    assert any("5.0000 mm" in v["description"] for v in clearance), clearance
+
+
+def test_assign_net_to_class_survives_a_board_save(tmp_path: Path) -> None:
+    """The same, for a class created first and a net assigned afterwards."""
+    from commands.design_rules import DesignRuleCommands
+    from commands.routing import RoutingCommands
+
+    board, board_path, cli = _two_track_project(tmp_path)
+    assert RoutingCommands(board).create_netclass({"name": "HV", "clearance": 5.0})["success"]
+    result = DesignRuleCommands(board).assign_net_to_class({"net": "HV_BUS", "netClass": "HV"})
+    assert result["success"] is True and result["persisted"] is True, result
+
+    clearance = _drc_clearance_violations(cli, board, board_path)
+    assert any("5.0000 mm" in v["description"] for v in clearance), clearance
+
+
 def test_run_drc_reports_unconnected_pads_with_real_kicad_cli(tmp_path: Path) -> None:
     """Two pads on one net and no copper between them: kicad-cli lists the gap under
     "unconnected_items", which run_drc used to drop."""
