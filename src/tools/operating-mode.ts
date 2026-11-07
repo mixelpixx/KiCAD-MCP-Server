@@ -113,6 +113,7 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set<string>([
   "get_design_rules",
   "get_drc_violations",
   "get_layer_list",
+  "get_stackup",
   "get_net_pads",
   "get_nets_list",
   "get_pad_position",
@@ -120,6 +121,8 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set<string>([
   "get_ratsnest",
   "list_graphics",
   "query_traces",
+  "summarize_vias",
+  "summarize_net_copper",
   "query_zones",
   "run_drc",
   // Schematic inspection. run_erc, generate_netlist and the view tools work in

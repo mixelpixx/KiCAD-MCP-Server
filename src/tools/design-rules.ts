@@ -77,13 +77,23 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
   // ------------------------------------------------------
   server.tool(
     "run_drc",
-    "Run the KiCAD Design Rule Check (DRC) on the current PCB and return violations. Optionally save the report to a file.",
+    "Run the KiCAD Design Rule Check (DRC) on the current PCB and return violations, including unconnected items (unrouted connections) and, on request, schematic-parity issues. Each violation in the saved file lists the items it names (description, uuid, position). Zones are refilled first by default, as in KiCad's DRC dialog. Optionally save the report to a file.",
     {
       reportPath: z.string().optional().describe("Optional path to save the DRC report"),
+      refillZones: z
+        .boolean()
+        .optional()
+        .describe(
+          "Refill all zones before checking (default true, like the DRC dialog). Stale fills report clearance errors that a refill would clear.",
+        ),
+      schematicParity: z
+        .boolean()
+        .optional()
+        .describe("Also check the board against the project's schematic (default false)"),
     },
-    async ({ reportPath }) => {
+    async ({ reportPath, refillZones, schematicParity }) => {
       logger.debug("Running DRC check");
-      const result = await callKicadScript("run_drc", { reportPath });
+      const result = await callKicadScript("run_drc", { reportPath, refillZones, schematicParity });
 
       return formatKicadResult(result);
     },
