@@ -642,6 +642,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "assign_net_to_class": self.design_rule_commands.assign_net_to_class,
             "check_clearance": self.design_rule_commands.check_clearance,
             "set_layer_constraints": self.design_rule_commands.set_layer_constraints,
+            "set_voltage_clearance_rules": self.design_rule_commands.set_voltage_clearance_rules,
             # GUI-driver channel (in-process wx helper over a localhost socket;
             # generic scriptable surface, destructive names are advisory-flagged
             # with a "⚠ " prefix — never gated). See commands/gui_driver.py.

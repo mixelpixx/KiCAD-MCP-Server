@@ -122,6 +122,7 @@ export const toolCategories: ToolCategory[] = [
       "create_netclass",
       "assign_net_to_class",
       "set_layer_constraints",
+      "set_voltage_clearance_rules",
       "check_clearance",
       "get_drc_violations",
     ],

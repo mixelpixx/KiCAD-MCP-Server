@@ -2,6 +2,7 @@
 Design rules command implementations for KiCAD interface
 """
 
+import json
 import logging
 import math
 import os
@@ -282,6 +283,114 @@ class DesignRuleCommands:
             return {
                 "success": False,
                 "message": "Failed to set layer constraints",
+                "errorDetails": str(e),
+            }
+
+    def set_voltage_clearance_rules(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Clearance/creepage rules graded by working voltage between net classes.
+
+        See ``utils.voltage_rules`` for the model and the KiCad behaviours it
+        relies on. Writes a managed block at the end of the board's
+        ``.kicad_dru``. A re-run replaces that block and leaves every other
+        rule untouched.
+        """
+        from utils.voltage_rules import (
+            VoltageRuleError,
+            plan_rules,
+            render_block,
+            write_rules,
+        )
+
+        try:
+            board_path = params.get("boardPath")
+            if not board_path and self.board:
+                try:
+                    board_path = self.board.GetFileName()
+                except Exception:
+                    board_path = None
+            dru_path = resolve_dru_path(board_path)
+            if not dru_path:
+                return {
+                    "success": False,
+                    "message": "No board file",
+                    "errorDetails": "Pass boardPath (a .kicad_pcb) or load a board that has been saved",
+                }
+
+            classes = params.get("classes") or []
+            other = params.get("otherNetsVoltage", 0)
+            try:
+                plan = plan_rules(classes, params.get("spacing") or [], params.get("pairs"), other)
+                names = [c["name"] for c in classes]
+                block = render_block(plan, names)
+            except VoltageRuleError as exc:
+                return {
+                    "success": False,
+                    "message": "Invalid voltage rules",
+                    "errorDetails": str(exc),
+                }
+
+            # A rule naming a class the project doesn't define matches nothing,
+            # and KiCad doesn't report it. Say so.
+            warnings: List[str] = []
+            pro_path = os.path.splitext(board_path)[0] + ".kicad_pro"
+            defined: Optional[set] = None
+            try:
+                with open(pro_path, "r", encoding="utf-8") as f:
+                    pro = json.load(f)
+                defined = {c.get("name") for c in pro.get("net_settings", {}).get("classes", [])}
+            except (OSError, ValueError):
+                warnings.append(f"Could not read {pro_path} to check the class names")
+            if defined is not None:
+                missing = [n for n in names if n not in defined]
+                if missing:
+                    warnings.append(
+                        "Not defined in the project, so their rules match nothing until they "
+                        f"are created (create_netclass): {', '.join(missing)}"
+                    )
+
+            # kicad-cli 10.0.8 DRC crashes (SIGSEGV, no report) when a creepage
+            # rule is active on a board with no Edge.Cuts outline.
+            if any("creepage" in e for e in plan):
+                try:
+                    with open(board_path, "r", encoding="utf-8") as f:
+                        has_outline = '(layer "Edge.Cuts")' in f.read()
+                except OSError:
+                    has_outline = True  # can't tell; don't warn on a guess
+                if not has_outline:
+                    warnings.append(
+                        "The board has no Edge.Cuts outline. Creepage is measured along the "
+                        "board, and kicad-cli DRC 10.0.8 crashes (SIGSEGV) on a creepage rule "
+                        "without one. Add the outline before running DRC."
+                    )
+
+            if params.get("dryRun"):
+                return {
+                    "success": True,
+                    "message": f"{len(plan)} rules planned (dry run, nothing written)",
+                    "rules": plan,
+                    "druText": block,
+                    "warnings": warnings,
+                }
+            try:
+                written = write_rules(dru_path, block)
+            except VoltageRuleError as exc:
+                return {"success": False, "message": "Rules not written", "errorDetails": str(exc)}
+
+            return {
+                "success": True,
+                "message": (
+                    f"Wrote {len(plan)} voltage rules to {written['druFile']}; "
+                    "they apply from the next DRC run"
+                ),
+                "druFile": written["druFile"],
+                "rules": plan,
+                "warnings": warnings,
+            }
+        except Exception as e:
+            logger.error(f"Error setting voltage rules: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to set voltage rules",
                 "errorDetails": str(e),
             }
 
