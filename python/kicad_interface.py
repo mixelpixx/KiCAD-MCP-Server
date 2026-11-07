@@ -5508,7 +5508,8 @@ print("ok")
             net = params.get("net")
             clearance = params.get("clearance", 0.5)
             min_width = params.get("minWidth", 0.25)
-            points = params.get("points", [])
+            # The tool schema sends `outline`; `points` is the older key.
+            points = params.get("outline") or params.get("points") or []
             priority = params.get("priority", 0)
             fill_type = params.get("fillType", "solid")
             name = params.get("name", "")
