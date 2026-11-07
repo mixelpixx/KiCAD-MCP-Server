@@ -311,6 +311,11 @@ class _Via:
     def SetNet(self, net) -> None:
         self.net = net
 
+    def GetNetname(self) -> str:
+        # add_via reports the net the via has, not the one requested (a via can lose its
+        # net to the copper it touches), so the fake answers like a real PCB_VIA
+        return "GND" if self.net is GND else ""
+
 
 class _ViaNets(dict):
     def has_key(self, name: str) -> bool:
