@@ -34,6 +34,7 @@ module = [
     "sexpdata",
     "skip",
     "fitz",
+    "pymupdf",
     "kipy",
     "kipy.*",
     "schematic",

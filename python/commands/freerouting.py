@@ -1019,9 +1019,16 @@ class FreeroutingCommands:
                 "attempts": attempt_results,
             }
 
-        # Restore the winning SES as the canonical output file
+        # Restore the winning SES as the canonical output file. Write to a
+        # sibling path and rename over ses_path instead of truncating it in
+        # place: with rootful Docker and no -u, ses_path is still owned by
+        # the container, and an in-place overwrite needs write permission
+        # on that file itself. Rename only needs write permission on the
+        # containing directory, which the host always has.
         if attempts > 1:
-            shutil.copy2(best_ses_path, ses_path)
+            restore_tmp = ses_path + ".tmp"
+            shutil.copy2(best_ses_path, restore_tmp)
+            os.replace(restore_tmp, ses_path)
 
         ses_size = os.path.getsize(ses_path)
         logger.info(
