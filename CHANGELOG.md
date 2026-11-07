@@ -58,6 +58,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
   Both now append at the end of the sheet, as `add_label` and `add_wire`
   already did. KiCad's ERC confirms a no-connect placed on a child sheet
   clears that pin's `pin_not_connected`.
+- **`find_orphaned_wires` no longer reports wires to sheet pins as orphaned.**
+  On a real 3-sheet design whose ERC shows no dangling wire, the root sheet
+  came back with 38 "orphaned" wires: every wire to a hierarchical sheet pin.
+  Pruning them, the natural next step, deleted live wires back through
+  whole nets (93 on that sheet before nothing was left to remove). Sheet pins
+  and hierarchical labels now count as connections, as does a wire end on
+  another wire's interior at a junction (KiCad connects such an unsplit T).
+  The same design now reports 0 on every sheet, matching ERC.
 
 - **`add_via` reads the parameters its schemas declare** (#407). The SWIG
   handler indexed `position["unit"]`, so a call without the optional `unit`
