@@ -6,6 +6,7 @@ import base64
 import logging
 import math
 import os
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 import pcbnew
@@ -14,6 +15,76 @@ from commands.placement_optimizer import PlacementOptimizerCommands
 from utils.board_items import delete_board_item
 
 logger = logging.getLogger("kicad_interface")
+
+_BOX_UNIT_TO_MM = {"mm": 1.0, "mil": 0.0254, "inch": 25.4}
+
+
+def _query_box(bbox: Any) -> Tuple[Optional[Tuple[float, float, float, float]], Optional[str]]:
+    """Inclusive millimetre rectangle from a ``boundingBox`` argument."""
+    if not isinstance(bbox, dict):
+        return None, "boundingBox must be an object with x1, y1, x2, y2"
+    unit = bbox.get("unit") or "mm"
+    scale = _BOX_UNIT_TO_MM.get(unit)
+    if scale is None:
+        return None, f"Unsupported boundingBox unit '{unit}'"
+    try:
+        x1 = float(bbox["x1"]) * scale
+        y1 = float(bbox["y1"]) * scale
+        x2 = float(bbox["x2"]) * scale
+        y2 = float(bbox["y2"]) * scale
+    except (KeyError, TypeError, ValueError):
+        return None, "boundingBox requires numeric x1, y1, x2, y2"
+    return (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)), None
+
+
+def _point_inside(x: float, y: float, box: Tuple[float, float, float, float]) -> bool:
+    x1, y1, x2, y2 = box
+    return x1 <= x <= x2 and y1 <= y <= y2
+
+
+def _pad_number_key(number: str) -> Tuple:
+    """Sort pad 2 before pad 10. A plain string sort does the opposite."""
+    pieces = re.split(r"(\d+)", number or "")
+    key: List = []
+    for piece in pieces:
+        if piece.isdigit():
+            key.append((0, int(piece)))
+        elif piece:
+            key.append((1, piece))
+    return tuple(key)
+
+
+def row_inside_query(
+    row: Dict[str, Any],
+    box: Optional[Tuple[float, float, float, float]],
+    layer: Optional[str],
+    match_pads: bool,
+    pads: Optional[List[Dict[str, Any]]],
+) -> bool:
+    """Keep a live footprint row whose anchor, or a pad centre, is in the query.
+
+    ``layer`` is compared with the layer string on the row. Pad centres are
+    supplied by the caller; the live list does not carry them.
+    """
+    if isinstance(layer, str) and layer and row.get("layer") != layer:
+        return False
+    if box is None:
+        return True
+    position = row.get("position") or {}
+    try:
+        anchor = _point_inside(float(position["x"]), float(position["y"]), box)
+    except (KeyError, TypeError, ValueError):
+        anchor = False
+    if anchor:
+        return True
+    if not match_pads or not pads:
+        return False
+    return any(
+        pad.get("x") is not None
+        and pad.get("y") is not None
+        and _point_inside(float(pad["x"]), float(pad["y"]), box)
+        for pad in pads
+    )
 
 
 def _payload_in_unit(payload: Any, unit: str) -> Any:
@@ -806,8 +877,78 @@ class ComponentCommands(PlacementOptimizerCommands):
                 "errorDetails": str(e),
             }
 
+    def _component_on_layer(self, module: Any, wanted: str) -> bool:
+        """True when ``wanted`` is the board's layer name or the canonical one."""
+        try:
+            layer_id = module.GetLayer()
+        except Exception:
+            return False
+        try:
+            if self.board.GetLayerName(layer_id) == wanted:
+                return True
+        except Exception:
+            pass
+        standard = getattr(self.board, "GetStandardLayerName", None)
+        if not callable(standard):
+            return False
+        try:
+            name = standard(layer_id)
+        except Exception:
+            return False
+        return isinstance(name, str) and name == wanted
+
+    def _component_pads(self, module: Any) -> List[Dict[str, Any]]:
+        """Pad number, net, and centre. Empty when the footprint has no pad list."""
+        getter = getattr(module, "Pads", None)
+        if not callable(getter):
+            return []
+        try:
+            raw_pads = list(getter())
+        except TypeError:
+            return []
+        pads: List[Dict[str, Any]] = []
+        for pad in raw_pads:
+            try:
+                position = pad.GetPosition()
+                x_mm = position.x / 1000000
+                y_mm = position.y / 1000000
+            except Exception:
+                x_mm = None
+                y_mm = None
+            number = ""
+            for method in ("GetNumber", "GetPadName", "GetName"):
+                fn = getattr(pad, method, None)
+                if not callable(fn):
+                    continue
+                try:
+                    text = fn()
+                except Exception:
+                    continue
+                if isinstance(text, str) and text:
+                    number = text
+                    break
+            net = ""
+            net_fn = getattr(pad, "GetNetname", None)
+            if callable(net_fn):
+                try:
+                    net_text = net_fn()
+                except Exception:
+                    net_text = ""
+                if isinstance(net_text, str):
+                    net = net_text
+            pads.append({"number": number, "net": net, "x": x_mm, "y": y_mm})
+        pads.sort(key=lambda row: _pad_number_key(row["number"]))
+        return pads
+
     def get_component_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Get a list of all components on the board"""
+        """Get a list of components on the board.
+
+        ``boundingBox`` keeps footprints whose anchor lies inside the rectangle.
+        ``matchPadCenter`` also keeps a footprint when any pad centre is inside,
+        which is how a shield can catches a part whose body sits outside the can.
+        ``includePads`` adds each pad's number, net, and position. ``layer``
+        matches the name stored on the board or the canonical name (``B.Cu``).
+        """
         try:
             if not self.board:
                 return {
@@ -816,11 +957,46 @@ class ComponentCommands(PlacementOptimizerCommands):
                     "errorDetails": "Load or create a board first",
                 }
 
+            raw_box = params.get("boundingBox")
+            box = None
+            if raw_box is not None:
+                box, error = _query_box(raw_box)
+                if error:
+                    return {"success": False, "message": error, "errorDetails": error}
+            layer = params.get("layer")
+            if layer is not None and not isinstance(layer, str):
+                return {
+                    "success": False,
+                    "message": "layer must be a string",
+                    "errorDetails": "layer",
+                }
+            include_pads = bool(params.get("includePads"))
+            match_pads = bool(params.get("matchPadCenter"))
+
             components = []
             for module in self.board.GetFootprints():
+                if layer and not self._component_on_layer(module, layer):
+                    continue
                 pos = module.GetPosition()
                 x_mm = pos.x / 1000000
                 y_mm = pos.y / 1000000
+                pads = (
+                    self._component_pads(module)
+                    if include_pads or (match_pads and box is not None)
+                    else None
+                )
+                if box is not None:
+                    anchor_inside = _point_inside(x_mm, y_mm, box)
+                    pad_inside = bool(
+                        match_pads
+                        and pads
+                        and any(
+                            pad["x"] is not None and _point_inside(pad["x"], pad["y"], box)
+                            for pad in pads
+                        )
+                    )
+                    if not anchor_inside and not pad_inside:
+                        continue
 
                 bbox = module.GetBoundingBox()
                 bbox_data = {
@@ -833,17 +1009,18 @@ class ComponentCommands(PlacementOptimizerCommands):
                     "unit": "mm",
                 }
 
-                components.append(
-                    {
-                        "reference": module.GetReference(),
-                        "value": module.GetValue(),
-                        "footprint": module.GetFPIDAsString(),
-                        "position": {"x": x_mm, "y": y_mm, "unit": "mm"},
-                        "rotation": module.GetOrientation().AsDegrees(),
-                        "layer": self.board.GetLayerName(module.GetLayer()),
-                        "boundingBox": bbox_data,
-                    }
-                )
+                row = {
+                    "reference": module.GetReference(),
+                    "value": module.GetValue(),
+                    "footprint": module.GetFPIDAsString(),
+                    "position": {"x": x_mm, "y": y_mm, "unit": "mm"},
+                    "rotation": module.GetOrientation().AsDegrees(),
+                    "layer": self.board.GetLayerName(module.GetLayer()),
+                    "boundingBox": bbox_data,
+                }
+                if include_pads:
+                    row["pads"] = pads or []
+                components.append(row)
 
             return {"success": True, "components": components}
 
