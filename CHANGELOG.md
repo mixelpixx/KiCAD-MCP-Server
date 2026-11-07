@@ -35,6 +35,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`batch_connect` no longer draws diagonal wires to a "facing" label.** A pin
+  was joined by a wire to any label of its net within 14 mm whose orientation
+  was opposite its own, wherever that label was. A label 9 mm across and 10 mm
+  down got a diagonal wire, and a label behind the pin got a wire back across
+  the symbol body. A label now counts as facing only when it lies straight out
+  in front of the pin, on the pin's axis; otherwise the pin gets its own label.
+
 - **`add_via` reads the parameters its schemas declare** (#407). The SWIG
   handler indexed `position["unit"]`, so a call without the optional `unit`
   failed with `'unit'`. JSON-RPC calls (`x`, `y`, `diameter`, `netName`) were
