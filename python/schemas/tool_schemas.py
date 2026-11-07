@@ -472,6 +472,89 @@ BOARD_TOOLS = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "get_stackup",
+        "title": "Get Board Stackup",
+        "description": (
+            "Read the stackup from the saved board file, not the board open in memory. "
+            "Returns each copper, dielectric, mask, and silk entry with its thickness in "
+            "millimetres. A thickness the stackup editor has locked is returned as "
+            "thicknessMm plus thicknessLocked. Layer names are the names stored on the "
+            "board, so a renamed layer such as 'Top Side' is returned beside the canonical "
+            "F.Cu name. pcbnew does not expose the stackup, so this reads the "
+            "(stackup ...) section of the .kicad_pcb file. If an earlier save was refused, "
+            "the file can be older than the session. Pass expected to compare those rows "
+            "with a recipe in the same call."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "expected": {
+                    "type": "array",
+                    "description": "Rows to compare. Each row needs index or layer. Omit to only read.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "index": {"type": "integer"},
+                            "layer": {"type": "string"},
+                            "type": {"type": "string"},
+                            "thicknessMm": {"type": "number"},
+                            "epsilonR": {"type": "number"},
+                        },
+                    },
+                },
+                "thicknessToleranceMm": {
+                    "type": "number",
+                    "description": "Allowed thickness difference in millimetres. Default 0.001.",
+                },
+                "epsilonTolerance": {
+                    "type": "number",
+                    "description": "Allowed relative-permittivity difference. Default 0.01.",
+                },
+            },
+        },
+    },
+    {
+        "name": "set_stackup_layer",
+        "title": "Set Stackup Layer",
+        "description": (
+            "Write one stackup row into the board file. Identify the row by index from "
+            "get_stackup or by a layer name such as F.Cu or the name stored on the board. "
+            "thicknessMm changes that row. epsilonR, lossTangent, and material apply only "
+            "to a dielectric. sublayer selects a dielectric piece and defaults to 0. "
+            "pcbnew cannot edit the stackup, so this rewrites the (stackup ...) section."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "index": {"type": "integer", "description": "Row index from get_stackup"},
+                "layer": {
+                    "type": "string",
+                    "description": "Canonical name such as F.Cu, or the name stored on the board",
+                },
+                "sublayer": {
+                    "type": "integer",
+                    "description": "Dielectric sublayer. Defaults to 0",
+                },
+                "thicknessMm": {
+                    "type": "number",
+                    "description": "Thickness of this sublayer in millimetres",
+                },
+                "epsilonR": {
+                    "type": "number",
+                    "description": "Relative permittivity. Dielectric rows only",
+                },
+                "lossTangent": {
+                    "type": "number",
+                    "description": "Loss tangent. Dielectric rows only",
+                },
+                "material": {
+                    "type": "string",
+                    "description": "Material name. Dielectric rows only",
+                },
+            },
+        },
+    },
+    {
         "name": "get_board_info",
         "title": "Get Board Information",
         "description": "Retrieves comprehensive board information including dimensions, layer count, component count, and design rules.",
@@ -825,8 +908,37 @@ COMPONENT_TOOLS = [
     {
         "name": "get_component_list",
         "title": "List All Components",
-        "description": "Returns a list of all components on the board with their properties.",
-        "inputSchema": {"type": "object", "properties": {}},
+        "description": (
+            "Returns components on the board. boundingBox keeps footprints whose anchor "
+            "is inside the rectangle. matchPadCenter also keeps a footprint when any pad "
+            "centre is inside. includePads adds each pad's number, net, and position. "
+            "layer matches the board name or the canonical name such as B.Cu."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "layer": {"type": "string", "description": "Filter by layer name, such as F.Cu"},
+                "boundingBox": {
+                    "type": "object",
+                    "description": "Inclusive rectangle. The footprint anchor must lie inside",
+                    "properties": {
+                        "x1": {"type": "number"},
+                        "y1": {"type": "number"},
+                        "x2": {"type": "number"},
+                        "y2": {"type": "number"},
+                        "unit": {"type": "string", "enum": ["mm", "mil", "inch"]},
+                    },
+                },
+                "matchPadCenter": {
+                    "type": "boolean",
+                    "description": "Also match a footprint when any pad centre is inside boundingBox",
+                },
+                "includePads": {
+                    "type": "boolean",
+                    "description": "Add pads with number, net, and position",
+                },
+            },
+        },
     },
     {
         "name": "get_component_geometry",
@@ -3911,6 +4023,79 @@ GUI_DRIVER_TOOLS = [
     },
 ]
 
+# Read-only geometry for a PDN or EMC review. One entry per tool so a
+# later query can extend this list without changing the copper editor.
+ANALYSIS_TOOLS = [
+    {
+        "name": "summarize_vias",
+        "title": "Summarize Vias",
+        "description": (
+            "Count vias without listing them. Returns the via count, how many run "
+            "from F.Cu to B.Cu, a drill histogram, and the layer spans. Filter by "
+            "net, rectangle, drill, or layer name."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {
+                    "type": "string",
+                    "description": "Only vias on this net, for example GND",
+                },
+                "boundingBox": {
+                    "type": "object",
+                    "description": "Only vias whose centre lies inside this rectangle",
+                    "properties": {
+                        "x1": {"type": "number"},
+                        "y1": {"type": "number"},
+                        "x2": {"type": "number"},
+                        "y2": {"type": "number"},
+                        "unit": {
+                            "type": "string",
+                            "enum": ["mm", "mil", "inch"],
+                            "default": "mm",
+                        },
+                    },
+                },
+                "drillMin": {
+                    "type": "number",
+                    "description": "Minimum drill diameter in millimetres, inclusive",
+                },
+                "drillMax": {
+                    "type": "number",
+                    "description": "Maximum drill diameter in millimetres, inclusive",
+                },
+                "startLayer": {
+                    "type": "string",
+                    "description": "Match the via start layer by board name or canonical name",
+                },
+                "endLayer": {
+                    "type": "string",
+                    "description": "Match the via end layer by board name or canonical name",
+                },
+            },
+        },
+    },
+    {
+        "name": "summarize_net_copper",
+        "title": "Summarize Net Copper",
+        "description": (
+            "Summarize one net's copper without listing every track, via, and zone. "
+            "Returns the three counts, the layers involved, the bounding box, and a "
+            "shape: vias_only, tracks_only, zones_only, empty, or mixed."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "net": {
+                    "type": "string",
+                    "description": "Net name, for example GND or NetL2_1",
+                },
+            },
+            "required": ["net"],
+        },
+    },
+]
+
 TOOL_SCHEMAS: Dict[str, Any] = {}
 
 # Combine all tool categories
@@ -3927,6 +4112,7 @@ for tool in (
     + VALIDATION_TOOLS
     + DIGIKEY_TOOLS
     + GUI_DRIVER_TOOLS
+    + ANALYSIS_TOOLS
 ):
     TOOL_SCHEMAS[tool["name"]] = tool
 
