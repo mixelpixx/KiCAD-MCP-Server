@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 from pathlib import Path
@@ -224,3 +225,44 @@ def test_add_via_keeps_its_net_inside_another_nets_zone(tmp_path: Path) -> None:
     vias = [t for t in reloaded.GetTracks() if t.GetClass() == "PCB_VIA"]
     assert len(vias) == 1
     assert vias[0].GetNetname() == "SIG", "the via was saved on the zone's net"
+
+
+def test_run_drc_reports_unconnected_pads_with_real_kicad_cli(tmp_path: Path) -> None:
+    """Two pads on one net and no copper between them: kicad-cli lists the gap under
+    "unconnected_items", which run_drc used to drop."""
+    import pcbnew
+    from commands.design_rules import DesignRuleCommands
+
+    board = pcbnew.BOARD()
+    corners = [(0, 0), (20, 0), (20, 10), (0, 10)]
+    for start, end in zip(corners, corners[1:] + corners[:1]):
+        _add_segment(board, pcbnew.Edge_Cuts, start, end, width_mm=0.1)
+    net = pcbnew.NETINFO_ITEM(board, "SIG")
+    board.Add(net)
+    for ref, x in (("TP1", 4), ("TP2", 16)):
+        fp = pcbnew.FOOTPRINT(board)
+        fp.SetReference(ref)
+        pad = pcbnew.PAD(fp)
+        pad.SetShape(pcbnew.PAD_SHAPE_RECT)
+        pad.SetAttribute(pcbnew.PAD_ATTRIB_SMD)
+        pad.SetLayerSet(pad.SMDMask())
+        pad.SetSize(pcbnew.VECTOR2I(pcbnew.FromMM(1), pcbnew.FromMM(1)))
+        pad.SetNumber("1")
+        fp.Add(pad)
+        board.Add(fp)
+        fp.SetPosition(pcbnew.VECTOR2I(pcbnew.FromMM(x), pcbnew.FromMM(5)))
+        pad.SetNet(net)
+    board_path = tmp_path / "drc_smoke.kicad_pcb"
+    pcbnew.SaveBoard(str(board_path), board)
+
+    commands = DesignRuleCommands(pcbnew.LoadBoard(str(board_path)))
+    result = commands.run_drc({})
+
+    assert result["success"] is True, result
+    assert result["summary"]["by_category"].get("unconnected_items") == 1, result
+    saved = json.loads(Path(result["violationsFile"]).read_text())
+    gap = [v for v in saved["violations"] if v["category"] == "unconnected_items"][0]
+    assert sorted(i["description"].split(" of ")[-1].split(" ")[0] for i in gap["items"]) == [
+        "TP1",
+        "TP2",
+    ]
