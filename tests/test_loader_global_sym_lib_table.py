@@ -20,6 +20,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 from commands.dynamic_symbol_loader import DynamicSymbolLoader
 
 
+@pytest.fixture(autouse=True)
+def _isolated_kicad_config(monkeypatch):
+    """These tests place the user-global table under a fake home. KiCad's own
+    KICAD_CONFIG_HOME takes precedence over the home directory (the loader honours it,
+    as KiCad does), so a developer or CI environment that sets it would hide the fake
+    table. Clear it so the tests see only what they lay out."""
+    monkeypatch.delenv("KICAD_CONFIG_HOME", raising=False)
+
+
 def _write_lib(tmp_path: Path, name: str, symbols: list) -> Path:
     """Write a minimal .kicad_sym file with the given symbol names."""
     parts = [f"(kicad_symbol_lib (version 20231120) (generator test)"]
