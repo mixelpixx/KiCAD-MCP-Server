@@ -308,6 +308,11 @@ def test_fallback_without_kicad_cli_says_so(tmp_path, monkeypatch):
     assert any("built-in walker" in w for w in r["warnings"])
 
 
+def _field(fp, name):
+    """KiCad 10 has GetField(name); KiCad 9 GetFieldByName(name)."""
+    return fp.GetField(name) if hasattr(fp, "HasField") else fp.GetFieldByName(name)
+
+
 def _rework_board(board_path: Path):
     """R2 on the wrong footprint (0805, rotated, on the back), plus R9 (no symbol) and a board-only MH1."""
     import pcbnew
@@ -332,6 +337,12 @@ def _rework_board(board_path: Path):
     r2.SetPosition(pos)
     r2.Flip(r2.GetPosition(), False)
     r2.SetOrientationDegrees(90)
+    # hand-placed silkscreen that a replacement must keep: a moved reference, a hidden MPN
+    ref = r2.Reference()
+    ref.SetPosition(pos + pcbnew.VECTOR2I(pcbnew.FromMM(3), pcbnew.FromMM(-2)))
+    ref.SetTextSize(pcbnew.VECTOR2I(pcbnew.FromMM(0.6), pcbnew.FromMM(0.6)))
+    r2.SetField("MPN", "RC0805FR-0722KL")
+    _field(r2, "MPN").SetVisible(False)
     for ref, x, board_only in (("R9", 25, False), ("MH1", 5, True)):
         fp = pcbnew.FootprintLoad(str(fp_dir / "Resistor_SMD.pretty"), "R_0603_1608Metric")
         fp.SetReference(ref)
@@ -370,6 +381,12 @@ def test_replace_and_delete_footprints(tmp_path, monkeypatch):
     r2 = fps["R2"]
     assert str(r2.GetFPID().GetLibItemName()) == "R_0603_1608Metric"
     assert r2.GetPosition() == pos and r2.IsFlipped() and r2.GetOrientationDegrees() == 90
+    # field layout survives the replacement (it used to reset to the library's)
+    assert r2.Reference().GetPosition() == pos + pcbnew.VECTOR2I(pcbnew.FromMM(3), pcbnew.FromMM(-2))
+    assert r2.Reference().GetTextSize().x == pcbnew.FromMM(0.6)
+    # the text comes from the schematic (the sync updates fields afterwards); visibility stays the board's
+    assert _field(r2, "MPN").GetText() == "RC0603FR-0710KL"
+    assert not _field(r2, "MPN").IsVisible()
     assert r2.GetPath().AsString() == f"/{SHEET}/{R2}"
     assert {p.GetNumber(): p.GetNetname() for p in r2.Pads()}["1"] == "/CANH"
     assert _parity(board_path) == []

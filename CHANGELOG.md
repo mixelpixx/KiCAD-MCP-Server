@@ -41,7 +41,11 @@ All notable changes to the KiCAD MCP Server project are documented here.
   hand.
   - `replaceFootprints` loads the new footprint and keeps the old one's
     reference, value, fields, symbol link, position, rotation, side and
-    lock. The new pads get their nets in the same sync.
+    lock, and the board's text layout: each field keeps its position, size,
+    layer and visibility, as KiCad's F8 does (replacing 53 parts on a real
+    board without this reset every reference to the library spot and put
+    every MPN on the silkscreen: 199 silk violations). The new pads get
+    their nets in the same sync.
   - `deleteUnusedFootprints` removes footprints with no symbol. Board-only
     footprints (mounting holes, logos) are kept, as KiCad keeps them, and so
     are locked ones, which are reported.

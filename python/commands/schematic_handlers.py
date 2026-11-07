@@ -3690,6 +3690,7 @@ class SchematicHandlersMixin:
             new.SetPosition(old.GetPosition())
             new.SetOrientation(old.GetOrientation())
             new.SetLocked(old.IsLocked())
+            self._copy_field_layout(old, new)
             for flag, getter, setter in (
                 ("exclude_from_bom", "IsExcludedFromBOM", "SetExcludedFromBOM"),
                 ("dnp", "IsDNP", "SetDNP"),
@@ -3699,6 +3700,48 @@ class SchematicHandlersMixin:
             delete_board_item(board, old)
             replaced.append(dict(change))
         return replaced, failed
+
+    @staticmethod
+    def _copy_field_layout(old: Any, new: Any) -> None:
+        """Give new's fields old's placement: position, angle, size, layer, visibility.
+
+        A footprint fresh from the library has its fields at the library's
+        offsets, and fields set with SetField come out visible. Replacing 53
+        0402s on a real board without this put every reference back at the
+        default spot and every MPN on the silkscreen: 199 silk violations.
+        KiCad's "Update PCB from Schematic" keeps the board's text layout, so
+        this does too. Call it after the new footprint has old's position,
+        side and rotation, so absolute positions carry over unchanged.
+        """
+        for field in old.GetFields():
+            name = field.GetName()
+            if name == "Reference":
+                target = new.Reference()
+            elif name == "Value":
+                target = new.Value()
+            elif hasattr(new, "HasField"):  # KiCad 10
+                target = new.GetField(name) if new.HasField(name) else None
+            else:  # KiCad 9
+                target = new.GetFieldByName(name) if hasattr(new, "GetFieldByName") else None
+            if target is None:
+                continue
+            for getter, setter in (
+                ("GetPosition", "SetPosition"),
+                ("GetTextAngle", "SetTextAngle"),
+                ("GetTextSize", "SetTextSize"),
+                ("GetTextThickness", "SetTextThickness"),
+                ("GetLayer", "SetLayer"),
+                ("IsVisible", "SetVisible"),
+                ("IsMirrored", "SetMirrored"),
+                ("GetHorizJustify", "SetHorizJustify"),
+                ("GetVertJustify", "SetVertJustify"),
+                ("IsKeepUpright", "SetKeepUpright"),
+            ):
+                if hasattr(field, getter) and hasattr(target, setter):
+                    try:
+                        getattr(target, setter)(getattr(field, getter)())
+                    except Exception:  # binding differences across versions
+                        pass
 
     @staticmethod
     def _delete_footprints_without_symbols(
