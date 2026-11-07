@@ -70,6 +70,7 @@ Use dry_run=true to preview changes without writing.`,
             text: `Failed to enrich datasheets: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
