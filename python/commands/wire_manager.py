@@ -758,18 +758,21 @@ class WireManager:
                 sheet_instances_index = i
                 break
 
+        # A hierarchical sub-sheet has no (sheet_instances): append at the end,
+        # as add_label and add_wire do. Skipping the insert there left every
+        # junction a sub-sheet needed unwritten, so tool-drawn T's on any
+        # child sheet stayed open.
+        if sheet_instances_index is None:
+            sheet_instances_index = len(sch_data)
+
         to_add = needed_iu - existing_iu
         added = 0
-        if to_add:
-            if sheet_instances_index is None:
-                logger.warning("sync_junctions: no sheet_instances found, skipping junction insert")
-            else:
-                for iu_x, iu_y in to_add:
-                    x = iu_x / _IU_PER_MM
-                    y = iu_y / _IU_PER_MM
-                    sch_data.insert(sheet_instances_index, WireManager._make_junction_sexp(x, y))
-                    sheet_instances_index += 1
-                    added += 1
+        for iu_x, iu_y in to_add:
+            x = iu_x / _IU_PER_MM
+            y = iu_y / _IU_PER_MM
+            sch_data.insert(sheet_instances_index, WireManager._make_junction_sexp(x, y))
+            sheet_instances_index += 1
+            added += 1
 
         if added or removed:
             logger.info(f"sync_junctions: added {added}, removed {removed}")
@@ -810,8 +813,10 @@ class WireManager:
                     break
 
             if sheet_instances_index is None:
-                logger.error("No sheet_instances section found in schematic")
-                return False
+                # Hierarchical sub-sheets have no (sheet_instances); append at
+                # the end, as add_label does. Returning False here made every
+                # no-connect on a child sheet fail.
+                sheet_instances_index = len(sch_data)
 
             # Insert no_connect
             sch_data.insert(sheet_instances_index, no_connect_sexp)

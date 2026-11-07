@@ -49,6 +49,23 @@ All notable changes to the KiCAD MCP Server project are documented here.
   - A pin sitting mid-wire is still not dotted: KiCad treats it as
     unconnected, and a junction would change the netlist.
   - A plain crossing is still not dotted.
+- **No-connect flags and junctions now work on hierarchical child sheets.**
+  A child sheet has no `(sheet_instances)` block. `add_no_connect` returned
+  False there ("No sheet_instances section found"), so
+  `batch_add_no_connects` failed for every pin of every part below the root
+  sheet. `sync_junctions` skipped its insert, so no junction a child sheet
+  needed was ever written, and a tool-drawn T on a child sheet stayed open.
+  Both now append at the end of the sheet, as `add_label` and `add_wire`
+  already did. KiCad's ERC confirms a no-connect placed on a child sheet
+  clears that pin's `pin_not_connected`.
+- **`find_orphaned_wires` no longer reports wires to sheet pins as orphaned.**
+  On a real 3-sheet design whose ERC shows no dangling wire, the root sheet
+  came back with 38 "orphaned" wires: every wire to a hierarchical sheet pin.
+  Pruning them, the natural next step, deleted live wires back through
+  whole nets (93 on that sheet before nothing was left to remove). Sheet pins
+  and hierarchical labels now count as connections, as does a wire end on
+  another wire's interior at a junction (KiCad connects such an unsplit T).
+  The same design now reports 0 on every sheet, matching ERC.
 
 - **`add_via` reads the parameters its schemas declare** (#407). The SWIG
   handler indexed `position["unit"]`, so a call without the optional `unit`
