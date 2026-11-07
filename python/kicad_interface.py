@@ -1061,11 +1061,10 @@ class KiCADInterface(SchematicHandlersMixin):
 
     @staticmethod
     def _normalize_ipc_layer_name(layer: Any) -> str:
-        """Convert KiCad IPC layer enum strings to common layer names."""
-        layer_name = str(layer)
-        if layer_name.startswith("BL_"):
-            return layer_name[3:].replace("_", ".")
-        return layer_name
+        """Convert a KiCad IPC layer enum to a canonical name such as ``B.Cu``."""
+        from kicad_api.ipc_backend import ipc_layer_name
+
+        return ipc_layer_name(layer)
 
     def _result_backend_for_command(self, command: str, result: Dict[str, Any]) -> str:
         """Return the backend label for a command result."""
@@ -5733,24 +5732,62 @@ print("ok")
             return {"success": False, "message": str(e)}
 
     def _ipc_get_component_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """IPC handler for get_component_list"""
+        """IPC handler for get_component_list.
+
+        Position and layer come from the live footprint list. Pad centres are
+        not on that list, so only those are read from the file-loaded board.
+        Filtering the file board and labelling the reply as live would report
+        stale positions, and with no file loaded the filters used to be ignored.
+        """
         try:
+            from commands.component import _query_box, row_inside_query
+
+            raw_box = params.get("boundingBox")
+            box = None
+            if raw_box is not None:
+                box, error = _query_box(raw_box)
+                if error:
+                    return {"success": False, "message": error, "errorDetails": error}
+            layer = params.get("layer")
+            if layer is not None and not isinstance(layer, str):
+                return {
+                    "success": False,
+                    "message": "layer must be a string",
+                    "errorDetails": "layer",
+                }
+            include_pads = bool(params.get("includePads"))
+            match_pads = bool(params.get("matchPadCenter"))
+            if (include_pads or match_pads) and not self.board:
+                return {
+                    "success": False,
+                    "message": "includePads and matchPadCenter need the loaded board",
+                    "errorDetails": "No board is loaded",
+                }
+
             components = self.ipc_board_api.list_components()
+            pads_by_ref: Dict[str, Any] = {}
+            if include_pads or match_pads:
+                swig_result = self.component_commands.get_component_list({"includePads": True})
+                if not swig_result.get("success"):
+                    return swig_result
+                pads_by_ref = {
+                    row.get("reference"): row.get("pads") or []
+                    for row in swig_result.get("components", [])
+                }
 
-            # If IPC didn't provide bounding boxes, enrich from SWIG backend
-            if self.board and components and not components[0].get("boundingBox"):
-                try:
-                    swig_result = self.component_commands.get_component_list(params)
-                    if swig_result.get("success"):
-                        swig_map = {c["reference"]: c for c in swig_result.get("components", [])}
-                        for comp in components:
-                            swig_comp = swig_map.get(comp.get("reference"))
-                            if swig_comp and swig_comp.get("boundingBox"):
-                                comp["boundingBox"] = swig_comp["boundingBox"]
-                except Exception:
-                    pass
+            kept = []
+            for comp in components:
+                shown = self._normalize_ipc_layer_name(comp.get("layer", ""))
+                row = dict(comp)
+                row["layer"] = shown
+                pads = pads_by_ref.get(comp.get("reference")) or []
+                if not row_inside_query(row, box, layer, match_pads, pads):
+                    continue
+                if include_pads:
+                    row["pads"] = pads
+                kept.append(row)
 
-            return {"success": True, "components": components, "count": len(components)}
+            return {"success": True, "components": kept, "count": len(kept)}
         except Exception as e:
             logger.error(f"IPC get_component_list error: {e}")
             return {"success": False, "message": str(e)}

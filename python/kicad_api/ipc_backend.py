@@ -39,6 +39,54 @@ IPC_CONNECT_TIMEOUT_S = float(os.getenv("KICAD_IPC_CONNECT_TIMEOUT", "5"))
 MM_TO_NM = 1_000_000
 INCH_TO_NM = 25_400_000
 
+# kipy's BoardLayer values. str(fp.layer) is "3" or "34", not "F.Cu" or "B.Cu".
+# Inner copper is 4..33 (In1.Cu .. In30.Cu). These numbers are the protobuf
+# contract, so they do not depend on importing kipy.
+_IPC_LAYER_BY_NUMBER: Dict[int, str] = {
+    3: "F.Cu",
+    **{3 + index: f"In{index}.Cu" for index in range(1, 31)},
+    34: "B.Cu",
+    35: "B.Adhes",
+    36: "F.Adhes",
+    37: "B.Paste",
+    38: "F.Paste",
+    39: "B.SilkS",
+    40: "F.SilkS",
+    41: "B.Mask",
+    42: "F.Mask",
+    43: "Dwgs.User",
+    44: "Cmts.User",
+    45: "Eco1.User",
+    46: "Eco2.User",
+    47: "Edge.Cuts",
+    48: "Margin",
+    49: "B.CrtYd",
+    50: "F.CrtYd",
+    51: "B.Fab",
+    52: "F.Fab",
+}
+
+
+def ipc_layer_name(layer: Any) -> str:
+    """Canonical KiCad layer name for an IPC layer value.
+
+    Accepts a protobuf number (``34``), its decimal text (``"34"``), a
+    ``BL_B_Cu`` token, or a name that is already canonical.
+    """
+    if layer is None:
+        return ""
+    enum_name = getattr(layer, "name", None)
+    if isinstance(enum_name, str) and enum_name.startswith("BL_"):
+        return enum_name[3:].replace("_", ".")
+    text = str(layer).strip()
+    if text.startswith("BL_"):
+        return text[3:].replace("_", ".")
+    try:
+        number = int(text)
+    except (TypeError, ValueError):
+        return text
+    return _IPC_LAYER_BY_NUMBER.get(number, text)
+
 
 def _same_angle(a_deg: float, b_deg: float, tol: float = 1e-6) -> bool:
     """True when two angles in degrees name the same orientation (mod 360)."""
@@ -657,7 +705,7 @@ class IPCBoardAPI(BoardAPI):
                                 "unit": "mm",
                             },
                             "rotation": fp.orientation.degrees if fp.orientation else 0,
-                            "layer": str(fp.layer) if hasattr(fp, "layer") else "F.Cu",
+                            "layer": ipc_layer_name(fp.layer) if hasattr(fp, "layer") else "F.Cu",
                             "id": str(fp.id) if hasattr(fp, "id") else "",
                             "boundingBox": bbox_data,
                         }
