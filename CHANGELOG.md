@@ -33,8 +33,44 @@ All notable changes to the KiCAD MCP Server project are documented here.
   - The mode combines with `KICAD_MCP_TOOLBOXES`, and read-only tools carry
     MCP's `readOnlyHint` annotation in every mode.
 
+- **`sync_schematic_to_board` can preview (`dryRun: true`).** The sync
+  overwrites board values and fields with the schematic's and moves pads to
+  the schematic's nets, as KiCad's F8 does. On a board edited after its last
+  sync that discards data, and until now the list of changes came back only
+  after they were saved. With `dryRun` the same list comes back and nothing
+  is written (the board file is byte-identical afterwards).
+  - New in every reply: `pads_changed`, only the pads whose net actually
+    changes (for example `U6/1: 'Net-(U6-A)' -> 'unconnected-(U6-NC-Pad1)'`),
+    plus `pads_changed_count` and `dryRun`. `pads_assigned` still
+    counts every matched pad, so an up-to-date board reports many assigned
+    and 0 changed.
+  - On a real 107-part board, the preview showed 39 value changes, 107
+    field updates and one pad that the sync would disconnect from a routed
+    net. The pad came from a symbol that defines pin 1 differently in two
+    units.
+
 ### Bug Fixes
 
+- **`sync_schematic_to_board` and `create_board_from_schematic` take nets from
+  KiCad's own netlist.**
+  - **Before.** Pad nets came from a built-in walker that followed wires and
+    labels geometrically. It disagreed with KiCad whenever a net changed name
+    across a sheet boundary or a label sat mid-wire, and it wrote flat names
+    (`SWDIO`, not `/MCU/SWDIO`). On a real 77-part, 9-sheet board, 304 of 333
+    pads ended up on a net KiCad disagrees with, and KiCad's parity check
+    reported 349 issues, while the tool said success.
+  - **Now.** Nets come from `kicad-cli sch export netlist`, read in the
+    S-expression format because the XML writer unescapes names (`ADC7/PB6`
+    instead of KiCad's `ADC7{slash}PB6`). Each footprint is linked to its
+    symbol by path, and symbol values, fields and the BOM/DNP flags are carried
+    over, as KiCad's Update PCB does. The same board now has 0 pads that
+    disagree with KiCad and 3 parity issues, all in the design itself.
+  - **Also reported.** The reply says `netSource`. Pads that aren't pins of
+    their symbol have their net cleared (`pads_cleared`). Footprints that
+    differ from the symbol's are listed in `footprint_changes_pending`, not
+    swapped.
+  - **Fallback.** Without kicad-cli the built-in walker is still used, with a
+    warning.
 - **`add_via` reads the parameters its schemas declare** (#407). The SWIG
   handler indexed `position["unit"]`, so a call without the optional `unit`
   failed with `'unit'`. JSON-RPC calls (`x`, `y`, `diameter`, `netName`) were

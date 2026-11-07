@@ -2835,6 +2835,14 @@ SCHEMATIC_TOOLS = [
                     "type": "string",
                     "description": "Path to .kicad_pcb file. If omitted, uses currently loaded board.",
                 },
+                "dryRun": {
+                    "type": "boolean",
+                    "description": (
+                        "Report every change (pad nets, values, fields, footprints added) "
+                        "without saving. The sync overwrites board values and fields with the "
+                        "schematic's, so preview first on a board edited after its last sync."
+                    ),
+                },
             },
         },
     },
