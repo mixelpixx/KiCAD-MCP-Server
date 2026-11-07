@@ -1775,6 +1775,36 @@ edit_schematic_component and set its value to an empty string.`,
     },
   );
 
+  // Legibility: what a reader trips over
+  server.tool(
+    "check_schematic_legibility",
+    "Checks whether a person can read a schematic sheet: what ERC and a netlist cannot see. Boxes every symbol body, visible reference/value, label and free text and reports text over text (a symbol's own fields included), text over another symbol's body, a field across its own outline, body over body, items on the title block or outside the frame, and upside-down text. Each problem comes with its box in sheet mm; look at it with get_schematic_view_region.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch sheet to check (one sheet)"),
+      maxProblems: z
+        .number()
+        .optional()
+        .describe("Most problems to list (default 200); counts always cover all"),
+    },
+    async (args: { schematicPath: string; maxProblems?: number }) => {
+      const result = await callKicadScript("check_schematic_legibility", args);
+      if (result.success) {
+        const counts = Object.entries(result.counts || {})
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(", ");
+        const lines = [`${result.total} legibility problem(s)${counts ? ` (${counts})` : ""}`];
+        (result.problems || []).forEach((p: any) => {
+          const b = p.box;
+          lines.push(`  ${p.kind.padEnd(19)} ${p.items}  @(${b.x0},${b.y0})-(${b.x1},${b.y1})`);
+        });
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      }
+      return {
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
+      };
+    },
+  );
+
   // Find overlapping elements
   server.tool(
     "find_overlapping_elements",

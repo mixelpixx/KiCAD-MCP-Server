@@ -2991,6 +2991,25 @@ SCHEMATIC_TOOLS = [
         },
     },
     {
+        "name": "check_schematic_legibility",
+        "title": "Check Schematic Legibility",
+        "description": "Checks whether a person can read a schematic sheet: what ERC and a netlist cannot see. Boxes every symbol body, visible reference/value, label and free text and reports text over text (a symbol's own fields included), text over another symbol's body, a field across its own outline, body over body, items on the title block or outside the frame, and upside-down text. Each problem comes with its box in sheet mm; look at it with get_schematic_view_region.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch sheet to check (one sheet; check each sub-sheet separately)",
+                },
+                "maxProblems": {
+                    "type": "integer",
+                    "description": "Most problems to list (default 200); counts always cover all",
+                },
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
         "name": "get_elements_in_region",
         "title": "Get Elements in Region",
         "description": "Lists all symbols, wires, and labels within a rectangular region of the schematic. Useful for understanding what is in a specific area before modifying it.",
