@@ -14,6 +14,7 @@ the two fixes.
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -279,3 +280,138 @@ def test_differential_pair_gap_is_edge_to_edge(pair_board):
     assert centre_spacing - pos.width == 150_000
     assert pos.start.y > neg.start.y  # positive on the right of +x in y-down
     assert pos.end.y == pos.start.y and neg.end.y == neg.start.y
+
+
+# --- add_via (#407) -----------------------------------------------------------
+
+
+class _Via:
+    def __init__(self, board):
+        self.position = None
+        self.width = None
+        self.drill = None
+        self.layers = None
+        self.net = None
+
+    def SetPosition(self, pos) -> None:
+        self.position = (pos.x, pos.y)
+
+    def SetWidth(self, width_nm: int) -> None:
+        self.width = width_nm
+
+    def SetDrill(self, drill_nm: int) -> None:
+        self.drill = drill_nm
+
+    def GetDrill(self) -> int:
+        return self.drill
+
+    def SetLayerPair(self, top: int, bottom: int) -> None:
+        self.layers = (top, bottom)
+
+    def SetNet(self, net) -> None:
+        self.net = net
+
+
+class _ViaNets(dict):
+    def has_key(self, name: str) -> bool:
+        return name in self
+
+
+class _ViaDesignSettings:
+    def GetCurrentViaSize(self) -> int:
+        return 600_000
+
+    def GetCurrentViaDrill(self) -> int:
+        return 300_000
+
+
+class _ViaBoard:
+    def __init__(self, nets):
+        self._nets = _ViaNets(nets)
+        self.added = []
+
+    def GetNetInfo(self):
+        board = self
+
+        class _Info:
+            def NetsByName(self):
+                return board._nets
+
+        return _Info()
+
+    def GetDesignSettings(self):
+        return _ViaDesignSettings()
+
+    def GetLayerID(self, name: str) -> int:
+        return {"F.Cu": 0, "B.Cu": 2}.get(name, -1)
+
+    def Add(self, item) -> None:
+        self.added.append(item)
+
+
+GND = object()
+
+
+@pytest.fixture
+def via_board(monkeypatch):
+    # A namespace rather than attributes on the stub: add_via needs only these two.
+    fake_pcbnew = SimpleNamespace(PCB_VIA=_Via, VECTOR2I=lambda x, y: _Vec(x, y))
+    monkeypatch.setattr(routing_mod, "pcbnew", fake_pcbnew)
+    monkeypatch.setattr(routing_mod, "_via_front_width", lambda via: via.width)
+    return _ViaBoard({"GND": GND})
+
+
+def test_add_via_unit_is_optional(via_board):
+    """``unit`` is optional in the zod schema; it used to raise KeyError 'unit'."""
+    result = RoutingCommands(via_board).add_via({"position": {"x": 10, "y": 20.5}, "net": "GND"})
+    assert result["success"], result
+    (via,) = via_board.added
+    assert via.position == (10_000_000, 20_500_000)
+    assert via.net is GND
+    assert result["via"]["position"] == {"x": 10, "y": 20.5, "unit": "mm"}
+
+
+def test_add_via_converts_mil(via_board):
+    result = RoutingCommands(via_board).add_via(
+        {"position": {"x": 100, "y": 200, "unit": "mil"}, "net": "GND"}
+    )
+    assert result["success"], result
+    assert via_board.added[0].position == (2_540_000, 5_080_000)
+
+
+def test_add_via_accepts_jsonrpc_names(via_board):
+    """tool_schemas.py declares top-level x/y, diameter and netName."""
+    result = RoutingCommands(via_board).add_via(
+        {"x": 5, "y": 6, "diameter": 0.8, "drill": 0.4, "netName": "GND"}
+    )
+    assert result["success"], result
+    (via,) = via_board.added
+    assert via.position == (5_000_000, 6_000_000)
+    assert via.width == 800_000
+    assert via.drill == 400_000
+    assert via.net is GND
+
+
+def test_add_via_unknown_net_is_an_error(via_board):
+    result = RoutingCommands(via_board).add_via({"position": {"x": 1, "y": 1}, "net": "NOPE"})
+    assert not result["success"]
+    assert "NOPE" in result["errorDetails"]
+    assert via_board.added == []
+
+
+@pytest.mark.parametrize("via_type", ["blind", "buried", "micro"])
+def test_add_via_refuses_types_it_cannot_build(via_board, via_type):
+    result = RoutingCommands(via_board).add_via(
+        {"position": {"x": 1, "y": 1}, "net": "GND", "viaType": via_type}
+    )
+    assert not result["success"]
+    assert via_type in result["errorDetails"]
+    assert via_board.added == []
+
+
+def test_add_via_bad_unit_is_an_error(via_board):
+    result = RoutingCommands(via_board).add_via(
+        {"position": {"x": 1, "y": 1, "unit": "furlong"}, "net": "GND"}
+    )
+    assert not result["success"]
+    assert via_board.added == []
