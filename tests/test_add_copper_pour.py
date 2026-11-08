@@ -1,4 +1,4 @@
-"""add_copper_pour: net validation, pad connection, and the IPC outline key."""
+"""add_copper_pour: net validation, pad connection and point units, on SWIG and IPC."""
 
 import sys
 from pathlib import Path
@@ -84,19 +84,112 @@ def test_priority_is_applied() -> None:
     zone.SetAssignedPriority.assert_called_once_with(3)
 
 
-@pytest.mark.unit
-def test_ipc_handler_reads_the_schema_outline_key() -> None:
-    # The tool schema sends `outline`; the IPC handler read only `points`, so
-    # every add_copper_pour over IPC failed with "At least 3 points".
+def _ipc_iface(nets=("GND", "VBUS")) -> Any:
     with patch("kicad_interface.USE_IPC_BACKEND", False):
         from kicad_interface import KiCADInterface
 
         iface: Any = KiCADInterface.__new__(KiCADInterface)
     iface.ipc_board_api = MagicMock()
     iface.ipc_board_api.add_zone.return_value = True
+    iface.ipc_board_api.get_nets.return_value = [{"name": n, "code": i} for i, n in enumerate(nets)]
+    return iface
+
+
+@pytest.mark.unit
+def test_ipc_handler_reads_the_schema_outline_key() -> None:
+    # The tool schema sends `outline`; the IPC handler read only `points`, so
+    # every add_copper_pour over IPC failed with "At least 3 points".
+    iface = _ipc_iface()
 
     result = iface._ipc_add_copper_pour({"layer": "F.Cu", "net": "GND", "outline": SQUARE})
 
     assert result["success"] is True
     points = iface.ipc_board_api.add_zone.call_args.kwargs["points"]
     assert points == [{"x": p["x"], "y": p["y"]} for p in SQUARE]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("unit, mm", [("mil", 0.254), ("inch", 254.0), ("mm", 10.0)])
+def test_ipc_handler_converts_point_units_to_mm(unit: str, mm: float) -> None:
+    # add_zone forwards its points with their unit; ipc_board_api.add_zone takes mm.
+    iface = _ipc_iface()
+    outline = [{**p, "unit": unit} for p in SQUARE]
+
+    result = iface._ipc_add_copper_pour({"layer": "F.Cu", "net": "GND", "outline": outline})
+
+    assert result["success"] is True
+    points = iface.ipc_board_api.add_zone.call_args.kwargs["points"]
+    assert points[2] == {"x": pytest.approx(mm), "y": pytest.approx(mm)}
+
+
+@pytest.mark.unit
+def test_ipc_handler_rejects_an_unknown_point_unit() -> None:
+    iface = _ipc_iface()
+    outline = [{**p, "unit": "cm"} for p in SQUARE]
+
+    result = iface._ipc_add_copper_pour({"layer": "F.Cu", "net": "GND", "outline": outline})
+
+    assert result["success"] is False
+    iface.ipc_board_api.add_zone.assert_not_called()
+
+
+@pytest.mark.unit
+def test_ipc_handler_unknown_net_is_an_error() -> None:
+    iface = _ipc_iface()
+
+    result = iface._ipc_add_copper_pour({"layer": "F.Cu", "net": "VBSU", "outline": SQUARE})
+
+    assert result["success"] is False
+    assert "VBSU" in result["errorDetails"]
+    iface.ipc_board_api.add_zone.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("mode", ["solid", "thermal", "none"])
+def test_ipc_handler_passes_pad_connection(mode: str) -> None:
+    iface = _ipc_iface()
+
+    result = iface._ipc_add_copper_pour(
+        {"layer": "F.Cu", "net": "VBUS", "outline": SQUARE, "padConnection": mode}
+    )
+
+    assert result["success"] is True
+    assert iface.ipc_board_api.add_zone.call_args.kwargs["pad_connection"] == mode
+    assert result["pour"]["padConnection"] == mode
+
+
+@pytest.mark.unit
+def test_ipc_handler_rejects_invalid_pad_connection() -> None:
+    iface = _ipc_iface()
+
+    result = iface._ipc_add_copper_pour(
+        {"layer": "F.Cu", "net": "VBUS", "outline": SQUARE, "padConnection": "full"}
+    )
+
+    assert result["success"] is False
+    iface.ipc_board_api.add_zone.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "mode, style", [("solid", "ZCS_FULL"), ("thermal", "ZCS_THERMAL"), ("none", "ZCS_NONE")]
+)
+def test_ipc_backend_writes_pad_connection_to_the_zone(mode: str, style: str) -> None:
+    pytest.importorskip("kipy.board_types", reason="kipy (kicad-python) not installed")
+    from kicad_api.ipc_backend import IPCBoardAPI
+    from kipy.proto.board.board_types_pb2 import ZoneConnectionStyle
+
+    created = []
+    board = MagicMock()
+    board.get_nets.return_value = []
+    board.create_items.side_effect = created.append
+    api: Any = IPCBoardAPI.__new__(IPCBoardAPI)
+    api._get_board = lambda: board
+    api._notify = MagicMock()
+
+    assert api.add_zone(points=SQUARE, layer="F.Cu", pad_connection=mode) is True
+
+    (zone,) = created
+    assert zone._proto.copper_settings.connection.zone_connection == getattr(
+        ZoneConnectionStyle, style
+    )
