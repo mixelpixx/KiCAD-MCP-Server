@@ -12,6 +12,7 @@ import json
 import logging
 import math
 import os
+import re
 import shutil
 import sys
 import time
@@ -1390,6 +1391,7 @@ class KiCADInterface(SchematicHandlersMixin):
         "delete_schematic_wire",
         "edit_schematic_component",
         "enrich_datasheets",
+        "import_eagle_project",
         "lint_offgrid",
         "lint_schematic_cosmetic",
         "move_schematic_component",
@@ -1449,6 +1451,25 @@ class KiCADInterface(SchematicHandlersMixin):
             if not project.endswith(".kicad_pro"):
                 project += ".kicad_pro"
             target = project.replace(".kicad_pro", ".kicad_sch")
+            return [target] if os.path.exists(target) else []
+        if command == "import_eagle_project":
+            # Same output path as import_eagle_project, which writes
+            # <output_dir>/<name>.kicad_sch only when it finds an Eagle .sch.
+            board = params.get("board_file")
+            if not board:
+                return []
+            eagle_sch = (
+                params.get("schematic_file")
+                or params.get("sch_file")
+                or os.path.splitext(board)[0] + ".sch"
+            )
+            if not os.path.exists(eagle_sch):
+                return []
+            name = re.sub(r'[<>:"/\\|?* ]', "_", params.get("project_name") or Path(board).stem)
+            output_dir = params.get("output_dir") or os.path.join(
+                os.path.dirname(os.path.abspath(board)), name
+            )
+            target = os.path.join(output_dir, name + ".kicad_sch")
             return [target] if os.path.exists(target) else []
         if command == "backannotate_footprints" and not params.get("schematicPath"):
             # Without schematicPath it walks the sheet tree of the board's
