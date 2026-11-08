@@ -6,11 +6,17 @@ on:
   pull_request:
     branches: [main, develop]
 
+# Every job sets timeout-minutes. GitHub's default is 360 minutes, so a job
+# that stalls (a PPA download that stops sending data, a hung test) would hold
+# a runner and keep the required "CI passed" check pending for six hours. The
+# limits are about 3x the slowest successful run on main (measured 2026-11-06),
+# with a 10-minute floor.
 jobs:
   # TypeScript/Node.js tests
   typescript-tests:
     name: TypeScript Build & Test
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10 # slowest seen: under 2 min (macOS/Windows legs)
     strategy:
       matrix:
         os: [ubuntu-24.04, ubuntu-22.04, windows-latest, macos-latest]
@@ -56,6 +62,7 @@ jobs:
   python-tests:
     name: Python Tests
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15 # slowest seen: about 3.5 min
     strategy:
       matrix:
         os: [ubuntu-24.04, ubuntu-22.04]
@@ -129,6 +136,10 @@ jobs:
   integration-tests:
     name: Integration Tests (Linux + KiCAD)
     runs-on: ubuntu-24.04
+    # Usually about 2 minutes, but the KiCad PPA is sometimes slow: three
+    # successful runs on main spent 9, 15 and 18.5 minutes in the install
+    # step. The install step has its own, tighter limit below.
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -144,11 +155,28 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
+      # A stalled PPA download used to hang here until GitHub's 6-hour job
+      # limit. Now: apt gives up on a connection that sends nothing for 60
+      # seconds and retries the file itself (Acquire::Retries); each apt
+      # command is retried up to 3 times; and the whole step fails after 25
+      # minutes, which is above the slowest successful install seen (18.5 min)
+      # so a slow-but-working mirror is not cut off.
       - name: Add KiCAD PPA and Install KiCAD ${{ matrix.kicad }}
+        timeout-minutes: 25
         run: |
-          sudo add-apt-repository --yes ppa:kicad/kicad-${{ matrix.kicad }}-releases
-          sudo apt-get update
-          sudo apt-get install -y kicad kicad-libraries
+          APT_OPTS=(-o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60)
+          retry() {
+            for attempt in 1 2 3; do
+              if "$@"; then return 0; fi
+              echo "::warning::Attempt $attempt of 3 failed: $*"
+              if [ "$attempt" -lt 3 ]; then sleep 15; fi
+            done
+            return 1
+          }
+
+          retry sudo add-apt-repository --yes --no-update ppa:kicad/kicad-${{ matrix.kicad }}-releases
+          retry sudo apt-get "${APT_OPTS[@]}" update
+          retry sudo apt-get "${APT_OPTS[@]}" install -y kicad kicad-libraries
 
           mapfile -t KICAD_PYTHON_PACKAGES < <(
             {
@@ -166,7 +194,7 @@ jobs:
 
           if [ "${#KICAD_PYTHON_PACKAGES[@]}" -gt 0 ]; then
             echo "Installing KiCad Python packages: ${KICAD_PYTHON_PACKAGES[*]}"
-            sudo apt-get install -y "${KICAD_PYTHON_PACKAGES[@]}"
+            retry sudo apt-get "${APT_OPTS[@]}" install -y "${KICAD_PYTHON_PACKAGES[@]}"
           fi
 
           KICAD_PYTHONPATH="$(python3 - <<'PY'
@@ -347,12 +375,13 @@ jobs:
           KICAD_USE_REAL_PCBNEW: "1"
         run: |
           export PYTHONPATH="$KICAD_PYTHONPATH:$PYTHONPATH"
-          pytest tests/test_real_pcbnew_matrix.py -m "integration and real_pcbnew"
+          pytest tests/test_real_pcbnew_matrix.py tests/test_pymupdf_swig_iterator.py -m "integration and real_pcbnew"
 
   # Docker build test
   docker-build:
     name: Docker Build Test
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # slowest seen: under 1 min
 
     steps:
       - name: Checkout code
@@ -370,6 +399,9 @@ jobs:
   code-quality:
     name: Code Quality
     runs-on: ubuntu-latest
+    # Slowest seen: about 2 min. Extra headroom because a change to
+    # .pre-commit-config.yaml misses the hook cache and rebuilds every hook.
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
@@ -420,6 +452,7 @@ jobs:
   docs-check:
     name: Documentation Check
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # slowest seen: under 1 min
 
     steps:
       - name: Checkout code
@@ -442,9 +475,16 @@ jobs:
   # (ubuntu-22.04, 3.9)"), so requiring those directly would break the rule
   # whenever the matrix changes; this job succeeds only when every job above
   # did. docs/RELEASING.md describes the protection rules.
+  #
+  # A job that hits its timeout-minutes ends as "failure" (or "cancelled"),
+  # never "success", so the loop below fails this check for it. `if: always()`
+  # is what makes this job run at all after a failed or timed-out dependency;
+  # without it GitHub would skip it, and a skipped required check does not
+  # block the merge.
   ci-passed:
     name: CI passed
     if: always()
+    timeout-minutes: 5
     needs:
       - typescript-tests
       - python-tests
