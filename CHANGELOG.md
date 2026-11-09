@@ -236,6 +236,11 @@ All notable changes to the KiCAD MCP Server project are documented here.
   now appended to the DSN in the form KiCad writes the first (`keepout`,
   `wire_keepout` or `via_keepout` per the area's flags). Holes are still not
   exported, which keeps copper out rather than letting it in.
+- **Schematic text edits preserve line endings and are atomic.** Component,
+  label, and wire edits now avoid truncated files after an interrupted write
+  and avoid rewriting LF schematics as CRLF on Windows. Symbol injection also
+  finds `lib_symbols` boundaries correctly when quoted properties contain
+  unbalanced parentheses.
 
 - **`import_eagle_project` no longer replaces a schematic that is open in
   KiCad.** It writes `<output_dir>/<project_name>.kicad_sch` without checking

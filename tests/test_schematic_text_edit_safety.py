@@ -11,7 +11,7 @@ def test_symbol_injection_ignores_parentheses_in_quoted_values(tmp_path, monkeyp
     schematic = tmp_path / "quoted.kicad_sch"
     schematic.write_text(
         '(kicad_sch (version 20250114) (lib_symbols '
-        '(symbol "Existing" (property "Description" "Vin(fwd) 40V"))) '
+        '(symbol "Existing" (property "Description" "pin 1)")) '
         '(sheet_instances (path "/" (page "1"))))\n',
         encoding="utf-8",
     )
@@ -26,7 +26,11 @@ def test_symbol_injection_ignores_parentheses_in_quoted_values(tmp_path, monkeyp
     assert loader.inject_symbol_into_schematic(schematic, "Device", "R") is True
     parsed = sexpdata.loads(schematic.read_text(encoding="utf-8"))
     assert parsed[0] == sexpdata.Symbol("kicad_sch")
-    assert '(symbol "Device:R"' in schematic.read_text(encoding="utf-8")
+    lib_symbols = next(item for item in parsed if item[0] == sexpdata.Symbol("lib_symbols"))
+    assert any(
+        item[0] == sexpdata.Symbol("symbol") and item[1] == "Device:R"
+        for item in lib_symbols[1:]
+    )
 
 
 def test_repeated_label_edits_leave_a_parseable_schematic(tmp_path):

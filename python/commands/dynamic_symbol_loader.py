@@ -583,6 +583,7 @@ class DynamicSymbolLoader:
         Inject a symbol definition into a schematic's lib_symbols section.
         Uses text manipulation to preserve file formatting.
         """
+        schematic_path = Path(schematic_path)
         full_name = f"{library_name}:{symbol_name}"
 
         content, newline = read_text_preserve_newline(schematic_path)
@@ -628,7 +629,7 @@ class DynamicSymbolLoader:
     def _extract_paren_block(text: str, start: int) -> str:
         """Return the substring from text[start] up to and including the matching closing paren."""
         end = match_paren(text, start)
-        return text[start : end + 1] if end != -1 else text[start:]
+        return text[start : end + 1] if end >= 0 else text[start:]
 
     def _extract_lib_property_positions(
         self,
