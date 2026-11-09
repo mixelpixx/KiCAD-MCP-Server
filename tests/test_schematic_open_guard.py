@@ -358,6 +358,7 @@ _NOT_SCHEMATIC_WRITERS = {
             "add_layer",
             "add_mounting_hole",
             "add_zone",
+            "add_copper_keepout",
             "clear_board_outline",
             "delete_graphic",
             "import_svg_logo",

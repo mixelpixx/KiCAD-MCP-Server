@@ -567,6 +567,36 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
   );
 
   // ------------------------------------------------------
+  // Copper-fill keepout tool
+  // ------------------------------------------------------
+  server.tool(
+    "add_copper_keepout",
+    "Add a live KiCad rule area that excludes copper zone fill on the selected enabled copper layers. " +
+      "Tracks, vias, pads and footprints remain allowed. Requires an open PCB editor; save the board separately.",
+    {
+      boardPath: z.string().min(1).describe("Exact .kicad_pcb path open in the PCB editor"),
+      name: z.string().min(1).describe("Name shown for the rule area"),
+      layers: z
+        .array(z.string())
+        .min(1)
+        .describe("Exact enabled copper layers, for example F.Cu, In1.Cu, B.Cu"),
+      points: z
+        .array(z.object({ x: z.number().finite(), y: z.number().finite() }))
+        .min(3)
+        .describe("Simple polygon vertices in millimetres, without a repeated closing vertex"),
+    },
+    async ({ boardPath, name, layers, points }) => {
+      const result = await callKicadScript("add_copper_keepout", {
+        boardPath,
+        name,
+        layers,
+        points,
+      });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    },
+  );
+
+  // ------------------------------------------------------
   // Get Board Extents Tool
   // ------------------------------------------------------
   server.tool(

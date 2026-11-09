@@ -5,9 +5,9 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.8.3
-**Tools registered on the server:** 251
-**Tools indexed for keyword discovery:** 251 in 20 categories
-**Last updated:** 2026-11-06
+**Tools registered on the server:** 252
+**Tools indexed for keyword discovery:** 252 in 20 categories
+**Last updated:** 2026-11-09
 
 ## How to read this document
 
@@ -52,7 +52,7 @@ _Source: `src/tools/project.ts`_
 
 ---
 
-## Board Management (21 tools)
+## Board Management (22 tools)
 
 _Source: `src/tools/board.ts`_
 
@@ -76,6 +76,7 @@ _Source: `src/tools/board.ts`_
 | `add_mounting_hole`     | Add mounting hole with optional pad                                                                                                 | `board`   |
 | `add_board_text`        | Add text annotation to board                                                                                                        | `board`   |
 | `add_zone`              | Add copper zone/pour with clearance settings                                                                                        | `board`   |
+| `add_copper_keepout`    | Add a live KiCad rule area that excludes copper zone fill on the selected enabled copper layers.                                    | `board`   |
 | `get_board_extents`     | Get bounding box of board                                                                                                           | `board`   |
 | `get_board_2d_view`     | Render 2D board view (PNG/JPG/SVG)                                                                                                  | `board`   |
 | `import_svg_logo`       | Import SVG file as polygons on silkscreen layer                                                                                     | `board`   |
@@ -521,7 +522,7 @@ _Source: `src/tools/toolboxes.ts`_
 | Source file              | Section                                | Tools   |
 | ------------------------ | -------------------------------------- | ------- |
 | `project.ts`             | Project and Board Files                | 12      |
-| `board.ts`               | Board Management                       | 21      |
+| `board.ts`               | Board Management                       | 22      |
 | `component.ts`           | Component Management                   | 28      |
 | `routing.ts`             | Routing                                | 19      |
 | `design-rules.ts`        | Design Rules and DRC                   | 7       |
@@ -546,15 +547,15 @@ _Source: `src/tools/toolboxes.ts`_
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
 | `gui-driver.ts`          | gui-driver.ts                          | 11      |
 | `toolboxes.ts`           | toolboxes.ts                           | 3       |
-| **Total**                |                                        | **251** |
+| **Total**                |                                        | **252** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 251 of the 251 registered tools.
+These are the categories `search_tools` searches. They cover 252 of the 252 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
-| `board`                    | 17            |
+| `board`                    | 18            |
 | `component`                | 24            |
 | `export`                   | 27            |
 | `drc`                      | 8             |
@@ -574,6 +575,6 @@ These are the categories `search_tools` searches. They cover 251 of the 251 regi
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
 | `gui-driver`               | 11            |
-| **Indexed total**          | **251**       |
+| **Indexed total**          | **252**       |
 | Registered but not indexed | 0             |
-| **Registered total**       | **251**       |
+| **Registered total**       | **252**       |

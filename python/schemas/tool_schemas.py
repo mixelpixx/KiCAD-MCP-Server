@@ -1929,6 +1929,36 @@ ROUTING_TOOLS = [
         },
     },
     {
+        "name": "add_copper_keepout",
+        "title": "Add Copper Keepout",
+        "description": "Creates a live rule area that prevents copper zone fill while allowing tracks, vias, pads and footprints.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "boardPath": {"type": "string", "minLength": 1},
+                "name": {"type": "string", "minLength": 1},
+                "layers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                },
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "x": {"type": "number"},
+                            "y": {"type": "number"},
+                        },
+                        "required": ["x", "y"],
+                    },
+                    "minItems": 3,
+                },
+            },
+            "required": ["boardPath", "name", "layers", "points"],
+        },
+    },
+    {
         "name": "add_copper_pour",
         "title": "Add Copper Pour",
         "description": "Creates a copper pour/zone (typically for ground or power planes).",

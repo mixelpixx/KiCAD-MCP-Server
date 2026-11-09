@@ -390,7 +390,7 @@ Modify an existing trace (change width, layer, or net).
 
 ---
 
-## Copper Zones (2 tools)
+## Copper Zones (3 tools)
 
 ### add_copper_pour
 
@@ -428,6 +428,30 @@ Add a copper pour (ground/power plane) to the PCB.
   ]
 }
 ```
+
+---
+
+### add_copper_keepout
+
+Add a rule area that keeps copper zone fills out of a polygon. Tracks, vias, pads and footprints remain allowed, so this can clear the planes beneath a PCB antenna without blocking its traces.
+
+The named board must be open in KiCad with IPC enabled. The tool validates every requested copper layer against that board, creates the rule area in one undo transaction, reads back its ID, layers, outline and flags, then refills zones. Save the board separately. An `applied_not_refilled` or `applied_readback_mismatch` result means the rule area was created but needs inspection before relying on it.
+
+```json
+{
+  "boardPath": "/path/to/board.kicad_pcb",
+  "name": "Antenna plane clearance",
+  "layers": ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"],
+  "points": [
+    { "x": 10, "y": 10 },
+    { "x": 50, "y": 10 },
+    { "x": 50, "y": 40 },
+    { "x": 10, "y": 40 }
+  ]
+}
+```
+
+The tool does not validate a Freerouting export/import round trip; check that separately if the board will be autorouted.
 
 ---
 
