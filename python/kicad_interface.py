@@ -1330,6 +1330,10 @@ class KiCADInterface(SchematicHandlersMixin):
         # setter for it, so the command edits the file and the handler above
         # reloads before this auto-save runs.
         "set_stackup_layer",
+        # modify_trace mutates track.SetWidth()/SetLayer()/SetNet() on the
+        # in-memory SWIG board but has no save of its own; without this entry
+        # it reported success and wrote nothing to disk, identical to #222.
+        "modify_trace",
         "place_component",
         "move_component",
         "rotate_component",
