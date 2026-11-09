@@ -1147,6 +1147,29 @@ The script will:
 - Generate configuration
 - Run diagnostics
 
+**Using a uv virtual environment (optional):**
+
+To keep the server's Python packages out of KiCAD's own install, let
+[uv](https://docs.astral.sh/uv/) manage a project-local `.venv`:
+
+```powershell
+.\setup-windows.ps1 -UseUv -ClientType claude-code
+```
+
+or by hand:
+
+```powershell
+uv venv .venv --python "C:\Program Files\KiCad\10.0\bin\python.exe" --system-site-packages
+uv sync            # add --no-dev to skip pytest/black/mypy etc.
+```
+
+The venv must be built from KiCAD's bundled Python with
+`--system-site-packages`: `pcbnew` ships only with KiCAD and is compiled for
+that interpreter. The server uses `.venv` automatically when it exists, so do
+not set `PYTHONPATH` or `KICAD_PYTHON` in your MCP config. A `PYTHONPATH` would
+put KiCAD's bundled Pillow/requests ahead of the versions pinned in `uv.lock`.
+Re-run the setup script (it recreates `.venv`) after upgrading KiCAD.
+
 **Manual Setup:**
 See [Platform Guide](docs/PLATFORM_GUIDE.md) for detailed instructions, and
 [Windows Troubleshooting](docs/WINDOWS_TROUBLESHOOTING.md) if setup fails.
@@ -1419,7 +1442,13 @@ claude mcp add --scope user kicad \
   -- node /path/to/KiCAD-MCP-Server/dist/index.js
 ```
 
-With `--scope user` the server is available in every project; use `--scope project` to write a shareable `.mcp.json` instead. On macOS, `setup-macos.sh` prints this command with the detected paths filled in.
+With `--scope user` the server is available in every project; use `--scope project` to write a shareable `.mcp.json` instead. On macOS, `setup-macos.sh` prints this command with the detected paths filled in; on Windows, `.\setup-windows.ps1 -ClientType claude-code` does the same.
+
+If the repository has a `.venv` (see the uv instructions under Windows setup), leave out `KICAD_PYTHON` and `PYTHONPATH`:
+
+```powershell
+claude mcp add --scope user kicad --env LOG_LEVEL=info -- node D:\path\to\KiCAD-MCP-Server\dist\index.js
+```
 
 Verify with `claude mcp list` — the server should report ✔ Connected.
 

@@ -16,8 +16,14 @@
     Skip the npm build step (useful if already built)
 
 .PARAMETER ClientType
-    Type of MCP client to configure: 'claude-desktop', 'cline', or 'manual'
+    Type of MCP client to configure: 'claude-desktop', 'claude-code', 'cline', or 'manual'
     Default: 'claude-desktop'
+
+.PARAMETER UseUv
+    Install Python dependencies into a project-local uv virtual environment
+    (.venv) instead of KiCAD's own Python. The venv is created from KiCAD's
+    bundled Python with --system-site-packages so pcbnew stays importable, and
+    the server picks it up automatically. Requires uv (https://docs.astral.sh/uv/).
 
 .EXAMPLE
     .\setup-windows.ps1
@@ -30,11 +36,16 @@
 .EXAMPLE
     .\setup-windows.ps1 -SkipBuild
     Run setup without rebuilding the project
+
+.EXAMPLE
+    .\setup-windows.ps1 -UseUv -ClientType claude-code
+    Install Python dependencies into a uv venv and print the Claude Code command
 #>
 
 param(
     [switch]$SkipBuild,
-    [ValidateSet('claude-desktop', 'cline', 'manual')]
+    [switch]$UseUv,
+    [ValidateSet('claude-desktop', 'claude-code', 'cline', 'manual')]
     [string]$ClientType = 'claude-desktop'
 )
 
@@ -291,7 +302,45 @@ if ($script:Results.NodeFound) {
 
 Write-Step "Step 6: Installing Python Dependencies"
 
-if ($kicad) {
+$venvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
+
+if ($kicad -and $UseUv) {
+    if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+        Write-Error-Custom "uv not found on PATH"
+        Write-Warning-Custom "Install it from https://docs.astral.sh/uv/getting-started/installation/ or rerun without -UseUv"
+        $script:Results.Errors += "uv not found"
+    } else {
+        Write-Info "Creating .venv from KiCAD's Python (with system site-packages for pcbnew)..."
+        Push-Location $ProjectRoot
+        try {
+            # --clear: rebuild so the venv always tracks the KiCAD install detected above.
+            & uv venv .venv --clear --python $kicad.PythonExe --system-site-packages 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error-Custom "uv venv failed"
+                $script:Results.Errors += "uv venv failed"
+            } else {
+                Write-Info "Installing Python packages with uv sync..."
+                & uv sync --no-dev 2>&1 | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Error-Custom "uv sync failed"
+                    $script:Results.Errors += "uv sync failed"
+                } else {
+                    $venvCheck = & $venvPython -c "import pcbnew; print('SUCCESS')" 2>&1
+                    if ($venvCheck -match "SUCCESS") {
+                        Write-Success "Python dependencies installed into .venv (pcbnew importable)"
+                        $script:Results.DependenciesInstalled = $true
+                    } else {
+                        Write-Error-Custom "pcbnew cannot be imported from .venv"
+                        Write-Warning-Custom "Error: $venvCheck"
+                        $script:Results.Errors += "pcbnew import from .venv failed"
+                    }
+                }
+            }
+        } finally {
+            Pop-Location
+        }
+    }
+} elseif ($kicad) {
     Write-Info "Installing Python packages..."
     Push-Location $ProjectRoot
     try {
@@ -353,15 +402,19 @@ if ($kicad -and $script:Results.ProjectBuilt) {
     $pythonExeEscaped = $kicad.PythonExe -replace '\\', '\\'
     $pythonLibEscaped = $kicad.PythonLib -replace '\\', '\\'
 
+    # With a uv venv the server finds .venv\Scripts\python.exe on its own, and a
+    # PYTHONPATH would shadow the venv's packages with KiCAD's bundled copies.
+    $pythonEnvLines = if ($UseUv) { "" } else {
+        "`n        `"PYTHONPATH`": `"$pythonLibEscaped`",`n        `"KICAD_PYTHON`": `"$pythonExeEscaped`","
+    }
+
     $config = @"
 {
   "mcpServers": {
     "kicad": {
       "command": "node",
       "args": ["$distPathEscaped"],
-      "env": {
-        "PYTHONPATH": "$pythonLibEscaped",
-        "KICAD_PYTHON": "$pythonExeEscaped",
+      "env": {$pythonEnvLines
         "NODE_ENV": "production",
         "LOG_LEVEL": "info"
       }
@@ -369,6 +422,12 @@ if ($kicad -and $script:Results.ProjectBuilt) {
   }
 }
 "@
+
+    $claudeCodeCommand = if ($UseUv) {
+        "claude mcp add --scope user kicad --env LOG_LEVEL=info -- node `"$distPath`""
+    } else {
+        "claude mcp add --scope user kicad --env KICAD_PYTHON=`"$($kicad.PythonExe)`" --env PYTHONPATH=`"$($kicad.PythonLib)`" --env LOG_LEVEL=info -- node `"$distPath`""
+    }
 
     $configPath = Join-Path $ProjectRoot "windows-mcp-config.json"
     $config | Out-File -FilePath $configPath -Encoding UTF8
@@ -388,6 +447,11 @@ if ($kicad -and $script:Results.ProjectBuilt) {
         Write-Host "`n2. Copy the contents from:" -ForegroundColor Yellow
         Write-Host "   $configPath" -ForegroundColor White
         Write-Host "`n3. Restart Claude Desktop" -ForegroundColor Yellow
+    } elseif ($ClientType -eq 'claude-code') {
+        Write-Host "`n1. Register the server with Claude Code:" -ForegroundColor Yellow
+        Write-Host "   $claudeCodeCommand" -ForegroundColor White
+        Write-Host "`n2. Verify with: claude mcp list" -ForegroundColor Yellow
+        Write-Host "`n3. Start a new Claude Code session" -ForegroundColor Yellow
     } elseif ($ClientType -eq 'cline') {
         $clineConfigPath = "$env:APPDATA\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json"
         Write-Host "`n1. Open Cline configuration:" -ForegroundColor Yellow
@@ -410,8 +474,10 @@ Write-Step "Step 9: Running Diagnostic Test"
 if ($kicad -and $script:Results.ProjectBuilt) {
     Write-Info "Testing server startup..."
 
-    $env:PYTHONPATH = $kicad.PythonLib
-    $env:KICAD_PYTHON = $kicad.PythonExe
+    if (-not $UseUv) {
+        $env:PYTHONPATH = $kicad.PythonLib
+        $env:KICAD_PYTHON = $kicad.PythonExe
+    }
     $distPath = Join-Path $ProjectRoot "dist\index.js"
 
     # Start the server process
@@ -496,7 +562,7 @@ if ($isSuccess) {
     Write-Host "" -ForegroundColor Green
     Write-Host "  Next steps:" -ForegroundColor Green
     Write-Host "  1. Copy the generated config to your MCP client" -ForegroundColor Green
-    Write-Host "  2. Restart your MCP client (Claude Desktop/Cline)" -ForegroundColor Green
+    Write-Host "  2. Restart your MCP client (Claude Desktop/Claude Code/Cline)" -ForegroundColor Green
     Write-Host "  3. Try: 'Create a new KiCAD project'" -ForegroundColor Green
     Write-Host "============================================================" -ForegroundColor Green
 } else {

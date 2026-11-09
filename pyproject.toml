@@ -2,6 +2,45 @@
 name = "kicad-mcp-server"
 version = "2.4.0"
 requires-python = ">=3.9"
+# Keep in sync with requirements.txt (still used by pip-based setup and CI).
+# pcbnew is not listed: it ships only with KiCad, so a uv venv must be created
+# from KiCad's bundled Python with --system-site-packages to see it.
+dependencies = [
+    "kicad-python>=0.5.0",
+    "sexpdata>=1.0.2",
+    "kicad-skip>=0.1.0",
+    "Pillow>=9.0.0",
+    "pymupdf>=1.24",
+    "cairosvg>=2.7.0",
+    "colorlog>=6.7.0",
+    "pydantic>=2.5.0",
+    "requests>=2.32.5",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+# Keep in sync with requirements-dev.txt.
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.11.0",
+    "black>=23.7.0",
+    "mypy>=1.5.0",
+    "pylint>=2.17.0",
+    "flake8>=6.1.0",
+    "isort>=5.12.0",
+    "types-requests>=2.31.0",
+    "types-Pillow>=10.0.0",
+    "pre-commit>=3.3.0",
+    "ipython>=8.14.0",
+    "ipdb>=0.13.13",
+]
+
+[tool.uv]
+# The Python side is a script tree run by the Node server, not an installable
+# package; uv only manages its environment.
+package = false
 
 [tool.black]
 line-length = 100

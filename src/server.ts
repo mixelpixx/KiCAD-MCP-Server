@@ -7,7 +7,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import express from "express";
 import { spawn, exec, execSync, ChildProcess } from "child_process";
 import { existsSync, readdirSync } from "fs";
-import { join, dirname } from "path";
+import { join, dirname, isAbsolute } from "path";
 import { logger } from "./logger.js";
 import { computeCommandTimeout, DEFAULT_COMMAND_TIMEOUT_MS } from "./command-timeout.js";
 
@@ -109,6 +109,16 @@ function deriveKiCadSitePackages(pythonExe: string): string | undefined {
     join(versionDir, "lib", "python3", "dist-packages"),
   ];
   return candidates.find((p) => existsSync(p));
+}
+
+/**
+ * True when pythonExe belongs to a virtual environment (venv / uv venv), i.e.
+ * `<env>/Scripts/python.exe` or `<env>/bin/python` next to a `pyvenv.cfg`.
+ * Such an environment resolves its own packages (and pcbnew, when created from
+ * KiCad's Python with --system-site-packages), so no PYTHONPATH is injected.
+ */
+function isVirtualEnvPython(pythonExe: string): boolean {
+  return isAbsolute(pythonExe) && existsSync(join(dirname(dirname(pythonExe)), "pyvenv.cfg"));
 }
 
 /**
@@ -609,18 +619,25 @@ export class KiCADMcpServer {
       }
       // PYTHONPATH precedence: explicit env override → site-packages derived
       // from the detected KiCAD python (any version / install location) →
-      // legacy 9.0 fallback as a last resort.
-      const derivedSitePackages = deriveKiCadSitePackages(pythonExe);
-      if (derivedSitePackages && !process.env.PYTHONPATH) {
+      // legacy 9.0 fallback as a last resort. A virtual environment gets no
+      // injected PYTHONPATH: it would precede the venv's site-packages and
+      // shadow its pinned packages with KiCad's bundled copies.
+      const usingVenv = isVirtualEnvPython(pythonExe);
+      const derivedSitePackages = usingVenv ? undefined : deriveKiCadSitePackages(pythonExe);
+      if (usingVenv && !process.env.PYTHONPATH) {
+        logger.info("Using virtual environment packages (no PYTHONPATH injected)");
+      } else if (derivedSitePackages && !process.env.PYTHONPATH) {
         logger.info(`Using KiCAD site-packages: ${derivedSitePackages}`);
       }
+      const pythonPath =
+        process.env.PYTHONPATH ||
+        (usingVenv
+          ? undefined
+          : derivedSitePackages || "C:/Program Files/KiCad/9.0/lib/python3/dist-packages");
       this.pythonExecutable = pythonExe;
       this.pythonEnv = {
         ...process.env,
-        PYTHONPATH:
-          process.env.PYTHONPATH ||
-          derivedSitePackages ||
-          "C:/Program Files/KiCad/9.0/lib/python3/dist-packages",
+        ...(pythonPath ? { PYTHONPATH: pythonPath } : {}),
       };
 
       this.spawnPythonProcess();
