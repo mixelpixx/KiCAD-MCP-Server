@@ -1289,6 +1289,108 @@ class IPCBoardAPI(BoardAPI):
             logger.error(f"Failed to add arc track: {e}")
             return False
 
+    def modify_track(
+        self,
+        uuid: str,
+        width: Optional[float] = None,
+        layer: Optional[str] = None,
+        net_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Modify an existing track's width/layer/net in place (live UI update).
+
+        Unlike add_track's ``layer_map.get(layer, BL_F_Cu)``, an unrecognized
+        layer or net name here is a reported error, not a silent fallback —
+        modify_trace already shipped once reporting success while writing
+        nothing (#515, SWIG side); silently applying a different layer/net
+        than the one named is the same failure shape with a different cause.
+        """
+        try:
+            from kipy.proto.board.board_types_pb2 import BoardLayer
+            from kipy.util.units import from_mm
+
+            board = self._get_board()
+
+            track = None
+            for candidate in board.get_tracks():
+                if hasattr(candidate, "id") and str(candidate.id) == uuid:
+                    track = candidate
+                    break
+
+            if track is None:
+                return {
+                    "success": False,
+                    "message": "Track not found",
+                    "errorDetails": f"No live track with uuid '{uuid}'",
+                }
+
+            modifications = []
+
+            if width is not None:
+                track.width = from_mm(width)
+                modifications.append(f"width={width}mm")
+
+            if layer is not None:
+                layer_map = {
+                    "F.Cu": BoardLayer.BL_F_Cu,
+                    "B.Cu": BoardLayer.BL_B_Cu,
+                    "In1.Cu": BoardLayer.BL_In1_Cu,
+                    "In2.Cu": BoardLayer.BL_In2_Cu,
+                }
+                if layer not in layer_map:
+                    return {
+                        "success": False,
+                        "message": "Invalid layer",
+                        "errorDetails": f"Layer '{layer}' not recognized over IPC "
+                        f"(supported: {sorted(layer_map)})",
+                    }
+                track.layer = layer_map[layer]
+                modifications.append(f"layer={layer}")
+
+            if net_name is not None:
+                target_net = None
+                for net in board.get_nets():
+                    if net.name == net_name:
+                        target_net = net
+                        break
+                if target_net is None:
+                    return {
+                        "success": False,
+                        "message": "Invalid net",
+                        "errorDetails": f"Net '{net_name}' not found",
+                    }
+                track.net = target_net
+                modifications.append(f"net={net_name}")
+
+            if not modifications:
+                return {
+                    "success": False,
+                    "message": "No modifications specified",
+                    "errorDetails": "Provide at least one of: width, layer, net",
+                }
+
+            commit = board.begin_commit()
+            board.update_items([track])
+            board.push_commit(commit, "Modified track")
+
+            self._notify(
+                "track_modified",
+                {"uuid": uuid, "width": width, "layer": layer, "net": net_name},
+            )
+
+            return {
+                "success": True,
+                "message": f"Modified trace: {', '.join(modifications)}",
+                "uuid": uuid,
+                "modifications": modifications,
+            }
+        except Exception as e:
+            logger.error(f"Failed to modify track: {e}")
+            return {
+                "success": False,
+                "message": "Failed to modify trace",
+                "errorDetails": str(e),
+            }
+
     def add_via(
         self,
         x: float,

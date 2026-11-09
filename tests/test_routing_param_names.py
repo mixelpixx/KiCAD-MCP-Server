@@ -98,6 +98,15 @@ def test_modify_trace_is_a_board_mutating_command():
     assert "modify_trace" in KiCADInterface._BOARD_MUTATING_COMMANDS
 
 
+def test_modify_trace_is_ipc_capable():
+    """Without this, modify_trace always ran headless (SWIG), so a KiCad
+    window already open on the board wouldn't show the change until
+    File -> Revert, unlike route_trace/add_via."""
+    from kicad_interface import KiCADInterface
+
+    assert KiCADInterface.IPC_CAPABLE_COMMANDS.get("modify_trace") == "_ipc_modify_trace"
+
+
 # --- add_net ----------------------------------------------------------------
 
 
