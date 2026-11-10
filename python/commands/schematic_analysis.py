@@ -867,6 +867,51 @@ def find_wires_crossing_symbols(schematic_path: Path) -> List[Dict[str, Any]]:
     return collisions
 
 
+def _at_point(item: list) -> Optional[Tuple[int, int]]:
+    for sub in item:
+        if isinstance(sub, list) and len(sub) >= 3 and sub[0] == Symbol("at"):
+            return _to_iu(float(sub[1]), float(sub[2]))
+    return None
+
+
+def _hierarchy_anchor_points(sexp_data: list) -> Set[Tuple[int, int]]:
+    """Points of hierarchical labels and of sheet pins (on (sheet ...) symbols)."""
+    points: Set[Tuple[int, int]] = set()
+    for item in sexp_data:
+        if not isinstance(item, list) or not item:
+            continue
+        if item[0] == Symbol("hierarchical_label"):
+            pt = _at_point(item)
+            if pt:
+                points.add(pt)
+        elif item[0] == Symbol("sheet"):
+            for sub in item:
+                if isinstance(sub, list) and sub and sub[0] == Symbol("pin"):
+                    pt = _at_point(sub)
+                    if pt:
+                        points.add(pt)
+    return points
+
+
+def _junction_points(sexp_data: list) -> Set[Tuple[int, int]]:
+    points: Set[Tuple[int, int]] = set()
+    for item in sexp_data:
+        if isinstance(item, list) and item and item[0] == Symbol("junction"):
+            pt = _at_point(item)
+            if pt:
+                points.add(pt)
+    return points
+
+
+def _iu_strictly_inside(p: Tuple[int, int], seg: Tuple[Tuple[int, int], Tuple[int, int]]) -> bool:
+    (x1, y1), (x2, y2) = seg
+    if p in ((x1, y1), (x2, y2)):
+        return False
+    if (x2 - x1) * (p[1] - y1) != (y2 - y1) * (p[0] - x1):
+        return False
+    return min(x1, x2) <= p[0] <= max(x1, x2) and min(y1, y2) <= p[1] <= max(y1, y2)
+
+
 def find_orphaned_wires(schematic_path: Path) -> Dict[str, Any]:
     """
     Find wire segments with at least one dangling endpoint.
@@ -875,7 +920,8 @@ def find_orphaned_wires(schematic_path: Path) -> Dict[str, Any]:
     all three conditions simultaneously:
       1. No other wire shares that IU endpoint (would imply a junction / T-join)
       2. No component pin is at that IU point
-      3. No net label or power symbol pin is at that IU point
+      3. No net label, power symbol pin, hierarchical label or sheet pin is at
+         that IU point, and it is not a junction on another wire's interior
 
     Uses exact KiCad IU matching (10 000 IU/mm) — same strategy as
     wire_connectivity.py — to avoid floating-point tolerance issues.
@@ -947,7 +993,15 @@ def find_orphaned_wires(schematic_path: Path) -> Dict[str, Any]:
         except Exception as e:
             logger.warning(f"Could not extract power symbol anchors: {e}")
 
-    anchored_iu = pin_iu | label_iu | power_iu
+    # --- anchors: hierarchical labels, sheet pins, junctions ---
+    # A wire to a hierarchical label (child sheet) or to a sheet pin (parent
+    # sheet) is how a net crosses the hierarchy. Leaving them out reported
+    # every such wire as orphaned, so pruning "orphans" on a real hierarchical
+    # design deleted live wires back through whole nets.
+    hier_iu = _hierarchy_anchor_points(sexp_data)
+    junction_iu = _junction_points(sexp_data)
+
+    anchored_iu = pin_iu | label_iu | power_iu | hier_iu
 
     # --- classify each wire ---
     orphaned: List[Dict[str, Any]] = []
@@ -959,6 +1013,10 @@ def find_orphaned_wires(schematic_path: Path) -> Dict[str, Any]:
                 continue  # shared with another wire → connected
             if pt_iu in anchored_iu:
                 continue  # touches a pin or label → connected
+            if pt_iu in junction_iu and any(
+                _iu_strictly_inside(pt_iu, seg) for j, seg in enumerate(wires_iu) if j != i
+            ):
+                continue  # ends on another wire's interior at a junction (unsplit T)
             dangling_ends.append({"x": pt_mm[0], "y": pt_mm[1]})
         if dangling_ends:
             orphaned.append(
