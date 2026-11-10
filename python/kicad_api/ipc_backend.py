@@ -1312,7 +1312,9 @@ class IPCBoardAPI(BoardAPI):
 
             track = None
             for candidate in board.get_tracks():
-                if hasattr(candidate, "id") and str(candidate.id) == uuid:
+                # track.id is a KIID message; str() gives protobuf text
+                # format ('value: "..."\n'), so compare the value field.
+                if candidate.id.value == uuid:
                     track = candidate
                     break
 
@@ -1330,20 +1332,17 @@ class IPCBoardAPI(BoardAPI):
                 modifications.append(f"width={width}mm")
 
             if layer is not None:
-                layer_map = {
-                    "F.Cu": BoardLayer.BL_F_Cu,
-                    "B.Cu": BoardLayer.BL_B_Cu,
-                    "In1.Cu": BoardLayer.BL_In1_Cu,
-                    "In2.Cu": BoardLayer.BL_In2_Cu,
-                }
-                if layer not in layer_map:
+                # kipy enum names follow KiCad's canonical layer names
+                # (In3.Cu -> BL_In3_Cu), which covers all 32 copper layers.
+                enum_name = "BL_" + layer.replace(".", "_")
+                if not layer.endswith(".Cu") or enum_name not in BoardLayer.keys():
                     return {
                         "success": False,
                         "message": "Invalid layer",
-                        "errorDetails": f"Layer '{layer}' not recognized over IPC "
-                        f"(supported: {sorted(layer_map)})",
+                        "errorDetails": f"'{layer}' is not a copper layer name "
+                        "(expected F.Cu, B.Cu or In1.Cu..In30.Cu)",
                     }
-                track.layer = layer_map[layer]
+                track.layer = BoardLayer.Value(enum_name)
                 modifications.append(f"layer={layer}")
 
             if net_name is not None:
@@ -1522,7 +1521,7 @@ class IPCBoardAPI(BoardAPI):
                             "width": to_mm(track.width),
                             "layer": str(track.layer),
                             "net": track.net.name if track.net else "",
-                            "id": str(track.id) if hasattr(track, "id") else "",
+                            "id": track.id.value,
                         }
                     )
                 except Exception as e:
