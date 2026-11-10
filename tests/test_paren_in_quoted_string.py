@@ -175,6 +175,34 @@ def test_paren_delta_ignores_quoted_parens() -> None:
     assert paren_delta(")") == -1
 
 
+@pytest.mark.unit
+def test_kicad_dru_loads_without_sexpdata() -> None:
+    """``utils.kicad_dru`` runs under KiCad's own Python, which has no sexpdata.
+
+    It reaches ``match_paren`` through ``utils.paren_match``, which must stay
+    free of third-party imports; routing it through ``utils.sexpr_format``
+    broke ``tests/test_add_layer.py::test_inner_layers_actually_reach_the_file``
+    wherever KiCad 10 is installed.
+    """
+    import subprocess
+
+    python_root = str(Path(__file__).parent.parent / "python")
+    probe = (
+        "import sys; sys.modules['sexpdata'] = None; "
+        "sys.path.insert(0, sys.argv[1]); "
+        "import utils.paren_match, utils.kicad_dru; "
+        "print(utils.kicad_dru.match_paren('(a \"b(\" c)', 0))"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", probe, python_root],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert proc.stdout.strip() == "9"
+
+
 # --------------------------------------------------------------------------- #
 #  Symbol loader: the STM32 failure seen in the module-controller benchmark
 # --------------------------------------------------------------------------- #
