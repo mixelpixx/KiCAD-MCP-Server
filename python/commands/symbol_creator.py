@@ -17,7 +17,11 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from commands.library_tables import global_table_path, no_global_table_message
+from commands.library_tables import (
+    global_table_path,
+    no_global_table_message,
+    project_library_uri,
+)
 from utils.sexpr_format import escape_sexpr_string, paren_delta
 
 logger = logging.getLogger("kicad_interface")
@@ -292,6 +296,8 @@ class SymbolCreator:
             else:
                 table_dir = sym_path.parent
             table_path = table_dir / "sym-lib-table"
+            # Portable like KiCad's own entries: ${KIPRJMOD}/... when inside the project.
+            uri = project_library_uri(sym_path, table_dir)
         else:
             # The newest KiCad's own table (#425): only 9.0 used to be searched,
             # and with none there a 9.0 table was created, which KiCad 10 never
@@ -313,7 +319,8 @@ class SymbolCreator:
         else:
             content = "(sym_lib_table\n  (version 7)\n)\n"
 
-        if f'(name "{name}")' in content or uri in content:
+        absolute_uri = str(sym_path).replace("\\", "/")
+        if f'(name "{name}")' in content or uri in content or absolute_uri in content:
             return {
                 "success": True,
                 "already_registered": True,
