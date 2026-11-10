@@ -1298,6 +1298,9 @@ class IPCBoardAPI(BoardAPI):
     ) -> Dict[str, Any]:
         """Modify an existing track's width/layer/net in place (live UI update).
 
+        A via UUID works too, as on the SWIG path where board.Tracks()
+        includes vias: width sets the via diameter and net reassigns it.
+
         Unlike add_track's ``layer_map.get(layer, BL_F_Cu)``, an unrecognized
         layer or net name here is a reported error, not a silent fallback —
         modify_trace already shipped once reporting success while writing
@@ -1305,13 +1308,14 @@ class IPCBoardAPI(BoardAPI):
         than the one named is the same failure shape with a different cause.
         """
         try:
+            from kipy.board_types import Via
             from kipy.proto.board.board_types_pb2 import BoardLayer
             from kipy.util.units import from_mm
 
             board = self._get_board()
 
             track = None
-            for candidate in board.get_tracks():
+            for candidate in [*board.get_tracks(), *board.get_vias()]:
                 # track.id is a KIID message; str() gives protobuf text
                 # format ('value: "..."\n'), so compare the value field.
                 if candidate.id.value == uuid:
@@ -1322,16 +1326,28 @@ class IPCBoardAPI(BoardAPI):
                 return {
                     "success": False,
                     "message": "Track not found",
-                    "errorDetails": f"No live track with uuid '{uuid}'",
+                    "errorDetails": f"No live track or via with uuid '{uuid}'",
                 }
 
+            is_via = isinstance(track, Via)
             modifications = []
 
             if width is not None:
-                track.width = from_mm(width)
+                if is_via:
+                    # Same as SetWidth() on a SWIG via. kipy also resets
+                    # the padstack to PST_NORMAL when it sets the diameter.
+                    track.diameter = from_mm(width)
+                else:
+                    track.width = from_mm(width)
                 modifications.append(f"width={width}mm")
 
             if layer is not None:
+                if is_via:
+                    return {
+                        "success": False,
+                        "message": "Invalid layer",
+                        "errorDetails": "A via spans layers; 'layer' applies to traces only",
+                    }
                 # kipy enum names follow KiCad's canonical layer names
                 # (In3.Cu -> BL_In3_Cu), which covers all 32 copper layers.
                 enum_name = "BL_" + layer.replace(".", "_")
@@ -1552,7 +1568,7 @@ class IPCBoardAPI(BoardAPI):
                             "drill": to_mm(via.drill_diameter),
                             "net": via.net.name if via.net else "",
                             "type": str(via.type),
-                            "id": str(via.id) if hasattr(via, "id") else "",
+                            "id": via.id.value,
                         }
                     )
                 except Exception as e:
