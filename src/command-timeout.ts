@@ -31,6 +31,17 @@ export const LONG_RUNNING_COMMANDS = [
   "export_pdf",
   "export_3d",
   "sync_schematic_to_board",
+  // Runs sync_schematic_to_board on a fresh board.
+  "create_board_from_schematic",
+  "run_erc",
+  // Batch schematic edits parse every symbol library they place from; one
+  // STM32 symbol from MCU_ST_STM32G0 took longer than the 30 s default, and a
+  // batch abandoned mid-write left a .kicad_sch that no longer loaded.
+  "batch_add_components",
+  "batch_connect",
+  "batch_add_and_connect",
+  "batch_add_no_connects",
+  "batch_edit_schematic_components",
   "list_schematic_nets",
   "list_schematic_labels",
   "get_schematic_view",
@@ -72,7 +83,18 @@ export const JLCPCB_DOWNLOAD_TIMEOUT_MS = 3_600_000;
  * default fired at 30 s while Freerouting was still working, so the tool
  * reported failure even though a valid .ses had been written.
  */
-export function computeCommandTimeout(command: string, params?: unknown): number {
+export function computeCommandTimeout(
+  command: string,
+  params?: unknown,
+  env: Record<string, string | undefined> = process.env,
+): number {
+  // KICAD_MCP_COMMAND_TIMEOUT_MS raises the floor for every command, for
+  // slow machines or very large designs. It never shortens a timeout.
+  const floor = toPositiveNumber(env.KICAD_MCP_COMMAND_TIMEOUT_MS) ?? 0;
+  return Math.max(policyTimeout(command, params), floor);
+}
+
+function policyTimeout(command: string, params?: unknown): number {
   if (command === "autoroute") {
     const p = (params ?? {}) as Record<string, unknown>;
 

@@ -182,11 +182,29 @@ def _find_project_root(start_dir: Path) -> Path:
     return start_dir
 
 
+# Outward direction of a pin by its label orientation, in sheet coordinates (y down).
+_OUTWARD = {0: (1, 0), 90: (0, -1), 180: (-1, 0), 270: (0, 1)}
+
+
+def _straight_ahead(position, orientation, target, tol=0.01):
+    """True when *target* lies on the pin's outward axis, in front of the pin."""
+    d = _OUTWARD.get(int(round(orientation / 90) * 90) % 360)
+    if d is None:
+        return False
+    dx, dy = float(target[0]) - float(position[0]), float(target[1]) - float(position[1])
+    along = dx * d[0] + dy * d[1]
+    across = abs(dx * d[1] - dy * d[0])
+    return along > tol and across <= tol
+
+
 def _find_facing_label(sch_path, net_name, position, orientation, proximity_mm=14.0):
     """Return [x, y] of an existing label for *net_name* that faces *position*, else None.
 
-    "Facing" = within proximity_mm and oriented 180° opposite, so a single wire between
-    the two pins is cleaner than two overlapping labels.
+    "Facing" = within proximity_mm, oriented 180° opposite, and straight out in front
+    of the pin on its own axis, so a single wire between the two pins is cleaner than
+    two overlapping labels. A label off that axis is not facing: joining it would draw
+    a diagonal wire, which no schematic is drawn with (and a label behind the pin would
+    send the wire back across the symbol body).
     """
     try:
         content = sch_path.read_text(encoding="utf-8")
@@ -199,7 +217,7 @@ def _find_facing_label(sch_path, net_name, position, orientation, proximity_mm=1
             lx, ly, la = float(m.group(2)), float(m.group(3)), float(m.group(4))
             if math.hypot(lx - px, ly - py) > proximity_mm:
                 continue
-            if int(round(la)) % 360 == facing:
+            if int(round(la)) % 360 == facing and _straight_ahead(position, orientation, (lx, ly)):
                 return [lx, ly]
     except Exception:
         pass
