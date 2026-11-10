@@ -22,11 +22,17 @@ from commands.dynamic_symbol_loader import DynamicSymbolLoader
 
 @pytest.fixture(autouse=True)
 def _isolated_kicad_config(monkeypatch):
-    """These tests place the user-global table under a fake home. KiCad's own
-    KICAD_CONFIG_HOME takes precedence over the home directory (the loader honours it,
-    as KiCad does), so a developer or CI environment that sets it would hide the fake
-    table. Clear it so the tests see only what they lay out."""
+    """These tests place the user-global table under a fake home. The loader looks
+    in KICAD_CONFIG_HOME, APPDATA and XDG_CONFIG_HOME before the home directory (as
+    KiCad does), so a developer machine with KiCad installed would hide the fake
+    table behind its real one, and the tests would read the real KiCad config, which
+    tests never do. Clear all three so the tests see only what they lay out.
+
+    ``tests/conftest.py`` does the same for every test in mock mode; this fixture
+    keeps these tests isolated on their own, in every mode."""
     monkeypatch.delenv("KICAD_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
 
 
 def _write_lib(tmp_path: Path, name: str, symbols: list) -> Path:
