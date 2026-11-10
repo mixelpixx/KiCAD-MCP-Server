@@ -7,16 +7,19 @@ and value, every net/global/hierarchical label and every free text, and reports:
 
 - text over text (a symbol's own fields included)
 - text over another symbol's body
-- a symbol's own field across its outline, or over a small part's graphic
+- a symbol's own field across a drawn line of its body (inside an IC's
+  rectangle or beside a capacitor's plates is fine, whatever the body's size:
+  KiCad's own Device:R puts its value inside the rectangle)
 - body over body
 - a wire through a text (a label's own wire only touches its edge)
 - anything on the title block (KiCad's default drawing sheet, approx.) or
   outside the page frame
 - a field stored at 180 degrees, or a free text at 180/270 (drawn upside down)
 
-Calibrated against renders of a released three-sheet design: text advance is
-0.95 x size per character; a field's angle and justification live in the
-symbol's frame and are carried through the symbol's rotation, then its mirror.
+Calibrated against renders of a released three-sheet design: the text-size
+model is the one in ``schematic_text_metrics``, shared with the declutter and
+field-layout tools; a field's angle and justification live in the symbol's
+frame and are carried through the symbol's rotation, then its mirror.
 """
 
 import math
@@ -24,12 +27,22 @@ import re
 from pathlib import Path
 
 import sexpdata
+from commands.schematic_text_metrics import LABEL_FLAG, text_height, text_width
 
 S = sexpdata.Symbol
-CHAR_W = 0.95  # advance per character, x text size: measured off renders (AP63205WU, U10 SW, 22uF 10V)
-PAPER = {"A5": (210, 148), "A4": (297, 210), "A3": (420, 297), "A2": (594, 420), "A1": (841, 594),
-         "A0": (1189, 841), "A": (279.4, 215.9), "B": (431.8, 279.4), "C": (558.8, 431.8),
-         "D": (863.6, 558.8), "E": (1117.6, 863.6)}
+PAPER = {
+    "A5": (210, 148),
+    "A4": (297, 210),
+    "A3": (420, 297),
+    "A2": (594, 420),
+    "A1": (841, 594),
+    "A0": (1189, 841),
+    "A": (279.4, 215.9),
+    "B": (431.8, 279.4),
+    "C": (558.8, 431.8),
+    "D": (863.6, 558.8),
+    "E": (1117.6, 863.6),
+}
 
 
 def find(node, tag):
@@ -83,10 +96,10 @@ def text_box(x, y, angle, text, size, just, label=False, is_label=False):
 
     label: has a flag outline (global/hierarchical); is_label: any net label.
     """
-    w = max(1, len(text)) * size[0] * CHAR_W
-    h = size[1] * 1.2
+    w = text_width(text, size[0])
+    h = text_height(size[1])
     if label:
-        w += size[0] * 1.5  # flag / shape around global & hierarchical labels
+        w += size[0] * LABEL_FLAG  # flag / shape around global & hierarchical labels
     horiz = int(round(angle)) % 180 == 0
     if not is_label:
         # Fields and texts: justification runs along the text's own direction
@@ -156,7 +169,80 @@ def field_box(x, y, angle, text, size, just, sym_rot, mirror):
         elif mirror == "x":
             ry = -ry
         out.append((x + rx, y - ry))
-    return (min(p[0] for p in out), min(p[1] for p in out), max(p[0] for p in out), max(p[1] for p in out))
+    return (
+        min(p[0] for p in out),
+        min(p[1] for p in out),
+        max(p[0] for p in out),
+        max(p[1] for p in out),
+    )
+
+
+def lib_graphics(sym_def, unit):
+    """The graphic items (and pins) of a lib symbol that draw for one unit."""
+    for sub in find(sym_def, "symbol"):
+        name = str(sub[1])
+        m = re.search(r"_(\d+)_(\d+)$", name)
+        if m and int(m.group(1)) not in (0, unit):
+            continue
+        for g in sub[2:]:
+            if (
+                isinstance(g, list)
+                and g
+                and str(g[0]) in ("rectangle", "polyline", "circle", "arc", "bezier", "pin")
+            ):
+                yield g
+
+
+def lib_segments(sym_def, unit):
+    """The drawn lines of a lib symbol for one unit, in lib coords (y up).
+
+    A rectangle gives its four edges, a polyline its legs, a pin its stub, a
+    circle a 16-gon and an arc its two chords through the mid point. These are
+    what a field can be drawn across. The bbox alone is mostly empty on a small
+    part: a reference tucked beside a capacitor's pin stub crosses the box but
+    no line, and reads fine.
+    """
+    segs = []
+
+    def add(points, closed=False):
+        pts = list(points)
+        if closed and pts:
+            pts.append(pts[0])
+        segs.extend(zip(pts, pts[1:]))
+
+    for g in lib_graphics(sym_def, unit):
+        tag = str(g[0])
+        if tag == "rectangle":
+            s, e = first(g, "start"), first(g, "end")
+            x0, y0, x1, y1 = float(s[1]), float(s[2]), float(e[1]), float(e[2])
+            add([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], closed=True)
+        elif tag in ("polyline", "bezier"):
+            p = first(g, "pts")
+            add([(float(xy[1]), float(xy[2])) for xy in (find(p, "xy") if p else [])])
+        elif tag == "circle":
+            c = first(g, "center")
+            r = float(first(g, "radius")[1])
+            cx, cy = float(c[1]), float(c[2])
+            add(
+                [
+                    (cx + r * math.cos(k * math.pi / 8), cy + r * math.sin(k * math.pi / 8))
+                    for k in range(16)
+                ],
+                closed=True,
+            )
+        elif tag == "arc":
+            add(
+                [
+                    (float(p[1]), float(p[2]))
+                    for p in (first(g, k) for k in ("start", "mid", "end"))
+                    if p
+                ]
+            )
+        elif tag == "pin":
+            x, y, a = at_of(g)
+            ln = float(first(g, "length")[1]) if first(g, "length") else 2.54
+            add([(x, y), (x + ln * math.cos(math.radians(a)), y + ln * math.sin(math.radians(a)))])
+    return segs
 
 
 def lib_bbox(sym_def, unit):
@@ -168,55 +254,86 @@ def lib_bbox(sym_def, unit):
         if tag in ("rectangle",):
             for k in ("start", "end"):
                 p = first(node, k)
-                xs.append(float(p[1])); ys.append(float(p[2]))
+                xs.append(float(p[1]))
+                ys.append(float(p[2]))
         elif tag in ("polyline", "bezier"):
             p = first(node, "pts")
             for xy in find(p, "xy") if p else []:
-                xs.append(float(xy[1])); ys.append(float(xy[2]))
+                xs.append(float(xy[1]))
+                ys.append(float(xy[2]))
         elif tag == "circle":
-            c = first(node, "center"); r = float(first(node, "radius")[1])
-            xs.extend([float(c[1]) - r, float(c[1]) + r]); ys.extend([float(c[2]) - r, float(c[2]) + r])
+            c = first(node, "center")
+            r = float(first(node, "radius")[1])
+            xs.extend([float(c[1]) - r, float(c[1]) + r])
+            ys.extend([float(c[2]) - r, float(c[2]) + r])
         elif tag == "arc":
             for k in ("start", "mid", "end"):
                 p = first(node, k)
                 if p:
-                    xs.append(float(p[1])); ys.append(float(p[2]))
+                    xs.append(float(p[1]))
+                    ys.append(float(p[2]))
         elif tag == "pin":
             x, y, a = at_of(node)
             ln = float(first(node, "length")[1]) if first(node, "length") else 2.54
-            xs.extend([x, x + ln * math.cos(math.radians(a))]); ys.extend([y, y + ln * math.sin(math.radians(a))])
+            xs.extend([x, x + ln * math.cos(math.radians(a))])
+            ys.extend([y, y + ln * math.sin(math.radians(a))])
 
-    for sub in find(sym_def, "symbol"):
-        name = str(sub[1])
-        m = re.search(r"_(\d+)_(\d+)$", name)
-        if m and int(m.group(1)) not in (0, unit):
-            continue
-        for g in sub[2:]:
-            if isinstance(g, list) and g and str(g[0]) in ("rectangle", "polyline", "circle", "arc", "bezier", "pin"):
-                pts(g)
+    for g in lib_graphics(sym_def, unit):
+        pts(g)
     if not xs:
         return None
     return min(xs), min(ys), max(xs), max(ys)
 
 
+def place_point(px, py, x, y, rot, mirror):
+    """A lib point (y up) onto the sheet (y down): rotate CCW, then mirror, as KiCad does."""
+    r = math.radians(rot)
+    qx = px * math.cos(r) - py * math.sin(r)
+    qy = px * math.sin(r) + py * math.cos(r)
+    if mirror == "y":
+        qx = -qx
+    elif mirror == "x":
+        qy = -qy
+    return (x + qx, y - qy)
+
+
 def place_box(lb, x, y, rot, mirror):
     corners = [(lb[0], lb[1]), (lb[2], lb[1]), (lb[0], lb[3]), (lb[2], lb[3])]
-    out = []
-    r = math.radians(rot)
-    for px, py in corners:
-        # lib y-up -> rotate CCW -> mirror (KiCad's order) -> sheet y-down
-        qx = px * math.cos(r) - py * math.sin(r)
-        qy = px * math.sin(r) + py * math.cos(r)
-        if mirror == "y":
-            qx = -qx
-        elif mirror == "x":
-            qy = -qy
-        out.append((x + qx, y - qy))
-    return (min(p[0] for p in out), min(p[1] for p in out), max(p[0] for p in out), max(p[1] for p in out))
+    out = [place_point(px, py, x, y, rot, mirror) for px, py in corners]
+    return (
+        min(p[0] for p in out),
+        min(p[1] for p in out),
+        max(p[0] for p in out),
+        max(p[1] for p in out),
+    )
+
+
+def place_segments(segs, x, y, rot, mirror):
+    return [
+        (place_point(*p, x, y, rot, mirror), place_point(*q, x, y, rot, mirror)) for p, q in segs
+    ]
 
 
 def overlap(a, b, pad=0.0):
     return a[0] < b[2] - pad and b[0] < a[2] - pad and a[1] < b[3] - pad and b[1] < a[3] - pad
+
+
+def segment_crosses_box(seg, box):
+    """True when the segment has a run strictly inside the box (Liang-Barsky)."""
+    (x0, y0), (x1, y1) = seg
+    dx, dy = x1 - x0, y1 - y0
+    t0, t1 = 0.0, 1.0
+    for p, q in ((-dx, x0 - box[0]), (dx, box[2] - x0), (-dy, y0 - box[1]), (dy, box[3] - y0)):
+        if p == 0:
+            if q < 0:
+                return False
+            continue
+        t = q / p
+        if p < 0:
+            t0 = max(t0, t)
+        else:
+            t1 = min(t1, t)
+    return t0 < t1
 
 
 def collect(path):
@@ -245,13 +362,12 @@ def collect(path):
         for prop in find(sym, "property"):
             if str(prop[1]) == "Reference":
                 ref = str(prop[2])
-        if ref.startswith("#PWR") or ref.startswith("#FLG"):
-            pass
         sd = libs.get(name)
         if sd is not None:
             lb = lib_bbox(sd, unit)
             if lb:
-                bodies.append((ref, place_box(lb, x, y, rot, mirror)))
+                segs = place_segments(lib_segments(sd, unit), x, y, rot, mirror)
+                bodies.append((ref, place_box(lb, x, y, rot, mirror), segs))
         for prop in find(sym, "property"):
             if hidden(prop) or str(prop[1]) not in ("Reference", "Value") or not str(prop[2]):
                 continue
@@ -260,17 +376,39 @@ def collect(path):
                 # seen on a 180-degree resistor: a field stored at 180 is drawn upside
                 # down (270 on a 90-degree part renders upright, so only 180 is flagged)
                 upside.append((f"{ref}.{prop[1]}", (px - 1, py - 1, px + 1, py + 1)))
-            texts.append((f"{ref}.{prop[1]}", field_box(px, py, pa, str(prop[2]), text_size(prop), justify(prop), rot, mirror), ref))
+            texts.append(
+                (
+                    f"{ref}.{prop[1]}",
+                    field_box(
+                        px, py, pa, str(prop[2]), text_size(prop), justify(prop), rot, mirror
+                    ),
+                    ref,
+                )
+            )
     for tag in ("label", "global_label", "hierarchical_label"):
         for lab in find(data, tag):
             x, y, a = at_of(lab)
-            texts.append((f"{tag[:-6] or 'label'}:{lab[1]}",
-                          text_box(x, y, a, str(lab[1]), text_size(lab), justify(lab), label=tag != "label", is_label=True), None))
+            texts.append(
+                (
+                    f"{tag[:-6] or 'label'}:{lab[1]}",
+                    text_box(
+                        x,
+                        y,
+                        a,
+                        str(lab[1]),
+                        text_size(lab),
+                        justify(lab),
+                        label=tag != "label",
+                        is_label=True,
+                    ),
+                    None,
+                )
+            )
     for t in find(data, "text"):
         x, y, a = at_of(t)
         lines = str(t[1]).split("\n")
         size = text_size(t)
-        w = max(len(l) for l in lines) * size[0] * CHAR_W
+        w = text_width(max(lines, key=len), size[0])
         line_h = size[1] * 1.35
         h = (len(lines) - 1) * line_h + size[1]
         just = justify(t)
@@ -298,7 +436,7 @@ def check(path):
     frame = (10, 10, pw - 10, ph - 10)
     title = (pw - 122, ph - 47, pw - 10, ph - 10)  # KiCad default title block, approx.
     problems = [("upside down", n, b) for n, b in upside]
-    items = [("body", n, b, n) for n, b in bodies] + [("text", n, b, o) for n, b, o in texts]
+    items = [("body", n, b, n) for n, b, _ in bodies] + [("text", n, b, o) for n, b, o in texts]
     for kind, name, box, owner in items:
         if overlap(box, title):
             problems.append(("on title block", name, box))
@@ -312,14 +450,19 @@ def check(path):
             if overlap(a[1], b[1], pad=0.15):
                 problems.append(("text over text", f"{a[0]} / {b[0]}", a[1]))
     for n, tb, owner in texts:
-        for bn, bb in bodies:
+        # the text's interior: a line that only touches its edge is not across it
+        ib = (tb[0] + 0.3, tb[1] + 0.3, tb[2] - 0.3, tb[3] - 0.3)
+        for bn, bb, bs in bodies:
             if bn == owner:
-                # A symbol's own field may sit inside its body (an IC's name) or
-                # clear of it, but not across its outline or over a small part's
-                # graphic (a rotated capacitor's value drawn through the plates).
-                inside = tb[0] >= bb[0] and tb[1] >= bb[1] and tb[2] <= bb[2] and tb[3] <= bb[3]
-                small = (bb[2] - bb[0]) < 8 or (bb[3] - bb[1]) < 8
-                if overlap(tb, bb, pad=0.3) and (small or not inside):
+                # A symbol's own field may sit inside its body (an IC's name;
+                # Device:R's value at (0 0 90) inside its rectangle) or beside
+                # it (a reference tucked next to a capacitor's pin stub), but
+                # not across a drawn line of it: a value through the plates, a
+                # name across the outline. Tested against the lines, not the
+                # body's box: the box of a small part is mostly empty, and
+                # box-based rules reported 74 stock parts on KiCad's StickHub
+                # demo alone.
+                if ib[0] < ib[2] and ib[1] < ib[3] and any(segment_crosses_box(s, ib) for s in bs):
                     problems.append(("field over own body", n, tb))
                 continue
             if overlap(tb, bb, pad=0.3):
@@ -332,14 +475,19 @@ def check(path):
             continue
         for (ax, ay), (bx, by) in wires:
             if ax == bx and ib[0] < ax < ib[2] and min(ay, by) < ib[3] and max(ay, by) > ib[1]:
-                problems.append(("text over wire", n, tb)); break
+                problems.append(("text over wire", n, tb))
+                break
             if ay == by and ib[1] < ay < ib[3] and min(ax, bx) < ib[2] and max(ax, bx) > ib[0]:
-                problems.append(("text over wire", n, tb)); break
+                problems.append(("text over wire", n, tb))
+                break
     for i in range(len(bodies)):
         for j in range(i + 1, len(bodies)):
             if overlap(bodies[i][1], bodies[j][1], pad=0.3):
-                problems.append(("body over body", f"{bodies[i][0]} / {bodies[j][0]}", bodies[i][1]))
+                problems.append(
+                    ("body over body", f"{bodies[i][0]} / {bodies[j][0]}", bodies[i][1])
+                )
     return (pw, ph), problems
+
 
 def check_legibility(path, max_problems=200):
     """Run the check on one sheet; returns counts by kind and each problem's box."""
@@ -351,8 +499,16 @@ def check_legibility(path, max_problems=200):
         "total": len(problems),
         "counts": dict(Counter(p[0] for p in problems)),
         "problems": [
-            {"kind": k, "items": n, "box": {"x0": round(b[0], 2), "y0": round(b[1], 2),
-                                           "x1": round(b[2], 2), "y1": round(b[3], 2)}}
+            {
+                "kind": k,
+                "items": n,
+                "box": {
+                    "x0": round(b[0], 2),
+                    "y0": round(b[1], 2),
+                    "x1": round(b[2], 2),
+                    "y1": round(b[3], 2),
+                },
+            }
             for k, n, b in problems[:max_problems]
         ],
     }

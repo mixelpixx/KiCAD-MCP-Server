@@ -21,18 +21,25 @@ All notable changes to the KiCAD MCP Server project are documented here.
 - **`check_schematic_legibility`: what a reader trips over.** ERC and a
   netlist prove a sheet is connected; they say nothing about whether a person
   can read it. This boxes every symbol body, visible reference and value,
-  label and free text, and reports text over text (a symbol's own fields
-  included), text over another symbol's body, a field across its own outline,
-  body over body, items on the title block or outside the frame, and
-  a wire through a text, and upside-down text, each with its box in sheet mm.
+  label and free text, and reports: text over text (a symbol's own fields
+  included); text over another symbol's body; a symbol's own field across a
+  drawn line of its body (inside an IC's rectangle or beside a capacitor's
+  plates is fine, as KiCad's own `Device:R` places its value); body over
+  body; a wire through a text (a
+  label's own wire only touches its edge); items on the title block or
+  outside the frame; and upside-down text. Each problem comes with its box
+  in sheet mm.
   - Calibrated against renders of a released three-sheet design: text
     advance 0.95 x size per character; a field's angle and justification are
     in the symbol's frame and go through its rotation, then its mirror. On
     that design it reports 16 problems and each was confirmed on the render
     (a value printed over a label, values struck by body outlines, a riser
-    through a resistor value, a note
-    over a diode); `find_overlapping_elements` reports 0 on the same sheets,
-    since it compares positions, not the space text takes.
+    through a resistor value, a note over a diode);
+    `find_overlapping_elements` reports 0 on the same sheets, since it
+    compares positions, not the space text takes.
+  - The text-size model (`schematic_text_metrics`) is now shared with
+    `suggest_schematic_declutter` and `autoplace_schematic_fields`, so the
+    three tools agree on how much room a label takes.
   - Read-only; available in `readonly` mode.
 
 - **Operating modes: a readonly mode for review agents, and a manufacturing

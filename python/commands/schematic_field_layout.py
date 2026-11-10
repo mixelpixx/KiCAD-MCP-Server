@@ -18,6 +18,8 @@ from typing import Any, Dict, List
 
 from commands.pin_locator import PinLocator
 from commands.schematic import SchematicLoadError, SchematicManager
+from commands.schematic_text_metrics import field_bbox as shared_field_bbox
+from commands.schematic_text_metrics import label_bbox as shared_label_bbox
 from commands.schematic_text_utils import (
     _extract_property_position,
     _extract_property_visible,
@@ -297,42 +299,13 @@ class SchematicFieldLayoutCommands:
             if not sch_path.exists():
                 return {"success": False, "message": f"Schematic not found: {schematic_path}"}
 
-            chars_per_mm, text_height = 1.5, 1.27
-
             def snap(val):
                 return round(round(val / _GRID) * _GRID, 4)
 
+            # Text sizes come from schematic_text_metrics, shared with the
+            # declutter and legibility tools; the 1 mm margin keeps labels apart.
             def label_bbox(lx, ly, angle, name):
-                length = max(len(name), 1) * chars_per_mm + 1.0
-                half_h = text_height / 2.0
-                a = round(angle / 90) * 90 % 360
-                if a == 0:
-                    return {
-                        "x_min": lx,
-                        "y_min": ly - half_h,
-                        "x_max": lx + length,
-                        "y_max": ly + half_h,
-                    }
-                if a == 90:
-                    return {
-                        "x_min": lx - half_h,
-                        "y_min": ly - length,
-                        "x_max": lx + half_h,
-                        "y_max": ly,
-                    }
-                if a == 180:
-                    return {
-                        "x_min": lx - length,
-                        "y_min": ly - half_h,
-                        "x_max": lx,
-                        "y_max": ly + half_h,
-                    }
-                return {
-                    "x_min": lx - half_h,
-                    "y_min": ly,
-                    "x_max": lx + half_h,
-                    "y_max": ly + length,
-                }
+                return shared_label_bbox(lx, ly, angle, name, margin=1.0)
 
             def union(bb, other):
                 return {
@@ -343,14 +316,7 @@ class SchematicFieldLayoutCommands:
                 }
 
             def field_bbox(fx, fy, text):
-                half_w = max(len(str(text)), 1) * 0.75 / 2.0
-                half_h = text_height / 2.0
-                return {
-                    "x_min": fx - half_w,
-                    "y_min": fy - half_h,
-                    "x_max": fx + half_w,
-                    "y_max": fy + half_h,
-                }
+                return shared_field_bbox(fx, fy, text)
 
             try:
                 schematic = SchematicManager.load_schematic(schematic_path)
