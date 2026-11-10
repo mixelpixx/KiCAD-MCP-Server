@@ -59,7 +59,10 @@ class TestHelpers:
         f.write_text('(kicad_sch (label "U10 BST" (at 342.9 106.68 0)))')
         assert _find_facing_label(f, "U10 BST", [351.79, 96.52], orientation=180) is None
         # Same label straight out to the left of the pin, on its row: a wire is right.
-        assert _find_facing_label(f, "U10 BST", [351.79, 106.68], orientation=180) == [342.9, 106.68]
+        assert _find_facing_label(f, "U10 BST", [351.79, 106.68], orientation=180) == [
+            342.9,
+            106.68,
+        ]
 
     def test_facing_label_behind_the_pin_is_not_facing(self, tmp_path):
         # A pin pointing left (180) with the label to its right would wire back
