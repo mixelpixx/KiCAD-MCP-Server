@@ -137,9 +137,20 @@ def reference_file(board_path: str, reference: str, tmpdir: str) -> Tuple[Option
     An existing path is used as is. Anything else is taken as a git revision
     (``HEAD``, ``HEAD~1``, a sha, a tag) of the same board file, written to
     *tmpdir*. Returns (path or None, description or error).
+
+    The revision never reaches git as a bare argument: a value starting with
+    ``-`` is refused outright (``--output=X`` would make ``git show`` write
+    ``X``, and this tool is read-only), and what remains is resolved with
+    ``git rev-parse --verify --end-of-options <ref>^{commit}`` to a commit sha
+    before ``git show <sha>:<path>`` reads the file.
     """
     if os.path.isfile(reference):
         return reference, f"file {reference}"
+    if not reference or reference.startswith("-"):
+        return None, (
+            f"'{reference}' is not a file and cannot be a git revision: a reference "
+            "must not be empty or start with '-' (git would read it as an option)"
+        )
     board = Path(board_path).resolve()
     top = _git(board.parent, "rev-parse", "--show-toplevel")
     if top.returncode != 0:
@@ -148,14 +159,28 @@ def reference_file(board_path: str, reference: str, tmpdir: str) -> Tuple[Option
             "so it cannot be read as a revision"
         )
     rel = board.relative_to(Path(top.stdout.strip()).resolve()).as_posix()
+    resolved = _git(
+        board.parent,
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "--end-of-options",
+        f"{reference}^{{commit}}",
+    )
+    if resolved.returncode != 0 or not resolved.stdout.strip():
+        return None, (
+            f"'{reference}' is not a file and git does not know it as a commit: "
+            f"{resolved.stderr.strip() or 'no such revision'}"
+        )
+    sha = resolved.stdout.strip()
     shown = subprocess.run(
-        ["git", "-C", str(board.parent), "show", f"{reference}:{rel}"],
+        ["git", "-C", str(board.parent), "show", f"{sha}:{rel}"],
         capture_output=True,
         timeout=60,
     )
     if shown.returncode != 0:
         return None, (
-            f"git could not read {rel} at '{reference}': "
+            f"git could not read {rel} at '{reference}' ({sha[:12]}): "
             f"{shown.stderr.decode('utf-8', 'replace').strip()}"
         )
     out = Path(tmpdir) / board.name

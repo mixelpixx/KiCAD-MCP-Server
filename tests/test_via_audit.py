@@ -185,3 +185,58 @@ def test_unreadable_reference_fails_with_the_reason(tmp_path):
     assert "not in a git repository" in r["message"] or "git could not read" in r["message"]
 
     assert not _audit({"boardPath": str(board)})["success"]  # reference is required
+
+
+# --- reference handling: git never sees the reference as an option ---------- #
+
+
+def _tiny_repo(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "hw").mkdir(parents=True)
+    board = repo / "hw" / "board.kicad_pcb"
+    board.write_text("(kicad_pcb (version 20240108))\n")
+    for args in (
+        ["init", "-q"],
+        ["add", "."],
+        ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "good"],
+    ):
+        subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+    return board
+
+
+def test_a_reference_starting_with_a_dash_is_refused_before_git_runs(tmp_path):
+    """`--output=X` would make `git show` write X, in a tool that promises to be
+    read-only. Refused by shape, so this holds even without a git repository."""
+    from utils.via_audit import reference_file
+
+    board = tmp_path / "board.kicad_pcb"
+    board.write_text("(kicad_pcb)\n")
+    target = tmp_path / "written-by-git"
+    path, why = reference_file(str(board), f"--output={target}", str(tmp_path))
+    assert path is None and "start with '-'" in why
+    assert not target.exists()
+    assert reference_file(str(board), "", str(tmp_path))[0] is None
+
+
+def test_a_git_reference_is_resolved_to_a_commit_first(tmp_path):
+    if not shutil.which("git"):
+        pytest.skip("needs git")
+    from utils.via_audit import reference_file
+
+    board = _tiny_repo(tmp_path)
+    out = tmp_path / "out"
+    out.mkdir()
+    path, desc = reference_file(str(board), "HEAD", str(out))
+    assert path and Path(path).read_text() == board.read_text()
+    assert desc == "git HEAD:hw/board.kicad_pcb"
+
+    # Inside a repository the dash check still comes first: nothing is written.
+    target = tmp_path / "written-by-git"
+    path, why = reference_file(str(board), f"--output={target}", str(out))
+    assert path is None and not target.exists()
+
+    path, why = reference_file(str(board), "no-such-ref", str(out))
+    assert path is None and "does not know it as a commit" in why
+    # A blob or tree name is not a commit either.
+    path, why = reference_file(str(board), "HEAD:hw/board.kicad_pcb", str(out))
+    assert path is None and "does not know it as a commit" in why

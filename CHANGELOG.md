@@ -18,16 +18,19 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
-- **`audit_via_nets`: compare every via's net with a reference board.**
-  KiCad can change a via's net when it saves a board, with no error. DRC
-  doesn't flag it, because the board stays self-consistent, just wrong. Seen
-  on KiCad 10: a via inside a zone of another net took the zone's net, and
-  after an autorouter import a GND via came back on ISENSE_ADC and two VBAT
-  vias came back as GND (reported by @lewisfab). The reliable check is a
-  via-by-via comparison with a known-good version.
+- **`audit_via_nets`: compare every via's net with a reference board**
+  (#493, @dp-web4). KiCad can change a via's net when it saves a board, with
+  no error. DRC doesn't flag it, because the board stays self-consistent,
+  just wrong. Seen on KiCad 10 on a real board: a via inside a zone of
+  another net took the zone's net, and after an autorouter import a GND via
+  came back on ISENSE_ADC and two VBAT vias came back as GND. The reliable
+  check is a via-by-via comparison with a known-good version.
   - The reference is a `.kicad_pcb` file or a git revision of the same file
     (`HEAD`, `HEAD~1`, a sha). The board compared is the saved file, since
-    the change happens on save.
+    the change happens on save. A revision is resolved to a commit with
+    `git rev-parse --verify --end-of-options` before anything is read, and
+    one starting with `-` is refused, so the tool never hands git an option
+    (`--output=X` would have made `git show` write a file).
   - Vias are matched by UUID, then by position and layer pair, since an
     import can give vias new UUIDs.
   - The reply lists each via whose net changed (position, layers, old and
