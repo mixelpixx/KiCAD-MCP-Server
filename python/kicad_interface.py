@@ -5502,16 +5502,31 @@ print("ok")
         }
 
     def _ipc_add_copper_pour(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """IPC handler for add_copper_pour - adds zone with real-time UI update"""
+        """IPC handler for add_copper_pour - adds zone with real-time UI update.
+
+        Mirrors the SWIG handler's checks: per-point units are converted to mm,
+        an unknown net is an error, and padConnection is applied.
+        """
+        from commands.routing import LENGTH_UNITS_MM
+
         try:
             layer = params.get("layer", "F.Cu")
             net = params.get("net")
             clearance = params.get("clearance", 0.5)
             min_width = params.get("minWidth", 0.25)
-            points = params.get("points", [])
+            # The tool schema sends `outline`; `points` is the older key.
+            points = params.get("outline") or params.get("points") or []
             priority = params.get("priority", 0)
             fill_type = params.get("fillType", "solid")
             name = params.get("name", "")
+            pad_connection = params.get("padConnection")  # thermal | solid | none
+
+            if pad_connection is not None and pad_connection not in ("thermal", "solid", "none"):
+                return {
+                    "success": False,
+                    "message": "Invalid padConnection",
+                    "errorDetails": "padConnection must be one of thermal, solid, none",
+                }
 
             if not points or len(points) < 3:
                 return {
@@ -5519,10 +5534,31 @@ print("ok")
                     "message": "At least 3 points are required for copper pour outline",
                 }
 
-            # Convert points format if needed (handle both {x, y} and {x, y, unit})
+            # Points may carry their own unit (add_zone sends mil/inch);
+            # ipc_board_api.add_zone takes mm.
             formatted_points = []
             for point in points:
-                formatted_points.append({"x": point.get("x", 0), "y": point.get("y", 0)})
+                unit = point.get("unit", "mm")
+                if unit not in LENGTH_UNITS_MM:
+                    return {
+                        "success": False,
+                        "message": "Invalid unit",
+                        "errorDetails": (
+                            f"point unit must be one of {sorted(LENGTH_UNITS_MM)}, got {unit!r}"
+                        ),
+                    }
+                scale = LENGTH_UNITS_MM[unit]
+                formatted_points.append(
+                    {"x": point.get("x", 0) * scale, "y": point.get("y", 0) * scale}
+                )
+
+            # add_zone leaves the zone net-less when the name matches nothing.
+            if net and net not in {n.get("name") for n in self.ipc_board_api.get_nets()}:
+                return {
+                    "success": False,
+                    "message": "Unknown net",
+                    "errorDetails": f"Net '{net}' does not exist on the board",
+                }
 
             success = self.ipc_board_api.add_zone(
                 points=formatted_points,
@@ -5533,6 +5569,7 @@ print("ok")
                 priority=priority,
                 fill_mode=fill_type,
                 name=name,
+                pad_connection=pad_connection,
             )
 
             return {
@@ -5549,6 +5586,7 @@ print("ok")
                     "minWidth": min_width,
                     "priority": priority,
                     "fillType": fill_type,
+                    "padConnection": pad_connection or "thermal",
                     "pointCount": len(points),
                 },
             }
