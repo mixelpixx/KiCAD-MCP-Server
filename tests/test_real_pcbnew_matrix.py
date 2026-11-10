@@ -270,6 +270,30 @@ def test_assign_net_to_class_survives_a_board_save(tmp_path: Path) -> None:
     assert any("5.0000 mm" in v["description"] for v in clearance), clearance
 
 
+def test_assign_net_to_class_moves_a_net_between_classes(tmp_path: Path) -> None:
+    """SetNetclassPatternAssignment appends, so HV then LV used to leave the net in the
+    composite class HV,LV with HV's 5 mm clearance still winning. After the move, DRC
+    must judge the 1.75 mm gap by LV's 0.5 mm."""
+    from commands.design_rules import DesignRuleCommands
+    from commands.routing import RoutingCommands
+
+    board, board_path, cli = _two_track_project(tmp_path)
+    assert RoutingCommands(board).create_netclass({"name": "HV", "clearance": 5.0})["success"]
+    assert RoutingCommands(board).create_netclass({"name": "LV", "clearance": 0.5})["success"]
+    drc = DesignRuleCommands(board)
+    assert drc.assign_net_to_class({"net": "HV_BUS", "netClass": "HV"})["success"]
+    assert any(
+        "5.0000 mm" in v["description"] for v in _drc_clearance_violations(cli, board, board_path)
+    )
+
+    assert drc.assign_net_to_class({"net": "HV_BUS", "netClass": "LV"})["success"]
+    clearance = _drc_clearance_violations(cli, board, board_path)
+    assert not any("5.0000 mm" in v["description"] for v in clearance), clearance
+    settings = board.GetDesignSettings().m_NetSettings
+    if hasattr(settings, "GetEffectiveNetClass"):
+        assert settings.GetEffectiveNetClass("HV_BUS").GetName() == "LV"
+
+
 def test_run_drc_reports_unconnected_pads_with_real_kicad_cli(tmp_path: Path) -> None:
     """Two pads on one net and no copper between them: kicad-cli lists the gap under
     "unconnected_items", which run_drc used to drop."""

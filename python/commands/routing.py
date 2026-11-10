@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pcbnew
 from utils.board_items import delete_board_item
-from utils.project_netclasses import netclass_pattern_for_net
+from utils.project_netclasses import load_project_net_classes, netclass_pattern_for_net
 
 logger = logging.getLogger("kicad_interface")
 
@@ -340,26 +340,80 @@ def register_netclass_in_project_settings(board: Any, name: str, netclass: Any) 
     return None
 
 
+def _project_file_patterns(pro_path: Optional[str]) -> Optional[List[Tuple[str, str]]]:
+    """Every pattern assignment the project file holds, as ``(pattern, class)``:
+    the ``netclass_patterns`` entries plus ``netclass_assignments`` as escaped
+    names, the same view ``apply_net_classes_to_board`` pushes for a DSN export.
+    None when there is no readable project file."""
+    try:
+        loaded = load_project_net_classes(pro_path)
+    except ValueError:
+        return None
+    if loaded is None:
+        return None
+    patterns: List[Tuple[str, str]] = []
+    for pattern, class_name in loaded["patterns"]:
+        if (pattern, class_name) not in patterns:
+            patterns.append((pattern, class_name))
+    for net_name, class_names in loaded["assignments"].items():
+        for class_name in class_names:
+            entry = (netclass_pattern_for_net(net_name), class_name)
+            if entry not in patterns:
+                patterns.append(entry)
+    return patterns
+
+
 def register_membership_in_project_settings(
-    board: Any, net_name: str, class_name: str
+    board: Any, net_name: str, class_name: str, pro_path: Optional[str] = None
 ) -> Optional[str]:
-    """Record that *net_name* belongs to *class_name* in the in-memory net settings.
+    """``register_memberships_in_project_settings`` for one net."""
+    return register_memberships_in_project_settings(board, [net_name], class_name, pro_path)
+
+
+def register_memberships_in_project_settings(
+    board: Any, net_names: List[str], class_name: str, pro_path: Optional[str] = None
+) -> Optional[str]:
+    """Record that each of *net_names* belongs to *class_name* in the in-memory
+    net settings. Call it after the project file has been written.
 
     Same reason as ``register_netclass_in_project_settings``. Python can't call
     the label-assignment setter (SWIG doesn't wrap its ``std::set`` argument),
-    so this uses a pattern assignment. The pattern is the exact net name, which
-    only matches itself unless it contains a wildcard. Returns a warning, or None.
+    so membership goes in as a pattern assignment on the escaped net name
+    (``netclass_pattern_for_net``: KiCad reads a pattern as a regular
+    expression, so a raw ``D+`` would also claim ``D`` and ``DD``).
+
+    ``SetNetclassPatternAssignment`` appends, so assigning a net to A and then
+    to B would leave it in the composite class ``A,B`` with A's clearance
+    winning; on KiCad 9 the next save writes both into the project. Python
+    can't read the list back either (``GetNetclassPatternAssignments`` is an
+    opaque SWIG object), so the list is rebuilt from the project file, which
+    the writer keeps at one entry per net: cleared, then every pattern the
+    file holds is set again. Without a project file the nets' patterns are
+    appended. A label assignment loaded from the project for the net (the
+    old class, from a schematic directive) is cleared first. Returns a
+    warning, or None.
     """
     settings = _board_net_settings(board)
     if settings is None or not hasattr(settings, "SetNetclassPatternAssignment"):
         return None
-    if any(ch in net_name for ch in "*?"):
-        return (
-            f"net '{net_name}' contains a wildcard character; its class is in the "
-            "project file but not in KiCad's in-memory settings"
-        )
     try:
-        settings.SetNetclassPatternAssignment(net_name, class_name)
+        if hasattr(settings, "ClearNetclassLabelAssignment"):
+            for net_name in net_names:
+                settings.ClearNetclassLabelAssignment(net_name)
+        wanted = [(netclass_pattern_for_net(net_name), class_name) for net_name in net_names]
+        file_patterns = _project_file_patterns(pro_path)
+        if file_patterns is not None and hasattr(settings, "ClearNetclassPatternAssignments"):
+            settings.ClearNetclassPatternAssignments()
+            patterns = file_patterns
+            for entry in wanted:
+                if entry not in patterns:
+                    patterns.append(entry)
+        else:
+            patterns = wanted
+        for pattern, pattern_class in patterns:
+            settings.SetNetclassPatternAssignment(pattern, pattern_class)
+        if hasattr(settings, "ClearAllCaches"):
+            settings.ClearAllCaches()
     except Exception as exc:
         return f"in-memory project net class assignment failed: {exc}"
     return None
@@ -578,12 +632,13 @@ class RoutingCommands:
                         assigned_class = net_class
                     except Exception as exc:
                         warnings.append(f"in-memory net class assignment failed: {exc}")
-                    warning = register_membership_in_project_settings(self.board, name, net_class)
+                    net_pro_path = _project_file_for(self.board)
+                    persist = persist_net_assignment_to_project(net_pro_path, name, net_class)
+                    warning = register_membership_in_project_settings(
+                        self.board, name, net_class, net_pro_path
+                    )
                     if warning:
                         warnings.append(warning)
-                    persist = persist_net_assignment_to_project(
-                        _project_file_for(self.board), name, net_class
-                    )
                     class_persisted = bool(persist.get("persisted"))
                     if class_persisted:
                         assigned_class = net_class
@@ -2043,10 +2098,12 @@ class RoutingCommands:
                         set_net_class_in_memory(nets_map[net_name], live_netclass)
                     except Exception as exc:
                         warnings.append(f"in-memory assignment of {net_name} failed: {exc}")
-                    warning = register_membership_in_project_settings(self.board, net_name, name)
-                    if warning:
-                        warnings.append(warning)
                 membership = persist_net_assignments_to_project(pro_path, found, name)
+                warning = register_memberships_in_project_settings(
+                    self.board, found, name, pro_path
+                )
+                if warning:
+                    warnings.append(warning)
                 if membership.get("persisted"):
                     assigned = found
                 elif membership.get("warning"):

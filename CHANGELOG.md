@@ -48,7 +48,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
     in-memory settings, so the next board save erased every class and
     assignment the server had written to the file. Classes and memberships
     are now also registered in those in-memory settings (`SetNetclass`, plus a
-    pattern assignment on the exact net name).
+    pattern assignment on the escaped net name, since KiCad reads a pattern
+    as a regular expression and a raw `D+` would also claim `D` and `DD`).
+    `SetNetclassPatternAssignment` appends, so the in-memory list is rebuilt
+    from the project file on each assignment; moving a net from class A to B
+    leaves it in B, not in the composite `A,B`. KiCad 8 has no
+    `SetNetclassPatternAssignment`; there membership reaches KiCad through
+    the project file only.
   - `assign_net_to_class` right after `create_netclass` in the same session
     failed with "Net class not found", because the class was added to a copy
     of the class map. It now finds it.

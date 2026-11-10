@@ -364,7 +364,7 @@ class DesignRuleCommands:
 
             persist = persist_net_assignment_to_project(pro_path, net_name, class_name)
             registration_warning = register_membership_in_project_settings(
-                self.board, net_name, class_name
+                self.board, net_name, class_name, pro_path
             )
 
             warnings = [
