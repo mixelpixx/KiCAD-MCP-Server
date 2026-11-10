@@ -3232,6 +3232,14 @@ class SchematicHandlersMixin:
                 self.board = board
                 self._update_command_handlers()
 
+            # This handler wrote the board file itself. Record that write as
+            # ours: sync_schematic_to_board is a board-mutating command, so an
+            # auto-save follows it, and with the pre-sync signature still on
+            # record that auto-save -- and every later one -- refused to save,
+            # reporting the file as "changed externally".
+            if board is self.board:
+                self._record_board_signature()
+
             logger.info(
                 f"sync_schematic_to_board: {len(added_nets)} nets added, "
                 f"{len(added_footprints)} footprints added, {assigned_pads} pads assigned"
