@@ -12,12 +12,57 @@
  * whose first text block is a JSON object with `success === false` gets
  * `isError: true`. Everything else, including replies that already set
  * `isError` and non-JSON or non-text content, passes through unchanged.
+ *
+ * A partial success is not an error. The batch tools (`batch_add_components`,
+ * `batch_connect`, `connect_passthrough`, `backannotate_footprints`,
+ * `batch_list_symbol_pins`, ...) answer `success: false` when some items
+ * failed and the rest were written. Flagging that reply would tell an agent
+ * the call did nothing, and retrying the whole batch would add the written
+ * components and wires a second time. So a reply that reports applied work
+ * (an added / connected / updated count above zero, or a non-empty list of
+ * applied items) stays unflagged, and `isError` keeps meaning "nothing
+ * happened, safe to retry".
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 type Reply = { content?: Array<{ type?: string; text?: unknown }>; isError?: boolean };
 
-/** True when `reply`'s first text block is a JSON object reporting `success: false`. */
+/**
+ * Top-level fields that report work the backend applied before it answered
+ * `success: false`. Counts of inputs (`boardFootprintCount`, `checked`) and
+ * of failures (`errors`, `failed`, `error_count`) are deliberately not here.
+ */
+const APPLIED_WORK_FIELDS = [
+  "added",
+  "added_count",
+  "connected",
+  "connected_count",
+  "updated",
+  "updated_count",
+  "placed",
+  "applied",
+  "applied_count",
+  "updatedFiles",
+  "symbols",
+];
+
+/** True when a parsed `success: false` reply says some of the work was applied. */
+export function reportsAppliedWork(parsed: Record<string, unknown>): boolean {
+  for (const field of APPLIED_WORK_FIELDS) {
+    const value = parsed[field];
+    if (typeof value === "number" && value > 0) return true;
+    if (Array.isArray(value) && value.length > 0) return true;
+    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      if (Object.keys(value).length > 0) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * True when `reply`'s first text block is a JSON object reporting
+ * `success: false` and no applied work.
+ */
 export function reportsFailure(reply: unknown): boolean {
   if (typeof reply !== "object" || reply === null) return false;
   const first = (reply as Reply).content?.[0];
@@ -26,12 +71,9 @@ export function reportsFailure(reply: unknown): boolean {
   if (!/"success"\s*:\s*false/.test(first.text)) return false;
   try {
     const parsed: unknown = JSON.parse(first.text);
-    return (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      !Array.isArray(parsed) &&
-      (parsed as { success?: unknown }).success === false
-    );
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return false;
+    const record = parsed as Record<string, unknown>;
+    return record.success === false && !reportsAppliedWork(record);
   } catch {
     return false;
   }

@@ -45,7 +45,7 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
     async (args: any) => {
       const r = await callKicadScript("batch_add_components", args);
       if (r.success === false && r.message)
-        return { content: [{ type: "text", text: `Failed: ${r.message}` }] };
+        return { content: [{ type: "text", text: `Failed: ${r.message}` }], isError: true };
       const lines = [`Added ${r.added_count} component(s), ${r.error_count} error(s).`];
       for (const e of r.errors || []) lines.push(`  ✗ ${e.reference} (${e.symbol}): ${e.error}`);
       return { content: [{ type: "text", text: lines.join("\n") }] };
@@ -65,7 +65,7 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
     async (args: any) => {
       const r = await callKicadScript("batch_edit_schematic_components", args);
       if (r.success === false && r.message)
-        return { content: [{ type: "text", text: `Failed: ${r.message}` }] };
+        return { content: [{ type: "text", text: `Failed: ${r.message}` }], isError: true };
       const lines = [`Updated ${r.updated_count}, ${r.error_count} error(s).`];
       for (const e of r.errors || []) lines.push(`  ✗ ${e.reference}: ${e.error}`);
       return { content: [{ type: "text", text: lines.join("\n") }] };
@@ -203,7 +203,7 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
     async (args: any) => {
       const r = await callKicadScript("batch_add_no_connects", args);
       if (r.success === false && r.message)
-        return { content: [{ type: "text", text: `Failed: ${r.message}` }] };
+        return { content: [{ type: "text", text: `Failed: ${r.message}` }], isError: true };
       const lines = [r.message];
       for (const f of r.failed || []) lines.push(`  ✗ ${f.componentRef}/${f.pinName}: ${f.reason}`);
       return { content: [{ type: "text", text: lines.join("\n") }] };
@@ -235,7 +235,7 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
     async (args: any) => {
       const r = await callKicadScript("batch_connect", args);
       if (r.success === false && r.message)
-        return { content: [{ type: "text", text: `Failed: ${r.message}` }] };
+        return { content: [{ type: "text", text: `Failed: ${r.message}` }], isError: true };
       const lines = [r.message];
       for (const f of r.failed || []) lines.push(`  ✗ ${f.ref}/${f.pin}: ${f.reason}`);
       for (const w of r.warnings || []) lines.push(`  ⚠ ${w}`);
@@ -278,7 +278,7 @@ export function registerSchematicBatchTools(server: McpServer, callKicadScript: 
     async (args: any) => {
       const r = await callKicadScript("batch_add_and_connect", args);
       if (r.success === false && r.message)
-        return { content: [{ type: "text", text: `Failed: ${r.message}` }] };
+        return { content: [{ type: "text", text: `Failed: ${r.message}` }], isError: true };
       const lines = [r.message];
       for (const e of r.errors || []) lines.push(`  ✗ add ${e.reference}: ${e.error}`);
       for (const f of r.failed_connections || [])

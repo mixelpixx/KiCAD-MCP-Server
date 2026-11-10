@@ -35,6 +35,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Backend failures reach the client as MCP errors.** Most tools return the
+  backend's JSON as it is, so a `{"success": false, ...}` reply went out as a
+  normal result and an agent carried on as if the call had worked. Every
+  tool registration is now wrapped once: a reply whose JSON says
+  `success: false` is sent with `isError: true`. Replies that already set
+  `isError`, and non-JSON content, are unchanged. A partial success is not
+  flagged: when a batch tool (`batch_add_components`, `batch_connect`,
+  `connect_passthrough`, `backannotate_footprints`, ...) reports applied
+  work, an added, connected or updated count above zero or a non-empty list
+  of applied items, the reply stays a normal result with its `errors` list,
+  so `isError` means nothing happened and the call is safe to retry.
 - **`import_eagle_project` no longer replaces a schematic that is open in
   KiCad.** It writes `<output_dir>/<project_name>.kicad_sch` without checking
   whether that file exists, so re-importing into an open project overwrote it
