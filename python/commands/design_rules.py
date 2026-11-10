@@ -298,10 +298,27 @@ class DesignRuleCommands:
             VoltageRuleError,
             plan_rules,
             render_block,
+            unsupported_kicad_message,
             write_rules,
         )
 
         try:
+            # KiCad 8 has neither the creepage constraint nor hasNetclass(), and
+            # it drops a .kicad_dru it cannot parse as a whole: writing the
+            # block there would silently switch off the user's own rules too.
+            try:
+                build_version = pcbnew.GetBuildVersion()
+            except Exception:
+                build_version = None
+            unsupported = unsupported_kicad_message(build_version)
+            if unsupported:
+                return {
+                    "success": False,
+                    "message": "KiCad version not supported",
+                    "errorDetails": unsupported,
+                    "kicadVersion": str(build_version),
+                }
+
             board_path = params.get("boardPath")
             if not board_path and self.board:
                 try:
@@ -321,7 +338,9 @@ class DesignRuleCommands:
             try:
                 plan = plan_rules(classes, params.get("spacing") or [], params.get("pairs"), other)
                 names = [c["name"] for c in classes]
-                block = render_block(plan, names)
+                block = render_block(
+                    plan, names, exclude_unconnected=bool(params.get("excludeUnconnectedNets"))
+                )
             except VoltageRuleError as exc:
                 return {
                     "success": False,

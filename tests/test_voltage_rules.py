@@ -20,13 +20,19 @@ from utils.voltage_rules import (  # noqa: E402
     END,
     VoltageRuleError,
     check_balanced,
+    kicad_major_version,
     normalise_table,
     plan_rules,
     render_block,
     replace_block,
+    unsupported_kicad_message,
+    working_voltage,
     write_rules,
 )
 
+# Arbitrary numbers that make the DRC outcomes below unambiguous. They are NOT a
+# spacing standard (IPC-2221B's external uncoated row for 301-500 V is 2.5 mm, for
+# one), and nothing here should be copied into a design.
 TABLE = [
     {"upTo": 50, "clearance": 0.2},
     {"upTo": 400, "clearance": 1.0, "creepage": 2.0},
@@ -70,6 +76,77 @@ def test_other_nets_rules_can_be_skipped():
 
 
 @pytest.mark.unit
+def test_a_swinging_node_uses_the_largest_difference_its_range_can_show():
+    """A half-bridge switch node (0 to 800 V) against the 800 V bus is 800 V of
+    working voltage, not the 0 V that "worst case 800 vs 800" would give."""
+    assert working_voltage((0, 800), (800, 800)) == 800
+    assert working_voltage((800, 800), (0, 800)) == 800
+    assert working_voltage((400, 400), (400, 400)) == 0
+    assert working_voltage((-400, 400), (0, 0)) == 400
+    assert working_voltage((-400, -400), (400, 400)) == 800
+    plan = _by_pair(
+        plan_rules(
+            [{"name": "BUS", "voltage": 800}, {"name": "SW", "voltage": [0, 800]}],
+            TABLE,
+            other_nets_voltage=[0, 0],
+        )
+    )
+    assert plan[("BUS", "SW")]["voltage"] == 800
+    assert plan[("BUS", "SW")]["clearance"] == 3.0
+    assert plan[("SW", "(other nets)")]["voltage"] == 800
+    assert plan[("BUS", "(other nets)")]["voltage"] == 800
+    # 0..800 against a -12..12 V rail is 812 V, past the table: refused, not rounded down.
+    with pytest.raises(VoltageRuleError, match="above the spacing table"):
+        plan_rules([{"name": "SW", "voltage": [0, 800]}], TABLE, other_nets_voltage=[-12, 12])
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "voltage,match",
+    [([800, 0], r"must be \[min, max\]"), ([1, 2, 3], "number or"), ("abc", "must be a number")],
+)
+def test_bad_potentials_are_refused(voltage, match):
+    with pytest.raises(VoltageRuleError, match=match):
+        plan_rules([{"name": "X", "voltage": voltage}], TABLE)
+
+
+@pytest.mark.unit
+def test_a_row_that_drops_creepage_is_refused():
+    table = [{"upTo": 400, "clearance": 1.0, "creepage": 2.0}, {"upTo": 1000, "clearance": 3.0}]
+    with pytest.raises(VoltageRuleError, match="cannot drop the creepage"):
+        normalise_table(table)
+    # Creepage may start partway up the table; it just can't stop.
+    assert len(normalise_table(list(reversed(TABLE)))) == 3
+
+
+@pytest.mark.unit
+def test_kicad_8_is_refused_by_version():
+    assert kicad_major_version("9.0.9-9.0.9~ubuntu24.04.1") == 9
+    assert kicad_major_version("(10.0.8)") == 10
+    assert kicad_major_version("8.0.9+dfsg") == 8
+    assert kicad_major_version("") is None
+    assert unsupported_kicad_message("10.0.8") is None
+    assert unsupported_kicad_message(None) is None  # can't tell: don't refuse on a guess
+    message = unsupported_kicad_message("8.0.9")
+    assert message and "KiCad 9 or newer" in message and "Nothing was written" in message
+
+
+@pytest.mark.unit
+def test_handler_refuses_on_kicad_8_before_touching_anything(tmp_path, monkeypatch):
+    from commands import design_rules
+
+    monkeypatch.setattr(design_rules.pcbnew, "GetBuildVersion", lambda: "8.0.9")
+    board_path = tmp_path / "v.kicad_pcb"
+    board_path.write_text("(kicad_pcb)")
+    r = design_rules.DesignRuleCommands().set_voltage_clearance_rules(
+        {"boardPath": str(board_path), "classes": CLASSES, "spacing": TABLE}
+    )
+    assert r["success"] is False
+    assert "KiCad 9 or newer" in r["errorDetails"] and r["kicadVersion"] == "8.0.9"
+    assert not board_path.with_suffix(".kicad_dru").exists()
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     "classes,table,pairs,match",
     [
@@ -84,7 +161,7 @@ def test_other_nets_rules_can_be_skipped():
         (CLASSES + [{"name": "STACK", "voltage": 1}], TABLE, None, "listed twice"),
         (CLASSES, TABLE, [{"a": "STACK", "b": "NOPE", "voltage": 1}], "not in classes"),
         (CLASSES, [], None, "at least one row"),
-        ([{"name": "X", "voltage": -5}], TABLE, None, "must not be negative"),
+        (CLASSES, [{"upTo": 900, "clearance": -1}], None, "must not be negative"),
     ],
 )
 def test_bad_input_is_refused_with_a_reason(classes, table, pairs, match):
@@ -297,27 +374,36 @@ def test_creepage_without_a_board_outline_is_warned(tmp_path):
     assert not any("Edge.Cuts" in w for w in r["warnings"])
 
 
-def test_other_nets_rule_leaves_out_unwired_pins():
+@pytest.mark.unit
+def test_unwired_pin_nets_are_excluded_only_on_request():
     plan = plan_rules(CLASSES, TABLE, other_nets_voltage=0)
-    block = render_block(plan, [c["name"] for c in CLASSES])
-    others = [ln for ln in block.splitlines() if "-other" not in ln and "!(" in ln]
+    names = [c["name"] for c in CLASSES]
+    others = [ln for ln in render_block(plan, names).splitlines() if "!(" in ln]
+    assert others and not any("unconnected" in ln for ln in others)
+    others = [
+        ln for ln in render_block(plan, names, exclude_unconnected=True).splitlines() if "!(" in ln
+    ]
     assert others and all("B.NetName != 'unconnected-*'" in ln for ln in others)
 
 
 @pytest.mark.integration
 @pytest.mark.real_pcbnew
-def test_kicad_skips_unwired_pin_nets_in_other_rules(tmp_path):
-    # An 800 V track 1.75 mm from KiCad's net for an unwired pin passes; the same
-    # gap to an ordinary low-voltage net fails V:STACK-other.
+def test_kicad_skips_unwired_pin_nets_in_other_rules_only_on_request(tmp_path):
+    # An 800 V track 1.75 mm from KiCad's net for an unwired pin fails V:STACK-other
+    # by default (the pin sits at its own part's potential) and passes with
+    # excludeUnconnectedNets; the same gap to an ordinary low-voltage net always fails.
     if os.environ.get("KICAD_USE_REAL_PCBNEW") != "1" or not shutil.which("kicad-cli"):
         pytest.skip("needs KICAD_USE_REAL_PCBNEW=1 and kicad-cli")
     import pcbnew
-
     from commands.design_rules import DesignRuleCommands
 
     found = {}
-    for neighbour in ("unconnected-(R1-Pad2)", "LOGICNET"):
-        d = tmp_path / neighbour.replace("(", "_").replace(")", "_")
+    for neighbour, exclude in (
+        ("unconnected-(R1-Pad2)", True),
+        ("unconnected-(R1-Pad2)", False),
+        ("LOGICNET", False),
+    ):
+        d = tmp_path / (neighbour.replace("(", "_").replace(")", "_") + str(exclude))
         d.mkdir()
         board_path = d / "v.kicad_pcb"
         board = pcbnew.BOARD()
@@ -356,9 +442,11 @@ def test_kicad_skips_unwired_pin_nets_in_other_rules(tmp_path):
                 "boardPath": str(board_path),
                 "classes": [{"name": "STACK", "voltage": 800}],
                 "spacing": TABLE,
+                "excludeUnconnectedNets": exclude,
             }
         )
         assert r["success"], r
-        found[neighbour] = _rule_violations(board_path)
-    assert not any("V:STACK-other" in rule for _, rule in found["unconnected-(R1-Pad2)"])
-    assert any("V:STACK-other" in rule for _, rule in found["LOGICNET"])
+        found[(neighbour, exclude)] = _rule_violations(board_path)
+    assert not any("V:STACK-other" in rule for _, rule in found[("unconnected-(R1-Pad2)", True)])
+    assert any("V:STACK-other" in rule for _, rule in found[("unconnected-(R1-Pad2)", False)])
+    assert any("V:STACK-other" in rule for _, rule in found[("LOGICNET", False)])

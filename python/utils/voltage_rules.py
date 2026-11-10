@@ -10,6 +10,24 @@ The output lives in a managed block of the ``.kicad_dru`` file, between two
 comment markers, so a re-run replaces it and every other rule in the file is
 left as written.
 
+A class's potential is either one number (a node that stays at one potential)
+or ``[min, max]`` for a node that swings, such as a half-bridge switch node
+going 0 to 800 V. The working voltage between two classes is the largest
+difference the two ranges can show, ``max(|maxA - minB|, |maxB - minA|)``;
+with two single numbers that is ``|Va - Vb|``. Giving a swinging node its
+maximum alone under-spaces it against the bus it swings to (800 vs 800 would
+read as 0 V).
+
+The spacing table is keyed by one voltage per row. Under IEC 60664-1 clearance
+follows from the impulse/peak voltage and creepage from the RMS working
+voltage, so the voltage used as the key must suit both columns of the table.
+The tool supplies no values; they come from the user's standard and coating.
+
+KiCad 9 or newer: the ``creepage`` constraint and ``hasNetclass()`` arrived in
+KiCad 9, and KiCad ignores a ``.kicad_dru`` it cannot parse as a whole, so on
+KiCad 8 the block would switch off every rule in the file. The handler checks
+the running KiCad's version and refuses on 8.
+
 KiCad behaviours this relies on, checked with ``kicad-cli pcb drc`` on KiCad
 9.0.9 and 10.0.8:
 
@@ -41,12 +59,43 @@ END = "# kicad-mcp voltage rules: end"
 RULE_PREFIX = "V:"
 # KiCad string comparisons in rule conditions take * and ? wildcards.
 UNCONNECTED = "unconnected-*"
+# creepage constraint and hasNetclass() exist from KiCad 9.
+MIN_KICAD_MAJOR = 9
 
 _CLASS_NAME_OK = re.compile(r"^[^'\"\\()\n\r]+$")
+_VERSION_RE = re.compile(r"^\D*(\d+)\.(\d+)")
+
+Potential = Tuple[float, float]
 
 
 class VoltageRuleError(ValueError):
     """Bad input; the message is meant for the caller."""
+
+
+# --------------------------------------------------------------------------- #
+# KiCad version
+# --------------------------------------------------------------------------- #
+
+
+def kicad_major_version(build_version: Any) -> Optional[int]:
+    """The major number of a ``pcbnew.GetBuildVersion()`` string, e.g. 9 for
+    ``"9.0.9-9.0.9~ubuntu24.04.1"`` or ``"(10.0.8)"``; None when unreadable."""
+    match = _VERSION_RE.match(str(build_version or "").strip())
+    return int(match.group(1)) if match else None
+
+
+def unsupported_kicad_message(build_version: Any) -> Optional[str]:
+    """Why this tool refuses on *build_version*, or None when it may run."""
+    major = kicad_major_version(build_version)
+    if major is None or major >= MIN_KICAD_MAJOR:
+        return None
+    return (
+        f"set_voltage_clearance_rules needs KiCad {MIN_KICAD_MAJOR} or newer; this is KiCad "
+        f"{build_version}. The creepage constraint and hasNetclass() in the generated rules "
+        f"arrived in KiCad {MIN_KICAD_MAJOR}, and KiCad ignores a .kicad_dru it cannot parse "
+        "as a whole, so writing them here would switch off every rule in the file, including "
+        "hand-written ones. Nothing was written."
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -109,12 +158,44 @@ def _number(value: Any, what: str) -> float:
     return number
 
 
+def _signed_number(value: Any, what: str) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise VoltageRuleError(f"{what} must be a number, got {value!r}")
+
+
+def potential_range(value: Any, what: str) -> Potential:
+    """A node's potential as ``(min, max)`` volts.
+
+    One number is a fixed potential; ``[min, max]`` is a node that swings.
+    Negative values are allowed: a -400 V rail is 800 V from a +400 V one.
+    """
+    if isinstance(value, (list, tuple)):
+        if len(value) != 2:
+            raise VoltageRuleError(f"{what} must be a number or [min, max], got {value!r}")
+        low = _signed_number(value[0], f"{what}[0]")
+        high = _signed_number(value[1], f"{what}[1]")
+        if low > high:
+            raise VoltageRuleError(f"{what} must be [min, max], got [{low:g}, {high:g}]")
+        return (low, high)
+    fixed = _signed_number(value, what)
+    return (fixed, fixed)
+
+
+def working_voltage(a: Potential, b: Potential) -> float:
+    """The largest potential difference two ranges can show."""
+    return max(abs(a[1] - b[0]), abs(b[1] - a[0]))
+
+
 def normalise_table(table: Sequence[Dict[str, Any]]) -> List[Dict[str, float]]:
     """Validate the spacing table and sort it by ``upTo``.
 
     Each row: ``{"upTo": V, "clearance": mm, "creepage"?: mm}``, meaning
     "a working voltage up to V needs this much". Larger voltages must not need
-    less spacing; a table that says so is almost certainly a typo.
+    less spacing, and once a row gives a creepage every higher row must too;
+    a table that says otherwise is almost certainly a typo, and an 800 V pair
+    with no creepage rule at all is the outcome to avoid.
     """
     if not table:
         raise VoltageRuleError("spacing must have at least one row")
@@ -139,6 +220,12 @@ def normalise_table(table: Sequence[Dict[str, Any]]) -> List[Dict[str, float]]:
                     f"spacing {key} falls from {prev[key]} mm (≤{prev['upTo']} V) to "
                     f"{cur[key]} mm (≤{cur['upTo']} V); a higher voltage cannot need less"
                 )
+        if "creepage" in prev and "creepage" not in cur:
+            raise VoltageRuleError(
+                f"spacing row for ≤{cur['upTo']:g} V has no creepage while the row for "
+                f"≤{prev['upTo']:g} V has {prev['creepage']} mm; a higher voltage cannot drop "
+                "the creepage rule (pairs in that range would get none)"
+            )
     return rows
 
 
@@ -166,32 +253,35 @@ def plan_rules(
     classes: Sequence[Dict[str, Any]],
     spacing: Sequence[Dict[str, Any]],
     pairs: Optional[Sequence[Dict[str, Any]]] = None,
-    other_nets_voltage: Optional[float] = 0.0,
+    other_nets_voltage: Any = 0.0,
 ) -> List[Dict[str, Any]]:
     """One entry per pair of domains that needs a rule.
 
     ``classes``: ``[{"name": "HV_STACK", "voltage": 800}, ...]``. Each voltage is
-    the worst-case potential against one reference shared by all classes, so the
-    working voltage between two classes is ``|Va - Vb|``.
+    the node's potential against one reference shared by all classes: one
+    number for a node that stays put, ``[min, max]`` for one that swings. The
+    working voltage between two classes is ``working_voltage``, the largest
+    difference their ranges can show (``|Va - Vb|`` for two fixed nodes).
 
     ``pairs``: ``[{"a": "X", "b": "Y", "voltage": V}]`` overrides that for one pair.
     Use it when two classes sit in separate domains (across an isolation barrier)
     and no shared reference describes both worst cases.
 
-    ``other_nets_voltage``: potential of every net in none of the listed classes,
-    used for one "class vs everything else" rule per class. ``None`` skips those rules.
+    ``other_nets_voltage``: potential (number or ``[min, max]``) of every net in
+    none of the listed classes, used for one "class vs everything else" rule per
+    class. ``None`` skips those rules.
     """
     if not classes:
         raise VoltageRuleError("classes must list at least one net class")
     rows = normalise_table(spacing)
-    volts: Dict[str, float] = {}
+    volts: Dict[str, Potential] = {}
     for k, c in enumerate(classes):
         if not isinstance(c, dict):
             raise VoltageRuleError(f"classes[{k}] must be an object")
         name = _check_class_name(c.get("name"), f"classes[{k}]")
         if name in volts:
             raise VoltageRuleError(f"net class {name!r} listed twice")
-        volts[name] = _number(c.get("voltage"), f"classes[{k}].voltage")
+        volts[name] = potential_range(c.get("voltage"), f"classes[{k}].voltage")
 
     overrides: Dict[Tuple[str, str], float] = {}
     for k, p in enumerate(pairs or []):
@@ -209,13 +299,13 @@ def plan_rules(
     for i, a in enumerate(names):
         for b in names[i + 1 :]:
             key = tuple(sorted((a, b)))
-            voltage = overrides.get(key, abs(volts[a] - volts[b]))
+            voltage = overrides.get(key, working_voltage(volts[a], volts[b]))
             source = "pair" if key in overrides else "difference"
             plan.append(_entry(a, b, voltage, source, rows))
     if other_nets_voltage is not None:
-        other = _number(other_nets_voltage, "otherNetsVoltage")
+        other = potential_range(other_nets_voltage, "otherNetsVoltage")
         for a in names:
-            plan.append(_entry(a, None, abs(volts[a] - other), "other nets", rows))
+            plan.append(_entry(a, None, working_voltage(volts[a], other), "other nets", rows))
     return plan
 
 
@@ -242,17 +332,26 @@ def _fmt(mm: float) -> str:
     return f"{mm:.4f}".rstrip("0").rstrip(".") + "mm"
 
 
-def render_block(plan: List[Dict[str, Any]], all_classes: Sequence[str]) -> str:
+def render_block(
+    plan: List[Dict[str, Any]], all_classes: Sequence[str], exclude_unconnected: bool = False
+) -> str:
+    """The managed block for *plan*.
+
+    ``exclude_unconnected`` leaves KiCad's ``unconnected-(R1-Pad2)`` nets (unwired
+    pins) out of the "other nets" rules. Off by default: an unwired pin of a
+    low-voltage IC sits near that IC's potential through its ESD diodes, so it
+    needs the full spacing from a high-voltage track. It is for boards where the
+    unwired pins near the high-voltage copper belong to the high-voltage parts
+    themselves, which otherwise get held to the full spacing from their own pads.
+    """
     lines = [BEGIN]
     for e in plan:
         a = e["a"]
         if e["b"] == "(other nets)":
             others = " || ".join(f"B.hasNetclass('{c}')" for c in all_classes)
-            # KiCad names an unwired pin's net "unconnected-(R1-Pad2)". Such a
-            # pin floats with its own part, so it isn't "other nets" (low-voltage
-            # logic): without this a floating pin of a high-voltage part was held
-            # to the full spacing from that part's own pads.
-            condition = f"A.hasNetclass('{a}') && !({others}) && B.NetName != '{UNCONNECTED}'"
+            condition = f"A.hasNetclass('{a}') && !({others})"
+            if exclude_unconnected:
+                condition += f" && B.NetName != '{UNCONNECTED}'"
             name = f"{RULE_PREFIX}{a}-other"
         else:
             condition = f"A.hasNetclass('{a}') && B.hasNetclass('{e['b']}')"

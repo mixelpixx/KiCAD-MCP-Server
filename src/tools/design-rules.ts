@@ -154,15 +154,21 @@ export function registerDesignRuleTools(server: McpServer, callKicadScript: Comm
     "set_voltage_clearance_rules",
     `Write clearance and creepage rules graded by the working voltage between net classes, as a managed block in the board's .kicad_dru.
 
-Give each net class its worst-case voltage against one shared reference. The working voltage between two classes is then |Va - Vb|. Use 'pairs' to override that for classes in separate domains, for example across an isolation barrier. 'spacing' maps working voltage to the required clearance and (optionally) creepage. Choose its values from your standard (e.g. IPC-2221 or IEC 60664) and your coating or potting; the tool does not supply them.
+Give each net class its potential against one shared reference: a single number for a node that stays at one potential, or [min, max] for a node that swings (a half-bridge switch node going 0 to 800 V is [0, 800]). The working voltage between two classes is the largest difference their ranges can show, max(|maxA - minB|, |maxB - minA|), which is |Va - Vb| for two fixed nodes. A swinging node given only its maximum is under-spaced against the bus it swings to (800 vs 800 reads as 0 V), so use the range. Use 'pairs' to set the working voltage of one pair directly, for classes in separate domains, for example across an isolation barrier.
 
-One rule is written per pair of classes, plus one per class against all other nets (at otherNetsVoltage, default 0 V). A re-run replaces the block and leaves other rules alone. The write is refused if the rest of the .kicad_dru does not parse, because KiCad silently ignores every rule in a file it cannot parse. Classes not defined in the project are reported in warnings. Rules apply from the next DRC run.`,
+'spacing' maps working voltage to the required clearance and (optionally) creepage. Choose its values from your standard (e.g. IPC-2221 or IEC 60664) and your coating or potting; the tool does not supply them. Under IEC 60664-1 clearance follows from the impulse/peak voltage and creepage from the RMS working voltage, so the voltage you key the table by must suit both columns. Once a row gives a creepage, every higher row must too.
+
+One rule is written per pair of classes, plus one per class against all other nets (at otherNetsVoltage, default 0 V). A re-run replaces the block and leaves other rules alone. The write is refused if the rest of the .kicad_dru does not parse, because KiCad silently ignores every rule in a file it cannot parse. Classes not defined in the project are reported in warnings. Rules apply from the next DRC run. Needs KiCad 9 or newer (creepage constraint, hasNetclass); on KiCad 8 the tool refuses and writes nothing.`,
     {
       classes: z
         .array(
           z.object({
             name: z.string().describe("Net class name (must exist in the project)"),
-            voltage: z.number().describe("Worst-case potential (V) against the shared reference"),
+            voltage: z
+              .union([z.number(), z.tuple([z.number(), z.number()])])
+              .describe(
+                "Potential (V) against the shared reference: a number for a fixed node, [min, max] for one that swings",
+              ),
           }),
         )
         .min(1)
@@ -176,16 +182,26 @@ One rule is written per pair of classes, plus one per class against all other ne
           }),
         )
         .min(1)
-        .describe("Spacing table; spacing must not fall as voltage rises"),
+        .describe(
+          "Spacing table; spacing must not fall as voltage rises, and a row with creepage must not be followed by one without",
+        ),
       pairs: z
         .array(z.object({ a: z.string(), b: z.string(), voltage: z.number() }))
         .optional()
-        .describe("Explicit working voltage (V) between two classes, overriding |Va - Vb|"),
+        .describe("Explicit working voltage (V) between two classes, overriding the computed one"),
       otherNetsVoltage: z
-        .number()
+        .union([z.number(), z.tuple([z.number(), z.number()])])
         .nullable()
         .optional()
-        .describe("Potential of nets in none of the classes (default 0); null skips those rules"),
+        .describe(
+          "Potential of nets in none of the classes, a number or [min, max] (default 0); null skips those rules",
+        ),
+      excludeUnconnectedNets: z
+        .boolean()
+        .optional()
+        .describe(
+          "Leave KiCad's unconnected-(...) nets (unwired pins) out of the 'other nets' rules. Default false: an unwired pin of a low-voltage part sits near that part's potential and needs the full spacing. Turn on only when the unwired pins near the high-voltage copper belong to the high-voltage parts themselves",
+        ),
       boardPath: z.string().optional().describe("Board .kicad_pcb (default: the loaded board)"),
       dryRun: z.boolean().optional().describe("Return the planned rules without writing"),
     },

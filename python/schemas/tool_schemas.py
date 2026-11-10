@@ -2371,14 +2371,21 @@ DESIGN_RULE_TOOLS = [
         "title": "Set Voltage Clearance Rules",
         "description": (
             "Writes clearance/creepage rules graded by working voltage between net classes "
-            "into a managed block of the board's .kicad_dru."
+            "into a managed block of the board's .kicad_dru. A class's voltage is one number "
+            "(fixed potential) or [min, max] for a node that swings; the working voltage "
+            "between two classes is max(|maxA - minB|, |maxB - minA|). The spacing table's "
+            "voltage key must suit both columns (IEC 60664-1: clearance from impulse/peak, "
+            "creepage from RMS working voltage). KiCad 9 or newer; refused on KiCad 8."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "classes": {
                     "type": "array",
-                    "description": "[{name, voltage}]: worst-case potential per net class (V)",
+                    "description": (
+                        "[{name, voltage}]: potential per net class against the shared "
+                        "reference (V): a number for a fixed node, [min, max] for one that swings"
+                    ),
                     "items": {"type": "object"},
                 },
                 "spacing": {
@@ -2392,8 +2399,19 @@ DESIGN_RULE_TOOLS = [
                     "items": {"type": "object"},
                 },
                 "otherNetsVoltage": {
-                    "type": ["number", "null"],
-                    "description": "Potential of nets in no listed class (default 0); null skips",
+                    "type": ["number", "array", "null"],
+                    "description": (
+                        "Potential of nets in no listed class, a number or [min, max] "
+                        "(default 0); null skips those rules"
+                    ),
+                },
+                "excludeUnconnectedNets": {
+                    "type": "boolean",
+                    "description": (
+                        "Leave KiCad's unconnected-(...) nets (unwired pins) out of the 'other "
+                        "nets' rules (default false; an unwired pin of a low-voltage part sits "
+                        "near that part's potential and needs the full spacing)"
+                    ),
                 },
                 "boardPath": {"type": "string", "description": "Board .kicad_pcb"},
                 "dryRun": {"type": "boolean", "description": "Plan only, write nothing"},
