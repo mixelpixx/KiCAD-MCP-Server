@@ -25,6 +25,22 @@ All notable changes to the KiCAD MCP Server project are documented here.
   isolated high-voltage board be routed one domain at a time (pack-side nets
   inside their region, then the logic nets) and leaves high-current nets for
   hand-drawn pours. The reply lists `netsLeftOut`.
+- **`autoroute` keeps tracks off plane layers: `signalLayers` and
+  `layerTraceCosts`.** KiCad exports every copper layer as `(type signal)`,
+  so Freerouting ran tracks across the inner planes of a 4-layer board and cut
+  one into seven islands. `signalLayers` (e.g. `["F.Cu", "In2.Cu", "B.Cu"]`)
+  marks the other copper layers `(active off)` in a Freerouting rules file
+  passed with `-dr`: no tracks there, vias still pass through.
+  `layerTraceCosts` (e.g. `{"In1.Cu": 5}`) keeps a layer usable but prices
+  tracks on it, for a plane that may carry the odd track where nothing else
+  fits. Names may be canonical or the board's own (a renamed F.Cu is found
+  either way, since the DSN uses the board's names); a name the board lacks
+  is refused rather than ignored. The file holds only what was asked for, so
+  Freerouting's own per-layer defaults stay in force elsewhere. The reply
+  lists the restricted layers by the board's names in `tracksKeptOffLayers`.
+  A board-sized wire keepout was tried first and is the wrong tool: Freerouting
+  then places no vias at all (0 vias, 111 unrouted against fanout escaping
+  244/304 pins on the same DSN).
 
 - **Operating modes: a readonly mode for review agents, and a manufacturing
   mode** (#443 and #444, @b0gdaniy). `KICAD_MCP_OPERATING_MODE=readonly`
@@ -42,6 +58,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
     MCP's `readOnlyHint` annotation in every mode.
 
 ### Bug Fixes
+
+- **`autoroute` keeps every outline of a keepout.** KiCad's Specctra export
+  writes only the first outline of a rule area, so a keepout drawn as several
+  polygons reached Freerouting as one. On a real high-voltage board a keepout
+  built from many voltage halos lost all but one, and Freerouting put logic
+  vias 0.4 mm from 400 V pads that needed 1.5 mm. The missing outlines are
+  now appended to the DSN in the form KiCad writes the first (`keepout`,
+  `wire_keepout` or `via_keepout` per the area's flags). Holes are still not
+  exported, which keeps copper out rather than letting it in.
 
 - **`import_eagle_project` no longer replaces a schematic that is open in
   KiCad.** It writes `<output_dir>/<project_name>.kicad_sch` without checking
