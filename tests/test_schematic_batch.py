@@ -186,7 +186,7 @@ class TestBatchConnect:
         )
         labels = []
         fake_wm = types.SimpleNamespace(
-            add_labels_and_wires=lambda p, new_labels, wires: labels.extend(
+            add_labels_and_wires=lambda p, new_labels, wires, **k: labels.extend(
                 (net, orientation) for net, _pos, _kind, orientation in new_labels
             )
             or True,
@@ -217,7 +217,7 @@ class TestBatchConnect:
         )
         kinds = []
         fake_wm = types.SimpleNamespace(
-            add_labels_and_wires=lambda p, new_labels, wires: kinds.extend(
+            add_labels_and_wires=lambda p, new_labels, wires, **k: kinds.extend(
                 kind for _net, _pos, kind, _angle in new_labels
             )
             or True,

@@ -47,7 +47,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
     labels and wires are written in one read-modify-write. Four labels on
     that sheet went from 9.6 s to 4.2 s, and the cost no longer grows with
     the number of labels.
-  - Facing pins in the same batch are still joined by a wire.
+  - Facing pins in the same batch are still joined by a wire, under the same
+    straight-ahead rule as a label already in the file: a planned label off
+    the pin's axis gets no diagonal wire.
+  - With `replace`, the old labels are removed in the same write that adds
+    the new ones, so a failed write leaves the sheet as it was instead of
+    with the old labels gone. `replace` also clears the net's label at the
+    stub end, and a stub wire already in the file is not added twice, so
+    re-running a `stubLength` batch does not stack a second label and wire.
   - The schematic batch commands also get the long timeout, so a very large
     sheet can't be cut off part-way.
 - **`batch_connect` no longer draws diagonal wires to a "facing" label.** A pin

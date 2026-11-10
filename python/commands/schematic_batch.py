@@ -26,6 +26,7 @@ from commands.schematic_text_utils import (
     _find_placed_symbol_block,
     _find_project_root,
     _move_property_in_block,
+    _straight_ahead,
 )
 from commands.wire_manager import WireManager
 from utils.symbol_instances import add_missing_instances, instance_report
@@ -577,14 +578,18 @@ class SchematicBatchCommands:
                 """A label planned earlier in this batch that faces *position*.
 
                 Mirrors _find_facing_label for labels not yet in the file, so a
-                pair of facing pins in one batch is still joined by a wire.
+                pair of facing pins in one batch is still joined by a wire. The
+                same _straight_ahead gate applies: a label off the pin's axis
+                would get a diagonal wire.
                 """
                 facing = (int(round(orientation)) % 360 + 180) % 360
                 px, py = float(position[0]), float(position[1])
                 for net, pos, kind, angle in new_labels:
                     if kind != "label" or net != net_name or angle % 360 != facing:
                         continue
-                    if ((pos[0] - px) ** 2 + (pos[1] - py) ** 2) ** 0.5 <= proximity_mm:
+                    if ((pos[0] - px) ** 2 + (pos[1] - py) ** 2) ** 0.5 > proximity_mm:
+                        continue
+                    if _straight_ahead(position, orientation, pos):
                         return [pos[0], pos[1]]
                 return None
 
@@ -665,16 +670,23 @@ class SchematicBatchCommands:
                                 ]
                                 new_wires.append((list(position), label_at))
                                 entry["label_position"] = {"x": label_at[0], "y": label_at[1]}
+                                if replace:
+                                    # An earlier stub run left this net's label at
+                                    # the stub end; without this a re-run stacks a
+                                    # second label there.
+                                    to_clear.append((net_name, list(label_at)))
                             new_labels.append((net_name, label_at, label_type, orientation))
                         placed.append(entry)
                         placed_positions[pos_key] = net_name
                     except Exception as pin_err:
                         failed.append({"ref": ref, "pin": str(pin_id), "reason": str(pin_err)})
 
-            for net_name, position in to_clear:
-                WireManager.delete_label(sch_path, net_name, position, tolerance=0.5)
-                self._delete_labels_at(sch_path, position)
-            if not WireManager.add_labels_and_wires(sch_path, new_labels, new_wires):
+            # Old labels (replace=True) are removed in the same write that adds
+            # the new ones: a failed write then leaves the sheet as it was,
+            # instead of with the old labels gone and nothing in their place.
+            if not WireManager.add_labels_and_wires(
+                sch_path, new_labels, new_wires, clear=to_clear, tolerance=0.5
+            ):
                 failed.extend(dict(e, reason="writing the schematic failed") for e in placed)
                 placed = []
 
@@ -695,40 +707,6 @@ class SchematicBatchCommands:
 
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
-
-    @staticmethod
-    def _delete_labels_at(sch_path, position):
-        """Drop any (label ...) within 0.5mm of *position* (used by batch_connect replace=True)."""
-        try:
-            import sexpdata
-            from sexpdata import Symbol
-            from utils.sexpr_format import dumps as kicad_dumps
-
-            data = sexpdata.loads(sch_path.read_text(encoding="utf-8"))
-            changed = False
-            new_data = []
-            for item in data:
-                if isinstance(item, list) and len(item) > 0 and item[0] == Symbol("label"):
-                    at = next(
-                        (
-                            p
-                            for p in item[1:]
-                            if isinstance(p, list) and len(p) >= 3 and p[0] == Symbol("at")
-                        ),
-                        None,
-                    )
-                    if (
-                        at
-                        and abs(float(at[1]) - position[0]) < 0.5
-                        and abs(float(at[2]) - position[1]) < 0.5
-                    ):
-                        changed = True
-                        continue
-                new_data.append(item)
-            if changed:
-                sch_path.write_text(kicad_dumps(new_data), encoding="utf-8")
-        except Exception as e:
-            logger.warning(f"replace cleanup failed: {e}")
 
     @staticmethod
     def _pwr_flag_warnings(sch_path, locator, placed):

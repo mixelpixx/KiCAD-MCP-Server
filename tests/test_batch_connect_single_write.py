@@ -46,7 +46,7 @@ def _sym(ref, uuid, x, y):
 """
 
 
-def _sheet(tmp_path: Path) -> Path:
+def _sheet(tmp_path: Path, extra: str = "") -> Path:
     f = tmp_path / "p.kicad_sch"
     f.write_text(
         '(kicad_sch (version 20231120) (generator "eeschema") (generator_version "8.0")\n'
@@ -55,6 +55,7 @@ def _sheet(tmp_path: Path) -> Path:
         + _sym("R1", "33333333-3333-3333-3333-333333330000", 100, 100)
         + _sym("R2", "44444444-4444-4444-4444-444444440000", 110, 100)
         + _sym("R3", "55555555-5555-5555-5555-555555550000", 100, 130)
+        + extra
         + '  (sheet_instances (path "/" (page "1")))\n)\n'
     )
     return f
@@ -117,6 +118,77 @@ def test_replace_clears_the_old_label(tmp_path):
     )
     assert r["success"], r
     assert [str(lbl[1]) for lbl in _items(f, "label")] == ["NEW"]
+
+
+def test_replace_removes_and_inserts_in_the_same_write(tmp_path, monkeypatch):
+    # The old labels used to be deleted one write at a time before the bulk
+    # write. If that write then failed, the old labels were gone and nothing
+    # new was written: a half-applied batch. Now removal rides in the one
+    # write, so a failed write leaves the sheet exactly as it was.
+    f = _sheet(tmp_path)
+    c = SchematicBatchCommands(None)
+    assert c.batch_connect({"schematicPath": str(f), "connections": {"R3": {"1": "OLD"}}})[
+        "success"
+    ]
+    before = f.read_text()
+
+    def no_single_delete(*a, **k):
+        raise AssertionError("labels must not be deleted outside the bulk write")
+
+    monkeypatch.setattr(WireManager, "delete_label", staticmethod(no_single_delete))
+    seen = {}
+    real_bulk = WireManager.add_labels_and_wires
+
+    def failing_bulk(path, labels, wires, clear=None, **k):
+        seen["clear"] = list(clear or [])
+        return False
+
+    monkeypatch.setattr(WireManager, "add_labels_and_wires", staticmethod(failing_bulk))
+    r = c.batch_connect(
+        {"schematicPath": str(f), "connections": {"R3": {"1": "NEW"}}, "replace": True}
+    )
+    assert not r["success"] and r["placed"] == [] and len(r["failed"]) == 1
+    assert seen["clear"] and seen["clear"][0][0] == "NEW"
+    assert f.read_text() == before, "a failed write must leave the old label in place"
+
+    # The same call with the real write: OLD removed and NEW added, one write.
+    monkeypatch.setattr(WireManager, "add_labels_and_wires", staticmethod(real_bulk))
+    r = c.batch_connect(
+        {"schematicPath": str(f), "connections": {"R3": {"1": "NEW"}}, "replace": True}
+    )
+    assert r["success"], r
+    assert [str(lbl[1]) for lbl in _items(f, "label")] == ["NEW"]
+
+
+def test_replace_rerun_with_a_stub_adds_no_second_wire_or_label(tmp_path):
+    # An earlier stub run left the label at the stub end, not on the pin.
+    # replace=True clears that too, and the stub wire is not stacked twice.
+    f = _sheet(tmp_path)
+    c = SchematicBatchCommands(None)
+    call = {"schematicPath": str(f), "connections": {"R1": {"1": "LEFT"}}, "stubLength": 2.54}
+    assert c.batch_connect(call)["success"]
+    r = c.batch_connect(dict(call, replace=True))
+    assert r["success"], r
+    labels = _items(f, "label")
+    assert [str(lbl[1]) for lbl in labels] == ["LEFT"]
+    at = next(x for x in labels[0] if isinstance(x, list) and x[0] == sexpdata.Symbol("at"))
+    assert (round(float(at[1]), 2), round(float(at[2]), 2)) == (96.19, 100.0)
+    assert len(_items(f, "wire")) == 1
+
+
+def test_facing_planned_label_off_the_pin_axis_gets_its_own_label(tmp_path):
+    # R1 pin 2 (101.27, 100) points right; R4 pin 1 (108.73, 108) points left,
+    # 10.9 mm away but 8 mm below the axis. Before #500's gate the second pin
+    # was wired diagonally to the first's label. Same gate for labels planned
+    # earlier in the batch: two labels, no wire.
+    f = _sheet(tmp_path, extra=_sym("R4", "66666666-6666-6666-6666-666666660000", 110, 108))
+    r = SchematicBatchCommands(None).batch_connect(
+        {"schematicPath": str(f), "connections": {"R1": {"2": "MID"}, "R4": {"1": "MID"}}}
+    )
+    assert r["success"], r
+    assert len(_items(f, "label")) == 2
+    assert _items(f, "wire") == []
+    assert not any("wired to" in p.get("note", "") for p in r["placed"])
 
 
 def test_bulk_write_matches_single_writes(tmp_path):

@@ -334,10 +334,59 @@ class WireManager:
         ]
 
     @staticmethod
+    def _label_to_clear(item: Any, net: str, position: List[float], tolerance: float) -> bool:
+        """True for a label batch_connect replace=True removes at *position*.
+
+        That is any local label there, whatever its text (the pin is getting a
+        new net), and a global or hierarchical label there carrying *net*.
+        """
+        if not (isinstance(item, list) and len(item) > 1):
+            return False
+        if item[0] == _SYM_LABEL:
+            pass
+        elif item[0] in (_SYM_GLOBAL_LABEL, _SYM_HIERARCHICAL_LABEL) and item[1] == net:
+            pass
+        else:
+            return False
+        at = next(
+            (p for p in item[1:] if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_AT),
+            None,
+        )
+        if at is None:
+            return False
+        return (
+            abs(float(at[1]) - float(position[0])) < tolerance
+            and abs(float(at[2]) - float(position[1])) < tolerance
+        )
+
+    @staticmethod
+    def _wire_keys(sch_data: list) -> set:
+        """The unordered endpoint pairs of every two-point wire in *sch_data*."""
+        keys = set()
+        for item in sch_data:
+            if not (isinstance(item, list) and item and item[0] == _SYM_WIRE):
+                continue
+            pts = next(
+                (p for p in item[1:] if isinstance(p, list) and p and p[0] == _SYM_PTS), None
+            )
+            if pts is None:
+                continue
+            xy = [
+                (round(float(p[1]), 3), round(float(p[2]), 3))
+                for p in pts[1:]
+                if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_XY
+            ]
+            if len(xy) == 2:
+                keys.add(frozenset(xy))
+        return keys
+
+    @staticmethod
     def add_labels_and_wires(
         schematic_path: Path,
         labels: List[Tuple[str, List[float], str, int]],
         wires: List[Tuple[List[float], List[float]]],
+        clear: Optional[List[Tuple[str, List[float]]]] = None,
+        tolerance: float = 0.5,
     ) -> bool:
         """Add several labels and wires in one read-modify-write of the file.
 
@@ -348,18 +397,52 @@ class WireManager:
         write costs about a second, so a per-item batch of a dozen labels ran
         past the bridge's 30 s timeout and the worker was restarted mid-batch,
         leaving only some of the labels written.
+
+        *clear* holds (net, position) pairs, for batch_connect's replace=True:
+        before anything is added, every local label within *tolerance* of
+        *position*, and every global or hierarchical label of *net* there, is
+        removed. Removal and insertion are the same write, so if the write
+        fails the old labels are still in the file, rather than gone with
+        nothing new in their place.
+
+        A wire whose two endpoints already belong to a wire in the file is not
+        added again, so re-running a stub batch does not stack a second wire
+        on the first.
         """
-        if not labels and not wires:
+        clear = clear or []
+        if not labels and not wires and not clear:
             return True
         try:
             with open(schematic_path, "r", encoding="utf-8") as f:
                 sch_data = sexpdata.loads(f.read())
 
+            if clear:
+                kept = []
+                removed = 0
+                for item in sch_data:
+                    if any(WireManager._label_to_clear(item, n, p, tolerance) for n, p in clear):
+                        removed += 1
+                        continue
+                    kept.append(item)
+                sch_data[:] = kept
+                if removed:
+                    logger.info(f"Cleared {removed} label(s) for replacement")
+
             new_items = [
                 WireManager._make_label_sexp(text, position, label_type, orientation)
                 for text, position, label_type, orientation in labels
             ]
+            present = WireManager._wire_keys(sch_data)
             for start, end in wires:
+                key = frozenset(
+                    (
+                        (round(float(start[0]), 3), round(float(start[1]), 3)),
+                        (round(float(end[0]), 3), round(float(end[1]), 3)),
+                    )
+                )
+                if key in present:
+                    continue
+                present.add(key)
                 for pt in (start, end):
                     WireManager._break_wires_at_point(sch_data, pt)
                 new_items.append(WireManager._make_wire_sexp(start, end, 0, "default"))
