@@ -325,13 +325,152 @@ def test_create_project_over_an_open_schematic(project, name, refused):
     assert len(calls) == (0 if refused else 1)
 
 
+@pytest.mark.parametrize(
+    "existing, eagle_sch, refused",
+    [(True, True, True), (False, True, False), (True, False, False)],
+)
+def test_import_eagle_project_over_an_open_schematic(project, existing, eagle_sch, refused):
+    eagle = project.parent / "eagle"
+    eagle.mkdir()
+    (eagle / "board.brd").write_text("<eagle/>")
+    if eagle_sch:
+        (eagle / "board.sch").write_text("<eagle/>")
+    params = {"board_file": str(eagle / "board.brd"), "output_dir": str(project)}
+    params["project_name"] = "proj" if existing else "imported"
+
+    _, calls = _run([_open("proj.kicad_sch")], "import_eagle_project", params)
+
+    assert len(calls) == (0 if refused else 1)
+
+
 # --- keeping the list current ---------------------------------------------- #
 
-# Schematic tools that are not read-only but never write a .kicad_sch.
+# Tools that are not read-only but never write a .kicad_sch.
 _NOT_SCHEMATIC_WRITERS = {
     "sync_schematic_to_board": "writes the board",
     "create_board_from_schematic": "writes the board",
     "set_symbol_pin_type": "writes a .kicad_sym library",
+    **dict.fromkeys(
+        [
+            # board.ts
+            "add_board_outline",
+            "add_board_text",
+            "add_layer",
+            "add_mounting_hole",
+            "add_zone",
+            "clear_board_outline",
+            "delete_graphic",
+            "import_svg_logo",
+            "replace_board_outline",
+            "set_active_layer",
+            "set_board_origin",
+            "set_board_size",
+            "set_stackup_layer",
+            "update_graphic",
+            # component.ts
+            "add_component_annotation",
+            "align_components",
+            "batch_move_components",
+            "delete_component",
+            "duplicate_component",
+            "edit_component",
+            "group_components",
+            "hierarchical_place",
+            "move_component",
+            "move_footprint_text",
+            "place_component",
+            "place_component_array",
+            "replace_component",
+            "rotate_component",
+            "set_footprint_type",
+            "suggest_placement",
+            # routing.ts, freerouting.ts, pcb-import.ts
+            "add_copper_pour",
+            "add_gnd_stitching_vias",
+            "add_net",
+            "add_via",
+            "copy_routing_pattern",
+            "delete_trace",
+            "modify_trace",
+            "refill_zones",
+            "route_arc_trace",
+            "route_differential_pair",
+            "route_pad_to_pad",
+            "route_trace",
+            "autoroute",
+            "export_dsn",
+            "import_ses",
+            "import_pcb",
+        ],
+        "writes the board",
+    ),
+    **dict.fromkeys(
+        [
+            "assign_net_to_class",
+            "create_netclass",
+            "set_design_rules",
+            "set_layer_constraints",
+            "set_net_color",
+        ],
+        "writes the board or its .kicad_pro",
+    ),
+    **dict.fromkeys(
+        [
+            "close_project",
+            "discard_or_reload",
+            "save_as",
+            "save_board",
+            "save_project",
+            "snapshot_project",
+        ],
+        "saves, reloads or copies the board and project files",
+    ),
+    **dict.fromkeys(
+        [
+            "add_component_3d_model",
+            "add_footprint_3d_model",
+            "create_footprint",
+            "edit_footprint_pad",
+            "import_3d_model",
+            "register_footprint_library",
+        ],
+        "writes footprint libraries, 3D models or the board",
+    ),
+    **dict.fromkeys(
+        [
+            "add_symbol_property",
+            "create_symbol",
+            "delete_symbol",
+            "export_symbol",
+            "import_symbol",
+            "register_symbol_library",
+            "rename_symbol",
+            "remove_library_table_entry",
+            "set_library_table_uri",
+        ],
+        "writes symbol libraries or library tables",
+    ),
+    **dict.fromkeys(
+        ["download_jlcpcb_database", "download_registry_part"],
+        "downloads parts data",
+    ),
+    **dict.fromkeys(
+        [
+            "install_gui_driver",
+            "kicad_gui_click",
+            "kicad_gui_click_atspi",
+            "kicad_gui_screenshot",
+            "kicad_gui_tree",
+            "kicad_gui_tree_atspi",
+            "kicad_gui_wait_for",
+            "kicad_pcb_snapshot",
+            "kicad_reload_and_open_plugin",
+            "kicad_run_action_plugin",
+            "kicad_run_drc",
+            "launch_kicad_ui",
+        ],
+        "drives the KiCad GUI",
+    ),
 }
 
 
@@ -341,17 +480,12 @@ def _ts_set(source, name):
 
 
 def test_every_schematic_writer_is_guarded():
-    """Every schematic tool that READ_ONLY_TOOLS does not cover is guarded or exempted."""
+    """Every tool that READ_ONLY_TOOLS does not cover is guarded or exempted."""
     tools = REPO / "src" / "tools"
     modes = (tools / "operating-mode.ts").read_text(encoding="utf-8")
     read_only = _ts_set(modes, "READ_ONLY_TOOLS") | _ts_set(modes, "EXPORT_TOOLS")
-    files = [
-        *sorted(tools.glob("schematic*.ts")),
-        tools / "datasheet.ts",
-        tools / "library-symbol.ts",
-    ]
     registered = set()
-    for f in files:
+    for f in sorted(tools.glob("*.ts")):
         registered |= set(
             re.findall(r'server\.(?:tool|registerTool)\(\s*"([a-z_0-9]+)"', f.read_text())
         )
@@ -364,6 +498,7 @@ def test_every_schematic_writer_is_guarded():
     )
 
     assert unguarded == set()
+    assert not set(_NOT_SCHEMATIC_WRITERS) & KiCADInterface._SCHEMATIC_MUTATING_COMMANDS
 
 
 def test_guarded_commands_exist():

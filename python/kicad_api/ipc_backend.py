@@ -1496,6 +1496,7 @@ class IPCBoardAPI(BoardAPI):
         priority: int = 0,
         fill_mode: str = "solid",
         name: str = "",
+        pad_connection: Optional[str] = None,
     ) -> bool:
         """
         Add a copper pour zone to the board.
@@ -1511,11 +1512,12 @@ class IPCBoardAPI(BoardAPI):
             priority: Zone priority (higher = fills first)
             fill_mode: "solid" or "hatched"
             name: Optional zone name
+            pad_connection: "thermal", "solid" or "none"; None keeps KiCad's default
         """
         try:
             from kipy.board_types import Zone, ZoneFillMode, ZoneType
             from kipy.geometry import PolyLine, PolyLineNode, Vector2
-            from kipy.proto.board.board_types_pb2 import BoardLayer
+            from kipy.proto.board.board_types_pb2 import BoardLayer, ZoneConnectionStyle
             from kipy.util.units import from_mm
 
             board = self._get_board()
@@ -1562,6 +1564,13 @@ class IPCBoardAPI(BoardAPI):
             zone._proto.copper_settings.fill_mode = (
                 ZoneFillMode.ZFM_HATCHED if fill_mode == "hatched" else ZoneFillMode.ZFM_SOLID
             )
+
+            if pad_connection is not None:
+                zone._proto.copper_settings.connection.zone_connection = {
+                    "thermal": ZoneConnectionStyle.ZCS_THERMAL,
+                    "solid": ZoneConnectionStyle.ZCS_FULL,
+                    "none": ZoneConnectionStyle.ZCS_NONE,
+                }[pad_connection]
 
             # Create outline polyline
             outline = PolyLine()
