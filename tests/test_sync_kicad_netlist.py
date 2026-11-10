@@ -92,6 +92,121 @@ def test_parse_sexpr_keeps_parens_inside_strings():
     assert parse_sexpr('(name "PA13(JTMS")') == ["name", "PA13(JTMS"]
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "written, value",
+    [
+        (r'"line1\nline2"', "line1\nline2"),
+        (r'"a\rb"', "a\rb"),
+        (r'"a\tb"', "a\tb"),
+        (r'"10\"k"', '10"k'),
+        (r'"C:\\new"', "C:\\new"),  # an escaped backslash is not the start of \n
+        (r'"\\n"', "\\n"),  # ... so a literal backslash-n stays two characters
+        (r'"\q"', "\\q"),  # anything else keeps its backslash, as KiCad's lexer does
+    ],
+)
+def test_parse_sexpr_maps_kicads_escapes_back(written, value):
+    """kicad-cli writes "line1\\nline2" for a two-line field; the parser used to
+    drop the backslash and return "line1nline2", which the sync then wrote onto
+    the footprint, so the field showed as changed on every later sync."""
+    assert parse_sexpr(f"(value {written})") == ["value", value]
+
+
+@pytest.mark.unit
+def test_parse_netlist_keeps_multiline_field_values():
+    text = SAMPLE.replace('(field (name "Datasheet"))', r'(field (name "Note") "line1\nline2")')
+    by_ref = {c["reference"]: c for c in parse_netlist(text).components}
+    assert by_ref["U2"]["fields"]["Note"] == "line1\nline2"
+
+
+# --------------------------------------------------------------------------- #
+# Footprint library IDs (unit, fake footprints)
+# --------------------------------------------------------------------------- #
+
+
+class _FPID:
+    def __init__(self, lib, name):
+        self.lib, self.name = lib, name
+
+    def GetLibNickname(self):
+        return self.lib
+
+    def GetLibItemName(self):
+        return self.name
+
+
+class _Footprint:
+    """Just enough of pcbnew.FOOTPRINT for _update_footprints_from_symbols."""
+
+    def __init__(self, ref, lib, name):
+        self.ref, self.fpid = ref, _FPID(lib, name)
+        self.set_fpid_calls = []
+
+    def GetReference(self):
+        return self.ref
+
+    def GetValue(self):
+        return "10k"
+
+    def GetFPID(self):
+        return self.fpid
+
+    def SetFPID(self, fpid):
+        self.set_fpid_calls.append(fpid)
+
+    def HasField(self, name):
+        return False
+
+    def GetFields(self):
+        return []
+
+    def IsFlipped(self):
+        return False
+
+
+def _update(fps, want):
+    from commands.schematic_handlers import SchematicHandlersMixin
+
+    board = type("B", (), {"GetFootprints": lambda self: fps})()
+    comps = [{"reference": fp.ref, "value": "10k", "footprint": want} for fp in fps]
+    return SchematicHandlersMixin._update_footprints_from_symbols(board, comps)
+
+
+@pytest.mark.unit
+def test_footprint_with_no_library_gets_the_symbols_library():
+    """What older versions of this tool left behind: ``R_0603`` with no nickname."""
+    fp = _Footprint("R1", "", "R_0603_1608Metric")
+    updated, pending = _update([fp], "Resistor_SMD:R_0603_1608Metric")
+    assert len(fp.set_fpid_calls) == 1
+    assert updated == ["R1: library '(none)' -> 'Resistor_SMD'"]
+    assert pending == []
+
+
+@pytest.mark.unit
+def test_different_library_same_name_is_a_pending_change_not_a_rewrite():
+    """KiCad treats a different library as a footprint change: it reports it and
+    swaps the footprint only when "replace footprints" is ticked. Rewriting the
+    nickname alone would keep the old library's geometry under the new name."""
+    fp = _Footprint("R1", "project_lib", "R_0603_1608Metric")
+    updated, pending = _update([fp], "Resistor_SMD:R_0603_1608Metric")
+    assert fp.set_fpid_calls == []
+    assert updated == []
+    assert pending == [
+        {
+            "reference": "R1",
+            "board": "project_lib:R_0603_1608Metric",
+            "schematic": "Resistor_SMD:R_0603_1608Metric",
+        }
+    ]
+
+
+@pytest.mark.unit
+def test_same_library_id_changes_nothing():
+    fp = _Footprint("R1", "Resistor_SMD", "R_0603_1608Metric")
+    updated, pending = _update([fp], "Resistor_SMD:R_0603_1608Metric")
+    assert fp.set_fpid_calls == [] and updated == [] and pending == []
+
+
 # --------------------------------------------------------------------------- #
 # Real KiCad
 # --------------------------------------------------------------------------- #
@@ -175,6 +290,8 @@ def _project(d: Path) -> Path:
         ),
         Path("/usr/share/kicad/footprints"),
     )
+    if not (fp_dir / "Resistor_SMD.pretty").is_dir():
+        pytest.skip(f"no KiCad footprint library at {fp_dir} (set KICAD10_FOOTPRINT_DIR)")
     board = pcbnew.BOARD()
     for ref, x in (("R1", 10), ("R2", 20)):
         fp = pcbnew.FootprintLoad(str(fp_dir / "Resistor_SMD.pretty"), "R_0603_1608Metric")
@@ -261,7 +378,10 @@ def test_sync_matches_kicads_netlist_and_parity_is_clean(tmp_path, monkeypatch):
         for f in fp.GetFields():
             if not (f.IsReference() or f.IsValue()) and f.GetName() in ("MPN", "MB P/N"):
                 assert not f.IsVisible(), (fp.GetReference(), f.GetName())
-                assert f.GetLayer() in (pcbnew.F_Fab, pcbnew.B_Fab), (fp.GetReference(), f.GetName())
+                assert f.GetLayer() in (pcbnew.F_Fab, pcbnew.B_Fab), (
+                    fp.GetReference(),
+                    f.GetName(),
+                )
 
     assert _parity(board_path) == []  # KiCad agrees with every pad, field and link
 

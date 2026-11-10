@@ -51,8 +51,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
     disagree with KiCad and 3 parity issues, all in the design itself.
   - **Also reported.** The reply says `netSource`. Pads that aren't pins of
     their symbol have their net cleared (`pads_cleared`). Footprints that
-    differ from the symbol's are listed in `footprint_changes_pending`, not
-    swapped.
+    differ from the symbol's, in name or in library, are listed in
+    `footprint_changes_pending`, not swapped; only a footprint with no
+    library nickname at all (what older versions of this tool wrote) gets
+    the symbol's nickname. New fields are created hidden on the Fab layer,
+    as KiCad does. Field values with line breaks come through intact: the
+    netlist reader maps KiCad's `\n`, `\r` and `\t` escapes back.
   - **Fallback.** Without kicad-cli the built-in walker is still used, with a
     warning.
 - **`import_eagle_project` no longer replaces a schematic that is open in

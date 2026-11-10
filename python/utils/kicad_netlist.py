@@ -34,12 +34,19 @@ logger = logging.getLogger("kicad_interface")
 
 SExpr = Union[str, List["SExpr"]]
 
+# What KiCad's writer puts after a backslash inside a quoted token, and the
+# character it stands for. Any other escaped character keeps its backslash,
+# as KiCad's own lexer leaves it.
+_UNESCAPES = {"n": "\n", "r": "\r", "t": "\t", '"': '"', "\\": "\\"}
+
 
 def parse_sexpr(text: str) -> SExpr:
     """Parse one S-expression into nested lists of strings.
 
-    Quoted and bare atoms both become ``str``; KiCad's ``\\"`` and ``\\\\``
-    escapes inside quotes are undone.
+    Quoted and bare atoms both become ``str``. KiCad's escapes inside quotes
+    (``\\n``, ``\\r``, ``\\t``, ``\\"`` and ``\\\\``) are mapped back to the
+    characters the writer escaped: a multi-line field value written as
+    ``"line1\\nline2"`` comes back with its line feed, not as ``line1nline2``.
     """
     stack: List[List[SExpr]] = [[]]
     i, n = 0, len(text)
@@ -59,7 +66,10 @@ def parse_sexpr(text: str) -> SExpr:
             buf = []
             while j < n and text[j] != '"':
                 if text[j] == "\\" and j + 1 < n:
-                    j += 1
+                    nxt = text[j + 1]
+                    buf.append(_UNESCAPES.get(nxt, "\\" + nxt))
+                    j += 2
+                    continue
                 buf.append(text[j])
                 j += 1
             if j >= n:

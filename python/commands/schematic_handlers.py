@@ -3514,10 +3514,13 @@ class SchematicHandlersMixin:
         changed in the schematic stayed stale on the board, and KiCad's parity
         check reported every such part.
 
-        A library ID that differs only in its library nickname, or is missing
-        one, is rewritten. A different footprint *name* means the footprint
-        itself has to be swapped. That is reported in the second list and
-        left for the caller, not done silently here.
+        A library ID with no library nickname at all (what older versions of
+        this tool wrote) gets the symbol's nickname when the footprint name
+        matches. Any other difference, in the library or in the name, is a
+        footprint change: KiCad reports it and swaps the footprint only when
+        "replace footprints" is ticked, because another library's footprint
+        of the same name can have different geometry. Those are listed in the
+        second list and left for the caller, not done silently here.
         """
         by_ref = {c["reference"]: c for c in components if c.get("reference")}
         updated: List[str] = []
@@ -3537,10 +3540,10 @@ class SchematicHandlersMixin:
                 fpid = fp.GetFPID()
                 have_lib = str(fpid.GetLibNickname())
                 have_name = str(fpid.GetLibItemName())
-                if have_name == name and have_lib != lib:
+                if have_name == name and not have_lib:
                     fp.SetFPID(pcbnew.LIB_ID(lib, name))
-                    changes.append(f"library {have_lib or '(none)'!r} -> {lib!r}")
-                elif have_name != name:
+                    changes.append(f"library '(none)' -> {lib!r}")
+                elif have_name != name or have_lib != lib:
                     footprint_changes.append(
                         {
                             "reference": ref,
