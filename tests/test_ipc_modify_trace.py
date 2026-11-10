@@ -82,13 +82,15 @@ def _api_with_board(monkeypatch, board: Any) -> IPCBoardAPI:
 
 
 def _track(uuid: str = TRACE_UUID) -> Any:
-    track = MagicMock()
-    track.id = uuid
+    # A real kipy Track, so track.id is a KIID message as on a live board.
+    # A MagicMock with a plain-string id hid a lookup that never matched.
+    track = bt.Track()
+    track._proto.id.value = uuid
     return track
 
 
 def _net(name: str) -> Any:
-    net = MagicMock()
+    net = bt.Net()
     net.name = name
     return net
 
@@ -116,6 +118,48 @@ def test_modify_track_applies_width_layer_net_and_commits(monkeypatch):
     assert track.width == from_mm(0.3)
     assert track.layer == BoardLayer.BL_B_Cu
     assert track.net.name == "+12V"
+
+
+@pytest.mark.parametrize("layer", ["F.Cu", "In3.Cu", "In30.Cu", "B.Cu"])
+def test_modify_track_accepts_every_copper_layer(monkeypatch, layer):
+    """A 6-layer board needs In3.Cu and up, which the SWIG path handles."""
+    from kipy.proto.board.board_types_pb2 import BoardLayer
+
+    track = _track()
+    board = MagicMock()
+    board.get_tracks.return_value = [track]
+    api = _api_with_board(monkeypatch, board)
+
+    result = api.modify_track(TRACE_UUID, layer=layer)
+
+    assert result["success"], result
+    assert track.layer == BoardLayer.Value("BL_" + layer.replace(".", "_"))
+
+
+def test_modify_track_rejects_non_copper_layer(monkeypatch):
+    """F.SilkS is a valid BoardLayer name, but a track cannot live on it."""
+    board = MagicMock()
+    board.get_tracks.return_value = [_track()]
+    api = _api_with_board(monkeypatch, board)
+
+    result = api.modify_track(TRACE_UUID, layer="F.SilkS")
+
+    assert not result["success"]
+    assert result["message"] == "Invalid layer"
+    board.update_items.assert_not_called()
+
+
+def test_get_tracks_id_round_trips_into_modify_track(monkeypatch):
+    """query_traces hands out get_tracks ids, and modify_trace takes them
+    back, so the id must be the bare UUID that modify_track compares."""
+    board = MagicMock()
+    board.get_tracks.return_value = [_track()]
+    api = _api_with_board(monkeypatch, board)
+
+    (listed,) = api.get_tracks()
+
+    assert listed["id"] == TRACE_UUID
+    assert api.modify_track(listed["id"], width=0.3)["success"]
 
 
 def test_modify_track_missing_uuid_is_reported_not_silent(monkeypatch):
