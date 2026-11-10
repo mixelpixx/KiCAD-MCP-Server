@@ -35,6 +35,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`autoroute` works on the board named by `boardPath`.** The path was
+  accepted and then ignored: with nothing loaded the call refused with "No
+  board is loaded", and with a different board loaded it routed that board
+  and saved it over `boardPath`. A `boardPath` given to `autoroute`,
+  `export_dsn` or `import_ses` that is not the loaded board is now loaded
+  first, the way `open_project` loads it (every command handler, the disk
+  signature and the session pin follow), so the whole session moves to that
+  board. A path that only differs in spelling (case on Windows, `..`
+  segments) is the same board and does not reload. A session pinned to the
+  board open in KiCad refuses a different `boardPath` and asks for
+  `open_project` first.
+
 - **`import_eagle_project` no longer replaces a schematic that is open in
   KiCad.** It writes `<output_dir>/<project_name>.kicad_sch` without checking
   whether that file exists, so re-importing into an open project overwrote it
