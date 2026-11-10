@@ -3267,6 +3267,14 @@ class SchematicHandlersMixin:
                     self.board = board
                     self._update_command_handlers()
 
+            # This handler wrote the board file itself. Record that write as
+            # ours: sync_schematic_to_board is a board-mutating command, so an
+            # auto-save follows it, and with the pre-sync signature still on
+            # record that auto-save -- and every later one -- refused to save,
+            # reporting the file as "changed externally".
+            if board is self.board:
+                self._record_board_signature()
+
             logger.info(
                 f"sync_schematic_to_board: {len(added_nets)} nets added, "
                 f"{len(added_footprints)} footprints added, {assigned_pads} pads assigned"
@@ -3536,10 +3544,13 @@ class SchematicHandlersMixin:
         changed in the schematic stayed stale on the board, and KiCad's parity
         check reported every such part.
 
-        A library ID that differs only in its library nickname, or is missing
-        one, is rewritten. A different footprint *name* means the footprint
-        itself has to be swapped. That is reported in the second list and
-        left for the caller, not done silently here.
+        A library ID with no library nickname at all (what older versions of
+        this tool wrote) gets the symbol's nickname when the footprint name
+        matches. Any other difference, in the library or in the name, is a
+        footprint change: KiCad reports it and swaps the footprint only when
+        "replace footprints" is ticked, because another library's footprint
+        of the same name can have different geometry. Those are listed in the
+        second list and left for the caller, not done silently here.
         """
         by_ref = {c["reference"]: c for c in components if c.get("reference")}
         updated: List[str] = []
@@ -3559,10 +3570,10 @@ class SchematicHandlersMixin:
                 fpid = fp.GetFPID()
                 have_lib = str(fpid.GetLibNickname())
                 have_name = str(fpid.GetLibItemName())
-                if have_name == name and have_lib != lib:
+                if have_name == name and not have_lib:
                     fp.SetFPID(pcbnew.LIB_ID(lib, name))
-                    changes.append(f"library {have_lib or '(none)'!r} -> {lib!r}")
-                elif have_name != name:
+                    changes.append(f"library '(none)' -> {lib!r}")
+                elif have_name != name or have_lib != lib:
                     footprint_changes.append(
                         {
                             "reference": ref,
@@ -3577,9 +3588,20 @@ class SchematicHandlersMixin:
                 if name == "Footprint":
                     continue
                 try:
-                    if fp.HasField(name) and fp.GetFieldText(name) == value:
+                    existed = fp.HasField(name)
+                    if existed and fp.GetFieldText(name) == value:
                         continue
                     fp.SetField(name, value)
+                    if not existed:
+                        # A new field arrives hidden on the side's Fab layer, as
+                        # KiCad's own update from schematic adds it. SetField makes
+                        # it visible on F.SilkS at the footprint origin: on a real
+                        # board that printed every MPN and datasheet URL across
+                        # the silkscreen.
+                        field = next((f for f in fp.GetFields() if f.GetName() == name), None)
+                        if field is not None:
+                            field.SetVisible(False)
+                            field.SetLayer(pcbnew.B_Fab if fp.IsFlipped() else pcbnew.F_Fab)
                     changes.append(f"field {name!r}")
                 except Exception as exc:  # binding differences across versions
                     logger.warning(f"could not set field {name!r} on {ref}: {exc}")
