@@ -3124,6 +3124,22 @@ class SchematicHandlersMixin:
             dry_run = bool(params.get("dryRun"))
             warnings: List[str] = []
 
+            # With the board open in KiCad (session pinned to IPC) this tool
+            # writes the file underneath the GUI, and KiCad's next save
+            # overwrites it. Swapping and deleting parts that way loses
+            # them, so both options are refused there; a preview is fine.
+            wanted = [p for p in ("replaceFootprints", "deleteUnusedFootprints") if params.get(p)]
+            if wanted and not dry_run and getattr(self, "session_backend", None) == "ipc":
+                return {
+                    "success": False,
+                    "message": (
+                        f"{' and '.join(wanted)} refused: the board is open in KiCad "
+                        "(session pinned to IPC), and KiCad's next save would overwrite "
+                        "the swaps and deletions. Close the board in KiCad and reopen "
+                        "the project, or preview with dryRun."
+                    ),
+                }
+
             # Determine board to work with
             board = None
             if dry_run and not board_path and self.board:
@@ -3218,6 +3234,12 @@ class SchematicHandlersMixin:
             # ("Update PCB from Schematic"), but our previous implementation
             # only mutated nets, leaving newly-added schematic symbols with no
             # PCB footprint at all.
+            # A re-annotated schematic first: KiCad matches footprints by
+            # symbol path and renames them in place, so R203 -> R299 is a
+            # rename, not a missing R299 plus an unused R203.
+            renamed_footprints = self._rename_footprints_by_symbol_path(
+                board, netlist.components if netlist else []
+            )
             added_footprints, skipped_footprints = self._add_missing_footprints_from_schematic(
                 board, schematic_path, components=netlist.components if netlist else None
             )
@@ -3370,6 +3392,7 @@ class SchematicHandlersMixin:
                 "footprints_linked": linked_footprints,
                 "footprints_updated": updated_footprints,
                 "footprint_changes_pending": footprint_changes,
+                "footprints_renamed": renamed_footprints,
                 "footprints_replaced": replaced_footprints,
                 "footprints_deleted": deleted_footprints,
                 "pads_cleared": cleared_pads,
@@ -3777,25 +3800,72 @@ class SchematicHandlersMixin:
                     except Exception:  # binding differences across versions
                         pass
 
-    @staticmethod
+    @classmethod
+    def _rename_footprints_by_symbol_path(
+        cls, board: Any, components: List[Dict[str, Any]]
+    ) -> List[str]:
+        """Give each footprint the reference of the symbol it is linked to.
+
+        KiCad matches a footprint to its symbol by path (sheet UUIDs plus the
+        symbol UUID), not by reference, so re-annotating the schematic renames
+        the footprint on the next update. Matching by reference alone made a
+        re-annotated part look like a missing R299 and an unused R203, and
+        ``deleteUnusedFootprints`` then removed the placed part.
+
+        The full path is compared, so instances of a reused sheet (same symbol
+        UUID, different sheet UUIDs) each find their own footprint. Returns
+        ``["R203 -> R299", ...]``.
+        """
+        by_path = {c["path"]: c for c in components if c.get("path") and c.get("reference")}
+        renamed: List[str] = []
+        for fp in board.GetFootprints():
+            try:
+                path = fp.GetPath().AsString()
+            except Exception:
+                continue
+            comp = by_path.get(path) if isinstance(path, str) else None
+            if comp is None or fp.GetReference() == comp["reference"]:
+                continue
+            renamed.append(f"{fp.GetReference()} -> {comp['reference']}")
+            fp.SetReference(comp["reference"])
+        return sorted(renamed)
+
+    @classmethod
     def _delete_footprints_without_symbols(
-        board: Any, components: List[Dict[str, Any]]
+        cls, board: Any, components: List[Dict[str, Any]]
     ) -> Tuple[List[str], List[Dict[str, str]]]:
         """Remove footprints whose reference has no symbol in the schematic.
 
         KiCad's "Delete footprints with no symbols". Footprints marked
         board-only (mounting holes, logos, fiducials) are kept, as KiCad
-        keeps them, and so are locked ones, which are reported instead.
+        keeps them, and so are locked ones, which are reported instead. A
+        footprint whose symbol UUID matches a schematic symbol is never
+        deleted either: it is that symbol's part, whatever its reference
+        says (the rename step normally renames it first).
         """
         from utils.board_items import delete_board_item
 
         refs = {c["reference"] for c in components if c.get("reference")}
+        symbol_refs: Dict[str, str] = {}
+        for c in components:
+            path = c.get("path") or ""
+            if path and c.get("reference"):
+                symbol_refs[path.rstrip("/").rsplit("/", 1)[-1]] = c["reference"]
         board_only = getattr(pcbnew, "FP_BOARD_ONLY", 0)
         deleted: List[str] = []
         kept: List[Dict[str, str]] = []
         for fp in list(board.GetFootprints()):
             ref = fp.GetReference()
             if ref in refs:
+                continue
+            symbol_ref = symbol_refs.get(cls._board_symbol_uuid(fp))
+            if symbol_ref:
+                kept.append(
+                    {
+                        "reference": ref,
+                        "reason": f"its symbol UUID is schematic symbol {symbol_ref}; not deleted",
+                    }
+                )
                 continue
             if board_only and fp.GetAttributes() & board_only:
                 continue

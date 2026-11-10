@@ -2867,7 +2867,10 @@ SCHEMATIC_TOOLS = [
                     "type": "boolean",
                     "description": (
                         "Delete footprints with no symbol in the schematic; board-only and "
-                        "locked footprints are kept."
+                        "locked footprints are kept, and a footprint whose symbol UUID matches "
+                        "a schematic symbol is renamed to it (re-annotation), never deleted. "
+                        "Refused, like replaceFootprints, while the board is open in KiCad "
+                        "(session pinned to IPC) unless dryRun."
                     ),
                 },
             },

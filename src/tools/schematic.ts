@@ -1671,8 +1671,10 @@ edit_schematic_component and set its value to an empty string.`,
         .boolean()
         .optional()
         .describe(
-          "Delete footprints with no symbol in the schematic; board-only and locked footprints are kept " +
-            "(KiCad F8: 'Delete footprints with no symbols').",
+          "Delete footprints with no symbol in the schematic; board-only and locked footprints are kept, " +
+            "and a footprint whose symbol UUID matches a schematic symbol is renamed to it (re-annotation), " +
+            "never deleted (KiCad F8: 'Delete footprints with no symbols'). Refused, like replaceFootprints, " +
+            "while the board is open in KiCad (session pinned to IPC) unless dryRun.",
         ),
     },
     async (args: {

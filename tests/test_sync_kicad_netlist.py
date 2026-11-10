@@ -552,11 +552,54 @@ def test_replace_and_delete_footprints(tmp_path, monkeypatch):
     assert str(r2.GetFPID().GetLibItemName()) == "R_0603_1608Metric"
     assert r2.GetPosition() == pos and r2.IsFlipped() and r2.GetOrientationDegrees() == 90
     # field layout survives the replacement (it used to reset to the library's)
-    assert r2.Reference().GetPosition() == pos + pcbnew.VECTOR2I(pcbnew.FromMM(3), pcbnew.FromMM(-2))
+    assert r2.Reference().GetPosition() == pos + pcbnew.VECTOR2I(
+        pcbnew.FromMM(3), pcbnew.FromMM(-2)
+    )
     assert r2.Reference().GetTextSize().x == pcbnew.FromMM(0.6)
     # the text comes from the schematic (the sync updates fields afterwards); visibility stays the board's
     assert _field(r2, "MPN").GetText() == "RC0603FR-0710KL"
     assert not _field(r2, "MPN").IsVisible()
     assert r2.GetPath().AsString() == f"/{SHEET}/{R2}"
     assert {p.GetNumber(): p.GetNetname() for p in r2.Pads()}["1"] == "/CANH"
+    assert _parity(board_path) == []
+    # A field the library footprint lacks (MPN) was created on the new footprint
+    # with the old field's layer and visibility: _rework_board created it on
+    # the flipped R2, so B.SilkS, hidden; not visible on F.SilkS.
+    assert _field(r2, "MPN").GetLayer() == pcbnew.B_SilkS
+
+
+@pytest.mark.integration
+@pytest.mark.real_pcbnew
+def test_reannotated_symbol_renames_its_footprint_instead_of_deleting_it(tmp_path, monkeypatch):
+    """R2 is renamed R99 in the schematic (same symbol UUID). KiCad matches by
+    UUID and renames the footprint; deleteUnusedFootprints must not remove it."""
+    _require_kicad()
+    monkeypatch.setenv("KICAD_SKIP_SYMBOL_WARMUP", "1")
+    import pcbnew
+
+    board_path = _project(tmp_path / "p")
+    assert _sync(board_path)["success"]
+    board = pcbnew.LoadBoard(str(board_path))
+    placed = next(fp for fp in board.GetFootprints() if fp.GetReference() == "R2")
+    moved_to = pcbnew.VECTOR2I(pcbnew.FromMM(22), pcbnew.FromMM(7))
+    placed.SetPosition(moved_to)
+    pcbnew.SaveBoard(str(board_path), board)
+
+    sub = board_path.parent / "sub.kicad_sch"
+    sub.write_text(sub.read_text().replace('"R2"', '"R99"'))  # re-annotation, UUID unchanged
+
+    preview = _sync(board_path, dryRun=True, deleteUnusedFootprints=True)
+    assert preview["footprints_renamed"] == ["R2 -> R99"]
+    assert preview["footprints_deleted"] == [] and preview["footprints_added"] == []
+
+    r = _sync(board_path, deleteUnusedFootprints=True)
+    assert r["success"], r
+    assert r["footprints_renamed"] == ["R2 -> R99"]
+    assert r["footprints_deleted"] == [] and r["footprints_added"] == []
+    board = pcbnew.LoadBoard(str(board_path))
+    refs = {fp.GetReference(): fp for fp in board.GetFootprints()}
+    assert set(refs) == {"R1", "R99"}
+    assert refs["R99"].GetPosition() == moved_to  # the placed part, renamed in place
+    assert refs["R99"].GetPath().AsString() == f"/{SHEET}/{R2}"
+    assert {p.GetNumber(): p.GetNetname() for p in refs["R99"].Pads()}["1"] == "/CANH"
     assert _parity(board_path) == []

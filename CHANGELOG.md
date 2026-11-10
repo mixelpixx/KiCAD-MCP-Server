@@ -49,6 +49,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
   - `deleteUnusedFootprints` removes footprints with no symbol. Board-only
     footprints (mounting holes, logos) are kept, as KiCad keeps them, and so
     are locked ones, which are reported.
+  - Footprints are matched to symbols by symbol path (UUID) before
+    reference, as KiCad does: after a re-annotation (R203 renamed to R299,
+    same symbol) the footprint is renamed in place and listed in
+    `footprints_renamed`, instead of being reported missing and, with
+    `deleteUnusedFootprints`, deleted. A footprint whose symbol UUID matches
+    a schematic symbol is never deleted.
+  - Both options are refused while the board is open in KiCad (session
+    pinned to IPC), except under `dryRun`: the tool writes the board file
+    underneath the GUI, and KiCad's next save would overwrite the swaps and
+    deletions.
   - Both work with `dryRun`, and the reply lists `footprints_replaced` and
     `footprints_deleted`.
 
