@@ -162,6 +162,62 @@ def test_get_tracks_id_round_trips_into_modify_track(monkeypatch):
     assert api.modify_track(listed["id"], width=0.3)["success"]
 
 
+VIA_UUID = "22222222-2222-2222-2222-222222222222"
+
+
+def _via(uuid: str = VIA_UUID) -> Any:
+    via = bt.Via()
+    via._proto.id.value = uuid
+    return via
+
+
+def test_modify_track_changes_via_diameter_and_net(monkeypatch):
+    """SWIG modify_trace walks board.Tracks(), which includes vias. kipy
+    lists vias apart from tracks, so modify_track has to search both."""
+    from kipy.util.units import from_mm
+
+    via = _via()
+    board = MagicMock()
+    board.get_tracks.return_value = [_track()]
+    board.get_vias.return_value = [via]
+    board.get_nets.return_value = [_net("GND")]
+    api = _api_with_board(monkeypatch, board)
+
+    result = api.modify_track(VIA_UUID, width=0.8, net_name="GND")
+
+    assert result["success"], result
+    assert via.diameter == from_mm(0.8)
+    assert via.net.name == "GND"
+    (pushed,), _ = board.update_items.call_args
+    assert pushed == [via]
+
+
+def test_modify_track_rejects_layer_change_on_via(monkeypatch):
+    board = MagicMock()
+    board.get_tracks.return_value = []
+    board.get_vias.return_value = [_via()]
+    api = _api_with_board(monkeypatch, board)
+
+    result = api.modify_track(VIA_UUID, width=0.8, layer="B.Cu")
+
+    assert not result["success"]
+    assert result["message"] == "Invalid layer"
+    board.update_items.assert_not_called()
+
+
+def test_get_vias_id_round_trips_into_modify_track(monkeypatch):
+    """query_traces with includeVias hands out get_vias ids."""
+    board = MagicMock()
+    board.get_tracks.return_value = []
+    board.get_vias.return_value = [_via()]
+    api = _api_with_board(monkeypatch, board)
+
+    (listed,) = api.get_vias()
+
+    assert listed["id"] == VIA_UUID
+    assert api.modify_track(listed["id"], width=0.8)["success"]
+
+
 def test_modify_track_missing_uuid_is_reported_not_silent(monkeypatch):
     board = MagicMock()
     board.get_tracks.return_value = [_track("other-uuid")]
