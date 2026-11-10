@@ -21,9 +21,36 @@ the via padstack in the library, and drop the claimed nets from
 import json
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("kicad_interface")
+
+
+def netclass_pattern_for_net(net_name: str) -> str:
+    """The netclass pattern that matches *net_name* and nothing else.
+
+    KiCad compiles every netclass pattern as an anchored regular expression
+    (``EDA_COMBINED_MATCHER`` with ``CTX_NETCLASS``: ``wxRE_ADVANCED`` wrapped
+    in ``^...$``) and, beside it, as an anchored wildcard; a name matches when
+    either does. So a raw net name is not an exact match: ``HV+`` also captures
+    ``HV`` and ``HVV``, ``/SPI.CLK`` captures ``/SPIxCLK``, ``Net-(R1-Pad1)``
+    captures ``Net-R1-Pad1``, and on KiCad 10 every matching class is merged
+    into the net's effective class, so clearances change without anyone asking.
+    ``re.escape`` makes each of those match only itself. Checked on KiCad
+    10.0.8: the extra escapes it adds (``\\-``, ``\\#``, ``\\&``, ``\\~``, ``\\_``
+    and ``\\ `` for a space) are read as the literal character. A name holding
+    ``*`` or ``?`` escapes to ``\\*``/``\\?``, which still matches itself; the
+    wildcard side then also admits names beginning with the name up to a
+    literal backslash, which don't occur.
+
+    Used for the ``netclass_patterns`` record ``assign_net_to_class`` writes,
+    for the explicit assignments this loader pushes into ``NET_SETTINGS``, and
+    for the in-memory ``SetNetclassPatternAssignment``, so all three agree on
+    what a net's own pattern looks like.
+    """
+    return re.escape(net_name)
+
 
 # net_settings.classes numeric fields (millimetres) -> NETCLASS setter names.
 # Same field vocabulary as commands/routing.py's _NETCLASS_NUMERIC_FIELDS.
@@ -139,13 +166,16 @@ def apply_net_classes_to_board(board: Any, settings: Dict[str, Any]) -> Dict[str
 
     # Explicit per-net assignments are expressed as exact-name patterns:
     # SetNetclassLabelAssignment is not callable from Python (its argument is
-    # a C++ std::set<wxString>), and a literal net name is a wildcard pattern
-    # matching exactly itself. Nets assigned multiple classes keep only the
-    # last one (same-pattern assignments replace); composite-class merging is
-    # not modeled here.
+    # a C++ std::set<wxString>). The name is escaped first, because KiCad reads
+    # a pattern as a regular expression and a raw "Net-(D1-Pad2)" would also
+    # claim "Net-D1-Pad2" (see netclass_pattern_for_net). Nets assigned
+    # multiple classes keep only the last one (same-pattern assignments
+    # replace); composite-class merging is not modeled here.
     for net_name, class_names in settings.get("assignments", {}).items():
         for class_name in class_names:
-            net_settings.SetNetclassPatternAssignment(net_name, class_name)
+            net_settings.SetNetclassPatternAssignment(
+                netclass_pattern_for_net(net_name), class_name
+            )
             assignment_count += 1
 
     if hasattr(net_settings, "ClearAllCaches"):

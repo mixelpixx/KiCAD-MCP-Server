@@ -56,6 +56,19 @@ All notable changes to the KiCAD MCP Server project are documented here.
     net (the same `SetClass` error). It now applies and persists the class,
     reports `classPersisted`, and warns about an unknown class instead of
     claiming it.
+- **`assign_net_to_class` membership now survives Update PCB from Schematic**
+  (#517). The tool wrote only `net_settings.netclass_assignments`, which KiCad
+  derives from the schematic's net-class directives and rewrites on a sync; a
+  schematic without directives emptied it, every rule keyed on those classes
+  stopped matching, and DRC passed (a pour 0.21 mm from a 600 V net on a real
+  board). The tool now also records the net in `netclass_patterns`, which a
+  sync leaves alone. The pattern is the escaped name (`re.escape`), because
+  KiCad reads a pattern as an anchored regular expression: a raw `HV+` also
+  put `HV` and `HVV` in the class. The project loader behind `export_dsn` and
+  `autoroute` had the same gap and now escapes the names from
+  `netclass_assignments` too. Assignments made with an earlier version were
+  lost on the first sync after they were made, so redo them (call
+  `assign_net_to_class` again for each net) after upgrading.
 - **`import_eagle_project` no longer replaces a schematic that is open in
   KiCad.** It writes `<output_dir>/<project_name>.kicad_sch` without checking
   whether that file exists, so re-importing into an open project overwrote it
