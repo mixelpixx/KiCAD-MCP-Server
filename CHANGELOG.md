@@ -42,6 +42,28 @@ All notable changes to the KiCAD MCP Server project are documented here.
   schematic writers. The test that keeps the guarded list current scans every
   tool file instead of only the schematic ones, so a writer added elsewhere
   fails it until it is guarded or listed as not writing a schematic.
+- **Saves after `sync_schematic_to_board` are no longer refused as an
+  external change.** The sync writes the board file itself but did not record
+  that write, so the auto-save that follows it, and every later one in the
+  session, reported the file as "changed externally" and kept the change in
+  memory only. `create_board_from_schematic` followed by another sync hit the
+  same refusal.
+- **`add_zone`, `export_position_file` and `export_vrml` work.** They were
+  listed and documented, but every call failed with "Unknown command". They
+  now run `add_copper_pour`, `export_pos` and `export_3d_cli` with translated
+  parameters.
+- **`add_copper_pour`** reports an unknown net as an error instead of adding a
+  zone with no net, exposes `priority`, `fillType`, `minWidth` and a new
+  `padConnection` (`thermal`/`solid`/`none`), and works over IPC: that handler
+  read `points` while the tool sends `outline`. The IPC path now applies the
+  same checks as SWIG: point units are converted to mm, an unknown net is an
+  error, and `padConnection` is written to the zone.
+- **Schematic batches no longer time out on large symbols.** Placing one STM32
+  symbol took longer than the 30 s default, and the abandoned batch left a
+  schematic that would not load. The batch schematic commands,
+  `create_board_from_schematic` and `run_erc` get the long allowance, and
+  `KICAD_MCP_COMMAND_TIMEOUT_MS` raises the floor for every command.
+
 - **A wire ending on the middle of another wire now gets its junction, and
   keeps one it already has.** KiCad connects such a T only with a junction at
   the meeting point. KiCad's editor splits the through-wire there, but wires

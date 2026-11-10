@@ -7,6 +7,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { logger } from "../logger.js";
+import { positionFileToExportPos, vrmlToExport3dCli } from "./tool-aliases.js";
 
 // Command function type for KiCAD script calls
 type CommandFunction = (command: string, params: Record<string, unknown>) => Promise<any>;
@@ -272,12 +273,13 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
     async ({ outputPath, format, units, side }) => {
       logger.debug(`Exporting position file to: ${outputPath}`);
-      const result = await callKicadScript("export_position_file", {
-        outputPath,
-        format,
-        units,
-        side,
-      });
+      // No Python export_position_file command exists; kicad-cli's export_pos
+      // does the job.
+      const mapped = positionFileToExportPos({ outputPath, format, units, side });
+      const result =
+        "error" in mapped
+          ? { success: false, message: mapped.error }
+          : await callKicadScript("export_pos", mapped.params);
 
       return {
         content: [
@@ -306,11 +308,12 @@ export function registerExportTools(server: McpServer, callKicadScript: CommandF
     },
     async ({ outputPath, includeComponents, useRelativePaths }) => {
       logger.debug(`Exporting VRML to: ${outputPath}`);
-      const result = await callKicadScript("export_vrml", {
-        outputPath,
-        includeComponents,
-        useRelativePaths,
-      });
+      // No Python export_vrml command exists; export_3d_cli covers VRML.
+      const mapped = vrmlToExport3dCli({ outputPath, includeComponents, useRelativePaths });
+      const result =
+        "error" in mapped
+          ? { success: false, message: mapped.error }
+          : await callKicadScript("export_3d_cli", mapped.params);
 
       return {
         content: [
