@@ -218,6 +218,8 @@ def test_apply_updates_default_class_in_place() -> None:
 
 
 def test_apply_expresses_explicit_assignments_as_exact_patterns() -> None:
+    """KiCad reads the pattern as a regex: raw "Net-(D1-Pad2)" would also claim
+    "Net-D1-Pad2", so the assignment goes in escaped."""
     board, report = _apply(
         {
             "classes": [{"name": "HV", "clearance": 1.0}],
@@ -225,7 +227,7 @@ def test_apply_expresses_explicit_assignments_as_exact_patterns() -> None:
             "assignments": {"Net-(D1-Pad2)": ["HV"]},
         }
     )
-    assert board.net_settings.pattern_assignments == [("Net-(D1-Pad2)", "HV")]
+    assert board.net_settings.pattern_assignments == [(r"Net\-\(D1\-Pad2\)", "HV")]
     assert report["assignments"] == 1
 
 
