@@ -1921,6 +1921,18 @@ class RoutingCommands:
             points = params.get("outline", params.get("points", []))
             priority = params.get("priority", 0)
             fill_type = params.get("fillType", "solid")  # solid or hatched
+            pad_connection = params.get("padConnection")  # thermal | solid | none
+            pad_connection_modes = {
+                "thermal": "ZONE_CONNECTION_THERMAL",
+                "solid": "ZONE_CONNECTION_FULL",
+                "none": "ZONE_CONNECTION_NONE",
+            }
+            if pad_connection is not None and pad_connection not in pad_connection_modes:
+                return {
+                    "success": False,
+                    "message": "Invalid padConnection",
+                    "errorDetails": "padConnection must be one of thermal, solid, none",
+                }
 
             # If no outline provided, use board outline
             if not points or len(points) < 3:
@@ -1971,13 +1983,18 @@ class RoutingCommands:
             zone = pcbnew.ZONE(self.board)
             zone.SetLayer(layer_id)
 
-            # Set net if provided
+            # Set net if provided. An unknown name used to be ignored, which
+            # left a net-less zone on the board while reporting success.
             if net:
                 netinfo = self.board.GetNetInfo()
                 nets_map = netinfo.NetsByName()
-                if nets_map.has_key(net):
-                    net_obj = nets_map[net]
-                    zone.SetNet(net_obj)
+                if not nets_map.has_key(net):
+                    return {
+                        "success": False,
+                        "message": "Unknown net",
+                        "errorDetails": f"Net '{net}' does not exist on the board",
+                    }
+                zone.SetNet(nets_map[net])
 
             # Set zone properties
             scale = 1000000  # mm to nm
@@ -1987,6 +2004,9 @@ class RoutingCommands:
                 zone.SetLocalClearance(int(clearance * scale))
 
             zone.SetMinThickness(int(min_width * scale))
+
+            if pad_connection is not None:
+                zone.SetPadConnection(getattr(pcbnew, pad_connection_modes[pad_connection]))
 
             # Set fill type
             if fill_type == "hatched":
@@ -2028,6 +2048,7 @@ class RoutingCommands:
                     "minWidth": min_width,
                     "priority": priority,
                     "fillType": fill_type,
+                    "padConnection": pad_connection or "thermal",
                     "pointCount": len(points),
                 },
             }

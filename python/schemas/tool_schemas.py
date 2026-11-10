@@ -1956,14 +1956,27 @@ ROUTING_TOOLS = [
                 },
                 "outline": {
                     "type": "array",
-                    "description": "Array of [x, y] points defining the pour boundary",
+                    "description": "Array of {x, y} points (mm) defining the pour boundary",
                     "items": {
-                        "type": "array",
-                        "items": {"type": "number"},
-                        "minItems": 2,
-                        "maxItems": 2,
+                        "type": "object",
+                        "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
+                        "required": ["x", "y"],
                     },
                     "minItems": 3,
+                },
+                "minWidth": {
+                    "type": "number",
+                    "description": "Minimum fill width in millimeters (default 0.2)",
+                },
+                "fillType": {
+                    "type": "string",
+                    "enum": ["solid", "hatched"],
+                    "description": "Fill style (default solid)",
+                },
+                "padConnection": {
+                    "type": "string",
+                    "enum": ["thermal", "solid", "none"],
+                    "description": "How pads of the zone's net connect (default thermal)",
                 },
             },
             "required": ["net", "layer", "outline"],
