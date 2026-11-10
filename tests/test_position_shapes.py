@@ -54,14 +54,18 @@ def test_xy_normaliser():
 @pytest.mark.unit
 @pytest.mark.parametrize("pos", [[50.8, 25.4], {"x": 50.8, "y": 25.4}])
 def test_add_schematic_text_takes_either_shape(sch, pos):
-    r = _iface()._handle_add_schematic_text({"schematicPath": str(sch), "text": "NOTE", "position": pos})
+    r = _iface()._handle_add_schematic_text(
+        {"schematicPath": str(sch), "text": "NOTE", "position": pos}
+    )
     assert r["success"], r
     assert '(text "NOTE"' in sch.read_text() and "(at 50.8 25.4 0)" in sch.read_text()
 
 
 @pytest.mark.unit
 def test_add_schematic_text_bad_position_says_what_it_wants(sch):
-    r = _iface()._handle_add_schematic_text({"schematicPath": str(sch), "text": "NOTE", "position": {"x": 1}})
+    r = _iface()._handle_add_schematic_text(
+        {"schematicPath": str(sch), "text": "NOTE", "position": {"x": 1}}
+    )
     assert not r["success"] and "[x, y]" in r["message"] and '"x"' in r["message"]
 
 
@@ -72,15 +76,38 @@ def test_delete_net_label_takes_either_shape(sch, pos):
 
     assert WireManager.add_label(sch, "VBUS", [50.8, 25.4])
     assert '(label "VBUS"' in sch.read_text()
-    r = _iface()._handle_delete_schematic_net_label({"schematicPath": str(sch), "netName": "VBUS", "position": pos})
+    r = _iface()._handle_delete_schematic_net_label(
+        {"schematicPath": str(sch), "netName": "VBUS", "position": pos}
+    )
     assert r["success"], r
     assert '(label "VBUS"' not in sch.read_text()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("pos", [{"x": 50.8}, [50.8], "50.8, 25.4", {"x": "50.8", "y": 25.4}])
+def test_delete_net_label_refuses_a_malformed_position(sch, pos):
+    """A position that is present but malformed is an error, not "no position".
+
+    Treating it as absent would delete the only label of that name, which is
+    the wrong label whenever the caller passed coordinates to pick one.
+    """
+    from commands.wire_manager import WireManager
+
+    assert WireManager.add_label(sch, "VBUS", [50.8, 25.4])
+    before = sch.read_text()
+    r = _iface()._handle_delete_schematic_net_label(
+        {"schematicPath": str(sch), "netName": "VBUS", "position": pos}
+    )
+    assert not r["success"], r
+    assert "[x, y]" in r["message"] and '"x"' in r["message"]
+    assert sch.read_text() == before
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize("pos", [[50.8, 25.4], {"x": 50.8, "y": 25.4}])
 def test_hierarchical_label_takes_either_shape(sch, pos):
     r = _iface()._handle_add_schematic_hierarchical_label(
-        {"schematicPath": str(sch), "text": "SDA", "position": pos, "shape": "bidirectional"})
+        {"schematicPath": str(sch), "text": "SDA", "position": pos, "shape": "bidirectional"}
+    )
     assert r["success"], r
     assert '(hierarchical_label "SDA"' in sch.read_text()

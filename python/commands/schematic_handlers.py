@@ -47,14 +47,19 @@ def _xy(value: Any) -> Optional[List[float]]:
     # Values are passed through as given: the writers format 100 as "100", so
     # converting to float would change every coordinate in the file to "100.0".
     if isinstance(value, dict):
-        pt = [value.get("x"), value.get("y")]
+        x, y = value.get("x"), value.get("y")
     elif isinstance(value, (list, tuple)) and len(value) == 2:
-        pt = list(value)
+        x, y = value
     else:
         return None
-    if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in pt):
-        return pt
+    if isinstance(x, bool) or isinstance(y, bool):
+        return None
+    if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+        return [x, y]
     return None
+
+
+_POSITION_SHAPES = '[x, y] or {"x": .., "y": ..}'
 
 
 def _find_placed_symbol_position(content: str, reference: str) -> Optional[Tuple[float, float]]:
@@ -2319,7 +2324,7 @@ class SchematicHandlersMixin:
         try:
             schematic_path = params.get("schematicPath")
             net_name = params.get("netName")
-            position = _xy(params.get("position"))
+            raw_position = params.get("position")
 
             if not schematic_path or not net_name:
                 return {
@@ -2327,13 +2332,24 @@ class SchematicHandlersMixin:
                     "message": "schematicPath and netName are required",
                 }
 
+            # A position that is given but malformed is refused, not treated as
+            # absent: without a position the only label of that name is deleted,
+            # which is the wrong label when the caller meant to pick one.
+            pos_list = None
+            if raw_position is not None:
+                pos_list = _xy(raw_position)
+                if pos_list is None:
+                    return {
+                        "success": False,
+                        "message": (
+                            f"position must be {_POSITION_SHAPES}, got {raw_position!r}; "
+                            "nothing was deleted"
+                        ),
+                    }
+
             from pathlib import Path
 
             from commands.wire_manager import WireManager
-
-            pos_list = None
-            if position:
-                pos_list = position
 
             deleted = WireManager.delete_label(Path(schematic_path), net_name, pos_list)
             if deleted:
@@ -2645,7 +2661,7 @@ class SchematicHandlersMixin:
             if not text:
                 return {"success": False, "message": "text is required"}
             if not position or len(position) != 2:
-                return {"success": False, "message": "position is required, as [x, y] or {\"x\": .., \"y\": ..}"}
+                return {"success": False, "message": f"position is required, as {_POSITION_SHAPES}"}
             if justify not in ("left", "center", "right"):
                 return {"success": False, "message": "justify must be left, center, or right"}
             if font_size <= 0:
@@ -2702,7 +2718,7 @@ class SchematicHandlersMixin:
             if not text:
                 return {"success": False, "message": "text is required"}
             if not position or len(position) != 2:
-                return {"success": False, "message": "position is required, as [x, y] or {\"x\": .., \"y\": ..}"}
+                return {"success": False, "message": f"position is required, as {_POSITION_SHAPES}"}
             if shape not in ("input", "output", "bidirectional"):
                 return {
                     "success": False,
@@ -2756,7 +2772,7 @@ class SchematicHandlersMixin:
             if not pin_name:
                 return {"success": False, "message": "pinName is required"}
             if not position or len(position) != 2:
-                return {"success": False, "message": "position is required, as [x, y] or {\"x\": .., \"y\": ..}"}
+                return {"success": False, "message": f"position is required, as {_POSITION_SHAPES}"}
             if pin_type not in ("input", "output", "bidirectional"):
                 return {
                     "success": False,
