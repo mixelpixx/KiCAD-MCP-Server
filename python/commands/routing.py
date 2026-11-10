@@ -260,6 +260,23 @@ def apply_net_assignment_to_project_settings(
         assignments = {}
         net_settings["netclass_assignments"] = assignments
     assignments[net_name] = [class_name]
+    # The durable record is an exact-name entry in netclass_patterns. KiCad treats
+    # netclass_assignments as DERIVED from the schematic's net-class directives and
+    # rewrites it on Update PCB from Schematic: on a schematic with no directives a
+    # sync (sync_schematic_to_board) leaves it empty and every assignment made here
+    # is silently lost. The user-defined patterns survive a sync. Seen on a real
+    # 6-layer HV board: 21 voltage-class assignments dropped, every clearance rule
+    # keyed on those classes stopped matching, and DRC still passed.
+    patterns = net_settings.get("netclass_patterns")
+    if not isinstance(patterns, list):
+        patterns = []
+        net_settings["netclass_patterns"] = patterns
+    for entry in patterns:
+        if isinstance(entry, dict) and entry.get("pattern") == net_name:
+            entry["netclass"] = class_name
+            break
+    else:
+        patterns.append({"netclass": class_name, "pattern": net_name})
     return data
 
 
