@@ -35,6 +35,67 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`import_eagle_project` no longer replaces a schematic that is open in
+  KiCad.** It writes `<output_dir>/<project_name>.kicad_sch` without checking
+  whether that file exists, so re-importing into an open project overwrote it
+  the way `create_project` did before #473. It is now refused like the other
+  schematic writers. The test that keeps the guarded list current scans every
+  tool file instead of only the schematic ones, so a writer added elsewhere
+  fails it until it is guarded or listed as not writing a schematic.
+- **Saves after `sync_schematic_to_board` are no longer refused as an
+  external change.** The sync writes the board file itself but did not record
+  that write, so the auto-save that follows it, and every later one in the
+  session, reported the file as "changed externally" and kept the change in
+  memory only. `create_board_from_schematic` followed by another sync hit the
+  same refusal.
+- **`add_zone`, `export_position_file` and `export_vrml` work.** They were
+  listed and documented, but every call failed with "Unknown command". They
+  now run `add_copper_pour`, `export_pos` and `export_3d_cli` with translated
+  parameters.
+- **`add_copper_pour`** reports an unknown net as an error instead of adding a
+  zone with no net, exposes `priority`, `fillType`, `minWidth` and a new
+  `padConnection` (`thermal`/`solid`/`none`), and works over IPC: that handler
+  read `points` while the tool sends `outline`. The IPC path now applies the
+  same checks as SWIG: point units are converted to mm, an unknown net is an
+  error, and `padConnection` is written to the zone.
+- **Schematic batches no longer time out on large symbols.** Placing one STM32
+  symbol took longer than the 30 s default, and the abandoned batch left a
+  schematic that would not load. The batch schematic commands,
+  `create_board_from_schematic` and `run_erc` get the long allowance, and
+  `KICAD_MCP_COMMAND_TIMEOUT_MS` raises the floor for every command.
+
+- **A wire ending on the middle of another wire now gets its junction, and
+  keeps one it already has.** KiCad connects such a T only with a junction at
+  the meeting point. KiCad's editor splits the through-wire there, but wires
+  written by a tool usually aren't split. `sync_junctions` counted wire ends
+  only, so it added no junction (KiCad left the T open, and ERC reports
+  `unconnected_wire_endpoint`). Worse, it deleted a junction that was
+  already there, cutting a working connection. It runs on every `add_wire`,
+  `delete_wire`, move and rotate, so one edit anywhere on a sheet could
+  disconnect a T elsewhere on it.
+  - The through-wire now counts as two connections, as its halves would
+    if split.
+  - A pin sitting mid-wire is still not dotted: KiCad treats it as
+    unconnected, and a junction would change the netlist.
+  - A plain crossing is still not dotted.
+- **No-connect flags and junctions now work on hierarchical child sheets.**
+  A child sheet has no `(sheet_instances)` block. `add_no_connect` returned
+  False there ("No sheet_instances section found"), so
+  `batch_add_no_connects` failed for every pin of every part below the root
+  sheet. `sync_junctions` skipped its insert, so no junction a child sheet
+  needed was ever written, and a tool-drawn T on a child sheet stayed open.
+  Both now append at the end of the sheet, as `add_label` and `add_wire`
+  already did. KiCad's ERC confirms a no-connect placed on a child sheet
+  clears that pin's `pin_not_connected`.
+- **`find_orphaned_wires` no longer reports wires to sheet pins as orphaned.**
+  On a real 3-sheet design whose ERC shows no dangling wire, the root sheet
+  came back with 38 "orphaned" wires: every wire to a hierarchical sheet pin.
+  Pruning them, the natural next step, deleted live wires back through
+  whole nets (93 on that sheet before nothing was left to remove). Sheet pins
+  and hierarchical labels now count as connections, as does a wire end on
+  another wire's interior at a junction (KiCad connects such an unsplit T).
+  The same design now reports 0 on every sheet, matching ERC.
+
 - **`add_via` reads the parameters its schemas declare** (#407). The SWIG
   handler indexed `position["unit"]`, so a call without the optional `unit`
   failed with `'unit'`. JSON-RPC calls (`x`, `y`, `diameter`, `netName`) were
