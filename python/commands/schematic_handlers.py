@@ -3128,6 +3128,18 @@ class SchematicHandlersMixin:
             board = None
             if dry_run and not board_path and self.board:
                 board_path = self.board.GetFileName()
+                if not board_path:
+                    # Nothing on disk to preview against, and a preview must
+                    # not touch the loaded board: the branch below would run
+                    # the sync on it in memory.
+                    return {
+                        "success": False,
+                        "dryRun": True,
+                        "message": (
+                            "dryRun needs a board file: the loaded board has no file name. "
+                            "Save it first (save_board) or pass boardPath."
+                        ),
+                    }
                 warnings.append(
                     "dryRun previews against the board file on disk; unsaved edits to the "
                     "loaded board are not included."
@@ -3272,7 +3284,7 @@ class SchematicHandlersMixin:
             # auto-save follows it, and with the pre-sync signature still on
             # record that auto-save -- and every later one -- refused to save,
             # reporting the file as "changed externally".
-            if board is self.board:
+            if board is self.board and not dry_run:
                 self._record_board_signature()
 
             logger.info(

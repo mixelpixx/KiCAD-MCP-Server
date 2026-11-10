@@ -418,6 +418,50 @@ def test_dry_run_reports_the_changes_and_saves_nothing(tmp_path, monkeypatch):
 
 @pytest.mark.integration
 @pytest.mark.real_pcbnew
+def test_dry_run_through_handle_command_leaves_the_file_and_the_loaded_board(tmp_path, monkeypatch):
+    """The MCP layer auto-saves after sync_schematic_to_board. open_project, move
+    a footprint without saving, then preview: the file must not be rewritten
+    with the move, no backup may appear, and the loaded board keeps the move."""
+    _require_kicad()
+    monkeypatch.setenv("KICAD_SKIP_SYMBOL_WARMUP", "1")
+    import pcbnew
+    from kicad_interface import KiCADInterface
+
+    board_path = _project(tmp_path / "p")
+    iface = KiCADInterface()
+    opened = iface.handle_command(
+        "open_project", {"filename": str(board_path.with_suffix(".kicad_pro"))}
+    )
+    assert opened["success"], opened
+    moved_to = pcbnew.VECTOR2I(pcbnew.FromMM(15), pcbnew.FromMM(15))
+    iface.board.FindFootprintByReference("R1").SetPosition(moved_to)  # unsaved edit
+    before = board_path.read_bytes()
+
+    preview = iface.handle_command(
+        "sync_schematic_to_board",
+        {"schematicPath": str(board_path.with_suffix(".kicad_sch")), "dryRun": True},
+    )
+    assert preview["success"], preview
+    assert preview["dryRun"] is True
+    assert "R1/2: '' -> '/CANH'" in preview["pads_changed"]
+    assert board_path.read_bytes() == before, "the preview saved the board"
+    assert not (board_path.parent / ".mcp-backups").exists(), "the preview made a backup"
+    assert "autoSave" not in preview
+    assert iface.board.FindFootprintByReference("R1").GetPosition() == moved_to
+    # Nothing in memory was synced either: the loaded board still has no nets.
+    assert iface.board.FindFootprintByReference("R1").FindPadByNumber("2").GetNetname() == ""
+
+    applied = iface.handle_command(
+        "sync_schematic_to_board",
+        {"schematicPath": str(board_path.with_suffix(".kicad_sch"))},
+    )
+    assert applied["success"] and applied["dryRun"] is False, applied
+    assert board_path.read_bytes() != before
+    assert preview["pads_changed"] == applied["pads_changed"]
+
+
+@pytest.mark.integration
+@pytest.mark.real_pcbnew
 def test_fallback_without_kicad_cli_says_so(tmp_path, monkeypatch):
     _require_kicad()
     monkeypatch.setenv("KICAD_SKIP_SYMBOL_WARMUP", "1")

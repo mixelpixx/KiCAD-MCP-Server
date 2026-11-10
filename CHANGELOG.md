@@ -38,7 +38,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   the schematic's nets, as KiCad's F8 does. On a board edited after its last
   sync that discards data, and until now the list of changes came back only
   after they were saved. With `dryRun` the same list comes back and nothing
-  is written (the board file is byte-identical afterwards).
+  is written (the board file is byte-identical afterwards). The auto-save
+  that follows every board-mutating command is skipped for a preview: it
+  used to write the loaded board, unsaved edits and all, and leave a
+  backup, under a reply that said nothing was saved. A preview of a loaded
+  board that has no file name is refused (save it first, or pass
+  `boardPath`) instead of running the sync on it in memory.
   - New in every reply: `pads_changed`, only the pads whose net actually
     changes (for example `U6/1: 'Net-(U6-A)' -> 'unconnected-(U6-NC-Pad1)'`),
     plus `pads_changed_count` and `dryRun`. `pads_assigned` still
