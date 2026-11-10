@@ -4,6 +4,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New MCP Prompt
+
+- `pdn_dc_review` — Checklist for a DC power-distribution review using
+  `get_stackup`, `summarize_vias`, `summarize_net_copper`, `query_traces`, and
+  `query_zones`. It does not ask for a copper solve or an impedance curve this
+  server cannot produce. Target impedance is the allowed ripple divided by the
+  load's transient step.
+- `emc_shield_review` — Checklist for a shield review from the board geometry
+  (`get_component_list`, `get_stackup`, `summarize_vias`). It does not assume a
+  near-field solver. A caller may paste a comparison; the prompt does not
+  invent one.
+
 ### New Features
 
 - **`check_schematic_legibility`: what a reader trips over.** ERC and a
@@ -40,6 +52,115 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`import_eagle_project` no longer replaces a schematic that is open in
+  KiCad.** It writes `<output_dir>/<project_name>.kicad_sch` without checking
+  whether that file exists, so re-importing into an open project overwrote it
+  the way `create_project` did before #473. It is now refused like the other
+  schematic writers. The test that keeps the guarded list current scans every
+  tool file instead of only the schematic ones, so a writer added elsewhere
+  fails it until it is guarded or listed as not writing a schematic.
+- **Saves after `sync_schematic_to_board` are no longer refused as an
+  external change.** The sync writes the board file itself but did not record
+  that write, so the auto-save that follows it, and every later one in the
+  session, reported the file as "changed externally" and kept the change in
+  memory only. `create_board_from_schematic` followed by another sync hit the
+  same refusal.
+- **`add_zone`, `export_position_file` and `export_vrml` work.** They were
+  listed and documented, but every call failed with "Unknown command". They
+  now run `add_copper_pour`, `export_pos` and `export_3d_cli` with translated
+  parameters.
+- **`add_copper_pour`** reports an unknown net as an error instead of adding a
+  zone with no net, exposes `priority`, `fillType`, `minWidth` and a new
+  `padConnection` (`thermal`/`solid`/`none`), and works over IPC: that handler
+  read `points` while the tool sends `outline`. The IPC path now applies the
+  same checks as SWIG: point units are converted to mm, an unknown net is an
+  error, and `padConnection` is written to the zone.
+- **Schematic batches no longer time out on large symbols.** Placing one STM32
+  symbol took longer than the 30 s default, and the abandoned batch left a
+  schematic that would not load. The batch schematic commands,
+  `create_board_from_schematic` and `run_erc` get the long allowance, and
+  `KICAD_MCP_COMMAND_TIMEOUT_MS` raises the floor for every command.
+
+- **A wire ending on the middle of another wire now gets its junction, and
+  keeps one it already has.** KiCad connects such a T only with a junction at
+  the meeting point. KiCad's editor splits the through-wire there, but wires
+  written by a tool usually aren't split. `sync_junctions` counted wire ends
+  only, so it added no junction (KiCad left the T open, and ERC reports
+  `unconnected_wire_endpoint`). Worse, it deleted a junction that was
+  already there, cutting a working connection. It runs on every `add_wire`,
+  `delete_wire`, move and rotate, so one edit anywhere on a sheet could
+  disconnect a T elsewhere on it.
+  - The through-wire now counts as two connections, as its halves would
+    if split.
+  - A pin sitting mid-wire is still not dotted: KiCad treats it as
+    unconnected, and a junction would change the netlist.
+  - A plain crossing is still not dotted.
+- **No-connect flags and junctions now work on hierarchical child sheets.**
+  A child sheet has no `(sheet_instances)` block. `add_no_connect` returned
+  False there ("No sheet_instances section found"), so
+  `batch_add_no_connects` failed for every pin of every part below the root
+  sheet. `sync_junctions` skipped its insert, so no junction a child sheet
+  needed was ever written, and a tool-drawn T on a child sheet stayed open.
+  Both now append at the end of the sheet, as `add_label` and `add_wire`
+  already did. KiCad's ERC confirms a no-connect placed on a child sheet
+  clears that pin's `pin_not_connected`.
+- **`find_orphaned_wires` no longer reports wires to sheet pins as orphaned.**
+  On a real 3-sheet design whose ERC shows no dangling wire, the root sheet
+  came back with 38 "orphaned" wires: every wire to a hierarchical sheet pin.
+  Pruning them, the natural next step, deleted live wires back through
+  whole nets (93 on that sheet before nothing was left to remove). Sheet pins
+  and hierarchical labels now count as connections, as does a wire end on
+  another wire's interior at a junction (KiCad connects such an unsplit T).
+  The same design now reports 0 on every sheet, matching ERC.
+
+- **`add_via` reads the parameters its schemas declare** (#407). The SWIG
+  handler indexed `position["unit"]`, so a call without the optional `unit`
+  failed with `'unit'`. JSON-RPC calls (`x`, `y`, `diameter`, `netName`) were
+  refused as `Missing position`, and the IPC handler took `x`/`y` as mm
+  whatever their unit. Both handlers now share one parameter reader: `unit`
+  defaults to mm, the JSON-RPC names are accepted, a net that does not exist
+  is reported instead of leaving the via unconnected, and a `viaType` other
+  than `through` is refused instead of quietly adding a through via.
+- **Autoroute with several attempts no longer crashes with `PermissionError`
+  on a rootful Docker engine** (#477). The best-of-N restore step copied the
+  winning SES over the existing file with `shutil.copy2`, which needs write
+  permission on that file; on a rootful Docker engine the file is still
+  owned by the container. It now writes to a sibling path and renames over
+  the existing file instead, which only needs write permission on the
+  directory.
+- **Schematic edits are refused while the schematic is open in KiCad** (#472).
+  KiCad keeps its own copy of an open schematic and does not reload it when
+  the file changes on disk, so saving there silently overwrote what the
+  schematic tools wrote. Commands that edit a schematic now ask KiCad over IPC
+  which schematic is open and refuse if it belongs to the same project. Tools
+  that write only on request (`lint_offgrid` with `fix`, `dryRun: false`,
+  `apply`) are refused only then, and previews (`dryRun`/`dry_run`) pass.
+  Every file `update_symbol_from_library` would write is checked,
+  `backannotate_footprints` without `schematicPath` checks the board's
+  schematic, and `create_schematic` and `create_project` no longer replace an
+  open schematic with an empty one. Set
+  `KICAD_ALLOW_OPEN_SCHEMATIC_EDITS=true` to allow them anyway; the opt-in
+  Windows reload (`KICAD_INTERACTIVE_SCHEMATIC`) is unaffected.
+- **`run_drc` reports unconnected items and schematic-parity issues, and
+  refills zones first on KiCad 10.** kicad-cli's JSON report keeps three
+  lists, and only `violations` was read, so missing connections
+  (`unconnected_items`) and schematic mismatches (`schematic_parity`) were
+  never reported: a board with unrouted nets could come back with no errors.
+  All three are read now, the summary counts them `by_category`, and each
+  violation in the saved file keeps its `category` and the `items` it names
+  (description, uuid, position). `get_drc_violations` uses `run_drc`, so its
+  counts now include unconnected items too.
+  - With KiCad 10 kicad-cli, DRC refills zones before checking, as the DRC
+    dialog does by default; on a 13-cell battery board with stale fills,
+    about 400 of 584 reported violations were clearance errors against old
+    fill copper. The refill is not saved: the reply says
+    `zonesRefilled: true` and notes that exports plot the saved fills.
+    `refillZones` set to false turns it off. KiCad 8 and 9 have no
+    `--refill-zones`, so there the check runs on the saved fills and says so
+    (`zonesRefilled: false`).
+  - `schematicParity` set to true adds the schematic check, with a warning
+    when kicad-cli could not load the schematic.
+  - A failed kicad-cli run reports stdout's last lines when stderr is empty.
 - **`export_svg` writes the SVG it reports** (#467). It plotted without
   opening a plot file first, the same mistake #456 fixed in `export_gerber`,
   so no file was written while the reply said success. It now writes one SVG
@@ -47,11 +168,37 @@ All notable changes to the KiCAD MCP Server project are documented here.
   is named `<board>-<name>.svg` like the PDF export. Both `export_svg` and
   `export_pdf` now take that name from KiCad and fail if the file is missing,
   instead of reporting a path nobody checked.
+- **Board tools keep working after an image render** (#479).
+  `get_board_2d_view` and the schematic view rasterize with pymupdf, which,
+  like pcbnew, is a SWIG module. On builds where both use the same SWIG
+  runtime version, they share one type table, and pymupdf loading after pcbnew
+  replaced pcbnew's iterator class. Every later loop over board drawings,
+  tracks or footprint graphics then failed with
+  `'SwigPyIterator' object has no attribute 'next'` until the server
+  restarted; `list_graphics` was the most visible casualty. If you never saw
+  that error, your build keeps the tables separate and was not affected (seen
+  with KiCad 9.0.8 from Ubuntu 26.04 and pymupdf 2.1). The server now imports
+  pymupdf before pcbnew, and both view tools re-register pcbnew's iterator
+  class after loading pymupdf, so the import order no longer matters.
 - **Prompts include the arguments you pass** (found while reviewing #470).
   Every prompt's text marks its arguments with `{{name}}`, but no handler
   filled them in, so the model received the literal `{{requirements}}` and the
   user's text was dropped. All 18 prompts now substitute their arguments; an
   optional one left out reads "(not provided)".
+
+### Tooling
+
+- **CI jobs time out instead of hanging for six hours.** No job in
+  `ci.yml` set `timeout-minutes`, so GitHub's 360-minute default applied. On
+  2026-11-06 a KiCad 10 integration leg on the #505 merge train sat in the
+  KiCad PPA install step for over 25 minutes (normally under 2) until it was
+  cancelled by hand, and the required `CI passed` check stayed pending the
+  whole time. Every job now has a limit of about 3x its slowest successful run
+  on `main` (10 minutes at least; 35 for the integration tests). The KiCad
+  install step also has its own 25-minute limit, apt drops a connection that
+  sends nothing for 60 seconds and retries the file, and each apt command is
+  retried up to 3 times. A timed-out job counts as failed, so `CI passed`
+  fails with it.
 
 ## [2.8.3] - 2026-10-25
 

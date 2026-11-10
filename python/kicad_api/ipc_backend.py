@@ -39,6 +39,54 @@ IPC_CONNECT_TIMEOUT_S = float(os.getenv("KICAD_IPC_CONNECT_TIMEOUT", "5"))
 MM_TO_NM = 1_000_000
 INCH_TO_NM = 25_400_000
 
+# kipy's BoardLayer values. str(fp.layer) is "3" or "34", not "F.Cu" or "B.Cu".
+# Inner copper is 4..33 (In1.Cu .. In30.Cu). These numbers are the protobuf
+# contract, so they do not depend on importing kipy.
+_IPC_LAYER_BY_NUMBER: Dict[int, str] = {
+    3: "F.Cu",
+    **{3 + index: f"In{index}.Cu" for index in range(1, 31)},
+    34: "B.Cu",
+    35: "B.Adhes",
+    36: "F.Adhes",
+    37: "B.Paste",
+    38: "F.Paste",
+    39: "B.SilkS",
+    40: "F.SilkS",
+    41: "B.Mask",
+    42: "F.Mask",
+    43: "Dwgs.User",
+    44: "Cmts.User",
+    45: "Eco1.User",
+    46: "Eco2.User",
+    47: "Edge.Cuts",
+    48: "Margin",
+    49: "B.CrtYd",
+    50: "F.CrtYd",
+    51: "B.Fab",
+    52: "F.Fab",
+}
+
+
+def ipc_layer_name(layer: Any) -> str:
+    """Canonical KiCad layer name for an IPC layer value.
+
+    Accepts a protobuf number (``34``), its decimal text (``"34"``), a
+    ``BL_B_Cu`` token, or a name that is already canonical.
+    """
+    if layer is None:
+        return ""
+    enum_name = getattr(layer, "name", None)
+    if isinstance(enum_name, str) and enum_name.startswith("BL_"):
+        return enum_name[3:].replace("_", ".")
+    text = str(layer).strip()
+    if text.startswith("BL_"):
+        return text[3:].replace("_", ".")
+    try:
+        number = int(text)
+    except (TypeError, ValueError):
+        return text
+    return _IPC_LAYER_BY_NUMBER.get(number, text)
+
 
 def _same_angle(a_deg: float, b_deg: float, tol: float = 1e-6) -> bool:
     """True when two angles in degrees name the same orientation (mod 360)."""
@@ -267,6 +315,36 @@ class IPCBackend(KiCADBackend):
         except Exception as e:
             logger.debug(f"Could not read open documents via IPC: {e}")
         return None
+
+    def get_open_schematics(self) -> List[Dict[str, str]]:
+        """Root schematics open in the live KiCad GUI.
+
+        Each entry has the root sheet's file name and, when KiCad reports the
+        project, its full path ("" otherwise). KiCad 10's IPC API can list open
+        schematics but cannot edit, save or reload them, and KiCad 10.0.7
+        leaves the project path empty for schematics.
+        """
+        if not self.is_connected():
+            return []
+        try:
+            from kipy.proto.common.types import DocumentType
+
+            schematics = []
+            for doc in self._kicad.get_open_documents(DocumentType.DOCTYPE_SCHEMATIC):
+                name = str(getattr(doc, "board_filename", "") or "")
+                if not name.endswith(".kicad_sch"):
+                    continue
+                root = str(getattr(getattr(doc, "project", None), "path", "") or "")
+                schematics.append(
+                    {
+                        "name": os.path.basename(name),
+                        "path": os.path.join(root, name) if root else "",
+                    }
+                )
+            return schematics
+        except Exception as e:
+            logger.debug(f"Could not read open schematics via IPC: {e}")
+        return []
 
     def register_change_callback(self, callback: Callable) -> None:
         """Register a callback to be called when changes are made."""
@@ -627,7 +705,7 @@ class IPCBoardAPI(BoardAPI):
                                 "unit": "mm",
                             },
                             "rotation": fp.orientation.degrees if fp.orientation else 0,
-                            "layer": str(fp.layer) if hasattr(fp, "layer") else "F.Cu",
+                            "layer": ipc_layer_name(fp.layer) if hasattr(fp, "layer") else "F.Cu",
                             "id": str(fp.id) if hasattr(fp, "id") else "",
                             "boundingBox": bbox_data,
                         }
@@ -1418,6 +1496,7 @@ class IPCBoardAPI(BoardAPI):
         priority: int = 0,
         fill_mode: str = "solid",
         name: str = "",
+        pad_connection: Optional[str] = None,
     ) -> bool:
         """
         Add a copper pour zone to the board.
@@ -1433,11 +1512,12 @@ class IPCBoardAPI(BoardAPI):
             priority: Zone priority (higher = fills first)
             fill_mode: "solid" or "hatched"
             name: Optional zone name
+            pad_connection: "thermal", "solid" or "none"; None keeps KiCad's default
         """
         try:
             from kipy.board_types import Zone, ZoneFillMode, ZoneType
             from kipy.geometry import PolyLine, PolyLineNode, Vector2
-            from kipy.proto.board.board_types_pb2 import BoardLayer
+            from kipy.proto.board.board_types_pb2 import BoardLayer, ZoneConnectionStyle
             from kipy.util.units import from_mm
 
             board = self._get_board()
@@ -1484,6 +1564,13 @@ class IPCBoardAPI(BoardAPI):
             zone._proto.copper_settings.fill_mode = (
                 ZoneFillMode.ZFM_HATCHED if fill_mode == "hatched" else ZoneFillMode.ZFM_SOLID
             )
+
+            if pad_connection is not None:
+                zone._proto.copper_settings.connection.zone_connection = {
+                    "thermal": ZoneConnectionStyle.ZCS_THERMAL,
+                    "solid": ZoneConnectionStyle.ZCS_FULL,
+                    "none": ZoneConnectionStyle.ZCS_NONE,
+                }[pad_connection]
 
             # Create outline polyline
             outline = PolyLine()

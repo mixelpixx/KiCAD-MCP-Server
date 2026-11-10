@@ -104,6 +104,10 @@ def _svg_to_png(svg_path: str, width: int, height: int) -> Optional[bytes]:
 
     try:
         import fitz
+        from utils.swig_compat import restore_pcbnew_iterator
+
+        # pymupdf can replace pcbnew's SWIG iterator class; put it back (#479).
+        restore_pcbnew_iterator()
 
         doc = fitz.open(svg_path)
         page = doc[0]
@@ -3207,6 +3211,14 @@ class SchematicHandlersMixin:
             if params.get("boardPath"):
                 self.board = board
                 self._update_command_handlers()
+
+            # This handler wrote the board file itself. Record that write as
+            # ours: sync_schematic_to_board is a board-mutating command, so an
+            # auto-save follows it, and with the pre-sync signature still on
+            # record that auto-save -- and every later one -- refused to save,
+            # reporting the file as "changed externally".
+            if board is self.board:
+                self._record_board_signature()
 
             logger.info(
                 f"sync_schematic_to_board: {len(added_nets)} nets added, "

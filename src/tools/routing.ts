@@ -119,7 +119,10 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
         })
         .describe("Via position"),
       net: z.string().describe("Net name"),
-      viaType: z.string().optional().describe("Via type (through, blind, buried)"),
+      viaType: z
+        .string()
+        .optional()
+        .describe('Via type. Only "through" (the default) is supported; other types are refused'),
     },
     async (args: any) => {
       const result = await callKicadScript("add_via", args);
@@ -147,6 +150,24 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
         .optional()
         .describe(
           "Array of {x, y} points defining the pour boundary. If omitted, the board outline is used.",
+        ),
+      minWidth: z.number().optional().describe("Minimum fill width in mm (default 0.2)"),
+      priority: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe(
+          "Zone priority (default 0). Overlapping zones on one layer need distinct priorities; " +
+            "the higher one fills first.",
+        ),
+      fillType: z.enum(["solid", "hatched"]).optional().describe("Fill style (default solid)"),
+      padConnection: z
+        .enum(["thermal", "solid", "none"])
+        .optional()
+        .describe(
+          "How pads of the zone's net connect: thermal reliefs (default), solid copper " +
+            "(for high-current pads), or not at all",
         ),
     },
     async (args: any) => {
@@ -214,6 +235,64 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
     },
     async (args: any) => {
       const result = await callKicadScript("query_traces", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
+  server.tool(
+    "summarize_vias",
+    "Count vias on the board without listing them. Returns the via count, how many run from F.Cu to B.Cu, a drill histogram, and the layer spans. Filter by net, rectangle, drill, or layer name. A stitched ground net can hold thousands of vias; this summary is the census a PDN review needs.",
+    {
+      net: z.string().optional().describe("Only vias on this net, for example GND"),
+      boundingBox: z
+        .object({
+          x1: z.number(),
+          y1: z.number(),
+          x2: z.number(),
+          y2: z.number(),
+          unit: z.enum(["mm", "mil", "inch"]).optional(),
+        })
+        .optional()
+        .describe("Rectangle. Only vias whose centre lies inside are counted."),
+      drillMin: z.number().optional().describe("Minimum drill diameter in millimetres, inclusive"),
+      drillMax: z.number().optional().describe("Maximum drill diameter in millimetres, inclusive"),
+      startLayer: z
+        .string()
+        .optional()
+        .describe("Match the via start layer by the board's name or the canonical name"),
+      endLayer: z
+        .string()
+        .optional()
+        .describe("Match the via end layer by the board's name or the canonical name"),
+    },
+    async (args) => {
+      const result = await callKicadScript("summarize_vias", args);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
+  server.tool(
+    "summarize_net_copper",
+    "Summarize one net's copper without listing every track, via, and zone. Returns the three counts, the layers involved, the bounding box, and a shape: vias_only, tracks_only, zones_only, empty, or mixed. vias_only means the net has vias and neither tracks nor zones. An unknown net is an error, not an empty shape.",
+    {
+      net: z.string().describe("Net name, for example GND or NetL2_1"),
+    },
+    async (args) => {
+      const result = await callKicadScript("summarize_net_copper", args);
       return {
         content: [
           {
