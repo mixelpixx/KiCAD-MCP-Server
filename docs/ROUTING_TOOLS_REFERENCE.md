@@ -120,14 +120,16 @@ Add a via to the PCB.
 | --------- | ------ | -------- | ----------------------------------------- |
 | position  | object | Yes      | Via position with x, y, and optional unit |
 | net       | string | Yes      | Net name                                  |
-| viaType   | string | No       | Via type: "through", "blind", or "buried" |
+| viaType   | string | No       | Via type: only "through" is supported     |
 
 **Usage Notes:**
 
-- Through vias connect all layers (default)
-- Blind vias connect an outer layer to one or more inner layers
-- Buried vias connect two or more inner layers without reaching outer layers
-- Position coordinates use mm by default
+- Through vias connect all layers (default). Blind, buried and micro vias are
+  refused, because neither schema has parameters for their layer pair
+- Position coordinates use mm when `unit` is omitted
+- A net that does not exist on the board is an error, not a via without a net
+- JSON-RPC callers can send `x`, `y` (mm), `diameter`, `drill` and `netName`
+  instead
 
 **Example:**
 
