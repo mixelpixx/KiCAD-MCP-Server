@@ -151,6 +151,24 @@ export function registerRoutingTools(server: McpServer, callKicadScript: Functio
         .describe(
           "Array of {x, y} points defining the pour boundary. If omitted, the board outline is used.",
         ),
+      minWidth: z.number().optional().describe("Minimum fill width in mm (default 0.2)"),
+      priority: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe(
+          "Zone priority (default 0). Overlapping zones on one layer need distinct priorities; " +
+            "the higher one fills first.",
+        ),
+      fillType: z.enum(["solid", "hatched"]).optional().describe("Fill style (default solid)"),
+      padConnection: z
+        .enum(["thermal", "solid", "none"])
+        .optional()
+        .describe(
+          "How pads of the zone's net connect: thermal reliefs (default), solid copper " +
+            "(for high-current pads), or not at all",
+        ),
     },
     async (args: any) => {
       const result = await callKicadScript("add_copper_pour", args);
