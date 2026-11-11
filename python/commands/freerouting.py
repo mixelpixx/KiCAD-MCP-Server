@@ -136,6 +136,33 @@ def _sexpr_end(text: str, start: int) -> int:
     return -1
 
 
+# One DSN name token: quoted (as KiCad writes names that need it) or bare.
+DSN_NAME = r'"[^"]*"|[^\s()"]+'
+_DSN_NEEDS_QUOTE_RE = re.compile(r"[\t ()%{}]")
+
+
+def dsn_unquote(token: str) -> str:
+    """The name a DSN token stands for: the surrounding quotes removed, if any."""
+    if len(token) >= 2 and token[0] == '"' and token[-1] == '"':
+        return token[1:-1]
+    return token
+
+
+def dsn_quote(name: str) -> str:
+    """Write ``name`` the way KiCad's Specctra export does: in quotes when it has to be.
+
+    KiCad (``OUTPUTFORMATTER::GetQuoteChar``) quotes an empty name, a name starting with
+    ``#``, one containing a tab, a space, a parenthesis, ``%``, ``{`` or ``}``, and one
+    with ``-`` anywhere but first. So ``F.Cu`` and ``In1.Cu`` stay bare, while
+    ``"Bottom side"``, ``"GND-plane"`` and ``"Net-(C5-Pad1)"`` are quoted; the Specctra
+    parser would otherwise read ``Bottom side`` as the layer ``Bottom`` plus a stray
+    token. Checked against KiCad 10.0.8's export.
+    """
+    if not name or name[0] == "#" or _DSN_NEEDS_QUOTE_RE.search(name) or "-" in name[1:]:
+        return f'"{name}"'
+    return name
+
+
 _PLACEMENT_RE = re.compile(r"\(placement(?=[\s)])")
 _PLACE_RE = re.compile(r'\(place\s+("[^"]*"|[^\s()]+)')
 
@@ -510,6 +537,78 @@ def _reconcile_ses_net_names(
     return _SES_NET_TOKEN_RE.sub(_repl, ses_text), remapped
 
 
+def _missing_keepout_lines(board) -> List[str]:
+    """The rule-area outlines KiCad's Specctra export leaves out, as DSN keepout lines.
+
+    ExportSpecctraDSN writes only the first outline of a rule area. A keepout area drawn
+    as several polygons (or one built from a union of halos) silently routes as if only
+    its first piece existed. Each further outline is written in the same form KiCad
+    writes the first: (keepout|wire_keepout|via_keepout "" (polygon LAYER 0 x y ...)),
+    in micrometres with y negated. Holes are not exported (KiCad drops them too), which
+    errs on the side of keeping copper out.
+    """
+    lines: List[str] = []
+    for z in board.Zones():
+        if not z.GetIsRuleArea():
+            continue
+        tracks, vias = z.GetDoNotAllowTracks(), z.GetDoNotAllowVias()
+        if not (tracks or vias):
+            continue
+        kind = "keepout" if tracks and vias else ("wire_keepout" if tracks else "via_keepout")
+        outline = z.Outline()
+        if outline.OutlineCount() < 2:
+            continue
+        for layer in z.GetLayerSet().CuStack():
+            name = dsn_quote(board.GetLayerName(layer))
+            for i in range(1, outline.OutlineCount()):
+                chain = outline.COutline(i)
+                pts = " ".join(
+                    f"{chain.CPoint(k).x / 1000:g} {-chain.CPoint(k).y / 1000:g}"
+                    for k in range(chain.PointCount())
+                )
+                lines.append(f'    ({kind} "" (polygon {name} 0 {pts}))')
+    return lines
+
+
+def _append_to_structure(dsn_text: str, lines: Iterable[str]) -> str:
+    """Insert ``lines`` (without line endings) at the end of the DSN's (structure) block.
+
+    The block's end is found by parsing, not by its indentation, and the file's own line
+    ending is used, so the text is otherwise left exactly as KiCad wrote it.
+    """
+    lines = list(lines)
+    m = re.search(r"\(structure(?=[\s)])", dsn_text)
+    if not lines or not m:
+        return dsn_text
+    end = _sexpr_end(dsn_text, m.start())
+    if end < 0:
+        return dsn_text
+    nl = "\r\n" if "\r\n" in dsn_text else "\n"
+    close = end - 1  # the ")" that closes (structure
+    line_start = dsn_text.rfind("\n", 0, close) + 1
+    block = nl.join(lines) + nl
+    if dsn_text[line_start:close].strip():
+        # the closing paren shares a line with content: start a new line for the block
+        return dsn_text[:close] + nl + block + dsn_text[close:]
+    return dsn_text[:line_start] + block + dsn_text[line_start:]
+
+
+def _append_missing_keepouts(board, dsn_path) -> int:
+    """Add the rule-area outlines the DSN export left out to the file; returns how many."""
+    lines = _missing_keepout_lines(board)
+    if not lines:
+        return 0
+    # newline="" keeps the file's line endings as KiCad wrote them (no CRLF on Windows).
+    with open(dsn_path, "r", encoding="utf-8", newline="") as fh:
+        text = fh.read()
+    patched = _append_to_structure(text, lines)
+    if patched == text:
+        return 0
+    with open(dsn_path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(patched)
+    return len(lines)
+
+
 class FreeroutingCommands:
     """Handles Freerouting autoroute operations."""
 
@@ -802,6 +901,9 @@ class FreeroutingCommands:
                     "message": "DSN export failed",
                     "errorDetails": (f"ExportSpecctraDSN returned: {result}"),
                 }
+            added = _append_missing_keepouts(self.board, dsn_path)
+            if added:
+                logger.info(f"Added {added} rule-area outline(s) the DSN export left out")
         except Exception as e:
             return {
                 "success": False,
@@ -1106,6 +1208,7 @@ class FreeroutingCommands:
         if netclass_report.get("warning"):
             logger.warning(f"Net-class application: {netclass_report['warning']}")
 
+        added_keepouts = 0
         try:
             result = pcbnew.ExportSpecctraDSN(self.board, output_path)
             if not _api_ok(result):
@@ -1114,6 +1217,9 @@ class FreeroutingCommands:
                     "message": "DSN export failed",
                     "errorDetails": (f"ExportSpecctraDSN returned: {result}"),
                 }
+            if os.path.isfile(output_path):
+                # Same fix as autoroute, so a DSN exported by hand matches what it sends.
+                added_keepouts = _append_missing_keepouts(self.board, output_path)
         except Exception as e:
             return {
                 "success": False,
@@ -1130,6 +1236,7 @@ class FreeroutingCommands:
             "path": output_path,
             "size_bytes": file_size,
             "netClasses": netclass_report,
+            "keepoutOutlinesAdded": added_keepouts,
         }
 
     def _board_net_names(self) -> List[str]:

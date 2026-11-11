@@ -165,6 +165,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
     netlist reader maps KiCad's `\n`, `\r` and `\t` escapes back.
   - **Fallback.** Without kicad-cli the built-in walker is still used, with a
     warning.
+- **`autoroute` keeps every outline of a keepout.** KiCad's Specctra export
+  writes only the first outline of a rule area, so a keepout drawn as several
+  polygons reached Freerouting as one. On a real high-voltage board a keepout
+  built from many voltage halos lost all but one, and Freerouting put logic
+  vias 0.4 mm from 400 V pads that needed 1.5 mm. The missing outlines are
+  now appended to the DSN in the form KiCad writes the first (`keepout`,
+  `wire_keepout` or `via_keepout` per the area's flags). Holes are still not
+  exported, which keeps copper out rather than letting it in.
+
 - **`import_eagle_project` no longer replaces a schematic that is open in
   KiCad.** It writes `<output_dir>/<project_name>.kicad_sch` without checking
   whether that file exists, so re-importing into an open project overwrote it
