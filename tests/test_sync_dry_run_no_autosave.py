@@ -40,7 +40,7 @@ def _make_iface() -> Any:
     iface._update_command_handlers = lambda: None
     iface._build_hierarchical_pad_net_map = lambda *a, **k: ({}, [])
     iface._add_missing_footprints_from_schematic = lambda *a, **k: ([], [])
-    iface._find_kicad_cli_static = staticmethod(lambda: None)
+    iface._find_kicad_cli_static = lambda: None  # plain callable: a staticmethod object on an instance is not callable before Python 3.10
     iface.command_routes = {"sync_schematic_to_board": iface._handle_sync_schematic_to_board}
     return iface
 
