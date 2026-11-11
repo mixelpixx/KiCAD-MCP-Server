@@ -88,6 +88,21 @@ All notable changes to the KiCAD MCP Server project are documented here.
   down got a diagonal wire, and a label behind the pin got a wire back across
   the symbol body. A label now counts as facing only when it lies straight out
   in front of the pin, on the pin's axis; otherwise the pin gets its own label.
+- **Library listing and search find KiCad's global tables wherever KiCad
+  keeps them, and on a fresh install.** `list_symbol_libraries`,
+  `list_libraries`, `search_symbols` and the loader behind
+  `add_schematic_component` each had their own list of `~/.config/kicad/<ver>`
+  paths, so with `KICAD_CONFIG_HOME` set (KiCad's own override, and how a
+  user-space or CI install keeps its configuration), or with `XDG_CONFIG_HOME`
+  or `%APPDATA%` elsewhere, they reported 0 libraries while
+  `list_library_table` showed the table. They now share the table editor's
+  discovery, and before KiCad has created a user table they read KiCad's
+  stock `template/sym-lib-table` and `fp-lib-table`, so the bundled libraries
+  are listed on a fresh install too. The writers still only use a table the
+  user already has. One behaviour change: the symbol loader used to read
+  every `8.0`, `9.0` and `10.0` global table it found; it now reads only the
+  newest version's table, as KiCad does, so a library registered only in an
+  older version's table has to be added to the current one.
 - **`import_eagle_project` no longer replaces a schematic that is open in
   KiCad.** It writes `<output_dir>/<project_name>.kicad_sch` without checking
   whether that file exists, so re-importing into an open project overwrote it
