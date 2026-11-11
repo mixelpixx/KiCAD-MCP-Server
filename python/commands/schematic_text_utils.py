@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-from utils.sexpr_format import QUOTED_VALUE, unescape_sexpr_string
+from utils.sexpr_format import QUOTED_VALUE, match_paren, unescape_sexpr_string
 
 _KICAD_INTERNAL_PROPS = frozenset(
     {"ki_keywords", "ki_description", "ki_fp_filters", "ki_locked", "ki_model"}
@@ -33,16 +33,12 @@ _PAPER_DIMS = {
 
 
 def _find_matching_paren(s: str, start: int) -> int:
-    """Return index of the ')' matching the '(' at position *start*, or -1."""
-    depth = 0
-    for i in range(start, len(s)):
-        if s[i] == "(":
-            depth += 1
-        elif s[i] == ")":
-            depth -= 1
-            if depth == 0:
-                return i
-    return -1
+    """Return index of the ')' matching the '(' at position *start*, or -1.
+
+    Parens inside quoted strings are text: KiCad writes pin names such as
+    "PA13(JTMS" raw.
+    """
+    return match_paren(s, start)
 
 
 def _find_placed_symbol_block(
