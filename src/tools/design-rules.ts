@@ -265,6 +265,29 @@ One rule is written per pair of classes, plus one per class against all other ne
   );
 
   // ------------------------------------------------------
+  // Audit Via Nets Tool
+  // ------------------------------------------------------
+  server.tool(
+    "audit_via_nets",
+    "Compare every via's net in the saved board with a reference board (a .kicad_pcb file or a git revision such as HEAD) and list vias whose net changed, plus vias added, removed or moved. KiCad can silently change a via's net on save (e.g. to a surrounding zone's net, or after an autorouter import), and DRC does not flag it because the board stays self-consistent. Run after saving, autorouting or importing a session.",
+    {
+      reference: z
+        .string()
+        .describe(
+          "Known-good version of the board: a .kicad_pcb path, or a git revision of the same file (HEAD, HEAD~1, a sha)",
+        ),
+      boardPath: z
+        .string()
+        .optional()
+        .describe("Board file to audit; defaults to the loaded board's file on disk"),
+    },
+    async ({ reference, boardPath }) => {
+      const result = await callKicadScript("audit_via_nets", { reference, boardPath });
+      return formatKicadResult(result);
+    },
+  );
+
+  // ------------------------------------------------------
   // Get DRC Violations Tool
   // ------------------------------------------------------
   server.tool(

@@ -124,6 +124,7 @@ export const toolCategories: ToolCategory[] = [
       "set_layer_constraints",
       "set_voltage_clearance_rules",
       "check_clearance",
+      "audit_via_nets",
       "get_drc_violations",
     ],
   },
