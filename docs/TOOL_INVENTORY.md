@@ -5,9 +5,9 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.8.3
-**Tools registered on the server:** 251
-**Tools indexed for keyword discovery:** 251 in 20 categories
-**Last updated:** 2026-11-06
+**Tools registered on the server:** 253
+**Tools indexed for keyword discovery:** 253 in 20 categories
+**Last updated:** 2026-11-11
 
 ## How to read this document
 
@@ -147,19 +147,21 @@ _Source: `src/tools/routing.ts`_
 
 ---
 
-## Design Rules and DRC (7 tools)
+## Design Rules and DRC (9 tools)
 
 _Source: `src/tools/design-rules.ts`_
 
-| Tool                    | Description                                                 | Discovery |
-| ----------------------- | ----------------------------------------------------------- | --------- |
-| `set_design_rules`      | Set global design rules (clearance, track width, via sizes) | `drc`     |
-| `get_design_rules`      | Get current design rules                                    | `drc`     |
-| `run_drc`               | Run design rule check                                       | `drc`     |
-| `assign_net_to_class`   | Assign net to a net class                                   | `drc`     |
-| `set_layer_constraints` | Set layer-specific constraints                              | `drc`     |
-| `check_clearance`       | Check clearance between two items                           | `drc`     |
-| `get_drc_violations`    | Get DRC violation list (filter by severity)                 | `drc`     |
+| Tool                          | Description                                                                                                                                     | Discovery |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `set_design_rules`            | Set global design rules (clearance, track width, via sizes)                                                                                     | `drc`     |
+| `get_design_rules`            | Get current design rules                                                                                                                        | `drc`     |
+| `run_drc`                     | Run design rule check                                                                                                                           | `drc`     |
+| `assign_net_to_class`         | Assign net to a net class                                                                                                                       | `drc`     |
+| `set_layer_constraints`       | Set layer-specific constraints                                                                                                                  | `drc`     |
+| `set_voltage_clearance_rules` | Clearance/creepage rules graded by working voltage between net classes                                                                          | `drc`     |
+| `check_clearance`             | Check clearance between two items                                                                                                               | `drc`     |
+| `audit_via_nets`              | Compare every via's net in the saved board with a reference board (a .kicad_pcb file or a git revision such as HEAD) and list vias whose net... | `drc`     |
+| `get_drc_violations`          | Get DRC violation list (filter by severity)                                                                                                     | `drc`     |
 
 ---
 
@@ -524,7 +526,7 @@ _Source: `src/tools/toolboxes.ts`_
 | `board.ts`               | Board Management                       | 21      |
 | `component.ts`           | Component Management                   | 28      |
 | `routing.ts`             | Routing                                | 19      |
-| `design-rules.ts`        | Design Rules and DRC                   | 7       |
+| `design-rules.ts`        | Design Rules and DRC                   | 9       |
 | `export.ts`              | Export and Fabrication Output          | 27      |
 | `schematic.ts`           | Schematic                              | 46      |
 | `schematic-batch.ts`     | Schematic Batch Operations             | 9       |
@@ -546,18 +548,18 @@ _Source: `src/tools/toolboxes.ts`_
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
 | `gui-driver.ts`          | gui-driver.ts                          | 11      |
 | `toolboxes.ts`           | toolboxes.ts                           | 3       |
-| **Total**                |                                        | **251** |
+| **Total**                |                                        | **253** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 251 of the 251 registered tools.
+These are the categories `search_tools` searches. They cover 253 of the 253 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
 | `board`                    | 17            |
 | `component`                | 24            |
 | `export`                   | 27            |
-| `drc`                      | 8             |
+| `drc`                      | 10            |
 | `schematic`                | 36            |
 | `library`                  | 9             |
 | `symbol_library`           | 17            |
@@ -574,6 +576,6 @@ These are the categories `search_tools` searches. They cover 251 of the 251 regi
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
 | `gui-driver`               | 11            |
-| **Indexed total**          | **251**       |
+| **Indexed total**          | **253**       |
 | Registered but not indexed | 0             |
-| **Registered total**       | **251**       |
+| **Registered total**       | **253**       |

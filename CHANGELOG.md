@@ -16,7 +16,46 @@ All notable changes to the KiCAD MCP Server project are documented here.
   near-field solver. A caller may paste a comparison; the prompt does not
   invent one.
 
+### New Tools
+
+- **`set_voltage_clearance_rules`** — clearance and creepage rules graded by
+  the working voltage between net classes, written as a managed block at the
+  end of the board's `.kicad_dru` (a re-run replaces the block; hand-written
+  rules stay). Each class gets its potential against a shared reference, a
+  number for a fixed node or `[min, max]` for one that swings; the working
+  voltage of a pair is the largest difference their ranges can show, and
+  `pairs` sets it directly for classes in separate domains. The `spacing`
+  table (working voltage to clearance and optional creepage) comes from the
+  user's standard; the tool supplies no values, refuses a table whose spacing
+  falls as voltage rises or that drops creepage in a higher row, and refuses a
+  working voltage above the table's last row. The write is refused when the
+  rest of the `.kicad_dru` does not parse, because KiCad silently ignores
+  every rule in a file it cannot parse. `excludeUnconnectedNets` (default
+  off) leaves KiCad's `unconnected-(...)` nets out of the "other nets" rules.
+  Needs KiCad 9 or newer (`creepage`, `hasNetclass()`); on KiCad 8 the tool
+  refuses and writes nothing.
+
 ### New Features
+
+- **`audit_via_nets`: compare every via's net with a reference board**
+  (#493, @dp-web4). KiCad can change a via's net when it saves a board, with
+  no error. DRC doesn't flag it, because the board stays self-consistent,
+  just wrong. Seen on KiCad 10 on a real board: a via inside a zone of
+  another net took the zone's net, and after an autorouter import a GND via
+  came back on ISENSE_ADC and two VBAT vias came back as GND. The reliable
+  check is a via-by-via comparison with a known-good version.
+  - The reference is a `.kicad_pcb` file or a git revision of the same file
+    (`HEAD`, `HEAD~1`, a sha). The board compared is the saved file, since
+    the change happens on save. A revision is resolved to a commit with
+    `git rev-parse --verify --end-of-options` before anything is read, and
+    one starting with `-` is refused, so the tool never hands git an option
+    (`--output=X` would have made `git show` write a file).
+  - Vias are matched by UUID, then by position and layer pair, since an
+    import can give vias new UUIDs.
+  - The reply lists each via whose net changed (position, layers, old and
+    new net, how it was matched), plus a count per transition such as
+    `"VBAT -> GND": 2`, and the vias added, removed and moved.
+  - Read-only, so it is available in `readonly` mode.
 
 - **Operating modes: a readonly mode for review agents, and a manufacturing
   mode** (#443 and #444, @b0gdaniy). `KICAD_MCP_OPERATING_MODE=readonly`
@@ -49,6 +88,21 @@ All notable changes to the KiCAD MCP Server project are documented here.
   down got a diagonal wire, and a label behind the pin got a wire back across
   the symbol body. A label now counts as facing only when it lies straight out
   in front of the pin, on the pin's axis; otherwise the pin gets its own label.
+- **Library listing and search find KiCad's global tables wherever KiCad
+  keeps them, and on a fresh install.** `list_symbol_libraries`,
+  `list_libraries`, `search_symbols` and the loader behind
+  `add_schematic_component` each had their own list of `~/.config/kicad/<ver>`
+  paths, so with `KICAD_CONFIG_HOME` set (KiCad's own override, and how a
+  user-space or CI install keeps its configuration), or with `XDG_CONFIG_HOME`
+  or `%APPDATA%` elsewhere, they reported 0 libraries while
+  `list_library_table` showed the table. They now share the table editor's
+  discovery, and before KiCad has created a user table they read KiCad's
+  stock `template/sym-lib-table` and `fp-lib-table`, so the bundled libraries
+  are listed on a fresh install too. The writers still only use a table the
+  user already has. One behaviour change: the symbol loader used to read
+  every `8.0`, `9.0` and `10.0` global table it found; it now reads only the
+  newest version's table, as KiCad does, so a library registered only in an
+  older version's table has to be added to the current one.
 - **`import_eagle_project` no longer replaces a schematic that is open in
   KiCad.** It writes `<output_dir>/<project_name>.kicad_sch` without checking
   whether that file exists, so re-importing into an open project overwrote it
