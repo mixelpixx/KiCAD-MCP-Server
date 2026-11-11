@@ -56,6 +56,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
     new net, how it was matched), plus a count per transition such as
     `"VBAT -> GND": 2`, and the vias added, removed and moved.
   - Read-only, so it is available in `readonly` mode.
+- **`autoroute` can route a chosen set of nets** (`routeNets`, `excludeNets`,
+  names or globs such as `/HV PWR/*`). Freerouting routes every net in the
+  DSN; the selection is applied to the DSN copy, so nets left out keep their
+  pads and copper on the board as obstacles but get no routing. That lets an
+  isolated high-voltage board be routed one domain at a time (pack-side nets
+  inside their region, then the logic nets) and leaves high-current nets for
+  hand-drawn pours. The left-out nets' existing tracks, arcs and vias become
+  keepouts in the DSN (Freerouting drops the wires of nets it does not know)
+  and are locked for the session import, which KiCad keeps locked tracks
+  through, so routing in passes keeps the earlier passes with the same
+  objects, UUIDs and groups. The reply lists `netsLeftOut`.
 - **`autoroute` keeps tracks off plane layers: `signalLayers` and
   `layerTraceCosts`.** KiCad exports every copper layer as `(type signal)`,
   so Freerouting ran tracks across the inner planes of a 4-layer board and cut
