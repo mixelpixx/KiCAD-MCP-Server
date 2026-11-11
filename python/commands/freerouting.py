@@ -255,6 +255,107 @@ _TRACKS_CLEARED_NOTE = (
 
 
 _DSN_KEEPOUT_RE = re.compile(r'(\(keepout "[^"]*" \(polygon signal 0\s+)([-\d.\s]+?)(\))')
+_DSN_LAYER_RE = re.compile(r"\(layer\s+(" + DSN_NAME + r")\s*\(type\s+(\w+)\)")
+
+
+def _dsn_layer_names(dsn_text: str) -> List[str]:
+    """The layers of the DSN's (structure), in order, by the names KiCad wrote (unquoted).
+
+    The DSN uses the board's own layer names (``Top`` for a renamed F.Cu), quoted when
+    they need it (``"GND plane"``).
+    """
+    st = re.search(r"\(structure(?=[\s)])", dsn_text)
+    if not st:
+        return []
+    end = _sexpr_end(dsn_text, st.start())
+    block = dsn_text[st.start() : end if end > 0 else len(dsn_text)]
+    return [dsn_unquote(m.group(1)) for m in _DSN_LAYER_RE.finditer(block)]
+
+
+def _board_layer_names(board, names: Iterable[Any]) -> List[str]:
+    """Translate layer names (canonical ``F.Cu`` or the board's own) to the board's names.
+
+    The DSN carries the board's names, so a canonical name has to go through the board:
+    with F.Cu renamed to ``Top``, ``"F.Cu"`` must restrict ``Top``, not silently nothing.
+    Raises ValueError for a name that is not an enabled copper layer of the board.
+    """
+    import pcbnew
+
+    enabled = [board.GetLayerName(lid) for lid in board.GetEnabledLayers().CuStack()]
+    out: List[str] = []
+    for name in names:
+        lid = board.GetLayerID(str(name))
+        board_name = board.GetLayerName(lid) if lid >= 0 and pcbnew.IsCopperLayer(lid) else None
+        if board_name is None or board_name not in enabled:
+            raise ValueError(
+                f"{name!r} is not a copper layer of this board (its copper layers: {enabled})"
+            )
+        out.append(board_name)
+    return out
+
+
+def _signal_layer_rules(
+    dsn_text: str,
+    signal_layers: List[str],
+    trace_costs: Optional[Dict[str, float]] = None,
+    design_name: str = "kicad-mcp",
+) -> Tuple[Optional[str], List[str]]:
+    """Freerouting rules text that keeps tracks off every copper layer not in ``signal_layers``.
+
+    KiCad exports every copper layer as ``(type signal)``, so Freerouting runs tracks across
+    inner plane layers and cuts them into islands (found on a 4-layer board: In2 in 7 pieces,
+    26 plane pads open). The rules file's ``autoroute_settings`` carries a ``layer_rule`` per
+    restricted layer with ``(active off)``: an inactive layer gets no traces, vias still pass.
+
+    A board-sized ``wire_keepout`` looks equivalent but is not: Freerouting 2.5's fanout
+    stage still runs, but ``DrillPage`` excludes the keepout area from its via candidates,
+    so no via can be placed anywhere on the board (A/B on the same DSN: 0 vias, 111 unrouted
+    with the keepout; fanout 244/304 pins without it). ``(type power)`` keeps vias but
+    switches on power-plane validation of the layer.
+
+    ``trace_costs`` (layer -> factor, e.g. {"In1.Cu": 5}) keeps a layer usable but makes
+    traces there cost more, for a plane layer that may carry the odd track where nothing
+    else fits: that layer's trace costs are written as the factor along its preferred
+    direction and twice that against it (Freerouting's own defaults are 1 along and 1 plus
+    the board's aspect ratio against, plus 0.2 per signal layer on the outer layers of a
+    board with more than two).
+
+    The file holds only what was asked for. Freerouting reads each ``layer_rule`` key on
+    its own, and an explicit value replaces the per-layer default it would otherwise
+    compute (``RouterSettings.applyBoardSpecificOptimizations``: preferred directions from
+    the board's aspect ratio, the outer-layer surcharge); a layer that is neither
+    restricted nor costed therefore gets no rule, and there are no top-level cost settings.
+
+    Both lists must use the names the DSN uses (the board's own; see
+    :func:`_board_layer_names`). Raises ValueError for a name that is not a layer of the
+    DSN, so a typo cannot silently restrict the wrong layers. Returns (rules text,
+    restricted layers); (None, []) when nothing would be restricted or costed.
+    """
+    costs = {str(k): float(v) for k, v in (trace_costs or {}).items()}
+    wanted = [str(n) for n in signal_layers or []]
+    if not (wanted or costs):
+        return None, []
+    layers = _dsn_layer_names(dsn_text)
+    unknown = [n for n in wanted + list(costs) if n not in layers]
+    if unknown:
+        raise ValueError(f"not a layer of this board's DSN: {unknown} (DSN layers: {layers})")
+    restricted = [name for name in layers if wanted and name not in wanted]
+    rules = []
+    for name in layers:
+        if name in restricted:
+            rules.append(f"    (layer_rule {dsn_quote(name)} (active off))\n")
+        elif name in costs:
+            k = costs[name]
+            rules.append(
+                f"    (layer_rule {dsn_quote(name)} (preferred_direction_trace_costs {k:g})"
+                f" (against_preferred_direction_trace_costs {2 * k:g}))\n"
+            )
+    if not rules:
+        return None, []
+    # Freerouting checks the header's name against the DSN file's stem (a mismatch is
+    # only logged).
+    text = f"(rules PCB {dsn_quote(design_name)}\n  (autoroute_settings\n" + "".join(rules)
+    return text + "  )\n)\n", restricted
 
 
 def _grow_hole_keepouts(dsn_text: str, grow_um: float) -> str:
@@ -338,6 +439,7 @@ def _build_freerouting_cmd(
     passes: int,
     use_docker: bool,
     single_thread: bool = False,
+    rules_path: Optional[str] = None,
 ) -> List[str]:
     """Build the command to run Freerouting.
 
@@ -348,6 +450,8 @@ def _build_freerouting_cmd(
     valid routed board, not an artefact of MT optimisation.
     """
     extra = ["-mt", "1"] if single_thread else []
+    if rules_path:
+        extra += ["-dr", rules_path]
     required_java = _jar_required_java(jar_path)
     if use_docker:
         docker_exe = _find_docker()
@@ -357,6 +461,10 @@ def _build_freerouting_cmd(
         dsn_name = os.path.basename(dsn_path)
         ses_name = os.path.basename(ses_path)
         jar_name = os.path.basename(jar_path)
+        if rules_path:
+            extra = [
+                a if a != rules_path else f"/work/{os.path.basename(rules_path)}" for a in extra
+            ]
         return [
             docker_exe,
             "run",
@@ -919,6 +1027,35 @@ class FreeroutingCommands:
             }
 
         self._apply_edge_clearance(dsn_path)
+        restricted_layers: List[str] = []
+        rules_path: Optional[str] = None
+        signal_layers = list(params.get("signalLayers") or [])
+        trace_costs = dict(params.get("layerTraceCosts") or {})
+        if signal_layers or trace_costs:
+            try:
+                # Canonical names (F.Cu) become the board's own names, which the DSN uses.
+                signal_layers = _board_layer_names(self.board, signal_layers)
+                cost_layers = _board_layer_names(self.board, trace_costs)
+                trace_costs = dict(zip(cost_layers, trace_costs.values()))
+                with open(dsn_path, "r", encoding="utf-8", newline="") as fh:
+                    rules_text, restricted_layers = _signal_layer_rules(
+                        fh.read(),
+                        signal_layers,
+                        trace_costs,
+                        design_name=os.path.splitext(os.path.basename(dsn_path))[0],
+                    )
+            except ValueError as e:
+                return {
+                    "success": False,
+                    "message": "signalLayers / layerTraceCosts name a layer this board lacks",
+                    "errorDetails": str(e),
+                }
+            if rules_text:
+                rules_path = os.path.splitext(dsn_path)[0] + ".rules"
+                with open(rules_path, "w", encoding="utf-8") as fh:
+                    fh.write(rules_text)
+            else:
+                logger.info(f"signalLayers {signal_layers}: nothing to restrict or cost")
         dsn_size = os.path.getsize(dsn_path)
         logger.info(f"DSN exported: {dsn_size} bytes")
 
@@ -950,6 +1087,7 @@ class FreeroutingCommands:
                 attempt_passes,
                 use_docker,
                 single_thread=single_thread,
+                rules_path=rules_path,
             )
             logger.info(
                 f"Freerouting attempt {idx + 1}/{attempts} "
@@ -1144,6 +1282,9 @@ class FreeroutingCommands:
             "success": True,
             "message": f"Autoroute completed in {elapsed}s",
             "mode": mode_label,
+            # By the board's own layer names (what the DSN and the rules file use).
+            "tracksKeptOffLayers": restricted_layers,
+            "layerTraceCosts": trace_costs,
             # Artifacts are staged in a temp dir and removed after the run
             # (#249); with keepArtifacts=true they are copied next to the
             # board and these fields point at the kept copies.
