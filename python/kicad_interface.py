@@ -850,6 +850,7 @@ class KiCADInterface(SchematicHandlersMixin):
         "route_arc_trace": "_ipc_route_arc_trace",
         "add_via": "_ipc_add_via",
         "add_net": "_ipc_add_net",
+        "modify_trace": "_ipc_modify_trace",
         "delete_trace": "_ipc_delete_trace",
         "query_traces": "_ipc_query_traces",
         "get_nets_list": "_ipc_get_nets_list",
@@ -1332,6 +1333,10 @@ class KiCADInterface(SchematicHandlersMixin):
         # setter for it, so the command edits the file and the handler above
         # reloads before this auto-save runs.
         "set_stackup_layer",
+        # modify_trace mutates track.SetWidth()/SetLayer()/SetNet() on the
+        # in-memory SWIG board but has no save of its own; without this entry
+        # it reported success and wrote nothing to disk, identical to #222.
+        "modify_trace",
         "place_component",
         "move_component",
         "rotate_component",
@@ -5908,6 +5913,31 @@ print("ok")
             return result
         except Exception as e:
             logger.error(f"IPC save_project error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_modify_trace(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """IPC handler for modify_trace - mutates an existing track with real-time UI update.
+
+        ``traceUuid`` is the schema name (src/tools/routing.ts); ``uuid`` is
+        kept for JSON-RPC callers that predate the schema alignment (#403),
+        matching the SWIG handler's same two-key lookup.
+        """
+        try:
+            trace_uuid = params.get("traceUuid") or params.get("uuid")
+            if not trace_uuid:
+                return {
+                    "success": False,
+                    "message": "Missing trace identifier",
+                    "errorDetails": "Provide 'traceUuid' to identify the trace",
+                }
+            return self.ipc_board_api.modify_track(
+                uuid=trace_uuid,
+                width=params.get("width"),
+                layer=params.get("layer"),
+                net_name=params.get("net"),
+            )
+        except Exception as e:
+            logger.error(f"IPC modify_trace error: {e}")
             return {"success": False, "message": str(e)}
 
     def _ipc_delete_trace(self, params: Dict[str, Any]) -> Dict[str, Any]:
