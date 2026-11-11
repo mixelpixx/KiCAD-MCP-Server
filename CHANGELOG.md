@@ -141,6 +141,30 @@ All notable changes to the KiCAD MCP Server project are documented here.
   `Connector_PinSocket_2.54mm` came back empty although the library has 278
   matches, and a user library added after the `KiCad` row was hardly ever
   reached. The search now scans only the requested library.
+- **`sync_schematic_to_board` and `create_board_from_schematic` take nets from
+  KiCad's own netlist.**
+  - **Before.** Pad nets came from a built-in walker that followed wires and
+    labels geometrically. It disagreed with KiCad whenever a net changed name
+    across a sheet boundary or a label sat mid-wire, and it wrote flat names
+    (`SWDIO`, not `/MCU/SWDIO`). On a real 77-part, 9-sheet board, 304 of 333
+    pads ended up on a net KiCad disagrees with, and KiCad's parity check
+    reported 349 issues, while the tool said success.
+  - **Now.** Nets come from `kicad-cli sch export netlist`, read in the
+    S-expression format because the XML writer unescapes names (`ADC7/PB6`
+    instead of KiCad's `ADC7{slash}PB6`). Each footprint is linked to its
+    symbol by path, and symbol values, fields and the BOM/DNP flags are carried
+    over, as KiCad's Update PCB does. The same board now has 0 pads that
+    disagree with KiCad and 3 parity issues, all in the design itself.
+  - **Also reported.** The reply says `netSource`. Pads that aren't pins of
+    their symbol have their net cleared (`pads_cleared`). Footprints that
+    differ from the symbol's, in name or in library, are listed in
+    `footprint_changes_pending`, not swapped; only a footprint with no
+    library nickname at all (what older versions of this tool wrote) gets
+    the symbol's nickname. New fields are created hidden on the Fab layer,
+    as KiCad does. Field values with line breaks come through intact: the
+    netlist reader maps KiCad's `\n`, `\r` and `\t` escapes back.
+  - **Fallback.** Without kicad-cli the built-in walker is still used, with a
+    warning.
 - **`import_eagle_project` no longer replaces a schematic that is open in
   KiCad.** It writes `<output_dir>/<project_name>.kicad_sch` without checking
   whether that file exists, so re-importing into an open project overwrote it
