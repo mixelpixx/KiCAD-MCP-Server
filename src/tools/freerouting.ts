@@ -34,7 +34,19 @@ export function registerFreeroutingTools(server: McpServer, callKicadScript: Fun
         .describe(
           "Maximum routing passes for single-attempt mode (default: 20). Ignored when `attempts` > 1; use `passSchedule` instead.",
         ),
-      timeout: z.number().optional().describe("Per-attempt timeout in seconds (default: 300)"),
+      timeout: z
+        .number()
+        .optional()
+        .describe(
+          "Per-attempt timeout in seconds (default: 300). Freerouting is killed when it is reached and nothing it routed is kept, so the router is given a shorter time budget of its own (see jobTimeout).",
+        ),
+      jobTimeout: z
+        .number()
+        .min(0)
+        .optional()
+        .describe(
+          "Time in seconds Freerouting may spend routing before it stops by itself and writes what it has routed (--router.job_timeout). Default: `timeout` minus a tenth of it (at least 20 s, at most 120 s). The result has time_budget_reached: true when routing stopped this way; the board then holds a partial routing. 0 passes no time budget.",
+        ),
       attempts: z
         .number()
         .int()

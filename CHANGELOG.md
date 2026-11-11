@@ -18,6 +18,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **`autoroute` keeps what Freerouting routed when time runs out.** Freerouting
+  writes its session file only when it ends, so a run that reached `timeout`
+  was killed and returned nothing, however much it had routed. `autoroute` now
+  passes `--router.job_timeout`, by default `timeout` minus a tenth of it (at
+  least 20 s, at most 120 s): the router stops by itself, writes the partial
+  result, and it is imported as usual. The result reports
+  `job_timeout_seconds` and `time_budget_reached`. New parameter `jobTimeout`
+  sets the budget in seconds; `0` passes none.
+
 - **Operating modes: a readonly mode for review agents, and a manufacturing
   mode** (#443 and #444, @b0gdaniy). `KICAD_MCP_OPERATING_MODE=readonly`
   leaves only the tools that cannot change the design, the project, libraries

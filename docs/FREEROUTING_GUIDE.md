@@ -107,7 +107,11 @@ Run the full autorouting workflow (export DSN, route, import SES).
 | `boardPath` | string | No | Current board | Path to .kicad_pcb file |
 | `freeroutingJar` | string | No | ~/.kicad-mcp/freerouting.jar | Path to freerouting.jar |
 | `maxPasses` | number | No | 20 | Maximum routing passes |
-| `timeout` | number | No | 300 | Timeout in seconds |
+| `timeout` | number | No | 300 | Seconds to wait for Freerouting. It is killed after that, and nothing it routed is kept |
+| `jobTimeout` | number | No | `timeout` minus 10 % (20–120 s) | Seconds Freerouting may route before it stops by itself and writes what it has (`--router.job_timeout`). `0` passes no budget |
+
+When Freerouting stops at its time budget, the result has `time_budget_reached: true` and the board holds
+the partial routing; `run_drc` lists what is still unconnected.
 
 **Example:**
 
