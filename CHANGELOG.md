@@ -56,6 +56,33 @@ All notable changes to the KiCAD MCP Server project are documented here.
     new net, how it was matched), plus a count per transition such as
     `"VBAT -> GND": 2`, and the vias added, removed and moved.
   - Read-only, so it is available in `readonly` mode.
+- **`autoroute` can route a chosen set of nets** (`routeNets`, `excludeNets`,
+  names or globs such as `/HV PWR/*`). Freerouting routes every net in the
+  DSN; the selection is applied to the DSN copy, so nets left out keep their
+  pads and copper on the board as obstacles but get no routing. That lets an
+  isolated high-voltage board be routed one domain at a time (pack-side nets
+  inside their region, then the logic nets) and leaves high-current nets for
+  hand-drawn pours. The left-out nets' existing tracks, arcs and vias become
+  keepouts in the DSN (Freerouting drops the wires of nets it does not know)
+  and are locked for the session import, which KiCad keeps locked tracks
+  through, so routing in passes keeps the earlier passes with the same
+  objects, UUIDs and groups. The reply lists `netsLeftOut`.
+- **`autoroute` keeps tracks off plane layers: `signalLayers` and
+  `layerTraceCosts`.** KiCad exports every copper layer as `(type signal)`,
+  so Freerouting ran tracks across the inner planes of a 4-layer board and cut
+  one into seven islands. `signalLayers` (e.g. `["F.Cu", "In2.Cu", "B.Cu"]`)
+  marks the other copper layers `(active off)` in a Freerouting rules file
+  passed with `-dr`: no tracks there, vias still pass through.
+  `layerTraceCosts` (e.g. `{"In1.Cu": 5}`) keeps a layer usable but prices
+  tracks on it, for a plane that may carry the odd track where nothing else
+  fits. Names may be canonical or the board's own (a renamed F.Cu is found
+  either way, since the DSN uses the board's names); a name the board lacks
+  is refused rather than ignored. The file holds only what was asked for, so
+  Freerouting's own per-layer defaults stay in force elsewhere. The reply
+  lists the restricted layers by the board's names in `tracksKeptOffLayers`.
+  A board-sized wire keepout was tried first and is the wrong tool: Freerouting
+  then places no vias at all (0 vias, 111 unrouted against fanout escaping
+  244/304 pins on the same DSN).
 
 - **Operating modes: a readonly mode for review agents, and a manufacturing
   mode** (#443 and #444, @b0gdaniy). `KICAD_MCP_OPERATING_MODE=readonly`
@@ -103,6 +130,77 @@ All notable changes to the KiCAD MCP Server project are documented here.
   every `8.0`, `9.0` and `10.0` global table it found; it now reads only the
   newest version's table, as KiCad does, so a library registered only in an
   older version's table has to be added to the current one.
+- **`add_via` keeps the net it was given inside another net's zone.** It
+  created a non-free via, and KiCad 10 gives a non-free via the net of the
+  copper it touches when the board is saved. A via placed inside a filled
+  zone of another net, before anything of its own net reached it, was written
+  to the file on the zone's net, while the reply named the requested one: on a
+  battery board with a plane in every cell, a CMGND via came back as the
+  cell's supply net and shorted. `add_via` now makes a free via, as KiCad's
+  Add Free-Standing Via does, and reports the net the via has.
+- **STM32 and other symbols with parentheses in pin names load again.** KiCad
+  writes a `(` inside a quoted string as is, so the stock STM32 libraries have
+  pin names like `"PA13(JTMS"`. Twenty block scanners counted every `(` and
+  `)`, including those inside strings, so a single quoted `(` threw them off
+  to the end of the file. `list_symbol_pins`, `add_schematic_component` and
+  `import_symbol` failed on every `MCU_ST_STM32H5` symbol. Once such a symbol
+  was in a schematic, adding any other symbol type failed with "No
+  lib_symbols section found". The same miscount affected datasheet
+  enrichment, library property edits, symbol removal, `replace_instance_lib_ids`,
+  sheet lookups, `add_sheet_pin`, footprint pad and 3D-model edits, the
+  footprint parser and `.kicad_dru` rule lookup. They all use the string-aware
+  `match_paren` now, plus a new `paren_delta` for the scanners that read line
+  by line. (The matcher in `schematic_handlers` was already string-aware;
+  this brings every other scanner in line with it.)
+- **Every schematic tool that takes a `position` accepts `[x, y]` and
+  `{"x": .., "y": ..}`.** `add_schematic_text`, `add_schematic_hierarchical_label`
+  and `add_sheet_pin` took a list; a dict passed their length check and then
+  failed with "Failed to add text annotation". `delete_schematic_net_label`
+  took a dict; a list raised. Either shape now works everywhere, in the MCP
+  schemas as well as the Python handlers, and a malformed one is refused with
+  a message naming both shapes. `delete_schematic_net_label` refuses a
+  position that is present but malformed instead of treating it as absent,
+  which would have deleted the only label of that name.
+- **`search_footprints` with `library` searches that library.** The filter was
+  applied after a search of every library that stopped at `limit * 10`
+  matches, so a library listed late in the table returned nothing once earlier
+  libraries had used up that budget. With the stock tables, `P2.54mm` in
+  `Connector_PinSocket_2.54mm` came back empty although the library has 278
+  matches, and a user library added after the `KiCad` row was hardly ever
+  reached. The search now scans only the requested library.
+- **`sync_schematic_to_board` and `create_board_from_schematic` take nets from
+  KiCad's own netlist.**
+  - **Before.** Pad nets came from a built-in walker that followed wires and
+    labels geometrically. It disagreed with KiCad whenever a net changed name
+    across a sheet boundary or a label sat mid-wire, and it wrote flat names
+    (`SWDIO`, not `/MCU/SWDIO`). On a real 77-part, 9-sheet board, 304 of 333
+    pads ended up on a net KiCad disagrees with, and KiCad's parity check
+    reported 349 issues, while the tool said success.
+  - **Now.** Nets come from `kicad-cli sch export netlist`, read in the
+    S-expression format because the XML writer unescapes names (`ADC7/PB6`
+    instead of KiCad's `ADC7{slash}PB6`). Each footprint is linked to its
+    symbol by path, and symbol values, fields and the BOM/DNP flags are carried
+    over, as KiCad's Update PCB does. The same board now has 0 pads that
+    disagree with KiCad and 3 parity issues, all in the design itself.
+  - **Also reported.** The reply says `netSource`. Pads that aren't pins of
+    their symbol have their net cleared (`pads_cleared`). Footprints that
+    differ from the symbol's, in name or in library, are listed in
+    `footprint_changes_pending`, not swapped; only a footprint with no
+    library nickname at all (what older versions of this tool wrote) gets
+    the symbol's nickname. New fields are created hidden on the Fab layer,
+    as KiCad does. Field values with line breaks come through intact: the
+    netlist reader maps KiCad's `\n`, `\r` and `\t` escapes back.
+  - **Fallback.** Without kicad-cli the built-in walker is still used, with a
+    warning.
+- **`autoroute` keeps every outline of a keepout.** KiCad's Specctra export
+  writes only the first outline of a rule area, so a keepout drawn as several
+  polygons reached Freerouting as one. On a real high-voltage board a keepout
+  built from many voltage halos lost all but one, and Freerouting put logic
+  vias 0.4 mm from 400 V pads that needed 1.5 mm. The missing outlines are
+  now appended to the DSN in the form KiCad writes the first (`keepout`,
+  `wire_keepout` or `via_keepout` per the area's flags). Holes are still not
+  exported, which keeps copper out rather than letting it in.
+
 - **`import_eagle_project` no longer replaces a schematic that is open in
   KiCad.** It writes `<output_dir>/<project_name>.kicad_sch` without checking
   whether that file exists, so re-importing into an open project overwrote it

@@ -46,6 +46,7 @@ import logging
 import re
 
 import sexpdata
+from utils.paren_match import match_paren, paren_delta  # noqa: F401 (re-export)
 
 logger = logging.getLogger("kicad_interface")
 
@@ -92,36 +93,10 @@ QUOTED_VALUE_SKIP = r'"(?:[^"\\]|\\.)*"'
 # ``"Ceramic (X7R) 50V"`` or a footprint named ``HRS_U.FL-R-SMT-1(10)`` puts
 # unbalanced parens inside quoted tokens, and real libraries contain both.
 #
-# These two helpers skip quoted text, so callers can slice a block out of a
-# file and splice a new one back without a parser.
-
-
-def match_paren(content: str, open_idx: int) -> int:
-    """Index of the ``)`` closing the ``(`` at *open_idx*, or -1 if unbalanced.
-
-    Parens inside quoted tokens are literal text, not structure.
-    """
-    depth = 0
-    in_string = False
-    i = open_idx
-    while i < len(content):
-        ch = content[i]
-        if in_string:
-            if ch == "\\":
-                i += 2
-                continue
-            if ch == '"':
-                in_string = False
-        elif ch == '"':
-            in_string = True
-        elif ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-            if depth == 0:
-                return i
-        i += 1
-    return -1
+# ``match_paren`` and ``paren_delta`` skip quoted text, so callers can slice
+# a block out of a file and splice a new one back without a parser. They live
+# in ``utils.paren_match`` (no third-party imports, so ``utils.kicad_dru`` can
+# load under KiCad's own Python) and are re-exported here.
 
 
 def iter_child_offsets(block: str, depth: int = 2):
