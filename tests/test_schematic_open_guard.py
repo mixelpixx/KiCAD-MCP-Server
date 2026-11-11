@@ -411,6 +411,7 @@ _NOT_SCHEMATIC_WRITERS = {
             "set_design_rules",
             "set_layer_constraints",
             "set_net_color",
+            "set_voltage_clearance_rules",
         ],
         "writes the board or its .kicad_pro",
     ),

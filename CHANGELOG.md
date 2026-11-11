@@ -16,6 +16,25 @@ All notable changes to the KiCAD MCP Server project are documented here.
   near-field solver. A caller may paste a comparison; the prompt does not
   invent one.
 
+### New Tools
+
+- **`set_voltage_clearance_rules`** — clearance and creepage rules graded by
+  the working voltage between net classes, written as a managed block at the
+  end of the board's `.kicad_dru` (a re-run replaces the block; hand-written
+  rules stay). Each class gets its potential against a shared reference, a
+  number for a fixed node or `[min, max]` for one that swings; the working
+  voltage of a pair is the largest difference their ranges can show, and
+  `pairs` sets it directly for classes in separate domains. The `spacing`
+  table (working voltage to clearance and optional creepage) comes from the
+  user's standard; the tool supplies no values, refuses a table whose spacing
+  falls as voltage rises or that drops creepage in a higher row, and refuses a
+  working voltage above the table's last row. The write is refused when the
+  rest of the `.kicad_dru` does not parse, because KiCad silently ignores
+  every rule in a file it cannot parse. `excludeUnconnectedNets` (default
+  off) leaves KiCad's `unconnected-(...)` nets out of the "other nets" rules.
+  Needs KiCad 9 or newer (`creepage`, `hasNetclass()`); on KiCad 8 the tool
+  refuses and writes nothing.
+
 ### New Features
 
 - **Operating modes: a readonly mode for review agents, and a manufacturing
