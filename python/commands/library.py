@@ -337,13 +337,16 @@ class LibraryManager:
             logger.warning(f"Footprint not found in any library: {footprint_name}")
             return None
 
-    def search_footprints(self, pattern: str, limit: int = 20) -> List[Dict[str, str]]:
+    def search_footprints(
+        self, pattern: str, limit: int = 20, library: Optional[str] = None
+    ) -> List[Dict[str, str]]:
         """
         Search for footprints matching a pattern
 
         Args:
             pattern: Search pattern (supports wildcards *, case-insensitive)
             limit: Maximum number of results to return
+            library: Only search this library nickname (case-insensitive)
 
         Returns:
             List of dicts with 'library', 'footprint', and 'full_name' keys
@@ -355,7 +358,11 @@ class LibraryManager:
         regex_pattern = pattern_lower.replace("*", ".*")
         regex = re.compile(regex_pattern)
 
-        for library_nickname in self.libraries.keys():
+        nicknames = list(self.libraries.keys())
+        if library:
+            nicknames = [n for n in nicknames if n.lower() == library.lower()]
+
+        for library_nickname in nicknames:
             footprints = self.list_footprints(library_nickname)
 
             for footprint in footprints:
@@ -431,16 +438,10 @@ class LibraryCommands:
             limit = params.get("limit", 20)
             library_filter = params.get("library")
 
-            results = self.library_manager.search_footprints(
-                pattern, limit * 10 if library_filter else limit
-            )
-
-            # Filter by library if specified
-            if library_filter:
-                results = [
-                    r for r in results if r.get("library", "").lower() == library_filter.lower()
-                ]
-                results = results[:limit]
+            # Restrict the scan itself: filtering a capped all-library result
+            # afterwards dropped every match from libraries listed late in the
+            # table (e.g. a user library after the ~150 stock ones).
+            results = self.library_manager.search_footprints(pattern, limit, library_filter)
 
             return {
                 "success": True,

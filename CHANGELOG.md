@@ -134,6 +134,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
   a message naming both shapes. `delete_schematic_net_label` refuses a
   position that is present but malformed instead of treating it as absent,
   which would have deleted the only label of that name.
+- **`search_footprints` with `library` searches that library.** The filter was
+  applied after a search of every library that stopped at `limit * 10`
+  matches, so a library listed late in the table returned nothing once earlier
+  libraries had used up that budget. With the stock tables, `P2.54mm` in
+  `Connector_PinSocket_2.54mm` came back empty although the library has 278
+  matches, and a user library added after the `KiCad` row was hardly ever
+  reached. The search now scans only the requested library.
 - **`import_eagle_project` no longer replaces a schematic that is open in
   KiCad.** It writes `<output_dir>/<project_name>.kicad_sch` without checking
   whether that file exists, so re-importing into an open project overwrote it
