@@ -18,6 +18,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **`autoroute` passes Freerouting settings: `routerSettings`.** An object of
+  setting name to value, by the names in Freerouting's `docs/settings.md` under
+  `router`. Each is passed as `--router.<name>=<value>`; a list is joined with
+  commas. This reaches what the router already offers and `autoroute` had no
+  parameter for: `autorouter.priority_net_classes` (classes routed first and not
+  ripped by other nets), `autorouter.plane_as_priority` (one via per plane pad
+  into its plane), `autorouter.ignore_net_classes`, `via_costs`,
+  `plane_via_costs`. Keys must be plain setting names; `max_passes` and
+  `job_timeout` are refused in favour of `maxPasses` and `jobTimeout`. The
+  result lists the options passed as `router_settings`.
+
 - **`autoroute` keeps what Freerouting routed when time runs out.** Freerouting
   writes its session file only when it ends, so a run that reached `timeout`
   was killed and returned nothing, however much it had routed. `autoroute` now

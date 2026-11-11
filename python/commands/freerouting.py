@@ -350,6 +350,61 @@ def _router_time_budget(timeout: Any, requested: Any) -> Optional[int]:
     return int(budget) if budget >= 1 else None
 
 
+# A Freerouting setting key: lower-case words joined by dots, as in its docs/settings.md
+# ("autorouter.priority_net_classes"). Nothing else, so a key cannot smuggle in another option.
+_ROUTER_SETTING_KEY = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$")
+# Settings autoroute sets itself; a caller's value would silently fight it.
+_ROUTER_SETTINGS_OWNED = {
+    "job_timeout": "jobTimeout",
+    "max_passes": "maxPasses",
+    "autorouter.max_passes": "maxPasses",
+}
+
+
+def _router_setting_args(settings: Any) -> List[str]:
+    """``routerSettings`` as Freerouting command-line options.
+
+    ``{"autorouter.priority_net_classes": ["DIFF", "ANALOG"], "autorouter.plane_as_priority": True}``
+    becomes ``--router.autorouter.priority_net_classes=DIFF,ANALOG`` and
+    ``--router.autorouter.plane_as_priority=true``. Keys are the names in Freerouting's
+    docs/settings.md under ``router``. Raises ValueError for anything that is not a plain
+    setting: a key of another shape, a value that is not a string, number, boolean or a list
+    of those, or a setting that autoroute has a parameter of its own for.
+    """
+    if settings is None:
+        return []
+    if not isinstance(settings, dict):
+        raise ValueError("routerSettings must be an object of setting name to value")
+    args: List[str] = []
+    for key, value in settings.items():
+        if not isinstance(key, str) or not _ROUTER_SETTING_KEY.match(key):
+            raise ValueError(
+                f"routerSettings key {key!r} is not a Freerouting setting name "
+                "(lower-case words joined by dots, e.g. autorouter.priority_net_classes)"
+            )
+        if key in _ROUTER_SETTINGS_OWNED:
+            raise ValueError(
+                f"routerSettings key {key!r}: use autoroute's {_ROUTER_SETTINGS_OWNED[key]} parameter"
+            )
+        items = value if isinstance(value, (list, tuple)) else [value]
+        if not items:
+            raise ValueError(f"routerSettings {key!r}: empty list")
+        parts = []
+        for item in items:
+            if isinstance(item, bool):
+                parts.append("true" if item else "false")
+            elif isinstance(item, (int, float)):
+                parts.append(str(item))
+            elif isinstance(item, str) and item and "\n" not in item:
+                parts.append(item)
+            else:
+                raise ValueError(
+                    f"routerSettings {key!r}: value {item!r} is not a string, number or boolean"
+                )
+        args.append(f"--router.{key}={','.join(parts)}")
+    return args
+
+
 def _build_freerouting_cmd(
     jar_path: str,
     dsn_path: str,
@@ -358,6 +413,7 @@ def _build_freerouting_cmd(
     use_docker: bool,
     single_thread: bool = False,
     job_timeout: Optional[int] = None,
+    router_args: Optional[List[str]] = None,
 ) -> List[str]:
     """Build the command to run Freerouting.
 
@@ -374,6 +430,7 @@ def _build_freerouting_cmd(
     extra = ["-mt", "1"] if single_thread else []
     if job_timeout:
         extra.append(f"--router.job_timeout={_hms(job_timeout)}")
+    extra += list(router_args or [])
     required_java = _jar_required_java(jar_path)
     if use_docker:
         docker_exe = _find_docker()
@@ -876,6 +933,14 @@ class FreeroutingCommands:
         # Step 2: Run Freerouting (single or multiple attempts)
         mode_label = "docker" if use_docker else "direct"
         job_timeout = _router_time_budget(timeout, params.get("jobTimeout"))
+        try:
+            router_args = _router_setting_args(params.get("routerSettings"))
+        except ValueError as e:
+            return {
+                "success": False,
+                "message": "Invalid routerSettings",
+                "errorDetails": str(e),
+            }
         best_budget_reached = False
         total_start = time.time()
         attempt_results: List[Dict[str, Any]] = []
@@ -904,6 +969,7 @@ class FreeroutingCommands:
                 use_docker,
                 single_thread=single_thread,
                 job_timeout=job_timeout,
+                router_args=router_args,
             )
             logger.info(
                 f"Freerouting attempt {idx + 1}/{attempts} "
@@ -1128,6 +1194,7 @@ class FreeroutingCommands:
             "netClasses": netclass_report,
             "freerouting_stdout": best_proc_stdout[:1000],
             "job_timeout_seconds": job_timeout,
+            "router_settings": router_args,
             "time_budget_reached": best_budget_reached,
         }
         if attempts > 1:

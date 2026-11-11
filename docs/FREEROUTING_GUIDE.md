@@ -109,6 +109,7 @@ Run the full autorouting workflow (export DSN, route, import SES).
 | `maxPasses` | number | No | 20 | Maximum routing passes |
 | `timeout` | number | No | 300 | Seconds to wait for Freerouting. It is killed after that, and nothing it routed is kept |
 | `jobTimeout` | number | No | `timeout` minus 10 % (20–120 s) | Seconds Freerouting may route before it stops by itself and writes what it has (`--router.job_timeout`). `0` passes no budget |
+| `routerSettings` | object | No | none | Freerouting settings for this run, e.g. `{"autorouter.priority_net_classes": ["DIFF"], "autorouter.plane_as_priority": true}`. Each is passed as `--router.<name>=<value>` |
 
 When Freerouting stops at its time budget, the result has `time_budget_reached: true` and the board holds
 the partial routing; `run_drc` lists what is still unconnected.
