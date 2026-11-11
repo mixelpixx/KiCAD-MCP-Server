@@ -32,6 +32,7 @@ from utils.project_settings_guard import preserve_project_settings
 from utils.sexpr_format import QUOTED_VALUE
 from utils.sexpr_format import dumps as kicad_dumps
 from utils.sexpr_format import escape_sexpr_string, unescape_sexpr_string
+from utils.skip_items import skip_items
 from utils.symbol_instances import annotate_sheet, instance_report
 
 logger = logging.getLogger("kicad_interface")
@@ -2958,7 +2959,7 @@ class SchematicHandlersMixin:
             point_net: dict = {}  # snap(x,y) -> net_name
 
             for attr in ("label", "global_label", "hierarchical_label"):
-                for lbl in getattr(sch, attr, None) or []:
+                for lbl in skip_items(sch, attr):
                     try:
                         pos = lbl.at.value
                         name = lbl.value
@@ -2978,7 +2979,7 @@ class SchematicHandlersMixin:
             # name onto the flag's pin, from where the BFS below propagated it
             # over the real net. A PWR_FLAG takes whatever net it is wired to;
             # it never names one.
-            for sym in getattr(sch, "symbol", None) or []:
+            for sym in skip_items(sch, "symbol"):
                 try:
                     ref = sym.property.Reference.value
                     if not ref.startswith("#PWR"):
@@ -2996,7 +2997,7 @@ class SchematicHandlersMixin:
 
             # ── 2. Build wire adjacency and BFS-propagate net names ──────────
             wire_segments = []
-            for wire in getattr(sch, "wire", None) or []:
+            for wire in skip_items(sch, "wire"):
                 try:
                     pts = []
                     for pt in wire.pts.xy:
@@ -3035,7 +3036,7 @@ class SchematicHandlersMixin:
 
             # ── 3. Collect real (non-power) symbol pins with their positions ──
             sym_pins = []  # (ref, pin_num, (px, py))
-            for sym in getattr(sch, "symbol", None) or []:
+            for sym in skip_items(sch, "symbol"):
                 try:
                     ref = sym.property.Reference.value
                     if ref.startswith("#"):
