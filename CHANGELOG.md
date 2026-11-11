@@ -43,6 +43,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   `sync_schematic_to_board` failed on such a project. Iterating the bare
   element would also have walked its children instead of the items. A new
   `utils.skip_items.skip_items(sch, kind)` always returns a list of items.
+- **`batch_connect` no longer draws diagonal wires to a "facing" label.** A pin
+  was joined by a wire to any label of its net within 14 mm whose orientation
+  was opposite its own, wherever that label was. A label 9 mm across and 10 mm
+  down got a diagonal wire, and a label behind the pin got a wire back across
+  the symbol body. A label now counts as facing only when it lies straight out
+  in front of the pin, on the pin's axis; otherwise the pin gets its own label.
 - **`import_eagle_project` no longer replaces a schematic that is open in
   KiCad.** It writes `<output_dir>/<project_name>.kicad_sch` without checking
   whether that file exists, so re-importing into an open project overwrote it
