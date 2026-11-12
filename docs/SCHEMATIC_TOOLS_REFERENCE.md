@@ -575,7 +575,7 @@ Import the schematic netlist into the PCB board — equivalent to pressing F8 in
 | schematicPath          | string  | Yes      | Absolute path to the .kicad_sch schematic file                                                                                             |
 | boardPath              | string  | Yes      | Absolute path to the .kicad_pcb board file                                                                                                 |
 | dryRun                 | boolean | No       | Report every change (pad nets, values, fields, footprints added, replaced, deleted) without saving                                         |
-| replaceFootprints      | boolean | No       | Swap footprints whose name differs from the symbol's footprint, keeping position, rotation, side, symbol link and the board's field layout |
+| replaceFootprints      | boolean | No       | Swap footprints whose library ID differs from the symbol's footprint, keeping position, rotation, side, symbol link and the board's field layout |
 | deleteUnusedFootprints | boolean | No       | Delete footprints with no symbol in the schematic; board-only and locked footprints are kept                                               |
 
 **Usage Notes:** This is the F8 equivalent. It synchronizes the schematic design to the PCB, creating footprints on the board and assigning nets. This step is critical in the workflow: design in schematic → sync_schematic_to_board → place and route on PCB.

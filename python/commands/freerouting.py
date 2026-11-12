@@ -19,7 +19,7 @@ import tempfile
 import time
 import zipfile
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from utils.project_netclasses import apply_net_classes_to_board, load_project_net_classes
 from utils.project_settings_guard import preserve_project_settings
@@ -136,6 +136,179 @@ def _sexpr_end(text: str, start: int) -> int:
     return -1
 
 
+# One DSN name token: quoted (as KiCad writes names that need it) or bare.
+DSN_NAME = r'"[^"]*"|[^\s()"]+'
+_DSN_NEEDS_QUOTE_RE = re.compile(r"[\t ()%{}]")
+
+
+def dsn_unquote(token: str) -> str:
+    """The name a DSN token stands for: the surrounding quotes removed, if any."""
+    if len(token) >= 2 and token[0] == '"' and token[-1] == '"':
+        return token[1:-1]
+    return token
+
+
+def dsn_quote(name: str) -> str:
+    """Write ``name`` the way KiCad's Specctra export does: in quotes when it has to be.
+
+    KiCad (``OUTPUTFORMATTER::GetQuoteChar``) quotes an empty name, a name starting with
+    ``#``, one containing a tab, a space, a parenthesis, ``%``, ``{`` or ``}``, and one
+    with ``-`` anywhere but first. So ``F.Cu`` and ``In1.Cu`` stay bare, while
+    ``"Bottom side"``, ``"GND-plane"`` and ``"Net-(C5-Pad1)"`` are quoted; the Specctra
+    parser would otherwise read ``Bottom side`` as the layer ``Bottom`` plus a stray
+    token. Checked against KiCad 10.0.8's export.
+    """
+    if not name or name[0] == "#" or _DSN_NEEDS_QUOTE_RE.search(name) or "-" in name[1:]:
+        return f'"{name}"'
+    return name
+
+
+_DSN_NAME_RE = re.compile(DSN_NAME)
+
+
+def net_selector(route_nets: Iterable[str], exclude_nets: Iterable[str]):
+    """A predicate for net names from include and exclude glob lists.
+
+    Empty ``route_nets`` means every net; ``exclude_nets`` then removes some.
+    """
+    import fnmatch
+
+    include = [str(p) for p in route_nets or []]
+    exclude = [str(p) for p in exclude_nets or []]
+
+    def keep(name: str) -> bool:
+        if include and not any(fnmatch.fnmatchcase(name, p) for p in include):
+            return False
+        return not any(fnmatch.fnmatchcase(name, p) for p in exclude)
+
+    return keep
+
+
+def filter_dsn_nets(dsn_text: str, keep) -> Tuple[str, List[str]]:
+    """Drop the nets ``keep`` rejects from a Specctra DSN's (network) section.
+
+    Freerouting routes every net in (network). Removing a net's (net ...) block leaves
+    its pads and existing copper on the board as obstacles but gives the router nothing
+    to connect for it. So a board can be routed one domain at a time: the pack-side nets
+    first, inside their own region, then the logic nets, without either crossing the
+    other's isolation gap. The (class ...) lists are left alone: Freerouting's
+    ``Network.insert_net_class`` looks each member up with ``nets.get(name)`` and skips a
+    name it does not know, and KiCad's auto-generated names such as ``"Net-(C5-Pad1)"``
+    contain parentheses that a rewrite would have to parse. Returns the new text and the
+    names removed.
+    """
+    m = re.search(r"\(network(?=[\s)])", dsn_text)
+    if not m:
+        return dsn_text, []
+    start = m.start()
+    end = _sexpr_end(dsn_text, start)
+    if end < 0:
+        return dsn_text, []
+    body = dsn_text[start:end]
+    out: List[str] = []
+    removed: List[str] = []
+    i = len("(network")
+    out.append(body[:i])
+    while i < len(body):
+        j = body.find("(", i)
+        if j < 0:
+            out.append(body[i:])
+            break
+        out.append(body[i:j])
+        k = _sexpr_end(body, j)
+        if k < 0:
+            out.append(body[j:])
+            break
+        child = body[j:k]
+        head = re.match(r"\(net\s+", child)
+        if head:
+            name = dsn_unquote(_DSN_NAME_RE.match(child, head.end()).group(0))
+            if not keep(name):
+                removed.append(name)
+                i = k
+                # Drop the line break and indent the block leaves behind.
+                while i < len(body) and body[i] in " \t":
+                    i += 1
+                if i < len(body) and body[i] == "\n":
+                    i += 1
+                continue
+        out.append(child)
+        i = k
+    text = dsn_text[:start] + "".join(out) + dsn_text[end:]
+    return _wiring_of_removed_nets_as_keepouts(text, set(removed)), removed
+
+
+def _wiring_of_removed_nets_as_keepouts(dsn_text: str, removed) -> str:
+    """Turn the existing wires and vias of left-out nets into keepouts.
+
+    A wire whose (net ...) is no longer in (network) is dropped by Freerouting, so the
+    copper of a left-out net was invisible to the router: a logic pass routed straight
+    through the pack nets' tracks (79 shorts on a real board). Each such wire becomes a
+    (keepout "" (path LAYER WIDTH ...)) and each via a circle keepout on every copper
+    layer, in the (structure) section; their pads were already obstacles. Layer names
+    are taken as the DSN writes them (quoted when KiCad quotes them, see
+    :func:`dsn_quote`). KiCad exports an arc as its straight chord, so the keepout of an
+    arc misses the bulge; the board keeps the arc itself (see
+    :func:`_lock_tracks_of_nets`).
+    """
+    if not removed:
+        return dsn_text
+    w = re.search(r"\(wiring(?=[\s)])", dsn_text)
+    st = re.search(r"\(structure(?=[\s)])", dsn_text)
+    if not w or not st:
+        return dsn_text
+    w_end = _sexpr_end(dsn_text, w.start())
+    if w_end < 0 or _sexpr_end(dsn_text, st.start()) < 0:
+        return dsn_text
+    layers = [dsn_quote(name) for name in _dsn_layer_names(dsn_text)]
+    diam = {}
+    for m in re.finditer(r"\(padstack\s+(" + DSN_NAME + ")", dsn_text):
+        e = _sexpr_end(dsn_text, m.start())
+        c = re.search(r"\(circle\s+(?:" + DSN_NAME + r")\s+([\d.]+)", dsn_text[m.start() : e])
+        if c:
+            diam[dsn_unquote(m.group(1))] = c.group(1)
+    body = dsn_text[w.start() : w_end]
+    kept, keepouts = [], []
+    i = len("(wiring")
+    kept.append(body[:i])
+    while i < len(body):
+        j = body.find("(", i)
+        if j < 0:
+            kept.append(body[i:])
+            break
+        kept.append(body[i:j])
+        k = _sexpr_end(body, j)
+        if k < 0:
+            kept.append(body[j:])
+            break
+        child = body[j:k]
+        net = re.search(r"\(net\s+(" + DSN_NAME + r")\)", child)
+        if net and dsn_unquote(net.group(1)) in removed:
+            path = re.search(r"\(path\s+(" + DSN_NAME + r")\s+([\d.]+)\s+([^()]*)\)", child)
+            via = re.match(r"\(via\s+(" + DSN_NAME + r")\s+([-\d.]+)\s+([-\d.]+)", child)
+            if path:
+                keepouts.append(
+                    f'    (keepout "" (path {path.group(1)} {path.group(2)} '
+                    f"{path.group(3).strip()}))"
+                )
+            elif via and dsn_unquote(via.group(1)) in diam:
+                d = diam[dsn_unquote(via.group(1))]
+                for layer in layers:
+                    keepouts.append(
+                        f'    (keepout "" (circle {layer} {d} {via.group(2)} {via.group(3)}))'
+                    )
+            i = k
+            while i < len(body) and body[i] in " \t":
+                i += 1
+            if i < len(body) and body[i] == "\n":
+                i += 1
+            continue
+        kept.append(child)
+        i = k
+    text = dsn_text[: w.start()] + "".join(kept) + dsn_text[w_end:]
+    return _append_to_structure(text, keepouts)
+
+
 _PLACEMENT_RE = re.compile(r"\(placement(?=[\s)])")
 _PLACE_RE = re.compile(r'\(place\s+("[^"]*"|[^\s()]+)')
 
@@ -220,6 +393,36 @@ def _prune_ses_placement(ses_text: str, board_refs: Iterable[str]) -> Tuple[str,
     return ses_text[: m.start()] + "".join(out) + ses_text[block_end:], dropped
 
 
+def _lock_tracks_of_nets(board, nets) -> List[Tuple[Any, bool]]:
+    """Lock every track, arc and via of ``nets``; returns (item, lock state before) pairs.
+
+    ImportSpecctraSES removes the board's unlocked tracks and adds the session's wires,
+    but keeps locked ones (checked on KiCad 10.0.8: tracks, vias and arcs stay, with
+    their UUIDs). A session from a DSN with nets left out (routeNets / excludeNets)
+    holds none of their wires, so importing it erased their routing: routing in passes
+    (logic first, then the pack nets) kept only the last pass (600 tracks to 66 on a
+    real board). Locking them for the import keeps them exactly as they were, arcs,
+    UUIDs and group membership included; :func:`_restore_lock_states` puts the lock
+    flags back afterwards.
+    """
+    nets = set(nets)
+    locked: List[Tuple[Any, bool]] = []
+    for t in board.GetTracks():
+        if t.GetNetname() in nets:
+            locked.append((t, bool(t.IsLocked())))
+            t.SetLocked(True)
+    return locked
+
+
+def _restore_lock_states(locked: Iterable[Tuple[Any, bool]]) -> int:
+    """Put back the lock flags recorded by _lock_tracks_of_nets; returns how many."""
+    n = 0
+    for item, was_locked in locked:
+        item.SetLocked(was_locked)
+        n += 1
+    return n
+
+
 _TRACKS_CLEARED_NOTE = (
     "An SES import that fails after parsing has usually already removed the "
     "board's unlocked tracks, so the board in memory may have lost them; nothing "
@@ -228,6 +431,107 @@ _TRACKS_CLEARED_NOTE = (
 
 
 _DSN_KEEPOUT_RE = re.compile(r'(\(keepout "[^"]*" \(polygon signal 0\s+)([-\d.\s]+?)(\))')
+_DSN_LAYER_RE = re.compile(r"\(layer\s+(" + DSN_NAME + r")\s*\(type\s+(\w+)\)")
+
+
+def _dsn_layer_names(dsn_text: str) -> List[str]:
+    """The layers of the DSN's (structure), in order, by the names KiCad wrote (unquoted).
+
+    The DSN uses the board's own layer names (``Top`` for a renamed F.Cu), quoted when
+    they need it (``"GND plane"``).
+    """
+    st = re.search(r"\(structure(?=[\s)])", dsn_text)
+    if not st:
+        return []
+    end = _sexpr_end(dsn_text, st.start())
+    block = dsn_text[st.start() : end if end > 0 else len(dsn_text)]
+    return [dsn_unquote(m.group(1)) for m in _DSN_LAYER_RE.finditer(block)]
+
+
+def _board_layer_names(board, names: Iterable[Any]) -> List[str]:
+    """Translate layer names (canonical ``F.Cu`` or the board's own) to the board's names.
+
+    The DSN carries the board's names, so a canonical name has to go through the board:
+    with F.Cu renamed to ``Top``, ``"F.Cu"`` must restrict ``Top``, not silently nothing.
+    Raises ValueError for a name that is not an enabled copper layer of the board.
+    """
+    import pcbnew
+
+    enabled = [board.GetLayerName(lid) for lid in board.GetEnabledLayers().CuStack()]
+    out: List[str] = []
+    for name in names:
+        lid = board.GetLayerID(str(name))
+        board_name = board.GetLayerName(lid) if lid >= 0 and pcbnew.IsCopperLayer(lid) else None
+        if board_name is None or board_name not in enabled:
+            raise ValueError(
+                f"{name!r} is not a copper layer of this board (its copper layers: {enabled})"
+            )
+        out.append(board_name)
+    return out
+
+
+def _signal_layer_rules(
+    dsn_text: str,
+    signal_layers: List[str],
+    trace_costs: Optional[Dict[str, float]] = None,
+    design_name: str = "kicad-mcp",
+) -> Tuple[Optional[str], List[str]]:
+    """Freerouting rules text that keeps tracks off every copper layer not in ``signal_layers``.
+
+    KiCad exports every copper layer as ``(type signal)``, so Freerouting runs tracks across
+    inner plane layers and cuts them into islands (found on a 4-layer board: In2 in 7 pieces,
+    26 plane pads open). The rules file's ``autoroute_settings`` carries a ``layer_rule`` per
+    restricted layer with ``(active off)``: an inactive layer gets no traces, vias still pass.
+
+    A board-sized ``wire_keepout`` looks equivalent but is not: Freerouting 2.5's fanout
+    stage still runs, but ``DrillPage`` excludes the keepout area from its via candidates,
+    so no via can be placed anywhere on the board (A/B on the same DSN: 0 vias, 111 unrouted
+    with the keepout; fanout 244/304 pins without it). ``(type power)`` keeps vias but
+    switches on power-plane validation of the layer.
+
+    ``trace_costs`` (layer -> factor, e.g. {"In1.Cu": 5}) keeps a layer usable but makes
+    traces there cost more, for a plane layer that may carry the odd track where nothing
+    else fits: that layer's trace costs are written as the factor along its preferred
+    direction and twice that against it (Freerouting's own defaults are 1 along and 1 plus
+    the board's aspect ratio against, plus 0.2 per signal layer on the outer layers of a
+    board with more than two).
+
+    The file holds only what was asked for. Freerouting reads each ``layer_rule`` key on
+    its own, and an explicit value replaces the per-layer default it would otherwise
+    compute (``RouterSettings.applyBoardSpecificOptimizations``: preferred directions from
+    the board's aspect ratio, the outer-layer surcharge); a layer that is neither
+    restricted nor costed therefore gets no rule, and there are no top-level cost settings.
+
+    Both lists must use the names the DSN uses (the board's own; see
+    :func:`_board_layer_names`). Raises ValueError for a name that is not a layer of the
+    DSN, so a typo cannot silently restrict the wrong layers. Returns (rules text,
+    restricted layers); (None, []) when nothing would be restricted or costed.
+    """
+    costs = {str(k): float(v) for k, v in (trace_costs or {}).items()}
+    wanted = [str(n) for n in signal_layers or []]
+    if not (wanted or costs):
+        return None, []
+    layers = _dsn_layer_names(dsn_text)
+    unknown = [n for n in wanted + list(costs) if n not in layers]
+    if unknown:
+        raise ValueError(f"not a layer of this board's DSN: {unknown} (DSN layers: {layers})")
+    restricted = [name for name in layers if wanted and name not in wanted]
+    rules = []
+    for name in layers:
+        if name in restricted:
+            rules.append(f"    (layer_rule {dsn_quote(name)} (active off))\n")
+        elif name in costs:
+            k = costs[name]
+            rules.append(
+                f"    (layer_rule {dsn_quote(name)} (preferred_direction_trace_costs {k:g})"
+                f" (against_preferred_direction_trace_costs {2 * k:g}))\n"
+            )
+    if not rules:
+        return None, []
+    # Freerouting checks the header's name against the DSN file's stem (a mismatch is
+    # only logged).
+    text = f"(rules PCB {dsn_quote(design_name)}\n  (autoroute_settings\n" + "".join(rules)
+    return text + "  )\n)\n", restricted
 
 
 def _grow_hole_keepouts(dsn_text: str, grow_um: float) -> str:
@@ -311,6 +615,7 @@ def _build_freerouting_cmd(
     passes: int,
     use_docker: bool,
     single_thread: bool = False,
+    rules_path: Optional[str] = None,
 ) -> List[str]:
     """Build the command to run Freerouting.
 
@@ -321,6 +626,8 @@ def _build_freerouting_cmd(
     valid routed board, not an artefact of MT optimisation.
     """
     extra = ["-mt", "1"] if single_thread else []
+    if rules_path:
+        extra += ["-dr", rules_path]
     required_java = _jar_required_java(jar_path)
     if use_docker:
         docker_exe = _find_docker()
@@ -330,6 +637,10 @@ def _build_freerouting_cmd(
         dsn_name = os.path.basename(dsn_path)
         ses_name = os.path.basename(ses_path)
         jar_name = os.path.basename(jar_path)
+        if rules_path:
+            extra = [
+                a if a != rules_path else f"/work/{os.path.basename(rules_path)}" for a in extra
+            ]
         return [
             docker_exe,
             "run",
@@ -510,11 +821,105 @@ def _reconcile_ses_net_names(
     return _SES_NET_TOKEN_RE.sub(_repl, ses_text), remapped
 
 
+def _missing_keepout_lines(board) -> List[str]:
+    """The rule-area outlines KiCad's Specctra export leaves out, as DSN keepout lines.
+
+    ExportSpecctraDSN writes only the first outline of a rule area. A keepout area drawn
+    as several polygons (or one built from a union of halos) silently routes as if only
+    its first piece existed. Each further outline is written in the same form KiCad
+    writes the first: (keepout|wire_keepout|via_keepout "" (polygon LAYER 0 x y ...)),
+    in micrometres with y negated. Holes are not exported (KiCad drops them too), which
+    errs on the side of keeping copper out.
+    """
+    lines: List[str] = []
+    for z in board.Zones():
+        if not z.GetIsRuleArea():
+            continue
+        tracks, vias = z.GetDoNotAllowTracks(), z.GetDoNotAllowVias()
+        if not (tracks or vias):
+            continue
+        kind = "keepout" if tracks and vias else ("wire_keepout" if tracks else "via_keepout")
+        outline = z.Outline()
+        if outline.OutlineCount() < 2:
+            continue
+        for layer in z.GetLayerSet().CuStack():
+            name = dsn_quote(board.GetLayerName(layer))
+            for i in range(1, outline.OutlineCount()):
+                chain = outline.COutline(i)
+                pts = " ".join(
+                    f"{chain.CPoint(k).x / 1000:g} {-chain.CPoint(k).y / 1000:g}"
+                    for k in range(chain.PointCount())
+                )
+                lines.append(f'    ({kind} "" (polygon {name} 0 {pts}))')
+    return lines
+
+
+def _append_to_structure(dsn_text: str, lines: Iterable[str]) -> str:
+    """Insert ``lines`` (without line endings) at the end of the DSN's (structure) block.
+
+    The block's end is found by parsing, not by its indentation, and the file's own line
+    ending is used, so the text is otherwise left exactly as KiCad wrote it.
+    """
+    lines = list(lines)
+    m = re.search(r"\(structure(?=[\s)])", dsn_text)
+    if not lines or not m:
+        return dsn_text
+    end = _sexpr_end(dsn_text, m.start())
+    if end < 0:
+        return dsn_text
+    nl = "\r\n" if "\r\n" in dsn_text else "\n"
+    close = end - 1  # the ")" that closes (structure
+    line_start = dsn_text.rfind("\n", 0, close) + 1
+    block = nl.join(lines) + nl
+    if dsn_text[line_start:close].strip():
+        # the closing paren shares a line with content: start a new line for the block
+        return dsn_text[:close] + nl + block + dsn_text[close:]
+    return dsn_text[:line_start] + block + dsn_text[line_start:]
+
+
+def _append_missing_keepouts(board, dsn_path) -> int:
+    """Add the rule-area outlines the DSN export left out to the file; returns how many."""
+    lines = _missing_keepout_lines(board)
+    if not lines:
+        return 0
+    # newline="" keeps the file's line endings as KiCad wrote them (no CRLF on Windows).
+    with open(dsn_path, "r", encoding="utf-8", newline="") as fh:
+        text = fh.read()
+    patched = _append_to_structure(text, lines)
+    if patched == text:
+        return 0
+    with open(dsn_path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(patched)
+    return len(lines)
+
+
 class FreeroutingCommands:
     """Handles Freerouting autoroute operations."""
 
-    def __init__(self, board: Any = None) -> None:
+    def __init__(
+        self,
+        board: Any = None,
+        on_board_saved: Optional[Callable[[str], None]] = None,
+    ) -> None:
         self.board = board
+        # Nets left out of the last autoroute's DSN (routeNets / excludeNets), or None.
+        self._nets_left_out: Optional[List[str]] = None
+        # Told the path after each successful save of self.board, so the
+        # interface can record the file's new signature. Without that, its
+        # next auto-save takes this save for an external change and refuses.
+        self.on_board_saved = on_board_saved
+
+    def _save_board(self, board_path: str, after: str) -> None:
+        """Save self.board to board_path; report a successful save."""
+        try:
+            with preserve_project_settings(board_path):
+                self.board.Save(board_path)
+        except Exception as e:
+            logger.warning(f"Board save after {after} failed: {e}")
+            return
+        on_board_saved = getattr(self, "on_board_saved", None)
+        if on_board_saved is not None:
+            on_board_saved(board_path)
 
     def _apply_project_net_classes(self, board_path: Optional[str]) -> Dict[str, Any]:
         """Push the project's net classes into the loaded board before DSN
@@ -730,7 +1135,8 @@ class FreeroutingCommands:
         kept_paths: Dict[str, str] = {}
 
         try:
-            return self._autoroute_staged(
+            self._nets_left_out = None
+            staged = self._autoroute_staged(
                 params,
                 board_path=board_path,
                 board_dir=board_dir,
@@ -748,6 +1154,10 @@ class FreeroutingCommands:
                 pass_schedule=pass_schedule,
                 use_docker=use_docker,
             )
+            if self._nets_left_out is not None and isinstance(staged, dict):
+                staged["netsLeftOut"] = self._nets_left_out
+                staged["netsLeftOutCount"] = len(self._nets_left_out)
+            return staged
         finally:
             # Runs on every exit -- success, failure return, or exception --
             # so no artefact can outlive the run unless explicitly kept.
@@ -802,6 +1212,9 @@ class FreeroutingCommands:
                     "message": "DSN export failed",
                     "errorDetails": (f"ExportSpecctraDSN returned: {result}"),
                 }
+            added = _append_missing_keepouts(self.board, dsn_path)
+            if added:
+                logger.info(f"Added {added} rule-area outline(s) the DSN export left out")
         except Exception as e:
             return {
                 "success": False,
@@ -817,6 +1230,45 @@ class FreeroutingCommands:
             }
 
         self._apply_edge_clearance(dsn_path)
+        route_nets = list(params.get("routeNets") or [])
+        exclude_nets = list(params.get("excludeNets") or [])
+        if route_nets or exclude_nets:
+            with open(dsn_path, "r", encoding="utf-8", newline="") as f:
+                dsn_text = f.read()
+            dsn_text, left_out = filter_dsn_nets(dsn_text, net_selector(route_nets, exclude_nets))
+            with open(dsn_path, "w", encoding="utf-8", newline="") as f:
+                f.write(dsn_text)
+            self._nets_left_out = left_out
+            logger.info(f"Net selection: {len(left_out)} net(s) left out of the DSN")
+        restricted_layers: List[str] = []
+        rules_path: Optional[str] = None
+        signal_layers = list(params.get("signalLayers") or [])
+        trace_costs = dict(params.get("layerTraceCosts") or {})
+        if signal_layers or trace_costs:
+            try:
+                # Canonical names (F.Cu) become the board's own names, which the DSN uses.
+                signal_layers = _board_layer_names(self.board, signal_layers)
+                cost_layers = _board_layer_names(self.board, trace_costs)
+                trace_costs = dict(zip(cost_layers, trace_costs.values()))
+                with open(dsn_path, "r", encoding="utf-8", newline="") as fh:
+                    rules_text, restricted_layers = _signal_layer_rules(
+                        fh.read(),
+                        signal_layers,
+                        trace_costs,
+                        design_name=os.path.splitext(os.path.basename(dsn_path))[0],
+                    )
+            except ValueError as e:
+                return {
+                    "success": False,
+                    "message": "signalLayers / layerTraceCosts name a layer this board lacks",
+                    "errorDetails": str(e),
+                }
+            if rules_text:
+                rules_path = os.path.splitext(dsn_path)[0] + ".rules"
+                with open(rules_path, "w", encoding="utf-8") as fh:
+                    fh.write(rules_text)
+            else:
+                logger.info(f"signalLayers {signal_layers}: nothing to restrict or cost")
         dsn_size = os.path.getsize(dsn_path)
         logger.info(f"DSN exported: {dsn_size} bytes")
 
@@ -848,6 +1300,7 @@ class FreeroutingCommands:
                 attempt_passes,
                 use_docker,
                 single_thread=single_thread,
+                rules_path=rules_path,
             )
             logger.info(
                 f"Freerouting attempt {idx + 1}/{attempts} "
@@ -998,7 +1451,15 @@ class FreeroutingCommands:
                 routed = _strip_ses_placement(fh.read())
             with open(import_copy, "w", encoding="utf-8") as fh:
                 fh.write(routed)
-            result = pcbnew.ImportSpecctraSES(self.board, import_copy)
+            # The left-out nets' copper is not in the session; lock it so the import
+            # keeps it (unlocked tracks are cleared), then put the lock flags back.
+            kept = _lock_tracks_of_nets(self.board, self._nets_left_out or [])
+            try:
+                result = pcbnew.ImportSpecctraSES(self.board, import_copy)
+            finally:
+                if kept:
+                    _restore_lock_states(kept)
+                    logger.info(f"Kept {len(kept)} track(s)/via(s) of the nets left out of the DSN")
             if not _api_ok(result):
                 return {
                     "success": False,
@@ -1022,11 +1483,7 @@ class FreeroutingCommands:
                 pass
 
         # Step 4: Save board
-        try:
-            with preserve_project_settings(board_path):
-                self.board.Save(board_path)
-        except Exception as e:
-            logger.warning(f"Board save after autoroute failed: {e}")
+        self._save_board(board_path, "autoroute")
 
         # Collect stats
         tracks = self.board.GetTracks()
@@ -1042,6 +1499,9 @@ class FreeroutingCommands:
             "success": True,
             "message": f"Autoroute completed in {elapsed}s",
             "mode": mode_label,
+            # By the board's own layer names (what the DSN and the rules file use).
+            "tracksKeptOffLayers": restricted_layers,
+            "layerTraceCosts": trace_costs,
             # Artifacts are staged in a temp dir and removed after the run
             # (#249); with keepArtifacts=true they are copied next to the
             # board and these fields point at the kept copies.
@@ -1106,6 +1566,7 @@ class FreeroutingCommands:
         if netclass_report.get("warning"):
             logger.warning(f"Net-class application: {netclass_report['warning']}")
 
+        added_keepouts = 0
         try:
             result = pcbnew.ExportSpecctraDSN(self.board, output_path)
             if not _api_ok(result):
@@ -1114,6 +1575,9 @@ class FreeroutingCommands:
                     "message": "DSN export failed",
                     "errorDetails": (f"ExportSpecctraDSN returned: {result}"),
                 }
+            if os.path.isfile(output_path):
+                # Same fix as autoroute, so a DSN exported by hand matches what it sends.
+                added_keepouts = _append_missing_keepouts(self.board, output_path)
         except Exception as e:
             return {
                 "success": False,
@@ -1130,6 +1594,7 @@ class FreeroutingCommands:
             "path": output_path,
             "size_bytes": file_size,
             "netClasses": netclass_report,
+            "keepoutOutlinesAdded": added_keepouts,
         }
 
     def _board_net_names(self) -> List[str]:
@@ -1246,11 +1711,7 @@ class FreeroutingCommands:
 
         board_path = params.get("boardPath") or self.board.GetFileName()
         if board_path:
-            try:
-                with preserve_project_settings(board_path):
-                    self.board.Save(board_path)
-            except Exception as e:
-                logger.warning(f"Board save after SES import failed: {e}")
+            self._save_board(board_path, "SES import")
 
         tracks = self.board.GetTracks()
         track_count = sum(1 for t in tracks if t.GetClass() != "PCB_VIA")
