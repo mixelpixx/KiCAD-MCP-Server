@@ -52,6 +52,32 @@ class TestHelpers:
         # Too far -> None
         assert _find_facing_label(f, "VBUS", [100, 200], orientation=180) is None
 
+    def test_facing_label_must_be_on_the_pins_axis(self, tmp_path):
+        # The HV PWR case: C39's pin at (351.79, 96.52) points left (180); a "U10 BST"
+        # label at angle 0 sits 9 mm left and 10 mm down. Joining them drew a diagonal.
+        f = tmp_path / "s.kicad_sch"
+        f.write_text('(kicad_sch (label "U10 BST" (at 342.9 106.68 0)))')
+        assert _find_facing_label(f, "U10 BST", [351.79, 96.52], orientation=180) is None
+        # Same label straight out to the left of the pin, on its row: a wire is right.
+        assert _find_facing_label(f, "U10 BST", [351.79, 106.68], orientation=180) == [
+            342.9,
+            106.68,
+        ]
+
+    def test_facing_label_behind_the_pin_is_not_facing(self, tmp_path):
+        # A pin pointing left (180) with the label to its right would wire back
+        # across its own symbol body.
+        f = tmp_path / "s.kicad_sch"
+        f.write_text('(kicad_sch (label "VBUS" (at 20 20 0)))')
+        assert _find_facing_label(f, "VBUS", [12, 20], orientation=180) is None
+
+    def test_facing_label_vertical_pins(self, tmp_path):
+        # Pin pointing up (90; outward is -y on the sheet) with a label above it at 270.
+        f = tmp_path / "s.kicad_sch"
+        f.write_text('(kicad_sch (label "SDA" (at 30 10 270)))')
+        assert _find_facing_label(f, "SDA", [30, 20], orientation=90) == [30.0, 10.0]
+        assert _find_facing_label(f, "SDA", [30, 0], orientation=90) is None
+
     def test_field_positions_two_pin_vertical(self):
         # pins stacked vertically -> labels go left/right
         pins = {"1": [0, 5], "2": [0, -5]}

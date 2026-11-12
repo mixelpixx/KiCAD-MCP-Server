@@ -105,6 +105,62 @@ describe("backend failure reaches the client as isError", () => {
     expect((result.content as { text: string }[])[0].text).toContain("Schematic not found");
   });
 
+  // batch_connect and batch_add_no_connects always send a message, also after a
+  // partial batch (#489 review): with one pin placed it must not read as nothing done.
+  it("batch_connect: a partial batch is not an error, nothing placed is", async () => {
+    const partial = await connectWithBackend({
+      success: false,
+      message: "Placed 1 label(s), 1 failed",
+      placed: [{ ref: "R1", pin: "1", net: "X" }],
+      failed: [{ ref: "R2", pin: "9", reason: "pin not found" }],
+    });
+    const applied = await partial.callTool({
+      name: "batch_connect",
+      arguments: {
+        schematicPath: "/tmp/x.kicad_sch",
+        connections: { R1: { "1": "X" }, R2: { "9": "X" } },
+      },
+    });
+    expect(applied.isError).toBeFalsy();
+    const text = (applied.content as { text: string }[])[0].text;
+    expect(text).toContain("Placed 1 label(s), 1 failed");
+    expect(text).toContain("R2/9: pin not found");
+    expect(text).not.toContain("Failed:");
+
+    const nothing = await connectWithBackend({
+      success: false,
+      message: "Placed 0 label(s), 1 failed",
+      placed: [],
+      failed: [{ ref: "R2", pin: "9", reason: "pin not found" }],
+    });
+    const none = await nothing.callTool({
+      name: "batch_connect",
+      arguments: { schematicPath: "/tmp/x.kicad_sch", connections: { R2: { "9": "X" } } },
+    });
+    expect(none.isError).toBe(true);
+  });
+
+  it("batch_add_no_connects: a partial batch is not an error", async () => {
+    const client = await connectWithBackend({
+      success: false,
+      message: "Added 1 no-connect(s), 1 failed",
+      placed: [{ componentRef: "U1", pinName: "NC1" }],
+      failed: [{ componentRef: "U1", pinName: "NOPE", reason: "pin not found" }],
+    });
+    const result = await client.callTool({
+      name: "batch_add_no_connects",
+      arguments: {
+        schematicPath: "/tmp/x.kicad_sch",
+        pins: [
+          { componentRef: "U1", pinName: "NC1" },
+          { componentRef: "U1", pinName: "NOPE" },
+        ],
+      },
+    });
+    expect(result.isError).toBeFalsy();
+    expect((result.content as { text: string }[])[0].text).toContain("U1/NOPE: pin not found");
+  });
+
   // backannotate_footprints returns the backend JSON verbatim, so these two go
   // through the wrapper itself: written files mean applied work.
   it("verbatim JSON: a partial success stays unflagged, nothing written is an error", async () => {

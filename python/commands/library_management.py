@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from commands.symbol_creator import KICAD9_SYMBOL_LIB_VERSION, _invalidate_symbol_caches
+from utils.sexpr_format import match_paren, paren_delta
 
 logger = logging.getLogger("kicad_interface")
 
@@ -30,15 +31,8 @@ _NEW_LIB_HEADER = (
 
 def _extract_paren_block(text: str, start: int) -> str:
     """Extract a balanced () block starting at position `start`."""
-    depth = 0
-    for i in range(start, len(text)):
-        if text[i] == "(":
-            depth += 1
-        elif text[i] == ")":
-            depth -= 1
-            if depth == 0:
-                return text[start : i + 1]
-    return ""
+    end = match_paren(text, start)
+    return text[start : end + 1] if end != -1 else ""
 
 
 def _find_symbol_block(content: str, name: str) -> Optional[Tuple[int, int, str]]:
@@ -52,13 +46,7 @@ def _find_symbol_block(content: str, name: str) -> Optional[Tuple[int, int, str]
     pattern = re.compile(r'\(symbol "' + re.escape(name) + r'"')
     for m in pattern.finditer(content):
         pos = m.start()
-        depth = 0
-        for i in range(pos):
-            if content[i] == "(":
-                depth += 1
-            elif content[i] == ")":
-                depth -= 1
-        if depth != 1:
+        if paren_delta(content[:pos]) != 1:
             continue
         block = _extract_paren_block(content, pos)
         if block:
