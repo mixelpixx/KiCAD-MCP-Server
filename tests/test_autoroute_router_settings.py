@@ -8,11 +8,16 @@ import sys
 import types
 from unittest.mock import patch
 
-import pytest
-
 import commands.freerouting as fr_mod
-from commands.freerouting import _build_freerouting_cmd, _router_setting_args
+import pytest
+from commands.freerouting import (
+    _build_freerouting_cmd,
+    _rejected_router_settings,
+    _router_setting_args,
+)
+
 from tests.test_autoroute_best_of_n import (  # noqa: F401  (fixtures)
+    _java_on_path,
     _make_cmds,
     _make_ses,
     _patch_exec_mode,
@@ -92,7 +97,7 @@ def test_command_carries_the_options_after_the_fixed_ones():
     ]
 
 
-def _autoroute(workdir, fake_jar, params):
+def _autoroute(workdir, fake_jar, params, stdout="ok"):
     cc = _make_cmds(workdir / "test.kicad_pcb")
     _patch_exec_mode(cc)
     seen = {}
@@ -100,7 +105,7 @@ def _autoroute(workdir, fake_jar, params):
     def fake_run(cmd, **kw):
         seen["cmd"] = cmd
         _ses_from_cmd(cmd).write_text(_make_ses(num_nets=5))
-        return types.SimpleNamespace(returncode=0, stdout="ok", stderr="")
+        return types.SimpleNamespace(returncode=0, stdout=stdout, stderr="")
 
     with (
         patch.object(fr_mod, "subprocess") as sp,
@@ -153,3 +158,50 @@ def test_autoroute_without_settings_is_unchanged(workdir, fake_jar):
     assert [a for a in seen["cmd"] if a.startswith("--router.")] == [
         next(a for a in seen["cmd"] if a.startswith("--router.job_timeout="))
     ]
+
+
+# Freerouting master 842ad835 with --router.bogus_setting=1 --router.via_costs=abc
+# --router.autorouter.plane_as_priority=true (the last one applies; the others are logged, not refused).
+_REAL_LOG = """\
+2026-11-11 19:27:47.169 WARN   Unknown settings property: router.bogus_setting
+2026-11-11 19:27:47.170 WARN   Unknown settings property: router.via_costs
+2026-11-11 19:27:48.243 WARN   Deprecated settings path 'router.max_passes'; use 'router.autorouter.max_passes' instead.
+2026-11-11 19:27:48.245 WARN   Failed to apply CLI router setting: router.bogus_setting: No field found with name or SerializedName: bogus_setting
+2026-11-11 19:27:48.245 WARN   Failed to apply CLI router setting: router.via_costs: No field found with name or SerializedName: via_costs
+"""
+
+
+def test_rejected_settings_read_from_freerouting_log():
+    args = [
+        "--router.bogus_setting=1",
+        "--router.via_costs=abc",
+        "--router.autorouter.plane_as_priority=true",
+    ]
+    assert _rejected_router_settings(_REAL_LOG, args) == ["bogus_setting", "via_costs"]
+
+
+def test_rejected_settings_only_names_what_the_caller_passed():
+    # router.max_passes appears in a warning (autoroute's own -mp), but the caller did not pass it
+    assert (
+        _rejected_router_settings(_REAL_LOG, ["--router.autorouter.plane_as_priority=true"]) == []
+    )
+    assert _rejected_router_settings("", ["--router.bogus_setting=1"]) == []
+
+
+def test_autoroute_reports_rejected_settings(workdir, fake_jar):
+    out, seen, _ = _autoroute(
+        workdir,
+        fake_jar,
+        {"routerSettings": {"bogus_setting": 1, "autorouter.plane_as_priority": True}},
+        stdout=_REAL_LOG,
+    )
+    assert out["success"], out
+    assert "--router.bogus_setting=1" in seen["cmd"]
+    assert out["router_settings_rejected"] == ["bogus_setting"]
+
+
+def test_autoroute_without_rejections_reports_none(workdir, fake_jar):
+    out, _, _ = _autoroute(
+        workdir, fake_jar, {"routerSettings": {"autorouter.plane_as_priority": True}}
+    )
+    assert out["router_settings_rejected"] == []

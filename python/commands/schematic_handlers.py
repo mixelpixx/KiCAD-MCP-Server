@@ -32,9 +32,35 @@ from utils.project_settings_guard import preserve_project_settings
 from utils.sexpr_format import QUOTED_VALUE
 from utils.sexpr_format import dumps as kicad_dumps
 from utils.sexpr_format import escape_sexpr_string, unescape_sexpr_string
+from utils.skip_items import skip_items
 from utils.symbol_instances import annotate_sheet, instance_report
 
 logger = logging.getLogger("kicad_interface")
+
+
+def _xy(value: Any) -> Optional[List[float]]:
+    """A point given as [x, y] or {"x": .., "y": ..}, as [x, y]; None if neither.
+
+    Tools disagreed on the shape: add_schematic_text took a list and
+    delete_schematic_net_label a dict, and the other shape failed late with a
+    message that did not say why. Every handler that takes a position accepts both.
+    """
+    # Values are passed through as given: the writers format 100 as "100", so
+    # converting to float would change every coordinate in the file to "100.0".
+    if isinstance(value, dict):
+        x, y = value.get("x"), value.get("y")
+    elif isinstance(value, (list, tuple)) and len(value) == 2:
+        x, y = value
+    else:
+        return None
+    if isinstance(x, bool) or isinstance(y, bool):
+        return None
+    if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+        return [x, y]
+    return None
+
+
+_POSITION_SHAPES = '[x, y] or {"x": .., "y": ..}'
 
 
 def _find_placed_symbol_position(content: str, reference: str) -> Optional[Tuple[float, float]]:
@@ -1390,7 +1416,7 @@ class SchematicHandlersMixin:
 
             schematic_path = params.get("schematicPath")
             net_name = params.get("netName")
-            position = params.get("position")
+            position = _xy(params.get("position"))
             label_type = params.get("labelType", "label")
             orientation_param = params.get("orientation")
             orientation = 0 if orientation_param is None else orientation_param
@@ -2299,7 +2325,7 @@ class SchematicHandlersMixin:
         try:
             schematic_path = params.get("schematicPath")
             net_name = params.get("netName")
-            position = params.get("position")
+            raw_position = params.get("position")
 
             if not schematic_path or not net_name:
                 return {
@@ -2307,13 +2333,24 @@ class SchematicHandlersMixin:
                     "message": "schematicPath and netName are required",
                 }
 
+            # A position that is given but malformed is refused, not treated as
+            # absent: without a position the only label of that name is deleted,
+            # which is the wrong label when the caller meant to pick one.
+            pos_list = None
+            if raw_position is not None:
+                pos_list = _xy(raw_position)
+                if pos_list is None:
+                    return {
+                        "success": False,
+                        "message": (
+                            f"position must be {_POSITION_SHAPES}, got {raw_position!r}; "
+                            "nothing was deleted"
+                        ),
+                    }
+
             from pathlib import Path
 
             from commands.wire_manager import WireManager
-
-            pos_list = None
-            if position:
-                pos_list = [position.get("x", 0), position.get("y", 0)]
 
             deleted = WireManager.delete_label(Path(schematic_path), net_name, pos_list)
             if deleted:
@@ -2613,7 +2650,7 @@ class SchematicHandlersMixin:
 
             schematic_path = params.get("schematicPath")
             text = params.get("text")
-            position = params.get("position")
+            position = _xy(params.get("position"))
             angle = params.get("angle", 0)
             font_size = params.get("fontSize", 1.27)
             bold = params.get("bold", False)
@@ -2625,7 +2662,7 @@ class SchematicHandlersMixin:
             if not text:
                 return {"success": False, "message": "text is required"}
             if not position or len(position) != 2:
-                return {"success": False, "message": "position [x, y] is required"}
+                return {"success": False, "message": f"position is required, as {_POSITION_SHAPES}"}
             if justify not in ("left", "center", "right"):
                 return {"success": False, "message": "justify must be left, center, or right"}
             if font_size <= 0:
@@ -2673,7 +2710,7 @@ class SchematicHandlersMixin:
 
             schematic_path = params.get("schematicPath")
             text = params.get("text")
-            position = params.get("position")
+            position = _xy(params.get("position"))
             shape = params.get("shape", "bidirectional")
             orientation = params.get("orientation", 0)
 
@@ -2682,7 +2719,7 @@ class SchematicHandlersMixin:
             if not text:
                 return {"success": False, "message": "text is required"}
             if not position or len(position) != 2:
-                return {"success": False, "message": "position [x, y] is required"}
+                return {"success": False, "message": f"position is required, as {_POSITION_SHAPES}"}
             if shape not in ("input", "output", "bidirectional"):
                 return {
                     "success": False,
@@ -2726,7 +2763,7 @@ class SchematicHandlersMixin:
             sheet_name = params.get("sheetName")
             pin_name = params.get("pinName")
             pin_type = params.get("pinType", "bidirectional")
-            position = params.get("position")
+            position = _xy(params.get("position"))
             orientation = params.get("orientation", 0)
 
             if not schematic_path:
@@ -2736,7 +2773,7 @@ class SchematicHandlersMixin:
             if not pin_name:
                 return {"success": False, "message": "pinName is required"}
             if not position or len(position) != 2:
-                return {"success": False, "message": "position [x, y] is required"}
+                return {"success": False, "message": f"position is required, as {_POSITION_SHAPES}"}
             if pin_type not in ("input", "output", "bidirectional"):
                 return {
                     "success": False,
@@ -2958,7 +2995,7 @@ class SchematicHandlersMixin:
             point_net: dict = {}  # snap(x,y) -> net_name
 
             for attr in ("label", "global_label", "hierarchical_label"):
-                for lbl in getattr(sch, attr, None) or []:
+                for lbl in skip_items(sch, attr):
                     try:
                         pos = lbl.at.value
                         name = lbl.value
@@ -2978,7 +3015,7 @@ class SchematicHandlersMixin:
             # name onto the flag's pin, from where the BFS below propagated it
             # over the real net. A PWR_FLAG takes whatever net it is wired to;
             # it never names one.
-            for sym in getattr(sch, "symbol", None) or []:
+            for sym in skip_items(sch, "symbol"):
                 try:
                     ref = sym.property.Reference.value
                     if not ref.startswith("#PWR"):
@@ -2996,7 +3033,7 @@ class SchematicHandlersMixin:
 
             # ── 2. Build wire adjacency and BFS-propagate net names ──────────
             wire_segments = []
-            for wire in getattr(sch, "wire", None) or []:
+            for wire in skip_items(sch, "wire"):
                 try:
                     pts = []
                     for pt in wire.pts.xy:
@@ -3035,7 +3072,7 @@ class SchematicHandlersMixin:
 
             # ── 3. Collect real (non-power) symbol pins with their positions ──
             sym_pins = []  # (ref, pin_num, (px, py))
-            for sym in getattr(sch, "symbol", None) or []:
+            for sym in skip_items(sch, "symbol"):
                 try:
                     ref = sym.property.Reference.value
                     if ref.startswith("#"):
@@ -3159,11 +3196,35 @@ class SchematicHandlersMixin:
                     "message": f"Schematic not found. Provide schematicPath. Tried: {schematic_path}",
                 }
 
-            # Build the pad->net map from the sheets reachable from the root
+            # Nets come from KiCad's own netlist (kicad-cli), the reference
+            # KiCad uses for "Update PCB from Schematic". The built-in
+            # geometric walker is only a fallback when kicad-cli is missing:
+            # it disagrees with KiCad across sheet boundaries (see
+            # utils/kicad_netlist.py).
+            warnings: List[str] = []
             sheets_scanned: list = []
-            pad_net_map, net_names = self._build_hierarchical_pad_net_map(
-                schematic_path, sheets_out=sheets_scanned
-            )
+            netlist = None
+            kicad_cli = self._find_kicad_cli_static()
+            if kicad_cli:
+                from utils.kicad_netlist import export_netlist
+
+                netlist = export_netlist(kicad_cli, schematic_path)
+            if netlist is not None:
+                net_source = "kicad-cli"
+                pad_net_map = dict(netlist.pad_nets)
+                net_names = list(netlist.net_names)
+            else:
+                net_source = "built-in"
+                warnings.append(
+                    "kicad-cli netlist export was not available"
+                    + ("" if kicad_cli else " (kicad-cli not found)")
+                    + ", so nets were traced by the built-in walker. It can disagree "
+                    "with KiCad across sheet boundaries; check the result with run_drc "
+                    "schematicParity."
+                )
+                pad_net_map, net_names = self._build_hierarchical_pad_net_map(
+                    schematic_path, sheets_out=sheets_scanned
+                )
 
             # Add missing footprints from the schematic to the board *before*
             # we add nets and assign pads — F8 in KiCad does this implicitly
@@ -3171,7 +3232,13 @@ class SchematicHandlersMixin:
             # only mutated nets, leaving newly-added schematic symbols with no
             # PCB footprint at all.
             added_footprints, skipped_footprints = self._add_missing_footprints_from_schematic(
-                board, schematic_path
+                board, schematic_path, components=netlist.components if netlist else None
+            )
+            linked_footprints = self._link_footprints_to_symbols(
+                board, netlist.components if netlist else []
+            )
+            updated_footprints, footprint_changes = self._update_footprints_from_symbols(
+                board, netlist.components if netlist else []
             )
 
             # Add all nets to board
@@ -3191,6 +3258,8 @@ class SchematicHandlersMixin:
             # Assign nets to pads (now also covers any footprints we just added)
             assigned_pads = 0
             unmatched = []
+            cleared_pads = []
+            netlist_refs = {r for r, _ in pad_net_map} if netlist is not None else set()
             for fp in board.GetFootprints():
                 ref = fp.GetReference()
                 for pad in fp.Pads():
@@ -3201,6 +3270,9 @@ class SchematicHandlersMixin:
                         if nets_by_name.has_key(net_name):
                             pad.SetNet(nets_by_name[net_name])
                             assigned_pads += 1
+                    elif ref in netlist_refs and str(pad_num) and pad.GetNetCode() > 0:
+                        cleared_pads.append(f"{ref}/{pad_num} (was {pad.GetNetname()})")
+                        pad.SetNetCode(0)
                     else:
                         unmatched.append(f"{ref}/{pad_num}")
 
@@ -3228,7 +3300,20 @@ class SchematicHandlersMixin:
             # Net-(REF-PadN) name), so an unmatched pad is one the schematic
             # does not wire at all, or a pad the symbol does not have. Report
             # all of them: a ten-entry sample buried a 25-pad failure (#400).
-            warnings: List[str] = []
+            if footprint_changes:
+                warnings.append(
+                    f"{len(footprint_changes)} footprint(s) differ from their symbol's footprint "
+                    "and were not swapped: "
+                    + ", ".join(
+                        f"{c['reference']} ({c['board']} -> {c['schematic']})"
+                        for c in footprint_changes
+                    )
+                )
+            if cleared_pads:
+                warnings.append(
+                    f"{len(cleared_pads)} pad(s) are not pins of their symbol, so their "
+                    "net was cleared as KiCad does: " + ", ".join(cleared_pads)
+                )
             if unmatched:
                 warnings.append(
                     f"{len(unmatched)} pad(s) have no net in the schematic and were left "
@@ -3248,7 +3333,12 @@ class SchematicHandlersMixin:
                     f"PCB updated from schematic: {len(added_footprints)} footprints added, "
                     f"{len(added_nets)} nets added, {assigned_pads} pads assigned"
                 ),
-                "sheets_scanned": sheet_names,
+                "sheets_scanned": sheet_names if net_source == "built-in" else netlist.sheets,
+                "netSource": net_source,
+                "footprints_linked": linked_footprints,
+                "footprints_updated": updated_footprints,
+                "footprint_changes_pending": footprint_changes,
+                "pads_cleared": cleared_pads,
                 "nets_added": added_nets,
                 "nets_total": len(net_names),
                 "pads_assigned": assigned_pads,
@@ -3408,8 +3498,135 @@ class SchematicHandlersMixin:
             return ""
         return path.rstrip("/").rsplit("/", 1)[-1]
 
+    @staticmethod
+    def _set_symbol_link(fp: Any, comp: Dict[str, str]) -> bool:
+        """Give ``fp`` the symbol path (and sheet fields) KiCad's update writes.
+
+        Returns False when the component carries no path (no kicad-cli
+        netlist) or the binding lacks the setter.
+        """
+        path = comp.get("path")
+        if not path:
+            return False
+        try:
+            fp.SetPath(pcbnew.KIID_PATH(path))
+        except Exception as exc:  # binding without KIID_PATH(str)
+            logger.warning(f"could not set symbol path on {fp.GetReference()}: {exc}")
+            return False
+        for setter, key in (("SetSheetname", "sheetname"), ("SetSheetfile", "sheetfile")):
+            if comp.get(key) and hasattr(fp, setter):
+                try:
+                    getattr(fp, setter)(comp[key])
+                except Exception:
+                    pass
+        return True
+
+    def _link_footprints_to_symbols(
+        self, board: Any, components: List[Dict[str, str]]
+    ) -> List[str]:
+        """Link board footprints that have no symbol path to their symbol, by reference.
+
+        Footprints added by earlier versions of this tool, or placed by hand,
+        carry no path, so KiCad's parity check and any later re-annotation can
+        only match them by reference. A footprint that already has a path is
+        left alone: that link is KiCad's and may be deliberate.
+        """
+        by_ref = {c["reference"]: c for c in components if c.get("reference") and c.get("path")}
+        linked: List[str] = []
+        for fp in board.GetFootprints():
+            if self._board_symbol_uuid(fp):
+                continue
+            comp = by_ref.get(fp.GetReference())
+            if comp and self._set_symbol_link(fp, comp):
+                linked.append(fp.GetReference())
+        return linked
+
+    @staticmethod
+    def _update_footprints_from_symbols(
+        board: Any, components: List[Dict[str, str]]
+    ) -> Tuple[List[str], List[Dict[str, str]]]:
+        """Carry symbol values and footprint library IDs to the matching board footprints.
+
+        KiCad's "Update PCB from Schematic" does both. Without this, a value
+        changed in the schematic stayed stale on the board, and KiCad's parity
+        check reported every such part.
+
+        A library ID with no library nickname at all (what older versions of
+        this tool wrote) gets the symbol's nickname when the footprint name
+        matches. Any other difference, in the library or in the name, is a
+        footprint change: KiCad reports it and swaps the footprint only when
+        "replace footprints" is ticked, because another library's footprint
+        of the same name can have different geometry. Those are listed in the
+        second list and left for the caller, not done silently here.
+        """
+        by_ref = {c["reference"]: c for c in components if c.get("reference")}
+        updated: List[str] = []
+        footprint_changes: List[Dict[str, str]] = []
+        for fp in board.GetFootprints():
+            comp = by_ref.get(fp.GetReference())
+            if not comp:
+                continue
+            ref = fp.GetReference()
+            changes = []
+            if comp.get("value") and fp.GetValue() != comp["value"]:
+                changes.append(f"value {fp.GetValue()!r} -> {comp['value']!r}")
+                fp.SetValue(comp["value"])
+            want = comp.get("footprint", "")
+            if ":" in want:
+                lib, name = want.split(":", 1)
+                fpid = fp.GetFPID()
+                have_lib = str(fpid.GetLibNickname())
+                have_name = str(fpid.GetLibItemName())
+                if have_name == name and not have_lib:
+                    fp.SetFPID(pcbnew.LIB_ID(lib, name))
+                    changes.append(f"library '(none)' -> {lib!r}")
+                elif have_name != name or have_lib != lib:
+                    footprint_changes.append(
+                        {
+                            "reference": ref,
+                            "board": f"{have_lib}:{have_name}" if have_lib else have_name,
+                            "schematic": want,
+                        }
+                    )
+            # Symbol fields (KiCad's parity check reports any missing or
+            # different one) and the BOM / DNP flags. Footprint is the library
+            # ID handled above; Reference and Value are not in the field list.
+            for name, value in (comp.get("fields") or {}).items():
+                if name == "Footprint":
+                    continue
+                try:
+                    existed = fp.HasField(name)
+                    if existed and fp.GetFieldText(name) == value:
+                        continue
+                    fp.SetField(name, value)
+                    if not existed:
+                        # A new field arrives hidden on the side's Fab layer, as
+                        # KiCad's own update from schematic adds it. SetField makes
+                        # it visible on F.SilkS at the footprint origin: on a real
+                        # board that printed every MPN and datasheet URL across
+                        # the silkscreen.
+                        field = next((f for f in fp.GetFields() if f.GetName() == name), None)
+                        if field is not None:
+                            field.SetVisible(False)
+                            field.SetLayer(pcbnew.B_Fab if fp.IsFlipped() else pcbnew.F_Fab)
+                    changes.append(f"field {name!r}")
+                except Exception as exc:  # binding differences across versions
+                    logger.warning(f"could not set field {name!r} on {ref}: {exc}")
+            for flag, getter, setter in (
+                ("exclude_from_bom", "IsExcludedFromBOM", "SetExcludedFromBOM"),
+                ("dnp", "IsDNP", "SetDNP"),
+            ):
+                if flag in comp and hasattr(fp, setter):
+                    want_flag = bool(comp[flag])
+                    if bool(getattr(fp, getter)()) != want_flag:
+                        getattr(fp, setter)(want_flag)
+                        changes.append(f"{flag} {want_flag}")
+            if changes:
+                updated.append(f"{ref}: " + ", ".join(changes))
+        return updated, footprint_changes
+
     def _add_missing_footprints_from_schematic(
-        self, board: Any, schematic_path: str
+        self, board: Any, schematic_path: str, components: Optional[List[Dict[str, str]]] = None
     ) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
         """Add footprints to ``board`` for any schematic component not yet present.
 
@@ -3425,7 +3642,8 @@ class SchematicHandlersMixin:
         added: List[Dict[str, str]] = []
         skipped: List[Dict[str, str]] = []
 
-        components = self._extract_components_from_schematic(schematic_path)
+        if components is None:
+            components = self._extract_components_from_schematic(schematic_path)
         if not components:
             return added, skipped
 
@@ -3461,6 +3679,9 @@ class SchematicHandlersMixin:
             fp_str = comp["footprint"]
             if not ref or ref.startswith("#"):
                 # Power flags / global indicators — no PCB footprint expected.
+                continue
+            if comp.get("exclude_from_board"):
+                # Symbol marked "exclude from board": KiCad adds no footprint.
                 continue
             if ref in existing_refs:
                 continue
@@ -3540,6 +3761,9 @@ class SchematicHandlersMixin:
             if comp["value"]:
                 module.SetValue(comp["value"])
             module.SetFPID(pcbnew.LIB_ID(lib_name, fp_name))
+            # Link to the symbol the way KiCad does, so later syncs, parity
+            # checks and back-annotation find it by path, not by reference.
+            self._set_symbol_link(module, comp)
             # Place at board origin; user / autoplacer can position from there.
             module.SetPosition(pcbnew.VECTOR2I(0, 0))
 

@@ -22,7 +22,7 @@ from commands.library_tables import (
     no_global_table_message,
     project_library_uri,
 )
-from utils.sexpr_format import escape_sexpr_string
+from utils.sexpr_format import escape_sexpr_string, paren_delta
 
 logger = logging.getLogger("kicad_interface")
 
@@ -420,11 +420,11 @@ class SymbolCreator:
                     r'_\d+_\d+"', line
                 ):
                     skip = True
-                    depth = stripped.count("(") - stripped.count(")")
+                    depth = paren_delta(stripped)
                     continue
                 result.append(line)
             else:
-                depth += stripped.count("(") - stripped.count(")")
+                depth += paren_delta(stripped)
                 if depth <= 0:
                     skip = False
 

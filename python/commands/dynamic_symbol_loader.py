@@ -18,6 +18,8 @@ from utils.sexpr_format import (
     QUOTED_VALUE,
     QUOTED_VALUE_SKIP,
     escape_sexpr_string,
+    match_paren,
+    paren_delta,
     unescape_sexpr_string,
 )
 from utils.sheet_tree import instance_paths, project_name
@@ -225,20 +227,15 @@ class DynamicSymbolLoader:
         return result
 
     def _global_sym_lib_table_paths(self) -> list:
-        """Candidate paths for the user-global sym-lib-table, newest version first."""
-        home = Path.home()
-        versions = ["10.0", "9.0", "8.0"]
-        bases = []
-        if os.name == "nt":
-            bases.append(home / "AppData" / "Roaming" / "kicad")
-        else:
-            bases.append(home / ".config" / "kicad")
-            bases.append(home / "Library" / "Preferences" / "kicad")  # macOS
-        candidates = []
-        for base in bases:
-            for v in versions:
-                candidates.append(base / v / "sym-lib-table")
-        return candidates
+        """The global sym-lib-table to search, as a list (empty when there is none).
+
+        Same discovery as ``SymbolLibraryManager``; see
+        ``library_tables.global_table_for_reading``.
+        """
+        from commands.library_tables import global_table_for_reading
+
+        table = global_table_for_reading("symbol")
+        return [table] if table is not None else []
 
     def _resolve_library_from_table(self, table_path: Path, library_name: str) -> Optional[Path]:
         """Parse a sym-lib-table file and return the resolved path for the given library nickname."""
@@ -320,15 +317,9 @@ class DynamicSymbolLoader:
         depth = 0
         end = None
         for i in range(start, len(lines)):
-            for ch in lines[i]:
-                if ch == "(":
-                    depth += 1
-                elif ch == ")":
-                    depth -= 1
-                    if depth == 0:
-                        end = i
-                        break
-            if end is not None:
+            depth += paren_delta(lines[i])
+            if depth <= 0:
+                end = i
                 break
 
         if end is None:
@@ -367,11 +358,7 @@ class DynamicSymbolLoader:
             depth = 0
             item_start = i
             while i < n:
-                for ch in lines[i]:
-                    if ch == "(":
-                        depth += 1
-                    elif ch == ")":
-                        depth -= 1
+                depth += paren_delta(lines[i])
                 i += 1
                 if depth == 0:
                     break
@@ -623,18 +610,9 @@ class DynamicSymbolLoader:
         if lib_sym_start == -1:
             raise ValueError("No lib_symbols section found in schematic")
 
-        depth = 0
-        lib_sym_end = lib_sym_start
-        for i in range(lib_sym_start, len(content)):
-            if content[i] == "(":
-                depth += 1
-            elif content[i] == ")":
-                depth -= 1
-                if depth == 0:
-                    lib_sym_end = i
-                    break
-        else:
-            raise ValueError("No lib_symbols section found in schematic")
+        lib_sym_end = match_paren(content, lib_sym_start)
+        if lib_sym_end == -1:
+            raise ValueError("The lib_symbols section in the schematic is not closed")
 
         # Insert the symbol block just before the closing ) of lib_symbols
         content = content[:lib_sym_end] + "\n    " + indented_block + "\n  " + content[lib_sym_end:]
@@ -650,16 +628,8 @@ class DynamicSymbolLoader:
     @staticmethod
     def _extract_paren_block(text: str, start: int) -> str:
         """Return the substring from text[start] up to and including the matching closing paren."""
-        depth, i = 0, start
-        while i < len(text):
-            if text[i] == "(":
-                depth += 1
-            elif text[i] == ")":
-                depth -= 1
-                if depth == 0:
-                    return text[start : i + 1]
-            i += 1
-        return text[start:]
+        end = match_paren(text, start)
+        return text[start : end + 1] if end != -1 else text[start:]
 
     def _extract_lib_property_positions(
         self,
