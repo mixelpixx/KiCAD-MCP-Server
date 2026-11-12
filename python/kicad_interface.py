@@ -1168,6 +1168,13 @@ class KiCADInterface(SchematicHandlersMixin):
                     f"IPC handler not available for {command}, falling back to SWIG (deprecated)"
                 )
 
+            # A boardPath that is not the loaded board is loaded first, for the
+            # whole interface, so every handler works on the board the caller named.
+            self._board_switch_note = None
+            refusal = self._load_board_named_by_params(command, params)
+            if refusal:
+                return refusal
+
             # Get the handler for the command
             handler = self.command_routes.get(command)
 
@@ -1175,6 +1182,12 @@ class KiCADInterface(SchematicHandlersMixin):
                 # Execute the command
                 result = handler(params)
                 logger.debug(f"Command result: {result}")
+                # Tell the caller the session moved to boardPath: its next command
+                # without boardPath acts on that board.
+                note = getattr(self, "_board_switch_note", None)
+                if note and isinstance(result, dict):
+                    result.setdefault("sessionBoardPath", note["boardPath"])
+                    result["boardSwitchWarning"] = note["warning"]
 
                 # Add backend indicator
                 if isinstance(result, dict):
@@ -1967,6 +1980,91 @@ class KiCADInterface(SchematicHandlersMixin):
         if first is None:
             return True
         return all(hasattr(first, m) for m in self._ITEM_HEALTH_METHODS)
+
+    # Commands whose ``boardPath`` names the board to work on. Before, such a path
+    # was accepted and then ignored: with nothing loaded, autoroute refused with
+    # "No board is loaded" even though boardPath was given, and with a different
+    # board loaded it routed that board and saved it over boardPath.
+    _BOARD_PATH_COMMANDS = {"autoroute", "export_dsn", "import_ses"}
+
+    def _load_board_named_by_params(
+        self, command: str, params: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Load ``params["boardPath"]`` when it is not the board this session holds.
+
+        The switch goes through ``_handle_open_board`` (board reference, every command
+        handler, disk signature, project path and symbol libraries, session pin), so
+        the whole interface moves to that board, as open_project would move it. Paths
+        are compared normalised against ``_authoritative_board_path()``, the session's
+        identity: in an IPC-pinned session the SWIG board can be missing, and its own
+        board must not read as "another board". Refused:
+
+        - when the loaded board holds changes that are not on disk (auto-save refused
+          after a mutation): switching would drop them. Save first, or reload to
+          discard;
+        - in an IPC-pinned session, for a board other than the one open in KiCad.
+
+        On a switch, ``_board_switch_note`` is set and the dispatcher adds
+        ``sessionBoardPath`` and ``boardSwitchWarning`` to the reply. Returns a failure
+        reply, else None.
+        """
+        if command not in self._BOARD_PATH_COMMANDS:
+            return None
+        board_path = params.get("boardPath")
+        if not board_path:
+            return None
+        target = self._normalize_board_path(board_path)
+        current = self._authoritative_board_path()
+        if current and target == self._normalize_board_path(current):
+            return None
+        if not os.path.isfile(str(board_path)):
+            return {
+                "success": False,
+                "message": f"Board file not found: {board_path}",
+                "errorDetails": "boardPath must name an existing .kicad_pcb file",
+            }
+        if getattr(self, "session_backend", None) == "ipc":
+            # The GUI owns this session's board; switching boards underneath it is
+            # the divergent-state problem of #223. The caller has to open the other
+            # project first.
+            return {
+                "success": False,
+                "message": f"{command}: boardPath names a board other than the one open in KiCad",
+                "errorDetails": (
+                    f"This session is pinned to the board open in KiCad "
+                    f"({self.session_board_path}). Call open_project on {board_path} first."
+                ),
+            }
+        if current and self._dirty_state(current).get("dirty") is True:
+            return {
+                "success": False,
+                "message": (
+                    f"{command}: the loaded board has changes that are not saved; "
+                    f"not switching to {board_path}"
+                ),
+                "errorDetails": (
+                    f"{current} holds edits that exist only in memory (auto-save was refused). "
+                    "Loading another board would drop them. Run save_project first to keep them, "
+                    "or reload_board / open_project to discard them, then call again."
+                ),
+            }
+        opened = self._handle_open_board({"boardPath": str(board_path)})
+        if not opened.get("success"):
+            return {
+                "success": False,
+                "message": f"Failed to load board {board_path}",
+                "errorDetails": opened.get("errorDetails") or opened.get("message"),
+            }
+        logger.info(f"{command}: loaded {board_path} (not the board this session held)")
+        self._board_switch_note = {
+            "boardPath": opened.get("boardPath", str(board_path)),
+            "warning": (
+                f"This session now holds {opened.get('boardPath', board_path)}"
+                + (f" instead of {current}" if current else "")
+                + ": commands without boardPath act on it."
+            ),
+        }
+        return None
 
     def _reload_stackup_file(self) -> bool:
         """Reload the board after set_stackup_layer writes its file.
