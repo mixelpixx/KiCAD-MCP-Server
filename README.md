@@ -43,6 +43,66 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 https://github.com/mixelpixx/arduino-ide
 
+## What's New in v2.9.0
+
+Board inspection tools, operating modes, autorouting by layer and by net, and
+a large batch of fixes, most of them found on real boards. Thanks to
+@dp-web4, @karu2003, @rmskkn, @YORROY123, @0anes0, @vim4all,
+@AlexanderSaydakov, @TimChild, @zjywlive and @b0gdaniy.
+
+### New tools
+
+- `get_stackup` reads the stackup from the board file and can check it against
+  a recipe; `set_stackup_layer` sets one row's thickness and dielectric
+  properties (@karu2003).
+- `summarize_vias` and `summarize_net_copper` count a net's or a board's
+  copper without listing thousands of items (@karu2003).
+- `audit_via_nets` compares every via's net with a reference board or a git
+  revision. KiCad can move a via onto another net when it saves, and DRC does
+  not notice (@dp-web4).
+- `set_voltage_clearance_rules` writes clearance and creepage rules graded by
+  the working voltage between net classes, from a spacing table you supply
+  (@dp-web4).
+- `get_component_list` filters by region (@karu2003). Two new prompts guide a
+  DC power-distribution review and a shield review (@karu2003).
+
+### Operating modes
+
+- `KICAD_MCP_OPERATING_MODE=readonly` leaves only the tools that cannot change
+  the design, for review agents. `manufacturing` adds the export tools. Unset,
+  nothing changes. The idea is from @b0gdaniy.
+
+### Autorouting
+
+- `signalLayers` keeps tracks off plane layers, and `layerTraceCosts` makes a
+  layer expensive rather than forbidden (@dp-web4).
+- `routeNets` and `excludeNets` route one set of nets and keep the rest as
+  they are, so a board can be routed one domain at a time (@dp-web4).
+- Every outline of a keepout rule area reaches Freerouting (@dp-web4).
+
+### Fixes
+
+- `sync_schematic_to_board` takes nets, symbol links and fields from KiCad's
+  own netlist. On a real 333-pad board, 304 pads had the wrong net before
+  (@dp-web4).
+- Saves are no longer refused as "changed externally" after
+  `sync_schematic_to_board` (@vim4all), `autoroute`, `import_ses` or
+  `refill_zones`.
+- Schematic edits are refused while the schematic is open in KiCad, which
+  would otherwise overwrite them (@0anes0).
+- Library listing and search find KiCad's tables under `KICAD_CONFIG_HOME` and
+  on a fresh install. One behaviour change: the symbol loader now reads only
+  the newest KiCad version's global table, as KiCad does (@dp-web4).
+- `add_via` keeps its net inside another net's zone and reads the parameters
+  its schema declares; `modify_trace` works on the IPC backend; STM32 symbols
+  load again; `search_footprints` with `library` finds late libraries
+  (@dp-web4, @YORROY123, @rmskkn, @zjywlive).
+- `run_drc` reports unconnected items and schematic parity, board tools keep
+  working after an image render, and project libraries survive a move
+  (@dp-web4, @AlexanderSaydakov).
+
+Full details in the [CHANGELOG](CHANGELOG.md).
+
 ## What's New in v2.8.3
 
 Toolboxes to keep the tool list small, a Linux setup script, and a batch of
@@ -1934,7 +1994,7 @@ npm run format
 
 ## Project Status
 
-**Current Version:** 2.8.3
+**Current Version:** 2.9.0
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
@@ -2043,6 +2103,6 @@ If you use this project in your research or publication, please cite:
   author = {mixelpixx},
   year = {2026},
   url = {https://github.com/mixelpixx/KiCAD-MCP-Server},
-  version = {2.8.3}
+  version = {2.9.0}
 }
 ```

@@ -4,6 +4,8 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-11-11
+
 ### New MCP Prompt
 
 - `pdn_dc_review` — Checklist for a DC power-distribution review using
@@ -18,7 +20,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Tools
 
-- **`set_voltage_clearance_rules`** — clearance and creepage rules graded by
+- **`set_voltage_clearance_rules`** (#490, @dp-web4) — clearance and creepage rules graded by
   the working voltage between net classes, written as a managed block at the
   end of the board's `.kicad_dru` (a re-run replaces the block; hand-written
   rules stay). Each class gets its potential against a shared reference, a
@@ -34,6 +36,24 @@ All notable changes to the KiCAD MCP Server project are documented here.
   off) leaves KiCad's `unconnected-(...)` nets out of the "other nets" rules.
   Needs KiCad 9 or newer (`creepage`, `hasNetclass()`); on KiCad 8 the tool
   refuses and writes nothing.
+
+- **`get_stackup`** (#457, #462, @karu2003) reads the stackup from the saved
+  board file: every copper, dielectric, mask and silk row with its thickness in
+  millimetres, a thickness locked in the stackup editor, and the board's own
+  layer names beside the canonical ones. Pass `expected` to compare the rows
+  with a recipe in the same call (tolerances 0.001 mm and 0.01 for
+  permittivity by default).
+- **`set_stackup_layer`** (#461, @karu2003) sets one stackup row's thickness,
+  and for a dielectric its material, relative permittivity and loss tangent.
+  The row is named by index or layer name, and only the fields passed change.
+- **`summarize_vias`** (#458, @karu2003) counts vias without listing them: the
+  total, how many run F.Cu to B.Cu, a drill histogram and the layer spans,
+  filtered by net, rectangle, drill or layer. A stitched ground net can hold
+  thousands of vias, too many to list in a reply.
+- **`summarize_net_copper`** (#460, @karu2003) summarizes one net's copper
+  without listing it: the track, via and zone counts, the layers, the bounding
+  box, and a shape (`vias_only`, `tracks_only`, `zones_only`, `empty` or
+  `mixed`). An unknown net is an error rather than an empty result.
 
 ### New Features
 
@@ -98,6 +118,11 @@ All notable changes to the KiCAD MCP Server project are documented here.
   - A value the server doesn't recognise counts as `readonly`.
   - The mode combines with `KICAD_MCP_TOOLBOXES`, and read-only tools carry
     MCP's `readOnlyHint` annotation in every mode.
+
+- **`get_component_list` filters by region** (#459, @karu2003).
+  `boundingBox` keeps the footprints whose anchor lies inside a rectangle;
+  `matchPadCenter` also keeps one when any pad centre is inside, and
+  `includePads` adds each pad's number, net and position.
 
 ### Bug Fixes
 
@@ -346,6 +371,18 @@ All notable changes to the KiCAD MCP Server project are documented here.
   user's text was dropped. All 18 prompts now substitute their arguments; an
   optional one left out reads "(not provided)".
 
+- **`modify_trace` applies its changes on the IPC backend** (#515, @rmskkn).
+  It compared track ids in protobuf text form (`value: "..."`) with plain
+  UUIDs, so it never found the track, and it accepted only F.Cu and B.Cu. It
+  now matches on the UUID, accepts all 32 copper layers, and changes a via's
+  diameter too. `query_traces` ids now feed straight into it.
+- **Project libraries survive a move** (#488, @dp-web4).
+  `register_symbol_library` and `register_footprint_library` with
+  `scope="project"` wrote absolute paths, so a project broke when it was moved
+  or cloned. A library inside the project is now written as
+  `${KIPRJMOD}/...`, as KiCad's own library manager does. One outside it stays
+  absolute, and an existing absolute row still counts as registered.
+
 ### Tooling
 
 - **CI jobs time out instead of hanging for six hours.** No job in
@@ -359,6 +396,11 @@ All notable changes to the KiCAD MCP Server project are documented here.
   sends nothing for 60 seconds and retries the file, and each apt command is
   retried up to 3 times. A timed-out job counts as failed, so `CI passed`
   fails with it.
+
+- **MCP SDK 1.32.1, and `npm audit` clean again** (#463, @rmskkn). Clearing
+  the remaining advisories also dropped the unused `@types/glob`
+  devDependency, whose old `@types/minimatch` broke `tsc` (the error in #15).
+- **Vitest 4** for the TypeScript tests (#512, @TimChild).
 
 ## [2.8.3] - 2026-10-25
 
