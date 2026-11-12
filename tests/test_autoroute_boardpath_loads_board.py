@@ -71,6 +71,8 @@ def _make_iface(loaded: Any = None) -> Any:
 
     iface._safe_load_board = _load
     iface._pin_session_backend = lambda p: iface.pinned.append(str(p))
+    iface.refreshed: List[Any] = []
+    iface._refresh_symbol_library_for_project = lambda p: iface.refreshed.append(p)
     return iface
 
 
@@ -173,3 +175,49 @@ def test_without_boardpath_and_for_other_commands_nothing_changes(boards) -> Non
     out = iface.handle_command("get_board_info", {"boardPath": str(b)})
     assert out["success"] and iface.loaded_paths == [] and iface.board is loaded
     other.assert_called_once()
+
+
+@pytest.mark.unit
+def test_unsaved_changes_are_not_dropped_by_a_switch(boards) -> None:
+    """Auto-save refused after a mutation: the edits exist only in memory. Switching would
+    drop them and is_dirty would then report clean; the switch is refused instead."""
+    a, b = boards
+    loaded = _fake_board(a)
+    iface = _make_iface(loaded=loaded)
+    iface._last_auto_save_status = {"memChangesUnsaved": True, "diskChangedExternally": True}
+    out = iface.handle_command("autoroute", {"boardPath": str(b)})
+    assert out["success"] is False, out
+    assert "save_project" in out["errorDetails"] and "reload_board" in out["errorDetails"]
+    assert iface.calls == [] and iface.loaded_paths == [] and iface.board is loaded
+    assert iface._last_auto_save_status["memChangesUnsaved"] is True  # still reported dirty
+
+
+@pytest.mark.unit
+def test_ipc_session_with_no_swig_board_accepts_its_own_board(boards) -> None:
+    """In an IPC-pinned session the SWIG board can be missing; the session's identity is
+    session_board_path, so naming that board is not 'another board'."""
+    a, b = boards
+    iface = _make_iface()
+    iface.session_backend = "ipc"
+    iface.session_board_path = str(a)
+    out = iface.handle_command("autoroute", {"boardPath": str(a)})
+    assert out["success"], out
+    assert iface.loaded_paths == [] and len(iface.calls) == 1
+    out = iface.handle_command("autoroute", {"boardPath": str(b)})
+    assert out["success"] is False and "open_project" in out["errorDetails"]
+
+
+@pytest.mark.unit
+def test_switch_moves_the_project_and_says_so(boards) -> None:
+    """The switch runs open_board's steps, symbol libraries included, and the reply names
+    the board the session now holds."""
+    a, b = boards
+    iface = _make_iface(loaded=_fake_board(a))
+    out = iface.handle_command("autoroute", {"boardPath": str(b)})
+    assert out["success"], out
+    assert len(iface.refreshed) == 1 and str(iface.refreshed[0]).startswith(str(b.parent))
+    assert out["sessionBoardPath"] == str(b)
+    assert str(a) in out["boardSwitchWarning"] and str(b) in out["boardSwitchWarning"]
+    # the same board again: no switch, no note
+    out = iface.handle_command("autoroute", {"boardPath": str(b)})
+    assert out["success"] and "boardSwitchWarning" not in out

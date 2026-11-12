@@ -1289,6 +1289,123 @@ class IPCBoardAPI(BoardAPI):
             logger.error(f"Failed to add arc track: {e}")
             return False
 
+    def modify_track(
+        self,
+        uuid: str,
+        width: Optional[float] = None,
+        layer: Optional[str] = None,
+        net_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Modify an existing track's width/layer/net in place (live UI update).
+
+        A via UUID works too, as on the SWIG path where board.Tracks()
+        includes vias: width sets the via diameter and net reassigns it.
+
+        Unlike add_track's ``layer_map.get(layer, BL_F_Cu)``, an unrecognized
+        layer or net name here is a reported error, not a silent fallback —
+        modify_trace already shipped once reporting success while writing
+        nothing (#515, SWIG side); silently applying a different layer/net
+        than the one named is the same failure shape with a different cause.
+        """
+        try:
+            from kipy.board_types import Via
+            from kipy.proto.board.board_types_pb2 import BoardLayer
+            from kipy.util.units import from_mm
+
+            board = self._get_board()
+
+            track = None
+            for candidate in [*board.get_tracks(), *board.get_vias()]:
+                # track.id is a KIID message; str() gives protobuf text
+                # format ('value: "..."\n'), so compare the value field.
+                if candidate.id.value == uuid:
+                    track = candidate
+                    break
+
+            if track is None:
+                return {
+                    "success": False,
+                    "message": "Track not found",
+                    "errorDetails": f"No live track or via with uuid '{uuid}'",
+                }
+
+            is_via = isinstance(track, Via)
+            modifications = []
+
+            if width is not None:
+                if is_via:
+                    # Same as SetWidth() on a SWIG via. kipy also resets
+                    # the padstack to PST_NORMAL when it sets the diameter.
+                    track.diameter = from_mm(width)
+                else:
+                    track.width = from_mm(width)
+                modifications.append(f"width={width}mm")
+
+            if layer is not None:
+                if is_via:
+                    return {
+                        "success": False,
+                        "message": "Invalid layer",
+                        "errorDetails": "A via spans layers; 'layer' applies to traces only",
+                    }
+                # kipy enum names follow KiCad's canonical layer names
+                # (In3.Cu -> BL_In3_Cu), which covers all 32 copper layers.
+                enum_name = "BL_" + layer.replace(".", "_")
+                if not layer.endswith(".Cu") or enum_name not in BoardLayer.keys():
+                    return {
+                        "success": False,
+                        "message": "Invalid layer",
+                        "errorDetails": f"'{layer}' is not a copper layer name "
+                        "(expected F.Cu, B.Cu or In1.Cu..In30.Cu)",
+                    }
+                track.layer = BoardLayer.Value(enum_name)
+                modifications.append(f"layer={layer}")
+
+            if net_name is not None:
+                target_net = None
+                for net in board.get_nets():
+                    if net.name == net_name:
+                        target_net = net
+                        break
+                if target_net is None:
+                    return {
+                        "success": False,
+                        "message": "Invalid net",
+                        "errorDetails": f"Net '{net_name}' not found",
+                    }
+                track.net = target_net
+                modifications.append(f"net={net_name}")
+
+            if not modifications:
+                return {
+                    "success": False,
+                    "message": "No modifications specified",
+                    "errorDetails": "Provide at least one of: width, layer, net",
+                }
+
+            commit = board.begin_commit()
+            board.update_items([track])
+            board.push_commit(commit, "Modified track")
+
+            self._notify(
+                "track_modified",
+                {"uuid": uuid, "width": width, "layer": layer, "net": net_name},
+            )
+
+            return {
+                "success": True,
+                "message": f"Modified trace: {', '.join(modifications)}",
+                "uuid": uuid,
+                "modifications": modifications,
+            }
+        except Exception as e:
+            logger.error(f"Failed to modify track: {e}")
+            return {
+                "success": False,
+                "message": "Failed to modify trace",
+                "errorDetails": str(e),
+            }
+
     def add_via(
         self,
         x: float,
@@ -1420,7 +1537,7 @@ class IPCBoardAPI(BoardAPI):
                             "width": to_mm(track.width),
                             "layer": str(track.layer),
                             "net": track.net.name if track.net else "",
-                            "id": str(track.id) if hasattr(track, "id") else "",
+                            "id": track.id.value,
                         }
                     )
                 except Exception as e:
@@ -1451,7 +1568,7 @@ class IPCBoardAPI(BoardAPI):
                             "drill": to_mm(via.drill_diameter),
                             "net": via.net.name if via.net else "",
                             "type": str(via.type),
-                            "id": str(via.id) if hasattr(via, "id") else "",
+                            "id": via.id.value,
                         }
                     )
                 except Exception as e:

@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from utils.sexpr_format import escape_sexpr_string, prettify
+from utils.sexpr_format import escape_sexpr_string, match_paren, prettify
 
 
 def _find_symbol_in_lib_symbols(
@@ -23,16 +23,10 @@ def _find_symbol_in_lib_symbols(
     if sym_start == -1:
         return None
 
-    depth = 0
-    for i in range(sym_start, len(content)):
-        if content[i] == "(":
-            depth += 1
-        elif content[i] == ")":
-            depth -= 1
-            if depth == 0:
-                return sym_start, i, content[sym_start : i + 1]
-
-    return None
+    end = match_paren(content, sym_start)
+    if end == -1:
+        return None
+    return sym_start, end, content[sym_start : end + 1]
 
 
 def _has_property(symbol_block: str, prop_name: str) -> bool:
