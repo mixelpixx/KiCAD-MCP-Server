@@ -285,3 +285,81 @@ def test_stub_puts_the_label_off_the_pin_and_keeps_it_connected(tmp_path):
             if isinstance(node, list) and node[0] == sexpdata.Symbol("node")
         ]
         assert {"ref": "R1", "pin": "1"}.items() <= nodes[0].items() if nodes else False
+
+
+def _netlist_members(tmp_path, sch):
+    """{net name: set of (ref, pin)} from kicad-cli's netlist, or None without kicad-cli."""
+    import shutil
+    import subprocess
+
+    if not shutil.which("kicad-cli"):
+        return None
+    out = tmp_path / "renet.net"
+    subprocess.run(
+        [
+            "kicad-cli",
+            "sch",
+            "export",
+            "netlist",
+            "--format",
+            "kicadsexpr",
+            "-o",
+            str(out),
+            str(sch),
+        ],
+        capture_output=True,
+        check=True,
+    )
+    data = sexpdata.loads(out.read_text())
+    block = next(x for x in data[1:] if isinstance(x, list) and x[0] == sexpdata.Symbol("nets"))
+    members = {}
+    for net in block[1:]:
+        fields = {str(f[0]): f for f in net if isinstance(f, list)}
+        name = str(fields["name"][1]) if "name" in fields else "?"
+        nodes = set()
+        for node in net:
+            if isinstance(node, list) and node and node[0] == sexpdata.Symbol("node"):
+                d = {str(f[0]): str(f[1]) for f in node[1:] if isinstance(f, list)}
+                nodes.add((d.get("ref"), d.get("pin")))
+        members[name] = nodes
+    return members
+
+
+def test_replace_does_not_wire_a_pin_to_a_label_the_batch_renames(tmp_path):
+    """#495 review: run 1 puts X on R1.2; run 2 with replace asks R1.2 -> Y and R2.1 -> X.
+    R2.1 faces R1.2, whose old X label this same batch replaces with Y. Wiring R2.1 to that
+    label (the file is read before the write) shorted R2.1 onto Y. It gets its own X label."""
+    f = _sheet(tmp_path)
+    c = SchematicBatchCommands(None)
+    assert c.batch_connect({"schematicPath": str(f), "connections": {"R1": {"2": "X"}}})["success"]
+    r = c.batch_connect(
+        {
+            "schematicPath": str(f),
+            "connections": {"R1": {"2": "Y"}, "R2": {"1": "X"}},
+            "replace": True,
+        }
+    )
+    assert r["success"], r
+    assert not any("wired to existing label" in p.get("note", "") for p in r["placed"]), r
+    assert sorted(str(lbl[1]) for lbl in _items(f, "label")) == ["X", "Y"]
+    members = _netlist_members(tmp_path, f)
+    if members is not None:
+        on_x = next(v for k, v in members.items() if k.endswith("X"))
+        on_y = next(v for k, v in members.items() if k.endswith("Y"))
+        assert ("R2", "1") in on_x and ("R2", "1") not in on_y, members
+        assert ("R1", "2") in on_y and ("R1", "2") not in on_x, members
+
+
+def test_replace_still_wires_to_a_facing_label_the_batch_keeps(tmp_path):
+    """The guard only skips labels at positions this batch clears: R3's label is untouched,
+    so R1.2 -> MID with replace still wires to a facing MID label elsewhere when one exists."""
+    f = _sheet(tmp_path)
+    c = SchematicBatchCommands(None)
+    assert c.batch_connect({"schematicPath": str(f), "connections": {"R2": {"1": "MID"}}})[
+        "success"
+    ]
+    r = c.batch_connect(
+        {"schematicPath": str(f), "connections": {"R1": {"2": "MID"}}, "replace": True}
+    )
+    assert r["success"], r
+    assert any("wired to existing label" in p.get("note", "") for p in r["placed"]), r

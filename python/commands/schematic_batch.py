@@ -593,6 +593,43 @@ class SchematicBatchCommands:
                         return [pos[0], pos[1]]
                 return None
 
+            # With replace=True the old labels at this batch's pins (and stub ends)
+            # are removed in the same write. _find_facing_label still reads the
+            # unchanged file, so it could pick such a label as the wiring target
+            # for another pin, and the write then renames it: re-netting R1.2 from
+            # X to Y while R2.1 asks for X wired R2.1 onto Y. Collect every
+            # position this batch clears first, and skip facing labels there.
+            cleared_by_batch: set = set()
+            if replace:
+                for c_ref, c_pins in connections.items():
+                    if not isinstance(c_pins, dict):
+                        continue
+                    for c_pin in c_pins:
+                        try:
+                            c_pos = locator.get_pin_location(sch_path, c_ref, str(c_pin))
+                            if not c_pos:
+                                c_all = locator.get_all_symbol_pins(sch_path, c_ref) or {}
+                                if len(c_all) != 1:
+                                    continue
+                                c_pin = next(iter(c_all))
+                                c_pos = c_all[c_pin]
+                            cx, cy = float(c_pos[0]), float(c_pos[1])
+                            cleared_by_batch.add((round(cx, 2), round(cy, 2)))
+                            if stub > 0:
+                                c_angle = locator.get_pin_angle(sch_path, c_ref, str(c_pin)) or 0
+                                c_orient = int(round(c_angle / 90) * 90) % 360
+                                dx, dy = {0: (1, 0), 90: (0, -1), 180: (-1, 0), 270: (0, 1)}[
+                                    c_orient
+                                ]
+                                cleared_by_batch.add(
+                                    (round(cx + dx * stub, 2), round(cy + dy * stub, 2))
+                                )
+                        except Exception:
+                            continue
+
+            def _cleared_here(pos) -> bool:
+                return (round(float(pos[0]), 2), round(float(pos[1]), 2)) in cleared_by_batch
+
             for ref, pin_map in connections.items():
                 if not isinstance(pin_map, dict):
                     failed.append({"ref": ref, "reason": "pin_map must be a dict {pin: netName}"})
@@ -650,7 +687,12 @@ class SchematicBatchCommands:
                         if label_type == "label":
                             existing_pos = _find_facing_label(
                                 sch_path, net_name, position, orientation
-                            ) or _facing_planned(net_name, position, orientation)
+                            )
+                            if existing_pos and _cleared_here(existing_pos):
+                                existing_pos = None  # replaced by this batch: not a target
+                            existing_pos = existing_pos or _facing_planned(
+                                net_name, position, orientation
+                            )
                         if existing_pos:
                             new_wires.append((list(position), existing_pos))
                             entry["note"] = (

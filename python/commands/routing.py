@@ -875,6 +875,14 @@ class RoutingCommands:
             if net_obj is not None:
                 via.SetNet(net_obj)
 
+            # A via placed on its own is a free via, as KiCad's own "Add Free-Standing Via"
+            # makes it. A non-free via takes its net from the copper it touches when the
+            # board is saved: inside another net's zone, with no path to a pad of its own
+            # net yet, it was written to the file on the zone's net, so the via the reply
+            # described was not the via on the board.
+            if hasattr(via, "SetIsFree"):
+                via.SetIsFree(True)
+
             # Add via to board
             self.board.Add(via)
 
@@ -891,7 +899,7 @@ class RoutingCommands:
                     "drill": via.GetDrill() / 1000000,
                     "from_layer": from_layer,
                     "to_layer": to_layer,
-                    "net": net,
+                    "net": via.GetNetname(),
                 },
             }
 
