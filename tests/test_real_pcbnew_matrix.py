@@ -184,6 +184,49 @@ def test_export_pdf_writes_the_file_it_reports(tmp_path: Path) -> None:
     assert pdf.read_bytes().startswith(b"%PDF")
 
 
+def test_add_via_keeps_its_net_inside_another_nets_zone(tmp_path: Path) -> None:
+    """A via placed on its own inside a zone of another net used to be written to the file on
+    the zone's net: a non-free via takes its net from the copper it touches when the board is
+    saved. add_via now makes a free via, as KiCad's Add Free-Standing Via does."""
+    import pcbnew
+    from commands.routing import RoutingCommands
+
+    board = pcbnew.BOARD()
+    for name in ("PLANE", "SIG"):
+        board.Add(pcbnew.NETINFO_ITEM(board, name))
+    zone = pcbnew.ZONE(board)
+    zone.SetLayer(pcbnew.B_Cu)
+    zone.SetNet(board.FindNet("PLANE"))
+    outline = zone.Outline()
+    outline.NewOutline()
+    for x, y in ((0, 0), (20, 0), (20, 20), (0, 20)):
+        outline.Append(pcbnew.FromMM(x), pcbnew.FromMM(y))
+    board.Add(zone)
+    # Save and reload before filling: ZONE_FILLER on a bare in-memory BOARD() segfaults on
+    # KiCad 9 (no project attached). A board on disk carries its last fill, so the via lands
+    # on filled copper, as it would on a real board.
+    seed = tmp_path / "seed.kicad_pcb"
+    pcbnew.SaveBoard(str(seed), board)
+    board = pcbnew.LoadBoard(str(seed))
+    pcbnew.ZONE_FILLER(board).Fill(board.Zones())
+    # KiCad 9 drops nets that nothing uses when it saves; SIG has no items yet.
+    if not board.FindNet("SIG"):
+        board.Add(pcbnew.NETINFO_ITEM(board, "SIG"))
+
+    result = RoutingCommands(board).add_via(
+        {"position": {"x": 10, "y": 10, "unit": "mm"}, "net": "SIG"}
+    )
+    assert result["success"] is True, result
+    assert result["via"]["net"] == "SIG"
+
+    path = tmp_path / "via_in_zone.kicad_pcb"
+    pcbnew.SaveBoard(str(path), board)
+    reloaded = pcbnew.LoadBoard(str(path))
+    vias = [t for t in reloaded.GetTracks() if t.GetClass() == "PCB_VIA"]
+    assert len(vias) == 1
+    assert vias[0].GetNetname() == "SIG", "the via was saved on the zone's net"
+
+
 def test_run_drc_reports_unconnected_pads_with_real_kicad_cli(tmp_path: Path) -> None:
     """Two pads on one net and no copper between them: kicad-cli lists the gap under
     "unconnected_items", which run_drc used to drop."""

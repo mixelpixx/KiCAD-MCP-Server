@@ -27,6 +27,13 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger("kicad_interface")
 
 
+# How each regex character of a net name is written so KiCad's matcher reads it
+# literally. Checked against KiCad 10.0.7's NET_SETTINGS (maintainer, #517) and
+# 10.0.8 (tests/test_netclass_patterns_real_pcbnew.py).
+_NETCLASS_LITERAL = {c: "\\" + c for c in "\\.^|?*+()[]"}
+_NETCLASS_LITERAL.update({"{": "[{]", "}": "[}]", "$": "[$]"})
+
+
 def netclass_pattern_for_net(net_name: str) -> str:
     """The netclass pattern that matches *net_name* and nothing else.
 
@@ -37,19 +44,24 @@ def netclass_pattern_for_net(net_name: str) -> str:
     ``HV`` and ``HVV``, ``/SPI.CLK`` captures ``/SPIxCLK``, ``Net-(R1-Pad1)``
     captures ``Net-R1-Pad1``, and on KiCad 10 every matching class is merged
     into the net's effective class, so clearances change without anyone asking.
-    ``re.escape`` makes each of those match only itself. Checked on KiCad
-    10.0.8: the extra escapes it adds (``\\-``, ``\\#``, ``\\&``, ``\\~``, ``\\_``
-    and ``\\ `` for a space) are read as the literal character. A name holding
-    ``*`` or ``?`` escapes to ``\\*``/``\\?``, which still matches itself; the
-    wildcard side then also admits names beginning with the name up to a
-    literal backslash, which don't occur.
+
+    ``re.escape`` is not the answer: KiCad's engine does not read the escaped
+    brace pair ``\\{...\\}`` as literal braces, so an overbar name such as
+    ``~{RESET}`` escaped that way matches nothing, not even itself. And the
+    matcher appends ``$`` only when a pattern does not already end in one, so
+    ``FOO\\$`` also matches ``FOO$X``. What matches exactly:
+
+    - a backslash before ``\\ . ^ | ? * + ( ) [ ]``;
+    - ``{``, ``}`` and ``$`` as the bracket classes ``[{]``, ``[}]``, ``[$]``;
+    - everything else (``-``, ``~``, ``#``, ``&``, ``/``, ``_``, space) as is,
+      since KiCad reads those literally.
 
     Used for the ``netclass_patterns`` record ``assign_net_to_class`` writes,
     for the explicit assignments this loader pushes into ``NET_SETTINGS``, and
     for the in-memory ``SetNetclassPatternAssignment``, so all three agree on
     what a net's own pattern looks like.
     """
-    return re.escape(net_name)
+    return "".join(_NETCLASS_LITERAL.get(c, c) for c in net_name)
 
 
 # net_settings.classes numeric fields (millimetres) -> NETCLASS setter names.

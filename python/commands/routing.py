@@ -269,7 +269,7 @@ def apply_net_assignment_to_project_settings(
     # 6-layer HV board: 21 voltage-class assignments dropped, every clearance rule
     # keyed on those classes stopped matching, and DRC still passed.
     #
-    # The pattern is the escaped name (see netclass_pattern_for_net): KiCad reads
+    # The pattern is the name made literal for KiCad (see netclass_pattern_for_net): KiCad reads
     # a pattern as a regular expression, so the raw name would also capture other
     # nets. A re-assignment updates the net's entry in place; an entry holding the
     # raw name (what an earlier build of this code wrote) is the same net's record
@@ -280,7 +280,11 @@ def apply_net_assignment_to_project_settings(
         patterns = []
         net_settings["netclass_patterns"] = patterns
     for entry in patterns:
-        if isinstance(entry, dict) and entry.get("pattern") in (pattern, net_name):
+        if isinstance(entry, dict) and entry.get("pattern") in (
+            pattern,
+            net_name,
+            re.escape(net_name),  # what this tool wrote before the KiCad-literal form
+        ):
             entry["pattern"] = pattern
             entry["netclass"] = class_name
             break
@@ -901,6 +905,14 @@ class RoutingCommands:
             if net_obj is not None:
                 via.SetNet(net_obj)
 
+            # A via placed on its own is a free via, as KiCad's own "Add Free-Standing Via"
+            # makes it. A non-free via takes its net from the copper it touches when the
+            # board is saved: inside another net's zone, with no path to a pad of its own
+            # net yet, it was written to the file on the zone's net, so the via the reply
+            # described was not the via on the board.
+            if hasattr(via, "SetIsFree"):
+                via.SetIsFree(True)
+
             # Add via to board
             self.board.Add(via)
 
@@ -917,7 +929,7 @@ class RoutingCommands:
                     "drill": via.GetDrill() / 1000000,
                     "from_layer": from_layer,
                     "to_layer": to_layer,
-                    "net": net,
+                    "net": via.GetNetname(),
                 },
             }
 

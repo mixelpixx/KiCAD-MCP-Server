@@ -29,6 +29,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+from utils.skip_items import skip_items
+
 logger = logging.getLogger("kicad_interface")
 
 _PASSES = ("hide_pin_names", "orient_labels")
@@ -134,7 +136,7 @@ def _build_pin_orient_map(sch_path: Path) -> Dict[Tuple[float, float], int]:
     sch = SchematicManager.load_schematic(str(sch_path))
 
     pin_map: Dict[Tuple[float, float], int] = {}
-    for symbol in getattr(sch, "symbol", None) or []:
+    for symbol in skip_items(sch, "symbol"):
         try:
             if not hasattr(symbol, "property") or not hasattr(symbol.property, "Reference"):
                 continue

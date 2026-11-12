@@ -13,6 +13,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict
 
+from utils.sexpr_format import match_paren
+
 logger = logging.getLogger("kicad_interface")
 
 MIRROR_TO_ANGLE = {"__m0": 0, "__m90": 90, "__m180": 180, "__m270": 270}
@@ -59,17 +61,8 @@ class SymbolSchematicCommands:
             if lib_start < 0:
                 return {"success": False, "error": "lib_symbols section not found"}
 
-            depth = 0
-            lib_end = None
-            for i in range(lib_start, len(content)):
-                if content[i] == "(":
-                    depth += 1
-                elif content[i] == ")":
-                    depth -= 1
-                    if depth == 0:
-                        lib_end = i
-                        break
-            if lib_end is None:
+            lib_end = match_paren(content, lib_start)
+            if lib_end == -1:
                 return {"success": False, "error": "Cannot find end of lib_symbols"}
 
             lib_part = content[: lib_end + 1]
