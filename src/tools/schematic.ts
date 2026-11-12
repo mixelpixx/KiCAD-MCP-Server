@@ -1880,7 +1880,10 @@ edit_schematic_component and set its value to an empty string.`,
   // Find wires crossing symbols
   server.tool(
     "find_wires_crossing_symbols",
-    "Find all wires that cross over component symbol bodies. Wires passing over symbols are unacceptable in schematics — they indicate routing mistakes where a wire was drawn across a component instead of around it.",
+    "Find all wires that cross over component symbol bodies. Wires passing over symbols are unacceptable in schematics — they indicate routing mistakes where a wire was drawn across a component instead of around it. " +
+      "Also lists, under pinsOnWireInterior (with pinsOnWireInteriorCount), every symbol pin, power pins included, that lies on the middle of a wire without being connected to it: " +
+      "KiCad joins a pin to a wire only where the wire ends or where a junction sits on the pin, so a label there does not connect it to the wire. " +
+      "collisions and count are unchanged.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
     },
@@ -1895,6 +1898,14 @@ edit_schematic_component and set its value to an empty string.`,
           );
         });
         if (collisions.length > 30) lines.push(`  ... and ${collisions.length - 30} more`);
+        const pinsOnWire: any[] = result.pinsOnWireInterior || [];
+        lines.push(`Found ${pinsOnWire.length} pin(s) on a wire's interior, not connected to it:`);
+        pinsOnWire.slice(0, 30).forEach((p: any, i: number) => {
+          lines.push(
+            `  ${i + 1}. ${p.component.reference} pin ${p.pin} at (${p.pinPosition.x},${p.pinPosition.y}) lies on wire (${p.wire.start.x},${p.wire.start.y})→(${p.wire.end.x},${p.wire.end.y})`,
+          );
+        });
+        if (pinsOnWire.length > 30) lines.push(`  ... and ${pinsOnWire.length - 30} more`);
         return { content: [{ type: "text", text: lines.join("\n") }] };
       }
       return {
