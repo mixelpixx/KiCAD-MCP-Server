@@ -19,7 +19,7 @@ import tempfile
 import time
 import zipfile
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from utils.project_netclasses import apply_net_classes_to_board, load_project_net_classes
 from utils.project_settings_guard import preserve_project_settings
@@ -896,10 +896,30 @@ def _append_missing_keepouts(board, dsn_path) -> int:
 class FreeroutingCommands:
     """Handles Freerouting autoroute operations."""
 
-    def __init__(self, board: Any = None) -> None:
+    def __init__(
+        self,
+        board: Any = None,
+        on_board_saved: Optional[Callable[[str], None]] = None,
+    ) -> None:
         self.board = board
         # Nets left out of the last autoroute's DSN (routeNets / excludeNets), or None.
         self._nets_left_out: Optional[List[str]] = None
+        # Told the path after each successful save of self.board, so the
+        # interface can record the file's new signature. Without that, its
+        # next auto-save takes this save for an external change and refuses.
+        self.on_board_saved = on_board_saved
+
+    def _save_board(self, board_path: str, after: str) -> None:
+        """Save self.board to board_path; report a successful save."""
+        try:
+            with preserve_project_settings(board_path):
+                self.board.Save(board_path)
+        except Exception as e:
+            logger.warning(f"Board save after {after} failed: {e}")
+            return
+        on_board_saved = getattr(self, "on_board_saved", None)
+        if on_board_saved is not None:
+            on_board_saved(board_path)
 
     def _apply_project_net_classes(self, board_path: Optional[str]) -> Dict[str, Any]:
         """Push the project's net classes into the loaded board before DSN
@@ -1463,11 +1483,7 @@ class FreeroutingCommands:
                 pass
 
         # Step 4: Save board
-        try:
-            with preserve_project_settings(board_path):
-                self.board.Save(board_path)
-        except Exception as e:
-            logger.warning(f"Board save after autoroute failed: {e}")
+        self._save_board(board_path, "autoroute")
 
         # Collect stats
         tracks = self.board.GetTracks()
@@ -1695,11 +1711,7 @@ class FreeroutingCommands:
 
         board_path = params.get("boardPath") or self.board.GetFileName()
         if board_path:
-            try:
-                with preserve_project_settings(board_path):
-                    self.board.Save(board_path)
-            except Exception as e:
-                logger.warning(f"Board save after SES import failed: {e}")
+            self._save_board(board_path, "SES import")
 
         tracks = self.board.GetTracks()
         track_count = sum(1 for t in tracks if t.GetClass() != "PCB_VIA")

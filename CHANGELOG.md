@@ -101,6 +101,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`autoroute`, `import_ses` and `refill_zones` no longer make the next
+  auto-save refuse.** All three write the board file themselves but did not
+  record that write, so the session still held the file's signature from
+  before the command. The auto-save after the next board edit (and
+  `refill_zones`' own) then found the file changed, reported "the on-disk PCB
+  file's contents changed externally", and left the edit only in memory, as
+  it did for every later edit until the project was reopened. They now record
+  the file after a successful save of the session's own board. A save that
+  fails, or that goes to a different file, records nothing, so a real external
+  edit is still refused.
+
 - **A sheet with exactly one hierarchical label no longer breaks board
   creation.** kicad-skip returns a collection for two or more hierarchical
   labels (or no-connects), but the bare element when there is exactly one.

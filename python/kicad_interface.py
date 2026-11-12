@@ -511,7 +511,9 @@ class KiCADInterface(SchematicHandlersMixin):
         self.routing_commands = RoutingCommands(self.board)
         self.stackup_commands = StackupCommands(self.board, self)
         self.via_summary_commands = ViaSummaryCommands(self.board)
-        self.freerouting_commands = FreeroutingCommands(self.board)
+        self.freerouting_commands = FreeroutingCommands(
+            self.board, on_board_saved=self._note_own_board_save
+        )
         self.eagle_commands = EagleCommands()
         self.symbol_schematic_commands = SymbolSchematicCommands()
         self.library_management_commands = LibraryManagementCommands()
@@ -1636,6 +1638,21 @@ class KiCADInterface(SchematicHandlersMixin):
         except Exception:
             path = None
         self._board_disk_signature = self._disk_signature(path) if path else None
+
+    def _note_own_board_save(self, path: str) -> None:
+        """A command saved self.board to ``path`` itself (autoroute, import_ses).
+
+        When that is the board's own file, record its new signature, as
+        handle_command does after save_project. Otherwise the next auto-save
+        sees the file differ from the signature taken before the command and
+        refuses, reporting our own write as an external change. A save to some
+        other file leaves the board's file, and its signature, as they were.
+        """
+        current = self._current_board_path()
+        if not current or not path:
+            return
+        if os.path.normcase(str(Path(path).resolve())) == os.path.normcase(current):
+            self._record_board_signature()
 
     def _current_board_path(self) -> Optional[str]:
         """Return the current board file path, if a healthy board is loaded."""
@@ -5326,6 +5343,10 @@ print("ok")
                         }
                     self.board = reloaded
                     self._update_command_handlers()
+                    # The subprocess wrote the filled board to this file. Record
+                    # it, or the auto-save that follows takes that write for an
+                    # external change and refuses.
+                    self._record_board_signature()
                     logger.info("Zone fill subprocess succeeded")
                     return {
                         "success": True,
