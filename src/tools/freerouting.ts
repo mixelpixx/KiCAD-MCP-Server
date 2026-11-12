@@ -34,7 +34,19 @@ export function registerFreeroutingTools(server: McpServer, callKicadScript: Fun
         .describe(
           "Maximum routing passes for single-attempt mode (default: 20). Ignored when `attempts` > 1; use `passSchedule` instead.",
         ),
-      timeout: z.number().optional().describe("Per-attempt timeout in seconds (default: 300)"),
+      timeout: z
+        .number()
+        .optional()
+        .describe(
+          "Per-attempt timeout in seconds (default: 300). Freerouting is killed when it is reached and nothing it routed is kept, so the router is given a shorter time budget of its own (see jobTimeout).",
+        ),
+      jobTimeout: z
+        .number()
+        .min(0)
+        .optional()
+        .describe(
+          "Time in seconds Freerouting may spend routing before it stops by itself and writes what it has routed (--router.job_timeout). Default: `timeout` minus a tenth of it (at least 60 s, at most 120 s). Needs Freerouting 2.4 or later: older versions stop at the budget but write no session file. The result has time_budget_reached: true when routing stopped this way; the board then holds a partial routing. 0 passes no time budget.",
+        ),
       attempts: z
         .number()
         .int()
@@ -54,6 +66,20 @@ export function registerFreeroutingTools(server: McpServer, callKicadScript: Fun
         .optional()
         .describe(
           "Per-attempt `--max-passes` values to cycle through (default: [50, 60, 65, 70, 75, 80, 85, 90, 55, 95]). The list wraps if `attempts` exceeds its length.",
+        ),
+      routerSettings: z
+        .record(
+          z.string(),
+          z.union([
+            z.string(),
+            z.number(),
+            z.boolean(),
+            z.array(z.union([z.string(), z.number(), z.boolean()])),
+          ]),
+        )
+        .optional()
+        .describe(
+          'Freerouting router settings for this run, by the names in Freerouting\'s docs/settings.md under `router`; each is passed as --router.<name>=<value>, a list joined with commas. Examples: {"autorouter.priority_net_classes": ["DIFF", "ANALOG"]} routes those net classes first and keeps other nets from ripping them; {"autorouter.plane_as_priority": true} gives each plane pad a via of its own into its plane (the plane\'s layer must be of type power); {"autorouter.ignore_net_classes": ["HV"]}. Which settings exist depends on the Freerouting version: priority_net_classes and plane_as_priority are on Freerouting master only (merged 2026-11-07), not in a v2 release. Freerouting skips a setting it does not know and keeps routing; the reply lists those in router_settings_rejected. Use maxPasses and jobTimeout for those two.',
         ),
       routeNets: z
         .array(z.string())

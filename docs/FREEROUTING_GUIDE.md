@@ -107,7 +107,12 @@ Run the full autorouting workflow (export DSN, route, import SES).
 | `boardPath` | string | No | Current board | Path to .kicad_pcb file |
 | `freeroutingJar` | string | No | ~/.kicad-mcp/freerouting.jar | Path to freerouting.jar |
 | `maxPasses` | number | No | 20 | Maximum routing passes |
-| `timeout` | number | No | 300 | Timeout in seconds |
+| `timeout` | number | No | 300 | Seconds to wait for Freerouting. It is killed after that, and nothing it routed is kept |
+| `jobTimeout` | number | No | `timeout` minus 10 % (60–120 s) | Seconds Freerouting may route before it stops by itself and writes what it has (`--router.job_timeout`). Needs Freerouting 2.4 or later (older versions stop but write no session file). `0` passes no budget |
+| `routerSettings` | object | No | none | Freerouting settings for this run, e.g. `{"autorouter.priority_net_classes": ["DIFF"], "autorouter.plane_as_priority": true}`. Each is passed as `--router.<name>=<value>`. Freerouting skips a setting it does not know (a typo, or one the installed jar lacks) and keeps routing; those come back in `router_settings_rejected`. `autorouter.priority_net_classes` and `autorouter.plane_as_priority` are on Freerouting master only (merged 2026-11-07), not in a v2 release |
+
+When Freerouting stops at its time budget, the result has `time_budget_reached: true` and the board holds
+the partial routing; `run_drc` lists what is still unconnected.
 
 **Example:**
 
