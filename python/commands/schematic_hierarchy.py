@@ -17,7 +17,12 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List
 
-from utils.sexpr_format import QUOTED_VALUE, escape_sexpr_string, unescape_sexpr_string
+from utils.sexpr_format import (
+    QUOTED_VALUE,
+    escape_sexpr_string,
+    match_paren,
+    unescape_sexpr_string,
+)
 from utils.sheet_tree import instance_paths, project_name, sheet_tree, sub_sheets
 from utils.symbol_instances import add_missing_instances
 
@@ -163,15 +168,9 @@ class SchematicHierarchyCommands:
         spans: List[tuple] = []
         for m in re.finditer(r"\(sheet\s", content):
             start = m.start()
-            depth = 0
-            for i in range(start, len(content)):
-                if content[i] == "(":
-                    depth += 1
-                elif content[i] == ")":
-                    depth -= 1
-                    if depth == 0:
-                        spans.append((start, i + 1))
-                        break
+            end = match_paren(content, start)
+            if end != -1:
+                spans.append((start, end + 1))
         return spans
 
     def remove_hierarchical_sheet(self, params: Dict[str, Any]) -> Dict[str, Any]:

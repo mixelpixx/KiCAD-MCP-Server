@@ -89,6 +89,24 @@ def test_modify_trace_error_names_the_documented_key(board_with_track):
     assert "traceUuid" in result["errorDetails"]
 
 
+def test_modify_trace_is_a_board_mutating_command():
+    """Without this, modify_trace reports success and writes nothing to
+    disk: it SetWidth()s the in-memory SWIG board with no save of its own,
+    identical in shape to add_layer's #222."""
+    from kicad_interface import KiCADInterface
+
+    assert "modify_trace" in KiCADInterface._BOARD_MUTATING_COMMANDS
+
+
+def test_modify_trace_is_ipc_capable():
+    """Without this, modify_trace always ran headless (SWIG), so a KiCad
+    window already open on the board wouldn't show the change until
+    File -> Revert, unlike route_trace/add_via."""
+    from kicad_interface import KiCADInterface
+
+    assert KiCADInterface.IPC_CAPABLE_COMMANDS.get("modify_trace") == "_ipc_modify_trace"
+
+
 # --- add_net ----------------------------------------------------------------
 
 
@@ -310,6 +328,11 @@ class _Via:
 
     def SetNet(self, net) -> None:
         self.net = net
+
+    def GetNetname(self) -> str:
+        # add_via reports the net the via has, not the one requested (a via can lose its
+        # net to the copper it touches), so the fake answers like a real PCB_VIA
+        return "GND" if self.net is GND else ""
 
 
 class _ViaNets(dict):

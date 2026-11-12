@@ -15,6 +15,7 @@ import pytest
 from commands.freerouting import _build_freerouting_cmd, _hms, _router_time_budget
 
 from tests.test_autoroute_best_of_n import (  # noqa: F401  (fixtures)
+    _java_on_path,
     _make_cmds,
     _make_ses,
     _patch_exec_mode,
@@ -44,14 +45,14 @@ def test_hms(seconds, text):
 @pytest.mark.parametrize(
     "timeout, requested, budget",
     [
-        (300, None, 270),  # a tenth of the wait is the margin
-        (60, None, 40),  # margin never under 20 s
+        (900, None, 810),  # a tenth of the wait is the margin
+        (300, None, 240),  # margin never under 60 s (Freerouting's 30 s grace + JVM/DSN start)
         (3600, None, 3480),  # margin never over 120 s
         (300, 100, 100),  # the caller's value
-        (300, 299, 270),  # capped below the wait, or the kill would come first
+        (300, 299, 240),  # capped below the wait, or the kill would come first
         (300, 0, None),  # 0: no budget passed
-        (20, None, None),  # nothing left after the margin
-        (300, "abc", 270),  # not a number: the default
+        (60, None, None),  # nothing left after the margin
+        (300, "abc", 240),  # not a number: the default
         (None, None, None),
     ],
 )

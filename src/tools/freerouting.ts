@@ -45,7 +45,7 @@ export function registerFreeroutingTools(server: McpServer, callKicadScript: Fun
         .min(0)
         .optional()
         .describe(
-          "Time in seconds Freerouting may spend routing before it stops by itself and writes what it has routed (--router.job_timeout). Default: `timeout` minus a tenth of it (at least 20 s, at most 120 s). The result has time_budget_reached: true when routing stopped this way; the board then holds a partial routing. 0 passes no time budget.",
+          "Time in seconds Freerouting may spend routing before it stops by itself and writes what it has routed (--router.job_timeout). Default: `timeout` minus a tenth of it (at least 60 s, at most 120 s). Needs Freerouting 2.4 or later: older versions stop at the budget but write no session file. The result has time_budget_reached: true when routing stopped this way; the board then holds a partial routing. 0 passes no time budget.",
         ),
       attempts: z
         .number()
@@ -67,11 +67,35 @@ export function registerFreeroutingTools(server: McpServer, callKicadScript: Fun
         .describe(
           "Per-attempt `--max-passes` values to cycle through (default: [50, 60, 65, 70, 75, 80, 85, 90, 55, 95]). The list wraps if `attempts` exceeds its length.",
         ),
+      routeNets: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Route only these nets (names or globs such as '/HV PWR/*'). Other nets stay on the board as obstacles but are left out of the routing job, so a board can be routed one isolation domain at a time.",
+        ),
+      excludeNets: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Leave these nets (names or globs) out of the routing job, e.g. high-current nets you will pour by hand.",
+        ),
       keepArtifacts: z
         .boolean()
         .optional()
         .describe(
           "Keep the intermediate .dsn/.ses files next to the board after the run (default: false). Artifacts are staged in a temporary directory and removed on every exit — success, failure, or crash — unless this is set.",
+        ),
+      layerTraceCosts: z
+        .record(z.string(), z.number())
+        .optional()
+        .describe(
+          "Per-layer trace cost factor, e.g. {\"In1.Cu\": 5}: the layer stays usable but a track there costs more (the factor along its preferred direction, twice that against it; Freerouting's defaults are about 1 and 2), so a plane layer carries only the tracks that fit nowhere else. Keys are canonical (In1.Cu) or the board's own layer names; a name the board lacks is refused. Combines with signalLayers; written to the same Freerouting rules file.",
+        ),
+      signalLayers: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Copper layers tracks may use, e.g. ["F.Cu", "In2.Cu", "B.Cu"] when In1 is a plane; canonical names or the board\'s own (a renamed F.Cu is found either way), and a name the board lacks is refused. The other copper layers get (active off) in a Freerouting rules file (autoroute_settings layer_rule, passed with -dr): no tracks there, vias still pass through, so a plane is not cut into islands. Nothing else is written to the file, so Freerouting\'s own per-layer defaults stay in force. The reply lists the restricted layers by the board\'s names in tracksKeptOffLayers. Default: all layers.',
         ),
     },
     async (args: any) => {
