@@ -32,9 +32,35 @@ from utils.project_settings_guard import preserve_project_settings
 from utils.sexpr_format import QUOTED_VALUE
 from utils.sexpr_format import dumps as kicad_dumps
 from utils.sexpr_format import escape_sexpr_string, unescape_sexpr_string
+from utils.skip_items import skip_items
 from utils.symbol_instances import annotate_sheet, instance_report
 
 logger = logging.getLogger("kicad_interface")
+
+
+def _xy(value: Any) -> Optional[List[float]]:
+    """A point given as [x, y] or {"x": .., "y": ..}, as [x, y]; None if neither.
+
+    Tools disagreed on the shape: add_schematic_text took a list and
+    delete_schematic_net_label a dict, and the other shape failed late with a
+    message that did not say why. Every handler that takes a position accepts both.
+    """
+    # Values are passed through as given: the writers format 100 as "100", so
+    # converting to float would change every coordinate in the file to "100.0".
+    if isinstance(value, dict):
+        x, y = value.get("x"), value.get("y")
+    elif isinstance(value, (list, tuple)) and len(value) == 2:
+        x, y = value
+    else:
+        return None
+    if isinstance(x, bool) or isinstance(y, bool):
+        return None
+    if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+        return [x, y]
+    return None
+
+
+_POSITION_SHAPES = '[x, y] or {"x": .., "y": ..}'
 
 
 def _find_placed_symbol_position(content: str, reference: str) -> Optional[Tuple[float, float]]:
@@ -1390,7 +1416,7 @@ class SchematicHandlersMixin:
 
             schematic_path = params.get("schematicPath")
             net_name = params.get("netName")
-            position = params.get("position")
+            position = _xy(params.get("position"))
             label_type = params.get("labelType", "label")
             orientation_param = params.get("orientation")
             orientation = 0 if orientation_param is None else orientation_param
@@ -2299,7 +2325,7 @@ class SchematicHandlersMixin:
         try:
             schematic_path = params.get("schematicPath")
             net_name = params.get("netName")
-            position = params.get("position")
+            raw_position = params.get("position")
 
             if not schematic_path or not net_name:
                 return {
@@ -2307,13 +2333,24 @@ class SchematicHandlersMixin:
                     "message": "schematicPath and netName are required",
                 }
 
+            # A position that is given but malformed is refused, not treated as
+            # absent: without a position the only label of that name is deleted,
+            # which is the wrong label when the caller meant to pick one.
+            pos_list = None
+            if raw_position is not None:
+                pos_list = _xy(raw_position)
+                if pos_list is None:
+                    return {
+                        "success": False,
+                        "message": (
+                            f"position must be {_POSITION_SHAPES}, got {raw_position!r}; "
+                            "nothing was deleted"
+                        ),
+                    }
+
             from pathlib import Path
 
             from commands.wire_manager import WireManager
-
-            pos_list = None
-            if position:
-                pos_list = [position.get("x", 0), position.get("y", 0)]
 
             deleted = WireManager.delete_label(Path(schematic_path), net_name, pos_list)
             if deleted:
@@ -2613,7 +2650,7 @@ class SchematicHandlersMixin:
 
             schematic_path = params.get("schematicPath")
             text = params.get("text")
-            position = params.get("position")
+            position = _xy(params.get("position"))
             angle = params.get("angle", 0)
             font_size = params.get("fontSize", 1.27)
             bold = params.get("bold", False)
@@ -2625,7 +2662,7 @@ class SchematicHandlersMixin:
             if not text:
                 return {"success": False, "message": "text is required"}
             if not position or len(position) != 2:
-                return {"success": False, "message": "position [x, y] is required"}
+                return {"success": False, "message": f"position is required, as {_POSITION_SHAPES}"}
             if justify not in ("left", "center", "right"):
                 return {"success": False, "message": "justify must be left, center, or right"}
             if font_size <= 0:
@@ -2673,7 +2710,7 @@ class SchematicHandlersMixin:
 
             schematic_path = params.get("schematicPath")
             text = params.get("text")
-            position = params.get("position")
+            position = _xy(params.get("position"))
             shape = params.get("shape", "bidirectional")
             orientation = params.get("orientation", 0)
 
@@ -2682,7 +2719,7 @@ class SchematicHandlersMixin:
             if not text:
                 return {"success": False, "message": "text is required"}
             if not position or len(position) != 2:
-                return {"success": False, "message": "position [x, y] is required"}
+                return {"success": False, "message": f"position is required, as {_POSITION_SHAPES}"}
             if shape not in ("input", "output", "bidirectional"):
                 return {
                     "success": False,
@@ -2726,7 +2763,7 @@ class SchematicHandlersMixin:
             sheet_name = params.get("sheetName")
             pin_name = params.get("pinName")
             pin_type = params.get("pinType", "bidirectional")
-            position = params.get("position")
+            position = _xy(params.get("position"))
             orientation = params.get("orientation", 0)
 
             if not schematic_path:
@@ -2736,7 +2773,7 @@ class SchematicHandlersMixin:
             if not pin_name:
                 return {"success": False, "message": "pinName is required"}
             if not position or len(position) != 2:
-                return {"success": False, "message": "position [x, y] is required"}
+                return {"success": False, "message": f"position is required, as {_POSITION_SHAPES}"}
             if pin_type not in ("input", "output", "bidirectional"):
                 return {
                     "success": False,
@@ -2958,7 +2995,7 @@ class SchematicHandlersMixin:
             point_net: dict = {}  # snap(x,y) -> net_name
 
             for attr in ("label", "global_label", "hierarchical_label"):
-                for lbl in getattr(sch, attr, None) or []:
+                for lbl in skip_items(sch, attr):
                     try:
                         pos = lbl.at.value
                         name = lbl.value
@@ -2978,7 +3015,7 @@ class SchematicHandlersMixin:
             # name onto the flag's pin, from where the BFS below propagated it
             # over the real net. A PWR_FLAG takes whatever net it is wired to;
             # it never names one.
-            for sym in getattr(sch, "symbol", None) or []:
+            for sym in skip_items(sch, "symbol"):
                 try:
                     ref = sym.property.Reference.value
                     if not ref.startswith("#PWR"):
@@ -2996,7 +3033,7 @@ class SchematicHandlersMixin:
 
             # ── 2. Build wire adjacency and BFS-propagate net names ──────────
             wire_segments = []
-            for wire in getattr(sch, "wire", None) or []:
+            for wire in skip_items(sch, "wire"):
                 try:
                     pts = []
                     for pt in wire.pts.xy:
@@ -3035,7 +3072,7 @@ class SchematicHandlersMixin:
 
             # ── 3. Collect real (non-power) symbol pins with their positions ──
             sym_pins = []  # (ref, pin_num, (px, py))
-            for sym in getattr(sch, "symbol", None) or []:
+            for sym in skip_items(sch, "symbol"):
                 try:
                     ref = sym.property.Reference.value
                     if ref.startswith("#"):
