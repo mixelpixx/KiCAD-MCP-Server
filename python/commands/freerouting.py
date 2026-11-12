@@ -608,6 +608,54 @@ def _java_version_ok(java_exe: str, required: int = DEFAULT_REQUIRED_JAVA) -> bo
     return False
 
 
+def _hms(seconds: int) -> str:
+    """Seconds as HH:MM:SS, the form Freerouting's time settings take."""
+    seconds = int(seconds)
+    return f"{seconds // 3600:02d}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}"
+
+
+# Wall-clock time Freerouting needs after its own time budget ends: up to its
+# GRACE_PERIOD of 30 s for the router to stop (RoutingJobSchedulerActionThread,
+# 2.4.1 and later), writing the session file, plus the JVM start and DSN load
+# before the budget begins to count (measured 11-13 s past the budget).
+_JOB_TIMEOUT_MARGIN_MIN = 60
+_JOB_TIMEOUT_MARGIN_MAX = 120
+# Freerouting logs this when a stage ended because the job's time was up.
+_TIME_BUDGET_MARKER = "completed with timeout"
+
+
+def _router_time_budget(timeout: Any, requested: Any) -> Optional[int]:
+    """The time, in seconds, Freerouting is given to route (``--router.job_timeout``).
+
+    ``timeout`` is how long the caller waits for the process. When that wait
+    ends, the process is killed and nothing it routed is kept, because
+    Freerouting writes the session file only at the end. So the router is told
+    to stop earlier by itself: by default at ``timeout`` minus a margin of a
+    tenth of it (at least 60 s, at most 120 s).
+
+    ``requested`` is the caller's ``jobTimeout``: a number of seconds to use
+    instead (capped below ``timeout`` by the same margin), or 0 to pass no
+    time budget at all. Returns None when no budget is to be passed.
+    """
+    try:
+        wait = float(timeout)
+    except (TypeError, ValueError):
+        return None
+    if requested is not None:
+        try:
+            asked = float(requested)
+        except (TypeError, ValueError):
+            asked = -1.0
+        if asked == 0:
+            return None
+    else:
+        asked = -1.0
+    margin = min(_JOB_TIMEOUT_MARGIN_MAX, max(_JOB_TIMEOUT_MARGIN_MIN, wait * 0.1))
+    ceiling = wait - margin
+    budget = min(asked, ceiling) if asked > 0 else ceiling
+    return int(budget) if budget >= 1 else None
+
+
 def _build_freerouting_cmd(
     jar_path: str,
     dsn_path: str,
@@ -616,8 +664,13 @@ def _build_freerouting_cmd(
     use_docker: bool,
     single_thread: bool = False,
     rules_path: Optional[str] = None,
+    job_timeout: Optional[int] = None,
 ) -> List[str]:
     """Build the command to run Freerouting.
+
+    ``job_timeout`` (seconds) is passed as ``--router.job_timeout=HH:MM:SS``:
+    Freerouting then stops routing by itself when the time is up and still
+    writes the session file with what it has routed.
 
     ``single_thread`` forces ``-mt 1`` (single-threaded optimisation).
     Freerouting 2.x's multi-threaded optimiser is documented to produce
@@ -628,6 +681,8 @@ def _build_freerouting_cmd(
     extra = ["-mt", "1"] if single_thread else []
     if rules_path:
         extra += ["-dr", rules_path]
+    if job_timeout:
+        extra.append(f"--router.job_timeout={_hms(job_timeout)}")
     required_java = _jar_required_java(jar_path)
     if use_docker:
         docker_exe = _find_docker()
@@ -1274,6 +1329,8 @@ class FreeroutingCommands:
 
         # Step 2: Run Freerouting (single or multiple attempts)
         mode_label = "docker" if use_docker else "direct"
+        job_timeout = _router_time_budget(timeout, params.get("jobTimeout"))
+        best_budget_reached = False
         total_start = time.time()
         attempt_results: List[Dict[str, Any]] = []
         best_score = -1
@@ -1301,6 +1358,7 @@ class FreeroutingCommands:
                 use_docker,
                 single_thread=single_thread,
                 rules_path=rules_path,
+                job_timeout=job_timeout,
             )
             logger.info(
                 f"Freerouting attempt {idx + 1}/{attempts} "
@@ -1329,7 +1387,17 @@ class FreeroutingCommands:
                 return {
                     "success": False,
                     "message": f"Freerouting timed out after {timeout}s",
-                    "errorDetails": "Increase timeout or reduce board complexity",
+                    "errorDetails": (
+                        "Increase timeout or reduce board complexity. Nothing was routed: "
+                        "Freerouting writes its result only when it ends"
+                        + (
+                            f", and no session file came out of its own time budget of "
+                            f"{job_timeout}s (--router.job_timeout). Freerouting before 2.4 "
+                            "stops at the budget but writes nothing; use 2.4 or later."
+                            if job_timeout
+                            else ". No time budget was passed to it (jobTimeout)."
+                        )
+                    ),
                     "attempts_completed": idx,
                 }
             except Exception as e:
@@ -1389,12 +1457,14 @@ class FreeroutingCommands:
                 ses_text = fh.read()
             score_info = _score_ses(ses_text, target_nets)
             score = score_info["score"]
+            budget_reached = _TIME_BUDGET_MARKER in ((proc.stdout or "") + (proc.stderr or ""))
             attempt_results.append(
                 {
                     "attempt": idx + 1,
                     "max_passes": attempt_passes,
                     "elapsed_seconds": attempt_elapsed,
                     "ok": True,
+                    "time_budget_reached": budget_reached,
                     **score_info,
                 }
             )
@@ -1408,6 +1478,7 @@ class FreeroutingCommands:
                 best_score = score
                 best_attempt_idx = idx
                 best_proc_stdout = proc.stdout or ""
+                best_budget_reached = budget_reached
                 # Snapshot the SES that produced this score so later
                 # attempts (which overwrite ses_path) don't clobber it.
                 shutil.copy2(ses_path, best_ses_path)
@@ -1519,6 +1590,8 @@ class FreeroutingCommands:
             },
             "netClasses": netclass_report,
             "freerouting_stdout": best_proc_stdout[:1000],
+            "job_timeout_seconds": job_timeout,
+            "time_budget_reached": best_budget_reached,
         }
         if attempts > 1:
             response["attempts"] = attempt_results
