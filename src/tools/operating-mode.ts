@@ -96,6 +96,7 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set<string>([
   // Board inspection. run_drc and get_drc_violations write a JSON report next
   // to the board; get_board_2d_view can write a preview image there.
   "check_clearance",
+  "audit_via_nets",
   "check_courtyard_overlaps",
   "check_freerouting",
   "check_placement_clearance",

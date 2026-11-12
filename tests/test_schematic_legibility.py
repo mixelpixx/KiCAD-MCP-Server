@@ -192,3 +192,58 @@ def test_a_labels_own_wire_is_not_text_over_wire(tmp_path):
         "(wire (pts (xy 50 50) (xy 70 50)))",
     )
     assert "text over wire" not in kinds(f)
+
+
+# R at (100, 100): body x 98.98-101.02, y 97.46-102.54; pin stubs at x 100, y 96.19-97.46 and
+# 102.54-103.81. The cross-symbol rules use those drawn lines, as the own-field rule does.
+def label(text, x, y, angle=0, justify="left"):
+    return (
+        f'(label "{text}" (at {x} {y} {angle}) '
+        f"(effects (font (size 1.27 1.27)) (justify {justify})))"
+    )
+
+
+def test_text_beside_another_parts_pin_stub_is_not_over_its_body(tmp_path):
+    """Inside the part's box with its stubs, but clear of every drawn line: the false
+    positives on StickHub, bus_pci and pic_programmer were all of this kind."""
+    f = sheet(tmp_path, symbol("T:R", "R1", 100, 100) + label("N", 100.6, 97.0))
+    assert "text over body" not in kinds(f)
+
+
+def test_text_across_another_parts_outline_is_over_its_body(tmp_path):
+    f = sheet(tmp_path, symbol("T:R", "R1", 100, 100) + label("ACROSS THE PART", 96.0, 100.6))
+    assert "text over body" in kinds(f)
+
+
+def test_text_inside_another_parts_outline_is_over_its_body(tmp_path):
+    """Clear of the lines but in the middle of the body: still drawn over the part."""
+    f = sheet(
+        tmp_path,
+        symbol("T:A", "A1", 100, 100)
+        + '(text "x" (at 103 100 0) (effects (font (size 1.27 1.27))))',
+    )
+    assert "text over body" in kinds(f)
+
+
+def test_pin_stubs_that_meet_are_not_body_over_body(tmp_path):
+    """Two parts whose stubs overlap (a power symbol on a pin end, parts joined pin to
+    pin) are not on top of each other; their drawn bodies are compared."""
+    meet = symbol("T:R", "R1", 100, 100) + symbol("T:R", "R2", 100, 106)
+    assert "body over body" not in kinds(sheet(tmp_path, meet))
+    stacked = symbol("T:R", "R1", 100, 100) + symbol("T:R", "R2", 100.5, 102)
+    assert "body over body" in kinds(sheet(tmp_path, stacked))
+
+
+def test_kicad_escapes_and_markup_are_measured_as_drawn():
+    from commands.schematic_legibility import display_text, text_box
+
+    assert display_text("VPP{slash}MCLR") == "VPP/MCLR"
+    assert display_text("A{backslash}B{dblquote}{lt}{gt}{colon}") == 'A\\B"<>:'
+    assert display_text("~{RESET}") == "RESET"
+    assert display_text("V_{in}^{2}") == "Vin2"
+    assert display_text("~{A_{1}}") == "A1"
+    assert display_text("{unknown}") == "{unknown}"  # not an escape: drawn as is
+    size, just = (1.27, 1.27), {"left"}
+    escaped = text_box(0, 0, 0, "VPP{slash}MCLR", size, just, is_label=True)
+    plain = text_box(0, 0, 0, "VPP/MCLR", size, just, is_label=True)
+    assert escaped == plain

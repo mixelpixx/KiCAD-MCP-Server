@@ -91,12 +91,42 @@ def justify(node):
     return {str(x) for x in j[1:]} if j else set()
 
 
+# KiCad stores characters that have a meaning in its text formats as {name}
+# escapes (EscapeString / UnescapeString): a net "VPP/MCLR" is saved as
+# "VPP{slash}MCLR". Measured raw, that was 14 characters wide instead of 8.
+_KICAD_ESCAPES = {
+    "slash": "/",
+    "backslash": "\\",
+    "dblquote": '"',
+    "quote": "'",
+    "lt": "<",
+    "gt": ">",
+    "colon": ":",
+    "tab": " ",
+    "return": " ",
+    "space": " ",
+    "brace": "{",
+}
+_ESCAPE_RE = re.compile(r"\{(" + "|".join(_KICAD_ESCAPES) + r")\}")
+# Overbar (~{RESET}), superscript (^{2}) and subscript (_{in}) markup: the braces
+# and the marker are not drawn; the inner text is (KiCad's markup parser).
+_MARKUP_RE = re.compile(r"[~^_]\{([^{}]*)\}")
+
+
+def display_text(text):
+    """The characters KiCad draws for a stored text: markup stripped, escapes decoded."""
+    prev = None
+    while prev != text:  # nested markup: ~{A_{1}}
+        prev, text = text, _MARKUP_RE.sub(r"\1", text)
+    return _ESCAPE_RE.sub(lambda m: _KICAD_ESCAPES[m.group(1)], text)
+
+
 def text_box(x, y, angle, text, size, just, label=False, is_label=False):
     """Axis-aligned box of a text anchored at (x, y).
 
     label: has a flag outline (global/hierarchical); is_label: any net label.
     """
-    w = text_width(text, size[0])
+    w = text_width(display_text(text), size[0])
     h = text_height(size[1])
     if label:
         w += size[0] * LABEL_FLAG  # flag / shape around global & hierarchical labels
@@ -245,8 +275,12 @@ def lib_segments(sym_def, unit):
     return segs
 
 
-def lib_bbox(sym_def, unit):
-    """Local bbox (lib coords, y up) of a lib symbol's graphics for one unit."""
+def lib_bbox(sym_def, unit, pins=True):
+    """Local bbox (lib coords, y up) of a lib symbol's graphics for one unit.
+
+    pins=False leaves the pin stubs out: the drawn body only. A resistor's box with
+    its stubs is twice as long as the rectangle, and text or a power symbol in the
+    empty space beside a stub is not over the part."""
     xs, ys = [], []
 
     def pts(node):
@@ -272,7 +306,7 @@ def lib_bbox(sym_def, unit):
                 if p:
                     xs.append(float(p[1]))
                     ys.append(float(p[2]))
-        elif tag == "pin":
+        elif tag == "pin" and pins:
             x, y, a = at_of(node)
             ln = float(first(node, "length")[1]) if first(node, "length") else 2.54
             xs.extend([x, x + ln * math.cos(math.radians(a))])
@@ -367,7 +401,9 @@ def collect(path):
             lb = lib_bbox(sd, unit)
             if lb:
                 segs = place_segments(lib_segments(sd, unit), x, y, rot, mirror)
-                bodies.append((ref, place_box(lb, x, y, rot, mirror), segs))
+                core = lib_bbox(sd, unit, pins=False)
+                core_box = place_box(core, x, y, rot, mirror) if core else None
+                bodies.append((ref, place_box(lb, x, y, rot, mirror), segs, core_box))
         for prop in find(sym, "property"):
             if hidden(prop) or str(prop[1]) not in ("Reference", "Value") or not str(prop[2]):
                 continue
@@ -406,7 +442,7 @@ def collect(path):
             )
     for t in find(data, "text"):
         x, y, a = at_of(t)
-        lines = str(t[1]).split("\n")
+        lines = display_text(str(t[1])).split("\n")
         size = text_size(t)
         w = text_width(max(lines, key=len), size[0])
         line_h = size[1] * 1.35
@@ -436,7 +472,9 @@ def check(path):
     frame = (10, 10, pw - 10, ph - 10)
     title = (pw - 122, ph - 47, pw - 10, ph - 10)  # KiCad default title block, approx.
     problems = [("upside down", n, b) for n, b in upside]
-    items = [("body", n, b, n) for n, b, _ in bodies] + [("text", n, b, o) for n, b, o in texts]
+    items = [("body", n, b, n) for n, b, _s, _c in bodies] + [
+        ("text", n, b, o) for n, b, o in texts
+    ]
     for kind, name, box, owner in items:
         if overlap(box, title):
             problems.append(("on title block", name, box))
@@ -452,7 +490,7 @@ def check(path):
     for n, tb, owner in texts:
         # the text's interior: a line that only touches its edge is not across it
         ib = (tb[0] + 0.3, tb[1] + 0.3, tb[2] - 0.3, tb[3] - 0.3)
-        for bn, bb, bs in bodies:
+        for bn, bb, bs, core in bodies:
             if bn == owner:
                 # A symbol's own field may sit inside its body (an IC's name;
                 # Device:R's value at (0 0 90) inside its rectangle) or beside
@@ -465,7 +503,17 @@ def check(path):
                 if ib[0] < ib[2] and ib[1] < ib[3] and any(segment_crosses_box(s, ib) for s in bs):
                     problems.append(("field over own body", n, tb))
                 continue
-            if overlap(tb, bb, pad=0.3):
+            # Another symbol: the same test on its drawn lines (pin stubs included,
+            # since text across a stub is drawn over it), plus text centred inside
+            # its outline. Its box with the stubs is mostly empty space beside the
+            # pins: on KiCad's StickHub demo all 14 box-based reports were text
+            # clearing a neighbour's stub, none visible on the render.
+            crosses = (
+                ib[0] < ib[2] and ib[1] < ib[3] and any(segment_crosses_box(s, ib) for s in bs)
+            )
+            cx, cy = (tb[0] + tb[2]) / 2, (tb[1] + tb[3]) / 2
+            inside = core is not None and core[0] < cx < core[2] and core[1] < cy < core[3]
+            if crosses or inside:
                 problems.append(("text over body", f"{n} / {bn}", tb))
     for n, tb, owner in texts:
         # a wire through the middle of a text (not one that only touches its edge,
@@ -482,7 +530,10 @@ def check(path):
                 break
     for i in range(len(bodies)):
         for j in range(i + 1, len(bodies)):
-            if overlap(bodies[i][1], bodies[j][1], pad=0.3):
+            # drawn bodies only: two parts whose pin stubs meet (a wire-less
+            # connection, or a power symbol on a pin end) are not on top of each other
+            ci, cj = bodies[i][3], bodies[j][3]
+            if ci and cj and overlap(ci, cj, pad=0.3):
                 problems.append(
                     ("body over body", f"{bodies[i][0]} / {bodies[j][0]}", bodies[i][1])
                 )

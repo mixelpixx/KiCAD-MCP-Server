@@ -20,6 +20,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 from commands.dynamic_symbol_loader import DynamicSymbolLoader
 
 
+@pytest.fixture(autouse=True)
+def _isolated_kicad_config(monkeypatch):
+    """These tests place the user-global table under a fake home. The loader looks
+    in KICAD_CONFIG_HOME, APPDATA and XDG_CONFIG_HOME before the home directory (as
+    KiCad does), so a developer machine with KiCad installed would hide the fake
+    table behind its real one, and the tests would read the real KiCad config, which
+    tests never do. Clear all three so the tests see only what they lay out.
+
+    ``tests/conftest.py`` does the same for every test in mock mode; this fixture
+    keeps these tests isolated on their own, in every mode."""
+    monkeypatch.delenv("KICAD_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+
+
 def _write_lib(tmp_path: Path, name: str, symbols: list) -> Path:
     """Write a minimal .kicad_sym file with the given symbol names."""
     parts = [f"(kicad_symbol_lib (version 20231120) (generator test)"]
