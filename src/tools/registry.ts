@@ -247,6 +247,7 @@ export const toolCategories: ToolCategory[] = [
       "lint_schematic_cosmetic",
       "lint_offgrid",
       "snap_to_grid",
+      "check_schematic_legibility",
       "find_overlapping_elements",
       "find_wires_crossing_symbols",
       "list_floating_labels",
