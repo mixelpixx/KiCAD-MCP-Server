@@ -33,17 +33,21 @@ from utils.project_netclasses import load_project_net_classes  # noqa: E402
 def test_writer_records_the_nets_own_pattern() -> None:
     data = apply_net_assignment_to_project_settings({}, "/TERM NEG", "TERMNEG")
     assert data["net_settings"]["netclass_patterns"] == [
-        {"netclass": "TERMNEG", "pattern": r"/TERM\ NEG"}
+        {"netclass": "TERMNEG", "pattern": "/TERM NEG"}
     ]
 
 
 def test_pattern_escapes_regex_metacharacters() -> None:
     """``HV+`` as a pattern is the regex "H then one or more V": it captures ``HV``
-    and ``HVV``. The record must be the escaped form, and a plain name stays as is."""
+    and ``HVV``. The record must be the literal form, and a plain name stays as is."""
     assert netclass_pattern_for_net("HV+") == r"HV\+"
     assert netclass_pattern_for_net("/SPI.CLK") == r"/SPI\.CLK"
-    assert netclass_pattern_for_net("Net-(R1-Pad1)") == r"Net\-\(R1\-Pad1\)"
+    assert netclass_pattern_for_net("Net-(R1-Pad1)") == r"Net-\(R1-Pad1\)"
     assert netclass_pattern_for_net("PWR") == "PWR"
+    # braces and $ as bracket classes: KiCad's engine reads neither \{ \} nor a trailing \$ literally
+    assert netclass_pattern_for_net("~{RESET}") == "~[{]RESET[}]"
+    assert netclass_pattern_for_net("FOO$") == "FOO[$]"
+    assert netclass_pattern_for_net("/TERM NEG") == "/TERM NEG"
     for name in ("HV+", "HV", "HVV", "/SPI.CLK", "/SPIxCLK", "Net-(R1-Pad1)", "Net-R1-Pad1"):
         pattern = re.compile("^" + netclass_pattern_for_net("HV+") + "$")
         assert bool(pattern.match(name)) == (name == "HV+"), name
@@ -76,7 +80,7 @@ def test_existing_user_patterns_are_kept() -> None:
     data = {"net_settings": {"netclass_patterns": [{"netclass": "Power", "pattern": "+*V"}]}}
     apply_net_assignment_to_project_settings(data, "/TERM NEG", "TERMNEG")
     assert {"netclass": "Power", "pattern": "+*V"} in data["net_settings"]["netclass_patterns"]
-    assert {"netclass": "TERMNEG", "pattern": r"/TERM\ NEG"} in data["net_settings"][
+    assert {"netclass": "TERMNEG", "pattern": "/TERM NEG"} in data["net_settings"][
         "netclass_patterns"
     ]
 
@@ -94,5 +98,5 @@ def test_membership_survives_a_sync_that_empties_the_derived_map(tmp_path: Path)
 
     loaded = load_project_net_classes(str(pro))
     assert loaded["assignments"] == {}
-    assert (r"/TERM\ NEG", "TERMNEG") in loaded["patterns"]
-    assert (r"/HV\ PWR/CAN\ GND", "PACK") in loaded["patterns"]
+    assert ("/TERM NEG", "TERMNEG") in loaded["patterns"]
+    assert ("/HV PWR/CAN GND", "PACK") in loaded["patterns"]

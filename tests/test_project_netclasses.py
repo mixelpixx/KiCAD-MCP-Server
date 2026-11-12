@@ -227,7 +227,7 @@ def test_apply_expresses_explicit_assignments_as_exact_patterns() -> None:
             "assignments": {"Net-(D1-Pad2)": ["HV"]},
         }
     )
-    assert board.net_settings.pattern_assignments == [(r"Net\-\(D1\-Pad2\)", "HV")]
+    assert board.net_settings.pattern_assignments == [(r"Net-\(D1-Pad2\)", "HV")]
     assert report["assignments"] == 1
 
 

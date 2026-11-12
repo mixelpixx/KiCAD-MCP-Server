@@ -2,6 +2,7 @@
 Design rules command implementations for KiCAD interface
 """
 
+import json
 import logging
 import math
 import os
@@ -289,6 +290,133 @@ class DesignRuleCommands:
                 "errorDetails": str(e),
             }
 
+    def set_voltage_clearance_rules(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Clearance/creepage rules graded by working voltage between net classes.
+
+        See ``utils.voltage_rules`` for the model and the KiCad behaviours it
+        relies on. Writes a managed block at the end of the board's
+        ``.kicad_dru``. A re-run replaces that block and leaves every other
+        rule untouched.
+        """
+        from utils.voltage_rules import (
+            VoltageRuleError,
+            plan_rules,
+            render_block,
+            unsupported_kicad_message,
+            write_rules,
+        )
+
+        try:
+            # KiCad 8 has neither the creepage constraint nor hasNetclass(), and
+            # it drops a .kicad_dru it cannot parse as a whole: writing the
+            # block there would silently switch off the user's own rules too.
+            try:
+                build_version = pcbnew.GetBuildVersion()
+            except Exception:
+                build_version = None
+            unsupported = unsupported_kicad_message(build_version)
+            if unsupported:
+                return {
+                    "success": False,
+                    "message": "KiCad version not supported",
+                    "errorDetails": unsupported,
+                    "kicadVersion": str(build_version),
+                }
+
+            board_path = params.get("boardPath")
+            if not board_path and self.board:
+                try:
+                    board_path = self.board.GetFileName()
+                except Exception:
+                    board_path = None
+            dru_path = resolve_dru_path(board_path)
+            if not dru_path:
+                return {
+                    "success": False,
+                    "message": "No board file",
+                    "errorDetails": "Pass boardPath (a .kicad_pcb) or load a board that has been saved",
+                }
+
+            classes = params.get("classes") or []
+            other = params.get("otherNetsVoltage", 0)
+            try:
+                plan = plan_rules(classes, params.get("spacing") or [], params.get("pairs"), other)
+                names = [c["name"] for c in classes]
+                block = render_block(
+                    plan, names, exclude_unconnected=bool(params.get("excludeUnconnectedNets"))
+                )
+            except VoltageRuleError as exc:
+                return {
+                    "success": False,
+                    "message": "Invalid voltage rules",
+                    "errorDetails": str(exc),
+                }
+
+            # A rule naming a class the project doesn't define matches nothing,
+            # and KiCad doesn't report it. Say so.
+            warnings: List[str] = []
+            pro_path = os.path.splitext(board_path)[0] + ".kicad_pro"
+            defined: Optional[set] = None
+            try:
+                with open(pro_path, "r", encoding="utf-8") as f:
+                    pro = json.load(f)
+                defined = {c.get("name") for c in pro.get("net_settings", {}).get("classes", [])}
+            except (OSError, ValueError):
+                warnings.append(f"Could not read {pro_path} to check the class names")
+            if defined is not None:
+                missing = [n for n in names if n not in defined]
+                if missing:
+                    warnings.append(
+                        "Not defined in the project, so their rules match nothing until they "
+                        f"are created (create_netclass): {', '.join(missing)}"
+                    )
+
+            # kicad-cli 10.0.8 DRC crashes (SIGSEGV, no report) when a creepage
+            # rule is active on a board with no Edge.Cuts outline.
+            if any("creepage" in e for e in plan):
+                try:
+                    with open(board_path, "r", encoding="utf-8") as f:
+                        has_outline = '(layer "Edge.Cuts")' in f.read()
+                except OSError:
+                    has_outline = True  # can't tell; don't warn on a guess
+                if not has_outline:
+                    warnings.append(
+                        "The board has no Edge.Cuts outline. Creepage is measured along the "
+                        "board, and kicad-cli DRC 10.0.8 crashes (SIGSEGV) on a creepage rule "
+                        "without one. Add the outline before running DRC."
+                    )
+
+            if params.get("dryRun"):
+                return {
+                    "success": True,
+                    "message": f"{len(plan)} rules planned (dry run, nothing written)",
+                    "rules": plan,
+                    "druText": block,
+                    "warnings": warnings,
+                }
+            try:
+                written = write_rules(dru_path, block)
+            except VoltageRuleError as exc:
+                return {"success": False, "message": "Rules not written", "errorDetails": str(exc)}
+
+            return {
+                "success": True,
+                "message": (
+                    f"Wrote {len(plan)} voltage rules to {written['druFile']}; "
+                    "they apply from the next DRC run"
+                ),
+                "druFile": written["druFile"],
+                "rules": plan,
+                "warnings": warnings,
+            }
+        except Exception as e:
+            logger.error(f"Error setting voltage rules: {str(e)}")
+            return {
+                "success": False,
+                "message": "Failed to set voltage rules",
+                "errorDetails": str(e),
+            }
+
     def assign_net_to_class(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Assign an existing net to an existing net class.
 
@@ -398,6 +526,44 @@ class DesignRuleCommands:
                 "message": "Failed to assign net to class",
                 "errorDetails": str(e),
             }
+
+    def audit_via_nets(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Compare every via's net in the saved board with a reference board.
+
+        ``reference`` is a board file or a git revision of the same file
+        (``HEAD``, ``HEAD~1``, a sha). The board compared is the file on disk,
+        because the failure this catches happens on save. See
+        ``utils/via_audit.py``.
+        """
+        from utils.via_audit import audit_via_nets
+
+        try:
+            reference = params.get("reference")
+            if not reference:
+                return {
+                    "success": False,
+                    "message": "Failed: reference is required (a board file or a git revision)",
+                }
+            board_path = params.get("boardPath")
+            note = None
+            if not board_path:
+                if not self.board or not self.board.GetFileName():
+                    return {
+                        "success": False,
+                        "message": "Failed: no boardPath given and no saved board is loaded",
+                    }
+                board_path = self.board.GetFileName()
+                note = (
+                    "Compared the board file on disk; unsaved edits to the loaded board "
+                    "are not included. Save first to audit them."
+                )
+            result = audit_via_nets(board_path, str(reference))
+            if note and result.get("success"):
+                result["note"] = note
+            return result
+        except Exception as e:
+            logger.error(f"Error auditing via nets: {e}")
+            return {"success": False, "message": "Failed to audit via nets", "errorDetails": str(e)}
 
     def check_clearance(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Check the measured clearance between two PCB items against the board's

@@ -195,6 +195,12 @@ def _two_track_project(tmp_path: Path):
     cli = shutil.which("kicad-cli")
     if not cli:
         pytest.skip("kicad-cli not on PATH")
+    if not hasattr(pcbnew.NET_SETTINGS, "SetNetclassPatternAssignment"):
+        pytest.skip(
+            "KiCad 8: SaveBoard rewrites the .kicad_pro from in-memory NET_SETTINGS, which Python "
+            "cannot reach on 8, so the membership the tool writes is dropped by the save; the tool "
+            "warns instead (KICAD8_MEMBERSHIP_WARNING)"
+        )
     made = ProjectCommands().create_project({"name": "netclass_drc", "path": str(tmp_path)})
     board_path = Path(made["project"]["boardPath"])
     board = pcbnew.LoadBoard(str(board_path))
@@ -292,6 +298,78 @@ def test_assign_net_to_class_moves_a_net_between_classes(tmp_path: Path) -> None
     settings = board.GetDesignSettings().m_NetSettings
     if hasattr(settings, "GetEffectiveNetClass"):
         assert settings.GetEffectiveNetClass("HV_BUS").GetName() == "LV"
+
+
+def test_directive_membership_does_not_become_a_pattern(tmp_path: Path) -> None:
+    """netclass_assignments come from schematic directives. The in-memory rebuild used to push
+    them in as patterns too, and KiCad 9's next SaveBoard writes memory back to
+    netclass_patterns, so a directive's membership became a permanent pattern that outlived the
+    directive (seen on 9.0.9). Only the tool's own net may come back as a pattern."""
+    import json
+
+    import pcbnew
+    from commands.design_rules import DesignRuleCommands
+    from commands.routing import RoutingCommands
+
+    board, board_path, _cli = _two_track_project(tmp_path)
+    assert RoutingCommands(board).create_netclass({"name": "HV", "clearance": 5.0})["success"]
+    pcbnew.SaveBoard(str(board_path), board)
+    pro = board_path.with_suffix(".kicad_pro")
+    data = json.loads(pro.read_text())
+    data["net_settings"]["netclass_assignments"] = {"LV_SIG": ["HV"]}  # as a sync writes it
+    pro.write_text(json.dumps(data, indent=2))
+
+    board = pcbnew.LoadBoard(str(board_path))
+    result = DesignRuleCommands(board).assign_net_to_class({"net": "HV_BUS", "netClass": "HV"})
+    assert result["success"] is True, result
+    pcbnew.SaveBoard(str(board_path), board)
+
+    patterns = json.loads(pro.read_text())["net_settings"].get("netclass_patterns") or []
+    assert {"netclass": "HV", "pattern": "HV_BUS"} in patterns
+    assert not [p for p in patterns if p.get("pattern") == "LV_SIG"], patterns
+
+
+def test_add_via_keeps_its_net_inside_another_nets_zone(tmp_path: Path) -> None:
+    """A via placed on its own inside a zone of another net used to be written to the file on
+    the zone's net: a non-free via takes its net from the copper it touches when the board is
+    saved. add_via now makes a free via, as KiCad's Add Free-Standing Via does."""
+    import pcbnew
+    from commands.routing import RoutingCommands
+
+    board = pcbnew.BOARD()
+    for name in ("PLANE", "SIG"):
+        board.Add(pcbnew.NETINFO_ITEM(board, name))
+    zone = pcbnew.ZONE(board)
+    zone.SetLayer(pcbnew.B_Cu)
+    zone.SetNet(board.FindNet("PLANE"))
+    outline = zone.Outline()
+    outline.NewOutline()
+    for x, y in ((0, 0), (20, 0), (20, 20), (0, 20)):
+        outline.Append(pcbnew.FromMM(x), pcbnew.FromMM(y))
+    board.Add(zone)
+    # Save and reload before filling: ZONE_FILLER on a bare in-memory BOARD() segfaults on
+    # KiCad 9 (no project attached). A board on disk carries its last fill, so the via lands
+    # on filled copper, as it would on a real board.
+    seed = tmp_path / "seed.kicad_pcb"
+    pcbnew.SaveBoard(str(seed), board)
+    board = pcbnew.LoadBoard(str(seed))
+    pcbnew.ZONE_FILLER(board).Fill(board.Zones())
+    # KiCad 9 drops nets that nothing uses when it saves; SIG has no items yet.
+    if not board.FindNet("SIG"):
+        board.Add(pcbnew.NETINFO_ITEM(board, "SIG"))
+
+    result = RoutingCommands(board).add_via(
+        {"position": {"x": 10, "y": 10, "unit": "mm"}, "net": "SIG"}
+    )
+    assert result["success"] is True, result
+    assert result["via"]["net"] == "SIG"
+
+    path = tmp_path / "via_in_zone.kicad_pcb"
+    pcbnew.SaveBoard(str(path), board)
+    reloaded = pcbnew.LoadBoard(str(path))
+    vias = [t for t in reloaded.GetTracks() if t.GetClass() == "PCB_VIA"]
+    assert len(vias) == 1
+    assert vias[0].GetNetname() == "SIG", "the via was saved on the zone's net"
 
 
 def test_run_drc_reports_unconnected_pads_with_real_kicad_cli(tmp_path: Path) -> None:

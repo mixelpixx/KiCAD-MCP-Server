@@ -58,28 +58,15 @@ class LibraryManager:
         logger.info(f"Loaded {len(self.libraries)} footprint libraries")
 
     def _get_global_fp_lib_table(self) -> Optional[Path]:
-        """Get path to global fp-lib-table file"""
-        # Try different possible locations
-        kicad_config_paths = [
-            Path.home() / ".config" / "kicad" / "10.0" / "fp-lib-table",
-            Path.home() / ".config" / "kicad" / "9.0" / "fp-lib-table",
-            Path.home() / ".config" / "kicad" / "8.0" / "fp-lib-table",
-            Path.home() / ".config" / "kicad" / "fp-lib-table",
-            # Windows paths
-            Path.home() / "AppData" / "Roaming" / "kicad" / "10.0" / "fp-lib-table",
-            Path.home() / "AppData" / "Roaming" / "kicad" / "9.0" / "fp-lib-table",
-            Path.home() / "AppData" / "Roaming" / "kicad" / "8.0" / "fp-lib-table",
-            # macOS paths
-            Path.home() / "Library" / "Preferences" / "kicad" / "10.0" / "fp-lib-table",
-            Path.home() / "Library" / "Preferences" / "kicad" / "9.0" / "fp-lib-table",
-            Path.home() / "Library" / "Preferences" / "kicad" / "8.0" / "fp-lib-table",
-        ]
+        """The global fp-lib-table to read.
 
-        for path in kicad_config_paths:
-            if path.exists():
-                return path
+        Shares discovery with the table editor: it honours ``KICAD_CONFIG_HOME``,
+        ``XDG_CONFIG_HOME`` and ``APPDATA``. Before KiCad has created a user
+        table, it falls back to KiCad's stock template table.
+        """
+        from commands.library_tables import global_table_for_reading
 
-        return None
+        return global_table_for_reading("footprint")
 
     def _parse_fp_lib_table(
         self,
@@ -350,13 +337,16 @@ class LibraryManager:
             logger.warning(f"Footprint not found in any library: {footprint_name}")
             return None
 
-    def search_footprints(self, pattern: str, limit: int = 20) -> List[Dict[str, str]]:
+    def search_footprints(
+        self, pattern: str, limit: int = 20, library: Optional[str] = None
+    ) -> List[Dict[str, str]]:
         """
         Search for footprints matching a pattern
 
         Args:
             pattern: Search pattern (supports wildcards *, case-insensitive)
             limit: Maximum number of results to return
+            library: Only search this library nickname (case-insensitive)
 
         Returns:
             List of dicts with 'library', 'footprint', and 'full_name' keys
@@ -368,7 +358,11 @@ class LibraryManager:
         regex_pattern = pattern_lower.replace("*", ".*")
         regex = re.compile(regex_pattern)
 
-        for library_nickname in self.libraries.keys():
+        nicknames = list(self.libraries.keys())
+        if library:
+            nicknames = [n for n in nicknames if n.lower() == library.lower()]
+
+        for library_nickname in nicknames:
             footprints = self.list_footprints(library_nickname)
 
             for footprint in footprints:
@@ -444,16 +438,10 @@ class LibraryCommands:
             limit = params.get("limit", 20)
             library_filter = params.get("library")
 
-            results = self.library_manager.search_footprints(
-                pattern, limit * 10 if library_filter else limit
-            )
-
-            # Filter by library if specified
-            if library_filter:
-                results = [
-                    r for r in results if r.get("library", "").lower() == library_filter.lower()
-                ]
-                results = results[:limit]
+            # Restrict the scan itself: filtering a capped all-library result
+            # afterwards dropped every match from libraries listed late in the
+            # table (e.g. a user library after the ~150 stock ones).
+            results = self.library_manager.search_footprints(pattern, limit, library_filter)
 
             return {
                 "success": True,

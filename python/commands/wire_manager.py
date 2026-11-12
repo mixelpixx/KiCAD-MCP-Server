@@ -17,7 +17,7 @@ from typing import Any, List, Optional, Tuple
 import sexpdata
 from sexpdata import Symbol
 from utils.sexpr_format import dumps as kicad_dumps
-from utils.sexpr_format import escape_sexpr_string
+from utils.sexpr_format import escape_sexpr_string, match_paren
 
 logger = logging.getLogger("kicad_interface")
 
@@ -1226,16 +1226,7 @@ class WireManager:
         # \b keeps (sheet_instances from matching ("_" is a word character).
         for match in re.finditer(r"\(sheet\b", content):
             start = match.start()
-            depth = 0
-            end = -1
-            for i in range(start, len(content)):
-                if content[i] == "(":
-                    depth += 1
-                elif content[i] == ")":
-                    depth -= 1
-                    if depth == 0:
-                        end = i  # index of the block's closing ")"
-                        break
+            end = match_paren(content, start)  # index of the block's closing ")"
             if end == -1:
                 break  # unbalanced parens; nothing sane to do
             if not sheetname_pattern.search(content, start, end):

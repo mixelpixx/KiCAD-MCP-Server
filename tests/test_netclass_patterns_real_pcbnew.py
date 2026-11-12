@@ -41,6 +41,11 @@ CASES = [
     ("Net-(R1-Pad1)", "NCPAT_PAREN", ["Net-R1-Pad1"]),
     ("/TERM NEG", "NCPAT_SPACE", ["/TERMxNEG"]),
     ("+5V", "NCPAT_LEADPLUS", ["5V", "+5VA"]),
+    # overbar names: re.escape's \{...\} matched nothing in KiCad's engine, not even the net itself
+    ("~{NCPAT_RESET}", "NCPAT_OVERBAR", ["~NCPAT_RESET", "~{NCPAT_RESETX}"]),
+    ("/MCU/~{NCPAT_CS}", "NCPAT_OVERBAR_PATH", ["/MCU/~NCPAT_CS"]),
+    # a trailing $: KiCad appends its end anchor only when a pattern does not end in $
+    ("NCPAT_FOO$", "NCPAT_DOLLAR", ["NCPAT_FOO$X", "NCPAT_FOO"]),
 ]
 
 

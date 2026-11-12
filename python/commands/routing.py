@@ -269,7 +269,7 @@ def apply_net_assignment_to_project_settings(
     # 6-layer HV board: 21 voltage-class assignments dropped, every clearance rule
     # keyed on those classes stopped matching, and DRC still passed.
     #
-    # The pattern is the escaped name (see netclass_pattern_for_net): KiCad reads
+    # The pattern is the name made literal for KiCad (see netclass_pattern_for_net): KiCad reads
     # a pattern as a regular expression, so the raw name would also capture other
     # nets. A re-assignment updates the net's entry in place; an entry holding the
     # raw name (what an earlier build of this code wrote) is the same net's record
@@ -280,7 +280,11 @@ def apply_net_assignment_to_project_settings(
         patterns = []
         net_settings["netclass_patterns"] = patterns
     for entry in patterns:
-        if isinstance(entry, dict) and entry.get("pattern") in (pattern, net_name):
+        if isinstance(entry, dict) and entry.get("pattern") in (
+            pattern,
+            net_name,
+            re.escape(net_name),  # what this tool wrote before the KiCad-literal form
+        ):
             entry["pattern"] = pattern
             entry["netclass"] = class_name
             break
@@ -341,10 +345,15 @@ def register_netclass_in_project_settings(board: Any, name: str, netclass: Any) 
 
 
 def _project_file_patterns(pro_path: Optional[str]) -> Optional[List[Tuple[str, str]]]:
-    """Every pattern assignment the project file holds, as ``(pattern, class)``:
-    the ``netclass_patterns`` entries plus ``netclass_assignments`` as escaped
-    names, the same view ``apply_net_classes_to_board`` pushes for a DSN export.
-    None when there is no readable project file."""
+    """The ``netclass_patterns`` entries the project file holds, as
+    ``(pattern, class)``. None when there is no readable project file.
+
+    ``netclass_assignments`` is left out on purpose. KiCad derives those
+    entries from the schematic's net-class directives, and on KiCad 9 the next
+    ``SaveBoard`` writes every in-memory pattern back to ``netclass_patterns``:
+    pushed in as patterns, a directive-derived membership became a permanent
+    pattern that outlived its directive (checked on 9.0.9; 10.0.8 leaves the
+    file alone on save)."""
     try:
         loaded = load_project_net_classes(pro_path)
     except ValueError:
@@ -355,12 +364,14 @@ def _project_file_patterns(pro_path: Optional[str]) -> Optional[List[Tuple[str, 
     for pattern, class_name in loaded["patterns"]:
         if (pattern, class_name) not in patterns:
             patterns.append((pattern, class_name))
-    for net_name, class_names in loaded["assignments"].items():
-        for class_name in class_names:
-            entry = (netclass_pattern_for_net(net_name), class_name)
-            if entry not in patterns:
-                patterns.append(entry)
     return patterns
+
+
+KICAD8_MEMBERSHIP_WARNING = (
+    "KiCad 8: the net class membership was written to the project file, but KiCad 8's next "
+    "board save rewrites the project file from memory, which this server cannot reach on 8, "
+    "and drops it. Assign the class in KiCad's Board Setup, or use KiCad 9 or later."
+)
 
 
 def register_membership_in_project_settings(
@@ -394,8 +405,13 @@ def register_memberships_in_project_settings(
     warning, or None.
     """
     settings = _board_net_settings(board)
-    if settings is None or not hasattr(settings, "SetNetclassPatternAssignment"):
+    if settings is None:
         return None
+    if not hasattr(settings, "SetNetclassPatternAssignment"):
+        # KiCad 8: no pattern API from Python, and SaveBoard rewrites the .kicad_pro from the
+        # in-memory NET_SETTINGS, so the membership just written to the file does not survive it.
+        return KICAD8_MEMBERSHIP_WARNING
+
     try:
         if hasattr(settings, "ClearNetclassLabelAssignment"):
             for net_name in net_names:
@@ -1072,6 +1088,14 @@ class RoutingCommands:
             if net_obj is not None:
                 via.SetNet(net_obj)
 
+            # A via placed on its own is a free via, as KiCad's own "Add Free-Standing Via"
+            # makes it. A non-free via takes its net from the copper it touches when the
+            # board is saved: inside another net's zone, with no path to a pad of its own
+            # net yet, it was written to the file on the zone's net, so the via the reply
+            # described was not the via on the board.
+            if hasattr(via, "SetIsFree"):
+                via.SetIsFree(True)
+
             # Add via to board
             self.board.Add(via)
 
@@ -1088,7 +1112,7 @@ class RoutingCommands:
                     "drill": via.GetDrill() / 1000000,
                     "from_layer": from_layer,
                     "to_layer": to_layer,
-                    "net": net,
+                    "net": via.GetNetname(),
                 },
             }
 

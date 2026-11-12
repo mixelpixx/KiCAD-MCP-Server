@@ -138,28 +138,14 @@ class SymbolLibraryManager:
         logger.info(f"Loaded {len(self.libraries)} symbol libraries")
 
     def _get_global_sym_lib_table(self) -> Optional[Path]:
-        """Get path to global sym-lib-table file"""
-        # Try different possible locations (same as fp-lib-table but for symbols)
-        kicad_config_paths = [
-            Path.home() / ".config" / "kicad" / "10.0" / "sym-lib-table",
-            Path.home() / ".config" / "kicad" / "9.0" / "sym-lib-table",
-            Path.home() / ".config" / "kicad" / "8.0" / "sym-lib-table",
-            Path.home() / ".config" / "kicad" / "sym-lib-table",
-            # Windows paths
-            Path.home() / "AppData" / "Roaming" / "kicad" / "10.0" / "sym-lib-table",
-            Path.home() / "AppData" / "Roaming" / "kicad" / "9.0" / "sym-lib-table",
-            Path.home() / "AppData" / "Roaming" / "kicad" / "8.0" / "sym-lib-table",
-            # macOS paths
-            Path.home() / "Library" / "Preferences" / "kicad" / "10.0" / "sym-lib-table",
-            Path.home() / "Library" / "Preferences" / "kicad" / "9.0" / "sym-lib-table",
-            Path.home() / "Library" / "Preferences" / "kicad" / "8.0" / "sym-lib-table",
-        ]
+        """The global sym-lib-table to read.
 
-        for path in kicad_config_paths:
-            if path.exists():
-                return path
+        Same discovery as the table editor and the footprint side; see
+        ``library_tables.global_table_for_reading``.
+        """
+        from commands.library_tables import global_table_for_reading
 
-        return None
+        return global_table_for_reading("symbol")
 
     def _parse_sym_lib_table(
         self,
