@@ -6,6 +6,38 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **`sync_schematic_to_board` can replace changed footprints and delete
+  removed ones** (`replaceFootprints`, `deleteUnusedFootprints`), KiCad F8's
+  two opt-in options. Until now a footprint whose library ID changed in the
+  schematic was only reported, and a part deleted from the schematic stayed
+  on the board, so revising an existing board meant finishing the job by
+  hand.
+  - `replaceFootprints` loads the new footprint and keeps the old one's
+    reference, value, fields, symbol link, position, rotation, side and
+    lock, and the board's text layout: each field keeps its position, size,
+    layer and visibility, as KiCad's F8 does (replacing 53 parts on a real
+    board without this reset every reference to the library spot and put
+    every MPN on the silkscreen: 199 silk violations). The new pads get
+    their nets in the same sync.
+  - `deleteUnusedFootprints` removes footprints with no symbol. Board-only
+    footprints (mounting holes, logos) are kept, as KiCad keeps them, and so
+    are locked ones, which are reported.
+  - Footprints are matched to symbols by symbol path (UUID) before
+    reference, as KiCad does: after a re-annotation (R203 renamed to R299,
+    same symbol) the footprint is renamed in place and listed in
+    `footprints_renamed`, instead of being reported missing and, with
+    `deleteUnusedFootprints`, deleted. A footprint whose symbol path is a
+    schematic symbol's is never deleted, nor one whose symbol UUID matches a
+    symbol with no footprint at its own path. The UUID alone is not enough:
+    every instance of a reused sheet shares it, so a deleted instance's
+    footprints are deleted, not kept as the live instance's parts.
+  - Both options are refused while the board is open in KiCad (session
+    pinned to IPC), except under `dryRun`: the tool writes the board file
+    underneath the GUI, and KiCad's next save would overwrite the swaps and
+    deletions.
+  - Both work with `dryRun`, and the reply lists `footprints_replaced` and
+    `footprints_deleted`.
+
 - **`sync_schematic_to_board` can preview (`dryRun: true`).** The sync
   overwrites board values and fields with the schematic's and moves pads to
   the schematic's nets, as KiCad's F8 does. On a board edited after its last
