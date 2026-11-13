@@ -26,6 +26,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
     field updates and one pad that the sync would disconnect from a routed
     net. The pad came from a symbol that defines pin 1 differently in two
     units.
+
 ### Bug Fixes
 
 - **`assign_net_to_class` membership now survives Update PCB from Schematic**
@@ -44,7 +45,6 @@ All notable changes to the KiCAD MCP Server project are documented here.
   `netclass_assignments` too. Assignments made with an earlier version were
   lost on the first sync after they were made, so redo them (call
   `assign_net_to_class` again for each net) after upgrading.
-### Bug Fixes
 
 - **Backend failures reach the client as MCP errors.** Most tools return the
   backend's JSON as it is, so a `{"success": false, ...}` reply went out as a
