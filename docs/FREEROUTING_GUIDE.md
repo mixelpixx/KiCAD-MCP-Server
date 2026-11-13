@@ -108,6 +108,18 @@ Run the full autorouting workflow (export DSN, route, import SES).
 | `freeroutingJar` | string | No | ~/.kicad-mcp/freerouting.jar | Path to freerouting.jar |
 | `maxPasses` | number | No | 20 | Maximum routing passes |
 | `timeout` | number | No | 300 | Timeout in seconds |
+| `kicadRules` | boolean | No | true | Pass the board's `.kicad_dru` and `.kicad_pro` to Freerouting in `-de` (see below). `false` leaves them out |
+
+**KiCad custom rules.** A DSN carries only the net-class clearances. The board's custom rules
+(`.kicad_dru`: isolation between voltage domains, larger or smaller clearances in an area) and
+its minimum track width (`.kicad_pro`) are lost on the way, and the KiCad DRC then rejects
+copper that Freerouting thought was legal. Freerouting master after 2.5.0 reads both files
+itself (freerouting #1121, #1130), so `autoroute` stages copies beside the DSN and names them in
+`-de`. The reply's `kicad_rules` reports `applied` and `ignored` files and the rules Freerouting
+could only approximate (`warnings`: creepage applied as the same rule's clearance, a condition
+it cannot evaluate applied wherever it may match, constraint types it does not translate).
+Freerouting 2.5.0 and earlier log the files as unknown and route on; `kicad_rules.ignored` then
+lists them, with a note to check the result with KiCad's DRC.
 
 **Example:**
 
