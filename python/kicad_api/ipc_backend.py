@@ -68,6 +68,19 @@ _IPC_LAYER_BY_NUMBER: Dict[int, str] = {
 }
 
 
+def _open_board_path_from_kicad(kicad: Any) -> Optional[str]:
+    """Rebuild a PCB path from kipy's project directory and bare board filename."""
+    # kipy requires an explicit document type. A no-argument call raises TypeError.
+    from kipy.proto.common.types import DocumentType
+
+    for doc in kicad.get_open_documents(DocumentType.DOCTYPE_PCB):
+        name = str(getattr(doc, "board_filename", "") or "")
+        if name.endswith(".kicad_pcb"):
+            root = str(getattr(getattr(doc, "project", None), "path", "") or "")
+            return os.path.join(root, name) if root else name
+    return None
+
+
 def ipc_layer_name(layer: Any) -> str:
     """Canonical KiCad layer name for an IPC layer value.
 
@@ -154,6 +167,24 @@ def _keepout_polygon_mm(points: List[Dict[str, float]]) -> List[tuple[float, flo
             ):
                 raise ValueError("Keepout polygon must not cross itself")
     return vertices
+
+
+def _same_keepout_outline(
+    observed: List[tuple[float, float]], requested: List[tuple[float, float]]
+) -> bool:
+    """Match the same polygon regardless of its first vertex or winding."""
+    if len(observed) != len(requested):
+        return False
+    count = len(requested)
+    for order in (requested, list(reversed(requested))):
+        for offset in range(count):
+            if all(
+                abs(actual_axis - expected_axis) < 1e-6
+                for index, actual in enumerate(observed)
+                for actual_axis, expected_axis in zip(actual, order[(index + offset) % count])
+            ):
+                return True
+    return False
 
 
 def _same_angle(a_deg: float, b_deg: float, tol: float = 1e-6) -> bool:
@@ -371,15 +402,7 @@ class IPCBackend(KiCADBackend):
         if not self.is_connected():
             return None
         try:
-            # kipy requires an explicit doc_type; a no-arg call raises TypeError.
-            # DocumentSpecifier exposes board_filename + project.path, not .path.
-            from kipy.proto.common.types import DocumentType
-
-            for doc in self._kicad.get_open_documents(DocumentType.DOCTYPE_PCB):
-                name = str(getattr(doc, "board_filename", "") or "")
-                if name.endswith(".kicad_pcb"):
-                    root = str(getattr(getattr(doc, "project", None), "path", "") or "")
-                    return os.path.join(root, name) if root else name
+            return _open_board_path_from_kicad(self._kicad)
         except Exception as e:
             logger.debug(f"Could not read open documents via IPC: {e}")
         return None
@@ -528,6 +551,10 @@ class IPCBoardAPI(BoardAPI):
         self._board = None
         self._notify = notify_callback
         self._current_commit = None
+
+    def get_open_board_path(self) -> Optional[str]:
+        """Full path of the PCB document reported by this live IPC connection."""
+        return _open_board_path_from_kicad(self._kicad)
 
     def _get_board(self) -> Any:
         """Get board instance, connecting if needed."""
@@ -1702,8 +1729,10 @@ class IPCBoardAPI(BoardAPI):
 
         try:
             board = self._get_board()
-            live_path = board.document.board_filename
-            if not live_path or Path(live_path).resolve() != Path(board_path).resolve():
+            live_path = self.get_open_board_path()
+            if not live_path or os.path.normcase(
+                str(Path(live_path).resolve())
+            ) != os.path.normcase(str(Path(board_path).resolve())):
                 return {
                     "success": False,
                     "message": f"Requested board is not open in KiCad: {board_path}",
@@ -1795,12 +1824,7 @@ class IPCBoardAPI(BoardAPI):
                         observed_rule.keepout_footprints,
                     )
                 )
-                and len(observed_points) == len(vertices)
-                and all(
-                    abs(a - b) < 1e-6
-                    for actual, requested in zip(observed_points, vertices)
-                    for a, b in zip(actual, requested)
-                )
+                and _same_keepout_outline(observed_points, vertices)
             )
             response.update(
                 {

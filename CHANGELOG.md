@@ -18,6 +18,10 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **`add_copper_keepout` creates a copper-fill rule area through live KiCad IPC.**
+  It requires the board to be open in KiCad with the IPC API enabled, keeps
+  zone fills out while allowing tracks, vias, pads, and footprints, and refills
+  the zones after creation. Save the board afterwards with `save_project`.
 - **Operating modes: a readonly mode for review agents, and a manufacturing
   mode** (#443 and #444, @b0gdaniy). `KICAD_MCP_OPERATING_MODE=readonly`
   leaves only the tools that cannot change the design, the project, libraries

@@ -10,7 +10,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 pytest.importorskip("kipy.board_types")
-from kicad_api.ipc_backend import IPCBoardAPI  # noqa: E402
+from kicad_api.ipc_backend import IPCBoardAPI, _same_keepout_outline  # noqa: E402
 from kicad_interface import KiCADInterface  # noqa: E402
 from kipy.board_types import Zone  # noqa: E402
 from kipy.proto.board.board_types_pb2 import BoardLayer  # noqa: E402
@@ -26,7 +26,10 @@ BOARD_PATH = "/private/tmp/keepout-test.kicad_pcb"
 
 class FakeBoard:
     def __init__(self) -> None:
-        self.document = SimpleNamespace(board_filename=BOARD_PATH)
+        self.document = SimpleNamespace(
+            board_filename=Path(BOARD_PATH).name,
+            project=SimpleNamespace(path=str(Path(BOARD_PATH).parent)),
+        )
         self.created = []
         self.refills = 0
         self.refill_error = None
@@ -59,13 +62,17 @@ class FakeBoard:
 
 
 def api_for(board):
-    api = IPCBoardAPI(None, Mock())
+    kicad = Mock()
+    kicad.get_open_documents.return_value = [board.document]
+    api = IPCBoardAPI(kicad, Mock())
     api._board = board
     return api
 
 
 def test_creates_and_reads_back_copper_only_rule_area() -> None:
     board = FakeBoard()
+    assert board.document.board_filename == "keepout-test.kicad_pcb"
+    assert board.document.project.path == str(Path(BOARD_PATH).parent)
     result = api_for(board).add_copper_keepout(
         BOARD_PATH, "NFC coil", ["F.Cu", "In1.Cu", "B.Cu"], RECTANGLE
     )
@@ -118,6 +125,23 @@ def test_wrong_open_board_does_not_mutate() -> None:
     assert result["success"] is False
     assert "not open" in result["message"]
     assert board.created == []
+
+
+def test_same_filename_in_another_directory_does_not_mutate() -> None:
+    board = FakeBoard()
+    result = api_for(board).add_copper_keepout(
+        "/private/tmp/other/keepout-test.kicad_pcb", "NFC coil", ["F.Cu"], RECTANGLE
+    )
+    assert result["success"] is False
+    assert "not open" in result["message"]
+    assert board.created == []
+
+
+def test_readback_accepts_rotated_or_reversed_outline() -> None:
+    requested = [(point["x"], point["y"]) for point in RECTANGLE]
+    assert _same_keepout_outline(requested[2:] + requested[:2], requested)
+    assert _same_keepout_outline(list(reversed(requested)), requested)
+    assert not _same_keepout_outline(requested[:-1] + [(2.0, 8.0)], requested)
 
 
 def test_readback_mismatch_is_reported() -> None:
