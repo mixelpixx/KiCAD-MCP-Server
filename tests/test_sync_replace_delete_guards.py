@@ -100,10 +100,47 @@ def test_delete_never_removes_a_footprint_whose_symbol_uuid_is_in_the_netlist():
     assert deleted == ["R10", "R9"]
     assert board.deleted == ["R9", "R10"]
     assert {k["reference"]: k["reason"] for k in kept} == {
-        "R203": "its symbol UUID is schematic symbol R299; not deleted",
+        "R203": "its symbol path is schematic symbol R299's; not deleted",
         "R11": "locked; not deleted",
     }
     assert [fp.ref for fp in board.fps] == ["R203", "R1", "MH1", "R11"]
+
+
+@pytest.mark.unit
+def test_delete_removes_a_deleted_reused_sheet_instance():
+    """A reused sheet: U2 (/sheet-b) and U3 (/sheet-c) share symbol UUID sym-u.
+    Sheet instance C is deleted from the schematic. U3's footprint must go:
+    the only component with its UUID is U2, and U2 has its own footprint at
+    /sheet-b/sym-u. (Keyed on the UUID alone, U3 was kept as "U2's part".)"""
+    components = [c for c in COMPONENTS if c["reference"] != "U3"]
+    fps = [_Footprint("U2", "/sheet-b/sym-u"), _Footprint("U3", "/sheet-c/sym-u")]
+    board = _Board(fps)
+    with patch("commands.schematic_handlers.pcbnew", SimpleNamespace(FP_BOARD_ONLY=BOARD_ONLY)):
+        deleted, kept = _handlers()._delete_footprints_without_symbols(board, components)
+    assert deleted == ["U3"]
+    assert kept == []
+    assert [fp.ref for fp in board.fps] == ["U2"]
+
+
+@pytest.mark.unit
+def test_delete_keeps_a_stale_path_footprint_whose_symbol_is_unplaced():
+    """The case the UUID guard is for: the footprint's path is stale (sheet
+    instance re-created, /sheet-old), its reference is not in the netlist,
+    and the component with its symbol UUID (U5 at /sheet-new) has no
+    footprint on the board. It stays, and the reason names that component."""
+    components = [{"reference": "U5", "path": "/sheet-new/sym-v"}]
+    fps = [_Footprint("U4", "/sheet-old/sym-v")]
+    board = _Board(fps)
+    with patch("commands.schematic_handlers.pcbnew", SimpleNamespace(FP_BOARD_ONLY=BOARD_ONLY)):
+        deleted, kept = _handlers()._delete_footprints_without_symbols(board, components)
+    assert deleted == []
+    assert kept == [
+        {
+            "reference": "U4",
+            "reason": "its symbol UUID matches schematic symbol U5 (/sheet-new/sym-v), "
+            "which has no footprint at that path; not deleted",
+        }
+    ]
 
 
 def _make_iface(session_backend: str) -> Any:

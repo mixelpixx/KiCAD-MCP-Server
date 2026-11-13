@@ -8,7 +8,7 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 - **`sync_schematic_to_board` can replace changed footprints and delete
   removed ones** (`replaceFootprints`, `deleteUnusedFootprints`), KiCad F8's
-  two opt-in options. Until now a footprint whose name changed in the
+  two opt-in options. Until now a footprint whose library ID changed in the
   schematic was only reported, and a part deleted from the schematic stayed
   on the board, so revising an existing board meant finishing the job by
   hand.
@@ -26,8 +26,11 @@ All notable changes to the KiCAD MCP Server project are documented here.
     reference, as KiCad does: after a re-annotation (R203 renamed to R299,
     same symbol) the footprint is renamed in place and listed in
     `footprints_renamed`, instead of being reported missing and, with
-    `deleteUnusedFootprints`, deleted. A footprint whose symbol UUID matches
-    a schematic symbol is never deleted.
+    `deleteUnusedFootprints`, deleted. A footprint whose symbol path is a
+    schematic symbol's is never deleted, nor one whose symbol UUID matches a
+    symbol with no footprint at its own path. The UUID alone is not enough:
+    every instance of a reused sheet shares it, so a deleted instance's
+    footprints are deleted, not kept as the live instance's parts.
   - Both options are refused while the board is open in KiCad (session
     pinned to IPC), except under `dryRun`: the tool writes the board file
     underneath the GUI, and KiCad's next save would overwrite the swaps and

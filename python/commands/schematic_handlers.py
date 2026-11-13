@@ -3407,6 +3407,7 @@ class SchematicHandlersMixin:
                 f"{len(added_footprints)} footprints added, {len(added_nets)} nets added, "
                 f"{len(changed_pads)} pad nets changed, {len(cleared_pads)} cleared, "
                 f"{len(updated_footprints)} footprints updated, "
+                f"{len(renamed_footprints)} renamed, "
                 f"{len(replaced_footprints)} replaced, {len(deleted_footprints)} deleted"
             )
             if kept_footprints:
@@ -3875,19 +3876,37 @@ class SchematicHandlersMixin:
 
         KiCad's "Delete footprints with no symbols". Footprints marked
         board-only (mounting holes, logos, fiducials) are kept, as KiCad
-        keeps them, and so are locked ones, which are reported instead. A
-        footprint whose symbol UUID matches a schematic symbol is never
-        deleted either: it is that symbol's part, whatever its reference
-        says (the rename step normally renames it first).
+        keeps them, and so are locked ones, which are reported instead.
+
+        Two symbol-link guards keep a footprint whose reference is not in
+        the netlist (the rename step normally renames such a part first):
+        - its full symbol path is a netlist component's path: it is that
+          symbol's part, whatever its reference says;
+        - its symbol UUID matches a netlist component that has no footprint
+          at its own full path on the board: a stale path for a symbol that
+          is otherwise unplaced.
+        The UUID alone is not enough: every instance of a reused sheet
+        shares it, so a deleted instance's footprints (Q301) would match the
+        live instance's symbols (Q201), which already have their footprints.
         """
         from utils.board_items import delete_board_item
 
         refs = {c["reference"] for c in components if c.get("reference")}
-        symbol_refs: Dict[str, str] = {}
+        by_path: Dict[str, str] = {}
+        by_uuid: Dict[str, List[Tuple[str, str]]] = {}
         for c in components:
-            path = c.get("path") or ""
+            path = (c.get("path") or "").rstrip("/")
             if path and c.get("reference"):
-                symbol_refs[path.rstrip("/").rsplit("/", 1)[-1]] = c["reference"]
+                by_path[path] = c["reference"]
+                by_uuid.setdefault(path.rsplit("/", 1)[-1], []).append((path, c["reference"]))
+        claimed_paths = set()
+        for fp in board.GetFootprints():
+            try:
+                fp_path = fp.GetPath().AsString()
+            except Exception:
+                continue
+            if isinstance(fp_path, str) and fp_path:
+                claimed_paths.add(fp_path.rstrip("/"))
         board_only = getattr(pcbnew, "FP_BOARD_ONLY", 0)
         deleted: List[str] = []
         kept: List[Dict[str, str]] = []
@@ -3895,12 +3914,32 @@ class SchematicHandlersMixin:
             ref = fp.GetReference()
             if ref in refs:
                 continue
-            symbol_ref = symbol_refs.get(cls._board_symbol_uuid(fp))
-            if symbol_ref:
+            try:
+                fp_path = fp.GetPath().AsString()
+            except Exception:
+                fp_path = ""
+            fp_path = fp_path.rstrip("/") if isinstance(fp_path, str) else ""
+            if fp_path and fp_path in by_path:
                 kept.append(
                     {
                         "reference": ref,
-                        "reason": f"its symbol UUID is schematic symbol {symbol_ref}; not deleted",
+                        "reason": f"its symbol path is schematic symbol {by_path[fp_path]}'s; "
+                        "not deleted",
+                    }
+                )
+                continue
+            unplaced = [
+                (path, sym_ref)
+                for path, sym_ref in by_uuid.get(cls._board_symbol_uuid(fp), [])
+                if path not in claimed_paths
+            ]
+            if unplaced:
+                kept.append(
+                    {
+                        "reference": ref,
+                        "reason": "its symbol UUID matches schematic symbol "
+                        + ", ".join(f"{r} ({p})" for p, r in unplaced)
+                        + ", which has no footprint at that path; not deleted",
                     }
                 )
                 continue

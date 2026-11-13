@@ -595,6 +595,7 @@ def test_reannotated_symbol_renames_its_footprint_instead_of_deleting_it(tmp_pat
     r = _sync(board_path, deleteUnusedFootprints=True)
     assert r["success"], r
     assert r["footprints_renamed"] == ["R2 -> R99"]
+    assert "1 renamed" in r["message"] and "1 renamed" in preview["message"]
     assert r["footprints_deleted"] == [] and r["footprints_added"] == []
     board = pcbnew.LoadBoard(str(board_path))
     refs = {fp.GetReference(): fp for fp in board.GetFootprints()}
