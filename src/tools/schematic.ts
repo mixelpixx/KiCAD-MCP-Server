@@ -119,6 +119,7 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
               text: `Failed to add component: ${result.message || JSON.stringify(result)}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -190,6 +191,7 @@ To remove a footprint from a PCB, use delete_component instead.`,
             text: `Failed to remove component: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -357,6 +359,7 @@ use edit_component instead.`,
             text: `Failed to edit component: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -448,6 +451,7 @@ with the \`properties\` parameter instead.`,
             text: `Failed to set property '${args.name}' on ${args.reference}: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -497,6 +501,7 @@ edit_schematic_component and set its value to an empty string.`,
             text: `Failed to remove property '${args.name}' from ${args.reference}: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -540,6 +545,7 @@ edit_schematic_component and set its value to an empty string.`,
             text: `Failed to get component: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -584,6 +590,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to add wire: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -658,6 +665,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to add net label: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -705,6 +713,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to add no-connect: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -746,6 +755,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to connect to net: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -781,6 +791,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to get net connections: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -844,6 +855,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to get wire connections: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -880,6 +892,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to get pin locations: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -1641,6 +1654,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to generate netlist: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -1653,8 +1667,16 @@ edit_schematic_component and set its value to an empty string.`,
     {
       schematicPath: z.string().describe("Absolute path to the .kicad_sch schematic file"),
       boardPath: z.string().describe("Absolute path to the .kicad_pcb board file"),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe(
+          "Report every change (pad nets, values, fields, footprints added) without saving. " +
+            "The sync overwrites board values and fields with the schematic's, so preview first " +
+            "on a board that was edited after its last sync.",
+        ),
     },
-    async (args: { schematicPath: string; boardPath: string }) => {
+    async (args: { schematicPath: string; boardPath: string; dryRun?: boolean }) => {
       const result = await callKicadScript("sync_schematic_to_board", args);
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
@@ -2084,6 +2106,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to get net at point: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -2135,6 +2158,7 @@ edit_schematic_component and set its value to an empty string.`,
             text: `Failed to add hierarchical label: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -2241,6 +2265,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to add text annotation: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -2296,6 +2321,7 @@ edit_schematic_component and set its value to an empty string.`,
             text: `Failed to add sheet pin: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
