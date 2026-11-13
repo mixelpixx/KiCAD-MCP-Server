@@ -78,3 +78,36 @@ def test_unsplit_tee_without_a_junction_is_still_dangling(tmp_path):
 def test_a_truly_dangling_wire_is_still_reported(tmp_path):
     body = _wire(100, 100, 120, 100, 1)
     assert find_orphaned_wires(_write(tmp_path, body))["count"] == 1
+
+
+def test_wire_to_a_bus_entry_is_connected(tmp_path):
+    # A wire ending on a bus_entry endpoint connects to the bus and is not orphaned.
+    body = (
+        _wire(100, 100, 120, 100, 1)
+        + '  (label "A" (at 100 100 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "66666666-6666-6666-6666-666666666601"))\n'
+        + '  (bus_entry (at 120 100) (size 2.54 2.54) (stroke (width 0.1524) (type solid)) (uuid "66666666-6666-6666-6666-666666666607"))\n'
+    )
+    assert find_orphaned_wires(_write(tmp_path, body))["count"] == 0
+
+
+def test_wire_with_interior_label_is_connected(tmp_path):
+    # When a net label is placed along a wire lead extending from an anchored
+    # endpoint (pin or label), the wire serves as the connection and is not orphaned.
+    body = (
+        _wire(100, 100, 120, 100, 1)
+        + '  (label "PIN" (at 100 100 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "66666666-6666-6666-6666-666666666601"))\n'
+        + '  (label "NET" (at 110 100 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "66666666-6666-6666-6666-666666666608"))\n'
+    )
+    assert find_orphaned_wires(_write(tmp_path, body))["count"] == 0
+
+
+def test_floating_wire_with_interior_label_is_still_reported(tmp_path):
+    # A floating wire where neither endpoint connects to anything is still orphaned,
+    # even if a label sits on its interior.
+    body = (
+        _wire(100, 100, 120, 100, 1)
+        + '  (label "NET" (at 110 100 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "66666666-6666-6666-6666-666666666609"))\n'
+    )
+    r = find_orphaned_wires(_write(tmp_path, body))
+    assert r["count"] == 1
+    assert len(r["orphaned_wires"][0]["dangling_ends"]) == 2

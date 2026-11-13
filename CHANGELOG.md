@@ -29,6 +29,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`find_orphaned_wires` recognizes bus entries and interior wire labels**
+  (#506). The tool previously reported live wires as orphaned on hierarchical
+  child sheets (e.g. 171 on `interf_u`, 110 on `expansion_connector`, and 50
+  on `csi` in the KiCad demo designs). Two gaps caused these false positives:
+  wire endpoints meeting `bus_entry` anchors were not included in connection
+  points, and wires with a connected endpoint and an interior net label
+  placed along the wire lead were misclassified as dangling. `bus_entry`
+  endpoints are now counted as connection anchors, and wires bridging an
+  anchored point to an interior anchor are recognized as active connections.
+
 - **`assign_net_to_class` membership now survives Update PCB from Schematic**
   (#517). The tool wrote only `net_settings.netclass_assignments`, which KiCad
   derives from the schematic's net-class directives and rewrites on a sync; a
