@@ -45,7 +45,7 @@ export function registerFreeroutingTools(server: McpServer, callKicadScript: Fun
         .min(0)
         .optional()
         .describe(
-          "Time in seconds Freerouting may spend routing before it stops by itself and writes what it has routed (--router.job_timeout). Default: `timeout` minus a tenth of it (at least 60 s, at most 120 s). Needs Freerouting 2.4 or later: older versions stop at the budget but write no session file. The result has time_budget_reached: true when routing stopped this way; the board then holds a partial routing. 0 passes no time budget.",
+          "Time in seconds Freerouting may spend routing before it stops by itself and writes what it has routed (--router.job_timeout). Default: `timeout` minus a tenth of it (at least 60 s, at most 120 s); no default budget with a `timeout` under 120 s, where it would cut off runs that finish in time. Needs Freerouting 2.4 or later: older versions stop at the budget but write no session file. The result has time_budget_reached: true when routing stopped this way; the board then holds a partial routing. 0 passes no time budget.",
         ),
       attempts: z
         .number()

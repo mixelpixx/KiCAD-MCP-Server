@@ -10,7 +10,8 @@ All notable changes to the KiCAD MCP Server project are documented here.
   writes its session file only when it ends, so a run that reached `timeout`
   was killed and returned nothing, however much it had routed. `autoroute` now
   passes `--router.job_timeout`, by default `timeout` minus a tenth of it (at
-  least 60 s, at most 120 s; Freerouting waits up to 30 s for the router to stop): the router stops by itself, writes the partial
+  least 60 s, at most 120 s; Freerouting waits up to 30 s for the router to stop), and none
+  when `timeout` is under 120 s: the router stops by itself, writes the partial
   result, and it is imported as usual. The result reports
   `job_timeout_seconds` and `time_budget_reached`. New parameter `jobTimeout`
   sets the budget in seconds; `0` passes none. Needs Freerouting 2.4 or later:

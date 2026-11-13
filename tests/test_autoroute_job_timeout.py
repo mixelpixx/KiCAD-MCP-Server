@@ -52,6 +52,11 @@ def test_hms(seconds, text):
         (300, 299, 240),  # capped below the wait, or the kill would come first
         (300, 0, None),  # 0: no budget passed
         (60, None, None),  # nothing left after the margin
+        (61, None, None),  # a default budget shorter than the margin is not passed
+        (119, None, None),
+        (120, None, 60),  # from here the default budget is at least the margin
+        (100, 30, 30),  # an explicit jobTimeout still fits under a short wait
+        (60, 30, None),  # no room at all: dropped (the kill message says why)
         (300, "abc", 240),  # not a number: the default
         (None, None, None),
     ],
@@ -148,5 +153,34 @@ def test_kill_message_says_nothing_was_kept(workdir, fake_jar):
         )
     assert out["success"] is False
     assert "timed out after 600s" in out["message"]
-    assert "Nothing was routed" in out["errorDetails"]
+    assert "Nothing it routed was kept" in out["errorDetails"]
     assert "540s" in out["errorDetails"]
+
+
+@pytest.mark.parametrize(
+    "params, says",
+    [
+        ({"timeout": 60, "jobTimeout": 30}, "The jobTimeout of 30s was not passed"),
+        ({"timeout": 90}, "a timeout under 120s leaves no room"),
+        ({"timeout": 600, "jobTimeout": 0}, "(jobTimeout: 0)"),
+    ],
+)
+def test_kill_message_says_why_no_budget_was_passed(workdir, fake_jar, params, says):
+    cc = _make_cmds(workdir / "test.kicad_pcb")
+    _patch_exec_mode(cc)
+    with (
+        patch.object(fr_mod, "subprocess") as sp,
+        patch.dict(sys.modules, {"pcbnew": _stub_pcbnew()}),
+    ):
+        sp.TimeoutExpired = TimeoutError
+        sp.run.side_effect = TimeoutError()
+        out = cc.autoroute(
+            {
+                "boardPath": str(workdir / "test.kicad_pcb"),
+                "freeroutingJar": str(fake_jar),
+                **params,
+            }
+        )
+    assert out["success"] is False
+    assert says in out["errorDetails"], out["errorDetails"]
+    assert "Nothing it routed was kept" in out["errorDetails"]

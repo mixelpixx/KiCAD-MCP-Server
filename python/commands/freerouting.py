@@ -631,7 +631,10 @@ def _router_time_budget(timeout: Any, requested: Any) -> Optional[int]:
     ends, the process is killed and nothing it routed is kept, because
     Freerouting writes the session file only at the end. So the router is told
     to stop earlier by itself: by default at ``timeout`` minus a margin of a
-    tenth of it (at least 60 s, at most 120 s).
+    tenth of it (at least 60 s, at most 120 s). No default budget is passed
+    when it would be shorter than the margin itself (a ``timeout`` under
+    120 s): it would cut off runs that finish within the wait, and be too
+    short to give a useful partial result.
 
     ``requested`` is the caller's ``jobTimeout``: a number of seconds to use
     instead (capped below ``timeout`` by the same margin), or 0 to pass no
@@ -652,8 +655,34 @@ def _router_time_budget(timeout: Any, requested: Any) -> Optional[int]:
         asked = -1.0
     margin = min(_JOB_TIMEOUT_MARGIN_MAX, max(_JOB_TIMEOUT_MARGIN_MIN, wait * 0.1))
     ceiling = wait - margin
-    budget = min(asked, ceiling) if asked > 0 else ceiling
+    if asked > 0:
+        budget = min(asked, ceiling)
+    elif ceiling >= margin:
+        budget = ceiling
+    else:
+        return None
     return int(budget) if budget >= 1 else None
+
+
+def _no_budget_reason(timeout: Any, requested: Any) -> str:
+    """Why no time budget was passed, for the message when the wait runs out."""
+    try:
+        asked = float(requested) if requested is not None else None
+    except (TypeError, ValueError):
+        asked = None
+    if asked == 0:
+        return "No time budget was passed to it (jobTimeout: 0)."
+    if asked is not None and asked > 0:
+        return (
+            f"The jobTimeout of {requested}s was not passed: a timeout of {timeout}s is too "
+            f"short to leave room for a budget (Freerouting needs at least "
+            f"{_JOB_TIMEOUT_MARGIN_MIN}s after its budget ends to stop and write its result)."
+        )
+    return (
+        f"No time budget was passed to it: a timeout under {2 * _JOB_TIMEOUT_MARGIN_MIN}s "
+        "leaves no room for a useful one. A longer timeout gets a time budget, and with it "
+        "a partial result."
+    )
 
 
 def _build_freerouting_cmd(
@@ -1388,14 +1417,15 @@ class FreeroutingCommands:
                     "success": False,
                     "message": f"Freerouting timed out after {timeout}s",
                     "errorDetails": (
-                        "Increase timeout or reduce board complexity. Nothing was routed: "
+                        "Increase timeout or reduce board complexity. Nothing it routed was "
+                        "kept: "
                         "Freerouting writes its result only when it ends"
                         + (
                             f", and no session file came out of its own time budget of "
                             f"{job_timeout}s (--router.job_timeout). Freerouting before 2.4 "
                             "stops at the budget but writes nothing; use 2.4 or later."
                             if job_timeout
-                            else ". No time budget was passed to it (jobTimeout)."
+                            else ". " + _no_budget_reason(timeout, params.get("jobTimeout"))
                         )
                     ),
                     "attempts_completed": idx,
