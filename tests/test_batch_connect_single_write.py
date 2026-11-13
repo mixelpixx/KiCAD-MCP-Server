@@ -10,6 +10,7 @@ the call had failed.
 import sys
 from pathlib import Path
 
+import pytest
 import sexpdata
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
@@ -363,3 +364,141 @@ def test_replace_still_wires_to_a_facing_label_the_batch_keeps(tmp_path):
     )
     assert r["success"], r
     assert any("wired to existing label" in p.get("note", "") for p in r["placed"]), r
+
+
+def _label_at(path: Path):
+    """{(x, y): [text, ...]} of the local labels in *path*."""
+    out: dict = {}
+    for lbl in _items(path, "label"):
+        at = next(x for x in lbl if isinstance(x, list) and x[0] == sexpdata.Symbol("at"))
+        out.setdefault((round(float(at[1]), 2), round(float(at[2]), 2)), []).append(str(lbl[1]))
+    return out
+
+
+def _net_of(members, ref, pin):
+    return sorted(k.lstrip("/") for k, v in members.items() if (ref, pin) in v)
+
+
+@pytest.mark.parametrize("second_stub", [None, 5.08])
+def test_replace_removes_an_earlier_runs_stub_wire_and_label(tmp_path, second_stub):
+    """#495 review 2026-11-12, item 1: run 1 with stubLength 2.54 puts R1.2 and R3.1 on X
+    through stub wires. Run 2 with replace and no stub (or 5.08) moves R1.2 to Y. The old
+    stub wire and its X label at (103.81, 100) stayed, so R1.2 was on X and Y at once."""
+    f = _sheet(tmp_path)
+    c = SchematicBatchCommands(None)
+    r = c.batch_connect(
+        {
+            "schematicPath": str(f),
+            "connections": {"R1": {"2": "X"}, "R3": {"1": "X"}},
+            "stubLength": 2.54,
+        }
+    )
+    assert r["success"], r
+    second = {"schematicPath": str(f), "connections": {"R1": {"2": "Y"}}, "replace": True}
+    if second_stub:
+        second["stubLength"] = second_stub
+    r = c.batch_connect(second)
+    assert r["success"], r
+    labels = _label_at(f)
+    assert (103.81, 100.0) not in labels, labels
+    assert labels[(96.19, 130.0)] == ["X"], labels  # R3.1's stub is not in the batch
+    y_at = (106.35, 100.0) if second_stub else (101.27, 100.0)
+    assert labels[y_at] == ["Y"], labels
+    assert len(_items(f, "wire")) == (2 if second_stub else 1)
+    members = _netlist_members(tmp_path, f)
+    if members is not None:
+        assert _net_of(members, "R1", "2") == ["Y"], members
+        assert _net_of(members, "R3", "1") == ["X"], members
+
+
+def test_replace_keeps_a_stub_label_another_wire_still_uses(tmp_path):
+    """The far-end label goes only when the stub is its only wire. Here R2.1 was wired to
+    R1.2's stub label; replacing R1.2 removes R1.2's stub wire, and X stays on R2.1."""
+    f = _sheet(tmp_path)
+    c = SchematicBatchCommands(None)
+    assert c.batch_connect(
+        {"schematicPath": str(f), "connections": {"R1": {"2": "X"}}, "stubLength": 2.54}
+    )["success"]
+    r = c.batch_connect({"schematicPath": str(f), "connections": {"R2": {"1": "X"}}})
+    assert any("wired to existing label" in p.get("note", "") for p in r["placed"]), r
+    r = c.batch_connect(
+        {"schematicPath": str(f), "connections": {"R1": {"2": "Y"}}, "replace": True}
+    )
+    assert r["success"], r
+    assert _label_at(f) == {(103.81, 100.0): ["X"], (101.27, 100.0): ["Y"]}
+    assert len(_items(f, "wire")) == 1
+    members = _netlist_members(tmp_path, f)
+    if members is not None:
+        assert _net_of(members, "R1", "2") == ["Y"], members
+        assert _net_of(members, "R2", "1") == ["X"], members
+
+
+def test_replace_warns_when_it_keeps_a_wire_to_another_pins_label(tmp_path):
+    """A wire that ends on another pin is kept (that pin's label stays), but the pin is
+    then on both nets; the reply says so instead of staying silent."""
+    f = _sheet(tmp_path)
+    c = SchematicBatchCommands(None)
+    assert c.batch_connect(
+        {"schematicPath": str(f), "connections": {"R1": {"2": "X"}, "R2": {"1": "X"}}}
+    )["success"]
+    r = c.batch_connect(
+        {"schematicPath": str(f), "connections": {"R2": {"1": "Y"}}, "replace": True}
+    )
+    assert r["success"], r
+    assert _label_at(f)[(101.27, 100.0)] == ["X"]
+    assert len(_items(f, "wire")) == 1
+    assert any(w.startswith("R2.1: replace kept the wire") for w in r.get("warnings", [])), r
+
+
+def test_replace_skips_a_facing_label_the_clear_removes_within_tolerance(tmp_path):
+    """#495 review 2026-11-12, item 2: a hand-placed X label 0.23 mm in front of R1.2 is
+    removed by the replace clear (0.5 mm), but the "cleared by this batch" check compared
+    positions to 0.01 mm, so R2.1 was wired to it and ended on a dangling wire."""
+    label = (
+        '  (label "X" (at 101.5 100 0) (effects (font (size 1.27 1.27)) (justify left bottom))'
+        ' (uuid "77777777-7777-7777-7777-777777770000"))\n'
+    )
+    f = _sheet(tmp_path, extra=label)
+    r = SchematicBatchCommands(None).batch_connect(
+        {
+            "schematicPath": str(f),
+            "connections": {"R1": {"2": "Y"}, "R2": {"1": "X"}},
+            "replace": True,
+        }
+    )
+    assert r["success"], r
+    assert not any("wired to existing label" in p.get("note", "") for p in r["placed"]), r
+    assert _label_at(f) == {(101.27, 100.0): ["Y"], (108.73, 100.0): ["X"]}
+    assert _items(f, "wire") == []
+    members = _netlist_members(tmp_path, f)
+    if members is not None:
+        assert _net_of(members, "R2", "1") == ["X"], members
+        assert _net_of(members, "R1", "2") == ["Y"], members
+
+
+def test_replace_clears_the_old_label_of_a_pin_wired_to_another_label(tmp_path):
+    """#495 review 2026-11-12, optional item: R2.1 takes the "wired to existing label" branch
+    to R1.2's new Y label. Its old Z label was not cleared, so Y and Z became one net and
+    R3.1 (on Z) landed on Y."""
+    f = _sheet(tmp_path)
+    c = SchematicBatchCommands(None)
+    assert c.batch_connect(
+        {
+            "schematicPath": str(f),
+            "connections": {"R1": {"2": "X"}, "R2": {"1": "Z"}, "R3": {"1": "Z"}},
+        }
+    )["success"]
+    r = c.batch_connect(
+        {
+            "schematicPath": str(f),
+            "connections": {"R1": {"2": "Y"}, "R2": {"1": "Y"}},
+            "replace": True,
+        }
+    )
+    assert r["success"], r
+    assert any("wired to existing label" in p.get("note", "") for p in r["placed"]), r
+    assert _label_at(f) == {(101.27, 100.0): ["Y"], (98.73, 130.0): ["Z"]}
+    members = _netlist_members(tmp_path, f)
+    if members is not None:
+        assert _net_of(members, "R2", "1") == ["Y"], members
+        assert _net_of(members, "R3", "1") == ["Z"], members

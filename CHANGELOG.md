@@ -29,6 +29,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
     A label this batch replaces is never the wiring target for another pin:
     the facing-label lookup reads the file before the write, and re-netting
     R1.2 from X to Y while R2.1 asked for X used to wire R2.1 onto Y.
+  - `replace` also removes an earlier run's stub, whatever its length: the
+    wire from the pin to a local label, and that label when no other wire
+    uses it. A run with `stubLength` followed by a `replace` run without one
+    (or with another length) left the old stub and label, and the pin on
+    both nets. A wire that ends on another pin, or on a global or
+    hierarchical label, is kept, and the reply warns when that leaves the
+    pin on a second net. The "cleared by this batch" check now uses the
+    clear's 0.5 mm tolerance, so a label a little off a pin is not both
+    removed and used as a wiring target. A pin wired to another pin's label
+    loses its own old label too, instead of joining the two nets.
   - `batch_move_components` and `batch_set_schematic_property_positions` also
     get the long timeout, so a very large sheet can't be cut off part-way.
 

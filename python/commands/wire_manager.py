@@ -43,6 +43,15 @@ _SYM_SYMBOL = Symbol("symbol")
 _SYM_UNIT = Symbol("unit")
 _IU_PER_MM = 10000
 
+# batch_connect replace=True removes labels this close (per axis, mm) to a
+# cleared position. The planner's "cleared by this batch" check uses the same
+# value, so a label the write removes is never chosen as a wiring target.
+REPLACE_TOLERANCE_MM = 0.5
+
+
+def _iu(x: float, y: float) -> Tuple[int, int]:
+    return round(float(x) * _IU_PER_MM), round(float(y) * _IU_PER_MM)
+
 
 def _strictly_inside(p: Tuple[int, int], seg: Tuple[int, int, int, int]) -> bool:
     """True when point *p* lies on segment *seg* (integer units), not at an end."""
@@ -381,12 +390,76 @@ class WireManager:
         return keys
 
     @staticmethod
+    def pin_label_wires(sch_data: list, pins: List[List[float]]) -> List[dict]:
+        """Two-point wires that run from one of *pins* to a label.
+
+        batch_connect's stubLength draws exactly this: a wire out of the pin
+        with the net label at its far end. replace=True has to know about such
+        wires from an earlier run, whatever stub length that run used, or the
+        old label keeps the pin on its old net next to the new one.
+
+        Each result is a dict with "pin" and "far" ([x, y]), "local" (texts of
+        the local labels at the far end), "other" ((kind, text) of global and
+        hierarchical labels there), "far_is_pin" (another pin sits at the far
+        end, as in a "wired to existing label" wire) and "far_shared" (another
+        wire also ends at or passes through the far end). Wires whose far end
+        carries no label are not returned. Positions match exactly, in KiCad's
+        internal units, the way KiCad decides connectivity.
+        """
+        wanted = {_iu(p[0], p[1]): [float(p[0]), float(p[1])] for p in pins}
+        if not wanted:
+            return []
+        segs = []
+        for item in sch_data:
+            parsed = WireManager._parse_wire(item)
+            if parsed is not None:
+                segs.append((_iu(*parsed[0]), _iu(*parsed[1]), parsed[0], parsed[1]))
+        labels: dict = {}
+        for item in sch_data:
+            if not (
+                isinstance(item, list)
+                and len(item) > 1
+                and item[0] in (_SYM_LABEL, _SYM_GLOBAL_LABEL, _SYM_HIERARCHICAL_LABEL)
+            ):
+                continue
+            at = next(
+                (p for p in item[1:] if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_AT),
+                None,
+            )
+            if at is not None:
+                labels.setdefault(_iu(at[1], at[2]), []).append((str(item[0]), str(item[1])))
+        all_pins = {_iu(x, y) for x, y in WireManager._collect_pin_positions(sch_data)}
+
+        found = []
+        for i, (a, b, a_mm, b_mm) in enumerate(segs):
+            for here, far, far_mm in ((a, b, b_mm), (b, a, a_mm)):
+                if here not in wanted or far == here or far not in labels:
+                    continue
+                at_far = labels[far]
+                shared = any(
+                    j != i and (far in (c, d) or _strictly_inside(far, (*c, *d)))
+                    for j, (c, d, _, _) in enumerate(segs)
+                )
+                found.append(
+                    {
+                        "pin": wanted[here],
+                        "far": [float(far_mm[0]), float(far_mm[1])],
+                        "local": [t for k, t in at_far if k == "label"],
+                        "other": [(k, t) for k, t in at_far if k != "label"],
+                        "far_is_pin": far in all_pins,
+                        "far_shared": shared,
+                    }
+                )
+        return found
+
+    @staticmethod
     def add_labels_and_wires(
         schematic_path: Path,
         labels: List[Tuple[str, List[float], str, int]],
         wires: List[Tuple[List[float], List[float]]],
         clear: Optional[List[Tuple[str, List[float]]]] = None,
-        tolerance: float = 0.5,
+        tolerance: float = REPLACE_TOLERANCE_MM,
+        remove_wires: Optional[List[Tuple[List[float], List[float]]]] = None,
     ) -> bool:
         """Add several labels and wires in one read-modify-write of the file.
 
@@ -405,28 +478,38 @@ class WireManager:
         fails the old labels are still in the file, rather than gone with
         nothing new in their place.
 
+        *remove_wires* holds (start, end) pairs: every two-point wire with
+        exactly those endpoints (either direction) is removed in the same pass,
+        for replace=True's old stub wires (see pin_label_wires).
+
         A wire whose two endpoints already belong to a wire in the file is not
         added again, so re-running a stub batch does not stack a second wire
         on the first.
         """
         clear = clear or []
-        if not labels and not wires and not clear:
+        drop = {frozenset((_iu(*s), _iu(*e))) for s, e in (remove_wires or [])}
+        if not labels and not wires and not clear and not drop:
             return True
         try:
             with open(schematic_path, "r", encoding="utf-8") as f:
                 sch_data = sexpdata.loads(f.read())
 
-            if clear:
+            if clear or drop:
                 kept = []
-                removed = 0
+                removed = dropped = 0
                 for item in sch_data:
                     if any(WireManager._label_to_clear(item, n, p, tolerance) for n, p in clear):
                         removed += 1
                         continue
+                    if drop:
+                        parsed = WireManager._parse_wire(item)
+                        if parsed and frozenset((_iu(*parsed[0]), _iu(*parsed[1]))) in drop:
+                            dropped += 1
+                            continue
                     kept.append(item)
                 sch_data[:] = kept
-                if removed:
-                    logger.info(f"Cleared {removed} label(s) for replacement")
+                if removed or dropped:
+                    logger.info(f"Cleared {removed} label(s) and {dropped} wire(s) for replacement")
 
             new_items = [
                 WireManager._make_label_sexp(text, position, label_type, orientation)
@@ -456,7 +539,7 @@ class WireManager:
                 len(sch_data),
             )
             sch_data[insert_at:insert_at] = new_items
-            if wires:
+            if wires or drop:
                 WireManager.sync_junctions(sch_data)
 
             with open(schematic_path, "w", encoding="utf-8") as f:
