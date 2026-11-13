@@ -1653,8 +1653,16 @@ edit_schematic_component and set its value to an empty string.`,
     {
       schematicPath: z.string().describe("Absolute path to the .kicad_sch schematic file"),
       boardPath: z.string().describe("Absolute path to the .kicad_pcb board file"),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe(
+          "Report every change (pad nets, values, fields, footprints added) without saving. " +
+            "The sync overwrites board values and fields with the schematic's, so preview first " +
+            "on a board that was edited after its last sync.",
+        ),
     },
-    async (args: { schematicPath: string; boardPath: string }) => {
+    async (args: { schematicPath: string; boardPath: string; dryRun?: boolean }) => {
       const result = await callKicadScript("sync_schematic_to_board", args);
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
