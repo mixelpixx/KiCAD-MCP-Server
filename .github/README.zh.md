@@ -16,13 +16,9 @@
 
 </div>
 
-<!-- prettier-ignore-start -->
-<div align="center">
-
-#### 我们的新论坛已上线：https://forum.orchis.ai — 有问题？有建议？想展示你的作品？
-
-</div>
-<!-- prettier-ignore-end -->
+> **Konnect 现已更名为 Konnect-EDA。** [Konnect-EDA](https://github.com/Orchis-ai-LLC/Konnect-EDA)
+> 源自本项目，是 Orchis.ai 推出的原生 KiCad 10 插件，属于商业软件，测试版期间免费。详情请见
+> [konnect-eda.orchis.ai](https://konnect-eda.orchis.ai)。KiCAD MCP Server 仍然开源（MIT）并持续维护。
 
 #
 
