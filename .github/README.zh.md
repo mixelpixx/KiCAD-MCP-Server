@@ -17,8 +17,8 @@
 </div>
 
 > **Konnect 现已更名为 Konnect-EDA。** [Konnect-EDA](https://github.com/Orchis-ai-LLC/Konnect-EDA)
-> 源自本项目，是 Orchis.ai 推出的原生 KiCad 10 插件，属于商业软件，测试版期间免费。详情请见
-> [konnect-eda.orchis.ai](https://konnect-eda.orchis.ai)。KiCAD MCP Server 仍然开源（MIT）并持续维护。
+> 源自本项目，是 Orchis.ai 推出的原生 KiCad 10 插件。**学生、爱好者和个人开发者可免费使用，1.0 之后依然免费。**
+> 只有企业需要商业许可证。详情请见 [konnect-eda.orchis.ai](https://konnect-eda.orchis.ai)。KiCAD MCP Server 仍然开源（MIT）并持续维护。
 
 #
 
