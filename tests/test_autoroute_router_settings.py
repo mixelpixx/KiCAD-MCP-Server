@@ -61,6 +61,7 @@ def test_no_settings_no_options():
         ({"--gui.enabled": True}, "not a Freerouting setting name"),
         ({"Autorouter.MaxPasses": 3}, "not a Freerouting setting name"),
         ({"": 1}, "not a Freerouting setting name"),
+        ({"a\n": 1}, "not a Freerouting setting name"),  # "$" alone would accept it
         ({"job_timeout": "00:01:00"}, "jobTimeout"),
         ({"max_passes": 5}, "maxPasses"),
         ({"autorouter.max_passes": 5}, "maxPasses"),
@@ -149,6 +150,31 @@ def test_autoroute_refuses_bad_settings_before_running(workdir, fake_jar):
     assert out["message"] == "Invalid routerSettings"
     assert "maxPasses" in out["errorDetails"]
     assert sp.run.call_count == 0
+
+
+@pytest.mark.parametrize("key", ["max_threads", "autorouter.max_threads", "optimizer.max_threads"])
+def test_thread_count_is_refused_for_best_of_n(key):
+    with pytest.raises(ValueError) as e:
+        _router_setting_args({key: 4}, single_thread=True)
+    assert "attempts: 1" in str(e.value)
+    # One attempt does not force -mt 1, so the caller may set the thread count.
+    assert _router_setting_args({key: 4}) == [f"--router.{key}=4"]
+
+
+def test_autoroute_with_attempts_refuses_a_thread_count(workdir, fake_jar):
+    out, _, sp = _autoroute(
+        workdir, fake_jar, {"attempts": 2, "routerSettings": {"max_threads": 4}}
+    )
+    assert out["success"] is False
+    assert out["message"] == "Invalid routerSettings"
+    assert "single-threaded" in out["errorDetails"]
+    assert sp.run.call_count == 0
+
+
+def test_autoroute_single_attempt_passes_a_thread_count(workdir, fake_jar):
+    out, seen, _ = _autoroute(workdir, fake_jar, {"routerSettings": {"max_threads": 4}})
+    assert out["success"], out
+    assert "--router.max_threads=4" in seen["cmd"]
 
 
 def test_autoroute_without_settings_is_unchanged(workdir, fake_jar):

@@ -15,7 +15,9 @@ All notable changes to the KiCAD MCP Server project are documented here.
   plane pad into its plane) and `autorouter.ignore_net_classes`; the first two
   are on Freerouting master only (merged 2026-11-07), not in a v2 release. Keys
   must be plain setting names; `max_passes` and `job_timeout` are refused in
-  favour of `maxPasses` and `jobTimeout`. Freerouting does not refuse a setting
+  favour of `maxPasses` and `jobTimeout`, and with `attempts` above 1 the thread
+  count (`max_threads`, `autorouter.max_threads`, `optimizer.max_threads`) is
+  refused, since best-of-N runs single-threaded. Freerouting does not refuse a setting
   it cannot apply (a typo, or one the installed jar lacks): it logs a warning
   and keeps routing. The result lists the options passed as `router_settings`
   and the ones Freerouting reported it could not apply as
@@ -25,7 +27,8 @@ All notable changes to the KiCAD MCP Server project are documented here.
   writes its session file only when it ends, so a run that reached `timeout`
   was killed and returned nothing, however much it had routed. `autoroute` now
   passes `--router.job_timeout`, by default `timeout` minus a tenth of it (at
-  least 60 s, at most 120 s; Freerouting waits up to 30 s for the router to stop): the router stops by itself, writes the partial
+  least 60 s, at most 120 s; Freerouting waits up to 30 s for the router to stop), and none
+  when `timeout` is under 120 s: the router stops by itself, writes the partial
   result, and it is imported as usual. The result reports
   `job_timeout_seconds` and `time_budget_reached`. New parameter `jobTimeout`
   sets the budget in seconds; `0` passes none. Needs Freerouting 2.4 or later:

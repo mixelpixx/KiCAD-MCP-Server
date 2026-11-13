@@ -653,7 +653,10 @@ def _router_time_budget(timeout: Any, requested: Any) -> Optional[int]:
     ends, the process is killed and nothing it routed is kept, because
     Freerouting writes the session file only at the end. So the router is told
     to stop earlier by itself: by default at ``timeout`` minus a margin of a
-    tenth of it (at least 60 s, at most 120 s).
+    tenth of it (at least 60 s, at most 120 s). No default budget is passed
+    when it would be shorter than the margin itself (a ``timeout`` under
+    120 s): it would cut off runs that finish within the wait, and be too
+    short to give a useful partial result.
 
     ``requested`` is the caller's ``jobTimeout``: a number of seconds to use
     instead (capped below ``timeout`` by the same margin), or 0 to pass no
@@ -674,22 +677,33 @@ def _router_time_budget(timeout: Any, requested: Any) -> Optional[int]:
         asked = -1.0
     margin = min(_JOB_TIMEOUT_MARGIN_MAX, max(_JOB_TIMEOUT_MARGIN_MIN, wait * 0.1))
     ceiling = wait - margin
-    budget = min(asked, ceiling) if asked > 0 else ceiling
+    if asked > 0:
+        budget = min(asked, ceiling)
+    elif ceiling >= margin:
+        budget = ceiling
+    else:
+        return None
     return int(budget) if budget >= 1 else None
 
 
 # A Freerouting setting key: lower-case words joined by dots, as in its docs/settings.md
 # ("autorouter.priority_net_classes"). Nothing else, so a key cannot smuggle in another option.
-_ROUTER_SETTING_KEY = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$")
+# Used with fullmatch: "$" would also accept a key ending in a newline.
+_ROUTER_SETTING_KEY = re.compile(r"[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*")
 # Settings autoroute sets itself; a caller's value would silently fight it.
 _ROUTER_SETTINGS_OWNED = {
     "job_timeout": "jobTimeout",
     "max_passes": "maxPasses",
     "autorouter.max_passes": "maxPasses",
 }
+# The thread count, in each spelling Freerouting master reads (docs/settings.md: the global
+# ceiling, and the autorouter and optimizer stages). With attempts > 1 autoroute forces -mt 1:
+# the attempts are compared, and the multi-threaded optimiser is the one known to leave
+# clearance violations, so a caller's value must not undo it.
+_ROUTER_THREAD_SETTINGS = ("max_threads", "autorouter.max_threads", "optimizer.max_threads")
 
 
-def _router_setting_args(settings: Any) -> List[str]:
+def _router_setting_args(settings: Any, single_thread: bool = False) -> List[str]:
     """``routerSettings`` as Freerouting command-line options.
 
     ``{"autorouter.priority_net_classes": ["DIFF", "ANALOG"], "autorouter.plane_as_priority": True}``
@@ -697,7 +711,8 @@ def _router_setting_args(settings: Any) -> List[str]:
     ``--router.autorouter.plane_as_priority=true``. Keys are the names in Freerouting's
     docs/settings.md under ``router``. Raises ValueError for anything that is not a plain
     setting: a key of another shape, a value that is not a string, number, boolean or a list
-    of those, or a setting that autoroute has a parameter of its own for.
+    of those, or a setting that autoroute has a parameter of its own for. With
+    ``single_thread`` (best-of-N attempts) the thread count is refused too.
     """
     if settings is None:
         return []
@@ -705,7 +720,7 @@ def _router_setting_args(settings: Any) -> List[str]:
         raise ValueError("routerSettings must be an object of setting name to value")
     args: List[str] = []
     for key, value in settings.items():
-        if not isinstance(key, str) or not _ROUTER_SETTING_KEY.match(key):
+        if not isinstance(key, str) or not _ROUTER_SETTING_KEY.fullmatch(key):
             raise ValueError(
                 f"routerSettings key {key!r} is not a Freerouting setting name "
                 "(lower-case words joined by dots, e.g. autorouter.priority_net_classes)"
@@ -713,6 +728,12 @@ def _router_setting_args(settings: Any) -> List[str]:
         if key in _ROUTER_SETTINGS_OWNED:
             raise ValueError(
                 f"routerSettings key {key!r}: use autoroute's {_ROUTER_SETTINGS_OWNED[key]} parameter"
+            )
+        if single_thread and key in _ROUTER_THREAD_SETTINGS:
+            raise ValueError(
+                f"routerSettings key {key!r}: with attempts above 1 autoroute runs Freerouting "
+                "single-threaded (-mt 1) so the attempts are comparable; leave the thread count "
+                "out, or use attempts: 1"
             )
         items = value if isinstance(value, (list, tuple)) else [value]
         if not items:
@@ -731,6 +752,27 @@ def _router_setting_args(settings: Any) -> List[str]:
                 )
         args.append(f"--router.{key}={','.join(parts)}")
     return args
+
+
+def _no_budget_reason(timeout: Any, requested: Any) -> str:
+    """Why no time budget was passed, for the message when the wait runs out."""
+    try:
+        asked = float(requested) if requested is not None else None
+    except (TypeError, ValueError):
+        asked = None
+    if asked == 0:
+        return "No time budget was passed to it (jobTimeout: 0)."
+    if asked is not None and asked > 0:
+        return (
+            f"The jobTimeout of {requested}s was not passed: a timeout of {timeout}s is too "
+            f"short to leave room for a budget (Freerouting needs at least "
+            f"{_JOB_TIMEOUT_MARGIN_MIN}s after its budget ends to stop and write its result)."
+        )
+    return (
+        f"No time budget was passed to it: a timeout under {2 * _JOB_TIMEOUT_MARGIN_MIN}s "
+        "leaves no room for a useful one. A longer timeout gets a time budget, and with it "
+        "a partial result."
+    )
 
 
 def _build_freerouting_cmd(
@@ -1410,7 +1452,9 @@ class FreeroutingCommands:
         mode_label = "docker" if use_docker else "direct"
         job_timeout = _router_time_budget(timeout, params.get("jobTimeout"))
         try:
-            router_args = _router_setting_args(params.get("routerSettings"))
+            router_args = _router_setting_args(
+                params.get("routerSettings"), single_thread=attempts > 1
+            )
         except ValueError as e:
             return {
                 "success": False,
@@ -1477,14 +1521,15 @@ class FreeroutingCommands:
                     "success": False,
                     "message": f"Freerouting timed out after {timeout}s",
                     "errorDetails": (
-                        "Increase timeout or reduce board complexity. Nothing was routed: "
+                        "Increase timeout or reduce board complexity. Nothing it routed was "
+                        "kept: "
                         "Freerouting writes its result only when it ends"
                         + (
                             f", and no session file came out of its own time budget of "
                             f"{job_timeout}s (--router.job_timeout). Freerouting before 2.4 "
                             "stops at the budget but writes nothing; use 2.4 or later."
                             if job_timeout
-                            else ". No time budget was passed to it (jobTimeout)."
+                            else ". " + _no_budget_reason(timeout, params.get("jobTimeout"))
                         )
                     ),
                     "attempts_completed": idx,
