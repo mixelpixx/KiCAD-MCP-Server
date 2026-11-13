@@ -6,6 +6,27 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **`sync_schematic_to_board` can preview (`dryRun: true`).** The sync
+  overwrites board values and fields with the schematic's and moves pads to
+  the schematic's nets, as KiCad's F8 does. On a board edited after its last
+  sync that discards data, and until now the list of changes came back only
+  after they were saved. With `dryRun` the same list comes back and nothing
+  is written (the board file is byte-identical afterwards). The auto-save
+  that follows every board-mutating command is skipped for a preview: it
+  used to write the loaded board, unsaved edits and all, and leave a
+  backup, under a reply that said nothing was saved. A preview of a loaded
+  board that has no file name is refused (save it first, or pass
+  `boardPath`) instead of running the sync on it in memory.
+  - New in every reply: `pads_changed`, only the pads whose net actually
+    changes (for example `U6/1: 'Net-(U6-A)' -> 'unconnected-(U6-NC-Pad1)'`),
+    plus `pads_changed_count` and `dryRun`. `pads_assigned` still
+    counts every matched pad, so an up-to-date board reports many assigned
+    and 0 changed.
+  - On a real 107-part board, the preview showed 39 value changes, 107
+    field updates and one pad that the sync would disconnect from a routed
+    net. The pad came from a symbol that defines pin 1 differently in two
+    units.
+
 - **`find_wires_crossing_symbols`** (#522) — the reply now also lists symbol pins
   that lie on the middle of a wire without being connected to it, under
   `pinsOnWireInterior` with `pinsOnWireInteriorCount`. KiCad joins a pin to a
@@ -14,6 +35,39 @@ All notable changes to the KiCAD MCP Server project are documented here.
   otherwise. A label or no-connect flag on the pin does not connect it to the
   wire and is still reported. Power pins are included. `collisions` and `count`
   keep their meaning.
+
+### Bug Fixes
+
+- **`assign_net_to_class` membership now survives Update PCB from Schematic**
+  (#517). The tool wrote only `net_settings.netclass_assignments`, which KiCad
+  derives from the schematic's net-class directives and rewrites on a sync; a
+  schematic without directives emptied it, every rule keyed on those classes
+  stopped matching, and DRC passed (a pour 0.21 mm from a 600 V net on a real
+  board). The tool now also records the net in `netclass_patterns`, which a
+  sync leaves alone. The pattern is the name with KiCad's regex characters
+  made literal (`\` before `\ . ^ | ? * + ( ) [ ]`, and `{`, `}`, `$` as
+  `[{]`, `[}]`, `[$]`), because KiCad reads a pattern as an anchored regular
+  expression: a raw `HV+` also put `HV` and `HVV` in the class. (`re.escape`
+  is not usable: KiCad's engine does not read `\{...\}` as literal braces, so
+  an overbar name such as `~{RESET}` matched nothing.) The project loader behind `export_dsn` and
+  `autoroute` had the same gap and now escapes the names from
+  `netclass_assignments` too. Assignments made with an earlier version were
+  lost on the first sync after they were made, so redo them (call
+  `assign_net_to_class` again for each net) after upgrading.
+
+- **Backend failures reach the client as MCP errors.** Most tools return the
+  backend's JSON as it is, so a `{"success": false, ...}` reply went out as a
+  normal result and an agent carried on as if the call had worked. Every
+  tool registration is now wrapped once: a reply whose JSON says
+  `success: false` is sent with `isError: true`. Replies that already set
+  `isError`, and non-JSON content, are unchanged. A partial success is not
+  flagged: when a batch tool (`batch_add_components`, `batch_connect`,
+  `batch_add_no_connects`, `connect_passthrough`, `backannotate_footprints`,
+  ...) reports applied work, an added, connected, placed or updated count
+  above zero or a non-empty list of applied items, the reply stays a normal
+  result with its list of failures, so `isError` means nothing happened and
+  the call is safe to retry. `batch_connect` and `batch_add_no_connects`,
+  which build their own reply text, follow the same rule.
 
 ## [2.9.0] - 2026-11-11
 
