@@ -16,31 +16,45 @@
 
 </div>
 
-<!-- prettier-ignore-start -->
-<div align="center">
+**Open source (MIT) and actively maintained.** New releases keep coming, and bug reports, pull
+requests and [discussion](https://github.com/mixelpixx/KiCAD-MCP-Server/discussions) are welcome
+here.
 
-#### Our new forum is up: https://forum.orchis.ai — Need help? Have suggestions? Want to show off your work?
+> ## Konnect is now Konnect-EDA, at Orchis.ai
+>
+> **[Konnect-EDA](https://github.com/Orchis-ai-LLC/Konnect-EDA)** grew out of this
+> project. It is a native KiCad 10 plugin: a single Rust binary that works through
+> KiCad's official IPC API and `kicad-cli`, with no SWIG. Its 228 tools, in 21
+> on-demand toolsets, cover schematic capture, PCB layout and routing, ERC and DRC,
+> design-review audits, JLCPCB parts and fab outputs, with bundled skills for Claude
+> and Codex.
+>
+> - **Get it:** install guide and downloads on [GitHub](https://github.com/Orchis-ai-LLC/Konnect-EDA),
+>   and more at [konnect-eda.orchis.ai](https://konnect-eda.orchis.ai).
+> - **Free during the beta.** Konnect-EDA is commercial and closed source. See
+>   [licensing](https://konnect-eda.orchis.ai/licensing/).
+> - **Runs on your machine.** It sends nothing to Orchis.ai. See
+>   [what leaves your machine](https://konnect-eda.orchis.ai/#leaves).
+> - **Help build it:** report bugs and request features in
+>   [its issues](https://github.com/Orchis-ai-LLC/Konnect-EDA/issues). Code
+>   contributors can [sign up here](https://orchis.ai/konnect/join).
+>
+> The earlier `mixelpixx/Konnect` repository is archived. Konnect-EDA replaces it.
 
-</div>
-<!-- prettier-ignore-end -->
+|                | KiCAD MCP Server (this repository)                          | Konnect-EDA                                                                                                                        |
+| -------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| License        | MIT, open source                                            | Commercial, closed source, free during the beta                                                                                    |
+| KiCad versions | 9 and 10                                                    | 10                                                                                                                                 |
+| Runs as        | Python and TypeScript MCP server                            | Native KiCad plugin, a single Rust binary                                                                                          |
+| Works through  | KiCad's Python API (SWIG), with an experimental IPC backend | KiCad's IPC API and `kicad-cli`                                                                                                    |
+| Home           | Here                                                        | [Orchis-ai-LLC/Konnect-EDA](https://github.com/Orchis-ai-LLC/Konnect-EDA) · [konnect-eda.orchis.ai](https://konnect-eda.orchis.ai) |
 
-> ##  Meet Konnect — the next generation
->
-> **[Konnect](https://github.com/mixelpixx/Konnect)** is this project rebuilt from
-> scratch in Rust as a native KiCAD 10 plugin: a single binary with no runtime
-> dependencies, built on KiCAD's official IPC API instead of SWIG, with 171 tools,
-> bundled Claude skills and agents, design-review audits, and a manufacturing
-> pipeline. It's where new development happens — licensed AGPL-3.0 (free for
-> individuals and open source; commercial licenses available for businesses).
->
-> This Python/TypeScript server remains fully open (MIT) and maintained.
->
-> ## KiCAD MCP and Konnect works well with Nimrod
+> ## KiCAD MCP Server and Konnect-EDA work well with Nimrod
 >
 > [**Nimrod**](https://nimrod.orchis.ai) is our web-research MCP server:
 > quality-scored Google search, clean webpage extraction, and deep multi-source
-> research. Design the board with Konnect while Nimrod pulls live parts availability, datasheets,
-> and errata — no more guessing from year-old training data
+> research. Design the board with KiCAD MCP Server or Konnect-EDA while Nimrod pulls live parts
+> availability, datasheets, and errata — no more guessing from year-old training data
 >
 > - Works with claude.ai, Claude Desktop, Claude Code, VS Code, and any MCP client
 > - 1 credit = 1 search · extraction always free · free 50-credit trial, no card
