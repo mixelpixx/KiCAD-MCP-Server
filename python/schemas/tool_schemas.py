@@ -2966,6 +2966,23 @@ SCHEMATIC_TOOLS = [
                         "schematic's, so preview first on a board edited after its last sync."
                     ),
                 },
+                "replaceFootprints": {
+                    "type": "boolean",
+                    "description": (
+                        "Swap footprints whose library ID differs from the symbol's footprint, keeping "
+                        "position, rotation, side and symbol link."
+                    ),
+                },
+                "deleteUnusedFootprints": {
+                    "type": "boolean",
+                    "description": (
+                        "Delete footprints with no symbol in the schematic; board-only and "
+                        "locked footprints are kept, and a footprint whose symbol UUID matches "
+                        "a schematic symbol is renamed to it (re-annotation), never deleted. "
+                        "Refused, like replaceFootprints, while the board is open in KiCad "
+                        "(session pinned to IPC) unless dryRun."
+                    ),
+                },
             },
         },
     },

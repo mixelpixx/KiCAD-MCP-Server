@@ -10,6 +10,38 @@ All notable changes to the KiCAD MCP Server project are documented here.
   It requires the board to be open in KiCad with the IPC API enabled, keeps
   zone fills out while allowing tracks, vias, pads, and footprints, and refills
   the zones after creation. Save the board afterwards with `save_project`.
+- **`sync_schematic_to_board` can replace changed footprints and delete
+  removed ones** (`replaceFootprints`, `deleteUnusedFootprints`), KiCad F8's
+  two opt-in options. Until now a footprint whose library ID changed in the
+  schematic was only reported, and a part deleted from the schematic stayed
+  on the board, so revising an existing board meant finishing the job by
+  hand.
+  - `replaceFootprints` loads the new footprint and keeps the old one's
+    reference, value, fields, symbol link, position, rotation, side and
+    lock, and the board's text layout: each field keeps its position, size,
+    layer and visibility, as KiCad's F8 does (replacing 53 parts on a real
+    board without this reset every reference to the library spot and put
+    every MPN on the silkscreen: 199 silk violations). The new pads get
+    their nets in the same sync.
+  - `deleteUnusedFootprints` removes footprints with no symbol. Board-only
+    footprints (mounting holes, logos) are kept, as KiCad keeps them, and so
+    are locked ones, which are reported.
+  - Footprints are matched to symbols by symbol path (UUID) before
+    reference, as KiCad does: after a re-annotation (R203 renamed to R299,
+    same symbol) the footprint is renamed in place and listed in
+    `footprints_renamed`, instead of being reported missing and, with
+    `deleteUnusedFootprints`, deleted. A footprint whose symbol path is a
+    schematic symbol's is never deleted, nor one whose symbol UUID matches a
+    symbol with no footprint at its own path. The UUID alone is not enough:
+    every instance of a reused sheet shares it, so a deleted instance's
+    footprints are deleted, not kept as the live instance's parts.
+  - Both options are refused while the board is open in KiCad (session
+    pinned to IPC), except under `dryRun`: the tool writes the board file
+    underneath the GUI, and KiCad's next save would overwrite the swaps and
+    deletions.
+  - Both work with `dryRun`, and the reply lists `footprints_replaced` and
+    `footprints_deleted`.
+
 - **`sync_schematic_to_board` can preview (`dryRun: true`).** The sync
   overwrites board values and fields with the schematic's and moves pads to
   the schematic's nets, as KiCad's F8 does. On a board edited after its last
@@ -33,6 +65,36 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Net classes and their nets reach KiCad, and the replies say what was
+  written.** Checked with KiCad's own DRC on 9.0.9 and 10.0.8.
+  - `create_netclass` with `nets` replied with the requested nets and
+    `persisted: true` while assigning none of them. The in-memory call was
+    `SetClass`, which KiCad 8 renamed to `SetNetClass`, and membership was
+    never written to the project. It now writes membership to the
+    `.kicad_pro` like `assign_net_to_class` does. It replies with
+    `netsAssigned` (written) and `netsNotAssigned` (not on the board, or not
+    writable), and `netClass.nets` lists only the assigned nets.
+  - On KiCad 9, `pcbnew.SaveBoard` rewrites the `.kicad_pro` from the board's
+    in-memory settings, so the next board save erased every class and
+    assignment the server had written to the file. Classes and memberships
+    are now also registered in those in-memory settings (`SetNetclass`, plus a
+    pattern assignment on the net name made literal for KiCad's matcher (see
+    #517), since KiCad reads a pattern as a regular expression and a raw `D+`
+    would also claim `D` and `DD`).
+    `SetNetclassPatternAssignment` appends, so the in-memory list is rebuilt
+    from the project file on each assignment; moving a net from class A to B
+    leaves it in B, not in the composite `A,B`.
+  - KiCad 8 has no `SetNetclassPatternAssignment`, and its `SaveBoard` also
+    rewrites the `.kicad_pro` from memory, which Python cannot reach there.
+    The membership is written to the project file, but the next board save
+    on KiCad 8 overwrites it; the reply says so in a `warning`.
+  - `assign_net_to_class` right after `create_netclass` in the same session
+    failed with "Net class not found", because the class was added to a copy
+    of the class map. It now finds it.
+  - `add_net` with `netClass` reported "Failed to add net" after adding the
+    net (the same `SetClass` error). It now applies and persists the class,
+    reports `classPersisted`, and warns about an unknown class instead of
+    claiming it.
 - **`assign_net_to_class` membership now survives Update PCB from Schematic**
   (#517). The tool wrote only `net_settings.netclass_assignments`, which KiCad
   derives from the schematic's net-class directives and rewrites on a sync; a
