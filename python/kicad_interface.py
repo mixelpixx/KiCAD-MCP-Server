@@ -1272,6 +1272,12 @@ class KiCADInterface(SchematicHandlersMixin):
                         self._record_board_signature()
                         self._last_auto_save_status = None
                     elif command in self._BOARD_MUTATING_COMMANDS:
+                        # A preview changed nothing, so there is nothing to
+                        # save. Saving here anyway wrote whatever unsaved edits
+                        # the loaded board held (and made a backup) while the
+                        # reply said "nothing saved".
+                        if isinstance(result, dict) and result.get("dryRun") is True:
+                            return result
                         # Auto-save after every board mutation via SWIG.
                         # Prevents data loss if Claude hits context limit before
                         # an explicit save_project call.  When auto-save refuses
