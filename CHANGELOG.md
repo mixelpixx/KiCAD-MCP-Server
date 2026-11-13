@@ -179,6 +179,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
   - `batch_move_components` and `batch_set_schematic_property_positions` also
     get the long timeout, so a very large sheet can't be cut off part-way.
 
+- **`list_library_footprints` reads the `filter` and `limit` its schema
+  declares** (#407). Both were ignored, so a client asking for the first 10
+  QFN footprints got the whole library. `filter` keeps names containing the
+  text, case-insensitively, with `*` as a wildcard and every other character
+  literal. `limit` caps the list after filtering and must be a positive
+  integer. The list is now sorted by name, and the reply adds `total`, the
+  number of matches before the cap, next to `count`. The JSON-RPC schema
+  declares both parameters too. Node clients get the zod default of 100 when
+  they pass no `limit`; the reply says "showing N of M" when the list was cut.
+
 ## [2.9.0] - 2026-11-11
 
 ### New MCP Prompt

@@ -458,19 +458,42 @@ class LibraryCommands:
             }
 
     def list_library_footprints(self, params: Dict) -> Dict:
-        """List all footprints in a specific library"""
+        """List the footprints in a library, optionally filtered and capped.
+
+        ``filter`` keeps names containing it, case-insensitively, with ``*`` as
+        a wildcard; every other character is literal. ``limit`` caps the list
+        after filtering. ``count`` is the number returned and ``total`` the
+        number that matched before the cap.
+        """
         try:
             library = params.get("library") or params.get("library_name")
             if not library:
                 return {"success": False, "message": "Missing library parameter"}
 
-            footprints = self.library_manager.list_footprints(library)
+            limit = params.get("limit")
+            if limit is not None and (
+                isinstance(limit, bool) or not isinstance(limit, int) or limit < 1
+            ):
+                return {"success": False, "message": "limit must be a positive integer"}
+
+            footprints = sorted(self.library_manager.list_footprints(library))
+
+            name_filter = params.get("filter")
+            if name_filter:
+                parts = (re.escape(part) for part in name_filter.split("*"))
+                regex = re.compile(".*".join(parts), re.IGNORECASE)
+                footprints = [name for name in footprints if regex.search(name)]
+
+            total = len(footprints)
+            if limit is not None:
+                footprints = footprints[:limit]
 
             return {
                 "success": True,
                 "library": library,
                 "footprints": footprints,
                 "count": len(footprints),
+                "total": total,
             }
         except Exception as e:
             logger.error(f"Error listing library footprints: {e}")
