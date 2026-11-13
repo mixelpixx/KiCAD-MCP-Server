@@ -879,10 +879,12 @@ def find_pins_on_wire_interiors(schematic_path: Path) -> List[Dict[str, Any]]:
     on the pin. A wire drawn straight through a pin leaves the pin unconnected,
     but the drawing reads as if it were on the wire's net (#522).
 
-    A pin is reported for each wire whose interior it lies on, unless a wire ends
-    at the pin or a junction sits on it. Labels, no-connect flags and other pins
-    at that point do not connect it to the wire, so they don't count (kicad-cli
-    10.0.7 netlists in #522). Power symbols are included; template symbols are not.
+    A pin is reported for each wire whose interior it lies on, unless a junction
+    sits on it. A wire that ends at the pin can't have it on its interior, so it is
+    never reported for that wire. Another wire ending there, a label, a no-connect
+    flag or another pin at that point joins the pin but does not split the wire, so
+    they don't count (kicad-cli 10.0.7 netlists in #522 and #533). Power symbols are
+    included; template symbols are not.
 
     Uses exact KiCad IU matching, like find_orphaned_wires.
 
@@ -893,7 +895,6 @@ def find_pins_on_wire_interiors(schematic_path: Path) -> List[Dict[str, Any]]:
     sexp_data = _load_sexp(schematic_path)
     wires_mm = _parse_wires(sexp_data)
     wires_iu = [(_to_iu(*w["start"]), _to_iu(*w["end"])) for w in wires_mm]
-    wire_ends = {p for seg in wires_iu for p in seg}
     junctions = _junction_points(sexp_data)
     lib_defs = _extract_lib_symbols(sexp_data)
 
@@ -910,7 +911,7 @@ def find_pins_on_wire_interiors(schematic_path: Path) -> List[Dict[str, Any]]:
         }
         for pin_num, (px, py) in sorted(_compute_pin_positions_direct(sym, pin_defs).items()):
             pin_iu = _to_iu(px, py)
-            if pin_iu in wire_ends or pin_iu in junctions:
+            if pin_iu in junctions:
                 continue
             for w, seg in zip(wires_mm, wires_iu):
                 if not _iu_strictly_inside(pin_iu, seg):

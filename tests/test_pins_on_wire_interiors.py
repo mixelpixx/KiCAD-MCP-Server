@@ -9,6 +9,7 @@ drawing suggests otherwise. The maintainers checked this with kicad-cli 10.0.7 n
 | nothing               | R1.2 and R2.2 on separate nets            |
 | a junction            | R1.2 and R2.2 on one net                  |
 | a label `N`           | R1.2 alone on /N; R2.2 still on its own net |
+| a second wire's end   | R1.2 with that wire only; R2.2 on its own |
 """
 
 import shutil
@@ -50,6 +51,7 @@ R2 = _sym("R2", "44444444-4444-4444-4444-444444440000", 100, 130)  # pin 2 at (1
 
 # The case from the issue: one wire runs vertically through R1 pin 2 and ends on R2 pin 2.
 THROUGH_R1 = _wire(1, 101.27, 90, 101.27, 130)
+SECOND_ENDS_ON_R1 = _wire(2, 101.27, 100, 120, 100)  # ends on R1 pin 2
 
 
 def _gnd(ref, x, y):
@@ -103,6 +105,14 @@ def test_pin_on_a_wire_interior_is_reported(tmp_path):
 def test_wire_ending_on_the_pin_is_fine(tmp_path):
     body = _wire(1, 101.27, 90, 101.27, 100) + _wire(2, 101.27, 100, 101.27, 130)
     assert find_pins_on_wire_interiors(_write(tmp_path, body)) == []
+
+
+def test_second_wire_ending_on_the_pin_does_not_connect_the_through_wire(tmp_path):
+    # Wire 2 ends on R1 pin 2 and joins it, but wire 1 is not split there: KiCad
+    # puts R1.2 with wire 2 only, not with R2.2 (20 of 20 cases in #533's review).
+    found = find_pins_on_wire_interiors(_write(tmp_path, THROUGH_R1 + SECOND_ENDS_ON_R1))
+    assert _pins(found) == [("R1", "2")]
+    assert found[0]["wire"]["start"] == {"x": 101.27, "y": 90.0}
 
 
 def test_junction_on_the_pin_connects_it(tmp_path):
@@ -189,7 +199,11 @@ def test_only_the_placed_units_pins_count(tmp_path, unit, expected):
 def test_matches_kicad_netlist(tmp_path):
     if not shutil.which("kicad-cli"):
         pytest.skip("needs kicad-cli")
-    for extra, joined in [("", False), (_junction(101.27, 100), True)]:
+    for extra, joined in [
+        ("", False),
+        (_junction(101.27, 100), True),
+        (SECOND_ENDS_ON_R1, False),
+    ]:
         sch = _write(tmp_path, THROUGH_R1 + extra)
         reported = bool(find_pins_on_wire_interiors(sch))
         assert _kicad_joins_r1_r2(sch) is joined
