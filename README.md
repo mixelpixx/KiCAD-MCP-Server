@@ -1,21 +1,41 @@
-# Discussions. Get in here.
-
-https://github.com/mixelpixx/KiCAD-MCP-Server/discussions/73
-
-> ## 🚀 Meet Konnect — the next generation
->
-> **[Konnect](https://github.com/mixelpixx/Konnect)** is this project rebuilt from
-> scratch in Rust as a native KiCAD 10 plugin: a single binary with no runtime
-> dependencies, built on KiCAD's official IPC API instead of SWIG, with 171 tools,
-> bundled Claude skills and agents, design-review audits, and a manufacturing
-> pipeline. It's where new development happens — licensed AGPL-3.0 (free for
-> individuals and open source; commercial licenses available for businesses).
->
-> This Python/TypeScript server remains fully open (MIT) and maintained.
-
 # KiCAD MCP Server
 
 A Model Context Protocol (MCP) server that enables AI assistants like Claude to interact with KiCAD for PCB design automation. Built on the MCP 2025-06-18 specification, this server provides comprehensive tool schemas and real-time project state access for intelligent PCB design workflows.
+
+**Open source (MIT) and actively maintained.** New releases keep coming, and bug
+reports, pull requests and [discussion](https://github.com/mixelpixx/KiCAD-MCP-Server/discussions)
+are welcome here.
+
+> ## Konnect is now Konnect-EDA, at Orchis.ai
+>
+> **[Konnect-EDA](https://github.com/Orchis-ai-LLC/Konnect-EDA)** grew out of this
+> project. It is a native KiCad 10 plugin: a single Rust binary that works through
+> KiCad's official IPC API and `kicad-cli`, with no SWIG. Its 228 tools, in 21
+> on-demand toolsets, cover schematic capture, PCB layout and routing, ERC and DRC,
+> design-review audits, JLCPCB parts and fab outputs, with bundled skills for Claude
+> and Codex.
+>
+> - **Free for students, hobbyists and individual developers, now and after 1.0.**
+>   Everyone can use it free during the beta. From 1.0, personal, hobby, student and
+>   individual developer use stays free, with a free license key. Only businesses need
+>   a commercial license. See [licensing](https://konnect-eda.orchis.ai/licensing/).
+> - **Get it:** install guide and downloads on [GitHub](https://github.com/Orchis-ai-LLC/Konnect-EDA),
+>   and more at [konnect-eda.orchis.ai](https://konnect-eda.orchis.ai).
+> - **Runs on your machine.** It sends nothing to Orchis.ai. See
+>   [what leaves your machine](https://konnect-eda.orchis.ai/#leaves).
+> - **Help build it:** report bugs and request features in
+>   [its issues](https://github.com/Orchis-ai-LLC/Konnect-EDA/issues). Code
+>   contributors can [sign up here](https://orchis.ai/konnect/join).
+>
+> The earlier `mixelpixx/Konnect` repository is archived. Konnect-EDA replaces it.
+
+|                | KiCAD MCP Server (this repository)                          | Konnect-EDA                                                                                                                        |
+| -------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| License        | MIT, open source                                            | Closed source. Free for students, hobbyists and individual developers; businesses need a license from 1.0                          |
+| KiCad versions | 9 and 10                                                    | 10                                                                                                                                 |
+| Runs as        | Python and TypeScript MCP server                            | Native KiCad plugin, a single Rust binary                                                                                          |
+| Works through  | KiCad's Python API (SWIG), with an experimental IPC backend | KiCad's IPC API and `kicad-cli`                                                                                                    |
+| Home           | Here                                                        | [Orchis-ai-LLC/Konnect-EDA](https://github.com/Orchis-ai-LLC/Konnect-EDA) · [konnect-eda.orchis.ai](https://konnect-eda.orchis.ai) |
 
 ## Overview
 
@@ -23,8 +43,8 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 251 tools registered, every one of them indexed for keyword discovery
-- 252 tools across 20 categories with JSON Schema validation
+- 254 tools registered, every one of them indexed for keyword discovery
+- 254 tools across 20 categories with JSON Schema validation
 - Keyword tool discovery via `search_tools` / `get_category_tools`
 - Optional toolboxes: start with a 37-tool core and open the rest by category,
   to save context and stay under client tool limits
@@ -42,6 +62,66 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 ## Try out Arduino MCP - now you can get Claude to help in the IDE, real time!:
 
 https://github.com/mixelpixx/arduino-ide
+
+## What's New in v2.9.0
+
+Board inspection tools, operating modes, autorouting by layer and by net, and
+a large batch of fixes, most of them found on real boards. Thanks to
+@dp-web4, @karu2003, @rmskkn, @YORROY123, @0anes0, @vim4all,
+@AlexanderSaydakov, @TimChild, @zjywlive and @b0gdaniy.
+
+### New tools
+
+- `get_stackup` reads the stackup from the board file and can check it against
+  a recipe; `set_stackup_layer` sets one row's thickness and dielectric
+  properties (@karu2003).
+- `summarize_vias` and `summarize_net_copper` count a net's or a board's
+  copper without listing thousands of items (@karu2003).
+- `audit_via_nets` compares every via's net with a reference board or a git
+  revision. KiCad can move a via onto another net when it saves, and DRC does
+  not notice (@dp-web4).
+- `set_voltage_clearance_rules` writes clearance and creepage rules graded by
+  the working voltage between net classes, from a spacing table you supply
+  (@dp-web4).
+- `get_component_list` filters by region (@karu2003). Two new prompts guide a
+  DC power-distribution review and a shield review (@karu2003).
+
+### Operating modes
+
+- `KICAD_MCP_OPERATING_MODE=readonly` leaves only the tools that cannot change
+  the design, for review agents. `manufacturing` adds the export tools. Unset,
+  nothing changes. The idea is from @b0gdaniy.
+
+### Autorouting
+
+- `signalLayers` keeps tracks off plane layers, and `layerTraceCosts` makes a
+  layer expensive rather than forbidden (@dp-web4).
+- `routeNets` and `excludeNets` route one set of nets and keep the rest as
+  they are, so a board can be routed one domain at a time (@dp-web4).
+- Every outline of a keepout rule area reaches Freerouting (@dp-web4).
+
+### Fixes
+
+- `sync_schematic_to_board` takes nets, symbol links and fields from KiCad's
+  own netlist. On a real 333-pad board, 304 pads had the wrong net before
+  (@dp-web4).
+- Saves are no longer refused as "changed externally" after
+  `sync_schematic_to_board` (@vim4all), `autoroute`, `import_ses` or
+  `refill_zones`.
+- Schematic edits are refused while the schematic is open in KiCad, which
+  would otherwise overwrite them (@0anes0).
+- Library listing and search find KiCad's tables under `KICAD_CONFIG_HOME` and
+  on a fresh install. One behaviour change: the symbol loader now reads only
+  the newest KiCad version's global table, as KiCad does (@dp-web4).
+- `add_via` keeps its net inside another net's zone and reads the parameters
+  its schema declares; `modify_trace` works on the IPC backend; STM32 symbols
+  load again; `search_footprints` with `library` finds late libraries
+  (@dp-web4, @YORROY123, @rmskkn, @zjywlive).
+- `run_drc` reports unconnected items and schematic parity, board tools keep
+  working after an image render, and project libraries survive a move
+  (@dp-web4, @AlexanderSaydakov).
+
+Full details in the [CHANGELOG](CHANGELOG.md).
 
 ## What's New in v2.8.3
 
@@ -796,10 +876,10 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. All **251 tools** are also indexed into 20 functional categories, so `search_tools` and `get_category_tools` can find one by keyword, and each category doubles as a [toolbox](#toolboxes).
+The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. All **253 tools** are also indexed into 20 functional categories, so `search_tools` and `get_category_tools` can find one by keyword, and each category doubles as a [toolbox](#toolboxes).
 
 The lists below are a curated tour of the most useful tools, not the full set.
-For the complete, generated reference of all 251 tools -- including how each one
+For the complete, generated reference of all 253 tools -- including how each one
 is discovered -- see [Tool Inventory](docs/TOOL_INVENTORY.md).
 
 ### Project Management (12 tools)
@@ -1934,7 +2014,7 @@ npm run format
 
 ## Project Status
 
-**Current Version:** 2.8.3
+**Current Version:** 2.9.0
 
 See [STATUS_SUMMARY.md](docs/STATUS_SUMMARY.md) for the complete status matrix and [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
@@ -1973,12 +2053,13 @@ Set `KICAD_MCP_DEV=1` to capture MCP session logs for debugging. See CHANGELOG v
 **Logging (`~/.kicad-mcp/logs/`):**
 Logs default to `INFO` and the file is size-capped so it can't grow without bound. Tune via the MCP server's environment:
 
-| Variable                            | Default            | Purpose                                                                              |
-| ----------------------------------- | ------------------ | ------------------------------------------------------------------------------------ |
-| `LOG_LEVEL` / `KICAD_MCP_LOG_LEVEL` | `info`             | Log verbosity (`error`/`warn`/`info`/`debug`, or `off`). `KICAD_MCP_LOG_LEVEL` wins. |
-| `KICAD_MCP_LOG_MAX_BYTES`           | `10485760` (10 MB) | Max size per log file before it rotates; `0` disables rotation.                      |
-| `KICAD_MCP_LOG_BACKUP_COUNT`        | `3`                | Number of rotated backups to keep.                                                   |
-| `KICAD_MCP_DEBUG_SKIP`              | unset              | Set to `1` to re-enable the verbose kicad-skip parser DEBUG logs (muted by default). |
+| Variable                            | Default            | Purpose                                                                                          |
+| ----------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------ |
+| `LOG_LEVEL` / `KICAD_MCP_LOG_LEVEL` | `info`             | Log verbosity (`error`/`warn`/`info`/`debug`, or `off`). `KICAD_MCP_LOG_LEVEL` wins.             |
+| `KICAD_MCP_LOG_MAX_BYTES`           | `10485760` (10 MB) | Max size per log file before it rotates; `0` disables rotation.                                  |
+| `KICAD_MCP_LOG_BACKUP_COUNT`        | `3`                | Number of rotated backups to keep.                                                               |
+| `KICAD_MCP_DEBUG_SKIP`              | unset              | Set to `1` to re-enable the verbose kicad-skip parser DEBUG logs (muted by default).             |
+| `KICAD_MCP_COMMAND_TIMEOUT_MS`      | unset              | Minimum time the server waits for any command (ms). Raises, never lowers, the built-in timeouts. |
 
 See [ROADMAP.md](docs/ROADMAP.md) for planned features.
 
@@ -2042,6 +2123,6 @@ If you use this project in your research or publication, please cite:
   author = {mixelpixx},
   year = {2026},
   url = {https://github.com/mixelpixx/KiCAD-MCP-Server},
-  version = {2.8.3}
+  version = {2.9.0}
 }
 ```

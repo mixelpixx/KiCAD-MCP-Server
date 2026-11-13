@@ -1,6 +1,6 @@
 {
   "name": "kicad-mcp",
-  "version": "2.8.3",
+  "version": "2.9.0",
   "description": "AI-assisted PCB design with KiCAD via Model Context Protocol",
   "type": "module",
   "main": "dist/index.js",
@@ -55,6 +55,6 @@
     "prettier": "^3.8.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.57.2",
-    "vitest": "^2.1.9"
+    "vitest": "^4.1.12"
   }
 }

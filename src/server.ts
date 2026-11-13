@@ -56,6 +56,7 @@ import { registerComponentPrompts } from "./prompts/component.js";
 import { registerRoutingPrompts } from "./prompts/routing.js";
 import { registerDesignPrompts } from "./prompts/design.js";
 import { registerFootprintPrompts } from "./prompts/footprint.js";
+import { flagBackendFailuresAsErrors } from "./tools/failure-as-error.js";
 
 function getWindowsKiCadPythonCandidates(): string[] {
   const roots = [
@@ -318,7 +319,7 @@ export class KiCADMcpServer {
     // Initialize the MCP server
     this.server = new McpServer({
       name: "kicad-mcp-server",
-      version: "2.8.3",
+      version: "2.9.0",
       description: "MCP server for KiCAD PCB design operations",
     });
     // Create the ready promise (resolved when Python sends {"type":"ready"})
@@ -347,6 +348,8 @@ export class KiCADMcpServer {
           `(write, readonly, manufacturing); using readonly`,
       );
     }
+    // A backend reply of {success: false} is an MCP error (failure-as-error.ts).
+    flagBackendFailuresAsErrors(this.server);
     this.toolboxes = new ToolboxManager(
       this.server,
       parseToolboxSetting(process.env[TOOLBOXES_ENV]),

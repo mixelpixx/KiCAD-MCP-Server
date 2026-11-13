@@ -119,6 +119,7 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
               text: `Failed to add component: ${result.message || JSON.stringify(result)}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -190,6 +191,7 @@ To remove a footprint from a PCB, use delete_component instead.`,
             text: `Failed to remove component: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -357,6 +359,7 @@ use edit_component instead.`,
             text: `Failed to edit component: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -448,6 +451,7 @@ with the \`properties\` parameter instead.`,
             text: `Failed to set property '${args.name}' on ${args.reference}: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -497,6 +501,7 @@ edit_schematic_component and set its value to an empty string.`,
             text: `Failed to remove property '${args.name}' from ${args.reference}: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -540,6 +545,7 @@ edit_schematic_component and set its value to an empty string.`,
             text: `Failed to get component: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -584,6 +590,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to add wire: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -603,11 +610,10 @@ edit_schematic_component and set its value to an empty string.`,
       schematicPath: z.string().describe("Path to the schematic file"),
       netName: z.string().describe("Name of the net (e.g., VCC, GND, SIGNAL_1)"),
       position: z
-        .array(z.number())
-        .length(2)
+        .union([z.array(z.number()).length(2), z.object({ x: z.number(), y: z.number() })])
         .optional()
         .describe(
-          "Position [x, y] for the label. Required when componentRef/pinNumber are not given.",
+          "Position for the label in mm, as [x, y] or {x, y}. Required when componentRef/pinNumber are not given.",
         ),
       componentRef: z
         .string()
@@ -635,7 +641,7 @@ edit_schematic_component and set its value to an empty string.`,
     async (args: {
       schematicPath: string;
       netName: string;
-      position?: number[];
+      position?: number[] | { x: number; y: number };
       componentRef?: string;
       pinNumber?: string | number;
       labelType?: string;
@@ -659,6 +665,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to add net label: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -706,6 +713,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to add no-connect: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -747,6 +755,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to connect to net: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -782,6 +791,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to get net connections: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -845,6 +855,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to get wire connections: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -881,6 +892,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to get pin locations: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -1355,14 +1367,16 @@ edit_schematic_component and set its value to an empty string.`,
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       netName: z.string().describe("Name of the net label to remove"),
       position: z
-        .object({ x: z.number(), y: z.number() })
+        .union([z.array(z.number()).length(2), z.object({ x: z.number(), y: z.number() })])
         .optional()
-        .describe("Position to disambiguate if multiple labels with same name"),
+        .describe(
+          "Position in mm, as [x, y] or {x, y}, to disambiguate if multiple labels share the name",
+        ),
     },
     async (args: {
       schematicPath: string;
       netName: string;
-      position?: { x: number; y: number };
+      position?: number[] | { x: number; y: number };
     }) => {
       const result = await callKicadScript("delete_schematic_net_label", args);
       if (result.success) {
@@ -1640,6 +1654,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to generate netlist: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -1652,8 +1667,16 @@ edit_schematic_component and set its value to an empty string.`,
     {
       schematicPath: z.string().describe("Absolute path to the .kicad_sch schematic file"),
       boardPath: z.string().describe("Absolute path to the .kicad_pcb board file"),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe(
+          "Report every change (pad nets, values, fields, footprints added) without saving. " +
+            "The sync overwrites board values and fields with the schematic's, so preview first " +
+            "on a board that was edited after its last sync.",
+        ),
     },
-    async (args: { schematicPath: string; boardPath: string }) => {
+    async (args: { schematicPath: string; boardPath: string; dryRun?: boolean }) => {
       const result = await callKicadScript("sync_schematic_to_board", args);
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
@@ -2083,6 +2106,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to get net at point: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -2098,7 +2122,9 @@ edit_schematic_component and set its value to an empty string.`,
     {
       schematicPath: z.string().describe("Path to the sub-sheet .kicad_sch file"),
       text: z.string().describe("Label text (e.g. 'SD_CLK') — must match the sheet pin name"),
-      position: z.array(z.number()).length(2).describe("Position [x, y] in mm"),
+      position: z
+        .union([z.array(z.number()).length(2), z.object({ x: z.number(), y: z.number() })])
+        .describe("Position in mm, as [x, y] or {x, y}"),
       shape: z
         .enum(["input", "output", "bidirectional"])
         .describe("Signal direction from the sub-sheet's perspective"),
@@ -2110,7 +2136,7 @@ edit_schematic_component and set its value to an empty string.`,
     async (args: {
       schematicPath: string;
       text: string;
-      position: number[];
+      position: number[] | { x: number; y: number };
       shape: "input" | "output" | "bidirectional";
       orientation?: number;
     }) => {
@@ -2132,6 +2158,7 @@ edit_schematic_component and set its value to an empty string.`,
             text: `Failed to add hierarchical label: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -2199,9 +2226,8 @@ edit_schematic_component and set its value to an empty string.`,
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       text: z.string().describe("Text content to display"),
       position: z
-        .array(z.number())
-        .length(2)
-        .describe("Position [x, y] in schematic mm coordinates"),
+        .union([z.array(z.number()).length(2), z.object({ x: z.number(), y: z.number() })])
+        .describe("Position in schematic mm coordinates, as [x, y] or {x, y}"),
       angle: z.number().optional().describe("Rotation angle in degrees (default: 0)"),
       fontSize: z.number().optional().describe("Font size in mm (default: 1.27)"),
       bold: z.boolean().optional().describe("Bold text (default: false)"),
@@ -2214,7 +2240,7 @@ edit_schematic_component and set its value to an empty string.`,
     async (args: {
       schematicPath: string;
       text: string;
-      position: number[];
+      position: number[] | { x: number; y: number };
       angle?: number;
       fontSize?: number;
       bold?: boolean;
@@ -2239,6 +2265,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to add text annotation: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -2260,9 +2287,8 @@ edit_schematic_component and set its value to an empty string.`,
         .enum(["input", "output", "bidirectional"])
         .describe("Signal direction (should match the sub-sheet hierarchical label shape)"),
       position: z
-        .array(z.number())
-        .length(2)
-        .describe("Pin position [x, y] in mm — must be on the sheet block boundary"),
+        .union([z.array(z.number()).length(2), z.object({ x: z.number(), y: z.number() })])
+        .describe("Pin position in mm, as [x, y] or {x, y} — must be on the sheet block boundary"),
       orientation: z
         .number()
         .optional()
@@ -2273,7 +2299,7 @@ edit_schematic_component and set its value to an empty string.`,
       sheetName: string;
       pinName: string;
       pinType: "input" | "output" | "bidirectional";
-      position: number[];
+      position: number[] | { x: number; y: number };
       orientation?: number;
     }) => {
       const result = await callKicadScript("add_sheet_pin", args);
@@ -2295,6 +2321,7 @@ edit_schematic_component and set its value to an empty string.`,
             text: `Failed to add sheet pin: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );

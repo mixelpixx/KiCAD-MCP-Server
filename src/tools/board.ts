@@ -7,6 +7,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { logger } from "../logger.js";
+import { addZoneToCopperPour } from "./tool-aliases.js";
 
 // Command function type for KiCAD script calls
 type CommandFunction = (command: string, params: Record<string, unknown>) => Promise<any>;
@@ -545,15 +546,20 @@ export function registerBoardTools(server: McpServer, callKicadScript: CommandFu
     },
     async ({ layer, net, points, unit, clearance, minWidth, padConnection }) => {
       logger.debug(`Adding zone on layer ${layer} for net ${net}`);
-      const result = await callKicadScript("add_zone", {
-        layer,
-        net,
-        points,
-        unit,
-        clearance,
-        minWidth,
-        padConnection,
-      });
+      // The Python side has no add_zone command: a zone is a copper pour, so
+      // run add_copper_pour, which also brings its IPC path and auto-save.
+      const result = await callKicadScript(
+        "add_copper_pour",
+        addZoneToCopperPour({
+          layer,
+          net,
+          points,
+          unit,
+          clearance,
+          minWidth,
+          padConnection,
+        }),
+      );
 
       return {
         content: [

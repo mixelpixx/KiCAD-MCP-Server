@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pcbnew
 from utils.board_items import delete_board_item
+from utils.project_netclasses import netclass_pattern_for_net
 
 logger = logging.getLogger("kicad_interface")
 
@@ -260,6 +261,35 @@ def apply_net_assignment_to_project_settings(
         assignments = {}
         net_settings["netclass_assignments"] = assignments
     assignments[net_name] = [class_name]
+    # The durable record is an exact-name entry in netclass_patterns. KiCad treats
+    # netclass_assignments as DERIVED from the schematic's net-class directives and
+    # rewrites it on Update PCB from Schematic: on a schematic with no directives a
+    # sync (sync_schematic_to_board) leaves it empty and every assignment made here
+    # is silently lost. The user-defined patterns survive a sync. Seen on a real
+    # 6-layer HV board: 21 voltage-class assignments dropped, every clearance rule
+    # keyed on those classes stopped matching, and DRC still passed.
+    #
+    # The pattern is the name made literal for KiCad (see netclass_pattern_for_net): KiCad reads
+    # a pattern as a regular expression, so the raw name would also capture other
+    # nets. A re-assignment updates the net's entry in place; an entry holding the
+    # raw name (what an earlier build of this code wrote) is the same net's record
+    # and is rewritten to the escaped form rather than left beside it.
+    pattern = netclass_pattern_for_net(net_name)
+    patterns = net_settings.get("netclass_patterns")
+    if not isinstance(patterns, list):
+        patterns = []
+        net_settings["netclass_patterns"] = patterns
+    for entry in patterns:
+        if isinstance(entry, dict) and entry.get("pattern") in (
+            pattern,
+            net_name,
+            re.escape(net_name),  # what this tool wrote before the KiCad-literal form
+        ):
+            entry["pattern"] = pattern
+            entry["netclass"] = class_name
+            break
+    else:
+        patterns.append({"netclass": class_name, "pattern": pattern})
     return data
 
 
@@ -875,6 +905,14 @@ class RoutingCommands:
             if net_obj is not None:
                 via.SetNet(net_obj)
 
+            # A via placed on its own is a free via, as KiCad's own "Add Free-Standing Via"
+            # makes it. A non-free via takes its net from the copper it touches when the
+            # board is saved: inside another net's zone, with no path to a pad of its own
+            # net yet, it was written to the file on the zone's net, so the via the reply
+            # described was not the via on the board.
+            if hasattr(via, "SetIsFree"):
+                via.SetIsFree(True)
+
             # Add via to board
             self.board.Add(via)
 
@@ -891,7 +929,7 @@ class RoutingCommands:
                     "drill": via.GetDrill() / 1000000,
                     "from_layer": from_layer,
                     "to_layer": to_layer,
-                    "net": net,
+                    "net": via.GetNetname(),
                 },
             }
 
@@ -1921,6 +1959,18 @@ class RoutingCommands:
             points = params.get("outline", params.get("points", []))
             priority = params.get("priority", 0)
             fill_type = params.get("fillType", "solid")  # solid or hatched
+            pad_connection = params.get("padConnection")  # thermal | solid | none
+            pad_connection_modes = {
+                "thermal": "ZONE_CONNECTION_THERMAL",
+                "solid": "ZONE_CONNECTION_FULL",
+                "none": "ZONE_CONNECTION_NONE",
+            }
+            if pad_connection is not None and pad_connection not in pad_connection_modes:
+                return {
+                    "success": False,
+                    "message": "Invalid padConnection",
+                    "errorDetails": "padConnection must be one of thermal, solid, none",
+                }
 
             # If no outline provided, use board outline
             if not points or len(points) < 3:
@@ -1971,13 +2021,18 @@ class RoutingCommands:
             zone = pcbnew.ZONE(self.board)
             zone.SetLayer(layer_id)
 
-            # Set net if provided
+            # Set net if provided. An unknown name used to be ignored, which
+            # left a net-less zone on the board while reporting success.
             if net:
                 netinfo = self.board.GetNetInfo()
                 nets_map = netinfo.NetsByName()
-                if nets_map.has_key(net):
-                    net_obj = nets_map[net]
-                    zone.SetNet(net_obj)
+                if not nets_map.has_key(net):
+                    return {
+                        "success": False,
+                        "message": "Unknown net",
+                        "errorDetails": f"Net '{net}' does not exist on the board",
+                    }
+                zone.SetNet(nets_map[net])
 
             # Set zone properties
             scale = 1000000  # mm to nm
@@ -1987,6 +2042,9 @@ class RoutingCommands:
                 zone.SetLocalClearance(int(clearance * scale))
 
             zone.SetMinThickness(int(min_width * scale))
+
+            if pad_connection is not None:
+                zone.SetPadConnection(getattr(pcbnew, pad_connection_modes[pad_connection]))
 
             # Set fill type
             if fill_type == "hatched":
@@ -2028,6 +2086,7 @@ class RoutingCommands:
                     "minWidth": min_width,
                     "priority": priority,
                     "fillType": fill_type,
+                    "padConnection": pad_connection or "thermal",
                     "pointCount": len(points),
                 },
             }

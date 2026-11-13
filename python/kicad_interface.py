@@ -511,7 +511,9 @@ class KiCADInterface(SchematicHandlersMixin):
         self.routing_commands = RoutingCommands(self.board)
         self.stackup_commands = StackupCommands(self.board, self)
         self.via_summary_commands = ViaSummaryCommands(self.board)
-        self.freerouting_commands = FreeroutingCommands(self.board)
+        self.freerouting_commands = FreeroutingCommands(
+            self.board, on_board_saved=self._note_own_board_save
+        )
         self.eagle_commands = EagleCommands()
         self.symbol_schematic_commands = SymbolSchematicCommands()
         self.library_management_commands = LibraryManagementCommands()
@@ -643,7 +645,9 @@ class KiCADInterface(SchematicHandlersMixin):
             "get_drc_violations": self.design_rule_commands.get_drc_violations,
             "assign_net_to_class": self.design_rule_commands.assign_net_to_class,
             "check_clearance": self.design_rule_commands.check_clearance,
+            "audit_via_nets": self.design_rule_commands.audit_via_nets,
             "set_layer_constraints": self.design_rule_commands.set_layer_constraints,
+            "set_voltage_clearance_rules": self.design_rule_commands.set_voltage_clearance_rules,
             # GUI-driver channel (in-process wx helper over a localhost socket;
             # generic scriptable surface, destructive names are advisory-flagged
             # with a "⚠ " prefix — never gated). See commands/gui_driver.py.
@@ -849,6 +853,7 @@ class KiCADInterface(SchematicHandlersMixin):
         "route_arc_trace": "_ipc_route_arc_trace",
         "add_via": "_ipc_add_via",
         "add_net": "_ipc_add_net",
+        "modify_trace": "_ipc_modify_trace",
         "delete_trace": "_ipc_delete_trace",
         "query_traces": "_ipc_query_traces",
         "get_nets_list": "_ipc_get_nets_list",
@@ -1275,6 +1280,12 @@ class KiCADInterface(SchematicHandlersMixin):
                         self._record_board_signature()
                         self._last_auto_save_status = None
                     elif command in self._BOARD_MUTATING_COMMANDS:
+                        # A preview changed nothing, so there is nothing to
+                        # save. Saving here anyway wrote whatever unsaved edits
+                        # the loaded board held (and made a backup) while the
+                        # reply said "nothing saved".
+                        if isinstance(result, dict) and result.get("dryRun") is True:
+                            return result
                         # Auto-save after every board mutation via SWIG.
                         # Prevents data loss if Claude hits context limit before
                         # an explicit save_project call.  When auto-save refuses
@@ -1338,6 +1349,10 @@ class KiCADInterface(SchematicHandlersMixin):
         # setter for it, so the command edits the file and the handler above
         # reloads before this auto-save runs.
         "set_stackup_layer",
+        # modify_trace mutates track.SetWidth()/SetLayer()/SetNet() on the
+        # in-memory SWIG board but has no save of its own; without this entry
+        # it reported success and wrote nothing to disk, identical to #222.
+        "modify_trace",
         "place_component",
         "move_component",
         "rotate_component",
@@ -1637,6 +1652,21 @@ class KiCADInterface(SchematicHandlersMixin):
         except Exception:
             path = None
         self._board_disk_signature = self._disk_signature(path) if path else None
+
+    def _note_own_board_save(self, path: str) -> None:
+        """A command saved self.board to ``path`` itself (autoroute, import_ses).
+
+        When that is the board's own file, record its new signature, as
+        handle_command does after save_project. Otherwise the next auto-save
+        sees the file differ from the signature taken before the command and
+        refuses, reporting our own write as an external change. A save to some
+        other file leaves the board's file, and its signature, as they were.
+        """
+        current = self._current_board_path()
+        if not current or not path:
+            return
+        if os.path.normcase(str(Path(path).resolve())) == os.path.normcase(current):
+            self._record_board_signature()
 
     def _current_board_path(self) -> Optional[str]:
         """Return the current board file path, if a healthy board is loaded."""
@@ -5327,6 +5357,10 @@ print("ok")
                         }
                     self.board = reloaded
                     self._update_command_handlers()
+                    # The subprocess wrote the filled board to this file. Record
+                    # it, or the auto-save that follows takes that write for an
+                    # external change and refuses.
+                    self._record_board_signature()
                     logger.info("Zone fill subprocess succeeded")
                     return {
                         "success": True,
@@ -5510,16 +5544,31 @@ print("ok")
         }
 
     def _ipc_add_copper_pour(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """IPC handler for add_copper_pour - adds zone with real-time UI update"""
+        """IPC handler for add_copper_pour - adds zone with real-time UI update.
+
+        Mirrors the SWIG handler's checks: per-point units are converted to mm,
+        an unknown net is an error, and padConnection is applied.
+        """
+        from commands.routing import LENGTH_UNITS_MM
+
         try:
             layer = params.get("layer", "F.Cu")
             net = params.get("net")
             clearance = params.get("clearance", 0.5)
             min_width = params.get("minWidth", 0.25)
-            points = params.get("points", [])
+            # The tool schema sends `outline`; `points` is the older key.
+            points = params.get("outline") or params.get("points") or []
             priority = params.get("priority", 0)
             fill_type = params.get("fillType", "solid")
             name = params.get("name", "")
+            pad_connection = params.get("padConnection")  # thermal | solid | none
+
+            if pad_connection is not None and pad_connection not in ("thermal", "solid", "none"):
+                return {
+                    "success": False,
+                    "message": "Invalid padConnection",
+                    "errorDetails": "padConnection must be one of thermal, solid, none",
+                }
 
             if not points or len(points) < 3:
                 return {
@@ -5527,10 +5576,31 @@ print("ok")
                     "message": "At least 3 points are required for copper pour outline",
                 }
 
-            # Convert points format if needed (handle both {x, y} and {x, y, unit})
+            # Points may carry their own unit (add_zone sends mil/inch);
+            # ipc_board_api.add_zone takes mm.
             formatted_points = []
             for point in points:
-                formatted_points.append({"x": point.get("x", 0), "y": point.get("y", 0)})
+                unit = point.get("unit", "mm")
+                if unit not in LENGTH_UNITS_MM:
+                    return {
+                        "success": False,
+                        "message": "Invalid unit",
+                        "errorDetails": (
+                            f"point unit must be one of {sorted(LENGTH_UNITS_MM)}, got {unit!r}"
+                        ),
+                    }
+                scale = LENGTH_UNITS_MM[unit]
+                formatted_points.append(
+                    {"x": point.get("x", 0) * scale, "y": point.get("y", 0) * scale}
+                )
+
+            # add_zone leaves the zone net-less when the name matches nothing.
+            if net and net not in {n.get("name") for n in self.ipc_board_api.get_nets()}:
+                return {
+                    "success": False,
+                    "message": "Unknown net",
+                    "errorDetails": f"Net '{net}' does not exist on the board",
+                }
 
             success = self.ipc_board_api.add_zone(
                 points=formatted_points,
@@ -5541,6 +5611,7 @@ print("ok")
                 priority=priority,
                 fill_mode=fill_type,
                 name=name,
+                pad_connection=pad_connection,
             )
 
             return {
@@ -5557,6 +5628,7 @@ print("ok")
                     "minWidth": min_width,
                     "priority": priority,
                     "fillType": fill_type,
+                    "padConnection": pad_connection or "thermal",
                     "pointCount": len(points),
                 },
             }
@@ -5889,6 +5961,31 @@ print("ok")
             return result
         except Exception as e:
             logger.error(f"IPC save_project error: {e}")
+            return {"success": False, "message": str(e)}
+
+    def _ipc_modify_trace(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """IPC handler for modify_trace - mutates an existing track with real-time UI update.
+
+        ``traceUuid`` is the schema name (src/tools/routing.ts); ``uuid`` is
+        kept for JSON-RPC callers that predate the schema alignment (#403),
+        matching the SWIG handler's same two-key lookup.
+        """
+        try:
+            trace_uuid = params.get("traceUuid") or params.get("uuid")
+            if not trace_uuid:
+                return {
+                    "success": False,
+                    "message": "Missing trace identifier",
+                    "errorDetails": "Provide 'traceUuid' to identify the trace",
+                }
+            return self.ipc_board_api.modify_track(
+                uuid=trace_uuid,
+                width=params.get("width"),
+                layer=params.get("layer"),
+                net_name=params.get("net"),
+            )
+        except Exception as e:
+            logger.error(f"IPC modify_trace error: {e}")
             return {"success": False, "message": str(e)}
 
     def _ipc_delete_trace(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -6855,7 +6952,7 @@ def main() -> None:
                                 "serverInfo": {
                                     "name": "kicad-mcp-server",
                                     "title": "KiCAD PCB Design Assistant",
-                                    "version": "2.8.3",
+                                    "version": "2.9.0",
                                 },
                                 "instructions": "AI-assisted PCB design with KiCAD. Use tools to create projects, design boards, place components, route traces, and export manufacturing files.",
                             },
