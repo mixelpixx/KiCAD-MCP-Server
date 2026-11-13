@@ -527,6 +527,8 @@ class KiCADInterface(SchematicHandlersMixin):
         self.gui_driver_commands = GuiDriverCommands(self)
         self.library_commands = LibraryCommands(self.footprint_library)
         self._current_project_path: Optional[Path] = None  # set when boardPath is known
+        # Set when a command's boardPath switched the session to another board (#519).
+        self._board_switch_note: Optional[Dict[str, Any]] = None
 
         # Initialize symbol library manager (for searching local KiCad symbol libraries)
         self.symbol_library_commands = SymbolLibraryCommands()
@@ -2035,7 +2037,10 @@ class KiCADInterface(SchematicHandlersMixin):
                     f"({self.session_board_path}). Call open_project on {board_path} first."
                 ),
             }
-        if current and self._dirty_state(current).get("dirty") is True:
+        # Refuse only for edits that exist nowhere but in memory. A board whose file changed
+        # on disk while memory is clean (diskChangedExternally) loses nothing by switching.
+        last_auto_save = getattr(self, "_last_auto_save_status", None) or {}
+        if current and last_auto_save.get("memChangesUnsaved"):
             return {
                 "success": False,
                 "message": (

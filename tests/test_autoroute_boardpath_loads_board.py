@@ -193,6 +193,21 @@ def test_unsaved_changes_are_not_dropped_by_a_switch(boards) -> None:
 
 
 @pytest.mark.unit
+def test_a_board_changed_on_disk_with_clean_memory_is_switched(boards) -> None:
+    """The loaded board's file changed on disk (diskChangedExternally) but memory holds no
+    unsaved edits: switching drops nothing, so it goes ahead."""
+    a, b = boards
+    loaded = _fake_board(a)
+    iface = _make_iface(loaded=loaded)
+    iface._board_disk_signature = (0, "a signature that no longer matches a.kicad_pcb")
+    assert iface._dirty_state(str(a))["diskChangedExternally"] is True
+    out = iface.handle_command("autoroute", {"boardPath": str(b)})
+    assert out["success"] is True, out
+    assert iface.loaded_paths == [str(b)]
+    assert iface.calls[0]["board"].GetFileName() == str(b)
+
+
+@pytest.mark.unit
 def test_ipc_session_with_no_swig_board_accepts_its_own_board(boards) -> None:
     """In an IPC-pinned session the SWIG board can be missing; the session's identity is
     session_board_path, so naming that board is not 'another board'."""
