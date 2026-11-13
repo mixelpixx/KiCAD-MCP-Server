@@ -241,7 +241,6 @@ All notable changes to the KiCAD MCP Server project are documented here.
   and avoid rewriting LF schematics as CRLF on Windows. Symbol injection also
   finds `lib_symbols` boundaries correctly when quoted properties contain
   unbalanced parentheses.
-
 - **`import_eagle_project` no longer replaces a schematic that is open in
   KiCad.** It writes `<output_dir>/<project_name>.kicad_sch` without checking
   whether that file exists, so re-importing into an open project overwrote it

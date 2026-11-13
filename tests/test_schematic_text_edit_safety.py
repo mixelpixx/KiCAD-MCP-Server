@@ -1,7 +1,6 @@
 """Regression tests for text-based schematic edits."""
 
 import sexpdata
-
 from commands.dynamic_symbol_loader import DynamicSymbolLoader
 from commands.wire_manager import WireManager
 
@@ -10,8 +9,8 @@ def test_symbol_injection_ignores_parentheses_in_quoted_values(tmp_path, monkeyp
     """A quoted pin/property value must not move the lib_symbols boundary."""
     schematic = tmp_path / "quoted.kicad_sch"
     schematic.write_text(
-        '(kicad_sch (version 20250114) (lib_symbols '
-        '(symbol "Existing" (property "Description" "pin 1)")) '
+        "(kicad_sch (version 20250114) (lib_symbols "
+        '(symbol "Existing" (property "Description" "pin 1)"))) '
         '(sheet_instances (path "/" (page "1"))))\n',
         encoding="utf-8",
     )
@@ -28,16 +27,14 @@ def test_symbol_injection_ignores_parentheses_in_quoted_values(tmp_path, monkeyp
     assert parsed[0] == sexpdata.Symbol("kicad_sch")
     lib_symbols = next(item for item in parsed if item[0] == sexpdata.Symbol("lib_symbols"))
     assert any(
-        item[0] == sexpdata.Symbol("symbol") and item[1] == "Device:R"
-        for item in lib_symbols[1:]
+        item[0] == sexpdata.Symbol("symbol") and item[1] == "Device:R" for item in lib_symbols[1:]
     )
 
 
 def test_repeated_label_edits_leave_a_parseable_schematic(tmp_path):
     schematic = tmp_path / "labels.kicad_sch"
     schematic.write_text(
-        '(kicad_sch (version 20250114) (lib_symbols) '
-        '(sheet_instances (path "/" (page "1"))))\n',
+        "(kicad_sch (version 20250114) (lib_symbols) " '(sheet_instances (path "/" (page "1"))))\n',
         encoding="utf-8",
     )
 
@@ -46,8 +43,6 @@ def test_repeated_label_edits_leave_a_parseable_schematic(tmp_path):
 
     parsed = sexpdata.loads(schematic.read_text(encoding="utf-8"))
     labels = [
-        item
-        for item in parsed
-        if isinstance(item, list) and item[0] == sexpdata.Symbol("label")
+        item for item in parsed if isinstance(item, list) and item[0] == sexpdata.Symbol("label")
     ]
     assert len(labels) == 10
