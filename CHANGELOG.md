@@ -44,6 +44,21 @@ All notable changes to the KiCAD MCP Server project are documented here.
   `netclass_assignments` too. Assignments made with an earlier version were
   lost on the first sync after they were made, so redo them (call
   `assign_net_to_class` again for each net) after upgrading.
+### Bug Fixes
+
+- **Backend failures reach the client as MCP errors.** Most tools return the
+  backend's JSON as it is, so a `{"success": false, ...}` reply went out as a
+  normal result and an agent carried on as if the call had worked. Every
+  tool registration is now wrapped once: a reply whose JSON says
+  `success: false` is sent with `isError: true`. Replies that already set
+  `isError`, and non-JSON content, are unchanged. A partial success is not
+  flagged: when a batch tool (`batch_add_components`, `batch_connect`,
+  `batch_add_no_connects`, `connect_passthrough`, `backannotate_footprints`,
+  ...) reports applied work, an added, connected, placed or updated count
+  above zero or a non-empty list of applied items, the reply stays a normal
+  result with its list of failures, so `isError` means nothing happened and
+  the call is safe to retry. `batch_connect` and `batch_add_no_connects`,
+  which build their own reply text, follow the same rule.
 
 ## [2.9.0] - 2026-11-11
 
