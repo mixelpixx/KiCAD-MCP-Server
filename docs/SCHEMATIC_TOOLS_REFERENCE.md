@@ -570,13 +570,13 @@ Runs the KiCAD Electrical Rules Check (ERC) on a schematic and returns all viola
 
 Import the schematic netlist into the PCB board — equivalent to pressing F8 in KiCAD (Tools → Update PCB from Schematic). MUST be called after the schematic is complete and before placing or routing components on the PCB. Without this step, the board has no footprints and no net assignments — place_component and route_pad_to_pad will produce an empty, unroutable board.
 
-| Parameter              | Type    | Required | Description                                                                                                                                |
-| ---------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| schematicPath          | string  | Yes      | Absolute path to the .kicad_sch schematic file                                                                                             |
-| boardPath              | string  | Yes      | Absolute path to the .kicad_pcb board file                                                                                                 |
-| dryRun                 | boolean | No       | Report every change (pad nets, values, fields, footprints added, replaced, deleted) without saving                                         |
+| Parameter              | Type    | Required | Description                                                                                                                                      |
+| ---------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| schematicPath          | string  | Yes      | Absolute path to the .kicad_sch schematic file                                                                                                   |
+| boardPath              | string  | Yes      | Absolute path to the .kicad_pcb board file                                                                                                       |
+| dryRun                 | boolean | No       | Report every change (pad nets, values, fields, footprints added, replaced, deleted) without saving                                               |
 | replaceFootprints      | boolean | No       | Swap footprints whose library ID differs from the symbol's footprint, keeping position, rotation, side, symbol link and the board's field layout |
-| deleteUnusedFootprints | boolean | No       | Delete footprints with no symbol in the schematic; board-only and locked footprints are kept                                               |
+| deleteUnusedFootprints | boolean | No       | Delete footprints with no symbol in the schematic; board-only and locked footprints are kept                                                     |
 
 **Usage Notes:** This is the F8 equivalent. It synchronizes the schematic design to the PCB, creating footprints on the board and assigning nets. This step is critical in the workflow: design in schematic → sync_schematic_to_board → place and route on PCB.
 
