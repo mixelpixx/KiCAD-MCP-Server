@@ -36,6 +36,7 @@ export function registerLibraryTools(server: McpServer, callKicadScript: Functio
             text: `Failed to list libraries: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -78,6 +79,7 @@ export function registerLibraryTools(server: McpServer, callKicadScript: Functio
             text: `Failed to search footprints: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -111,6 +113,7 @@ export function registerLibraryTools(server: McpServer, callKicadScript: Functio
             text: `Failed to list footprints in library ${args.library_name}: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -173,6 +176,7 @@ export function registerLibraryTools(server: McpServer, callKicadScript: Functio
             text: `Failed to get footprint info: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
