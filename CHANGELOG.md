@@ -6,6 +6,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **`autoroute` passes the board's KiCad rules to Freerouting: `kicadRules`.**
+  A DSN carries only net-class clearances; the board's `.kicad_dru` (custom
+  rules such as isolation between voltage domains) and the `.kicad_pro`'s
+  minimum track width were lost, so the KiCad DRC rejected copper Freerouting
+  thought was legal. Freerouting master after 2.5.0 reads both files given in
+  `-de` (freerouting #1121, #1130). `autoroute` now stages copies beside the
+  DSN and passes them (default on; `kicadRules: false` leaves them out). The
+  reply's `kicad_rules` lists the files `applied` and `ignored` (2.5.0 and
+  earlier log them as unknown and route on) and the rules Freerouting could
+  only approximate.
+
 - **`sync_schematic_to_board` can preview (`dryRun: true`).** The sync
   overwrites board values and fields with the schematic's and moves pads to
   the schematic's nets, as KiCad's F8 does. On a board edited after its last
