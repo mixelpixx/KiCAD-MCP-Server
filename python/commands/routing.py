@@ -367,10 +367,12 @@ def _project_file_patterns(pro_path: Optional[str]) -> Optional[List[Tuple[str, 
     return patterns
 
 
+# Worded so it holds whether or not the project-file write succeeded: the callers add it
+# in both cases, and their reply reports the file write separately.
 KICAD8_MEMBERSHIP_WARNING = (
-    "KiCad 8: the net class membership was written to the project file, but KiCad 8's next "
-    "board save rewrites the project file from memory, which this server cannot reach on 8, "
-    "and drops it. Assign the class in KiCad's Board Setup, or use KiCad 9 or later."
+    "KiCad 8: the next board save rewrites the project file from memory, which this server "
+    "cannot reach on KiCad 8, and drops this net class membership. Assign the class in "
+    "KiCad's Board Setup, or use KiCad 9 or later."
 )
 
 

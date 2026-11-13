@@ -21,6 +21,7 @@ from unittest.mock import MagicMock, call
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
 from commands.routing import (  # noqa: E402
+    KICAD8_MEMBERSHIP_WARNING,
     persist_net_assignment_to_project,
     register_membership_in_project_settings,
     register_memberships_in_project_settings,
@@ -134,7 +135,10 @@ def test_without_a_project_file_the_pattern_is_appended() -> None:
 def test_settings_without_the_setter_are_left_alone() -> None:
     # KiCad 8's NET_SETTINGS has no SetNetclassPatternAssignment.
     settings = MagicMock(spec=["ClearAllCaches"])
-    assert register_membership_in_project_settings(_board(settings), "N", "HV") is None
+    assert (
+        register_membership_in_project_settings(_board(settings), "N", "HV")
+        == KICAD8_MEMBERSHIP_WARNING
+    )
     settings.ClearAllCaches.assert_not_called()
 
 
