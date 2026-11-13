@@ -29,6 +29,36 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **Net classes and their nets reach KiCad, and the replies say what was
+  written.** Checked with KiCad's own DRC on 9.0.9 and 10.0.8.
+  - `create_netclass` with `nets` replied with the requested nets and
+    `persisted: true` while assigning none of them. The in-memory call was
+    `SetClass`, which KiCad 8 renamed to `SetNetClass`, and membership was
+    never written to the project. It now writes membership to the
+    `.kicad_pro` like `assign_net_to_class` does. It replies with
+    `netsAssigned` (written) and `netsNotAssigned` (not on the board, or not
+    writable), and `netClass.nets` lists only the assigned nets.
+  - On KiCad 9, `pcbnew.SaveBoard` rewrites the `.kicad_pro` from the board's
+    in-memory settings, so the next board save erased every class and
+    assignment the server had written to the file. Classes and memberships
+    are now also registered in those in-memory settings (`SetNetclass`, plus a
+    pattern assignment on the net name made literal for KiCad's matcher (see
+    #517), since KiCad reads a pattern as a regular expression and a raw `D+`
+    would also claim `D` and `DD`).
+    `SetNetclassPatternAssignment` appends, so the in-memory list is rebuilt
+    from the project file on each assignment; moving a net from class A to B
+    leaves it in B, not in the composite `A,B`.
+  - KiCad 8 has no `SetNetclassPatternAssignment`, and its `SaveBoard` also
+    rewrites the `.kicad_pro` from memory, which Python cannot reach there.
+    The membership is written to the project file, but the next board save
+    on KiCad 8 overwrites it; the reply says so in a `warning`.
+  - `assign_net_to_class` right after `create_netclass` in the same session
+    failed with "Net class not found", because the class was added to a copy
+    of the class map. It now finds it.
+  - `add_net` with `netClass` reported "Failed to add net" after adding the
+    net (the same `SetClass` error). It now applies and persists the class,
+    reports `classPersisted`, and warns about an unknown class instead of
+    claiming it.
 - **`assign_net_to_class` membership now survives Update PCB from Schematic**
   (#517). The tool wrote only `net_settings.netclass_assignments`, which KiCad
   derives from the schematic's net-class directives and rewrites on a sync; a
