@@ -12,8 +12,8 @@ and value, every net/global/hierarchical label and every free text, and reports:
   KiCad's own Device:R puts its value inside the rectangle)
 - body over body
 - a wire through a text (a label's own wire only touches its edge)
-- anything on the title block (KiCad's default drawing sheet, approx.) or
-  outside the page frame
+- anything on the title block (KiCad's default drawing sheet) or outside the
+  page frame
 - a field stored at 180 degrees, or a free text at 180/270 (drawn upside down)
 
 Calibrated against renders of a released three-sheet design: the text-size
@@ -121,6 +121,25 @@ def display_text(text):
     return _ESCAPE_RE.sub(lambda m: _KICAD_ESCAPES[m.group(1)], text)
 
 
+def block_box(x, y, angle, w, h, just):
+    """Box of a w x h text block anchored at (x, y), laid out along its angle.
+
+    Justification runs along the text's own direction (angle CCW, sheet y down):
+    "left" grows along the text, "bottom" puts the block above its anchor in the
+    text's own frame. At 90 degrees the block is h wide and w tall, "left" grows
+    upward and "bottom" puts the block left of the anchor (measured on a KiCad
+    10.0.8 SVG export of free texts at every justification).
+    """
+    a = math.radians(angle)
+    ux, uy = round(math.cos(a)), -round(math.sin(a))  # along the text
+    vx, vy = -uy, ux  # across it (top -> bottom for upright text)
+    al = (0, w) if "left" in just else ((-w, 0) if "right" in just else (-w / 2, w / 2))
+    ac = (-h, 0) if "bottom" in just else ((0, h) if "top" in just else (-h / 2, h / 2))
+    xs = [x + ux * p + vx * q for p in al for q in ac]
+    ys = [y + uy * p + vy * q for p in al for q in ac]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
 def text_box(x, y, angle, text, size, just, label=False, is_label=False):
     """Axis-aligned box of a text anchored at (x, y).
 
@@ -132,17 +151,9 @@ def text_box(x, y, angle, text, size, just, label=False, is_label=False):
         w += size[0] * LABEL_FLAG  # flag / shape around global & hierarchical labels
     horiz = int(round(angle)) % 180 == 0
     if not is_label:
-        # Fields and texts: justification runs along the text's own direction
-        # (angle CCW, sheet y down). KiCad draws a 180/270 text upright with the
-        # justification flipped, which covers the same box.
-        a = math.radians(angle)
-        ux, uy = round(math.cos(a)), -round(math.sin(a))  # along the text
-        vx, vy = -uy, ux  # across it (top -> bottom for upright text)
-        al = (0, w) if "left" in just else ((-w, 0) if "right" in just else (-w / 2, w / 2))
-        ac = (-h, 0) if "bottom" in just else ((0, h) if "top" in just else (-h / 2, h / 2))
-        xs = [x + ux * p + vx * q for p in al for q in ac]
-        ys = [y + uy * p + vy * q for p in al for q in ac]
-        return (min(xs), min(ys), max(xs), max(ys))
+        # Fields: KiCad draws a 180/270 field upright with the justification
+        # flipped, which covers the same box.
+        return block_box(x, y, angle, w, h, just)
     # Labels: anchor -> box along the text direction
     if "left" in just:
         a0, a1 = 0, w
@@ -223,7 +234,7 @@ def lib_graphics(sym_def, unit):
                 yield g
 
 
-def lib_segments(sym_def, unit):
+def lib_segments(sym_def, unit, pins=True):
     """The drawn lines of a lib symbol for one unit, in lib coords (y up).
 
     A rectangle gives its four edges, a polyline its legs, a pin its stub, a
@@ -231,14 +242,28 @@ def lib_segments(sym_def, unit):
     what a field can be drawn across. The bbox alone is mostly empty on a small
     part: a reference tucked beside a capacitor's pin stub crosses the box but
     no line, and reads fine.
+
+    pins=False gives the drawn body only: no pins, and no leg that ends on a
+    pin's connection point either. Such a leg is a stub drawn as a line:
+    ``power:GND`` draws its stub as a polyline from (0 0), where its
+    zero-length pin is, and a wire would be drawn the same way.
     """
     segs = []
+    ends = set()
+    if not pins:
+        for g in lib_graphics(sym_def, unit):
+            if str(g[0]) == "pin":
+                px, py, _a = at_of(g)
+                ends.add((round(px, 4), round(py, 4)))
 
     def add(points, closed=False):
         pts = list(points)
         if closed and pts:
             pts.append(pts[0])
-        segs.extend(zip(pts, pts[1:]))
+        for p, q in zip(pts, pts[1:]):
+            on_pin = {(round(p[0], 4), round(p[1], 4)), (round(q[0], 4), round(q[1], 4))} & ends
+            if not on_pin:
+                segs.append((p, q))
 
     for g in lib_graphics(sym_def, unit):
         tag = str(g[0])
@@ -268,7 +293,7 @@ def lib_segments(sym_def, unit):
                     if p
                 ]
             )
-        elif tag == "pin":
+        elif tag == "pin" and pins:
             x, y, a = at_of(g)
             ln = float(first(g, "length")[1]) if first(g, "length") else 2.54
             add([(x, y), (x + ln * math.cos(math.radians(a)), y + ln * math.sin(math.radians(a)))])
@@ -370,6 +395,44 @@ def segment_crosses_box(seg, box):
     return t0 < t1
 
 
+def segments_cross(s, t, eps=1e-9):
+    """True when two segments cross each other's middle (touching ends do not count)."""
+    (ax, ay), (bx, by) = s
+    (cx, cy), (dx, dy) = t
+
+    def side(px, py, qx, qy, rx, ry):
+        v = (qx - px) * (ry - py) - (qy - py) * (rx - px)
+        return 0 if abs(v) <= eps else (1 if v > 0 else -1)
+
+    return side(cx, cy, dx, dy, ax, ay) * side(cx, cy, dx, dy, bx, by) < 0 and (
+        side(ax, ay, bx, by, cx, cy) * side(ax, ay, bx, by, dx, dy) < 0
+    )
+
+
+def segments_box(segs):
+    xs = [p[0] for s in segs for p in s]
+    ys = [p[1] for s in segs for p in s]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def bodies_overlap(a, b):
+    """Two drawn bodies (segments, stubs left out) are on top of each other when a
+    line of one crosses a line of the other, or one lies inside the other's box
+    (a part dropped inside an IC's outline crosses none of its lines)."""
+    if not a or not b:
+        return False
+    ba, bb = segments_box(a), segments_box(b)
+    if not overlap(ba, bb):
+        return False
+
+    def inside(i, o):
+        return o[0] <= i[0] and o[1] <= i[1] and i[2] <= o[2] and i[3] <= o[3]
+
+    if inside(ba, bb) or inside(bb, ba):
+        return True
+    return any(segments_cross(s, t) for s in a for t in b)
+
+
 def collect(path):
     data = sexpdata.loads(Path(path).read_text(encoding="utf-8"))
     paper = first(data, "paper")
@@ -403,7 +466,8 @@ def collect(path):
                 segs = place_segments(lib_segments(sd, unit), x, y, rot, mirror)
                 core = lib_bbox(sd, unit, pins=False)
                 core_box = place_box(core, x, y, rot, mirror) if core else None
-                bodies.append((ref, place_box(lb, x, y, rot, mirror), segs, core_box))
+                drawn = place_segments(lib_segments(sd, unit, pins=False), x, y, rot, mirror)
+                bodies.append((ref, place_box(lb, x, y, rot, mirror), segs, core_box, drawn))
         for prop in find(sym, "property"):
             if hidden(prop) or str(prop[1]) not in ("Reference", "Value") or not str(prop[2]):
                 continue
@@ -444,19 +508,16 @@ def collect(path):
         x, y, a = at_of(t)
         lines = display_text(str(t[1])).split("\n")
         size = text_size(t)
+        # The block: as wide as its longest line, as tall as all its lines. KiCad
+        # anchors multi-line text by its block (bottom-justified text grows upward)
+        # and lays the block out along the text's angle: a note at 90 degrees runs
+        # bottom to top. KiCad 10 draws a free text at 180 exactly as at 0, and at
+        # 270 as at 90, same justification (measured on its SVG export).
         w = text_width(max(lines, key=len), size[0])
         line_h = size[1] * 1.35
         h = (len(lines) - 1) * line_h + size[1]
-        just = justify(t)
-        x0 = x if "left" in just else (x - w if "right" in just else x - w / 2)
-        # KiCad anchors multi-line text by its block: bottom-justified text grows upward.
-        if "bottom" in just:
-            y0 = y - h
-        elif "top" in just:
-            y0 = y
-        else:
-            y0 = y - h / 2
-        texts.append((f"text:{lines[0][:20]}", (x0, y0, x0 + w, y0 + h), None))
+        box = block_box(x, y, int(round(a)) % 180, w, h, justify(t))
+        texts.append((f"text:{lines[0][:20]}", box, None))
         if int(round(a)) % 360 in (180, 270):
             upside.append((f"text:{lines[0][:20]}", (x - 1, y - 1, x + 1, y + 1)))
     wires = []
@@ -470,9 +531,12 @@ def collect(path):
 def check(path):
     (pw, ph), bodies, texts, upside, wires = collect(path)
     frame = (10, 10, pw - 10, ph - 10)
-    title = (pw - 122, ph - 47, pw - 10, ph - 10)  # KiCad default title block, approx.
+    # KiCad's default drawing sheet: the title block's top-left corner is at
+    # (pw - 120, ph - 44) on every paper size, and it runs to the frame (lines
+    # measured on kicad-cli SVG exports of an A4 and an A3 sheet).
+    title = (pw - 120, ph - 44, pw - 10, ph - 10)
     problems = [("upside down", n, b) for n, b in upside]
-    items = [("body", n, b, n) for n, b, _s, _c in bodies] + [
+    items = [("body", n, b, n) for n, b, _s, _c, _d in bodies] + [
         ("text", n, b, o) for n, b, o in texts
     ]
     for kind, name, box, owner in items:
@@ -490,7 +554,7 @@ def check(path):
     for n, tb, owner in texts:
         # the text's interior: a line that only touches its edge is not across it
         ib = (tb[0] + 0.3, tb[1] + 0.3, tb[2] - 0.3, tb[3] - 0.3)
-        for bn, bb, bs, core in bodies:
+        for bn, bb, bs, core, _d in bodies:
             if bn == owner:
                 # A symbol's own field may sit inside its body (an IC's name;
                 # Device:R's value at (0 0 90) inside its rectangle) or beside
@@ -530,10 +594,13 @@ def check(path):
                 break
     for i in range(len(bodies)):
         for j in range(i + 1, len(bodies)):
-            # drawn bodies only: two parts whose pin stubs meet (a wire-less
-            # connection, or a power symbol on a pin end) are not on top of each other
-            ci, cj = bodies[i][3], bodies[j][3]
-            if ci and cj and overlap(ci, cj, pad=0.3):
+            # Drawn bodies only, compared line by line: two parts whose stubs meet
+            # (a wire-less connection, a power symbol on a pin end) are not on top
+            # of each other. Box overlap was not enough: power:GND draws its stub
+            # as a line from its pin, so its box starts on the pin end, inside an
+            # LED's box (its light arrows reach past the cathode's pin end) or a
+            # wire pad's (its pin is in the middle of its outline).
+            if bodies_overlap(bodies[i][4], bodies[j][4]):
                 problems.append(
                     ("body over body", f"{bodies[i][0]} / {bodies[j][0]}", bodies[i][1])
                 )

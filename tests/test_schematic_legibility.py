@@ -24,13 +24,44 @@ LIB_A = """
   (symbol "T:A"
     (symbol "A_0_1" (rectangle (start 0 -1) (end 6 1))))
 """
+# power:GND as KiCad draws it: the stub is a polyline leg from (0 0), where its
+# zero-length pin is, not a pin of its own.
+LIB_GND = """
+  (symbol "T:GND" (power)
+    (symbol "GND_0_1"
+      (polyline (pts (xy 0 0) (xy 0 -1.27) (xy 1.27 -1.27) (xy 0 -2.54) (xy -1.27 -1.27) (xy 0 -1.27))))
+    (symbol "GND_1_1" (pin power_in line (at 0 0 270) (length 0) (name "GND") (number "1"))))
+"""
+# interf_u's LED: its light arrows reach 0.76 mm past the cathode's pin end.
+LIB_LED = """
+  (symbol "T:LED"
+    (symbol "LED_0_1"
+      (polyline (pts (xy -3.048 -0.762) (xy -4.572 -2.286) (xy -3.81 -2.286) (xy -4.572 -2.286)
+                     (xy -4.572 -1.524)))
+      (polyline (pts (xy -1.778 -0.762) (xy -3.302 -2.286) (xy -2.54 -2.286) (xy -3.302 -2.286)
+                     (xy -3.302 -1.524)))
+      (polyline (pts (xy -1.27 0) (xy 1.27 0)))
+      (polyline (pts (xy -1.27 -1.27) (xy -1.27 1.27)))
+      (polyline (pts (xy 1.27 -1.27) (xy 1.27 1.27) (xy -1.27 0) (xy 1.27 -1.27)))
+      (pin passive line (at -3.81 0 0) (length 2.54) (name "K") (number "1"))
+      (pin passive line (at 3.81 0 180) (length 2.54) (name "A") (number "2"))))
+"""
+# vme-wren's wire pad (W1): its zero-length pin is in the middle of its outline.
+LIB_PAD = """
+  (symbol "T:PAD"
+    (symbol "PAD_1_1"
+      (polyline (pts (xy -0.762 -0.508) (xy -0.762 0.508) (xy -0.508 0.762) (xy 0.508 0.762)
+                     (xy 0.762 0.508) (xy 0.762 -0.508) (xy 0.508 -0.762) (xy -0.508 -0.762)
+                     (xy -0.762 -0.508)))
+      (pin bidirectional line (at 0 0 180) (length 0) (name "1") (number "1"))))
+"""
 
 
 def sheet(tmp_path, body, paper="A4"):
     f = tmp_path / "s.kicad_sch"
     f.write_text(
         f'(kicad_sch (version 20250114) (paper "{paper}")\n'
-        f"(lib_symbols {LIB_R} {LIB_A})\n{body})",
+        f"(lib_symbols {LIB_R} {LIB_A} {LIB_GND} {LIB_LED} {LIB_PAD})\n{body})",
         encoding="utf-8",
     )
     return f
@@ -247,3 +278,69 @@ def test_kicad_escapes_and_markup_are_measured_as_drawn():
     escaped = text_box(0, 0, 0, "VPP{slash}MCLR", size, just, is_label=True)
     plain = text_box(0, 0, 0, "VPP/MCLR", size, just, is_label=True)
     assert escaped == plain
+
+
+def note(text, x, y, angle=0, justify="left bottom"):
+    return (
+        f'(text "{text}" (at {x} {y} {angle}) '
+        f"(effects (font (size 1.27 1.27)) (justify {justify})))"
+    )
+
+
+def test_a_rotated_note_runs_along_its_angle(tmp_path):
+    """KiCad 10's jetson csi.kicad_sch: "CSI x2" at 90 degrees runs bottom to top,
+    clear of the label at x 261.62 that a box laid flat reached."""
+    lab = label("CAM0.CSI2_CLK-", 261.62, 55.88, justify="left bottom")
+    upright = note("CSI x2", 254.635, 54.61, angle=90)
+    assert "text over text" not in kinds(sheet(tmp_path, upright + lab))
+    flat = note("CSI x2", 254.635, 54.61)
+    assert "text over text" in kinds(sheet(tmp_path, flat + lab))
+
+
+def test_a_rotated_block_swaps_its_width_and_height(tmp_path):
+    """A two-line note is boxed 16.9 mm wide (its longest line) and 2.98 mm tall
+    (both lines). At 90 degrees the box is 2.98 wide and 16.9 tall, left of and
+    above a "left bottom" anchor, which is where KiCad 10 draws the block; KiCad
+    draws a note at 270 exactly as at 90 (both seen on a kicad-cli SVG export)."""
+    from commands.schematic_legibility import collect
+
+    def box(angle):
+        f = sheet(tmp_path, note("LONGEST LINE A\\nB", 100, 100, angle=angle))
+        return [round(v, 3) for v in collect(f)[2][0][1]]
+
+    w, h = 14 * 1.27 * 0.95, 1.27 * 1.35 + 1.27
+    assert box(0) == [100, round(100 - h, 3), round(100 + w, 3), 100]
+    assert box(90) == [round(100 - h, 3), round(100 - w, 3), 100, 100]
+    assert box(270) == box(90)
+
+
+def test_title_block_is_kicads_default_drawing_sheet(tmp_path):
+    """On A4 the block's top line is at y 166 (210 - 44) and its left line at x 177
+    (297 - 120). A GND value just above it (vme-wren slow_gpio's #PWR01036.Value at
+    y 163.07..164.59) or just left of it is clear of it."""
+    above = note("GND", 250, 163.07, justify="left top")
+    left = note("GND", 176.5, 180, justify="right")
+    on = note("GND", 250, 167, justify="left top")
+    assert "on title block" not in kinds(sheet(tmp_path, above))
+    assert "on title block" not in kinds(sheet(tmp_path, left))
+    assert "on title block" in kinds(sheet(tmp_path, on))
+
+
+def test_a_power_symbol_on_a_pin_end_is_not_body_over_body(tmp_path):
+    """The three body-over-body reports on KiCad 10's demos, none visible on the
+    render: GND on an LED's cathode (interf_u D1 / #019; the LED's arrows reach past
+    the pin end) and GND on a wire pad (vme-wren W1 / #PWR0571; the pin is in the
+    middle of the pad). GND's stub starts on the pin, so its box did too."""
+    led = symbol("T:LED", "D1", 100, 100, rot=90) + symbol("T:GND", "#019", 100, 103.81)
+    assert "body over body" not in kinds(sheet(tmp_path, led))
+    pad = symbol("T:PAD", "W1", 100, 100) + symbol("T:GND", "#PWR0571", 100, 100)
+    assert "body over body" not in kinds(sheet(tmp_path, pad))
+
+
+def test_a_power_symbol_dropped_on_a_part_is_body_over_body(tmp_path):
+    """Power symbols are compared like any part: a GND drawn across a resistor is.
+    So is a part drawn wholly inside another's outline, though no lines cross."""
+    f = sheet(tmp_path, symbol("T:R", "R1", 100, 100) + symbol("T:GND", "#PWR1", 100, 99))
+    assert "body over body" in kinds(f)
+    inside = symbol("T:R", "R2", 100, 100) + symbol("T:PAD", "W2", 100, 100)
+    assert "body over body" in kinds(sheet(tmp_path, inside))

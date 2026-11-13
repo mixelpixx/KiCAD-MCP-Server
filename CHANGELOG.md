@@ -14,10 +14,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   pin stub) or in the middle of its outline; a symbol's own field across a
   drawn line of its body (inside an IC's rectangle or beside a capacitor's
   plates is fine, as KiCad's own `Device:R` places its value); bodies on top
-  of each other (drawn bodies, not their pin stubs); a wire through a text (a
-  label's own wire only touches its edge); items on the title block or
-  outside the frame; and upside-down text. Each problem comes with its box
-  in sheet mm.
+  of each other (their drawn lines cross, or one lies inside the other; pin
+  stubs left out, including a stub drawn as a line, as `power:GND` draws
+  it); a wire through a text (a label's own wire only touches its edge);
+  items on KiCad's default title block or outside the frame; and upside-down
+  text. A free text is boxed along its angle (a note at 90 degrees runs
+  bottom to top). Each problem comes with its box in sheet mm.
   - Calibrated against renders of a released three-sheet design: text
     advance 0.95 x size per character; a field's angle and justification are
     in the symbol's frame and go through its rotation, then its mirror. On
