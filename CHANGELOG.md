@@ -6,6 +6,10 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **`add_copper_keepout` creates a copper-fill rule area through live KiCad IPC.**
+  It requires the board to be open in KiCad with the IPC API enabled, keeps
+  zone fills out while allowing tracks, vias, pads, and footprints, and refills
+  the zones after creation. Save the board afterwards with `save_project`.
 - **`sync_schematic_to_board` can preview (`dryRun: true`).** The sync
   overwrites board values and fields with the schematic's and moves pads to
   the schematic's nets, as KiCad's F8 does. On a board edited after its last
@@ -113,10 +117,6 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
-- **`add_copper_keepout` creates a copper-fill rule area through live KiCad IPC.**
-  It requires the board to be open in KiCad with the IPC API enabled, keeps
-  zone fills out while allowing tracks, vias, pads, and footprints, and refills
-  the zones after creation. Save the board afterwards with `save_project`.
 - **`audit_via_nets`: compare every via's net with a reference board**
   (#493, @dp-web4). KiCad can change a via's net when it saves a board, with
   no error. DRC doesn't flag it, because the board stays self-consistent,
