@@ -56,6 +56,39 @@ All notable changes to the KiCAD MCP Server project are documented here.
     net. The pad came from a symbol that defines pin 1 differently in two
     units.
 
+### Bug Fixes
+
+- **`assign_net_to_class` membership now survives Update PCB from Schematic**
+  (#517). The tool wrote only `net_settings.netclass_assignments`, which KiCad
+  derives from the schematic's net-class directives and rewrites on a sync; a
+  schematic without directives emptied it, every rule keyed on those classes
+  stopped matching, and DRC passed (a pour 0.21 mm from a 600 V net on a real
+  board). The tool now also records the net in `netclass_patterns`, which a
+  sync leaves alone. The pattern is the name with KiCad's regex characters
+  made literal (`\` before `\ . ^ | ? * + ( ) [ ]`, and `{`, `}`, `$` as
+  `[{]`, `[}]`, `[$]`), because KiCad reads a pattern as an anchored regular
+  expression: a raw `HV+` also put `HV` and `HVV` in the class. (`re.escape`
+  is not usable: KiCad's engine does not read `\{...\}` as literal braces, so
+  an overbar name such as `~{RESET}` matched nothing.) The project loader behind `export_dsn` and
+  `autoroute` had the same gap and now escapes the names from
+  `netclass_assignments` too. Assignments made with an earlier version were
+  lost on the first sync after they were made, so redo them (call
+  `assign_net_to_class` again for each net) after upgrading.
+
+- **Backend failures reach the client as MCP errors.** Most tools return the
+  backend's JSON as it is, so a `{"success": false, ...}` reply went out as a
+  normal result and an agent carried on as if the call had worked. Every
+  tool registration is now wrapped once: a reply whose JSON says
+  `success: false` is sent with `isError: true`. Replies that already set
+  `isError`, and non-JSON content, are unchanged. A partial success is not
+  flagged: when a batch tool (`batch_add_components`, `batch_connect`,
+  `batch_add_no_connects`, `connect_passthrough`, `backannotate_footprints`,
+  ...) reports applied work, an added, connected, placed or updated count
+  above zero or a non-empty list of applied items, the reply stays a normal
+  result with its list of failures, so `isError` means nothing happened and
+  the call is safe to retry. `batch_connect` and `batch_add_no_connects`,
+  which build their own reply text, follow the same rule.
+
 ## [2.9.0] - 2026-11-11
 
 ### New MCP Prompt
