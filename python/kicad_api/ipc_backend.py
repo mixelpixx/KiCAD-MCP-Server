@@ -15,6 +15,7 @@ Key Benefits over SWIG:
 """
 
 import logging
+import math
 import os
 import platform
 import threading
@@ -67,6 +68,19 @@ _IPC_LAYER_BY_NUMBER: Dict[int, str] = {
 }
 
 
+def _open_board_path_from_kicad(kicad: Any) -> Optional[str]:
+    """Rebuild a PCB path from kipy's project directory and bare board filename."""
+    # kipy requires an explicit document type. A no-argument call raises TypeError.
+    from kipy.proto.common.types import DocumentType
+
+    for doc in kicad.get_open_documents(DocumentType.DOCTYPE_PCB):
+        name = str(getattr(doc, "board_filename", "") or "")
+        if name.endswith(".kicad_pcb"):
+            root = str(getattr(getattr(doc, "project", None), "path", "") or "")
+            return os.path.join(root, name) if root else name
+    return None
+
+
 def ipc_layer_name(layer: Any) -> str:
     """Canonical KiCad layer name for an IPC layer value.
 
@@ -86,6 +100,91 @@ def ipc_layer_name(layer: Any) -> str:
     except (TypeError, ValueError):
         return text
     return _IPC_LAYER_BY_NUMBER.get(number, text)
+
+
+def _keepout_polygon_mm(points: List[Dict[str, float]]) -> List[tuple[float, float]]:
+    """Validate a simple, non-degenerate polygon before any KiCad mutation."""
+    if not isinstance(points, list) or len(points) < 3:
+        raise ValueError("A keepout needs at least three polygon vertices")
+
+    vertices = []
+    for index, point in enumerate(points):
+        if not isinstance(point, dict):
+            raise ValueError(f"Vertex {index} must contain numeric x and y")
+        x, y = point.get("x"), point.get("y")
+        if (
+            isinstance(x, bool)
+            or isinstance(y, bool)
+            or not isinstance(x, (int, float))
+            or not isinstance(y, (int, float))
+            or not math.isfinite(x)
+            or not math.isfinite(y)
+        ):
+            raise ValueError(f"Vertex {index} must contain finite numeric x and y")
+        vertices.append((float(x), float(y)))
+
+    if len(set(vertices)) != len(vertices):
+        raise ValueError("Keepout vertices must be distinct; omit the closing vertex")
+    area_twice = sum(
+        x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(vertices, vertices[1:] + vertices[:1])
+    )
+    if abs(area_twice) < 1e-12:
+        raise ValueError("Keepout polygon has zero area")
+
+    def crosses(
+        a: tuple[float, float],
+        b: tuple[float, float],
+        c: tuple[float, float],
+        d: tuple[float, float],
+    ) -> bool:
+        def orient(p: tuple[float, float], q: tuple[float, float], r: tuple[float, float]) -> float:
+            return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+
+        def on_segment(
+            p: tuple[float, float], q: tuple[float, float], r: tuple[float, float]
+        ) -> bool:
+            return min(p[0], q[0]) <= r[0] <= max(p[0], q[0]) and min(p[1], q[1]) <= r[1] <= max(
+                p[1], q[1]
+            )
+
+        o1, o2, o3, o4 = orient(a, b, c), orient(a, b, d), orient(c, d, a), orient(c, d, b)
+        if o1 == 0 and on_segment(a, b, c) or o2 == 0 and on_segment(a, b, d):
+            return True
+        if o3 == 0 and on_segment(c, d, a) or o4 == 0 and on_segment(c, d, b):
+            return True
+        return (o1 > 0) != (o2 > 0) and (o3 > 0) != (o4 > 0)
+
+    count = len(vertices)
+    for index in range(count):
+        for other in range(index + 1, count):
+            if other == index + 1 or (index == 0 and other == count - 1):
+                continue
+            if crosses(
+                vertices[index],
+                vertices[(index + 1) % count],
+                vertices[other],
+                vertices[(other + 1) % count],
+            ):
+                raise ValueError("Keepout polygon must not cross itself")
+    return vertices
+
+
+def _same_keepout_outline(
+    observed: List[tuple[float, float]], requested: List[tuple[float, float]]
+) -> bool:
+    """Match the same polygon regardless of its first vertex or winding."""
+    if len(observed) != len(requested):
+        return False
+    count = len(requested)
+    for order in (requested, list(reversed(requested))):
+        for offset in range(count):
+            if all(
+                abs(actual_axis - expected_axis) < 1e-6
+                for index, actual in enumerate(observed)
+                for actual_axis, expected_axis in zip(actual, order[(index + offset) % count])
+            ):
+                return True
+    return False
 
 
 def _same_angle(a_deg: float, b_deg: float, tol: float = 1e-6) -> bool:
@@ -303,15 +402,7 @@ class IPCBackend(KiCADBackend):
         if not self.is_connected():
             return None
         try:
-            # kipy requires an explicit doc_type; a no-arg call raises TypeError.
-            # DocumentSpecifier exposes board_filename + project.path, not .path.
-            from kipy.proto.common.types import DocumentType
-
-            for doc in self._kicad.get_open_documents(DocumentType.DOCTYPE_PCB):
-                name = str(getattr(doc, "board_filename", "") or "")
-                if name.endswith(".kicad_pcb"):
-                    root = str(getattr(getattr(doc, "project", None), "path", "") or "")
-                    return os.path.join(root, name) if root else name
+            return _open_board_path_from_kicad(self._kicad)
         except Exception as e:
             logger.debug(f"Could not read open documents via IPC: {e}")
         return None
@@ -460,6 +551,10 @@ class IPCBoardAPI(BoardAPI):
         self._board = None
         self._notify = notify_callback
         self._current_commit = None
+
+    def get_open_board_path(self) -> Optional[str]:
+        """Full path of the PCB document reported by this live IPC connection."""
+        return _open_board_path_from_kicad(self._kicad)
 
     def _get_board(self) -> Any:
         """Get board instance, connecting if needed."""
@@ -1721,6 +1816,165 @@ class IPCBoardAPI(BoardAPI):
         except Exception as e:
             logger.error(f"Failed to add zone: {e}")
             return False
+
+    def add_copper_keepout(
+        self,
+        board_path: str,
+        name: str,
+        layers: List[str],
+        points: List[Dict[str, float]],
+    ) -> Dict[str, Any]:
+        """Create and verify a live rule area that excludes zone fills only."""
+        from kipy.board_types import Zone, ZoneType
+        from kipy.geometry import PolyLine, PolyLineNode
+        from kipy.proto.board.board_types_pb2 import BoardLayer
+        from kipy.util.units import from_mm, to_mm
+
+        if not isinstance(name, str) or not name.strip():
+            return {"success": False, "message": "Keepout name must not be empty"}
+        if not isinstance(board_path, str) or not board_path.strip():
+            return {"success": False, "message": "boardPath must name the open PCB"}
+        try:
+            vertices = _keepout_polygon_mm(points)
+        except ValueError as error:
+            return {"success": False, "message": str(error)}
+        if (
+            not isinstance(layers, list)
+            or not layers
+            or any(not isinstance(layer, str) for layer in layers)
+            or len(set(layers)) != len(layers)
+        ):
+            return {"success": False, "message": "Select distinct copper layers"}
+
+        copper_layers = {"F.Cu": BoardLayer.BL_F_Cu, "B.Cu": BoardLayer.BL_B_Cu}
+        copper_layers.update(
+            {f"In{index}.Cu": getattr(BoardLayer, f"BL_In{index}_Cu") for index in range(1, 31)}
+        )
+        if any(layer not in copper_layers for layer in layers):
+            return {"success": False, "message": "Keepout layers must be copper layers"}
+
+        try:
+            board = self._get_board()
+            live_path = self.get_open_board_path()
+            if not live_path or os.path.normcase(
+                str(Path(live_path).resolve())
+            ) != os.path.normcase(str(Path(board_path).resolve())):
+                return {
+                    "success": False,
+                    "message": f"Requested board is not open in KiCad: {board_path}",
+                    "open_board": live_path,
+                }
+            enabled = {ipc_layer_name(layer) for layer in board.get_enabled_layers()}
+        except Exception as error:
+            return {"success": False, "message": f"Could not read enabled layers: {error}"}
+        disabled = [layer for layer in layers if layer not in enabled]
+        if disabled:
+            return {
+                "success": False,
+                "message": f"Copper layer(s) not enabled: {', '.join(disabled)}",
+            }
+
+        zone = Zone()
+        zone.type = ZoneType.ZT_RULE_AREA
+        zone.name = name
+        zone.layers = [copper_layers[layer] for layer in layers]
+        rule = zone._proto.rule_area_settings
+        rule.keepout_copper = True
+        rule.keepout_tracks = False
+        rule.keepout_vias = False
+        rule.keepout_pads = False
+        rule.keepout_footprints = False
+        outline = PolyLine()
+        outline.closed = True
+        for x, y in vertices:
+            outline.append(PolyLineNode.from_xy(from_mm(x), from_mm(y)))
+        zone._proto.outline.polygons.add().outline.CopyFrom(outline._proto)
+
+        commit = board.begin_commit()
+        created = None
+        try:
+            created = board.create_items(zone)
+            board.push_commit(commit, f"Added copper keepout {name}")
+        except Exception as error:
+            try:
+                board.drop_commit(commit)
+            except Exception as rollback_error:
+                logger.exception("Could not discard failed keepout transaction")
+                if created is not None:
+                    return {
+                        "success": False,
+                        "status": "mutation_outcome_uncertain",
+                        "message": f"KiCad created the keepout but commit and rollback failed: {error}; {rollback_error}",
+                    }
+            return {"success": False, "message": f"KiCad refused the keepout: {error}"}
+
+        created_id = ""
+        if created is not None and len(created) == 1:
+            created_id = getattr(
+                getattr(getattr(created[0], "_proto", None), "id", None), "value", ""
+            )
+        response: Dict[str, Any] = {
+            "success": True,
+            "mutation_applied": True,
+            "status": "applied_unverified",
+            "name": name,
+            "layers": layers,
+            "point_count": len(vertices),
+            "id": created_id,
+            "verified": False,
+            "refilled": False,
+        }
+        try:
+            observed = next(
+                item
+                for item in board.get_zones()
+                if created_id and item._proto.id.value == created_id
+            )
+            observed_points = [
+                (to_mm(node.point.x_nm), to_mm(node.point.y_nm))
+                for polygon in observed._proto.outline.polygons
+                for node in polygon.outline.nodes
+            ]
+            observed_layers = [ipc_layer_name(layer) for layer in observed.layers]
+            observed_rule = observed._proto.rule_area_settings
+            verified = (
+                observed.type == ZoneType.ZT_RULE_AREA
+                and set(observed_layers) == set(layers)
+                and observed.name == name
+                and observed_rule.keepout_copper
+                and not any(
+                    (
+                        observed_rule.keepout_tracks,
+                        observed_rule.keepout_vias,
+                        observed_rule.keepout_pads,
+                        observed_rule.keepout_footprints,
+                    )
+                )
+                and _same_keepout_outline(observed_points, vertices)
+            )
+            response.update(
+                {
+                    "verified": verified,
+                    "layers": observed_layers,
+                    "points": [{"x": x, "y": y} for x, y in observed_points],
+                    "status": "applied" if verified else "applied_readback_mismatch",
+                }
+            )
+        except Exception as error:
+            response["readback_error"] = str(error)
+
+        try:
+            board.refill_zones()
+            response["refilled"] = True
+        except Exception as error:
+            response["refill_error"] = str(error)
+            if response["status"] == "applied":
+                response["status"] = "applied_not_refilled"
+        try:
+            self._notify("rule_area_added", {"id": created_id, "name": name, "layers": layers})
+        except Exception:
+            logger.exception("Could not emit keepout notification")
+        return response
 
     def get_zones(self) -> List[Dict[str, Any]]:
         """Get all zones on the board."""

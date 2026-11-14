@@ -375,7 +375,7 @@ jobs:
           KICAD_USE_REAL_PCBNEW: "1"
         run: |
           export PYTHONPATH="$KICAD_PYTHONPATH:$PYTHONPATH"
-          pytest tests/test_real_pcbnew_matrix.py tests/test_pymupdf_swig_iterator.py -m "integration and real_pcbnew"
+          pytest tests/test_real_pcbnew_matrix.py tests/test_pymupdf_swig_iterator.py tests/test_netclass_patterns_real_pcbnew.py -m "integration and real_pcbnew"
 
   # Docker build test
   docker-build:

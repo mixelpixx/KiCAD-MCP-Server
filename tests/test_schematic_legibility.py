@@ -344,3 +344,10 @@ def test_a_power_symbol_dropped_on_a_part_is_body_over_body(tmp_path):
     assert "body over body" in kinds(f)
     inside = symbol("T:R", "R2", 100, 100) + symbol("T:PAD", "W2", 100, 100)
     assert "body over body" in kinds(sheet(tmp_path, inside))
+
+
+def test_a_free_text_at_180_or_270_is_not_upside_down(tmp_path):
+    """KiCad 10 draws a free text stored at 180 as at 0, and at 270 as at 90
+    (measured on its SVG export), so neither is reported upside down."""
+    f = sheet(tmp_path, note("AT 180", 60, 60, angle=180) + note("AT 270", 120, 120, angle=270))
+    assert "upside down" not in kinds(f)

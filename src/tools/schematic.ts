@@ -119,6 +119,7 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
               text: `Failed to add component: ${result.message || JSON.stringify(result)}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -190,6 +191,7 @@ To remove a footprint from a PCB, use delete_component instead.`,
             text: `Failed to remove component: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -357,6 +359,7 @@ use edit_component instead.`,
             text: `Failed to edit component: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -448,6 +451,7 @@ with the \`properties\` parameter instead.`,
             text: `Failed to set property '${args.name}' on ${args.reference}: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -497,6 +501,7 @@ edit_schematic_component and set its value to an empty string.`,
             text: `Failed to remove property '${args.name}' from ${args.reference}: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -540,6 +545,7 @@ edit_schematic_component and set its value to an empty string.`,
             text: `Failed to get component: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -584,6 +590,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to add wire: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -658,6 +665,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to add net label: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -705,6 +713,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to add no-connect: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -746,6 +755,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to connect to net: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -781,6 +791,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to get net connections: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -844,6 +855,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to get wire connections: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -880,6 +892,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to get pin locations: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -1641,6 +1654,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to generate netlist: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -1653,8 +1667,38 @@ edit_schematic_component and set its value to an empty string.`,
     {
       schematicPath: z.string().describe("Absolute path to the .kicad_sch schematic file"),
       boardPath: z.string().describe("Absolute path to the .kicad_pcb board file"),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe(
+          "Report every change (pad nets, values, fields, footprints added) without saving. " +
+            "The sync overwrites board values and fields with the schematic's, so preview first " +
+            "on a board that was edited after its last sync.",
+        ),
+      replaceFootprints: z
+        .boolean()
+        .optional()
+        .describe(
+          "Swap footprints whose library ID differs from the symbol's footprint, keeping position, " +
+            "rotation, side and symbol link (KiCad F8: 'Replace footprints with those specified by symbols').",
+        ),
+      deleteUnusedFootprints: z
+        .boolean()
+        .optional()
+        .describe(
+          "Delete footprints with no symbol in the schematic; board-only and locked footprints are kept, " +
+            "and a footprint whose symbol UUID matches a schematic symbol is renamed to it (re-annotation), " +
+            "never deleted (KiCad F8: 'Delete footprints with no symbols'). Refused, like replaceFootprints, " +
+            "while the board is open in KiCad (session pinned to IPC) unless dryRun.",
+        ),
     },
-    async (args: { schematicPath: string; boardPath: string }) => {
+    async (args: {
+      schematicPath: string;
+      boardPath: string;
+      dryRun?: boolean;
+      replaceFootprints?: boolean;
+      deleteUnusedFootprints?: boolean;
+    }) => {
       const result = await callKicadScript("sync_schematic_to_board", args);
       return {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
@@ -1779,7 +1823,7 @@ edit_schematic_component and set its value to an empty string.`,
   // Legibility: what a reader trips over
   server.tool(
     "check_schematic_legibility",
-    "Checks whether a person can read a schematic sheet: what ERC and a netlist cannot see. Boxes every symbol body, visible reference/value, label and free text and reports text over text (a symbol's own fields included), text over another symbol's body, a symbol's own field across a drawn line of its body (inside an IC's rectangle or beside a capacitor's plates is fine), body over body, a wire through a text (a label's own wire only touches its edge), items on the title block or outside the frame, and upside-down text. Each problem comes with its box in sheet mm; look at it with get_schematic_view_region.",
+    "Checks whether a person can read a schematic sheet: what ERC and a netlist cannot see. Boxes every symbol body, visible reference/value, label and free text and reports text over text (a symbol's own fields included), text over another symbol's body, a symbol's own field across a drawn line of its body (inside an IC's rectangle or beside a capacitor's plates is fine), body over body, a wire through a text (a label's own wire only touches its edge), items on the title block or outside the frame, and a field stored upside down. Each problem comes with its box in sheet mm; look at it with get_schematic_view_region.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch sheet to check (one sheet)"),
       maxProblems: z
@@ -1911,7 +1955,10 @@ edit_schematic_component and set its value to an empty string.`,
   // Find wires crossing symbols
   server.tool(
     "find_wires_crossing_symbols",
-    "Find all wires that cross over component symbol bodies. Wires passing over symbols are unacceptable in schematics — they indicate routing mistakes where a wire was drawn across a component instead of around it.",
+    "Find all wires that cross over component symbol bodies. Wires passing over symbols are unacceptable in schematics — they indicate routing mistakes where a wire was drawn across a component instead of around it. " +
+      "Also lists, under pinsOnWireInterior (with pinsOnWireInteriorCount), every symbol pin, power pins included, that lies on the middle of a wire without being connected to it: " +
+      "KiCad joins a pin to a wire only where the wire ends or where a junction sits on the pin, so a label there does not connect it to the wire. " +
+      "collisions and count are unchanged.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch schematic file"),
     },
@@ -1926,6 +1973,14 @@ edit_schematic_component and set its value to an empty string.`,
           );
         });
         if (collisions.length > 30) lines.push(`  ... and ${collisions.length - 30} more`);
+        const pinsOnWire: any[] = result.pinsOnWireInterior || [];
+        lines.push(`Found ${pinsOnWire.length} pin(s) on a wire's interior, not connected to it:`);
+        pinsOnWire.slice(0, 30).forEach((p: any, i: number) => {
+          lines.push(
+            `  ${i + 1}. ${p.component.reference} pin ${p.pin} at (${p.pinPosition.x},${p.pinPosition.y}) lies on wire (${p.wire.start.x},${p.wire.start.y})→(${p.wire.end.x},${p.wire.end.y})`,
+          );
+        });
+        if (pinsOnWire.length > 30) lines.push(`  ... and ${pinsOnWire.length - 30} more`);
         return { content: [{ type: "text", text: lines.join("\n") }] };
       }
       return {
@@ -2115,6 +2170,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to get net at point: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -2166,6 +2222,7 @@ edit_schematic_component and set its value to an empty string.`,
             text: `Failed to add hierarchical label: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -2272,6 +2329,7 @@ edit_schematic_component and set its value to an empty string.`,
               text: `Failed to add text annotation: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
     },
@@ -2327,6 +2385,7 @@ edit_schematic_component and set its value to an empty string.`,
             text: `Failed to add sheet pin: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );

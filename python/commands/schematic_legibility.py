@@ -14,7 +14,8 @@ and value, every net/global/hierarchical label and every free text, and reports:
 - a wire through a text (a label's own wire only touches its edge)
 - anything on the title block (KiCad's default drawing sheet) or outside the
   page frame
-- a field stored at 180 degrees, or a free text at 180/270 (drawn upside down)
+- a field stored at 180 degrees (drawn upside down; a free text is never: KiCad 10
+  draws one at 180 as at 0, and at 270 as at 90)
 
 Calibrated against renders of a released three-sheet design: the text-size
 model is the one in ``schematic_text_metrics``, shared with the declutter and
@@ -518,8 +519,6 @@ def collect(path):
         h = (len(lines) - 1) * line_h + size[1]
         box = block_box(x, y, int(round(a)) % 180, w, h, justify(t))
         texts.append((f"text:{lines[0][:20]}", box, None))
-        if int(round(a)) % 360 in (180, 270):
-            upside.append((f"text:{lines[0][:20]}", (x - 1, y - 1, x + 1, y + 1)))
     wires = []
     for w in find(data, "wire"):
         pts = first(w, "pts")

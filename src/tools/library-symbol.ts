@@ -69,6 +69,7 @@ export function registerSymbolLibraryTools(server: McpServer, callKicadScript: F
             text: `Failed to list symbol libraries: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -108,6 +109,7 @@ keep them under version control before repairing.`,
               text: `Failed to repair: ${result.message || "Unknown error"}`,
             },
           ],
+          isError: true,
         };
       }
       const lines = [result.message];
@@ -186,6 +188,7 @@ Returns symbol references that can be used directly in schematics.`,
             text: `Failed to search symbols: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -230,6 +233,7 @@ Returns symbol references that can be used directly in schematics.`,
             text: `Failed to list symbols in library ${args.library}: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -285,6 +289,7 @@ Returns symbol references that can be used directly in schematics.`,
             text: `Failed to get symbol info: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
@@ -332,6 +337,7 @@ Returns symbol references that can be used directly in schematics.`,
             text: `Failed to list pins: ${result.message || "Unknown error"}${hint}`,
           },
         ],
+        isError: true,
       };
     },
   );

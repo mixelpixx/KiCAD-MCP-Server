@@ -41,6 +41,7 @@ export const toolCategories: ToolCategory[] = [
       "update_graphic",
       "import_svg_logo",
       "add_zone",
+      "add_copper_keepout",
       "get_board_extents",
       "get_board_2d_view",
       "set_board_origin",
