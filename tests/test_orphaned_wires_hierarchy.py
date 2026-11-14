@@ -91,12 +91,36 @@ def test_wire_to_a_bus_entry_is_connected(tmp_path):
 
 
 def test_wire_with_interior_label_is_connected(tmp_path):
-    # When a net label is placed along a wire lead extending from an anchored
-    # endpoint (pin or label), the wire serves as the connection and is not orphaned.
+    # Wire from an anchor at 100 past an interior label at 110 to an open end at 120:
+    # KiCad ERC reports the open end at 120 as an unconnected wire endpoint.
     body = (
         _wire(100, 100, 120, 100, 1)
         + '  (label "PIN" (at 100 100 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "66666666-6666-6666-6666-666666666601"))\n'
         + '  (label "NET" (at 110 100 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "66666666-6666-6666-6666-666666666608"))\n'
+    )
+    r = find_orphaned_wires(_write(tmp_path, body))
+    assert r["count"] == 1
+    assert r["orphaned_wires"][0]["dangling_ends"] == [{"x": 120.0, "y": 100.0}]
+
+
+def test_wire_stopping_short_of_bus_entry_is_still_reported(tmp_path):
+    # A wire stopping 1.27 mm short of a bus entry really dangles per KiCad ERC.
+    body = (
+        _wire(100, 100, 118.73, 100, 1)
+        + '  (label "A" (at 100 100 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "66666666-6666-6666-6666-666666666601"))\n'
+        + '  (bus_entry (at 120 100) (size 2.54 2.54) (stroke (width 0.1524) (type solid)) (uuid "66666666-6666-6666-6666-666666666607"))\n'
+    )
+    r = find_orphaned_wires(_write(tmp_path, body))
+    assert r["count"] == 1
+    assert r["orphaned_wires"][0]["dangling_ends"] == [{"x": 118.73, "y": 100.0}]
+
+
+def test_wire_to_a_no_connect_flag_is_connected(tmp_path):
+    # A wire ending on a no_connect flag is terminated per KiCad ERC and not orphaned.
+    body = (
+        _wire(100, 100, 120, 100, 1)
+        + '  (label "A" (at 100 100 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "66666666-6666-6666-6666-666666666601"))\n'
+        + '  (no_connect (at 120 100) (uuid "66666666-6666-6666-6666-666666666610"))\n'
     )
     assert find_orphaned_wires(_write(tmp_path, body))["count"] == 0
 

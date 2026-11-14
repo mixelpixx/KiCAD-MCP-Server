@@ -990,6 +990,16 @@ def _bus_entry_points(sexp_data: list) -> Set[Tuple[int, int]]:
     return points
 
 
+def _no_connect_points(sexp_data: list) -> Set[Tuple[int, int]]:
+    points: Set[Tuple[int, int]] = set()
+    for item in sexp_data:
+        if isinstance(item, list) and item and item[0] == Symbol("no_connect"):
+            pt = _at_point(item)
+            if pt:
+                points.add(pt)
+    return points
+
+
 def _iu_strictly_inside(p: Tuple[int, int], seg: Tuple[Tuple[int, int], Tuple[int, int]]) -> bool:
     (x1, y1), (x2, y2) = seg
     if p in ((x1, y1), (x2, y2)):
@@ -1080,7 +1090,7 @@ def find_orphaned_wires(schematic_path: Path) -> Dict[str, Any]:
         except Exception as e:
             logger.warning(f"Could not extract power symbol anchors: {e}")
 
-    # --- anchors: hierarchical labels, sheet pins, junctions, bus entries ---
+    # --- anchors: hierarchical labels, sheet pins, junctions, bus entries, no-connects ---
     # A wire to a hierarchical label (child sheet) or to a sheet pin (parent
     # sheet) is how a net crosses the hierarchy. Leaving them out reported
     # every such wire as orphaned, so pruning "orphans" on a real hierarchical
@@ -1088,8 +1098,9 @@ def find_orphaned_wires(schematic_path: Path) -> Dict[str, Any]:
     hier_iu = _hierarchy_anchor_points(sexp_data)
     junction_iu = _junction_points(sexp_data)
     bus_entry_iu = _bus_entry_points(sexp_data)
+    no_connect_iu = _no_connect_points(sexp_data)
 
-    anchored_iu = pin_iu | label_iu | power_iu | hier_iu | bus_entry_iu
+    anchored_iu = pin_iu | label_iu | power_iu | hier_iu | bus_entry_iu | no_connect_iu
 
     # --- classify each wire ---
     orphaned: List[Dict[str, Any]] = []
@@ -1100,20 +1111,13 @@ def find_orphaned_wires(schematic_path: Path) -> Dict[str, Any]:
             if iu_to_count[pt_iu] > 1:
                 continue  # shared with another wire → connected
             if pt_iu in anchored_iu:
-                continue  # touches a pin, label, power, or bus entry → connected
+                continue  # touches a pin, label, power, bus entry, or no-connect → connected
             if pt_iu in junction_iu and any(
                 _iu_strictly_inside(pt_iu, seg) for j, seg in enumerate(wires_iu) if j != i
             ):
                 continue  # ends on another wire's interior at a junction (unsplit T)
             dangling_ends.append({"x": pt_mm[0], "y": pt_mm[1]})
         if dangling_ends:
-            # A wire that connects an endpoint (e.g. component pin or bus entry) to
-            # an interior anchor (e.g. net label placed along the wire lead) is an
-            # active connection, not an orphaned wire.
-            if len(dangling_ends) < 2 and any(
-                _iu_strictly_inside(a, (s_iu, e_iu)) for a in anchored_iu
-            ):
-                continue
             orphaned.append(
                 {
                     "start": {"x": w["start"][0], "y": w["start"][1]},
