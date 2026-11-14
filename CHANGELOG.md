@@ -74,6 +74,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **An SES import keeps each via's drill.** KiCad's `ImportSpecctraSES` takes
+  a via's diameter from the session's padstack but its drill from the net's
+  netclass. A 0.5/0.3 mm via (`Via[0-5]_500:300_um`) on a net whose class
+  asks for 0.8/0.4 vias came back as 0.5 mm with a 0.4 mm drill: a 0.05 mm
+  annular ring, below any fab's minimum. On a 6-layer board this left 22 such
+  vias after every Freerouting pass. `autoroute` and `import_ses` now give
+  every via the import created the drill its padstack's name gives (KiCad
+  names them `Via[a-b]_<diameter>:<drill>_um`), and report what they changed
+  in `viaDrillsRestored`. Vias that were on the board before the import, and
+  diameters that two padstacks give different drills, are left alone.
+
 - **The Windows setup scripts no longer stop at "Detecting KiCAD Installation"**
   (#534). `setup-windows-opencode.ps1` runs under `Set-StrictMode`, and it read
   `DisplayName` from every program's uninstall entry in the registry. Many
