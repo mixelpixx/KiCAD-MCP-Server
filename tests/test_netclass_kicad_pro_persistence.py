@@ -199,3 +199,43 @@ def test_create_netclass_fails_when_neither_memory_nor_disk_succeeds(tmp_path):
     )
     assert result["success"] is False
     assert "swig boom" in result["errorDetails"]
+
+
+def _board_with_nets(tmp_path, nets):
+    board = MagicMock()
+    board.GetFileName.return_value = str(tmp_path / "p.kicad_pcb")
+    nets_map = MagicMock()
+    nets_map.has_key.side_effect = lambda n: n in nets
+    nets_map.__getitem__.side_effect = lambda n: MagicMock(spec=["SetNetClass"], name=n)
+    board.GetNetInfo.return_value.NetsByName.return_value = nets_map
+    board.GetNetClasses.return_value = {}
+    return board
+
+
+def test_create_netclass_writes_and_reports_only_the_nets_it_assigned(tmp_path):
+    # It used to echo the requested nets as assigned while writing none of them.
+    pro = tmp_path / "p.kicad_pro"
+    pro.write_text(json.dumps(_project_with_default()))
+    board = _board_with_nets(tmp_path, {"HV_BUS", "HV_SENSE"})
+    result = RoutingCommands(board).create_netclass(
+        {"name": "HV", "clearance": 5.0, "nets": ["HV_BUS", "TYPO", "HV_SENSE"]}
+    )
+    assert result["success"] is True
+    assert result["netsAssigned"] == ["HV_BUS", "HV_SENSE"]
+    assert result["netsNotAssigned"] == ["TYPO"]
+    assert result["netClass"]["nets"] == ["HV_BUS", "HV_SENSE"]
+    assert "TYPO" in result["warning"]
+    assignments = json.loads(pro.read_text())["net_settings"]["netclass_assignments"]
+    assert assignments == {"HV_BUS": ["HV"], "HV_SENSE": ["HV"]}
+    settings = board.GetDesignSettings.return_value.m_NetSettings
+    settings.SetNetclass.assert_called_once()
+    assert settings.SetNetclassPatternAssignment.call_count == 2
+
+
+def test_create_netclass_reports_no_nets_when_membership_cannot_be_written(tmp_path):
+    board = _board_with_nets(tmp_path, {"HV_BUS"})
+    board.GetFileName.return_value = str(tmp_path / "missing.kicad_pcb")
+    result = RoutingCommands(board).create_netclass({"name": "HV", "nets": ["HV_BUS"]})
+    assert result["netsAssigned"] == []
+    assert result["netsNotAssigned"] == ["HV_BUS"]
+    assert "no .kicad_pro" in result["warning"]

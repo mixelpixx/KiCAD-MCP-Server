@@ -88,7 +88,7 @@ def _parse_symbols(sexp_data: list) -> List[Dict[str, Any]]:
     """
     Parse all placed symbol instances from the schematic S-expression.
 
-    Returns list of dicts: {reference, lib_id, x, y, rotation, mirror_x, mirror_y, is_power}
+    Returns list of dicts: {reference, lib_id, x, y, rotation, mirror_x, mirror_y, is_power, unit}
     """
     symbols = []
     for item in sexp_data:
@@ -103,6 +103,7 @@ def _parse_symbols(sexp_data: list) -> List[Dict[str, Any]]:
         is_power = False
         mirror_x = False
         mirror_y = False
+        unit = 1
 
         for sub in item:
             if isinstance(sub, list) and len(sub) >= 2:
@@ -113,6 +114,8 @@ def _parse_symbols(sexp_data: list) -> List[Dict[str, Any]]:
                     y = float(sub[2])
                     if len(sub) >= 4:
                         rotation = float(sub[3])
+                elif sub[0] == Symbol("unit"):
+                    unit = int(sub[1])
                 elif sub[0] == Symbol("mirror"):
                     m = str(sub[1])
                     if m == "x":
@@ -135,6 +138,7 @@ def _parse_symbols(sexp_data: list) -> List[Dict[str, Any]]:
                 "mirror_x": mirror_x,
                 "mirror_y": mirror_y,
                 "is_power": is_power,
+                "unit": unit,
             }
         )
     return symbols
@@ -865,6 +869,69 @@ def find_wires_crossing_symbols(schematic_path: Path) -> List[Dict[str, Any]]:
             )
 
     return collisions
+
+
+def find_pins_on_wire_interiors(schematic_path: Path) -> List[Dict[str, Any]]:
+    """
+    Find symbol pins drawn on the interior of a wire segment without being connected to it.
+
+    KiCad joins a pin to a wire only where the wire ends, or where a junction sits
+    on the pin. A wire drawn straight through a pin leaves the pin unconnected,
+    but the drawing reads as if it were on the wire's net (#522).
+
+    A pin is reported for each wire whose interior it lies on, unless a junction
+    sits on it. A wire that ends at the pin can't have it on its interior, so it is
+    never reported for that wire. Another wire ending there, a label, a no-connect
+    flag or another pin at that point joins the pin but does not split the wire, so
+    they don't count (kicad-cli 10.0.7 netlists in #522 and #533). Power symbols are
+    included; template symbols are not.
+
+    Uses exact KiCad IU matching, like find_orphaned_wires.
+
+    Returns a list of dicts:
+        {"component": {"reference", "libId", "position"}, "pin": str,
+         "pinPosition": {"x", "y"}, "wire": {"start": {"x", "y"}, "end": {"x", "y"}}}
+    """
+    sexp_data = _load_sexp(schematic_path)
+    wires_mm = _parse_wires(sexp_data)
+    wires_iu = [(_to_iu(*w["start"]), _to_iu(*w["end"])) for w in wires_mm]
+    junctions = _junction_points(sexp_data)
+    lib_defs = _extract_lib_symbols(sexp_data)
+
+    found: List[Dict[str, Any]] = []
+    for sym in _parse_symbols(sexp_data):
+        ref = sym["reference"]
+        if not ref or ref.startswith("_TEMPLATE"):
+            continue
+        # Only this instance's unit and the pins shared by all units (unit 0).
+        pin_defs = {
+            num: pin
+            for num, pin in lib_defs.get(sym["lib_id"], {}).get("pins", {}).items()
+            if pin.get("unit", 0) in (0, sym["unit"])
+        }
+        for pin_num, (px, py) in sorted(_compute_pin_positions_direct(sym, pin_defs).items()):
+            pin_iu = _to_iu(px, py)
+            if pin_iu in junctions:
+                continue
+            for w, seg in zip(wires_mm, wires_iu):
+                if not _iu_strictly_inside(pin_iu, seg):
+                    continue
+                found.append(
+                    {
+                        "component": {
+                            "reference": ref,
+                            "libId": sym["lib_id"],
+                            "position": {"x": sym["x"], "y": sym["y"]},
+                        },
+                        "pin": pin_num,
+                        "pinPosition": {"x": px, "y": py},
+                        "wire": {
+                            "start": {"x": w["start"][0], "y": w["start"][1]},
+                            "end": {"x": w["end"][0], "y": w["end"][1]},
+                        },
+                    }
+                )
+    return found
 
 
 def _at_point(item: list) -> Optional[Tuple[int, int]]:

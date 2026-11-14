@@ -325,6 +325,7 @@ Useful for cost optimization and finding alternatives when parts are out of stoc
             text: `Failed to find alternatives: ${result.message || "Unknown error"}`,
           },
         ],
+        isError: true,
       };
     },
   );
