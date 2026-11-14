@@ -139,6 +139,16 @@ function ConvertTo-HashtableDeep {
     return $InputObject
 }
 
+# Read a value from a registry uninstall entry. Many entries lack DisplayName,
+# InstallLocation or DisplayIcon, and reading a missing property throws under
+# Set-StrictMode (#534), so look the property up instead of dereferencing it.
+function Get-RegistryValue {
+    param($Entry, [string]$Name)
+    $property = $Entry.PSObject.Properties[$Name]
+    if ($property) { return $property.Value }
+    return $null
+}
+
 function Find-KiCadInstallation {
     param([string]$ExplicitRoot)
 
@@ -158,15 +168,17 @@ function Find-KiCadInstallation {
 
     foreach ($uninstallRoot in $uninstallRoots) {
         $entries = Get-ItemProperty (Join-Path $uninstallRoot '*') -ErrorAction SilentlyContinue |
-            Where-Object { $_.DisplayName -match '^KiCad' }
+            Where-Object { [string](Get-RegistryValue $_ 'DisplayName') -match '^KiCad' }
 
         foreach ($entry in $entries) {
             $candidateRoots = @()
-            if ($entry.InstallLocation) {
-                $candidateRoots += [string]$entry.InstallLocation
+            $installLocation = Get-RegistryValue $entry 'InstallLocation'
+            if ($installLocation) {
+                $candidateRoots += [string]$installLocation
             }
-            if ($entry.DisplayIcon) {
-                $iconDir = Split-Path -Parent ([string]$entry.DisplayIcon).Trim('"')
+            $displayIcon = Get-RegistryValue $entry 'DisplayIcon'
+            if ($displayIcon) {
+                $iconDir = Split-Path -Parent ([string]$displayIcon).Trim('"')
                 if ($iconDir -and (Split-Path -Leaf $iconDir) -eq 'bin') {
                     # DisplayIcon points at <root>\bin\kicad.exe; probe the version root, not the bin dir.
                     $iconDir = Split-Path -Parent $iconDir

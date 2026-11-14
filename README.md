@@ -15,10 +15,12 @@ are welcome here.
 > design-review audits, JLCPCB parts and fab outputs, with bundled skills for Claude
 > and Codex.
 >
+> - **Free for students, hobbyists and individual developers, now and after 1.0.**
+>   Everyone can use it free during the beta. From 1.0, personal, hobby, student and
+>   individual developer use stays free, with a free license key. Only businesses need
+>   a commercial license. See [licensing](https://konnect-eda.orchis.ai/licensing/).
 > - **Get it:** install guide and downloads on [GitHub](https://github.com/Orchis-ai-LLC/Konnect-EDA),
 >   and more at [konnect-eda.orchis.ai](https://konnect-eda.orchis.ai).
-> - **Free during the beta.** Konnect-EDA is commercial and closed source. See
->   [licensing](https://konnect-eda.orchis.ai/licensing/).
 > - **Runs on your machine.** It sends nothing to Orchis.ai. See
 >   [what leaves your machine](https://konnect-eda.orchis.ai/#leaves).
 > - **Help build it:** report bugs and request features in
@@ -29,7 +31,7 @@ are welcome here.
 
 |                | KiCAD MCP Server (this repository)                          | Konnect-EDA                                                                                                                        |
 | -------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| License        | MIT, open source                                            | Commercial, closed source, free during the beta                                                                                    |
+| License        | MIT, open source                                            | Closed source. Free for students, hobbyists and individual developers; businesses need a license from 1.0                          |
 | KiCad versions | 9 and 10                                                    | 10                                                                                                                                 |
 | Runs as        | Python and TypeScript MCP server                            | Native KiCad plugin, a single Rust binary                                                                                          |
 | Works through  | KiCad's Python API (SWIG), with an experimental IPC backend | KiCad's IPC API and `kicad-cli`                                                                                                    |
@@ -41,8 +43,8 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 253 tools registered, every one of them indexed for keyword discovery
-- 253 tools across 20 categories with JSON Schema validation
+- 254 tools registered, every one of them indexed for keyword discovery
+- 254 tools across 20 categories with JSON Schema validation
 - Keyword tool discovery via `search_tools` / `get_category_tools`
 - Optional toolboxes: start with a 37-tool core and open the rest by category,
   to save context and stay under client tool limits

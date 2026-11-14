@@ -42,6 +42,7 @@ The following MCP commands have IPC handlers:
 | `query_traces`             | `_ipc_query_traces`             | Implemented          |
 | `get_nets_list`            | `_ipc_get_nets_list`            | Implemented          |
 | `add_copper_pour`          | `_ipc_add_copper_pour`          | Implemented          |
+| `add_copper_keepout`       | `_ipc_add_copper_keepout`       | IPC only             |
 | `refill_zones`             | `_ipc_refill_zones`             | Implemented          |
 | `add_text`                 | `_ipc_add_text`                 | Implemented          |
 | `add_board_text`           | `_ipc_add_text`                 | Implemented          |

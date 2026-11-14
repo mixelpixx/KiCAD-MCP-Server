@@ -1929,6 +1929,36 @@ ROUTING_TOOLS = [
         },
     },
     {
+        "name": "add_copper_keepout",
+        "title": "Add Copper Keepout",
+        "description": "Creates a live rule area that prevents copper zone fill while allowing tracks, vias, pads and footprints.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "boardPath": {"type": "string", "minLength": 1},
+                "name": {"type": "string", "minLength": 1},
+                "layers": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                },
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "x": {"type": "number"},
+                            "y": {"type": "number"},
+                        },
+                        "required": ["x", "y"],
+                    },
+                    "minItems": 3,
+                },
+            },
+            "required": ["boardPath", "name", "layers", "points"],
+        },
+    },
+    {
         "name": "add_copper_pour",
         "title": "Add Copper Pour",
         "description": "Creates a copper pour/zone (typically for ground or power planes).",
@@ -2936,6 +2966,23 @@ SCHEMATIC_TOOLS = [
                         "schematic's, so preview first on a board edited after its last sync."
                     ),
                 },
+                "replaceFootprints": {
+                    "type": "boolean",
+                    "description": (
+                        "Swap footprints whose library ID differs from the symbol's footprint, keeping "
+                        "position, rotation, side and symbol link."
+                    ),
+                },
+                "deleteUnusedFootprints": {
+                    "type": "boolean",
+                    "description": (
+                        "Delete footprints with no symbol in the schematic; board-only and "
+                        "locked footprints are kept, and a footprint whose symbol UUID matches "
+                        "a schematic symbol is renamed to it (re-annotation), never deleted. "
+                        "Refused, like replaceFootprints, while the board is open in KiCad "
+                        "(session pinned to IPC) unless dryRun."
+                    ),
+                },
             },
         },
     },
@@ -3154,7 +3201,15 @@ SCHEMATIC_TOOLS = [
     {
         "name": "find_wires_crossing_symbols",
         "title": "Find Wires Crossing Symbols",
-        "description": "Find all wires that cross over component symbol bodies. Wires passing over symbols are unacceptable in schematics — they indicate routing mistakes where a wire was drawn across a component instead of around it.",
+        "description": (
+            "Find all wires that cross over component symbol bodies. Wires passing over symbols are "
+            "unacceptable in schematics — they indicate routing mistakes where a wire was drawn across "
+            "a component instead of around it. "
+            "Also lists, under pinsOnWireInterior (with pinsOnWireInteriorCount), every symbol pin, "
+            "power pins included, that lies on the middle of a wire without being connected to it: "
+            "KiCad joins a pin to a wire only where the wire ends or where a junction sits on the pin, "
+            "so a label there does not connect it to the wire. collisions and count are unchanged."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {

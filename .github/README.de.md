@@ -16,13 +16,11 @@
 
 </div>
 
-<!-- prettier-ignore-start -->
-<div align="center">
-
-#### Unser neues Forum ist online: https://forum.orchis.ai — Fragen? Ideen? Projekte zeigen?
-
-</div>
-<!-- prettier-ignore-end -->
+> **Konnect heißt jetzt Konnect-EDA.** [Konnect-EDA](https://github.com/Orchis-ai-LLC/Konnect-EDA)
+> ist aus diesem Projekt entstanden: ein natives KiCad-10-Plugin von Orchis.ai. **Für Studierende,
+> Hobbyisten und einzelne Entwickler ist es kostenlos, auch nach 1.0.** Nur Unternehmen brauchen
+> eine kommerzielle Lizenz. Mehr auf [konnect-eda.orchis.ai](https://konnect-eda.orchis.ai).
+> KiCAD MCP Server bleibt Open Source (MIT) und wird weiter gepflegt.
 
 #
 
