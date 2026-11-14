@@ -6,6 +6,10 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **`add_copper_keepout` creates a copper-fill rule area through live KiCad IPC.**
+  It requires the board to be open in KiCad with the IPC API enabled, keeps
+  zone fills out while allowing tracks, vias, pads, and footprints, and refills
+  the zones after creation. Save the board afterwards with `save_project`.
 - **`sync_schematic_to_board` can replace changed footprints and delete
   removed ones** (`replaceFootprints`, `deleteUnusedFootprints`), KiCad F8's
   two opt-in options. Until now a footprint whose library ID changed in the
@@ -58,6 +62,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
     field updates and one pad that the sync would disconnect from a routed
     net. The pad came from a symbol that defines pin 1 differently in two
     units.
+
+- **`find_wires_crossing_symbols`** (#522) — the reply now also lists symbol pins
+  that lie on the middle of a wire without being connected to it, under
+  `pinsOnWireInterior` with `pinsOnWireInteriorCount`. KiCad joins a pin to a
+  wire only where the wire ends or where a junction sits on the pin, so a wire
+  drawn through a pin leaves it unconnected while the drawing suggests
+  otherwise. A label or no-connect flag on the pin does not connect it to the
+  wire and is still reported. Power pins are included. `collisions` and `count`
+  keep their meaning.
 
 - **Schematic rectangles: `list_schematic_rectangles` and
   `set_schematic_rectangle`** (#525). A titled box around a group of parts is
