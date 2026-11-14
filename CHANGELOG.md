@@ -122,6 +122,42 @@ All notable changes to the KiCAD MCP Server project are documented here.
   the call is safe to retry. `batch_connect` and `batch_add_no_connects`,
   which build their own reply text, follow the same rule.
 
+- **Schematic batch edits no longer time out half-written.** `batch_connect`
+  (and `batch_add_and_connect`, which uses it) wrote the file once per pin,
+  re-parsing and re-serialising the whole sheet two or three times per
+  label. On a real 11,000-line sheet that was about 2.4 s per label, so a
+  12-pin part ran past the bridge's 30 s timeout. The bridge then restarted
+  the worker mid-batch: only some of the labels were written, and the caller
+  was told the call had failed, so a retry would duplicate the ones that
+  landed.
+  - Every pin is now resolved first, while the file is unchanged, and all
+    labels and wires are written in one read-modify-write. Four labels on
+    that sheet went from 9.6 s to 4.2 s, and the cost no longer grows with
+    the number of labels.
+  - Facing pins in the same batch are still joined by a wire, under the same
+    straight-ahead rule as a label already in the file: a planned label off
+    the pin's axis gets no diagonal wire.
+  - With `replace`, the old labels are removed in the same write that adds
+    the new ones, so a failed write leaves the sheet as it was instead of
+    with the old labels gone. `replace` also clears the net's label at the
+    stub end, and a stub wire already in the file is not added twice, so
+    re-running a `stubLength` batch does not stack a second label and wire.
+    A label this batch replaces is never the wiring target for another pin:
+    the facing-label lookup reads the file before the write, and re-netting
+    R1.2 from X to Y while R2.1 asked for X used to wire R2.1 onto Y.
+  - `replace` also removes an earlier run's stub, whatever its length: the
+    wire from the pin to a local label, and that label when no other wire
+    uses it. A run with `stubLength` followed by a `replace` run without one
+    (or with another length) left the old stub and label, and the pin on
+    both nets. A wire that ends on another pin, or on a global or
+    hierarchical label, is kept, and the reply warns when that leaves the
+    pin on a second net. The "cleared by this batch" check now uses the
+    clear's 0.5 mm tolerance, so a label a little off a pin is not both
+    removed and used as a wiring target. A pin wired to another pin's label
+    loses its own old label too, instead of joining the two nets.
+  - `batch_move_components` and `batch_set_schematic_property_positions` also
+    get the long timeout, so a very large sheet can't be cut off part-way.
+
 ## [2.9.0] - 2026-11-11
 
 ### New MCP Prompt
