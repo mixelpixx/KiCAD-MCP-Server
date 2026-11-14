@@ -43,8 +43,8 @@ The [Model Context Protocol](https://modelcontextprotocol.io/) is an open standa
 
 **Key Capabilities:**
 
-- 253 tools registered, every one of them indexed for keyword discovery
-- 253 tools across 20 categories with JSON Schema validation
+- 255 tools registered, every one of them indexed for keyword discovery
+- 255 tools across 20 categories with JSON Schema validation
 - Keyword tool discovery via `search_tools` / `get_category_tools`
 - Optional toolboxes: start with a 37-tool core and open the rest by category,
   to save context and stay under client tool limits
@@ -876,7 +876,7 @@ Access project state without executing tools:
 
 ## Available Tools
 
-The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. All **253 tools** are also indexed into 20 functional categories, so `search_tools` and `get_category_tools` can find one by keyword, and each category doubles as a [toolbox](#toolboxes).
+The server exposes every tool directly, so your assistant can call any of them without a discovery step -- just ask for what you want to accomplish. All **255 tools** are also indexed into 20 functional categories, so `search_tools` and `get_category_tools` can find one by keyword, and each category doubles as a [toolbox](#toolboxes).
 
 The lists below are a curated tour of the most useful tools, not the full set.
 For the complete, generated reference of all 253 tools -- including how each one

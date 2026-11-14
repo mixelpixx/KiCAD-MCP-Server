@@ -59,6 +59,19 @@ All notable changes to the KiCAD MCP Server project are documented here.
     net. The pad came from a symbol that defines pin 1 differently in two
     units.
 
+- **Schematic rectangles: `list_schematic_rectangles` and
+  `set_schematic_rectangle`** (#525). A titled box around a group of parts is
+  a `(rectangle ...)` on the sheet, and until now the only way to add, move or
+  resize one was editing the file by hand. `list_schematic_rectangles` returns
+  each rectangle's uuid, corners, stroke and fill, and skips the rectangles
+  inside symbol bodies. `set_schematic_rectangle` creates one when no `uuid` is
+  given and returns its uuid, changes only the given fields of an existing one,
+  and with `delete: true` removes it. An unknown uuid is an error that lists the
+  rectangles on the sheet. Edits rewrite only the changed fields, so the rest of
+  the file, including a uuid KiCad left unquoted, keeps its bytes. The corner
+  radius that KiCad 10 can write is read and kept but never written, because
+  KiCad 9 cannot load it. The list tool stays available in read-only mode.
+
 ### Bug Fixes
 
 - **The Windows setup scripts no longer stop at "Detecting KiCAD Installation"**
