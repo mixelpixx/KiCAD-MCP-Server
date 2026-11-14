@@ -6,6 +6,10 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **`add_copper_keepout` creates a copper-fill rule area through live KiCad IPC.**
+  It requires the board to be open in KiCad with the IPC API enabled, keeps
+  zone fills out while allowing tracks, vias, pads, and footprints, and refills
+  the zones after creation. Save the board afterwards with `save_project`.
 - **`sync_schematic_to_board` can replace changed footprints and delete
   removed ones** (`replaceFootprints`, `deleteUnusedFootprints`), KiCad F8's
   two opt-in options. Until now a footprint whose library ID changed in the
