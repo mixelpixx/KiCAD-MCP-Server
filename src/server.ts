@@ -56,6 +56,7 @@ import { registerComponentPrompts } from "./prompts/component.js";
 import { registerRoutingPrompts } from "./prompts/routing.js";
 import { registerDesignPrompts } from "./prompts/design.js";
 import { registerFootprintPrompts } from "./prompts/footprint.js";
+import { flagBackendFailuresAsErrors } from "./tools/failure-as-error.js";
 
 function getWindowsKiCadPythonCandidates(): string[] {
   const roots = [
@@ -347,6 +348,8 @@ export class KiCADMcpServer {
           `(write, readonly, manufacturing); using readonly`,
       );
     }
+    // A backend reply of {success: false} is an MCP error (failure-as-error.ts).
+    flagBackendFailuresAsErrors(this.server);
     this.toolboxes = new ToolboxManager(
       this.server,
       parseToolboxSetting(process.env[TOOLBOXES_ENV]),
