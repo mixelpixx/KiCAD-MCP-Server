@@ -71,7 +71,7 @@ export function registerFreeroutingTools(server: McpServer, callKicadScript: Fun
         .boolean()
         .optional()
         .describe(
-          "Pass the board's .kicad_dru (custom design rules: isolation, per-area clearances) and .kicad_pro (minimum track width) to Freerouting, which a DSN does not carry (default: true; a board without them is unaffected). Freerouting master after 2.5.0 applies them; 2.5.0 and earlier ignore them and route with net-class clearances only. The reply's kicad_rules says which: applied, ignored, and the rules Freerouting could only approximate (warnings, e.g. creepage applied as its clearance). false leaves them out.",
+          "Pass the board's .kicad_dru (custom design rules: isolation, per-area clearances) and .kicad_pro (minimum track width) to Freerouting, which a DSN does not carry (default: true; a board without them is unaffected). Freerouting master after 2.5.0 applies them; 2.2 to 2.5.0 log them as unknown and 2.0/2.1 skip them silently, and both route with net-class clearances only. The reply's kicad_rules says which: applied, ignored (logged as unknown), unconfirmed (not mentioned in the log, so not used), and the rules Freerouting could only approximate (warnings, e.g. creepage applied as its clearance). false leaves them out.",
         ),
       keepArtifacts: z
         .boolean()

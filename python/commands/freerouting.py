@@ -609,8 +609,9 @@ def _java_version_ok(java_exe: str, required: int = DEFAULT_REQUIRED_JAVA) -> bo
 
 
 # Freerouting reads a KiCad custom-rules file (.kicad_dru) and project file (.kicad_pro, for the
-# minimum track width) given in -de since master after 2.5.0 (freerouting #1121, #1130). A
-# release that predates them logs "Unknown file type in -de argument: <file>" and routes on.
+# minimum track width) given in -de since master after 2.5.0 (freerouting #1121, #1130). 2.2.0 to
+# 2.5.0 log "Unknown file type in -de argument: <file>" and route on; 2.0.x and 2.1.0 read only
+# the argument after -de and skip the rest without a word.
 _KICAD_RULE_EXTENSIONS = (".kicad_dru", ".kicad_pro")
 _KICAD_RULES_APPLIED_RE = re.compile(r"Using the KiCad (?:design rules of|project) '([^']+)'")
 _KICAD_RULES_IGNORED_RE = re.compile(
@@ -641,8 +642,10 @@ def _stage_kicad_rule_files(board_path: str, staging_dir: str, board_stem: str) 
 def _kicad_rules_report(output: str, files: List[str]) -> Dict[str, Any]:
     """What Freerouting did with the KiCad rule files, read from its log.
 
-    ``applied``: files it reported using. ``ignored``: files it did not know (a Freerouting
-    release before the KiCad-rules support). ``warnings``: the rule translations it reported
+    ``applied``: files it reported using. ``ignored``: files it logged as unknown (2.2.0 to
+    2.5.0). ``unconfirmed``: files it said nothing about (2.0.x and 2.1.0 skip them silently):
+    with no "Using the KiCad ..." line the router did not use them. ``warnings``: the rule
+    translations it reported
     as inexact (creepage applied as its clearance, a condition it cannot evaluate applied
     wherever it may match, a constraint type it does not translate), at most 20.
     """
@@ -655,17 +658,30 @@ def _kicad_rules_report(output: str, files: List[str]) -> Dict[str, Any]:
         "files": names,
         "applied": [n for n in names if n in applied],
         "ignored": [n for n in names if n in ignored],
+        "unconfirmed": [n for n in names if n not in applied and n not in ignored],
         "warningCount": len(warnings),
         "warnings": warnings[:_KICAD_RULES_WARNINGS_SHOWN],
     }
-    if report["ignored"]:
+    if report["ignored"] or report["unconfirmed"]:
         report["note"] = (
-            "This Freerouting does not read KiCad rule files (support is on its master after "
-            "2.5.0). It routed with the DSN's net-class clearances only: custom rules in the "
+            "This Freerouting did not report reading the KiCad rule files (support is on its "
+            "master after 2.5.0; 2.2.0 to 2.5.0 log them as unknown, 2.0.x and 2.1.0 skip them "
+            "silently). It routed with the DSN's net-class clearances only: custom rules in the "
             ".kicad_dru (isolation, per-area clearances) were not applied. Check the result "
             "with KiCad's DRC."
         )
     return report
+
+
+def _kicad_rules_hint(files: List[str]) -> str:
+    """The hint added to a failed run when KiCad rule files were passed: a master jar stops
+    when a ``.kicad_dru`` given to it cannot be read, rather than route a board that would fail
+    the KiCad DRC, and with best-of-N every attempt fails the same way."""
+    return (
+        "The board's KiCad rule files were passed to Freerouting "
+        f"({', '.join(os.path.basename(f) for f in files)}). If the log blames one of them, "
+        "fix it, or set kicadRules: false to route with the net-class clearances only."
+    )
 
 
 def _build_freerouting_cmd(
@@ -1444,15 +1460,8 @@ class FreeroutingCommands:
                         "mode": mode_label,
                     }
                     if kicad_rule_files:
-                        # Freerouting stops when a .kicad_dru given to it cannot be read, rather
-                        # than route a board that would fail the KiCad DRC.
                         failed["kicad_rules"] = kicad_rules
-                        failed["hint"] = (
-                            "The board's KiCad rule files were passed to Freerouting "
-                            f"({', '.join(os.path.basename(f) for f in kicad_rule_files)}). If "
-                            "the log blames one of them, fix it, or set kicadRules: false to "
-                            "route with the net-class clearances only."
-                        )
+                        failed["hint"] = _kicad_rules_hint(kicad_rule_files)
                     return failed
                 continue
 
@@ -1506,13 +1515,17 @@ class FreeroutingCommands:
         elapsed = round(time.time() - total_start, 1)
 
         if best_attempt_idx == -1:
-            return {
+            all_failed: Dict[str, Any] = {
                 "success": False,
                 "message": "All Freerouting attempts failed",
                 "errorDetails": "No attempt produced a usable SES file",
                 "elapsed_seconds": elapsed,
                 "attempts": attempt_results,
             }
+            if kicad_rule_files:
+                all_failed["kicad_rules"] = kicad_rules
+                all_failed["hint"] = _kicad_rules_hint(kicad_rule_files)
+            return all_failed
 
         # Restore the winning SES as the canonical output file. Write to a
         # sibling path and rename over ses_path instead of truncating it in

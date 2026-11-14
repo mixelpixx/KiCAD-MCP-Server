@@ -5,6 +5,7 @@ rules file and project file given in -de (freerouting #1121, #1130); 2.5.0 logs 
 and routes on. The log lines below are copied from real runs of both on the same board.
 """
 
+import os
 import sys
 import types
 from unittest.mock import patch
@@ -99,6 +100,7 @@ def test_report_from_master():
     assert r["ignored"] == []
     assert r["warningCount"] == 2  # the repeated line counts once
     assert r["warnings"][1].startswith("rule 'V:STRING-SMID1': constraint creepage 0.8000 mm")
+    assert r["unconfirmed"] == []
     assert "note" not in r
 
 
@@ -106,7 +108,33 @@ def test_report_from_a_release_that_does_not_read_them():
     r = _kicad_rules_report(RELEASE_LOG, ["/s/test.kicad_dru", "/s/test.kicad_pro"])
     assert r["applied"] == []
     assert r["ignored"] == ["test.kicad_dru", "test.kicad_pro"]
+    assert r["unconfirmed"] == []
     assert "KiCad's DRC" in r["note"]
+
+
+# A log with neither line. Not copied from a run: Freerouting 2.0.x and 2.1.0 (2.0.1 is the jar
+# the README links) read only the argument after -de and never mention the other files, so any
+# log of theirs looks like this as far as the report is concerned.
+SILENT_LOG = """\
+INFO   Loading design 'test.dsn'
+INFO   Auto-routing was completed.
+"""
+
+
+def test_report_from_a_release_that_skips_them_silently():
+    r = _kicad_rules_report(SILENT_LOG, ["/s/test.kicad_dru", "/s/test.kicad_pro"])
+    assert r["applied"] == []
+    assert r["ignored"] == []
+    assert r["unconfirmed"] == ["test.kicad_dru", "test.kicad_pro"]
+    assert "KiCad's DRC" in r["note"]
+
+
+def test_a_file_master_did_not_mention_is_unconfirmed():
+    only_dru = MASTER_LOG.splitlines()[0] + "\n"
+    r = _kicad_rules_report(only_dru, ["/s/test.kicad_dru", "/s/test.kicad_pro"])
+    assert r["applied"] == ["test.kicad_dru"]
+    assert r["unconfirmed"] == ["test.kicad_pro"]
+    assert "note" in r
 
 
 def test_warnings_are_capped():
@@ -162,7 +190,7 @@ def rules(workdir):
 def test_autoroute_passes_the_boards_rule_files(rules, fake_jar):
     out, seen = _run(rules, fake_jar, {}, stdout=MASTER_LOG)
     assert out["success"], out
-    assert [p.rsplit("/", 1)[-1] for p in seen["de"]] == [
+    assert [os.path.basename(p) for p in seen["de"]] == [
         "test.dsn",
         "test.kicad_dru",
         "test.kicad_pro",
@@ -199,3 +227,23 @@ def test_a_failed_run_names_the_rule_files(rules, fake_jar):
     assert out["success"] is False
     assert "kicadRules: false" in out["hint"]
     assert out["kicad_rules"]["files"] == ["test.kicad_dru", "test.kicad_pro"]
+
+
+def test_every_attempt_failing_names_the_rule_files(rules, fake_jar):
+    out, _ = _run(
+        rules,
+        fake_jar,
+        {"attempts": 2},
+        stdout="ERROR cannot read 'test.kicad_dru'",
+        returncode=1,
+    )
+    assert out["success"] is False
+    assert out["message"] == "All Freerouting attempts failed"
+    assert "kicadRules: false" in out["hint"]
+    assert out["kicad_rules"]["files"] == ["test.kicad_dru", "test.kicad_pro"]
+
+
+def test_every_attempt_failing_without_rule_files_has_no_hint(workdir, fake_jar):
+    out, _ = _run(workdir, fake_jar, {"attempts": 2}, returncode=1)
+    assert out["success"] is False
+    assert "hint" not in out and "kicad_rules" not in out

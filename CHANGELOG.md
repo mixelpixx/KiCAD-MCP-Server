@@ -13,9 +13,11 @@ All notable changes to the KiCAD MCP Server project are documented here.
   thought was legal. Freerouting master after 2.5.0 reads both files given in
   `-de` (freerouting #1121, #1130). `autoroute` now stages copies beside the
   DSN and passes them (default on; `kicadRules: false` leaves them out). The
-  reply's `kicad_rules` lists the files `applied` and `ignored` (2.5.0 and
-  earlier log them as unknown and route on) and the rules Freerouting could
-  only approximate.
+  reply's `kicad_rules` lists the files `applied`, `ignored` (2.2.0 to 2.5.0
+  log them as unknown and route on) and `unconfirmed` (2.0.x and 2.1.0 skip
+  them without a word, so the log does not mention them), and the rules
+  Freerouting could only approximate. A failed run, single or best-of-N,
+  names the files and how to leave them out.
 
 - **`sync_schematic_to_board` can preview (`dryRun: true`).** The sync
   overwrites board values and fields with the schematic's and moves pads to

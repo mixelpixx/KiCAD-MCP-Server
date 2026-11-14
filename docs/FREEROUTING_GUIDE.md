@@ -118,8 +118,11 @@ itself (freerouting #1121, #1130), so `autoroute` stages copies beside the DSN a
 `-de`. The reply's `kicad_rules` reports `applied` and `ignored` files and the rules Freerouting
 could only approximate (`warnings`: creepage applied as the same rule's clearance, a condition
 it cannot evaluate applied wherever it may match, constraint types it does not translate).
-Freerouting 2.5.0 and earlier log the files as unknown and route on; `kicad_rules.ignored` then
-lists them, with a note to check the result with KiCad's DRC.
+Freerouting 2.2.0 to 2.5.0 log the files as unknown and route on; `kicad_rules.ignored` then
+lists them. 2.0.x and 2.1.0 (the 2.0.1 jar linked above among them) read only the argument after
+`-de` and skip the rest without a word; `kicad_rules.unconfirmed` lists files the log does not
+mention, since without a "Using the KiCad ..." line the router did not use them. Either way the
+reply carries a note to check the result with KiCad's DRC.
 
 **Example:**
 
