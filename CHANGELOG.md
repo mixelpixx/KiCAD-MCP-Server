@@ -61,6 +61,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **The Windows setup scripts no longer stop at "Detecting KiCAD Installation"**
+  (#534). `setup-windows-opencode.ps1` runs under `Set-StrictMode`, and it read
+  `DisplayName` from every program's uninstall entry in the registry. Many
+  entries have no `DisplayName`, so PowerShell stopped with "The property
+  'DisplayName' cannot be found on this object" on most machines. Both setup
+  scripts now look the value up, and do the same for `InstallLocation` and
+  `DisplayIcon`, which are also often missing.
+
 - **Net classes and their nets reach KiCad, and the replies say what was
   written.** Checked with KiCad's own DRC on 9.0.9 and 10.0.8.
   - `create_netclass` with `nets` replied with the requested nets and
