@@ -28,7 +28,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from commands.symbol_creator import KICAD9_SYMBOL_LIB_VERSION
+from commands.symbol_creator import symbol_lib_header
 from utils.sexpr_format import escape_sexpr_string
 
 logger = logging.getLogger("kicad_interface")
@@ -1107,10 +1107,12 @@ def generate_sym_lib(sym_geoms: List["_EagleSymGeom"], lib_path: str) -> None:
     lets KiCad resolve the symbols both from the embedded lib_symbols section
     and from this library file.
     """
+    version, generator_version = symbol_lib_header(os.path.dirname(lib_path))
     out: List[str] = []
     out.append(
-        f"(kicad_symbol_lib (version {KICAD9_SYMBOL_LIB_VERSION})"
+        f"(kicad_symbol_lib (version {version})"
         ' (generator "kicad_symbol_editor")\n'
+        f' (generator_version "{generator_version}")\n'
     )
 
     for sg in sym_geoms:

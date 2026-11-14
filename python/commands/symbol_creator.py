@@ -4,8 +4,12 @@ Symbol Creator for KiCAD MCP Server
 Creates and edits .kicad_sym symbol library files using raw S-Expression text generation.
 No sexpdata – pure f-string assembly to guarantee format correctness.
 
-KiCAD 9 .kicad_sym format:
-  - Library file starts with (kicad_symbol_lib (version 20241209) ...)
+.kicad_sym format:
+  - A new library file starts with (kicad_symbol_lib (version ...) ...);
+    the version matches the project's root schematic (KiCad 10 header only
+    for a KiCad 10 project, KiCad 9 otherwise — see symbol_lib_header), so
+    KiCad never refuses the library and KiCad 10 projects get no upgrade
+    notice.
   - Each symbol has a parent block with properties + two sub-symbols:
       SymbolName_0_1  → body graphics (rectangle, polyline, circle, arc)
       SymbolName_1_1  → pins
@@ -15,7 +19,7 @@ KiCAD 9 .kicad_sym format:
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from commands.library_tables import (
     global_table_path,
@@ -23,10 +27,48 @@ from commands.library_tables import (
     project_library_uri,
 )
 from utils.sexpr_format import escape_sexpr_string, paren_delta
+from utils.sheet_tree import root_candidates
 
 logger = logging.getLogger("kicad_interface")
 
+# File-format header written into new .kicad_sym files. KiCad refuses a
+# library that declares a newer format than its own writer (a 20251024
+# header fails to load on KiCad 9), while a 20241209 header loads on both
+# 9 and 10 — with an upgrade notice on 10. So the 9 values are the
+# fallback, and the KiCad 10 header is only written when the project's own
+# root schematic positively declares a KiCad 10 format (#420, #410).
 KICAD9_SYMBOL_LIB_VERSION = "20241209"
+KICAD10_SYMBOL_LIB_VERSION = "20251024"
+_KICAD10_SCH_VERSION = 20260101  # same threshold as dynamic_symbol_loader
+
+
+def symbol_lib_header(project_dir: Optional[str] = None) -> Tuple[str, str]:
+    """The ``(version, generator_version)`` pair for a new .kicad_sym header.
+
+    Which KiCad will open the project decides the header, not which KiCad is
+    installed: several versions side by side must not force the newest format
+    on a project still on an older one. The root schematic's declared version
+    is the target — walk up from the library's directory to the nearest
+    ``.kicad_pro`` (utils.sheet_tree) and read its root schematic. No project
+    found (a global library), or a schematic older than the KiCad 10 format:
+    the KiCad 9 header, which loads everywhere the server supports.
+    """
+    if project_dir is None:
+        return KICAD9_SYMBOL_LIB_VERSION, "9.0"
+    # root_candidates takes a file inside the project; from the directory
+    # itself a synthetic file works (it is never a candidate itself).
+    directory = Path(project_dir)
+    probe = directory / "_.kicad_sym"
+    for root in root_candidates(probe):
+        try:
+            content = root.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        m = re.search(r"\(version\s+(\d+)\)", content)
+        if m and int(m.group(1)) >= _KICAD10_SCH_VERSION:
+            return KICAD10_SYMBOL_LIB_VERSION, "10.0"
+        break  # a root schematic was found; its version decides
+    return KICAD9_SYMBOL_LIB_VERSION, "9.0"
 
 
 def _invalidate_symbol_caches() -> None:
@@ -163,15 +205,17 @@ class SymbolCreator:
 
         lib_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Load or create library
+        # Load or create library; a new file's header matches the project's
+        # own schematic format (KiCad 10 only when the project is).
         if lib_path.exists():
             lib_content = lib_path.read_text(encoding="utf-8")
         else:
+            version, generator_version = symbol_lib_header(str(lib_path.parent))
             lib_content = (
                 f"(kicad_symbol_lib\n"
-                f"  (version {KICAD9_SYMBOL_LIB_VERSION})\n"
-                f'  (generator "kicad-mcp")\n'
-                f'  (generator_version "9.0")\n'
+                f"\t(version {version})\n"
+                f'\t(generator "kicad-mcp")\n'
+                f'\t(generator_version "{generator_version}")\n'
                 f")\n"
             )
 
