@@ -476,7 +476,7 @@ class LibraryCommands:
             ):
                 return {"success": False, "message": "limit must be a positive integer"}
 
-            footprints = sorted(self.library_manager.list_footprints(library))
+            footprints = sorted(self.library_manager.list_footprints(library), key=str.casefold)
 
             name_filter = params.get("filter")
             if name_filter:

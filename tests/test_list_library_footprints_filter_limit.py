@@ -97,3 +97,20 @@ def test_limit_must_be_a_positive_integer(tmp_path: Path, bad) -> None:
 def test_library_parameter_still_works(tmp_path: Path) -> None:
     result = _commands(tmp_path).list_library_footprints({"library": "Package", "limit": 1})
     assert result["count"] == 1
+
+
+def test_list_is_sorted_ignoring_case(tmp_path: Path) -> None:
+    # Code-point order would put every lower-case name after every capitalised
+    # one, so a limit would never reach "microSD_..." in a library like
+    # Connector_Card.
+    mgr = LibraryManager.__new__(LibraryManager)
+    mgr.project_path = None
+    mgr.footprint_cache = {}
+    lib = tmp_path / "Card.pretty"
+    lib.mkdir()
+    for name in ["SD_Card", "microSD_Molex", "nanoSIM_Hirose", "Micro_SIM"]:
+        (lib / f"{name}.kicad_mod").write_text("(footprint)")
+    mgr.libraries = {"Card": str(lib)}
+    result = LibraryCommands(mgr).list_library_footprints({"library_name": "Card", "limit": 2})
+    assert result["footprints"] == ["Micro_SIM", "microSD_Molex"]
+    assert result["total"] == 4

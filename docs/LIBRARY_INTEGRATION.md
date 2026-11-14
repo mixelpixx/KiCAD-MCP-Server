@@ -114,9 +114,10 @@ Search for footprints matching a pattern.
 
 ### 3. `list_library_footprints`
 
-List the footprints in a specific library, sorted by name. `filter` (optional)
-keeps names containing the text, case-insensitively, with `*` as a wildcard.
-`limit` (optional, a positive integer) caps the list after filtering.
+List the footprints in a specific library, sorted by name, ignoring case.
+`filter` (optional) keeps names containing the text, case-insensitively, with
+`*` as a wildcard. `limit` (optional, a positive integer) caps the list after
+filtering. MCP clients get at most 100 names when they pass no `limit`.
 
 **Parameters:**
 
