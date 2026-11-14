@@ -6,6 +6,38 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **`sync_schematic_to_board` can replace changed footprints and delete
+  removed ones** (`replaceFootprints`, `deleteUnusedFootprints`), KiCad F8's
+  two opt-in options. Until now a footprint whose library ID changed in the
+  schematic was only reported, and a part deleted from the schematic stayed
+  on the board, so revising an existing board meant finishing the job by
+  hand.
+  - `replaceFootprints` loads the new footprint and keeps the old one's
+    reference, value, fields, symbol link, position, rotation, side and
+    lock, and the board's text layout: each field keeps its position, size,
+    layer and visibility, as KiCad's F8 does (replacing 53 parts on a real
+    board without this reset every reference to the library spot and put
+    every MPN on the silkscreen: 199 silk violations). The new pads get
+    their nets in the same sync.
+  - `deleteUnusedFootprints` removes footprints with no symbol. Board-only
+    footprints (mounting holes, logos) are kept, as KiCad keeps them, and so
+    are locked ones, which are reported.
+  - Footprints are matched to symbols by symbol path (UUID) before
+    reference, as KiCad does: after a re-annotation (R203 renamed to R299,
+    same symbol) the footprint is renamed in place and listed in
+    `footprints_renamed`, instead of being reported missing and, with
+    `deleteUnusedFootprints`, deleted. A footprint whose symbol path is a
+    schematic symbol's is never deleted, nor one whose symbol UUID matches a
+    symbol with no footprint at its own path. The UUID alone is not enough:
+    every instance of a reused sheet shares it, so a deleted instance's
+    footprints are deleted, not kept as the live instance's parts.
+  - Both options are refused while the board is open in KiCad (session
+    pinned to IPC), except under `dryRun`: the tool writes the board file
+    underneath the GUI, and KiCad's next save would overwrite the swaps and
+    deletions.
+  - Both work with `dryRun`, and the reply lists `footprints_replaced` and
+    `footprints_deleted`.
+
 - **`sync_schematic_to_board` can preview (`dryRun: true`).** The sync
   overwrites board values and fields with the schematic's and moves pads to
   the schematic's nets, as KiCad's F8 does. On a board edited after its last
@@ -37,6 +69,36 @@ All notable changes to the KiCAD MCP Server project are documented here.
   scripts now look the value up, and do the same for `InstallLocation` and
   `DisplayIcon`, which are also often missing.
 
+- **Net classes and their nets reach KiCad, and the replies say what was
+  written.** Checked with KiCad's own DRC on 9.0.9 and 10.0.8.
+  - `create_netclass` with `nets` replied with the requested nets and
+    `persisted: true` while assigning none of them. The in-memory call was
+    `SetClass`, which KiCad 8 renamed to `SetNetClass`, and membership was
+    never written to the project. It now writes membership to the
+    `.kicad_pro` like `assign_net_to_class` does. It replies with
+    `netsAssigned` (written) and `netsNotAssigned` (not on the board, or not
+    writable), and `netClass.nets` lists only the assigned nets.
+  - On KiCad 9, `pcbnew.SaveBoard` rewrites the `.kicad_pro` from the board's
+    in-memory settings, so the next board save erased every class and
+    assignment the server had written to the file. Classes and memberships
+    are now also registered in those in-memory settings (`SetNetclass`, plus a
+    pattern assignment on the net name made literal for KiCad's matcher (see
+    #517), since KiCad reads a pattern as a regular expression and a raw `D+`
+    would also claim `D` and `DD`).
+    `SetNetclassPatternAssignment` appends, so the in-memory list is rebuilt
+    from the project file on each assignment; moving a net from class A to B
+    leaves it in B, not in the composite `A,B`.
+  - KiCad 8 has no `SetNetclassPatternAssignment`, and its `SaveBoard` also
+    rewrites the `.kicad_pro` from memory, which Python cannot reach there.
+    The membership is written to the project file, but the next board save
+    on KiCad 8 overwrites it; the reply says so in a `warning`.
+  - `assign_net_to_class` right after `create_netclass` in the same session
+    failed with "Net class not found", because the class was added to a copy
+    of the class map. It now finds it.
+  - `add_net` with `netClass` reported "Failed to add net" after adding the
+    net (the same `SetClass` error). It now applies and persists the class,
+    reports `classPersisted`, and warns about an unknown class instead of
+    claiming it.
 - **`assign_net_to_class` membership now survives Update PCB from Schematic**
   (#517). The tool wrote only `net_settings.netclass_assignments`, which KiCad
   derives from the schematic's net-class directives and rewrites on a sync; a
@@ -67,6 +129,42 @@ All notable changes to the KiCAD MCP Server project are documented here.
   result with its list of failures, so `isError` means nothing happened and
   the call is safe to retry. `batch_connect` and `batch_add_no_connects`,
   which build their own reply text, follow the same rule.
+
+- **Schematic batch edits no longer time out half-written.** `batch_connect`
+  (and `batch_add_and_connect`, which uses it) wrote the file once per pin,
+  re-parsing and re-serialising the whole sheet two or three times per
+  label. On a real 11,000-line sheet that was about 2.4 s per label, so a
+  12-pin part ran past the bridge's 30 s timeout. The bridge then restarted
+  the worker mid-batch: only some of the labels were written, and the caller
+  was told the call had failed, so a retry would duplicate the ones that
+  landed.
+  - Every pin is now resolved first, while the file is unchanged, and all
+    labels and wires are written in one read-modify-write. Four labels on
+    that sheet went from 9.6 s to 4.2 s, and the cost no longer grows with
+    the number of labels.
+  - Facing pins in the same batch are still joined by a wire, under the same
+    straight-ahead rule as a label already in the file: a planned label off
+    the pin's axis gets no diagonal wire.
+  - With `replace`, the old labels are removed in the same write that adds
+    the new ones, so a failed write leaves the sheet as it was instead of
+    with the old labels gone. `replace` also clears the net's label at the
+    stub end, and a stub wire already in the file is not added twice, so
+    re-running a `stubLength` batch does not stack a second label and wire.
+    A label this batch replaces is never the wiring target for another pin:
+    the facing-label lookup reads the file before the write, and re-netting
+    R1.2 from X to Y while R2.1 asked for X used to wire R2.1 onto Y.
+  - `replace` also removes an earlier run's stub, whatever its length: the
+    wire from the pin to a local label, and that label when no other wire
+    uses it. A run with `stubLength` followed by a `replace` run without one
+    (or with another length) left the old stub and label, and the pin on
+    both nets. A wire that ends on another pin, or on a global or
+    hierarchical label, is kept, and the reply warns when that leaves the
+    pin on a second net. The "cleared by this batch" check now uses the
+    clear's 0.5 mm tolerance, so a label a little off a pin is not both
+    removed and used as a wiring target. A pin wired to another pin's label
+    loses its own old label too, instead of joining the two nets.
+  - `batch_move_components` and `batch_set_schematic_property_positions` also
+    get the long timeout, so a very large sheet can't be cut off part-way.
 
 ## [2.9.0] - 2026-11-11
 

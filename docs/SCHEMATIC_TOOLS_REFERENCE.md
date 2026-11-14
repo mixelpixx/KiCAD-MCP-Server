@@ -570,16 +570,28 @@ Runs the KiCAD Electrical Rules Check (ERC) on a schematic and returns all viola
 
 Import the schematic netlist into the PCB board — equivalent to pressing F8 in KiCAD (Tools → Update PCB from Schematic). MUST be called after the schematic is complete and before placing or routing components on the PCB. Without this step, the board has no footprints and no net assignments — place_component and route_pad_to_pad will produce an empty, unroutable board.
 
-| Parameter     | Type   | Required | Description                                    |
-| ------------- | ------ | -------- | ---------------------------------------------- |
-| schematicPath | string | Yes      | Absolute path to the .kicad_sch schematic file |
-| boardPath     | string | Yes      | Absolute path to the .kicad_pcb board file     |
+| Parameter              | Type    | Required | Description                                                                                                                                      |
+| ---------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| schematicPath          | string  | Yes      | Absolute path to the .kicad_sch schematic file                                                                                                   |
+| boardPath              | string  | Yes      | Absolute path to the .kicad_pcb board file                                                                                                       |
+| dryRun                 | boolean | No       | Report every change (pad nets, values, fields, footprints added, replaced, deleted) without saving                                               |
+| replaceFootprints      | boolean | No       | Swap footprints whose library ID differs from the symbol's footprint, keeping position, rotation, side, symbol link and the board's field layout |
+| deleteUnusedFootprints | boolean | No       | Delete footprints with no symbol in the schematic; board-only and locked footprints are kept                                                     |
 
 **Usage Notes:** This is the F8 equivalent. It synchronizes the schematic design to the PCB, creating footprints on the board and assigning nets. This step is critical in the workflow: design in schematic → sync_schematic_to_board → place and route on PCB.
 
-Board footprints are matched to schematic symbols by reference designator _and_
-by symbol UUID. The UUID match is what stops a re-annotated schematic from
-looking entirely "missing" and being added to the board a second time.
+Board footprints are matched to schematic symbols by symbol path (UUID) first,
+then by reference designator. A footprint whose symbol UUID matches a schematic
+symbol with another reference is renamed in place (`footprints_renamed`), as
+KiCad does after a re-annotation; it is never counted as missing or unused.
+
+`replaceFootprints` and `deleteUnusedFootprints` are KiCad's two opt-in F8
+options and are off by default. Both are refused while the board is open in
+KiCad (the session is pinned to IPC), because this tool writes the board file
+and KiCad's next save would overwrite the swaps and deletions; a `dryRun`
+preview is still allowed there. The reply lists `footprints_replaced`,
+`footprints_deleted` and `footprints_renamed`; a footprint that could not be
+deleted (locked, or bound to a schematic symbol) is reported in `warnings`.
 
 ### backannotate_footprints
 
