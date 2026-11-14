@@ -441,6 +441,10 @@ try:
     from commands.schematic_field_layout import SchematicFieldLayoutCommands
     from commands.schematic_hierarchy import SchematicHierarchyCommands
     from commands.schematic_lint import SchematicLintCommands
+    from commands.schematic_rectangles import (
+        list_schematic_rectangles,
+        set_schematic_rectangle,
+    )
     from commands.set_symbol_pin_type import set_symbol_pin_type
     from commands.stackup import StackupCommands
     from commands.symbol_creator import SymbolCreator
@@ -789,6 +793,8 @@ class KiCADInterface(SchematicHandlersMixin):
             "add_schematic_hierarchical_label": self._handle_add_schematic_hierarchical_label,
             "add_schematic_text": self._handle_add_schematic_text,
             "list_schematic_texts": self._handle_list_schematic_texts,
+            "list_schematic_rectangles": list_schematic_rectangles,
+            "set_schematic_rectangle": set_schematic_rectangle,
             "add_sheet_pin": self._handle_add_sheet_pin,
             "import_svg_logo": self._handle_import_svg_logo,
             # UI/Process management commands
@@ -1427,6 +1433,7 @@ class KiCADInterface(SchematicHandlersMixin):
         "rotate_schematic_component",
         "set_schematic_component_property",
         "set_schematic_property_position",
+        "set_schematic_rectangle",
         "set_sheet_property",
         "snap_to_grid",
         "suggest_schematic_declutter",

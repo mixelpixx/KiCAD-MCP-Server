@@ -5,9 +5,9 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.9.0
-**Tools registered on the server:** 254
-**Tools indexed for keyword discovery:** 254 in 20 categories
-**Last updated:** 2026-11-13
+**Tools registered on the server:** 256
+**Tools indexed for keyword discovery:** 256 in 20 categories
+**Last updated:** 2026-11-14
 
 ## How to read this document
 
@@ -202,7 +202,7 @@ _Source: `src/tools/export.ts`_
 
 ---
 
-## Schematic (46 tools)
+## Schematic (48 tools)
 
 _Source: `src/tools/schematic.ts`_
 
@@ -253,6 +253,8 @@ _Source: `src/tools/schematic.ts`_
 | `add_schematic_hierarchical_label`    | Add hierarchical label for multi-sheet connections                                                                                                   | `schematic_hierarchy`   |
 | `list_schematic_texts`                | List all text annotations (with optional filter)                                                                                                     | `schematic`             |
 | `add_schematic_text`                  | Add free-form text annotation to schematic                                                                                                           | `schematic`             |
+| `list_schematic_rectangles`           | List rectangles drawn on a sheet (corners, stroke, fill, uuid)                                                                                       | `schematic`             |
+| `set_schematic_rectangle`             | Create, edit or delete a rectangle drawn on a sheet                                                                                                  | `schematic`             |
 | `add_sheet_pin`                       | Add a sheet pin to a hierarchical sheet symbol                                                                                                       | `schematic_hierarchy`   |
 
 ---
@@ -529,7 +531,7 @@ _Source: `src/tools/toolboxes.ts`_
 | `routing.ts`             | Routing                                | 19      |
 | `design-rules.ts`        | Design Rules and DRC                   | 9       |
 | `export.ts`              | Export and Fabrication Output          | 27      |
-| `schematic.ts`           | Schematic                              | 46      |
+| `schematic.ts`           | Schematic                              | 48      |
 | `schematic-batch.ts`     | Schematic Batch Operations             | 9       |
 | `schematic-hierarchy.ts` | Hierarchical Sheets                    | 5       |
 | `schematic-layout.ts`    | Schematic Layout and Cosmetics         | 5       |
@@ -549,11 +551,11 @@ _Source: `src/tools/toolboxes.ts`_
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
 | `gui-driver.ts`          | gui-driver.ts                          | 11      |
 | `toolboxes.ts`           | toolboxes.ts                           | 3       |
-| **Total**                |                                        | **254** |
+| **Total**                |                                        | **256** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 254 of the 254 registered tools.
+These are the categories `search_tools` searches. They cover 256 of the 256 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
@@ -561,7 +563,7 @@ These are the categories `search_tools` searches. They cover 254 of the 254 regi
 | `component`                | 24            |
 | `export`                   | 27            |
 | `drc`                      | 10            |
-| `schematic`                | 36            |
+| `schematic`                | 38            |
 | `library`                  | 9             |
 | `symbol_library`           | 17            |
 | `symbol_pins`              | 3             |
@@ -577,6 +579,6 @@ These are the categories `search_tools` searches. They cover 254 of the 254 regi
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
 | `gui-driver`               | 11            |
-| **Indexed total**          | **254**       |
+| **Indexed total**          | **256**       |
 | Registered but not indexed | 0             |
-| **Registered total**       | **254**       |
+| **Registered total**       | **256**       |
