@@ -16,8 +16,9 @@ existing single-item handlers (add/edit/get_schematic_component) and the footpri
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
+import sexpdata
 from commands.dynamic_symbol_loader import DynamicSymbolLoader
 from commands.pin_locator import PinLocator
 from commands.schematic_text_utils import (
@@ -26,8 +27,9 @@ from commands.schematic_text_utils import (
     _find_placed_symbol_block,
     _find_project_root,
     _move_property_in_block,
+    _straight_ahead,
 )
-from commands.wire_manager import WireManager
+from commands.wire_manager import REPLACE_TOLERANCE_MM, WireManager
 from utils.symbol_instances import add_missing_instances, instance_report
 
 logger = logging.getLogger("kicad_interface")
@@ -528,6 +530,10 @@ class SchematicBatchCommands:
             schematic_path = params.get("schematicPath")
             connections = params.get("connections")
             replace = bool(params.get("replace", False))
+            # A label straight on the pin end sits over the pin number and name;
+            # stubLength draws a short wire out of the pin first and puts the
+            # label at its end, the way schematics are normally drawn.
+            stub = float(params.get("stubLength") or 0.0)
             label_type = params.get("labelType") or params.get("label_type") or "label"
             if label_type not in ("label", "global_label"):
                 return {
@@ -560,6 +566,100 @@ class SchematicBatchCommands:
             placed: List[Dict[str, Any]] = []
             failed: List[Dict[str, Any]] = []
             placed_positions: Dict[tuple, str] = {}
+            # Planned edits, applied in one read-modify-write after the loop.
+            # Resolving every pin first, while the file is unchanged, keeps the
+            # PinLocator cache valid; writing per pin reparsed the whole sheet
+            # two or three times per label (about 2.4 s per label on an
+            # 11,000-line sheet), so a dozen labels ran past the bridge timeout.
+            new_labels: List[tuple] = []  # (net, position, label_type, orientation)
+            new_wires: List[tuple] = []  # (start, end)
+            to_clear: List[tuple] = []  # (net, position) for replace=True
+
+            def _facing_planned(net_name, position, orientation, proximity_mm=14.0):
+                """A label planned earlier in this batch that faces *position*.
+
+                Mirrors _find_facing_label for labels not yet in the file, so a
+                pair of facing pins in one batch is still joined by a wire. The
+                same _straight_ahead gate applies: a label off the pin's axis
+                would get a diagonal wire.
+                """
+                facing = (int(round(orientation)) % 360 + 180) % 360
+                px, py = float(position[0]), float(position[1])
+                for net, pos, kind, angle in new_labels:
+                    if kind != "label" or net != net_name or angle % 360 != facing:
+                        continue
+                    if ((pos[0] - px) ** 2 + (pos[1] - py) ** 2) ** 0.5 > proximity_mm:
+                        continue
+                    if _straight_ahead(position, orientation, pos):
+                        return [pos[0], pos[1]]
+                return None
+
+            # With replace=True the old labels at this batch's pins (and stub ends)
+            # are removed in the same write. _find_facing_label still reads the
+            # unchanged file, so it could pick such a label as the wiring target
+            # for another pin, and the write then renames it: re-netting R1.2 from
+            # X to Y while R2.1 asks for X wired R2.1 onto Y. Collect every
+            # position this batch clears first, and skip facing labels there.
+            cleared_by_batch: List[Tuple[float, float]] = []
+            # replace=True also removes an earlier run's stub: the wire from the
+            # pin to a local label, and that label, whatever stub length the
+            # earlier run used. Clearing only this call's pin and stub end left
+            # the old wire and label, and the pin on both nets.
+            remove_wires: List[tuple] = []
+            kept_wires: List[tuple] = []  # (ref, pin, net, far end) of wires left alone
+            if replace:
+                batch_pins: List[tuple] = []  # (ref, pin, net, [x, y])
+                for c_ref, c_pins in connections.items():
+                    if not isinstance(c_pins, dict):
+                        continue
+                    for c_pin, c_net in c_pins.items():
+                        try:
+                            c_pos = locator.get_pin_location(sch_path, c_ref, str(c_pin))
+                            if not c_pos:
+                                c_all = locator.get_all_symbol_pins(sch_path, c_ref) or {}
+                                if len(c_all) != 1:
+                                    continue
+                                c_pin = next(iter(c_all))
+                                c_pos = c_all[c_pin]
+                            cx, cy = float(c_pos[0]), float(c_pos[1])
+                            cleared_by_batch.append((cx, cy))
+                            batch_pins.append((c_ref, str(c_pin), c_net, [cx, cy]))
+                            if stub > 0:
+                                c_angle = locator.get_pin_angle(sch_path, c_ref, str(c_pin)) or 0
+                                c_orient = int(round(c_angle / 90) * 90) % 360
+                                dx, dy = {0: (1, 0), 90: (0, -1), 180: (-1, 0), 270: (0, 1)}[
+                                    c_orient
+                                ]
+                                cleared_by_batch.append((cx + dx * stub, cy + dy * stub))
+                        except Exception:
+                            continue
+                if batch_pins:
+                    with open(sch_path, "r", encoding="utf-8") as sf:
+                        sch_now = sexpdata.loads(sf.read())
+                    for w in WireManager.pin_label_wires(sch_now, [p[3] for p in batch_pins]):
+                        owner = next(p for p in batch_pins if p[3] == w["pin"])
+                        if w["far_is_pin"] or not w["local"]:
+                            # A "wired to existing label" wire ends on another
+                            # pin, whose label stays; a global or hierarchical
+                            # label is not ours to remove. Checked after the loop.
+                            kept_wires.append((owner[0], owner[1], owner[2], w["far"]))
+                            continue
+                        remove_wires.append((w["pin"], w["far"]))
+                        if not w["far_shared"]:
+                            # Only this pin's stub uses the label: it goes too.
+                            # When another wire also ends there, the label
+                            # still names that wire's net and stays.
+                            to_clear.append((owner[2], w["far"]))
+                            cleared_by_batch.append((w["far"][0], w["far"][1]))
+
+            def _cleared_here(pos) -> bool:
+                # Same per-axis test and tolerance as the clear in
+                # add_labels_and_wires, so the two always agree.
+                px, py = float(pos[0]), float(pos[1])
+                return any(
+                    abs(px - cx) < REPLACE_TOLERANCE_MM and abs(py - cy) < REPLACE_TOLERANCE_MM
+                    for cx, cy in cleared_by_batch
+                )
 
             for ref, pin_map in connections.items():
                 if not isinstance(pin_map, dict):
@@ -586,16 +686,17 @@ class SchematicBatchCommands:
                                 continue
 
                         pos_key = (round(float(position[0]), 2), round(float(position[1]), 2))
+                        entry = {
+                            "ref": ref,
+                            "pin": str(pin_id),
+                            "net": net_name,
+                            "position": {"x": position[0], "y": position[1]},
+                        }
                         if placed_positions.get(pos_key) == net_name:
-                            placed.append(
-                                {
-                                    "ref": ref,
-                                    "pin": str(pin_id),
-                                    "net": net_name,
-                                    "position": {"x": position[0], "y": position[1]},
-                                    "note": "deduped: label already placed at this coordinate for this net",
-                                }
+                            entry["note"] = (
+                                "deduped: label already placed at this coordinate for this net"
                             )
+                            placed.append(entry)
                             continue
 
                         # Orient the label along the pin's OUTWARD direction, the
@@ -611,69 +712,65 @@ class SchematicBatchCommands:
                         raw_angle = locator.get_pin_angle(sch_path, ref, resolved_pin) or 0
                         orientation = int(round(raw_angle / 90) * 90) % 360
 
+                        dx, dy = {0: (1, 0), 90: (0, -1), 180: (-1, 0), 270: (0, 1)}[orientation]
+                        stub_end = [
+                            round(float(position[0]) + dx * stub, 4),
+                            round(float(position[1]) + dy * stub, 4),
+                        ]
+                        if replace:
+                            # Every pin of the batch, whichever branch it takes
+                            # below: a pin wired to another pin's label used to
+                            # keep its own old label, joining the two nets. This
+                            # is also what cleared_by_batch assumed.
+                            to_clear.append((net_name, list(position)))
+                            if stub > 0:
+                                # An earlier stub run left this net's label at
+                                # the stub end; without this a re-run stacks a
+                                # second label there.
+                                to_clear.append((net_name, list(stub_end)))
+
                         # Facing-label auto-wiring is only meaningful for local labels;
                         # global labels join their net by name (one placed per pin).
-                        existing_pos = (
-                            _find_facing_label(sch_path, net_name, position, orientation)
-                            if label_type == "label"
-                            else None
-                        )
+                        existing_pos = None
+                        if label_type == "label":
+                            existing_pos = _find_facing_label(
+                                sch_path, net_name, position, orientation
+                            )
+                            if existing_pos and _cleared_here(existing_pos):
+                                existing_pos = None  # replaced by this batch: not a target
+                            existing_pos = existing_pos or _facing_planned(
+                                net_name, position, orientation
+                            )
                         if existing_pos:
-                            if WireManager.add_wire(sch_path, list(position), existing_pos):
-                                placed.append(
-                                    {
-                                        "ref": ref,
-                                        "pin": str(pin_id),
-                                        "net": net_name,
-                                        "position": {"x": position[0], "y": position[1]},
-                                        "note": f"wired to existing label at ({existing_pos[0]},{existing_pos[1]})",
-                                    }
-                                )
-                                placed_positions[pos_key] = net_name
-                            else:
-                                failed.append(
-                                    {
-                                        "ref": ref,
-                                        "pin": str(pin_id),
-                                        "net": net_name,
-                                        "reason": "wire-to-existing-label failed",
-                                    }
-                                )
-                            continue
-
-                        if replace:
-                            WireManager.delete_label(
-                                sch_path, net_name, list(position), tolerance=0.5
+                            new_wires.append((list(position), existing_pos))
+                            entry["note"] = (
+                                f"wired to existing label at ({existing_pos[0]},{existing_pos[1]})"
                             )
-                            self._delete_labels_at(sch_path, position)
-
-                        if WireManager.add_label(
-                            sch_path,
-                            net_name,
-                            position,
-                            label_type=label_type,
-                            orientation=orientation,
-                        ):
-                            placed.append(
-                                {
-                                    "ref": ref,
-                                    "pin": str(pin_id),
-                                    "net": net_name,
-                                    "position": {"x": position[0], "y": position[1]},
-                                }
-                            )
-                            placed_positions[pos_key] = net_name
                         else:
-                            failed.append(
-                                {
-                                    "ref": ref,
-                                    "pin": str(pin_id),
-                                    "net": net_name,
-                                    "reason": "add_label failed",
-                                }
-                            )
+                            label_at = position
+                            if stub > 0:
+                                label_at = stub_end
+                                new_wires.append((list(position), label_at))
+                                entry["label_position"] = {"x": label_at[0], "y": label_at[1]}
+                            new_labels.append((net_name, label_at, label_type, orientation))
+                        placed.append(entry)
+                        placed_positions[pos_key] = net_name
                     except Exception as pin_err:
                         failed.append({"ref": ref, "pin": str(pin_id), "reason": str(pin_err)})
+
+            # Old labels (replace=True) are removed in the same write that adds
+            # the new ones: a failed write then leaves the sheet as it was,
+            # instead of with the old labels gone and nothing in their place.
+            if not WireManager.add_labels_and_wires(
+                sch_path,
+                new_labels,
+                new_wires,
+                clear=to_clear,
+                tolerance=REPLACE_TOLERANCE_MM,
+                remove_wires=remove_wires,
+            ):
+                failed.extend(dict(e, reason="writing the schematic failed") for e in placed)
+                placed = []
 
             result: Dict[str, Any] = {
                 "success": len(failed) == 0,
@@ -681,7 +778,8 @@ class SchematicBatchCommands:
                 "placed": placed,
                 "failed": failed,
             }
-            warnings = self._pwr_flag_warnings(sch_path, locator, placed)
+            warnings = self._kept_wire_warnings(sch_path, kept_wires) if placed else []
+            warnings += self._pwr_flag_warnings(sch_path, locator, placed)
             if warnings:
                 result["warnings"] = warnings
             return result
@@ -694,38 +792,42 @@ class SchematicBatchCommands:
             return {"success": False, "message": str(e)}
 
     @staticmethod
-    def _delete_labels_at(sch_path, position):
-        """Drop any (label ...) within 0.5mm of *position* (used by batch_connect replace=True)."""
-        try:
-            import sexpdata
-            from sexpdata import Symbol
-            from utils.sexpr_format import dumps as kicad_dumps
+    def _kept_wire_warnings(sch_path, kept_wires) -> List[str]:
+        """Warn when replace=True left a pin wired to a label of another net.
 
-            data = sexpdata.loads(sch_path.read_text(encoding="utf-8"))
-            changed = False
-            new_data = []
+        replace does not remove a wire that ends on another pin (that pin's
+        label stays) or on a global or hierarchical label. If the label there
+        after the write names a different net, the pin is on both nets; say so
+        instead of leaving it silent.
+        """
+        if not kept_wires:
+            return []
+        out: List[str] = []
+        try:
+            with open(sch_path, "r", encoding="utf-8") as f:
+                data = sexpdata.loads(f.read())
+            names: Dict[tuple, List[str]] = {}
+            kinds = ("label", "global_label", "hierarchical_label")
             for item in data:
-                if isinstance(item, list) and len(item) > 0 and item[0] == Symbol("label"):
-                    at = next(
-                        (
-                            p
-                            for p in item[1:]
-                            if isinstance(p, list) and len(p) >= 3 and p[0] == Symbol("at")
-                        ),
-                        None,
+                if not (isinstance(item, list) and len(item) > 1 and str(item[0]) in kinds):
+                    continue
+                at = next((p for p in item[1:] if isinstance(p, list) and str(p[0]) == "at"), None)
+                if at is not None:
+                    key = (round(float(at[1]) * 10000), round(float(at[2]) * 10000))
+                    names.setdefault(key, []).append(str(item[1]))
+            for ref, pin, net, far in kept_wires:
+                key = (round(far[0] * 10000), round(far[1] * 10000))
+                others = sorted({n for n in names.get(key, []) if n != net})
+                if others:
+                    out.append(
+                        f"{ref}.{pin}: replace kept the wire from this pin to "
+                        f"({far[0]}, {far[1]}), where label {', '.join(others)} stays, "
+                        f"so the pin is on {net} and {', '.join(others)}. Delete that wire "
+                        "if the pin should be on only one net."
                     )
-                    if (
-                        at
-                        and abs(float(at[1]) - position[0]) < 0.5
-                        and abs(float(at[2]) - position[1]) < 0.5
-                    ):
-                        changed = True
-                        continue
-                new_data.append(item)
-            if changed:
-                sch_path.write_text(kicad_dumps(new_data), encoding="utf-8")
         except Exception as e:
-            logger.warning(f"replace cleanup failed: {e}")
+            logger.warning(f"kept-wire check failed: {e}")
+        return out
 
     @staticmethod
     def _pwr_flag_warnings(sch_path, locator, placed):
@@ -826,6 +928,7 @@ class SchematicBatchCommands:
                         "schematicPath": schematic_path,
                         "connections": nets_per_ref,
                         "labelType": params.get("labelType") or params.get("label_type") or "label",
+                        "stubLength": params.get("stubLength") or 0,
                     }
                 )
 
