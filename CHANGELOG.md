@@ -74,6 +74,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **New `.kicad_sym` libraries match the project's schematic format (#420).**
+  `create_symbol`, `export_symbol` and the Eagle importer wrote a hardcoded
+  KiCad 9 header (`20241209` / `"9.0"`) into every new library, which KiCad 10
+  reports as an older format and prompts to migrate on every open. All three
+  writers now share `symbol_lib_header(project_dir)`: the KiCad 10 header
+  (`20251024` / `"10.0"`) is written only when the project's root schematic
+  declares a KiCad 10 format (`(version 20260101)` or later, the same
+  threshold as `dynamic_symbol_loader`), and the KiCad 9 header — which loads
+  everywhere the server supports — is the fallback for KiCad 9 projects,
+  global libraries and projects without a schematic. Which KiCad is
+  installed plays no part, so several versions side by side cannot force the
+  newest format on a project still on an older one. Existing libraries keep
+  their header untouched.
+
 - **The Windows setup scripts no longer stop at "Detecting KiCAD Installation"**
   (#534). `setup-windows-opencode.ps1` runs under `Set-StrictMode`, and it read
   `DisplayName` from every program's uninstall entry in the registry. Many
