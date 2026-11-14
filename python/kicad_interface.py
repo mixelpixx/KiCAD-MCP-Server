@@ -637,6 +637,7 @@ class KiCADInterface(SchematicHandlersMixin):
             "create_netclass": self.routing_commands.create_netclass,
             "set_net_color": self.routing_commands.set_net_color,
             "add_copper_pour": self.routing_commands.add_copper_pour,
+            "add_copper_keepout": self._ipc_add_copper_keepout,
             "route_differential_pair": self.routing_commands.route_differential_pair,
             "refill_zones": self._handle_refill_zones,
             # Design rule commands
@@ -860,6 +861,7 @@ class KiCADInterface(SchematicHandlersMixin):
         "get_nets_list": "_ipc_get_nets_list",
         # Zone commands
         "add_copper_pour": "_ipc_add_copper_pour",
+        "add_copper_keepout": "_ipc_add_copper_keepout",
         "refill_zones": "_ipc_refill_zones",
         # Board commands
         "add_text": "_ipc_add_text",
@@ -1134,6 +1136,12 @@ class KiCADInterface(SchematicHandlersMixin):
                 and self._session_allows_ipc()
             )
 
+            if command == "add_copper_keepout" and not ipc_can_serve:
+                return {
+                    "success": False,
+                    "message": "A live KiCad PCB editor with IPC is required for copper keepouts; no file fallback was attempted",
+                }
+
             if ipc_can_serve:
                 ipc_handler_name = self.IPC_CAPABLE_COMMANDS[command]
                 ipc_handler = getattr(self, ipc_handler_name, None)
@@ -1287,6 +1295,12 @@ class KiCADInterface(SchematicHandlersMixin):
                         self._record_board_signature()
                         self._last_auto_save_status = None
                     elif command in self._BOARD_MUTATING_COMMANDS:
+                        # A preview changed nothing, so there is nothing to
+                        # save. Saving here anyway wrote whatever unsaved edits
+                        # the loaded board held (and made a backup) while the
+                        # reply said "nothing saved".
+                        if isinstance(result, dict) and result.get("dryRun") is True:
+                            return result
                         # Auto-save after every board mutation via SWIG.
                         # Prevents data loss if Claude hits context limit before
                         # an explicit save_project call.  When auto-save refuses
@@ -5724,6 +5738,19 @@ print("ok")
         except Exception as e:
             logger.error(f"IPC add_copper_pour error: {e}")
             return {"success": False, "message": str(e)}
+
+    def _ipc_add_copper_keepout(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a copper-fill keepout in the live PCB editor only."""
+        try:
+            return self.ipc_board_api.add_copper_keepout(
+                board_path=params.get("boardPath"),
+                name=params.get("name"),
+                layers=params.get("layers"),
+                points=params.get("points"),
+            )
+        except Exception as error:
+            logger.error("IPC add_copper_keepout error: %s", error)
+            return {"success": False, "message": str(error)}
 
     def _ipc_refill_zones(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for refill_zones - refills all zones with real-time UI update"""
