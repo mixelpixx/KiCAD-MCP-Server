@@ -59,6 +59,15 @@ All notable changes to the KiCAD MCP Server project are documented here.
     net. The pad came from a symbol that defines pin 1 differently in two
     units.
 
+- **`find_wires_crossing_symbols`** (#522) — the reply now also lists symbol pins
+  that lie on the middle of a wire without being connected to it, under
+  `pinsOnWireInterior` with `pinsOnWireInteriorCount`. KiCad joins a pin to a
+  wire only where the wire ends or where a junction sits on the pin, so a wire
+  drawn through a pin leaves it unconnected while the drawing suggests
+  otherwise. A label or no-connect flag on the pin does not connect it to the
+  wire and is still reported. Power pins are included. `collisions` and `count`
+  keep their meaning.
+
 ### Bug Fixes
 
 - **The Windows setup scripts no longer stop at "Detecting KiCAD Installation"**

@@ -4226,18 +4226,29 @@ class SchematicHandlersMixin:
         try:
             from pathlib import Path
 
-            from commands.schematic_analysis import find_wires_crossing_symbols
+            from commands.schematic_analysis import (
+                find_pins_on_wire_interiors,
+                find_wires_crossing_symbols,
+            )
 
             schematic_path = params.get("schematicPath")
             if not schematic_path:
                 return {"success": False, "message": "schematicPath is required"}
 
             result = find_wires_crossing_symbols(Path(schematic_path))
+            # A pin drawn on the middle of a wire is the same kind of drawing mistake.
+            # It gets its own key so `collisions` and `count` keep their meaning (#522).
+            pins_on_wire = find_pins_on_wire_interiors(Path(schematic_path))
             return {
                 "success": True,
                 "collisions": result,
                 "count": len(result),
-                "message": f"Found {len(result)} wire(s) crossing symbols",
+                "pinsOnWireInterior": pins_on_wire,
+                "pinsOnWireInteriorCount": len(pins_on_wire),
+                "message": (
+                    f"Found {len(result)} wire(s) crossing symbols and "
+                    f"{len(pins_on_wire)} pin(s) on a wire's interior, not connected to it"
+                ),
             }
         except Exception as e:
             logger.error(f"Error checking wire collisions: {e}")
