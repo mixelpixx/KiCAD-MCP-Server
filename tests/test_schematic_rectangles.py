@@ -243,6 +243,9 @@ def test_create_with_stroke_and_fill(tmp_path):
         ({"start": [0, 0], "end": [1, 1], "stroke": {"color": [0, 0, 0]}}, "color"),
         ({"start": [0, 0], "end": [1, 1], "radius": 1}, "radius"),
         ({"delete": True}, "uuid"),
+        ({"start": [float("nan"), 0], "end": [1, 1]}, "start"),
+        ({"start": [0, 0], "end": [float("inf"), 1]}, "end"),
+        ({"start": [0, 0], "end": [1, 1], "stroke": {"width": float("nan")}}, "width"),
     ],
 )
 def test_bad_requests_are_refused_and_write_nothing(tmp_path, params, word):
@@ -399,3 +402,14 @@ def test_edit_adds_a_missing_stroke_or_fill(tmp_path):
     text = path.read_text(encoding="utf-8")
     assert "\t\t(stroke\n\t\t\t(width 0)\n\t\t\t(type dot)\n\t\t)\n" in text
     assert text.index("(stroke") < text.index("(fill") < text.index('(uuid "bbbbbbbb')
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_create_keeps_the_files_line_endings(tmp_path, newline):
+    path = _write(tmp_path, KICAD_RECTANGLES, newline=newline)
+    assert _set(path, start=[0, 0], end=[5, 5])["success"]
+    raw = path.read_bytes()
+    if newline == "\n":
+        assert b"\r" not in raw
+    else:
+        assert b"\n" not in raw.replace(b"\r\n", b"")

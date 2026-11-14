@@ -16,6 +16,7 @@ that contains it, and choosing by file version belongs in a follow-up (#525).
 from __future__ import annotations
 
 import logging
+import math
 import uuid as uuid_lib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -94,7 +95,8 @@ def _top_level_rectangles(content: str) -> List[Tuple[int, int, Dict[str, Any]]]
 
 
 def _number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    """A finite int or float; bool, NaN and infinity are not numbers here."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def _point(value: Any) -> Optional[List[Any]]:
@@ -327,9 +329,27 @@ def _merged(
     return merged, None
 
 
-def _create(path: Path, changes: Dict[str, Any]) -> Dict[str, Any]:
-    from commands.wire_manager import _text_insert
+def _inserted(content: str, sexp_text: str) -> str:
+    """*content* with *sexp_text* placed where ``_text_insert`` puts free text.
 
+    Same placement as ``wire_manager._text_insert`` (before ``(sheet_instances``,
+    snapped to a line start, #298), but on text already read with its newline
+    style recorded, so the caller can write it back atomically with the file's
+    own line endings. ``_text_insert`` writes in text mode, which turns an LF
+    file into CRLF on Windows.
+    """
+    from commands.wire_manager import _find_insertion_point
+
+    insert_at = _find_insertion_point(content)
+    line_start = content.rfind("\n", 0, insert_at) + 1
+    if content[line_start:insert_at].strip():
+        sexp_text = "\n" + sexp_text
+    else:
+        insert_at = line_start
+    return content[:insert_at] + sexp_text + content[insert_at:]
+
+
+def _create(path: Path, changes: Dict[str, Any]) -> Dict[str, Any]:
     for key in ("start", "end"):
         if key not in changes:
             return {"success": False, "message": f"{key} is required to create a rectangle"}
@@ -341,9 +361,13 @@ def _create(path: Path, changes: Dict[str, Any]) -> Dict[str, Any]:
     stroke = merged.get("stroke", dict(_DEFAULT_STROKE))
     fill = merged.get("fill", dict(_DEFAULT_FILL))
     uid = str(uuid_lib.uuid4())
-    _text_insert(path, _new_rectangle_text(changes["start"], changes["end"], stroke, fill, uid))
-    content, _ = read_text_preserve_newline(path)
-    rect = next(d for _, _, d in _top_level_rectangles(content) if d["uuid"] == uid)
+    content, newline = read_text_preserve_newline(path)
+    updated = _inserted(
+        content, _new_rectangle_text(changes["start"], changes["end"], stroke, fill, uid)
+    )
+    sexpdata.loads(updated)  # never write a file that no longer parses
+    write_text_atomic(path, updated, newline)
+    rect = next(d for _, _, d in _top_level_rectangles(updated) if d["uuid"] == uid)
     return {
         "success": True,
         "uuid": uid,
