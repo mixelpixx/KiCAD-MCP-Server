@@ -970,6 +970,36 @@ def _junction_points(sexp_data: list) -> Set[Tuple[int, int]]:
     return points
 
 
+def _bus_entry_points(sexp_data: list) -> Set[Tuple[int, int]]:
+    """Endpoints of bus entries: (at X Y) and (at X + size_X, Y + size_Y)."""
+    points: Set[Tuple[int, int]] = set()
+    for item in sexp_data:
+        if not isinstance(item, list) or not item or item[0] != Symbol("bus_entry"):
+            continue
+        at = None
+        size = None
+        for sub in item:
+            if isinstance(sub, list) and sub:
+                if sub[0] == Symbol("at") and len(sub) >= 3:
+                    at = (float(sub[1]), float(sub[2]))
+                elif sub[0] == Symbol("size") and len(sub) >= 3:
+                    size = (float(sub[1]), float(sub[2]))
+        if at and size:
+            points.add(_to_iu(at[0], at[1]))
+            points.add(_to_iu(at[0] + size[0], at[1] + size[1]))
+    return points
+
+
+def _no_connect_points(sexp_data: list) -> Set[Tuple[int, int]]:
+    points: Set[Tuple[int, int]] = set()
+    for item in sexp_data:
+        if isinstance(item, list) and item and item[0] == Symbol("no_connect"):
+            pt = _at_point(item)
+            if pt:
+                points.add(pt)
+    return points
+
+
 def _iu_strictly_inside(p: Tuple[int, int], seg: Tuple[Tuple[int, int], Tuple[int, int]]) -> bool:
     (x1, y1), (x2, y2) = seg
     if p in ((x1, y1), (x2, y2)):
@@ -1025,7 +1055,7 @@ def find_orphaned_wires(schematic_path: Path) -> Dict[str, Any]:
     try:
         from commands.schematic import SchematicLoadError, SchematicManager
 
-        locator = PinLocator()
+        locator = PinLocator(memoize_pins=True)
         sch = SchematicManager.load_schematic(str(schematic_path))
         for symbol in sch.symbol:
             try:
@@ -1060,15 +1090,17 @@ def find_orphaned_wires(schematic_path: Path) -> Dict[str, Any]:
         except Exception as e:
             logger.warning(f"Could not extract power symbol anchors: {e}")
 
-    # --- anchors: hierarchical labels, sheet pins, junctions ---
+    # --- anchors: hierarchical labels, sheet pins, junctions, bus entries, no-connects ---
     # A wire to a hierarchical label (child sheet) or to a sheet pin (parent
     # sheet) is how a net crosses the hierarchy. Leaving them out reported
     # every such wire as orphaned, so pruning "orphans" on a real hierarchical
     # design deleted live wires back through whole nets.
     hier_iu = _hierarchy_anchor_points(sexp_data)
     junction_iu = _junction_points(sexp_data)
+    bus_entry_iu = _bus_entry_points(sexp_data)
+    no_connect_iu = _no_connect_points(sexp_data)
 
-    anchored_iu = pin_iu | label_iu | power_iu | hier_iu
+    anchored_iu = pin_iu | label_iu | power_iu | hier_iu | bus_entry_iu | no_connect_iu
 
     # --- classify each wire ---
     orphaned: List[Dict[str, Any]] = []
@@ -1079,7 +1111,7 @@ def find_orphaned_wires(schematic_path: Path) -> Dict[str, Any]:
             if iu_to_count[pt_iu] > 1:
                 continue  # shared with another wire → connected
             if pt_iu in anchored_iu:
-                continue  # touches a pin or label → connected
+                continue  # touches a pin, label, power, bus entry, or no-connect → connected
             if pt_iu in junction_iu and any(
                 _iu_strictly_inside(pt_iu, seg) for j, seg in enumerate(wires_iu) if j != i
             ):
