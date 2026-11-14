@@ -3201,7 +3201,15 @@ SCHEMATIC_TOOLS = [
     {
         "name": "find_wires_crossing_symbols",
         "title": "Find Wires Crossing Symbols",
-        "description": "Find all wires that cross over component symbol bodies. Wires passing over symbols are unacceptable in schematics — they indicate routing mistakes where a wire was drawn across a component instead of around it.",
+        "description": (
+            "Find all wires that cross over component symbol bodies. Wires passing over symbols are "
+            "unacceptable in schematics — they indicate routing mistakes where a wire was drawn across "
+            "a component instead of around it. "
+            "Also lists, under pinsOnWireInterior (with pinsOnWireInteriorCount), every symbol pin, "
+            "power pins included, that lies on the middle of a wire without being connected to it: "
+            "KiCad joins a pin to a wire only where the wire ends or where a junction sits on the pin, "
+            "so a label there does not connect it to the wire. collisions and count are unchanged."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
