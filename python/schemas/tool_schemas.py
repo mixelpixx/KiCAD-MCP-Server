@@ -2109,7 +2109,18 @@ LIBRARY_TOOLS = [
                     "type": "string",
                     "description": "Library name (e.g., Resistor_SMD, Connector_PinHeader)",
                     "minLength": 1,
-                }
+                },
+                "filter": {
+                    "type": "string",
+                    "description": (
+                        "Keep names containing this text (case-insensitive, * as a wildcard)"
+                    ),
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of footprints to return",
+                    "minimum": 1,
+                },
             },
             "required": ["library"],
         },
