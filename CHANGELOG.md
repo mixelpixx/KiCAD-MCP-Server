@@ -305,6 +305,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
   default of 100 when they pass no `limit`; when the list was cut, the reply
   says "showing N of M" and how to get the rest.
 
+- **`search_footprints` reads `+`, `.`, `(` and other characters literally,
+  like `list_library_footprints`.** It only turned `*` into a wildcard and
+  read the rest of the pattern as a regex, so `3x14+6` found nothing (`+`
+  meant "one or more 4"), `.` matched any character, and an unbalanced `(`
+  failed with "missing ), unterminated subpattern". Both tools now share one
+  helper: substring, case-insensitive, `*` as a wildcard, everything else
+  literal. The "did you mean" suggestions in `place_component` use it too.
+
 ## [2.9.0] - 2026-11-11
 
 ### New MCP Prompt

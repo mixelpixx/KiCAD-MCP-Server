@@ -85,7 +85,9 @@ List all available footprint libraries.
 
 ### 2. `search_footprints`
 
-Search for footprints matching a pattern.
+Search for footprints matching a pattern. The pattern is matched anywhere in
+the name, case-insensitively. `*` is a wildcard and every other character is
+literal, the same as the `filter` of `list_library_footprints`.
 
 **Parameters:**
 

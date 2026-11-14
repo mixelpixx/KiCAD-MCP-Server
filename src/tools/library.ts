@@ -46,7 +46,9 @@ export function registerLibraryTools(server: McpServer, callKicadScript: Functio
     "search_footprints",
     "Search for footprints matching a pattern across all libraries",
     {
-      search_term: z.string().describe("Search term or pattern to match footprint names"),
+      search_term: z
+        .string()
+        .describe("Text to find in footprint names (case-insensitive, * as a wildcard)"),
       library: z.string().optional().describe("Optional specific library to search in"),
       limit: z.number().optional().default(50).describe("Maximum number of results to return"),
     },
