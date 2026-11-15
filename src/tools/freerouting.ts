@@ -67,6 +67,20 @@ export function registerFreeroutingTools(server: McpServer, callKicadScript: Fun
         .describe(
           "Per-attempt `--max-passes` values to cycle through (default: [50, 60, 65, 70, 75, 80, 85, 90, 55, 95]). The list wraps if `attempts` exceeds its length.",
         ),
+      routerSettings: z
+        .record(
+          z.string(),
+          z.union([
+            z.string(),
+            z.number(),
+            z.boolean(),
+            z.array(z.union([z.string(), z.number(), z.boolean()])),
+          ]),
+        )
+        .optional()
+        .describe(
+          'Freerouting router settings for this run, by the names in Freerouting\'s docs/settings.md under `router`; each is passed as --router.<name>=<value>, a list joined with commas. Examples: {"autorouter.priority_net_classes": ["DIFF", "ANALOG"]} routes those net classes first and keeps other nets from ripping them; {"autorouter.plane_as_priority": true} gives each plane pad a via of its own into its plane (the plane\'s layer must be of type power); {"autorouter.ignore_net_classes": ["HV"]}. Which settings exist depends on the Freerouting version: priority_net_classes and plane_as_priority are on Freerouting master only (merged 2026-11-07), not in a v2 release. Freerouting skips a setting it does not know and keeps routing; the reply lists those in router_settings_rejected. Use maxPasses and jobTimeout for those two. With attempts above 1 the thread count (max_threads, autorouter.max_threads, optimizer.max_threads) is refused: best-of-N runs single-threaded so the attempts stay comparable.',
+        ),
       routeNets: z
         .array(z.string())
         .optional()

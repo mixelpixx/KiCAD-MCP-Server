@@ -622,6 +622,28 @@ _JOB_TIMEOUT_MARGIN_MIN = 60
 _JOB_TIMEOUT_MARGIN_MAX = 120
 # Freerouting logs this when a stage ended because the job's time was up.
 _TIME_BUDGET_MARKER = "completed with timeout"
+# Freerouting does not refuse a router setting it cannot apply: it logs one of
+# these and keeps routing (master 842ad835, 2.5.0 CliSettings.applyRouterSetting):
+#   WARN   Unknown settings property: router.bogus_setting
+#   WARN   Failed to apply CLI router setting: router.bogus_setting: No field found ...
+_REJECTED_SETTING_RE = re.compile(
+    r"(?:Unknown settings property|Failed to apply CLI router setting): router\.([A-Za-z0-9_.]+)"
+)
+
+
+def _rejected_router_settings(output: str, router_args: Optional[List[str]]) -> List[str]:
+    """The routerSettings keys Freerouting reported it could not apply, in the order passed.
+
+    Only keys this call passed are reported (``--router.<key>=...`` in ``router_args``), so a
+    warning about one of autoroute's own options cannot show up as the caller's mistake.
+    """
+    passed = []
+    for arg in router_args or []:
+        key = arg.split("=", 1)[0][len("--router.") :]
+        if key and key not in passed:
+            passed.append(key)
+    named = set(_REJECTED_SETTING_RE.findall(output or ""))
+    return [k for k in passed if k in named]
 
 
 def _router_time_budget(timeout: Any, requested: Any) -> Optional[int]:
@@ -664,6 +686,74 @@ def _router_time_budget(timeout: Any, requested: Any) -> Optional[int]:
     return int(budget) if budget >= 1 else None
 
 
+# A Freerouting setting key: lower-case words joined by dots, as in its docs/settings.md
+# ("autorouter.priority_net_classes"). Nothing else, so a key cannot smuggle in another option.
+# Used with fullmatch: "$" would also accept a key ending in a newline.
+_ROUTER_SETTING_KEY = re.compile(r"[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*")
+# Settings autoroute sets itself; a caller's value would silently fight it.
+_ROUTER_SETTINGS_OWNED = {
+    "job_timeout": "jobTimeout",
+    "max_passes": "maxPasses",
+    "autorouter.max_passes": "maxPasses",
+}
+# The thread count, in each spelling Freerouting master reads (docs/settings.md: the global
+# ceiling, and the autorouter and optimizer stages). With attempts > 1 autoroute forces -mt 1:
+# the attempts are compared, and the multi-threaded optimiser is the one known to leave
+# clearance violations, so a caller's value must not undo it.
+_ROUTER_THREAD_SETTINGS = ("max_threads", "autorouter.max_threads", "optimizer.max_threads")
+
+
+def _router_setting_args(settings: Any, single_thread: bool = False) -> List[str]:
+    """``routerSettings`` as Freerouting command-line options.
+
+    ``{"autorouter.priority_net_classes": ["DIFF", "ANALOG"], "autorouter.plane_as_priority": True}``
+    becomes ``--router.autorouter.priority_net_classes=DIFF,ANALOG`` and
+    ``--router.autorouter.plane_as_priority=true``. Keys are the names in Freerouting's
+    docs/settings.md under ``router``. Raises ValueError for anything that is not a plain
+    setting: a key of another shape, a value that is not a string, number, boolean or a list
+    of those, or a setting that autoroute has a parameter of its own for. With
+    ``single_thread`` (best-of-N attempts) the thread count is refused too.
+    """
+    if settings is None:
+        return []
+    if not isinstance(settings, dict):
+        raise ValueError("routerSettings must be an object of setting name to value")
+    args: List[str] = []
+    for key, value in settings.items():
+        if not isinstance(key, str) or not _ROUTER_SETTING_KEY.fullmatch(key):
+            raise ValueError(
+                f"routerSettings key {key!r} is not a Freerouting setting name "
+                "(lower-case words joined by dots, e.g. autorouter.priority_net_classes)"
+            )
+        if key in _ROUTER_SETTINGS_OWNED:
+            raise ValueError(
+                f"routerSettings key {key!r}: use autoroute's {_ROUTER_SETTINGS_OWNED[key]} parameter"
+            )
+        if single_thread and key in _ROUTER_THREAD_SETTINGS:
+            raise ValueError(
+                f"routerSettings key {key!r}: with attempts above 1 autoroute runs Freerouting "
+                "single-threaded (-mt 1) so the attempts are comparable; leave the thread count "
+                "out, or use attempts: 1"
+            )
+        items = value if isinstance(value, (list, tuple)) else [value]
+        if not items:
+            raise ValueError(f"routerSettings {key!r}: empty list")
+        parts = []
+        for item in items:
+            if isinstance(item, bool):
+                parts.append("true" if item else "false")
+            elif isinstance(item, (int, float)):
+                parts.append(str(item))
+            elif isinstance(item, str) and item and "\n" not in item:
+                parts.append(item)
+            else:
+                raise ValueError(
+                    f"routerSettings {key!r}: value {item!r} is not a string, number or boolean"
+                )
+        args.append(f"--router.{key}={','.join(parts)}")
+    return args
+
+
 def _no_budget_reason(timeout: Any, requested: Any) -> str:
     """Why no time budget was passed, for the message when the wait runs out."""
     try:
@@ -694,6 +784,7 @@ def _build_freerouting_cmd(
     single_thread: bool = False,
     rules_path: Optional[str] = None,
     job_timeout: Optional[int] = None,
+    router_args: Optional[List[str]] = None,
 ) -> List[str]:
     """Build the command to run Freerouting.
 
@@ -712,6 +803,7 @@ def _build_freerouting_cmd(
         extra += ["-dr", rules_path]
     if job_timeout:
         extra.append(f"--router.job_timeout={_hms(job_timeout)}")
+    extra += list(router_args or [])
     required_java = _jar_required_java(jar_path)
     if use_docker:
         docker_exe = _find_docker()
@@ -1359,12 +1451,23 @@ class FreeroutingCommands:
         # Step 2: Run Freerouting (single or multiple attempts)
         mode_label = "docker" if use_docker else "direct"
         job_timeout = _router_time_budget(timeout, params.get("jobTimeout"))
+        try:
+            router_args = _router_setting_args(
+                params.get("routerSettings"), single_thread=attempts > 1
+            )
+        except ValueError as e:
+            return {
+                "success": False,
+                "message": "Invalid routerSettings",
+                "errorDetails": str(e),
+            }
         best_budget_reached = False
         total_start = time.time()
         attempt_results: List[Dict[str, Any]] = []
         best_score = -1
         best_attempt_idx = -1
         best_proc_stdout = ""
+        rejected_settings: List[str] = []
 
         # If only one attempt, use the legacy maxPasses value (preserves
         # exact backward-compatible behaviour). Otherwise cycle through
@@ -1388,6 +1491,7 @@ class FreeroutingCommands:
                 single_thread=single_thread,
                 rules_path=rules_path,
                 job_timeout=job_timeout,
+                router_args=router_args,
             )
             logger.info(
                 f"Freerouting attempt {idx + 1}/{attempts} "
@@ -1488,6 +1592,11 @@ class FreeroutingCommands:
             score_info = _score_ses(ses_text, target_nets)
             score = score_info["score"]
             budget_reached = _TIME_BUDGET_MARKER in ((proc.stdout or "") + (proc.stderr or ""))
+            for key in _rejected_router_settings(
+                (proc.stdout or "") + (proc.stderr or ""), router_args
+            ):
+                if key not in rejected_settings:
+                    rejected_settings.append(key)
             attempt_results.append(
                 {
                     "attempt": idx + 1,
@@ -1621,6 +1730,8 @@ class FreeroutingCommands:
             "netClasses": netclass_report,
             "freerouting_stdout": best_proc_stdout[:1000],
             "job_timeout_seconds": job_timeout,
+            "router_settings": router_args,
+            "router_settings_rejected": rejected_settings,
             "time_budget_reached": best_budget_reached,
         }
         if attempts > 1:
