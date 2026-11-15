@@ -4,6 +4,42 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Tools
+
+- **`check_schematic_legibility`: what a reader trips over.** ERC and a
+  netlist prove a sheet is connected; they say nothing about whether a person
+  can read it. This boxes every symbol body, visible reference and value,
+  label and free text, and reports: text over text (a symbol's own fields
+  included); text across a drawn line of another symbol (its outline or a
+  pin stub) or in the middle of its outline; a symbol's own field across a
+  drawn line of its body (inside an IC's rectangle or beside a capacitor's
+  plates is fine, as KiCad's own `Device:R` places its value); bodies on top
+  of each other (their drawn lines cross, or one lies inside the other; pin
+  stubs left out, including a stub drawn as a line, as `power:GND` draws
+  it); a wire through a text (a label's own wire only touches its edge);
+  items on KiCad's default title block or outside the frame; and a field
+  stored upside down (at 180 degrees; KiCad draws free text upright at any
+  angle). A free text is boxed along its angle (a note at 90 degrees runs
+  bottom to top). Each problem comes with its box in sheet mm.
+  - Calibrated against renders of a released three-sheet design: text
+    advance 0.95 x size per character; a field's angle and justification are
+    in the symbol's frame and go through its rotation, then its mirror. On
+    that design it reports 16 problems and each was confirmed on the render
+    (a value printed over a label, values struck by body outlines, a riser
+    through a resistor value, a note over a diode);
+    `find_overlapping_elements` reports 0 on the same sheets, since it
+    compares positions, not the space text takes.
+  - Text is measured as KiCad draws it: escapes such as `{slash}` are decoded
+    and `~{...}` overbar, `^{...}` and `_{...}` markup is stripped first
+    (`VPP{slash}MCLR` is 8 characters wide, not 14).
+  - The text-size model (`schematic_text_metrics`) is now shared with
+    `suggest_schematic_declutter` and `autoplace_schematic_fields`, so the
+    three tools agree on how much room a label takes. **Their output
+    changes:** field boxes are about 60 % wider than those tools assumed
+    before, and label boxes taller, so they move fields and labels further
+    apart than they used to.
+  - Read-only; available in `readonly` mode.
+
 ### New Features
 
 - **`autoroute` passes Freerouting settings: `routerSettings`.** An object of
