@@ -6,6 +6,34 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **`autoroute` passes Freerouting settings: `routerSettings`.** An object of
+  setting name to value, by the names in Freerouting's `docs/settings.md` under
+  `router`. Each is passed as `--router.<name>=<value>`; a list is joined with
+  commas. This reaches what the router already offers and `autoroute` had no
+  parameter for, e.g. `autorouter.priority_net_classes` (classes routed first
+  and not ripped by other nets), `autorouter.plane_as_priority` (one via per
+  plane pad into its plane) and `autorouter.ignore_net_classes`; the first two
+  are on Freerouting master only (merged 2026-11-07), not in a v2 release. Keys
+  must be plain setting names; `max_passes` and `job_timeout` are refused in
+  favour of `maxPasses` and `jobTimeout`, and with `attempts` above 1 the thread
+  count (`max_threads`, `autorouter.max_threads`, `optimizer.max_threads`) is
+  refused, since best-of-N runs single-threaded. Freerouting does not refuse a setting
+  it cannot apply (a typo, or one the installed jar lacks): it logs a warning
+  and keeps routing. The result lists the options passed as `router_settings`
+  and the ones Freerouting reported it could not apply as
+  `router_settings_rejected`.
+
+- **`autoroute` keeps what Freerouting routed when time runs out.** Freerouting
+  writes its session file only when it ends, so a run that reached `timeout`
+  was killed and returned nothing, however much it had routed. `autoroute` now
+  passes `--router.job_timeout`, by default `timeout` minus a tenth of it (at
+  least 60 s, at most 120 s; Freerouting waits up to 30 s for the router to stop), and none
+  when `timeout` is under 120 s: the router stops by itself, writes the partial
+  result, and it is imported as usual. The result reports
+  `job_timeout_seconds` and `time_budget_reached`. New parameter `jobTimeout`
+  sets the budget in seconds; `0` passes none. Needs Freerouting 2.4 or later:
+  older versions stop at the budget but write no session file.
+
 - **`add_copper_keepout` creates a copper-fill rule area through live KiCad IPC.**
   It requires the board to be open in KiCad with the IPC API enabled, keeps
   zone fills out while allowing tracks, vias, pads, and footprints, and refills
@@ -86,6 +114,21 @@ All notable changes to the KiCAD MCP Server project are documented here.
   KiCad 9 cannot load it. The list tool stays available in read-only mode.
 
 ### Bug Fixes
+
+- **`autoroute` works on the board named by `boardPath`.** The path was
+  accepted and then ignored: with nothing loaded the call refused with "No
+  board is loaded", and with a different board loaded it routed that board
+  and saved it over `boardPath`. A `boardPath` given to `autoroute`,
+  `export_dsn` or `import_ses` that is not the loaded board is now loaded
+  first, through `open_board`'s steps (every command handler, the disk
+  signature, the project path and symbol libraries, the session pin), so the
+  whole session moves to that board; the reply says so (`sessionBoardPath`,
+  `boardSwitchWarning`). A path that only differs in spelling (case on
+  Windows, `..` segments) is the same board and does not reload. The switch
+  is refused while the loaded board holds changes that are not on disk (save
+  them first, or reload to discard them), and a session pinned to the board
+  open in KiCad refuses a different `boardPath` and asks for `open_project`
+  first.
 
 - **The Windows setup scripts no longer stop at "Detecting KiCAD Installation"**
   (#534). `setup-windows-opencode.ps1` runs under `Set-StrictMode`, and it read
