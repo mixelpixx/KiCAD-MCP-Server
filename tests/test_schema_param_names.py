@@ -64,7 +64,6 @@ KNOWN_ZOD_UNREAD: Dict[str, Set[str]] = {
     "duplicate_component": {"count", "offset"},
     "get_footprint_info": {"library_name"},
     "list_libraries": {"search_paths"},
-    "list_library_footprints": {"filter", "limit"},
     "place_component_array": {"columnSpacing", "footprint", "rowSpacing", "startReference"},
     "set_design_rules": {"courtyardClearance", "requireCourtyard"},
 }
