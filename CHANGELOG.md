@@ -181,13 +181,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
   their header untouched.
 
 - **`find_orphaned_wires` recognizes bus entries and no-connect flags**
-  (#506). The tool previously reported live wires as orphaned on hierarchical
-  child sheets (e.g. 171 to 135 on `interf_u` where the remaining 135 are
-  real unconnected endpoints per KiCad ERC, 110 to 0 on `expansion_connector`,
-  and 50 to 0 on `csi` in the KiCad demo designs). Wire endpoints meeting
-  `bus_entry` anchors or `no_connect` flags were not included in connection
-  points. Both `bus_entry` and `no_connect` endpoints are now counted as
-  connection anchors.
+  (#506). The tool previously reported live wires as orphaned on the KiCad demo
+  designs (e.g. 171 to 135 on `interf_u` where the remaining 135 are real
+  unconnected endpoints per KiCad ERC, 110 to 0 on `expansion_connector`,
+  50 to 0 on `csi`, and 13 to 0 on `usb` where 3 wires end on no-connect
+  flags). Wire endpoints meeting `bus_entry` anchors or `no_connect` flags
+  were not included in connection points. Both `bus_entry` and `no_connect`
+  endpoints are now counted as connection anchors.
 
 - **The Windows setup scripts no longer stop at "Detecting KiCAD Installation"**
   (#534). `setup-windows-opencode.ps1` runs under `Set-StrictMode`, and it read
