@@ -90,7 +90,7 @@ def test_wire_to_a_bus_entry_is_connected(tmp_path):
     assert find_orphaned_wires(_write(tmp_path, body))["count"] == 0
 
 
-def test_wire_with_interior_label_is_connected(tmp_path):
+def test_open_end_past_an_interior_label_is_still_reported(tmp_path):
     # Wire from an anchor at 100 past an interior label at 110 to an open end at 120:
     # KiCad ERC reports the open end at 120 as an unconnected wire endpoint.
     body = (
