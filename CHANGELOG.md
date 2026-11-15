@@ -4,6 +4,42 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Tools
+
+- **`check_schematic_legibility`: what a reader trips over.** ERC and a
+  netlist prove a sheet is connected; they say nothing about whether a person
+  can read it. This boxes every symbol body, visible reference and value,
+  label and free text, and reports: text over text (a symbol's own fields
+  included); text across a drawn line of another symbol (its outline or a
+  pin stub) or in the middle of its outline; a symbol's own field across a
+  drawn line of its body (inside an IC's rectangle or beside a capacitor's
+  plates is fine, as KiCad's own `Device:R` places its value); bodies on top
+  of each other (their drawn lines cross, or one lies inside the other; pin
+  stubs left out, including a stub drawn as a line, as `power:GND` draws
+  it); a wire through a text (a label's own wire only touches its edge);
+  items on KiCad's default title block or outside the frame; and a field
+  stored upside down (at 180 degrees; KiCad draws free text upright at any
+  angle). A free text is boxed along its angle (a note at 90 degrees runs
+  bottom to top). Each problem comes with its box in sheet mm.
+  - Calibrated against renders of a released three-sheet design: text
+    advance 0.95 x size per character; a field's angle and justification are
+    in the symbol's frame and go through its rotation, then its mirror. On
+    that design it reports 16 problems and each was confirmed on the render
+    (a value printed over a label, values struck by body outlines, a riser
+    through a resistor value, a note over a diode);
+    `find_overlapping_elements` reports 0 on the same sheets, since it
+    compares positions, not the space text takes.
+  - Text is measured as KiCad draws it: escapes such as `{slash}` are decoded
+    and `~{...}` overbar, `^{...}` and `_{...}` markup is stripped first
+    (`VPP{slash}MCLR` is 8 characters wide, not 14).
+  - The text-size model (`schematic_text_metrics`) is now shared with
+    `suggest_schematic_declutter` and `autoplace_schematic_fields`, so the
+    three tools agree on how much room a label takes. **Their output
+    changes:** field boxes are about 60 % wider than those tools assumed
+    before, and label boxes taller, so they move fields and labels further
+    apart than they used to.
+  - Read-only; available in `readonly` mode.
+
 ### New Features
 
 - **`autoroute` passes Freerouting settings: `routerSettings`.** An object of
@@ -129,6 +165,29 @@ All notable changes to the KiCAD MCP Server project are documented here.
   them first, or reload to discard them), and a session pinned to the board
   open in KiCad refuses a different `boardPath` and asks for `open_project`
   first.
+
+- **New `.kicad_sym` libraries match the project's schematic format (#420).**
+  `create_symbol`, `export_symbol` and the Eagle importer wrote a hardcoded
+  KiCad 9 header (`20241209` / `"9.0"`) into every new library, which KiCad 10
+  reports as an older format and prompts to migrate on every open. All three
+  writers now share `symbol_lib_header(project_dir)`: the KiCad 10 header
+  (`20251024` / `"10.0"`) is written only when the project's root schematic
+  declares a KiCad 10 format (`(version 20260101)` or later, the same
+  threshold as `dynamic_symbol_loader`), and the KiCad 9 header — which loads
+  everywhere the server supports — is the fallback for KiCad 9 projects,
+  global libraries and projects without a schematic. Which KiCad is
+  installed plays no part, so several versions side by side cannot force the
+  newest format on a project still on an older one. Existing libraries keep
+  their header untouched.
+
+- **`find_orphaned_wires` recognizes bus entries and no-connect flags**
+  (#506). The tool previously reported live wires as orphaned on hierarchical
+  child sheets (e.g. 171 to 135 on `interf_u` where the remaining 135 are
+  real unconnected endpoints per KiCad ERC, 110 to 0 on `expansion_connector`,
+  and 50 to 0 on `csi` in the KiCad demo designs). Wire endpoints meeting
+  `bus_entry` anchors or `no_connect` flags were not included in connection
+  points. Both `bus_entry` and `no_connect` endpoints are now counted as
+  connection anchors.
 
 - **The Windows setup scripts no longer stop at "Detecting KiCAD Installation"**
   (#534). `setup-windows-opencode.ps1` runs under `Set-StrictMode`, and it read
