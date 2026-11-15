@@ -3222,6 +3222,120 @@ SCHEMATIC_TOOLS = [
         },
     },
     {
+        "name": "list_schematic_rectangles",
+        "title": "List Schematic Rectangles",
+        "description": (
+            "List the rectangles drawn on a schematic sheet: uuid, start and end corners "
+            "in mm, stroke and fill, plus radius and locked when KiCad wrote them. "
+            "Rectangles inside symbol bodies are not included."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                }
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
+        "name": "set_schematic_rectangle",
+        "title": "Create, Edit or Delete a Schematic Rectangle",
+        "description": (
+            "Without uuid, create a rectangle from start and end and return its uuid. "
+            "With uuid, change only the fields given. With uuid and delete: true, remove it. "
+            "An unknown uuid is an error. A corner radius is never written (KiCad 9 "
+            "cannot load one); an existing radius is kept."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                },
+                "uuid": {
+                    "type": "string",
+                    "description": "Rectangle to change or delete; leave out to create one",
+                },
+                "start": {
+                    "description": 'First corner in mm, as [x, y] or {"x": .., "y": ..}',
+                    "oneOf": [
+                        {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 2,
+                            "maxItems": 2,
+                        },
+                        {
+                            "type": "object",
+                            "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
+                            "required": ["x", "y"],
+                        },
+                    ],
+                },
+                "end": {
+                    "description": 'Opposite corner in mm, as [x, y] or {"x": .., "y": ..}',
+                    "oneOf": [
+                        {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 2,
+                            "maxItems": 2,
+                        },
+                        {
+                            "type": "object",
+                            "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
+                            "required": ["x", "y"],
+                        },
+                    ],
+                },
+                "stroke": {
+                    "type": "object",
+                    "description": "Outline style; a partial stroke keeps the rest",
+                    "properties": {
+                        "width": {"type": "number", "minimum": 0},
+                        "type": {
+                            "type": "string",
+                            "enum": ["default", "solid", "dash", "dot", "dash_dot", "dash_dot_dot"],
+                        },
+                        "color": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 4,
+                            "maxItems": 4,
+                            "description": "[r, g, b, a]: r, g, b from 0 to 255, a from 0 to 1",
+                        },
+                    },
+                },
+                "fill": {
+                    "type": "object",
+                    "description": "Fill style; type color needs color",
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "enum": ["none", "outline", "background", "color"],
+                        },
+                        "color": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 4,
+                            "maxItems": 4,
+                            "description": "[r, g, b, a]: r, g, b from 0 to 255, a from 0 to 1",
+                        },
+                    },
+                },
+                "delete": {
+                    "type": "boolean",
+                    "description": "With uuid: remove the rectangle",
+                },
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
         "name": "find_orphaned_wires",
         "title": "Find Orphaned Wires",
         "description": (
