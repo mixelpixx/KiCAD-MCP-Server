@@ -2109,7 +2109,18 @@ LIBRARY_TOOLS = [
                     "type": "string",
                     "description": "Library name (e.g., Resistor_SMD, Connector_PinHeader)",
                     "minLength": 1,
-                }
+                },
+                "filter": {
+                    "type": "string",
+                    "description": (
+                        "Keep names containing this text (case-insensitive, * as a wildcard)"
+                    ),
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of footprints to return",
+                    "minimum": 1,
+                },
             },
             "required": ["library"],
         },
@@ -3168,6 +3179,25 @@ SCHEMATIC_TOOLS = [
         },
     },
     {
+        "name": "check_schematic_legibility",
+        "title": "Check Schematic Legibility",
+        "description": "Checks whether a person can read a schematic sheet: what ERC and a netlist cannot see. Boxes every symbol body, visible reference/value, label and free text and reports text over text (a symbol's own fields included), text over another symbol's body, a symbol's own field across a drawn line of its body (inside an IC's rectangle or beside a capacitor's plates is fine), body over body, a wire through a text (a label's own wire only touches its edge), items on the title block or outside the frame, and upside-down text. Each problem comes with its box in sheet mm; look at it with get_schematic_view_region.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch sheet to check (one sheet; check each sub-sheet separately)",
+                },
+                "maxProblems": {
+                    "type": "integer",
+                    "description": "Most problems to list (default 200); counts always cover all",
+                },
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
         "name": "get_elements_in_region",
         "title": "Get Elements in Region",
         "description": "Lists all symbols, wires, and labels within a rectangular region of the schematic. Useful for understanding what is in a specific area before modifying it.",
@@ -3217,6 +3247,120 @@ SCHEMATIC_TOOLS = [
                     "type": "string",
                     "description": "Path to the .kicad_sch schematic file",
                 }
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
+        "name": "list_schematic_rectangles",
+        "title": "List Schematic Rectangles",
+        "description": (
+            "List the rectangles drawn on a schematic sheet: uuid, start and end corners "
+            "in mm, stroke and fill, plus radius and locked when KiCad wrote them. "
+            "Rectangles inside symbol bodies are not included."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                }
+            },
+            "required": ["schematicPath"],
+        },
+    },
+    {
+        "name": "set_schematic_rectangle",
+        "title": "Create, Edit or Delete a Schematic Rectangle",
+        "description": (
+            "Without uuid, create a rectangle from start and end and return its uuid. "
+            "With uuid, change only the fields given. With uuid and delete: true, remove it. "
+            "An unknown uuid is an error. A corner radius is never written (KiCad 9 "
+            "cannot load one); an existing radius is kept."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "schematicPath": {
+                    "type": "string",
+                    "description": "Path to the .kicad_sch schematic file",
+                },
+                "uuid": {
+                    "type": "string",
+                    "description": "Rectangle to change or delete; leave out to create one",
+                },
+                "start": {
+                    "description": 'First corner in mm, as [x, y] or {"x": .., "y": ..}',
+                    "oneOf": [
+                        {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 2,
+                            "maxItems": 2,
+                        },
+                        {
+                            "type": "object",
+                            "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
+                            "required": ["x", "y"],
+                        },
+                    ],
+                },
+                "end": {
+                    "description": 'Opposite corner in mm, as [x, y] or {"x": .., "y": ..}',
+                    "oneOf": [
+                        {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 2,
+                            "maxItems": 2,
+                        },
+                        {
+                            "type": "object",
+                            "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
+                            "required": ["x", "y"],
+                        },
+                    ],
+                },
+                "stroke": {
+                    "type": "object",
+                    "description": "Outline style; a partial stroke keeps the rest",
+                    "properties": {
+                        "width": {"type": "number", "minimum": 0},
+                        "type": {
+                            "type": "string",
+                            "enum": ["default", "solid", "dash", "dot", "dash_dot", "dash_dot_dot"],
+                        },
+                        "color": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 4,
+                            "maxItems": 4,
+                            "description": "[r, g, b, a]: r, g, b from 0 to 255, a from 0 to 1",
+                        },
+                    },
+                },
+                "fill": {
+                    "type": "object",
+                    "description": "Fill style; type color needs color",
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "enum": ["none", "outline", "background", "color"],
+                        },
+                        "color": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 4,
+                            "maxItems": 4,
+                            "description": "[r, g, b, a]: r, g, b from 0 to 255, a from 0 to 1",
+                        },
+                    },
+                },
+                "delete": {
+                    "type": "boolean",
+                    "description": "With uuid: remove the rectangle",
+                },
             },
             "required": ["schematicPath"],
         },

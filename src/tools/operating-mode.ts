@@ -128,6 +128,7 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set<string>([
   // Schematic inspection. run_erc, generate_netlist and the view tools work in
   // temporary directories; validate_* run kicad-cli on a copy.
   "find_orphaned_wires",
+  "check_schematic_legibility",
   "find_overlapping_elements",
   "find_wires_crossing_symbols",
   "generate_netlist",
@@ -144,6 +145,7 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set<string>([
   "list_schematic_components",
   "list_schematic_labels",
   "list_schematic_nets",
+  "list_schematic_rectangles",
   "list_schematic_texts",
   "list_schematic_wires",
   "run_erc",
