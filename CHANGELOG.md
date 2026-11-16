@@ -151,6 +151,26 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`delete_trace` deletes from the live KiCad board in realtime mode (#553).**
+  Its IPC handler called the SWIG `delete_trace`, which removed the track from
+  the server's own copy of the board while KiCad kept it, and the reply still
+  said `success: true`, `_backend: "ipc"`, `_realtime: true`. A move done as
+  delete + `route_trace` (which does go over IPC) left the old copper in place
+  and shorted nets on the live board. `delete_trace` now removes the items
+  through kicad-python in one undo step, with the same parameters as the SWIG
+  tool (`traceUuid` for a track, arc or via, `position` for the nearest one
+  within 1 mm, `net` with `layer` / `includeVias` for bulk delete), and takes
+  the UUIDs `query_traces` returns. kicad-python does not report whether
+  KiCad deleted each item, so the board is read back afterwards and anything
+  still there is an error instead of a success. The dispatcher also no longer
+  stamps `_realtime: true` on an IPC handler's reply that the handler tagged
+  `_backend: "swig"`: `set_footprint_type`'s SWIG fallback already tagged
+  itself and was relabelled, and a rectangle `add_board_outline` (delegated to
+  SWIG) now reports `_realtime: false` with a `_backend_note`. In a realtime
+  session `run_drc` now warns that kicad-cli checked the board file on disk,
+  not the board open in KiCad (`checkedSource: "file"`), because a clean
+  report said nothing about unsaved live edits.
+
 - **`autoroute` works on the board named by `boardPath`.** The path was
   accepted and then ignored: with nothing loaded the call refused with "No
   board is loaded", and with a different board loaded it routed that board
