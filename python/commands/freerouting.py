@@ -424,11 +424,16 @@ def _restore_lock_states(locked: Iterable[Tuple[Any, bool]]) -> int:
 
 
 # KiCad names the via padstacks it exports by size: "Via[0-5]_800:400_um" is an 800 um via with a
-# 400 um drill. The session file carries only the shape (the diameter), and ImportSpecctraSES
-# takes each via's drill from its net's netclass instead: a 500:300 via on a net whose class
-# asks for 800:400 comes back as 0.5 mm with a 0.4 mm drill, a 0.05 mm annular ring (KiCad
-# 10.0.8). _restore_via_drills puts back the drill the padstack's name gives.
-_VIA_PADSTACK_RE = re.compile(r'\(padstack\s+"?(Via\[[^\]]*\]_(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)_um)"?')
+# 400 um drill. ImportSpecctraSES keeps the padstack's drill, except when it equals the Default
+# netclass's via drill: makeVIA (specctra_import.cpp) compares the drill against aViaDrillDefault,
+# the Default class's, and stores a match as undefined, which then resolves through the via's net's
+# own class. So a 500:300 via on a board whose Default drill is 300 um, on a net whose class asks
+# for 800:400, comes back as 0.5 mm with a 0.4 mm drill, a 0.05 mm annular ring (KiCad 10.0.8).
+# Only that case changes anything; _restore_via_drills puts back the drill the padstack's name
+# gives. If KiCad starts comparing against the net's own class, the restore becomes a no-op.
+_VIA_PADSTACK_RE = re.compile(
+    r'\(padstack\s+"?(Via\[[^\]]*\]_(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)_um)"?'
+)
 
 
 def _ses_via_drills(ses_text: str) -> Dict[int, Optional[int]]:
@@ -466,7 +471,9 @@ def _via_diameter(via, pcbnew_mod) -> int:
         return int(via.GetWidth())
 
 
-def _restore_via_drills(board, ses_text: str, before_ids: Optional[set], pcbnew_mod) -> Dict[str, Any]:
+def _restore_via_drills(
+    board, ses_text: str, before_ids: Optional[set], pcbnew_mod
+) -> Dict[str, Any]:
     """Give every via the import created the drill its padstack's name gives.
 
     Only vias that were not on the board before the import are touched (kept/locked copper keeps

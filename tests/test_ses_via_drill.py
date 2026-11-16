@@ -1,10 +1,12 @@
 """An SES import keeps each via's drill as its padstack names it.
 
-KiCad's ImportSpecctraSES takes a via's diameter from the session's padstack shape but its drill
-from the net's netclass. A 0.5/0.3 via ("Via[0-5]_500:300_um") on a net whose class asks for
-0.8/0.4 vias comes back 0.5 mm with a 0.4 mm drill: a 0.05 mm annular ring, under any fab's
-minimum (KiCad 10.0.8; 22 such vias on every Freerouting pass of a real 6-layer board).
-_restore_via_drills puts the padstack's drill back on the vias the import created.
+KiCad's ImportSpecctraSES keeps the padstack's drill, except when it equals the Default netclass's
+via drill: makeVIA stores that one as undefined, and it then resolves through the via's net's own
+class. A 0.5/0.3 via ("Via[0-5]_500:300_um") on a board whose Default drill is 0.3, on a net whose
+class asks for 0.8/0.4 vias, comes back 0.5 mm with a 0.4 mm drill: a 0.05 mm annular ring, under
+any fab's minimum (KiCad 10.0.8; 22 such vias on every Freerouting pass of a real 6-layer board).
+_restore_via_drills puts the padstack's drill back on the vias the import created; vias KiCad kept
+right are left as they are.
 """
 
 import os
@@ -154,7 +156,7 @@ SES = """(session t.ses
 
 @pytest.mark.integration
 @pytest.mark.real_pcbnew
-def test_real_import_takes_the_netclass_drill_and_the_restore_fixes_it(tmp_path):
+def test_real_import_loses_a_drill_equal_to_the_default_class_and_the_restore_fixes_it(tmp_path):
     if os.environ.get("KICAD_USE_REAL_PCBNEW") != "1":
         pytest.skip("needs KICAD_USE_REAL_PCBNEW=1 under KiCad's Python")
     import pcbnew
@@ -184,10 +186,52 @@ def test_real_import_takes_the_netclass_drill_and_the_restore_fixes_it(tmp_path)
     assert len(vias) == 1
     via = vias[0]
     assert via.GetWidth(pcbnew.F_Cu) == 500_000
-    # KiCad 10.0.8: the drill comes from the net's class (0.4), not the padstack (0.3). If a later
-    # KiCad keeps the padstack's drill, this fails, and the restore is no longer needed.
+    # KiCad 10.0.8: the padstack's 0.3 drill equals the Default class's (a fresh board's Default via
+    # drill is 0.3), so makeVIA stores it as undefined and it resolves through the net's class (0.4).
+    # If a later KiCad compares against the net's own class instead, this fails, and the restore is
+    # no longer needed.
     assert via.GetDrillValue() == 400_000
 
     report = _restore_via_drills(board, SES, before, pcbnew)
     assert via.GetDrillValue() == 300_000
     assert report["count"] == 1
+
+
+@pytest.mark.integration
+@pytest.mark.real_pcbnew
+def test_real_import_keeps_a_drill_that_is_not_the_default_class_one(tmp_path):
+    """The narrow trigger, from the other side: a 0.5/0.25 padstack (0.25 is not the Default class's
+    0.3) comes through the import with its own drill, on the same big-class net, and the restore
+    changes nothing."""
+    if os.environ.get("KICAD_USE_REAL_PCBNEW") != "1":
+        pytest.skip("needs KICAD_USE_REAL_PCBNEW=1 under KiCad's Python")
+    import pcbnew
+
+    board = pcbnew.BOARD()
+    settings = board.GetDesignSettings().m_NetSettings
+    if not hasattr(settings, "SetNetclassPatternAssignment"):
+        pytest.skip("netclass patterns need KiCad 9+")
+    nc = pcbnew.NETCLASS("VDRILL_BIG")
+    nc.SetViaDiameter(800_000)
+    nc.SetViaDrill(400_000)
+    settings.SetNetclass("VDRILL_BIG", nc)
+    settings.SetNetclassPatternAssignment("VDRILL_BIG", "VDRILL_BIG")
+    board.Add(pcbnew.NETINFO_ITEM(board, "VDRILL_BIG"))
+    if hasattr(settings, "ClearAllCaches"):
+        settings.ClearAllCaches()
+    board.SynchronizeNetsAndNetClasses(False)
+    assert board.FindNet("VDRILL_BIG").GetNetClassName() == "VDRILL_BIG"
+    ses_text = SES.replace("500:300_um", "500:250_um")
+    assert ses_text != SES
+    ses = tmp_path / "t.ses"
+    ses.write_text(ses_text)
+
+    before = _via_ids(board)
+    assert pcbnew.ImportSpecctraSES(board, str(ses))
+    vias = [t for t in board.GetTracks() if t.GetClass() == "PCB_VIA"]
+    assert len(vias) == 1
+    assert vias[0].GetDrillValue() == 250_000  # kept: not the Default class's drill
+
+    report = _restore_via_drills(board, ses_text, before, pcbnew)
+    assert vias[0].GetDrillValue() == 250_000
+    assert report["count"] == 0

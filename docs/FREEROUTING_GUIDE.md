@@ -156,12 +156,15 @@ If KiCad still rejects the file, the tool returns `success: false`, both here an
 `autoroute`, and saves nothing. A failed import has usually already removed the board's
 unlocked tracks in memory, so reopen the board from disk before saving.
 
-**Via drills.** KiCad's SES import takes a via's diameter from the session but its drill from
-the net's netclass, so a 0.5/0.3 mm via on a net whose class asks for 0.8/0.4 vias would come
-back with a 0.4 mm drill and a 0.05 mm annular ring. Both `import_ses` and `autoroute` put the
-drill back from the padstack's name (`Via[0-5]_500:300_um` is 500 um with a 300 um drill) on
-every via the import created, and report it in `viaDrillsRestored`
-(`{"count": 1, "changes": {"0.5/0.4 -> 0.5/0.3 mm": 1}}`).
+**Via drills.** KiCad's SES import keeps each via padstack's drill, except when it equals the
+Default netclass's via drill: KiCad stores that one as undefined, and it then resolves through the
+via's net's own class. So on a board whose Default via drill is 0.3 mm, a 0.5/0.3 mm via on a net
+whose class asks for 0.8/0.4 vias would come back with a 0.4 mm drill and a 0.05 mm annular ring.
+Your board is affected only if some net's class has a different via drill from Default and a via
+padstack's drill matches Default's. Both `import_ses` and `autoroute` put the drill back from the
+padstack's name (`Via[0-5]_500:300_um` is 500 um with a 300 um drill) on every via the import
+created, and report it in `viaDrillsRestored` (`{"count": 1, "changes": {"0.5/0.4 -> 0.5/0.3 mm": 1}}`).
+Vias KiCad kept right are left alone.
 
 ---
 
