@@ -87,21 +87,37 @@ export function registerLibraryTools(server: McpServer, callKicadScript: Functio
   // List footprints in a specific library
   server.tool(
     "list_library_footprints",
-    "List all footprints in a specific KiCAD library",
+    "List footprints in a KiCAD library, sorted by name; returns the first 100 unless `limit` is set",
     {
       library_name: z.string().describe("Name of the library to list footprints from"),
-      filter: z.string().optional().describe("Optional filter pattern for footprint names"),
-      limit: z.number().optional().default(100).describe("Maximum number of footprints to list"),
+      filter: z
+        .string()
+        .optional()
+        .describe("Keep names containing this text (case-insensitive, * as a wildcard)"),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .default(100)
+        .describe("Maximum number of footprints to list (default 100)"),
     },
     async (args: { library_name: string; filter?: string; limit?: number }) => {
       const result = await callKicadScript("list_library_footprints", args);
       if (result.success && result.footprints) {
         const footprintList = result.footprints.map((fp: string) => `  - ${fp}`).join("\n");
+        const shown = result.footprints.length;
+        const total = typeof result.total === "number" ? result.total : shown;
+        const summary =
+          total > shown
+            ? `Library ${args.library_name}: showing ${shown} of ${total} matching footprints ` +
+              "(pass `filter` to narrow, or a larger `limit` for more)"
+            : `Library ${args.library_name} contains ${shown} matching footprints`;
         return {
           content: [
             {
               type: "text",
-              text: `Library ${args.library_name} contains ${result.footprints.length} footprints:\n${footprintList}`,
+              text: `${summary}:\n${footprintList}`,
             },
           ],
         };

@@ -1820,6 +1820,37 @@ edit_schematic_component and set its value to an empty string.`,
     },
   );
 
+  // Legibility: what a reader trips over
+  server.tool(
+    "check_schematic_legibility",
+    "Checks whether a person can read a schematic sheet: what ERC and a netlist cannot see. Boxes every symbol body, visible reference/value, label and free text and reports text over text (a symbol's own fields included), text over another symbol's body, a symbol's own field across a drawn line of its body (inside an IC's rectangle or beside a capacitor's plates is fine), body over body, a wire through a text (a label's own wire only touches its edge), items on the title block or outside the frame, and a field stored upside down. Each problem comes with its box in sheet mm; look at it with get_schematic_view_region.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch sheet to check (one sheet)"),
+      maxProblems: z
+        .number()
+        .optional()
+        .describe("Most problems to list (default 200); counts always cover all"),
+    },
+    async (args: { schematicPath: string; maxProblems?: number }) => {
+      const result = await callKicadScript("check_schematic_legibility", args);
+      if (result.success) {
+        const counts = Object.entries(result.counts || {})
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(", ");
+        const lines = [`${result.total} legibility problem(s)${counts ? ` (${counts})` : ""}`];
+        (result.problems || []).forEach((p: any) => {
+          const b = p.box;
+          lines.push(`  ${p.kind.padEnd(19)} ${p.items}  @(${b.x0},${b.y0})-(${b.x1},${b.y1})`);
+        });
+        return { content: [{ type: "text", text: lines.join("\n") }] };
+      }
+      return {
+        content: [{ type: "text", text: `Failed: ${result.message || "Unknown error"}` }],
+        isError: true,
+      };
+    },
+  );
+
   // Find overlapping elements
   server.tool(
     "find_overlapping_elements",
@@ -2301,6 +2332,143 @@ edit_schematic_component and set its value to an empty string.`,
           isError: true,
         };
       }
+    },
+  );
+
+  // Schematic rectangles (graphic boxes drawn on the sheet, #525)
+  const point = z.union([
+    z.array(z.number()).length(2),
+    z.object({ x: z.number(), y: z.number() }),
+  ]);
+  const rgba = z
+    .array(z.number())
+    .length(4)
+    .describe("[r, g, b, a]: r, g, b from 0 to 255 and a (opacity) from 0 to 1");
+
+  server.tool(
+    "list_schematic_rectangles",
+    "List the rectangles drawn on a schematic sheet (graphic boxes, such as a titled box " +
+      "around a group of parts). Returns each one's uuid, start and end corners in mm, " +
+      "stroke and fill, plus the corner radius and locked flag when KiCad wrote them. " +
+      "Rectangles inside symbol bodies are not included. Use the uuid with " +
+      "set_schematic_rectangle to move, resize, restyle or delete one.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+    },
+    async (args: { schematicPath: string }) => {
+      const result = await callKicadScript("list_schematic_rectangles", args);
+      if (result.success) {
+        const rects = result.rectangles || [];
+        if (rects.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: "No rectangles found on this sheet." }],
+          };
+        }
+        const lines = rects.map(
+          (r: any) =>
+            `  ${r.uuid}: (${r.start.x}, ${r.start.y}) to (${r.end.x}, ${r.end.y})` +
+            ` stroke=${r.stroke.type}/${r.stroke.width}mm fill=${r.fill.type}` +
+            (r.radius ? ` radius=${r.radius}` : "") +
+            (r.locked ? " locked" : ""),
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Rectangles (${rects.length}):\n${lines.join("\n")}\n\n${JSON.stringify(rects, null, 2)}`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Failed to list rectangles: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
+    },
+  );
+
+  server.tool(
+    "set_schematic_rectangle",
+    "Create, change or delete a rectangle drawn on a schematic sheet. " +
+      "Without uuid it creates one from start and end (corners in mm) and returns its uuid. " +
+      "With uuid it changes only the fields given (start, end, stroke, fill); a stroke or fill " +
+      "given in part keeps the rest. With uuid and delete: true it removes the rectangle. " +
+      "An unknown uuid is an error that lists the rectangles on the sheet " +
+      "(see list_schematic_rectangles). A corner radius is not written, because KiCad 9 " +
+      "cannot load one; an existing radius is kept when a rectangle is edited.",
+    {
+      schematicPath: z.string().describe("Path to the .kicad_sch file"),
+      uuid: z
+        .string()
+        .optional()
+        .describe("Rectangle to change or delete; leave out to create a new one"),
+      start: point.optional().describe("First corner in mm, as [x, y] or {x, y}"),
+      end: point.optional().describe("Opposite corner in mm, as [x, y] or {x, y}"),
+      stroke: z
+        .object({
+          width: z
+            .number()
+            .min(0)
+            .optional()
+            .describe("Line width in mm; 0 (default) is KiCad's default width"),
+          type: z
+            .enum(["default", "solid", "dash", "dot", "dash_dot", "dash_dot_dot"])
+            .optional()
+            .describe("Line style (default: default)"),
+          color: rgba.optional(),
+        })
+        .optional()
+        .describe("Outline style"),
+      fill: z
+        .object({
+          type: z
+            .enum(["none", "outline", "background", "color"])
+            .optional()
+            .describe("none (default), outline, background, or color (needs fill.color)"),
+          color: rgba.optional(),
+        })
+        .optional()
+        .describe("Fill style"),
+      delete: z
+        .boolean()
+        .optional()
+        .describe("With uuid: remove the rectangle (no other fields allowed)"),
+    },
+    async (args: {
+      schematicPath: string;
+      uuid?: string;
+      start?: number[] | { x: number; y: number };
+      end?: number[] | { x: number; y: number };
+      stroke?: { width?: number; type?: string; color?: number[] };
+      fill?: { type?: string; color?: number[] };
+      delete?: boolean;
+    }) => {
+      const result = await callKicadScript("set_schematic_rectangle", args);
+      if (result.success) {
+        const detail = result.rectangle ? `\n${JSON.stringify(result.rectangle, null, 2)}` : "";
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `${result.message || "Rectangle updated"} (uuid ${result.uuid})${detail}`,
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Failed to set rectangle: ${result.message || "Unknown error"}`,
+          },
+        ],
+        isError: true,
+      };
     },
   );
 

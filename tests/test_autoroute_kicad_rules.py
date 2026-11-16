@@ -241,9 +241,12 @@ def test_every_attempt_failing_names_the_rule_files(rules, fake_jar):
     assert out["message"] == "All Freerouting attempts failed"
     assert "kicadRules: false" in out["hint"]
     assert out["kicad_rules"]["files"] == ["test.kicad_dru", "test.kicad_pro"]
+    # the line the hint tells the caller to look for, from stdout (where Freerouting logs)
+    assert [a["rules_log"] for a in out["attempts"]] == ["ERROR cannot read 'test.kicad_dru'"] * 2
 
 
 def test_every_attempt_failing_without_rule_files_has_no_hint(workdir, fake_jar):
     out, _ = _run(workdir, fake_jar, {"attempts": 2}, returncode=1)
     assert out["success"] is False
     assert "hint" not in out and "kicad_rules" not in out
+    assert all("rules_log" not in a for a in out["attempts"])

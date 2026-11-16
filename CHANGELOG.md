@@ -4,6 +4,42 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ## [Unreleased]
 
+### New Tools
+
+- **`check_schematic_legibility`: what a reader trips over.** ERC and a
+  netlist prove a sheet is connected; they say nothing about whether a person
+  can read it. This boxes every symbol body, visible reference and value,
+  label and free text, and reports: text over text (a symbol's own fields
+  included); text across a drawn line of another symbol (its outline or a
+  pin stub) or in the middle of its outline; a symbol's own field across a
+  drawn line of its body (inside an IC's rectangle or beside a capacitor's
+  plates is fine, as KiCad's own `Device:R` places its value); bodies on top
+  of each other (their drawn lines cross, or one lies inside the other; pin
+  stubs left out, including a stub drawn as a line, as `power:GND` draws
+  it); a wire through a text (a label's own wire only touches its edge);
+  items on KiCad's default title block or outside the frame; and a field
+  stored upside down (at 180 degrees; KiCad draws free text upright at any
+  angle). A free text is boxed along its angle (a note at 90 degrees runs
+  bottom to top). Each problem comes with its box in sheet mm.
+  - Calibrated against renders of a released three-sheet design: text
+    advance 0.95 x size per character; a field's angle and justification are
+    in the symbol's frame and go through its rotation, then its mirror. On
+    that design it reports 16 problems and each was confirmed on the render
+    (a value printed over a label, values struck by body outlines, a riser
+    through a resistor value, a note over a diode);
+    `find_overlapping_elements` reports 0 on the same sheets, since it
+    compares positions, not the space text takes.
+  - Text is measured as KiCad draws it: escapes such as `{slash}` are decoded
+    and `~{...}` overbar, `^{...}` and `_{...}` markup is stripped first
+    (`VPP{slash}MCLR` is 8 characters wide, not 14).
+  - The text-size model (`schematic_text_metrics`) is now shared with
+    `suggest_schematic_declutter` and `autoplace_schematic_fields`, so the
+    three tools agree on how much room a label takes. **Their output
+    changes:** field boxes are about 60 % wider than those tools assumed
+    before, and label boxes taller, so they move fields and labels further
+    apart than they used to.
+  - Read-only; available in `readonly` mode.
+
 ### New Features
 
 - **`autoroute` passes the board's KiCad rules to Freerouting: `kicadRules`.**
@@ -17,7 +53,38 @@ All notable changes to the KiCAD MCP Server project are documented here.
   log them as unknown and route on) and `unconfirmed` (2.0.x and 2.1.0 skip
   them without a word, so the log does not mention them), and the rules
   Freerouting could only approximate. A failed run, single or best-of-N,
-  names the files and how to leave them out.
+  names the files and how to leave them out, and each failed attempt carries
+  `rules_log`: the first log line naming a rule file. An explicit
+  `routerSettings: {"neck_width_um": ...}` overrides the `.kicad_pro`
+  minimum track width.
+
+- **`autoroute` passes Freerouting settings: `routerSettings`.** An object of
+  setting name to value, by the names in Freerouting's `docs/settings.md` under
+  `router`. Each is passed as `--router.<name>=<value>`; a list is joined with
+  commas. This reaches what the router already offers and `autoroute` had no
+  parameter for, e.g. `autorouter.priority_net_classes` (classes routed first
+  and not ripped by other nets), `autorouter.plane_as_priority` (one via per
+  plane pad into its plane) and `autorouter.ignore_net_classes`; the first two
+  are on Freerouting master only (merged 2026-11-07), not in a v2 release. Keys
+  must be plain setting names; `max_passes` and `job_timeout` are refused in
+  favour of `maxPasses` and `jobTimeout`, and with `attempts` above 1 the thread
+  count (`max_threads`, `autorouter.max_threads`, `optimizer.max_threads`) is
+  refused, since best-of-N runs single-threaded. Freerouting does not refuse a setting
+  it cannot apply (a typo, or one the installed jar lacks): it logs a warning
+  and keeps routing. The result lists the options passed as `router_settings`
+  and the ones Freerouting reported it could not apply as
+  `router_settings_rejected`.
+
+- **`autoroute` keeps what Freerouting routed when time runs out.** Freerouting
+  writes its session file only when it ends, so a run that reached `timeout`
+  was killed and returned nothing, however much it had routed. `autoroute` now
+  passes `--router.job_timeout`, by default `timeout` minus a tenth of it (at
+  least 60 s, at most 120 s; Freerouting waits up to 30 s for the router to stop), and none
+  when `timeout` is under 120 s: the router stops by itself, writes the partial
+  result, and it is imported as usual. The result reports
+  `job_timeout_seconds` and `time_budget_reached`. New parameter `jobTimeout`
+  sets the budget in seconds; `0` passes none. Needs Freerouting 2.4 or later:
+  older versions stop at the budget but write no session file.
 
 - **`add_copper_keepout` creates a copper-fill rule area through live KiCad IPC.**
   It requires the board to be open in KiCad with the IPC API enabled, keeps
@@ -85,7 +152,58 @@ All notable changes to the KiCAD MCP Server project are documented here.
   wire and is still reported. Power pins are included. `collisions` and `count`
   keep their meaning.
 
+- **Schematic rectangles: `list_schematic_rectangles` and
+  `set_schematic_rectangle`** (#525). A titled box around a group of parts is
+  a `(rectangle ...)` on the sheet, and until now the only way to add, move or
+  resize one was editing the file by hand. `list_schematic_rectangles` returns
+  each rectangle's uuid, corners, stroke and fill, and skips the rectangles
+  inside symbol bodies. `set_schematic_rectangle` creates one when no `uuid` is
+  given and returns its uuid, changes only the given fields of an existing one,
+  and with `delete: true` removes it. An unknown uuid is an error that lists the
+  rectangles on the sheet. Edits rewrite only the changed fields, so the rest of
+  the file, including a uuid KiCad left unquoted, keeps its bytes. The corner
+  radius that KiCad 10 can write is read and kept but never written, because
+  KiCad 9 cannot load it. The list tool stays available in read-only mode.
+
 ### Bug Fixes
+
+- **`autoroute` works on the board named by `boardPath`.** The path was
+  accepted and then ignored: with nothing loaded the call refused with "No
+  board is loaded", and with a different board loaded it routed that board
+  and saved it over `boardPath`. A `boardPath` given to `autoroute`,
+  `export_dsn` or `import_ses` that is not the loaded board is now loaded
+  first, through `open_board`'s steps (every command handler, the disk
+  signature, the project path and symbol libraries, the session pin), so the
+  whole session moves to that board; the reply says so (`sessionBoardPath`,
+  `boardSwitchWarning`). A path that only differs in spelling (case on
+  Windows, `..` segments) is the same board and does not reload. The switch
+  is refused while the loaded board holds changes that are not on disk (save
+  them first, or reload to discard them), and a session pinned to the board
+  open in KiCad refuses a different `boardPath` and asks for `open_project`
+  first.
+
+- **New `.kicad_sym` libraries match the project's schematic format (#420).**
+  `create_symbol`, `export_symbol` and the Eagle importer wrote a hardcoded
+  KiCad 9 header (`20241209` / `"9.0"`) into every new library, which KiCad 10
+  reports as an older format and prompts to migrate on every open. All three
+  writers now share `symbol_lib_header(project_dir)`: the KiCad 10 header
+  (`20251024` / `"10.0"`) is written only when the project's root schematic
+  declares a KiCad 10 format (`(version 20260101)` or later, the same
+  threshold as `dynamic_symbol_loader`), and the KiCad 9 header — which loads
+  everywhere the server supports — is the fallback for KiCad 9 projects,
+  global libraries and projects without a schematic. Which KiCad is
+  installed plays no part, so several versions side by side cannot force the
+  newest format on a project still on an older one. Existing libraries keep
+  their header untouched.
+
+- **`find_orphaned_wires` recognizes bus entries and no-connect flags**
+  (#506). The tool previously reported live wires as orphaned on the KiCad demo
+  designs (e.g. 171 to 135 on `interf_u` where the remaining 135 are real
+  unconnected endpoints per KiCad ERC, 110 to 0 on `expansion_connector`,
+  50 to 0 on `csi`, and 13 to 0 on `usb` where 3 wires end on no-connect
+  flags). Wire endpoints meeting `bus_entry` anchors or `no_connect` flags
+  were not included in connection points. Both `bus_entry` and `no_connect`
+  endpoints are now counted as connection anchors.
 
 - **The Windows setup scripts no longer stop at "Detecting KiCAD Installation"**
   (#534). `setup-windows-opencode.ps1` runs under `Set-StrictMode`, and it read
@@ -191,6 +309,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
     loses its own old label too, instead of joining the two nets.
   - `batch_move_components` and `batch_set_schematic_property_positions` also
     get the long timeout, so a very large sheet can't be cut off part-way.
+
+- **`list_library_footprints` reads the `filter` and `limit` its schema
+  declares** (#407). Both were ignored, so a client asking for the first 10
+  QFN footprints got the whole library. `filter` keeps names containing the
+  text, case-insensitively, with `*` as a wildcard and every other character
+  literal. `limit` caps the list after filtering and must be a positive
+  integer. The list is now sorted by name, ignoring case, and the reply adds
+  `total`, the number of matches before the cap, next to `count`. The
+  JSON-RPC schema declares both parameters too. Node clients get the zod
+  default of 100 when they pass no `limit`; when the list was cut, the reply
+  says "showing N of M" and how to get the rest.
 
 ## [2.9.0] - 2026-11-11
 

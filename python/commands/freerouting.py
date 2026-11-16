@@ -645,9 +645,9 @@ def _kicad_rules_report(output: str, files: List[str]) -> Dict[str, Any]:
     ``applied``: files it reported using. ``ignored``: files it logged as unknown (2.2.0 to
     2.5.0). ``unconfirmed``: files it said nothing about (2.0.x and 2.1.0 skip them silently):
     with no "Using the KiCad ..." line the router did not use them. ``warnings``: the rule
-    translations it reported
-    as inexact (creepage applied as its clearance, a condition it cannot evaluate applied
-    wherever it may match, a constraint type it does not translate), at most 20.
+    translations it reported as inexact (creepage applied as its clearance, a condition it
+    cannot evaluate applied wherever it may match, a constraint type it does not translate), at
+    most 20.
     """
     names = [os.path.basename(f) for f in files]
     out = output or ""
@@ -673,6 +673,17 @@ def _kicad_rules_report(output: str, files: List[str]) -> Dict[str, Any]:
     return report
 
 
+def _rules_log_line(output: str, files: List[str]) -> Optional[str]:
+    """The first log line that names one of the KiCad rule files (by name, or any ``.kicad_dru`` /
+    ``.kicad_pro``), so a failed attempt's reply shows what the hint asks the caller to look for.
+    Freerouting logs to stdout; a failed attempt otherwise keeps only the start of stderr."""
+    names = [os.path.basename(f) for f in files] + [".kicad_dru", ".kicad_pro"]
+    for line in (output or "").splitlines():
+        if any(n in line for n in names):
+            return line.strip()[:300]
+    return None
+
+
 def _kicad_rules_hint(files: List[str]) -> str:
     """The hint added to a failed run when KiCad rule files were passed: a master jar stops
     when a ``.kicad_dru`` given to it cannot be read, rather than route a board that would fail
@@ -681,6 +692,173 @@ def _kicad_rules_hint(files: List[str]) -> str:
         "The board's KiCad rule files were passed to Freerouting "
         f"({', '.join(os.path.basename(f) for f in files)}). If the log blames one of them, "
         "fix it, or set kicadRules: false to route with the net-class clearances only."
+    )
+
+
+def _hms(seconds: int) -> str:
+    """Seconds as HH:MM:SS, the form Freerouting's time settings take."""
+    seconds = int(seconds)
+    return f"{seconds // 3600:02d}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}"
+
+
+# Wall-clock time Freerouting needs after its own time budget ends: up to its
+# GRACE_PERIOD of 30 s for the router to stop (RoutingJobSchedulerActionThread,
+# 2.4.1 and later), writing the session file, plus the JVM start and DSN load
+# before the budget begins to count (measured 11-13 s past the budget).
+_JOB_TIMEOUT_MARGIN_MIN = 60
+_JOB_TIMEOUT_MARGIN_MAX = 120
+# Freerouting logs this when a stage ended because the job's time was up.
+_TIME_BUDGET_MARKER = "completed with timeout"
+# Freerouting does not refuse a router setting it cannot apply: it logs one of
+# these and keeps routing (master 842ad835, 2.5.0 CliSettings.applyRouterSetting):
+#   WARN   Unknown settings property: router.bogus_setting
+#   WARN   Failed to apply CLI router setting: router.bogus_setting: No field found ...
+_REJECTED_SETTING_RE = re.compile(
+    r"(?:Unknown settings property|Failed to apply CLI router setting): router\.([A-Za-z0-9_.]+)"
+)
+
+
+def _rejected_router_settings(output: str, router_args: Optional[List[str]]) -> List[str]:
+    """The routerSettings keys Freerouting reported it could not apply, in the order passed.
+
+    Only keys this call passed are reported (``--router.<key>=...`` in ``router_args``), so a
+    warning about one of autoroute's own options cannot show up as the caller's mistake.
+    """
+    passed = []
+    for arg in router_args or []:
+        key = arg.split("=", 1)[0][len("--router.") :]
+        if key and key not in passed:
+            passed.append(key)
+    named = set(_REJECTED_SETTING_RE.findall(output or ""))
+    return [k for k in passed if k in named]
+
+
+def _router_time_budget(timeout: Any, requested: Any) -> Optional[int]:
+    """The time, in seconds, Freerouting is given to route (``--router.job_timeout``).
+
+    ``timeout`` is how long the caller waits for the process. When that wait
+    ends, the process is killed and nothing it routed is kept, because
+    Freerouting writes the session file only at the end. So the router is told
+    to stop earlier by itself: by default at ``timeout`` minus a margin of a
+    tenth of it (at least 60 s, at most 120 s). No default budget is passed
+    when it would be shorter than the margin itself (a ``timeout`` under
+    120 s): it would cut off runs that finish within the wait, and be too
+    short to give a useful partial result.
+
+    ``requested`` is the caller's ``jobTimeout``: a number of seconds to use
+    instead (capped below ``timeout`` by the same margin), or 0 to pass no
+    time budget at all. Returns None when no budget is to be passed.
+    """
+    try:
+        wait = float(timeout)
+    except (TypeError, ValueError):
+        return None
+    if requested is not None:
+        try:
+            asked = float(requested)
+        except (TypeError, ValueError):
+            asked = -1.0
+        if asked == 0:
+            return None
+    else:
+        asked = -1.0
+    margin = min(_JOB_TIMEOUT_MARGIN_MAX, max(_JOB_TIMEOUT_MARGIN_MIN, wait * 0.1))
+    ceiling = wait - margin
+    if asked > 0:
+        budget = min(asked, ceiling)
+    elif ceiling >= margin:
+        budget = ceiling
+    else:
+        return None
+    return int(budget) if budget >= 1 else None
+
+
+# A Freerouting setting key: lower-case words joined by dots, as in its docs/settings.md
+# ("autorouter.priority_net_classes"). Nothing else, so a key cannot smuggle in another option.
+# Used with fullmatch: "$" would also accept a key ending in a newline.
+_ROUTER_SETTING_KEY = re.compile(r"[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*")
+# Settings autoroute sets itself; a caller's value would silently fight it.
+_ROUTER_SETTINGS_OWNED = {
+    "job_timeout": "jobTimeout",
+    "max_passes": "maxPasses",
+    "autorouter.max_passes": "maxPasses",
+}
+# The thread count, in each spelling Freerouting master reads (docs/settings.md: the global
+# ceiling, and the autorouter and optimizer stages). With attempts > 1 autoroute forces -mt 1:
+# the attempts are compared, and the multi-threaded optimiser is the one known to leave
+# clearance violations, so a caller's value must not undo it.
+_ROUTER_THREAD_SETTINGS = ("max_threads", "autorouter.max_threads", "optimizer.max_threads")
+
+
+def _router_setting_args(settings: Any, single_thread: bool = False) -> List[str]:
+    """``routerSettings`` as Freerouting command-line options.
+
+    ``{"autorouter.priority_net_classes": ["DIFF", "ANALOG"], "autorouter.plane_as_priority": True}``
+    becomes ``--router.autorouter.priority_net_classes=DIFF,ANALOG`` and
+    ``--router.autorouter.plane_as_priority=true``. Keys are the names in Freerouting's
+    docs/settings.md under ``router``. Raises ValueError for anything that is not a plain
+    setting: a key of another shape, a value that is not a string, number, boolean or a list
+    of those, or a setting that autoroute has a parameter of its own for. With
+    ``single_thread`` (best-of-N attempts) the thread count is refused too.
+    """
+    if settings is None:
+        return []
+    if not isinstance(settings, dict):
+        raise ValueError("routerSettings must be an object of setting name to value")
+    args: List[str] = []
+    for key, value in settings.items():
+        if not isinstance(key, str) or not _ROUTER_SETTING_KEY.fullmatch(key):
+            raise ValueError(
+                f"routerSettings key {key!r} is not a Freerouting setting name "
+                "(lower-case words joined by dots, e.g. autorouter.priority_net_classes)"
+            )
+        if key in _ROUTER_SETTINGS_OWNED:
+            raise ValueError(
+                f"routerSettings key {key!r}: use autoroute's {_ROUTER_SETTINGS_OWNED[key]} parameter"
+            )
+        if single_thread and key in _ROUTER_THREAD_SETTINGS:
+            raise ValueError(
+                f"routerSettings key {key!r}: with attempts above 1 autoroute runs Freerouting "
+                "single-threaded (-mt 1) so the attempts are comparable; leave the thread count "
+                "out, or use attempts: 1"
+            )
+        items = value if isinstance(value, (list, tuple)) else [value]
+        if not items:
+            raise ValueError(f"routerSettings {key!r}: empty list")
+        parts = []
+        for item in items:
+            if isinstance(item, bool):
+                parts.append("true" if item else "false")
+            elif isinstance(item, (int, float)):
+                parts.append(str(item))
+            elif isinstance(item, str) and item and "\n" not in item:
+                parts.append(item)
+            else:
+                raise ValueError(
+                    f"routerSettings {key!r}: value {item!r} is not a string, number or boolean"
+                )
+        args.append(f"--router.{key}={','.join(parts)}")
+    return args
+
+
+def _no_budget_reason(timeout: Any, requested: Any) -> str:
+    """Why no time budget was passed, for the message when the wait runs out."""
+    try:
+        asked = float(requested) if requested is not None else None
+    except (TypeError, ValueError):
+        asked = None
+    if asked == 0:
+        return "No time budget was passed to it (jobTimeout: 0)."
+    if asked is not None and asked > 0:
+        return (
+            f"The jobTimeout of {requested}s was not passed: a timeout of {timeout}s is too "
+            f"short to leave room for a budget (Freerouting needs at least "
+            f"{_JOB_TIMEOUT_MARGIN_MIN}s after its budget ends to stop and write its result)."
+        )
+    return (
+        f"No time budget was passed to it: a timeout under {2 * _JOB_TIMEOUT_MARGIN_MIN}s "
+        "leaves no room for a useful one. A longer timeout gets a time budget, and with it "
+        "a partial result."
     )
 
 
@@ -693,11 +871,17 @@ def _build_freerouting_cmd(
     single_thread: bool = False,
     rules_path: Optional[str] = None,
     design_files: Optional[List[str]] = None,
+    job_timeout: Optional[int] = None,
+    router_args: Optional[List[str]] = None,
 ) -> List[str]:
     """Build the command to run Freerouting.
 
     ``design_files`` go into ``-de`` after the DSN (the board's ``.kicad_dru`` and
     ``.kicad_pro``, staged beside it). Freerouting tells the files apart by extension.
+
+    ``job_timeout`` (seconds) is passed as ``--router.job_timeout=HH:MM:SS``:
+    Freerouting then stops routing by itself when the time is up and still
+    writes the session file with what it has routed.
 
     ``single_thread`` forces ``-mt 1`` (single-threaded optimisation).
     Freerouting 2.x's multi-threaded optimiser is documented to produce
@@ -708,6 +892,9 @@ def _build_freerouting_cmd(
     extra = ["-mt", "1"] if single_thread else []
     if rules_path:
         extra += ["-dr", rules_path]
+    if job_timeout:
+        extra.append(f"--router.job_timeout={_hms(job_timeout)}")
+    extra += list(router_args or [])
     required_java = _jar_required_java(jar_path)
     if use_docker:
         docker_exe = _find_docker()
@@ -1365,11 +1552,24 @@ class FreeroutingCommands:
 
         # Step 2: Run Freerouting (single or multiple attempts)
         mode_label = "docker" if use_docker else "direct"
+        job_timeout = _router_time_budget(timeout, params.get("jobTimeout"))
+        try:
+            router_args = _router_setting_args(
+                params.get("routerSettings"), single_thread=attempts > 1
+            )
+        except ValueError as e:
+            return {
+                "success": False,
+                "message": "Invalid routerSettings",
+                "errorDetails": str(e),
+            }
+        best_budget_reached = False
         total_start = time.time()
         attempt_results: List[Dict[str, Any]] = []
         best_score = -1
         best_attempt_idx = -1
         best_proc_stdout = ""
+        rejected_settings: List[str] = []
 
         # If only one attempt, use the legacy maxPasses value (preserves
         # exact backward-compatible behaviour). Otherwise cycle through
@@ -1393,6 +1593,8 @@ class FreeroutingCommands:
                 single_thread=single_thread,
                 rules_path=rules_path,
                 design_files=kicad_rule_files,
+                job_timeout=job_timeout,
+                router_args=router_args,
             )
             logger.info(
                 f"Freerouting attempt {idx + 1}/{attempts} "
@@ -1425,7 +1627,18 @@ class FreeroutingCommands:
                 return {
                     "success": False,
                     "message": f"Freerouting timed out after {timeout}s",
-                    "errorDetails": "Increase timeout or reduce board complexity",
+                    "errorDetails": (
+                        "Increase timeout or reduce board complexity. Nothing it routed was "
+                        "kept: "
+                        "Freerouting writes its result only when it ends"
+                        + (
+                            f", and no session file came out of its own time budget of "
+                            f"{job_timeout}s (--router.job_timeout). Freerouting before 2.4 "
+                            "stops at the budget but writes nothing; use 2.4 or later."
+                            if job_timeout
+                            else ". " + _no_budget_reason(timeout, params.get("jobTimeout"))
+                        )
+                    ),
                     "attempts_completed": idx,
                 }
             except Exception as e:
@@ -1451,6 +1664,10 @@ class FreeroutingCommands:
                         "stderr": (proc.stderr or "")[:200],
                     }
                 )
+                if kicad_rule_files:
+                    attempt_results[-1]["rules_log"] = _rules_log_line(
+                        (proc.stdout or "") + "\n" + (proc.stderr or ""), kicad_rule_files
+                    )
                 if attempts == 1:
                     failed: Dict[str, Any] = {
                         "success": False,
@@ -1489,12 +1706,19 @@ class FreeroutingCommands:
                 ses_text = fh.read()
             score_info = _score_ses(ses_text, target_nets)
             score = score_info["score"]
+            budget_reached = _TIME_BUDGET_MARKER in ((proc.stdout or "") + (proc.stderr or ""))
+            for key in _rejected_router_settings(
+                (proc.stdout or "") + (proc.stderr or ""), router_args
+            ):
+                if key not in rejected_settings:
+                    rejected_settings.append(key)
             attempt_results.append(
                 {
                     "attempt": idx + 1,
                     "max_passes": attempt_passes,
                     "elapsed_seconds": attempt_elapsed,
                     "ok": True,
+                    "time_budget_reached": budget_reached,
                     **score_info,
                 }
             )
@@ -1508,6 +1732,7 @@ class FreeroutingCommands:
                 best_score = score
                 best_attempt_idx = idx
                 best_proc_stdout = proc.stdout or ""
+                best_budget_reached = budget_reached
                 # Snapshot the SES that produced this score so later
                 # attempts (which overwrite ses_path) don't clobber it.
                 shutil.copy2(ses_path, best_ses_path)
@@ -1625,6 +1850,10 @@ class FreeroutingCommands:
             # None when the board has no .kicad_dru / .kicad_pro or kicadRules is false.
             "kicad_rules": kicad_rules,
             "freerouting_stdout": best_proc_stdout[:1000],
+            "job_timeout_seconds": job_timeout,
+            "router_settings": router_args,
+            "router_settings_rejected": rejected_settings,
+            "time_budget_reached": best_budget_reached,
         }
         if attempts > 1:
             response["attempts"] = attempt_results

@@ -65,6 +65,7 @@ def test_generate_sym_lib_uses_supported_format_version(tmp_path: Path) -> None:
     generate_sym_lib(list(unique_symbols.values()), str(out))
 
     text = out.read_text(encoding="utf-8")
+    # No project here, so the header is the safe KiCad 9 fallback (PR #535).
     assert text.startswith("(kicad_symbol_lib (version 20241209)")
     assert "20250114" not in text
 

@@ -172,6 +172,8 @@ export const toolCategories: ToolCategory[] = [
       "get_net_at_point",
       "get_schematic_view_region",
       "run_erc",
+      "list_schematic_rectangles",
+      "set_schematic_rectangle",
     ],
   },
   {
@@ -248,6 +250,7 @@ export const toolCategories: ToolCategory[] = [
       "lint_schematic_cosmetic",
       "lint_offgrid",
       "snap_to_grid",
+      "check_schematic_legibility",
       "find_overlapping_elements",
       "find_wires_crossing_symbols",
       "list_floating_labels",

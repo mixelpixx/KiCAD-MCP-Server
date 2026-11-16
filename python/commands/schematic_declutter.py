@@ -28,11 +28,12 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from commands.schematic_text_metrics import label_bbox
+
 logger = logging.getLogger("kicad_interface")
 
 _GRID = 1.27  # 50-mil KiCad schematic grid (mm)
-_CHARS_PER_MM = 1.5  # matches schematic_field_layout's label_bbox model
-_TEXT_HEIGHT = 1.27
+_LABEL_MARGIN = 1.0  # keeps neighbouring labels apart, mm
 _ORIENTATIONS = (0, 90, 180, 270)
 
 
@@ -41,18 +42,10 @@ _ORIENTATIONS = (0, 90, 180, 270)
 # ──────────────────────────────────────────────────────────────────────────
 def _label_bbox(lx: float, ly: float, angle: float, name: str) -> Dict[str, float]:
     """Axis-aligned bbox of a label's text, anchored at (lx, ly), for one of the
-    four orientations. Mirrors schematic_field_layout.label_bbox so overlap
-    results stay consistent with the rest of the codebase."""
-    length = max(len(name), 1) * _CHARS_PER_MM + 1.0
-    half_h = _TEXT_HEIGHT / 2.0
-    a = round(angle / 90) * 90 % 360
-    if a == 0:  # text extends +x (justify left)
-        return {"x_min": lx, "y_min": ly - half_h, "x_max": lx + length, "y_max": ly + half_h}
-    if a == 90:  # text extends -y (up)
-        return {"x_min": lx - half_h, "y_min": ly - length, "x_max": lx + half_h, "y_max": ly}
-    if a == 180:  # text extends -x (justify right)
-        return {"x_min": lx - length, "y_min": ly - half_h, "x_max": lx, "y_max": ly + half_h}
-    return {"x_min": lx - half_h, "y_min": ly, "x_max": lx + half_h, "y_max": ly + length}
+    four orientations. The text-size model is ``schematic_text_metrics``, shared
+    with ``autoplace_schematic_fields`` and ``check_schematic_legibility``, so
+    the three tools agree on the room a label takes."""
+    return label_bbox(lx, ly, angle, name, margin=_LABEL_MARGIN)
 
 
 def _bbox_overlaps(a: Dict[str, float], b: Dict[str, float], margin: float = 0.0) -> bool:

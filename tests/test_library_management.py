@@ -107,7 +107,8 @@ def test_export_symbol(tmp_path):
     assert '(symbol "R_10K_0603"' in content
     assert '(symbol "C_100nF_0603"' not in content  # only the exported symbol
     assert content.startswith("(kicad_symbol_lib")
-    assert "(version 20241209)" in content  # same token every writer here uses
+    # No project here, so the header is the safe KiCad 9 fallback (PR #535).
+    assert "(version 20241209)" in content
     assert content.count("(") == content.count(")")
 
 
