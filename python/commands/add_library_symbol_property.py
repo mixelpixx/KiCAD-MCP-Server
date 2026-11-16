@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
-from utils.sexpr_format import escape_sexpr_string, match_paren, prettify
+# The property edit itself is the one #362 fixed for .kicad_sym libraries: a
+# lib_symbols entry has the same shape as a library symbol, so the same
+# string-aware, direct-child helpers apply unchanged.
+from commands.add_symbol_property import (
+    _build_property,
+    _child_indent,
+    _existing_parts,
+    _find_property_span,
+    _first_subsymbol_offset,
+    _indent_at,
+    _splice_child,
+)
+from utils.sexpr_format import escape_sexpr_string, match_paren, paren_delta, prettify
 
 
 def _find_symbol_in_lib_symbols(
@@ -30,29 +41,20 @@ def _find_symbol_in_lib_symbols(
 
 
 def _has_property(symbol_block: str, prop_name: str) -> bool:
-    """Check if a property already exists in a symbol block."""
-    name = re.escape(escape_sexpr_string(prop_name))
-    return bool(re.search(rf'\(property\s+"{name}"', symbol_block))
+    """Whether the symbol itself (not one of its units) has *prop_name*."""
+    return _find_property_span(symbol_block, prop_name) is not None
 
 
-def _property_s_expr(
-    name: str, value: str, pos: dict[str, float] | None = None, hide: bool = False
-) -> str:
-    """Build a (property ...) s-expression string.
+def _is_direct_child(content: str, library_name: str, symbol_name: str, prop_name: str) -> bool:
+    """Whether *prop_name* ended up a direct child of the lib_symbols entry.
 
-    Name and value are escaped: an unescaped quote ends the token early, and a
-    raw line break leaves it unterminated, so KiCad cannot load the file.
+    Re-locates the symbol in the text about to be written. The paren-balance
+    guard cannot see a well-formed property spliced in at the wrong depth.
     """
-    x = pos.get("x", 0) if pos else 0
-    y = pos.get("y", 0) if pos else 0
-    name_text = escape_sexpr_string(name)
-    value_text = escape_sexpr_string(value)
-    parts = [f'(property "{name_text}" "{value_text}" (at {x} {y} 0)']
-    if hide:
-        parts.append("(hide yes)")
-    parts.append("(effects (font (size 1.27 1.27)))")
-    parts.append(")")
-    return "\n\t\t\t".join(parts)
+    found = _find_symbol_in_lib_symbols(content, library_name, symbol_name)
+    if found is None:
+        return False
+    return _find_property_span(found[2], prop_name) is not None
 
 
 def add_library_symbol_property(params: dict[str, Any]) -> dict[str, Any]:
@@ -76,28 +78,58 @@ def add_library_symbol_property(params: dict[str, Any]) -> dict[str, Any]:
         }
 
     sym_start, sym_end, block = found
-    new_prop = _property_s_expr(prop_name, prop_value, pos, hide)
+    sym_indent = _indent_at(content, sym_start) or ""
+    indent = _child_indent(block, sym_indent + "\t")
+    at_text = f"(at {pos.get('x', 0)} {pos.get('y', 0)} 0)" if pos else None
 
-    if _has_property(block, prop_name):
-        old = re.search(
-            rf'(\(property\s+"{re.escape(escape_sexpr_string(prop_name))}"[^)]*(?:\([^)]*\))*[^)]*\s*\n?\s*(?:\(hide[^)]*\)\s*\n?\s*)?(?:\(effects[^)]*(?:\([^)]*\))*[^)]*\))?\s*\))',
-            block,
-            re.DOTALL,
+    existing = _find_property_span(block, prop_name)
+    if existing:
+        # Replace the whole property block, located by string-aware paren
+        # matching. A pattern that stops at the first ")" ends inside
+        # "(at x y angle)" and leaves the old (effects ...) tail behind.
+        start, end = existing
+        old_at, old_hidden, old_others = _existing_parts(block[start:end])
+        new_prop = _build_property(
+            prop_name,
+            prop_value,
+            at_text or old_at or "(at 0 0 0)",
+            hide if "hide" in params else old_hidden,
+            indent,
+            old_others,
         )
-        if old:
-            block = block[: old.start()] + new_prop + block[old.end() :]
-        else:
-            block = block.rstrip()[:-1] + "\n\t\t\t" + new_prop + "\n\t\t)"
+        block = block[:start] + new_prop + block[end:]
     else:
-        sub = re.search(r'\n\t\t\t\(symbol "', block)
-        if sub:
-            insert_at = sub.start()
-            block = block[:insert_at] + "\n\t\t\t" + new_prop + block[insert_at:]
+        new_prop = _build_property(prop_name, prop_value, at_text or "(at 0 0 0)", hide, indent)
+        sub = _first_subsymbol_offset(block)
+        if sub is not None:
+            # Properties precede the unit definitions.
+            anchor, tail_indent = sub, indent
         else:
-            block = block.rstrip()[:-1] + "\n\t\t\t" + new_prop + "\n\t\t)"
+            anchor, tail_indent = block.rfind(")"), sym_indent
+        block = _splice_child(block, anchor, indent, tail_indent, new_prop)
 
-    content = content[:sym_start] + block + content[sym_end + 1 :]
-    schematic_path.write_text(prettify(content), encoding="utf-8")
+    updated = prettify(content[:sym_start] + block + content[sym_end + 1 :])
+
+    # Setting a property is a balanced edit, so the file's balance cannot move.
+    if paren_delta(updated) != paren_delta(content):
+        return {
+            "success": False,
+            "message": (
+                f"Refusing to write {schematic_path.name}: editing property "
+                f"'{prop_name}' on {library_name}:{symbol_name} would unbalance the file"
+            ),
+        }
+
+    if not _is_direct_child(updated, library_name, symbol_name, prop_name):
+        return {
+            "success": False,
+            "message": (
+                f"Refusing to write {schematic_path.name}: property '{prop_name}' would "
+                f"not be a direct child of {library_name}:{symbol_name}"
+            ),
+        }
+
+    schematic_path.write_text(updated, encoding="utf-8")
 
     return {
         "success": True,

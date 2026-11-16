@@ -333,6 +333,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
   helper: substring, case-insensitive, `*` as a wildcard, everything else
   literal. The "did you mean" suggestions in `place_component` use it too.
 
+- **`add_library_symbol_property` no longer breaks the schematic when it
+  updates a property** (#379). The update matched the old property with a
+  pattern that stopped at the first `)`, the one closing `(at x y angle)`, so
+  the old `(effects ...)` lines and one closing paren were left behind and
+  the file no longer parsed. The tool now uses the `add_symbol_property`
+  write path from #362: it replaces the whole property block, keeps the
+  field's position, font, justification and hidden state unless the call
+  sets them, ignores same-named properties inside units, adds a new property
+  before the symbol's units in every layout, and refuses to write when the
+  edit would unbalance the file or leave the property outside the symbol.
+
 ## [2.9.0] - 2026-11-11
 
 ### New MCP Prompt
