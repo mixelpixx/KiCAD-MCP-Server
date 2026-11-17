@@ -128,8 +128,9 @@ reply carries a note to check the result with KiCad's DRC.
 
 An explicit `routerSettings: {"neck_width_um": ...}` overrides the `.kicad_pro` minimum track
 width: Freerouting ranks every user-given setting above the project file (freerouting #1130). It is
-also the way around `connection_width` DRC errors from neck-downs narrower than that minimum, until
-freerouting #1135 lands.
+also the way around `connection_width` DRC errors from neck-downs narrower than that minimum on
+Freerouting 2.5.0 and earlier. freerouting #1135 (merged 2026-11-16, not yet in a release) makes the
+default neck width the larger of the minimum track width and the minimum connection width.
 
 When Freerouting stops at its time budget, the result has `time_budget_reached: true` and the board holds
 the partial routing; `run_drc` lists what is still unconnected.
