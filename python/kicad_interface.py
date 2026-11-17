@@ -1171,10 +1171,23 @@ class KiCADInterface(SchematicHandlersMixin):
                             "the file (SWIG) backend instead of IPC"
                         )
                     else:
-                        # Add indicator that IPC was used
+                        # Add indicator that IPC was used. An IPC handler that
+                        # delegated to the SWIG code tags its reply
+                        # ``_backend: "swig"``; that work touched the server's
+                        # board copy, not the live KiCad board, so it must not
+                        # be reported as realtime (#553).
                         if isinstance(result, dict):
-                            result["_backend"] = "ipc"
-                            result["_realtime"] = True
+                            if result.get("_backend") == "swig":
+                                result["_realtime"] = False
+                                result.setdefault(
+                                    "_backend_note",
+                                    "this request was handled by the SWIG code on the "
+                                    "server's copy of the board, not over IPC, so the "
+                                    "board open in the KiCad editor does not reflect it",
+                                )
+                            else:
+                                result["_backend"] = "ipc"
+                                result["_realtime"] = True
 
                         logger.debug(f"IPC command result: {result}")
                         return result
@@ -1231,6 +1244,22 @@ class KiCADInterface(SchematicHandlersMixin):
                     # an IPC read was redirected to SWIG for this command.
                     if swig_fallback_note:
                         result["_backend_note"] = swig_fallback_note
+                    # run_drc runs kicad-cli on the board file. In a realtime
+                    # session the live board can differ from that file, and a
+                    # clean report said nothing about it (#553).
+                    if (
+                        command == "run_drc"
+                        and result.get("success")
+                        and getattr(self, "session_backend", None) == "ipc"
+                        and self._ipc_session_alive()
+                    ):
+                        result["checkedSource"] = "file"
+                        result.setdefault("warnings", []).append(
+                            "DRC checked the board file on disk, not the board open in "
+                            "KiCad. Changes made in the KiCad editor or by realtime (IPC) "
+                            "tools since the last save are not included; run "
+                            "save_project first to check them."
+                        )
 
                 # Update board reference if command was successful
                 if result.get("success", False):
@@ -6122,11 +6151,30 @@ print("ok")
             return {"success": False, "message": str(e)}
 
     def _ipc_delete_trace(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """IPC handler for delete_trace - Note: IPC doesn't support direct trace deletion yet"""
-        # IPC API doesn't have a direct delete track method
-        # Fall back to SWIG for this operation
-        logger.info("delete_trace: Falling back to SWIG (IPC doesn't support trace deletion)")
-        return self.routing_commands.delete_trace(params)
+        """IPC handler for delete_trace - deletes from the live KiCad board (#553).
+
+        This used to call the SWIG delete_trace, which edited the server's
+        own copy of the board while KiCad kept the track, and the dispatcher
+        still labelled the reply as a realtime IPC success. A "move" done as
+        delete + route_trace then left the old copper in place and shorted
+        nets on the live board.
+        """
+        try:
+            if not hasattr(self.ipc_board_api, "delete_tracks"):
+                return {
+                    "success": False,
+                    "message": "IPC backend does not support trace deletion on this installation",
+                }
+            return self.ipc_board_api.delete_tracks(
+                uuid=params.get("traceUuid"),
+                position=params.get("position"),
+                net_name=params.get("net"),
+                layer=params.get("layer"),
+                include_vias=bool(params.get("includeVias", False)),
+            )
+        except Exception as e:
+            logger.error(f"IPC delete_trace error: {e}")
+            return {"success": False, "message": str(e)}
 
     def _ipc_query_traces(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """IPC handler for query_traces - reads traces from the live KiCAD board."""
@@ -6256,7 +6304,12 @@ print("ok")
             # but Claude sends rectangle/rounded_rectangle as shape+width+height.
             # Fall back to the SWIG path which correctly handles both shapes.
             logger.info(f"_ipc_add_board_outline: delegating {shape} to SWIG path")
-            return self.board_commands.add_board_outline(params)
+            result = self.board_commands.add_board_outline(params)
+            # The SWIG path edits the server's board copy, not the live board;
+            # the tag stops the dispatcher reporting it as realtime (#553).
+            if isinstance(result, dict):
+                result["_backend"] = "swig"
+            return result
 
         try:
             from kipy.board_types import BoardSegment

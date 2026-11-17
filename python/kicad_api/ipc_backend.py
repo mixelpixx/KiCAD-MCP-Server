@@ -1501,6 +1501,169 @@ class IPCBoardAPI(BoardAPI):
                 "errorDetails": str(e),
             }
 
+    # Same pick radius as the SWIG delete_trace: nearest track within 1 mm.
+    _DELETE_PICK_RADIUS_MM = 1.0
+
+    def delete_tracks(
+        self,
+        uuid: Optional[str] = None,
+        position: Optional[Dict[str, Any]] = None,
+        net_name: Optional[str] = None,
+        layer: Optional[str] = None,
+        include_vias: bool = False,
+    ) -> Dict[str, Any]:
+        """Delete tracks, arc tracks or vias from the live board (#553).
+
+        Mirrors the SWIG delete_trace contract (python/commands/routing.py):
+        ``net_name`` bulk-deletes every track on that net (``"*"`` = all nets,
+        vias only with ``include_vias``, ``layer`` filters tracks), else
+        ``uuid`` deletes one track or via, else ``position`` deletes the track
+        or via nearest to that point within 1 mm. SWIG board.Tracks() holds
+        tracks, arcs and vias together; kipy lists vias apart, so both lists
+        are searched.
+
+        kipy's remove_items() discards KiCad's per-item deletion status, so
+        the live board is read back after the commit: a reply only says
+        "deleted" when the items are really gone from KiCad.
+        """
+        try:
+            from kipy.board_types import Via
+            from kipy.util.units import to_mm
+
+            board = self._get_board()
+            tracks = list(board.get_tracks())
+            vias = list(board.get_vias())
+
+            targets: List[Any] = []
+            if net_name:
+                for item in [*tracks, *vias]:
+                    item_net = item.net.name if item.net else ""
+                    if net_name != "*" and item_net != net_name:
+                        continue
+                    is_via = isinstance(item, Via)
+                    if is_via and not include_vias:
+                        continue
+                    if layer and not is_via and ipc_layer_name(item.layer) != layer:
+                        continue
+                    targets.append(item)
+                if not targets:
+                    return {
+                        "success": True,
+                        "message": f"Deleted 0 traces on net '{net_name}'",
+                        "deletedCount": 0,
+                    }
+            elif uuid:
+                for item in [*tracks, *vias]:
+                    # item.id is a KIID message; str() gives protobuf text
+                    # ('value: "..."\n'), so compare the value field, the same
+                    # id get_tracks()/get_vias() hand out to query_traces.
+                    if item.id.value == uuid:
+                        targets.append(item)
+                        break
+                if not targets:
+                    return {
+                        "success": False,
+                        "message": "Track not found",
+                        "errorDetails": f"No live track or via with uuid '{uuid}'",
+                    }
+            elif position:
+                unit = position.get("unit") or "mm"
+                scale = {"mm": 1.0, "mil": 0.0254, "inch": 25.4}.get(unit)
+                if scale is None:
+                    return {
+                        "success": False,
+                        "message": "Invalid unit",
+                        "errorDetails": f"unit must be mm, mil or inch, got '{unit}'",
+                    }
+                px = float(position["x"]) * scale
+                py = float(position["y"]) * scale
+
+                def distance(item: Any) -> float:
+                    if isinstance(item, Via):
+                        sx = ex = to_mm(item.position.x)
+                        sy = ey = to_mm(item.position.y)
+                    else:
+                        # Arc tracks are measured on their chord, as SWIG does.
+                        sx, sy = to_mm(item.start.x), to_mm(item.start.y)
+                        ex, ey = to_mm(item.end.x), to_mm(item.end.y)
+                    vx, vy = ex - sx, ey - sy
+                    length_sq = vx * vx + vy * vy
+                    t = 0.0
+                    if length_sq > 0:
+                        t = max(0.0, min(1.0, ((px - sx) * vx + (py - sy) * vy) / length_sq))
+                    return math.hypot(px - (sx + t * vx), py - (sy + t * vy))
+
+                nearest = None
+                best = float("inf")
+                for item in [*tracks, *vias]:
+                    d = distance(item)
+                    if d < best:
+                        best, nearest = d, item
+                if nearest is None or best >= self._DELETE_PICK_RADIUS_MM:
+                    return {
+                        "success": False,
+                        "message": "No track found",
+                        "errorDetails": "No track found near specified position",
+                    }
+                targets.append(nearest)
+            else:
+                return {
+                    "success": False,
+                    "message": "Missing parameters",
+                    "errorDetails": "One of traceUuid, position, or net must be provided",
+                }
+
+            wanted = {item.id.value for item in targets}
+            commit = board.begin_commit()
+            try:
+                board.remove_items(targets)
+                board.push_commit(commit, f"Deleted {len(targets)} track(s)")
+            except Exception as error:
+                try:
+                    board.drop_commit(commit)
+                except Exception:
+                    logger.exception("Could not discard failed delete transaction")
+                return {
+                    "success": False,
+                    "message": "KiCad refused to delete the trace",
+                    "errorDetails": str(error),
+                }
+
+            remaining = {item.id.value for item in [*board.get_tracks(), *board.get_vias()]}
+            still_there = sorted(wanted & remaining)
+            if still_there:
+                return {
+                    "success": False,
+                    "message": "KiCad did not delete the trace",
+                    "errorDetails": (
+                        f"{len(still_there)} of {len(wanted)} item(s) are still on the "
+                        f"live board: {', '.join(still_there)}"
+                    ),
+                    "remainingUuids": still_there,
+                }
+
+            deleted = sorted(wanted)
+            self._notify("tracks_deleted", {"uuids": deleted})
+            if net_name:
+                message = f"Deleted {len(deleted)} traces on net '{net_name}'"
+            elif uuid:
+                message = f"Deleted track: {uuid}"
+            else:
+                message = "Deleted track at specified position"
+            return {
+                "success": True,
+                "message": message,
+                "deletedCount": len(deleted),
+                "deletedUuids": deleted,
+            }
+        except Exception as e:
+            logger.error(f"Failed to delete track: {e}")
+            return {
+                "success": False,
+                "message": "Failed to delete trace",
+                "errorDetails": str(e),
+            }
+
     def add_via(
         self,
         x: float,

@@ -165,6 +165,26 @@ All notable changes to the KiCAD MCP Server project are documented here.
   before the import, and diameters that two padstacks give different drills
   are left alone.
 
+- **`delete_trace` deletes from the live KiCad board in realtime mode (#553).**
+  Its IPC handler called the SWIG `delete_trace`, which removed the track from
+  the server's own copy of the board while KiCad kept it, and the reply still
+  said `success: true`, `_backend: "ipc"`, `_realtime: true`. A move done as
+  delete + `route_trace` (which does go over IPC) left the old copper in place
+  and shorted nets on the live board. `delete_trace` now removes the items
+  through kicad-python in one undo step, with the same parameters as the SWIG
+  tool (`traceUuid` for a track, arc or via, `position` for the nearest one
+  within 1 mm, `net` with `layer` / `includeVias` for bulk delete), and takes
+  the UUIDs `query_traces` returns. kicad-python does not report whether
+  KiCad deleted each item, so the board is read back afterwards and anything
+  still there is an error instead of a success. The dispatcher also no longer
+  stamps `_realtime: true` on an IPC handler's reply that the handler tagged
+  `_backend: "swig"`: `set_footprint_type`'s SWIG fallback already tagged
+  itself and was relabelled, and a rectangle `add_board_outline` (delegated to
+  SWIG) now reports `_realtime: false` with a `_backend_note`. In a realtime
+  session `run_drc` now warns that kicad-cli checked the board file on disk,
+  not the board open in KiCad (`checkedSource: "file"`), because a clean
+  report said nothing about unsaved live edits.
+
 - **`autoroute` works on the board named by `boardPath`.** The path was
   accepted and then ignored: with nothing loaded the call refused with "No
   board is loaded", and with a different board loaded it routed that board
@@ -318,6 +338,25 @@ All notable changes to the KiCAD MCP Server project are documented here.
   JSON-RPC schema declares both parameters too. Node clients get the zod
   default of 100 when they pass no `limit`; when the list was cut, the reply
   says "showing N of M" and how to get the rest.
+
+- **`search_footprints` reads `+`, `.`, `(` and other characters literally,
+  like `list_library_footprints`.** It only turned `*` into a wildcard and
+  read the rest of the pattern as a regex, so `3x14+6` found nothing (`+`
+  meant "one or more 4"), `.` matched any character, and an unbalanced `(`
+  failed with "missing ), unterminated subpattern". Both tools now share one
+  helper: substring, case-insensitive, `*` as a wildcard, everything else
+  literal. The "did you mean" suggestions in `place_component` use it too.
+
+- **`add_library_symbol_property` no longer breaks the schematic when it
+  updates a property** (#379). The update matched the old property with a
+  pattern that stopped at the first `)`, the one closing `(at x y angle)`, so
+  the old `(effects ...)` lines and one closing paren were left behind and
+  the file no longer parsed. The tool now uses the `add_symbol_property`
+  write path from #362: it replaces the whole property block, keeps the
+  field's position, font, justification and hidden state unless the call
+  sets them, ignores same-named properties inside units, adds a new property
+  before the symbol's units in every layout, and refuses to write when the
+  edit would unbalance the file or leave the property outside the symbol.
 
 ## [2.9.0] - 2026-11-11
 

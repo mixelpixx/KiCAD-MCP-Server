@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+import sexpdata
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
@@ -229,3 +230,213 @@ class TestAddLibrarySymbolProperty:
         assert "bbbbbbbb-5555-6666-7777-888888888888" in updated
         assert '(reference "R1")' in updated
         assert "(instances" in updated
+
+
+# --- regression (#379): updates replace the whole property block ------------ #
+
+
+def _lib_symbol(content: str, full_name: str) -> list:
+    """The parsed ``(symbol "LIB:NAME" ...)`` entry under ``(lib_symbols ...)``."""
+    tree = sexpdata.loads(content)
+    lib_symbols = next(
+        child
+        for child in tree
+        if isinstance(child, list) and child and child[0] == sexpdata.Symbol("lib_symbols")
+    )
+    return next(
+        child
+        for child in lib_symbols
+        if isinstance(child, list) and len(child) > 1 and child[1] == full_name
+    )
+
+
+def _heads(node: list) -> list[str]:
+    """Head names of every direct child list of *node*."""
+    return [str(child[0]) for child in node if isinstance(child, list) and child]
+
+
+def _property(node: list, name: str) -> list:
+    matches = [
+        child
+        for child in node
+        if isinstance(child, list)
+        and child
+        and child[0] == sexpdata.Symbol("property")
+        and child[1] == name
+    ]
+    assert len(matches) == 1, f"expected one {name!r} property, found {len(matches)}"
+    return matches[0]
+
+
+def _set(sch: Path, name: str, value: str, **extra) -> dict:
+    params = {
+        "schematicPath": str(sch),
+        "libraryName": "Device",
+        "symbolName": "R",
+        "propertyName": name,
+        "propertyValue": value,
+    }
+    params.update(extra)
+    return add_library_symbol_property(params)
+
+
+class TestUpdateReplacesWholeProperty:
+    """The old update regex stopped at the first ``)`` -- the ``(at x y angle)``."""
+
+    def test_update_leaves_no_orphaned_effects(self, tmp_path):
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_MINIMAL_SCH, encoding="utf-8")
+
+        result = _set(sch, "Reference", "RR")
+
+        assert result["success"] is True
+        updated = sch.read_text(encoding="utf-8")
+        symbol = _lib_symbol(updated, "Device:R")
+        # An orphaned tail shows up as an (effects ...) directly under the symbol.
+        assert "effects" not in _heads(symbol)
+        assert "hide" not in _heads(symbol)
+        ref = _property(symbol, "Reference")
+        assert ref[2] == "RR"
+        assert "effects" in _heads(ref)
+        # The unit and the rest of the file stay where they were.
+        assert '(symbol "R_1_1"' in updated
+        assert _heads(sexpdata.loads(updated)).count("symbol") == 1
+        assert '(reference "R1")' in updated
+
+    def test_update_keeps_position_and_hidden_state(self, tmp_path):
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_MINIMAL_SCH, encoding="utf-8")
+
+        assert _set(sch, "Reference", "RR")["success"] is True
+        assert _set(sch, "Footprint", "Resistor_SMD:R_0402_1005Metric")["success"] is True
+
+        symbol = _lib_symbol(sch.read_text(encoding="utf-8"), "Device:R")
+        ref = _property(symbol, "Reference")
+        assert [str(a) for a in next(c for c in ref if isinstance(c, list))] == [
+            "at",
+            "0",
+            "2.54",
+            "0",
+        ]
+        footprint = _property(symbol, "Footprint")
+        assert footprint[2] == "Resistor_SMD:R_0402_1005Metric"
+        assert "hide" in _heads(footprint)
+
+    def test_update_keeps_effects_hide_and_justify(self, tmp_path):
+        """KiCad 8/9 write (hide yes) inside (effects ...); it must survive an edit."""
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(
+            _MINIMAL_SCH.replace(
+                '(property "Value" "R" (at 0 -2.54 0)\n'
+                "\t\t\t\t(effects (font (size 1.27 1.27)))",
+                '(property "Value" "R" (at 0 -2.54 90)\n'
+                "\t\t\t\t(effects (font (size 1.5 1.5)) (justify left) (hide yes))",
+            ),
+            encoding="utf-8",
+        )
+
+        assert _set(sch, "Value", "10k")["success"] is True
+
+        updated = sch.read_text(encoding="utf-8")
+        value = _property(_lib_symbol(updated, "Device:R"), "Value")
+        assert value[2] == "10k"
+        assert "hide" in _heads(value)
+        assert "(at 0 -2.54 90)" in updated
+        assert "(size 1.5 1.5)" in updated
+        assert "(justify left)" in updated
+
+    def test_update_value_with_parens(self, tmp_path):
+        """Parens inside a quoted value are text, not structure."""
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_MINIMAL_SCH, encoding="utf-8")
+
+        assert _set(sch, "Value", "Ceramic (X7R")["success"] is True
+        assert _set(sch, "Value", "Ceramic (X7R) 50V")["success"] is True
+
+        symbol = _lib_symbol(sch.read_text(encoding="utf-8"), "Device:R")
+        assert _property(symbol, "Value")[2] == "Ceramic (X7R) 50V"
+        assert "effects" not in _heads(symbol)
+
+
+# --- regression (#379): new properties land on the symbol, before its units -- #
+
+_COMPACT_SCH = (
+    '(kicad_sch (version 20260306) (generator "eeschema")\n'
+    '\t(lib_symbols (symbol "Device:R" (property "Reference" "R" (at 0 0 0)'
+    " (effects (font (size 1.27 1.27))))"
+    ' (symbol "R_0_1" (rectangle (start -1 1) (end 1 -1)))))\n'
+    ")\n"
+)
+
+
+def test_new_property_precedes_units_in_compact_symbol(tmp_path):
+    """The old anchor needed a unit at exactly three tabs; otherwise it appended
+    the property after the units."""
+    sch = tmp_path / "compact.kicad_sch"
+    sch.write_text(_COMPACT_SCH, encoding="utf-8")
+
+    assert _set(sch, "MPN", "RC0402")["success"] is True
+
+    symbol = _lib_symbol(sch.read_text(encoding="utf-8"), "Device:R")
+    heads = _heads(symbol)
+    assert heads == ["property", "property", "symbol"]
+    assert _property(symbol, "MPN")[2] == "RC0402"
+
+
+def test_update_ignores_same_named_property_in_unit(tmp_path):
+    """Only the symbol's own property is rewritten, not a unit's."""
+    sch = tmp_path / "unit.kicad_sch"
+    sch.write_text(
+        _COMPACT_SCH.replace(
+            '(property "Reference" "R" (at 0 0 0) (effects (font (size 1.27 1.27))))',
+            "",
+        ).replace(
+            '(symbol "R_0_1" ',
+            '(symbol "R_0_1" (property "MPN" "unit" (at 0 0 0)) ',
+        ),
+        encoding="utf-8",
+    )
+
+    assert _set(sch, "MPN", "RC0402")["success"] is True
+
+    symbol = _lib_symbol(sch.read_text(encoding="utf-8"), "Device:R")
+    assert _property(symbol, "MPN")[2] == "RC0402"
+    unit = next(c for c in symbol if isinstance(c, list) and c[0] == sexpdata.Symbol("symbol"))
+    assert _property(unit, "MPN")[2] == "unit"
+
+
+# --- write guards ------------------------------------------------------------ #
+
+
+def test_unbalanced_edit_is_refused(tmp_path, monkeypatch):
+    import commands.add_library_symbol_property as mod
+
+    monkeypatch.setattr(mod, "_build_property", lambda *a, **k: '(property "MPN" "X1"')
+    sch = tmp_path / "test.kicad_sch"
+    sch.write_text(_MINIMAL_SCH, encoding="utf-8")
+
+    result = _set(sch, "MPN", "X1")
+
+    assert result["success"] is False
+    assert "unbalance" in result["message"]
+    assert sch.read_text(encoding="utf-8") == _MINIMAL_SCH
+
+
+def test_property_outside_symbol_is_refused(tmp_path, monkeypatch):
+    """A balanced splice at the wrong depth passes the balance guard; the
+    direct-child re-check must still stop it."""
+    import commands.add_library_symbol_property as mod
+
+    monkeypatch.setattr(
+        mod,
+        "_splice_child",
+        lambda block, anchor, indent, tail_indent, new_prop: new_prop + "\n" + block,
+    )
+    sch = tmp_path / "compact.kicad_sch"
+    sch.write_text(_COMPACT_SCH, encoding="utf-8")
+
+    result = _set(sch, "MPN", "RC0402")
+
+    assert result["success"] is False
+    assert "direct child" in result["message"]
+    assert sch.read_text(encoding="utf-8") == _COMPACT_SCH

@@ -18,6 +18,17 @@ from utils.platform_helper import PlatformHelper
 logger = logging.getLogger("kicad_interface")
 
 
+def footprint_name_pattern(pattern: str) -> "re.Pattern[str]":
+    """Compile a footprint-name search pattern.
+
+    The pattern matches anywhere in a name, case-insensitively. ``*`` matches
+    any run of characters and every other character is literal, so ``3x14+6``
+    and ``0.5`` mean what they say and an unbalanced ``(`` is not an error.
+    """
+    parts = (re.escape(part) for part in pattern.split("*"))
+    return re.compile(".*".join(parts), re.IGNORECASE)
+
+
 class LibraryManager:
     """
     Manages KiCAD footprint libraries
@@ -344,7 +355,8 @@ class LibraryManager:
         Search for footprints matching a pattern
 
         Args:
-            pattern: Search pattern (supports wildcards *, case-insensitive)
+            pattern: Matched anywhere in the name, case-insensitively; ``*``
+                is a wildcard and every other character is literal
             limit: Maximum number of results to return
             library: Only search this library nickname (case-insensitive)
 
@@ -352,11 +364,7 @@ class LibraryManager:
             List of dicts with 'library', 'footprint', and 'full_name' keys
         """
         results = []
-        pattern_lower = pattern.lower()
-
-        # Convert wildcards to regex
-        regex_pattern = pattern_lower.replace("*", ".*")
-        regex = re.compile(regex_pattern)
+        regex = footprint_name_pattern(pattern)
 
         nicknames = list(self.libraries.keys())
         if library:
@@ -366,7 +374,7 @@ class LibraryManager:
             footprints = self.list_footprints(library_nickname)
 
             for footprint in footprints:
-                if regex.search(footprint.lower()):
+                if regex.search(footprint):
                     results.append(
                         {
                             "library": library_nickname,
@@ -480,8 +488,7 @@ class LibraryCommands:
 
             name_filter = params.get("filter")
             if name_filter:
-                parts = (re.escape(part) for part in name_filter.split("*"))
-                regex = re.compile(".*".join(parts), re.IGNORECASE)
+                regex = footprint_name_pattern(name_filter)
                 footprints = [name for name in footprints if regex.search(name)]
 
             total = len(footprints)
