@@ -490,7 +490,7 @@ class SchematicHandlersMixin:
                     trim_start -= 1
                 content = content[:trim_start] + content[b_end + 1 :]
 
-            with open(sch_file, "w", encoding="utf-8") as f:
+            with open(sch_file, "w", encoding="utf-8", newline="") as f:
                 f.write(content)
 
             deleted_count = len(blocks_to_delete)
@@ -653,7 +653,7 @@ class SchematicHandlersMixin:
             if doomed_indices:
                 for i in reversed(doomed_indices):
                     del sch_data[i]
-                with open(sch_file, "w", encoding="utf-8") as f:
+                with open(sch_file, "w", encoding="utf-8", newline="") as f:
                     f.write(kicad_dumps(sch_data))
                 logger.info(
                     "Deleted %d dangling label(s) at removed pin positions",
@@ -950,7 +950,7 @@ class SchematicHandlersMixin:
 
             content = content[:block_start] + block_text + content[block_end + 1 :]
 
-            with open(sch_file, "w", encoding="utf-8") as f:
+            with open(sch_file, "w", encoding="utf-8", newline="") as f:
                 f.write(content)
 
             changes: Dict[str, Any] = {
@@ -2132,7 +2132,7 @@ class SchematicHandlersMixin:
 
             WireManager.sync_junctions(sch_data)
 
-            with open(schematic_path, "w", encoding="utf-8") as f:
+            with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                 f.write(kicad_dumps(sch_data))
 
             return {
@@ -2231,7 +2231,7 @@ class SchematicHandlersMixin:
 
             WireManager.sync_junctions(sch_data)
 
-            with open(schematic_path, "w", encoding="utf-8") as f:
+            with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                 f.write(kicad_dumps(sch_data))
 
             return {
@@ -2433,7 +2433,7 @@ class SchematicHandlersMixin:
                 rotation = at_entry[3] if len(at_entry) > 3 else 0
                 item[at_idx] = [_SYM_AT, float(new_x), float(new_y), rotation]
 
-                with open(schematic_path, "w", encoding="utf-8") as f:
+                with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                     f.write(kicad_dumps(sch_data))
 
                 return {
@@ -2805,7 +2805,7 @@ class SchematicHandlersMixin:
                     "message": f"Sheet '{sheet_name}' not found in {schematic_path}",
                 }
 
-            with open(sch_file, "w", encoding="utf-8") as f:
+            with open(sch_file, "w", encoding="utf-8", newline="") as f:
                 f.write(modified)
 
             return {

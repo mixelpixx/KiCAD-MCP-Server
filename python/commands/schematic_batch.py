@@ -191,7 +191,7 @@ class SchematicBatchCommands:
                             raw_content = (
                                 raw_content[:block_start] + new_block + raw_content[block_end + 1 :]
                             )
-                            schematic_file.write_text(raw_content, encoding="utf-8")
+                            schematic_file.write_bytes(raw_content.encode("utf-8"))
                             block_text = new_block
 
                     if block_text:
@@ -352,7 +352,7 @@ class SchematicBatchCommands:
             if trim_start > 0 and content[trim_start - 1] == "\n":
                 trim_start -= 1
             content = content[:trim_start] + content[block_end + 1 :]
-            sch_file.write_text(content, encoding="utf-8")
+            sch_file.write_bytes(content.encode("utf-8"))
 
             derived_project_path = _find_project_root(sch_file.parent)
             loader = DynamicSymbolLoader(project_path=derived_project_path)

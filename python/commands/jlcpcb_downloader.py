@@ -511,7 +511,7 @@ def download_yaqwsx(cache_dir: Path, progress: ProgressFn = None) -> Path:
             if old.exists():
                 old.unlink()
         if build:
-            stamp.write_text(build, encoding="utf-8")
+            stamp.write_bytes(build.encode("utf-8"))
 
     def _complete(dst: Path, remote_size: Optional[int]) -> bool:
         # Only a file of the published size is reused. Anything shorter is a

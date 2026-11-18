@@ -151,6 +151,7 @@ def upgrade_with_kicad_cli(path: Path, out: Path) -> subprocess.CompletedProcess
         text=True,
         timeout=120,
         check=False,
+        stdin=subprocess.DEVNULL,
     )
 
 

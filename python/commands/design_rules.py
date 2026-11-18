@@ -822,7 +822,7 @@ class DesignRuleCommands:
                 violations_file = os.path.join(board_dir, f"{board_name}_drc_violations.json")
 
                 # Always save violations to JSON file (for large result sets)
-                with open(violations_file, "w", encoding="utf-8") as f:
+                with open(violations_file, "w", encoding="utf-8", newline="") as f:
                     json.dump(
                         {
                             "board": board_file,

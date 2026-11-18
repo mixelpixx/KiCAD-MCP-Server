@@ -98,7 +98,7 @@ def _text_insert(file_path: Path, sexp_text: str) -> bool:
         insert_at = line_start
     content = content[:insert_at] + sexp_text + content[insert_at:]
 
-    with open(file_path, "w", encoding="utf-8") as f:
+    with open(file_path, "w", encoding="utf-8", newline="") as f:
         f.write(content)
     return True
 
@@ -226,7 +226,7 @@ class WireManager:
             WireManager.sync_junctions(sch_data)
 
             # Write back
-            with open(schematic_path, "w", encoding="utf-8") as f:
+            with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                 output = kicad_dumps(sch_data)
                 f.write(output)
 
@@ -306,7 +306,7 @@ class WireManager:
             WireManager.sync_junctions(sch_data)
 
             # Write back
-            with open(schematic_path, "w", encoding="utf-8") as f:
+            with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                 output = kicad_dumps(sch_data)
                 f.write(output)
 
@@ -542,7 +542,7 @@ class WireManager:
             if wires or drop:
                 WireManager.sync_junctions(sch_data)
 
-            with open(schematic_path, "w", encoding="utf-8") as f:
+            with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                 f.write(kicad_dumps(sch_data))
             logger.info(
                 f"Added {len(labels)} label(s) and {len(wires)} wire(s) to {schematic_path.name}"
@@ -592,7 +592,7 @@ class WireManager:
 
             sch_data.insert(sheet_instances_index, label_sexp)
 
-            with open(schematic_path, "w", encoding="utf-8") as f:
+            with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                 f.write(kicad_dumps(sch_data))
 
             logger.info(f"Successfully added label '{text}' to {schematic_path.name}")
@@ -1046,7 +1046,7 @@ class WireManager:
             logger.info(f"Injected no-connect at {position}")
 
             # Write back
-            with open(schematic_path, "w", encoding="utf-8") as f:
+            with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                 output = kicad_dumps(sch_data)
                 f.write(output)
 
@@ -1129,7 +1129,7 @@ class WireManager:
                 if match_fwd or match_rev:
                     del sch_data[i]
                     WireManager.sync_junctions(sch_data)
-                    with open(schematic_path, "w", encoding="utf-8") as f:
+                    with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                         f.write(kicad_dumps(sch_data))
                     logger.info(f"Deleted wire from {start_point} to {end_point}")
                     return True
@@ -1226,7 +1226,7 @@ class WireManager:
                         continue
 
                 del sch_data[i]
-                with open(schematic_path, "w", encoding="utf-8") as f:
+                with open(schematic_path, "w", encoding="utf-8", newline="") as f:
                     f.write(kicad_dumps(sch_data))
                 logger.info(f"Deleted label '{net_name}'")
                 return True

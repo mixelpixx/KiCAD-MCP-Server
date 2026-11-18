@@ -650,14 +650,14 @@ class ExportCommands:
                 html.append(f"<td>{value}</td>")
             html.append("</tr>")
         html.append("</table></body></html>")
-        with open(path, "w") as f:
+        with open(path, "w", newline="") as f:
             f.write("\n".join(html))
 
     def _export_bom_json(self, path: str, components: List[Dict[str, Any]]) -> None:
         """Export BOM to JSON format"""
         import json
 
-        with open(path, "w") as f:
+        with open(path, "w", newline="") as f:
             json.dump({"components": components}, f, indent=2)
 
     def _find_kicad_cli(self) -> Optional[str]:
@@ -718,7 +718,7 @@ class ExportCommands:
         logs_dir = Path(project_dir) / "logs"
         logs_dir.mkdir(exist_ok=True)
         dest = str(logs_dir / f"mcp_log_{timestamp}.txt")
-        with open(dest, "w", encoding="utf-8") as f:
+        with open(dest, "w", encoding="utf-8", newline="") as f:
             f.writelines(session_lines)
 
         logger.info(f"[DEV] MCP session log saved to: {dest} ({len(session_lines)} lines)")

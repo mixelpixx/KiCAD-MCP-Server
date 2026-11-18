@@ -173,7 +173,10 @@ def test_kicad_keeps_the_block_as_written(tmp_path: Path) -> None:
     r = _add(root, tmp_path / "power.kicad_sch")
     assert r["success"] is True
     up = subprocess.run(
-        [cli, "sch", "upgrade", "--force", str(root)], capture_output=True, text=True
+        [cli, "sch", "upgrade", "--force", str(root)],
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
     )
     assert up.returncode == 0, up.stderr
     content = root.read_text(encoding="utf-8")

@@ -166,7 +166,7 @@ class FootprintCreator:
         lines.append(")")
 
         content = "\n".join(lines) + "\n"
-        mod_path.write_text(content, encoding="utf-8")
+        mod_path.write_bytes(content.encode("utf-8"))
         logger.info(f"Created footprint: {mod_path} ({len(pads)} pads)")
 
         return {
@@ -288,7 +288,7 @@ class FootprintCreator:
                 "error": f'Pad "{pad_number}" not found or no changes made in {footprint_path}',
             }
 
-        path.write_text("\n".join(result_lines), encoding="utf-8")
+        path.write_bytes("\n".join(result_lines).encode("utf-8"))
         logger.info(f"Edited pad {pad_number} in {path.name}: {updated}")
 
         return {
@@ -386,7 +386,7 @@ class FootprintCreator:
             return {"success": False, "error": "Malformed footprint (no closing paren)"}
 
         new_content = rstripped[:insert_pos] + model_block + "\n" + rstripped[insert_pos:] + "\n"
-        path.write_text(new_content, encoding="utf-8")
+        path.write_bytes(new_content.encode("utf-8"))
         logger.info(f"add_3d_model: {model_path} -> {path.name} (replaced {removed})")
 
         return {
@@ -626,7 +626,7 @@ class FootprintCreator:
         else:
             content += "\n" + new_entry + "\n)\n"
 
-        table_path.write_text(content, encoding="utf-8")
+        table_path.write_bytes(content.encode("utf-8"))
         logger.info(f"Registered library '{name}' in {table_path}")
 
         return {

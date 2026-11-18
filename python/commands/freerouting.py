@@ -102,6 +102,28 @@ def _find_java(required: int = DEFAULT_REQUIRED_JAVA) -> Optional[str]:
     return found[0] if found else None
 
 
+def on_disk_name(path: str) -> str:
+    """``path`` with its file name in the letter case the existing file has on disk.
+
+    On a case-insensitive file system ``Board.kicad_pcb`` and ``board.kicad_pcb`` name one file.
+    A save through the other spelling makes KiCad rename the board and its ``.kicad_pro`` to it
+    (Windows 11, KiCad 10.0.1). Returns ``path`` unchanged when no such file exists, when the
+    name already matches, or when the directory cannot be listed.
+    """
+    p = Path(path)
+    try:
+        if not p.exists():
+            return path
+        if p.name in os.listdir(p.parent):
+            return path
+        for entry in os.listdir(p.parent):
+            if entry.lower() == p.name.lower() and os.path.samefile(p.parent / entry, p):
+                return str(p.parent / entry)
+    except OSError:
+        pass
+    return path
+
+
 def _api_ok(result: Any) -> bool:
     """True when a pcbnew Specctra export/import call reports success.
 
@@ -919,7 +941,7 @@ def _trim_shared_freerouting_log(max_bytes: int = 5 * 1024 * 1024) -> None:
     try:
         log_path = Path(tempfile.gettempdir()) / "freerouting" / "freerouting.log"
         if log_path.is_file() and log_path.stat().st_size > max_bytes:
-            with open(log_path, "w", encoding="utf-8"):
+            with open(log_path, "w", encoding="utf-8", newline=""):
                 pass
     except OSError:
         pass
@@ -1087,6 +1109,10 @@ class FreeroutingCommands:
 
     def _save_board(self, board_path: str, after: str) -> None:
         """Save self.board to board_path; report a successful save."""
+        # On a case-insensitive file system (Windows, macOS) a boardPath in another letter case
+        # names the same file, but KiCad's save would rename the board and its .kicad_pro to
+        # that case. Save under the name the file already has.
+        board_path = on_disk_name(board_path)
         try:
             with preserve_project_settings(board_path):
                 self.board.Save(board_path)
@@ -1156,7 +1182,7 @@ class FreeroutingCommands:
             track_um = float(m.group(1)) if m else 0.0
             grown = _grow_hole_keepouts(text, edge_um - track_um)
             if grown != text:
-                with open(dsn_path, "w", encoding="utf-8") as fh:
+                with open(dsn_path, "w", encoding="utf-8", newline="") as fh:
                     fh.write(grown)
         except Exception as e:
             logger.warning(f"Edge-clearance keepout adjustment skipped: {e}")
@@ -1441,7 +1467,7 @@ class FreeroutingCommands:
                 }
             if rules_text:
                 rules_path = os.path.splitext(dsn_path)[0] + ".rules"
-                with open(rules_path, "w", encoding="utf-8") as fh:
+                with open(rules_path, "w", encoding="utf-8", newline="") as fh:
                     fh.write(rules_text)
             else:
                 logger.info(f"signalLayers {signal_layers}: nothing to restrict or cost")
@@ -1659,7 +1685,7 @@ class FreeroutingCommands:
         try:
             with open(ses_path, "r", encoding="utf-8", errors="replace") as fh:
                 routed = _strip_ses_placement(fh.read())
-            with open(import_copy, "w", encoding="utf-8") as fh:
+            with open(import_copy, "w", encoding="utf-8", newline="") as fh:
                 fh.write(routed)
             # The left-out nets' copper is not in the session; lock it so the import
             # keeps it (unlocked tracks are cleared), then put the lock flags back.

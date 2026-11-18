@@ -169,6 +169,7 @@ def _run_netlist(sch_path: Path) -> dict:
         check=True,
         capture_output=True,
         env=env,
+        stdin=subprocess.DEVNULL,
     )
     return _extract_pin_to_net(out)
 

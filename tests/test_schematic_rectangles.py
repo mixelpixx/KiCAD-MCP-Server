@@ -380,6 +380,7 @@ def test_kicad_cli_loads_the_result(tmp_path):
         ["kicad-cli", "sch", "export", "netlist", "-o", str(out), str(path)],
         capture_output=True,
         text=True,
+        stdin=subprocess.DEVNULL,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert out.exists()

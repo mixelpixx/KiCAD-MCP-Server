@@ -617,7 +617,7 @@ class DynamicSymbolLoader:
         # Insert the symbol block just before the closing ) of lib_symbols
         content = content[:lib_sym_end] + "\n    " + indented_block + "\n  " + content[lib_sym_end:]
 
-        with open(schematic_path, "w", encoding="utf-8") as f:
+        with open(schematic_path, "w", encoding="utf-8", newline="") as f:
             f.write(content)
 
         # Handle both Path objects and strings
@@ -1095,7 +1095,7 @@ class DynamicSymbolLoader:
         else:
             content = content[:insert_at] + instance_block + "\n  " + content[insert_at:]
 
-        with open(schematic_path, "w", encoding="utf-8") as f:
+        with open(schematic_path, "w", encoding="utf-8", newline="") as f:
             f.write(content)
 
         logger.info(f"Added component instance {reference} ({full_lib_id}) at ({x}, {y})")
