@@ -20,6 +20,11 @@ describe("computeCommandTimeout", () => {
     expect(computeCommandTimeout("place_component", { x: 1 })).toBe(DEFAULT_COMMAND_TIMEOUT_MS);
   });
 
+  it("lets KiCad finish the variant BOM export before restarting the worker", () => {
+    // The CLI subprocess can take up to 120 seconds, plus startup and cleanup.
+    expect(computeCommandTimeout("export_variant_bom")).toBeGreaterThan(120_000);
+  });
+
   it("gives size-bound commands the blanket long allowance", () => {
     for (const command of LONG_RUNNING_COMMANDS) {
       expect(computeCommandTimeout(command, {})).toBe(LONG_COMMAND_TIMEOUT_MS);

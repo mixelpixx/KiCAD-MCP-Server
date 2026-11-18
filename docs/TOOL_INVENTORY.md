@@ -5,9 +5,9 @@
      in this file are preserved, so improving the wording here is safe. -->
 
 **Version:** 2.9.0
-**Tools registered on the server:** 257
-**Tools indexed for keyword discovery:** 257 in 20 categories
-**Last updated:** 2026-11-15
+**Tools registered on the server:** 262
+**Tools indexed for keyword discovery:** 262 in 21 categories
+**Last updated:** 2026-11-18
 
 ## How to read this document
 
@@ -292,6 +292,20 @@ _Source: `src/tools/schematic-hierarchy.ts`_
 
 ---
 
+## Assembly Variants (5 tools)
+
+_Source: `src/tools/variants.ts`_
+
+| Tool                    | Description                                                                  | Discovery  |
+| ----------------------- | ---------------------------------------------------------------------------- | ---------- |
+| `list_variants`         | List the assembly variants registered in a KiCad project.                    | `variants` |
+| `create_variant`        | Register a named assembly variant in a KiCad project.                        | `variants` |
+| `get_component_variant` | Read a component's DNP and field overrides for an assembly variant.          | `variants` |
+| `set_component_variant` | Set or remove a component's DNP and field overrides for an assembly variant. | `variants` |
+| `export_variant_bom`    | Export the bill of materials for a named assembly variant.                   | `variants` |
+
+---
+
 ## Schematic Layout and Cosmetics (5 tools)
 
 _Source: `src/tools/schematic-layout.ts`_
@@ -535,6 +549,7 @@ _Source: `src/tools/toolboxes.ts`_
 | `schematic.ts`           | Schematic                              | 49      |
 | `schematic-batch.ts`     | Schematic Batch Operations             | 9       |
 | `schematic-hierarchy.ts` | Hierarchical Sheets                    | 5       |
+| `variants.ts`            | Assembly Variants                      | 5       |
 | `schematic-layout.ts`    | Schematic Layout and Cosmetics         | 5       |
 | `validation.ts`          | File Validation                        | 2       |
 | `library.ts`             | Footprint Libraries and Library Tables | 7       |
@@ -552,11 +567,11 @@ _Source: `src/tools/toolboxes.ts`_
 | `digikey-api.ts`         | digikey-api.ts                         | 3       |
 | `gui-driver.ts`          | gui-driver.ts                          | 11      |
 | `toolboxes.ts`           | toolboxes.ts                           | 3       |
-| **Total**                |                                        | **257** |
+| **Total**                |                                        | **262** |
 
 ## Summary by discovery category
 
-These are the categories `search_tools` searches. They cover 257 of the 257 registered tools.
+These are the categories `search_tools` searches. They cover 262 of the 262 registered tools.
 
 | Category                   | Tools indexed |
 | -------------------------- | ------------- |
@@ -573,6 +588,7 @@ These are the categories `search_tools` searches. They cover 257 of the 257 regi
 | `schematic_batch`          | 6             |
 | `routing`                  | 16            |
 | `autoroute`                | 4             |
+| `variants`                 | 5             |
 | `validation`               | 2             |
 | `footprint`                | 5             |
 | `import`                   | 2             |
@@ -580,6 +596,6 @@ These are the categories `search_tools` searches. They cover 257 of the 257 regi
 | `parts-registry`           | 3             |
 | `digikey`                  | 3             |
 | `gui-driver`               | 11            |
-| **Indexed total**          | **257**       |
+| **Indexed total**          | **262**       |
 | Registered but not indexed | 0             |
-| **Registered total**       | **257**       |
+| **Registered total**       | **262**       |

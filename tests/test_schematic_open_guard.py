@@ -349,6 +349,7 @@ def test_import_eagle_project_over_an_open_schematic(project, existing, eagle_sc
 _NOT_SCHEMATIC_WRITERS = {
     "sync_schematic_to_board": "writes the board",
     "create_board_from_schematic": "writes the board",
+    "create_variant": "writes only the .kicad_pro variant registry",
     "set_symbol_pin_type": "writes a .kicad_sym library",
     **dict.fromkeys(
         [

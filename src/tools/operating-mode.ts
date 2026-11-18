@@ -135,6 +135,7 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set<string>([
   "get_elements_in_region",
   "get_net_at_point",
   "get_net_connections",
+  "get_component_variant",
   "get_schematic_component",
   "get_schematic_pin_locations",
   "get_schematic_view",
@@ -142,6 +143,7 @@ export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set<string>([
   "get_sheet_properties",
   "get_wire_connections",
   "list_floating_labels",
+  "list_variants",
   "list_schematic_components",
   "list_schematic_labels",
   "list_schematic_nets",
@@ -183,6 +185,7 @@ export const EXPORT_TOOLS: ReadonlySet<string> = new Set<string>([
   "export_schematic_pdf",
   "export_schematic_svg",
   "export_svg",
+  "export_variant_bom",
   "export_vrml",
 ]);
 
