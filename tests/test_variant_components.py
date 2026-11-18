@@ -33,6 +33,7 @@ def test_set_dnp_and_fields_applies_to_native_bom_only_in_selected_variant(desig
     import csv
     import os
     import subprocess
+
     from commands.variant_components import set_component_variant
     from utils.kicad_cli import resolve_kicad_cli
 

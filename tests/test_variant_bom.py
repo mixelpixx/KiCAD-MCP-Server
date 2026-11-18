@@ -2,11 +2,11 @@
 
 import csv
 import json
+import os
 import subprocess
 from pathlib import Path
 
 import pytest
-
 from commands.variant_bom import export_variant_bom
 from utils.kicad_cli import resolve_kicad_cli
 
@@ -136,7 +136,7 @@ def test_failed_export_preserves_previous_csv(design, monkeypatch, failure):
 @pytest.mark.unit
 def test_rejects_csv_alias_for_input(design, monkeypatch):
     output = Path(design["outputPath"])
-    output.hardlink_to(Path(design["projectPath"]))
+    os.link(design["projectPath"], output)
     monkeypatch.setattr(subprocess, "run", lambda *a, **kw: pytest.fail("unexpected CLI call"))
     result = export_variant_bom(design)
     assert not result["success"] and result["error"]

@@ -294,7 +294,7 @@ class TestKeyOrderIsPreserved:
     ]
 
     def test_surviving_keys_keep_kicad_order(self, tmp_path):
-        from utils.project_settings_guard import write_project_json_atomic, merge_preserved_keys
+        from utils.project_settings_guard import merge_preserved_keys, write_project_json_atomic
 
         before = {k: {} for k in self.KICAD_ORDER}
         before["net_settings"] = {"classes": [{"name": "Default"}]}
@@ -314,7 +314,7 @@ class TestKeyOrderIsPreserved:
         assert written[-1] == "net_settings"
 
     def test_restored_value_is_the_on_disk_one(self, tmp_path):
-        from utils.project_settings_guard import write_project_json_atomic, merge_preserved_keys
+        from utils.project_settings_guard import merge_preserved_keys, write_project_json_atomic
 
         before = {"meta": {"version": 3}, "net_settings": _CUSTOM_NET_SETTINGS}
         after = {"meta": {"version": 3}, "net_settings": {"classes": [{"name": "Default"}]}}
