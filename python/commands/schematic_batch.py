@@ -892,8 +892,8 @@ class SchematicBatchCommands:
                     f"Power nets without PWR_FLAG: {', '.join(missing)}. "
                     "A PWR_FLAG marks a net as driven and silences the "
                     '"power pin not driven" ERC; it belongs only where the rail '
-                    "is genuinely supplied from off the sheet (a connector, a "
-                    "battery, or a regulator not drawn yet). To tie a pin to an "
+                    "is genuinely supplied from off the sheet (a connector or "
+                    "a battery). To tie a pin to an "
                     "existing rail, place that rail's power symbol on the pin."
                 ]
         except Exception:

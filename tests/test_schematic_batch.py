@@ -487,6 +487,8 @@ class TestPwrFlagWarning:
         assert "marks a net as driven" in message
         assert "power pin not driven" in message
         assert "off the sheet" in message
+        assert "connector" in message and "battery" in message
+        assert "regulator" not in message
         assert "power symbol" in message
         assert "Add a PWR_FLAG" not in message
 
