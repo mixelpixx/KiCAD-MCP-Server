@@ -681,6 +681,7 @@ def _docker_available() -> bool:
             [docker, "info"],
             capture_output=True,
             timeout=10,
+            stdin=subprocess.DEVNULL,
         )
         return proc.returncode == 0
     except Exception:
@@ -695,6 +696,7 @@ def _java_version_ok(java_exe: str, required: int = DEFAULT_REQUIRED_JAVA) -> bo
             capture_output=True,
             text=True,
             timeout=10,
+            stdin=subprocess.DEVNULL,
         )
         output = proc.stderr or proc.stdout
         # Parse version like: openjdk version "17.0.18"
@@ -1721,6 +1723,7 @@ class FreeroutingCommands:
                     text=True,
                     timeout=timeout,
                     cwd=os.path.dirname(dsn_path),
+                    stdin=subprocess.DEVNULL,
                 )
                 attempt_elapsed = round(time.time() - attempt_start, 1)
                 if kicad_rule_files and kicad_rules is None:
@@ -2121,7 +2124,7 @@ class FreeroutingCommands:
                 fd, reconciled_temp = tempfile.mkstemp(
                     suffix=".ses", prefix="reconciled-", dir=os.path.dirname(ses_path) or None
                 )
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
                     f.write(fixed_text)
                 import_path = reconciled_temp
                 if remapped:
@@ -2200,6 +2203,7 @@ class FreeroutingCommands:
                     capture_output=True,
                     text=True,
                     timeout=10,
+                    stdin=subprocess.DEVNULL,
                 )
                 java_version = (proc.stderr or proc.stdout).strip().split("\n")[0]
                 java_ok = _java_version_ok(java_exe, required)

@@ -34,12 +34,38 @@ from commands.pin_locator import PinLocator  # noqa: E402
 from commands.schematic import SchematicManager  # noqa: E402
 from commands.wire_dragger import WireDragger  # noqa: E402
 
-_KICAD_CLI = shutil.which("kicad-cli")
-_DEVICE_LIB = Path("/usr/share/kicad/symbols/Device.kicad_sym")
+
+def _resolve_cli_or_warn():
+    """kicad-cli as the server finds it (PATH, then install dirs such as Program Files), or None
+    with a visible warning, so a run without it doesn't look fully covered."""
+    from utils.kicad_cli import resolve_kicad_cli
+
+    cli = resolve_kicad_cli()
+    if cli is None:
+        import warnings
+
+        warnings.warn("kicad-cli not found (PATH or install dirs): kicad-cli oracle tests skipped")
+    return cli
+
+
+def _device_lib():
+    """Device.kicad_sym from the same library dirs the server's symbol loader uses (KICAD*_SYMBOL_DIR,
+    install roots), not only /usr/share/kicad."""
+    from commands.dynamic_symbol_loader import DynamicSymbolLoader
+
+    for d in DynamicSymbolLoader().find_kicad_symbol_libraries():
+        p = Path(d) / "Device.kicad_sym"
+        if p.exists():
+            return p
+    return Path("/usr/share/kicad/symbols/Device.kicad_sym")
+
+
+_KICAD_CLI = _resolve_cli_or_warn()
+_DEVICE_LIB = _device_lib()
 
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skipif(_KICAD_CLI is None, reason="kicad-cli not on PATH"),
+    pytest.mark.skipif(_KICAD_CLI is None, reason="kicad-cli not found (PATH or install dirs)"),
     pytest.mark.skipif(not _DEVICE_LIB.exists(), reason="Device lib not installed"),
 ]
 

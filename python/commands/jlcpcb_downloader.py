@@ -537,7 +537,8 @@ def download_yaqwsx(cache_dir: Path, progress: ProgressFn = None) -> Path:
                     str(dst),
                     "--progress-bar",
                     url,
-                ]
+                ],
+                stdin=subprocess.DEVNULL,
             ).returncode
             == 0
         )
@@ -575,6 +576,7 @@ def download_yaqwsx(cache_dir: Path, progress: ProgressFn = None) -> Path:
         [seven_zip, "x", "-y", "-o" + str(cache_dir), str(zip_dst)],
         capture_output=True,
         text=True,
+        stdin=subprocess.DEVNULL,
     )
     if result.returncode != 0:
         raise RuntimeError(f"7z extraction failed: {result.stderr[:300]}")

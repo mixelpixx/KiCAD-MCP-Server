@@ -132,7 +132,13 @@ class ExportCommands:
                     ]
 
                     try:
-                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                        result = subprocess.run(
+                            cmd,
+                            capture_output=True,
+                            text=True,
+                            timeout=60,
+                            stdin=subprocess.DEVNULL,
+                        )
                         if result.returncode == 0:
                             # Get list of generated drill files
                             for file in os.listdir(output_dir):
@@ -488,6 +494,7 @@ class ExportCommands:
                 capture_output=True,
                 text=True,
                 timeout=300,  # 5 minute timeout for 3D export
+                stdin=subprocess.DEVNULL,
             )
 
             if result.returncode != 0:

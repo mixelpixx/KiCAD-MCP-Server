@@ -189,7 +189,9 @@ def export_netlist(kicad_cli: str, schematic_path: str, timeout: int = 60) -> Op
             schematic_path,
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL
+            )
         except (OSError, subprocess.TimeoutExpired) as exc:
             logger.warning(f"kicad-cli netlist export could not run: {exc}")
             return None

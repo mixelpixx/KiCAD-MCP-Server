@@ -19,7 +19,21 @@ from commands.add_symbol_property import (  # noqa: E402
     add_symbol_property,
 )
 
-_KICAD_CLI = shutil.which("kicad-cli")
+
+def _resolve_cli_or_warn():
+    """kicad-cli as the server finds it (PATH, then install dirs such as Program Files), or None
+    with a visible warning, so a run without it doesn't look fully covered."""
+    from utils.kicad_cli import resolve_kicad_cli
+
+    cli = resolve_kicad_cli()
+    if cli is None:
+        import warnings
+
+        warnings.warn("kicad-cli not found (PATH or install dirs): kicad-cli oracle tests skipped")
+    return cli
+
+
+_KICAD_CLI = _resolve_cli_or_warn()
 
 # A real KiCad 9 library (version 20241209, generator_version "9.0"): its
 # Footprint field is hidden via a (hide yes) *inside* (effects ...) and its
@@ -617,7 +631,7 @@ def test_guard_refuses_property_spliced_outside_symbol(tmp_path, monkeypatch):
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(_KICAD_CLI is None, reason="kicad-cli not on PATH")
+@pytest.mark.skipif(_KICAD_CLI is None, reason="kicad-cli not found (PATH or install dirs)")
 def test_kicad_cli_loads_edited_one_line_library(one_line_lib, tmp_path):
     name = "R" if 'symbol "R"' in one_line_lib.read_text(encoding="utf-8") else "EMPTY"
     r = add_symbol_property(
@@ -779,7 +793,7 @@ def test_kicad7_bare_hide_can_be_overridden(tmp_path):
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(_KICAD_CLI is None, reason="kicad-cli not on PATH")
+@pytest.mark.skipif(_KICAD_CLI is None, reason="kicad-cli not found (PATH or install dirs)")
 def test_kicad_cli_canonical_form_changes_only_the_value(kicad9_lib, tmp_path):
     """KiCad's own serialisation is the arbiter of "nothing else was lost".
 
