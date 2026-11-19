@@ -423,6 +423,84 @@ def _restore_lock_states(locked: Iterable[Tuple[Any, bool]]) -> int:
     return n
 
 
+# KiCad names the via padstacks it exports by size: "Via[0-5]_800:400_um" is an 800 um via with a
+# 400 um drill. ImportSpecctraSES keeps the padstack's drill, except when it equals the Default
+# netclass's via drill: makeVIA (specctra_import.cpp) compares the drill against aViaDrillDefault,
+# the Default class's, and stores a match as undefined, which then resolves through the via's net's
+# own class. So a 500:300 via on a board whose Default drill is 300 um, on a net whose class asks
+# for 800:400, comes back as 0.5 mm with a 0.4 mm drill, a 0.05 mm annular ring (KiCad 10.0.8).
+# Only that case changes anything; _restore_via_drills puts back the drill the padstack's name
+# gives. If KiCad starts comparing against the net's own class, the restore becomes a no-op.
+_VIA_PADSTACK_RE = re.compile(
+    r'\(padstack\s+"?(Via\[[^\]]*\]_(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)_um)"?'
+)
+
+
+def _ses_via_drills(ses_text: str) -> Dict[int, Optional[int]]:
+    """Diameter -> drill (both nm) from the via padstack names in an SES (or DSN).
+
+    A diameter that two padstacks give different drills maps to None (ambiguous: left alone).
+    """
+    out: Dict[int, Optional[int]] = {}
+    for _name, dia, drill in _VIA_PADSTACK_RE.findall(ses_text or ""):
+        d_nm, h_nm = int(round(float(dia) * 1000)), int(round(float(drill) * 1000))
+        if d_nm in out and out[d_nm] != h_nm:
+            out[d_nm] = None
+        else:
+            out[d_nm] = h_nm
+    return out
+
+
+def _via_ids(board) -> Optional[set]:
+    """UUIDs of the board's vias (taken before an import, to tell imported vias from kept ones).
+
+    None when they cannot be read: the drill restore is then skipped rather than risk touching
+    a via the import kept.
+    """
+    try:
+        return {t.m_Uuid.AsString() for t in board.GetTracks() if t.GetClass() == "PCB_VIA"}
+    except Exception as e:  # a stub or an unexpected binding: never fail the import over it
+        logger.warning(f"Via drill restore skipped: cannot read via ids ({e})")
+        return None
+
+
+def _via_diameter(via, pcbnew_mod) -> int:
+    try:
+        return int(via.GetWidth(pcbnew_mod.F_Cu))  # KiCad 9+: per-layer padstack
+    except TypeError:
+        return int(via.GetWidth())
+
+
+def _restore_via_drills(
+    board, ses_text: str, before_ids: Optional[set], pcbnew_mod
+) -> Dict[str, Any]:
+    """Give every via the import created the drill its padstack's name gives.
+
+    Only vias that were not on the board before the import are touched (kept/locked copper keeps
+    its own drill), and only when the padstack name is KiCad's ``Via[..]_<dia>:<drill>_um`` and
+    unambiguous for that diameter. Returns a small report for the reply.
+    """
+    drills = _ses_via_drills(ses_text)
+    restored: Dict[str, int] = {}
+    if before_ids is None or not drills:
+        return {"count": 0, "changes": restored}
+    try:
+        for t in board.GetTracks():
+            if t.GetClass() != "PCB_VIA" or t.m_Uuid.AsString() in before_ids:
+                continue
+            dia = _via_diameter(t, pcbnew_mod)
+            want = drills.get(dia)
+            have = int(t.GetDrillValue())
+            if want and want != have and want < dia:
+                t.SetDrill(want)
+                key = f"{dia / 1e6:g}/{have / 1e6:g} -> {dia / 1e6:g}/{want / 1e6:g} mm"
+                restored[key] = restored.get(key, 0) + 1
+    except Exception as e:  # never fail an import that succeeded
+        logger.warning(f"Via drill restore stopped: {e}")
+        return {"count": sum(restored.values()), "changes": restored, "error": str(e)}
+    return {"count": sum(restored.values()), "changes": restored}
+
+
 _TRACKS_CLEARED_NOTE = (
     "An SES import that fails after parsing has usually already removed the "
     "board's unlocked tracks, so the board in memory may have lost them; nothing "
@@ -1783,6 +1861,7 @@ class FreeroutingCommands:
             # The left-out nets' copper is not in the session; lock it so the import
             # keeps it (unlocked tracks are cleared), then put the lock flags back.
             kept = _lock_tracks_of_nets(self.board, self._nets_left_out or [])
+            vias_before = _via_ids(self.board)
             try:
                 result = pcbnew.ImportSpecctraSES(self.board, import_copy)
             finally:
@@ -1797,6 +1876,9 @@ class FreeroutingCommands:
                     "elapsed_seconds": elapsed,
                     "attempts": attempt_results,
                 }
+            via_drills = _restore_via_drills(self.board, routed, vias_before, pcbnew)
+            if via_drills["count"]:
+                logger.info(f"Restored the padstack drill of {via_drills['count']} imported via(s)")
         except Exception as e:
             return {
                 "success": False,
@@ -1847,6 +1929,9 @@ class FreeroutingCommands:
                 "vias": via_count,
             },
             "netClasses": netclass_report,
+            # Vias whose padstack drill the import reset to their net's class drill, put back:
+            # {"count", "changes"} (see _VIA_PADSTACK_RE).
+            "viaDrillsRestored": via_drills,
             # None when the board has no .kicad_dru / .kicad_pro or kicadRules is false.
             "kicad_rules": kicad_rules,
             "freerouting_stdout": best_proc_stdout[:1000],
@@ -2023,7 +2108,9 @@ class FreeroutingCommands:
             logger.warning(f"SES net-name reconciliation skipped ({e}); importing original file")
             import_path = ses_path
 
+        via_drills: Dict[str, Any] = {"count": 0, "changes": {}}
         try:
+            vias_before = _via_ids(self.board)
             result = pcbnew.ImportSpecctraSES(self.board, import_path)
             if not _api_ok(result):
                 return {
@@ -2031,6 +2118,8 @@ class FreeroutingCommands:
                     "message": "SES import failed",
                     "errorDetails": f"ImportSpecctraSES returned: {result}. {_TRACKS_CLEARED_NOTE}",
                 }
+            with open(import_path, "r", encoding="utf-8", errors="replace") as fh:
+                via_drills = _restore_via_drills(self.board, fh.read(), vias_before, pcbnew)
         except Exception as e:
             return {
                 "success": False,
@@ -2059,6 +2148,7 @@ class FreeroutingCommands:
                 "tracks": track_count,
                 "vias": via_count,
             },
+            "viaDrillsRestored": via_drills,
         }
         if remapped:
             # Report the net-name repairs so callers can see the '/'-prefix fix ran.

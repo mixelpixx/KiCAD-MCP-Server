@@ -167,6 +167,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **An SES import keeps each via's drill.** KiCad's `ImportSpecctraSES`
+  keeps a via padstack's drill, except when it equals the Default netclass's
+  via drill: `makeVIA` stores that one as undefined, and it then resolves
+  through the via's net's own class. So on a board whose Default via drill is
+  0.3 mm, a 0.5/0.3 mm via (`Via[0-5]_500:300_um`) on a net whose class asks
+  for 0.8/0.4 mm vias came back as 0.5 mm with a 0.4 mm drill: a 0.05 mm
+  annular ring, below any fab's minimum. On a 6-layer board this left 22 such
+  vias after every Freerouting pass. `autoroute` and `import_ses` now give
+  every via the import created the drill its padstack's name gives (KiCad
+  names them `Via[a-b]_<diameter>:<drill>_um`), and report what they changed
+  in `viaDrillsRestored`. Vias KiCad kept right, vias that were on the board
+  before the import, and diameters that two padstacks give different drills
+  are left alone.
+
 - **`delete_trace` deletes from the live KiCad board in realtime mode (#553).**
   Its IPC handler called the SWIG `delete_trace`, which removed the track from
   the server's own copy of the board while KiCad kept it, and the reply still
