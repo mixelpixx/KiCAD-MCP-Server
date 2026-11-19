@@ -42,6 +42,22 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **`autoroute` passes the board's KiCad rules to Freerouting: `kicadRules`.**
+  A DSN carries only net-class clearances; the board's `.kicad_dru` (custom
+  rules such as isolation between voltage domains) and the `.kicad_pro`'s
+  minimum track width were lost, so the KiCad DRC rejected copper Freerouting
+  thought was legal. Freerouting master after 2.5.0 reads both files given in
+  `-de` (freerouting #1121, #1130). `autoroute` now stages copies beside the
+  DSN and passes them (default on; `kicadRules: false` leaves them out). The
+  reply's `kicad_rules` lists the files `applied`, `ignored` (2.2.0 to 2.5.0
+  log them as unknown and route on) and `unconfirmed` (2.0.x and 2.1.0 skip
+  them without a word, so the log does not mention them), and the rules
+  Freerouting could only approximate. A failed run, single or best-of-N,
+  names the files and how to leave them out, and each failed attempt carries
+  `rules_log`: the first log line naming a rule file. An explicit
+  `routerSettings: {"neck_width_um": ...}` overrides the `.kicad_pro`
+  minimum track width.
+
 - **`autoroute` passes Freerouting settings: `routerSettings`.** An object of
   setting name to value, by the names in Freerouting's `docs/settings.md` under
   `router`. Each is passed as `--router.<name>=<value>`; a list is joined with

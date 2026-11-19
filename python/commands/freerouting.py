@@ -608,6 +608,93 @@ def _java_version_ok(java_exe: str, required: int = DEFAULT_REQUIRED_JAVA) -> bo
     return False
 
 
+# Freerouting reads a KiCad custom-rules file (.kicad_dru) and project file (.kicad_pro, for the
+# minimum track width) given in -de since master after 2.5.0 (freerouting #1121, #1130). 2.2.0 to
+# 2.5.0 log "Unknown file type in -de argument: <file>" and route on; 2.0.x and 2.1.0 read only
+# the argument after -de and skip the rest without a word.
+_KICAD_RULE_EXTENSIONS = (".kicad_dru", ".kicad_pro")
+_KICAD_RULES_APPLIED_RE = re.compile(r"Using the KiCad (?:design rules of|project) '([^']+)'")
+_KICAD_RULES_IGNORED_RE = re.compile(
+    r"Unknown file type in -de argument: (\S+?\.kicad_(?:dru|pro))\b"
+)
+_KICAD_RULES_WARNING_RE = re.compile(r"KiCad design rules: (.+)")
+_KICAD_RULES_WARNINGS_SHOWN = 20
+
+
+def _stage_kicad_rule_files(board_path: str, staging_dir: str, board_stem: str) -> List[str]:
+    """Copy the board's ``.kicad_dru`` and ``.kicad_pro`` beside the staged DSN.
+
+    The DSN is written to a fresh temp directory (#249), so Freerouting's own lookup of a
+    ``<board>.kicad_dru`` next to the DSN finds nothing; the copies are also what a Docker
+    run can see under /work. Returns the staged paths (only for files that exist).
+    """
+    staged: List[str] = []
+    stem = os.path.splitext(board_path)[0]
+    for ext in _KICAD_RULE_EXTENSIONS:
+        src = stem + ext
+        if os.path.isfile(src):
+            dest = os.path.join(staging_dir, board_stem + ext)
+            shutil.copy2(src, dest)
+            staged.append(dest)
+    return staged
+
+
+def _kicad_rules_report(output: str, files: List[str]) -> Dict[str, Any]:
+    """What Freerouting did with the KiCad rule files, read from its log.
+
+    ``applied``: files it reported using. ``ignored``: files it logged as unknown (2.2.0 to
+    2.5.0). ``unconfirmed``: files it said nothing about (2.0.x and 2.1.0 skip them silently):
+    with no "Using the KiCad ..." line the router did not use them. ``warnings``: the rule
+    translations it reported as inexact (creepage applied as its clearance, a condition it
+    cannot evaluate applied wherever it may match, a constraint type it does not translate), at
+    most 20.
+    """
+    names = [os.path.basename(f) for f in files]
+    out = output or ""
+    applied = {os.path.basename(m) for m in _KICAD_RULES_APPLIED_RE.findall(out)}
+    ignored = {os.path.basename(m) for m in _KICAD_RULES_IGNORED_RE.findall(out)}
+    warnings = list(dict.fromkeys(w.strip() for w in _KICAD_RULES_WARNING_RE.findall(out)))
+    report: Dict[str, Any] = {
+        "files": names,
+        "applied": [n for n in names if n in applied],
+        "ignored": [n for n in names if n in ignored],
+        "unconfirmed": [n for n in names if n not in applied and n not in ignored],
+        "warningCount": len(warnings),
+        "warnings": warnings[:_KICAD_RULES_WARNINGS_SHOWN],
+    }
+    if report["ignored"] or report["unconfirmed"]:
+        report["note"] = (
+            "This Freerouting did not report reading the KiCad rule files (support is on its "
+            "master after 2.5.0; 2.2.0 to 2.5.0 log them as unknown, 2.0.x and 2.1.0 skip them "
+            "silently). It routed with the DSN's net-class clearances only: custom rules in the "
+            ".kicad_dru (isolation, per-area clearances) were not applied. Check the result "
+            "with KiCad's DRC."
+        )
+    return report
+
+
+def _rules_log_line(output: str, files: List[str]) -> Optional[str]:
+    """The first log line that names one of the KiCad rule files (by name, or any ``.kicad_dru`` /
+    ``.kicad_pro``), so a failed attempt's reply shows what the hint asks the caller to look for.
+    Freerouting logs to stdout; a failed attempt otherwise keeps only the start of stderr."""
+    names = [os.path.basename(f) for f in files] + [".kicad_dru", ".kicad_pro"]
+    for line in (output or "").splitlines():
+        if any(n in line for n in names):
+            return line.strip()[:300]
+    return None
+
+
+def _kicad_rules_hint(files: List[str]) -> str:
+    """The hint added to a failed run when KiCad rule files were passed: a master jar stops
+    when a ``.kicad_dru`` given to it cannot be read, rather than route a board that would fail
+    the KiCad DRC, and with best-of-N every attempt fails the same way."""
+    return (
+        "The board's KiCad rule files were passed to Freerouting "
+        f"({', '.join(os.path.basename(f) for f in files)}). If the log blames one of them, "
+        "fix it, or set kicadRules: false to route with the net-class clearances only."
+    )
+
+
 def _hms(seconds: int) -> str:
     """Seconds as HH:MM:SS, the form Freerouting's time settings take."""
     seconds = int(seconds)
@@ -783,10 +870,14 @@ def _build_freerouting_cmd(
     use_docker: bool,
     single_thread: bool = False,
     rules_path: Optional[str] = None,
+    design_files: Optional[List[str]] = None,
     job_timeout: Optional[int] = None,
     router_args: Optional[List[str]] = None,
 ) -> List[str]:
     """Build the command to run Freerouting.
+
+    ``design_files`` go into ``-de`` after the DSN (the board's ``.kicad_dru`` and
+    ``.kicad_pro``, staged beside it). Freerouting tells the files apart by extension.
 
     ``job_timeout`` (seconds) is passed as ``--router.job_timeout=HH:MM:SS``:
     Freerouting then stops routing by itself when the time is up and still
@@ -817,6 +908,7 @@ def _build_freerouting_cmd(
             extra = [
                 a if a != rules_path else f"/work/{os.path.basename(rules_path)}" for a in extra
             ]
+        work_design = [f"/work/{os.path.basename(f)}" for f in design_files or []]
         return [
             docker_exe,
             "run",
@@ -831,6 +923,7 @@ def _build_freerouting_cmd(
             f"/app/{jar_name}",
             "-de",
             f"/work/{dsn_name}",
+            *work_design,
             "-do",
             f"/work/{ses_name}",
             "--gui.enabled=false",
@@ -848,6 +941,7 @@ def _build_freerouting_cmd(
             jar_path,
             "-de",
             dsn_path,
+            *(design_files or []),
             "-do",
             ses_path,
             "--gui.enabled=false",
@@ -1447,6 +1541,14 @@ class FreeroutingCommands:
                 logger.info(f"signalLayers {signal_layers}: nothing to restrict or cost")
         dsn_size = os.path.getsize(dsn_path)
         logger.info(f"DSN exported: {dsn_size} bytes")
+        # The board's custom rules (.kicad_dru) and minimum track width (.kicad_pro) do not
+        # reach the DSN; Freerouting reads the files themselves. kicadRules: false leaves them out.
+        kicad_rule_files: List[str] = []
+        if params.get("kicadRules", True) is not False:
+            kicad_rule_files = _stage_kicad_rule_files(
+                board_path, os.path.dirname(dsn_path), board_stem
+            )
+        kicad_rules: Optional[Dict[str, Any]] = None
 
         # Step 2: Run Freerouting (single or multiple attempts)
         mode_label = "docker" if use_docker else "direct"
@@ -1490,6 +1592,7 @@ class FreeroutingCommands:
                 use_docker,
                 single_thread=single_thread,
                 rules_path=rules_path,
+                design_files=kicad_rule_files,
                 job_timeout=job_timeout,
                 router_args=router_args,
             )
@@ -1516,6 +1619,10 @@ class FreeroutingCommands:
                     cwd=os.path.dirname(dsn_path),
                 )
                 attempt_elapsed = round(time.time() - attempt_start, 1)
+                if kicad_rule_files and kicad_rules is None:
+                    kicad_rules = _kicad_rules_report(
+                        (proc.stdout or "") + (proc.stderr or ""), kicad_rule_files
+                    )
             except subprocess.TimeoutExpired:
                 return {
                     "success": False,
@@ -1557,14 +1664,22 @@ class FreeroutingCommands:
                         "stderr": (proc.stderr or "")[:200],
                     }
                 )
+                if kicad_rule_files:
+                    attempt_results[-1]["rules_log"] = _rules_log_line(
+                        (proc.stdout or "") + "\n" + (proc.stderr or ""), kicad_rule_files
+                    )
                 if attempts == 1:
-                    return {
+                    failed: Dict[str, Any] = {
                         "success": False,
                         "message": (f"Freerouting exited with code {proc.returncode}{exit_note}"),
                         "errorDetails": proc.stderr or proc.stdout,
                         "elapsed_seconds": attempt_elapsed,
                         "mode": mode_label,
                     }
+                    if kicad_rule_files:
+                        failed["kicad_rules"] = kicad_rules
+                        failed["hint"] = _kicad_rules_hint(kicad_rule_files)
+                    return failed
                 continue
 
             if not os.path.isfile(ses_path):
@@ -1625,13 +1740,17 @@ class FreeroutingCommands:
         elapsed = round(time.time() - total_start, 1)
 
         if best_attempt_idx == -1:
-            return {
+            all_failed: Dict[str, Any] = {
                 "success": False,
                 "message": "All Freerouting attempts failed",
                 "errorDetails": "No attempt produced a usable SES file",
                 "elapsed_seconds": elapsed,
                 "attempts": attempt_results,
             }
+            if kicad_rule_files:
+                all_failed["kicad_rules"] = kicad_rules
+                all_failed["hint"] = _kicad_rules_hint(kicad_rule_files)
+            return all_failed
 
         # Restore the winning SES as the canonical output file. Write to a
         # sibling path and rename over ses_path instead of truncating it in
@@ -1728,6 +1847,8 @@ class FreeroutingCommands:
                 "vias": via_count,
             },
             "netClasses": netclass_report,
+            # None when the board has no .kicad_dru / .kicad_pro or kicadRules is false.
+            "kicad_rules": kicad_rules,
             "freerouting_stdout": best_proc_stdout[:1000],
             "job_timeout_seconds": job_timeout,
             "router_settings": router_args,
