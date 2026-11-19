@@ -55,14 +55,21 @@ _REAL_KICAD = os.environ.get("KICAD_USE_REAL_PCBNEW") == "1"
 
 
 @pytest.fixture(autouse=True)
-def _no_real_kicad_config(monkeypatch):
+def _no_real_kicad_config(monkeypatch, tmp_path_factory):
     """Tests never read or write the real KiCad configuration.
 
     The library readers and the table editor look for KiCad's global tables
     under ``KICAD_CONFIG_HOME``, ``APPDATA`` and ``XDG_CONFIG_HOME`` before the
     home directory, so a test that only patches ``Path.home`` would still find
-    the developer's real tables through those variables. Clear them for every
-    test; a test that needs one sets it itself with ``monkeypatch.setenv``.
+    the developer's real tables through those variables. Each test gets them
+    pointed at its own empty directory; a test that needs another value sets
+    it itself with ``monkeypatch.setenv`` (or ``delenv`` to test the fallback).
+
+    Pointed at a temp directory rather than deleted: a test that runs
+    ``kicad-cli`` with the variables deleted sends it to the user's real
+    config (``%APPDATA%\\kicad`` on Windows, ``~/.config/kicad`` on Linux), and
+    kicad-cli writes ``kicad_common.json`` there (Tristan Lewis saw its
+    ``working_dir`` change three times in one Windows run, 2026-11-18).
 
     Left alone in real-KiCad mode: there pcbnew and the ``kicad-cli``
     subprocesses need the configuration those variables point at (a user-space
@@ -72,8 +79,11 @@ def _no_real_kicad_config(monkeypatch):
     """
     if _REAL_KICAD:
         return
+    root = tmp_path_factory.mktemp("kicad-user-config")
     for var in ("KICAD_CONFIG_HOME", "APPDATA", "XDG_CONFIG_HOME"):
-        monkeypatch.delenv(var, raising=False)
+        d = root / var.lower()
+        d.mkdir()
+        monkeypatch.setenv(var, str(d))
 
 
 if not _REAL_KICAD:
