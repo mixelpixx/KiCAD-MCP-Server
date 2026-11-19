@@ -79,7 +79,6 @@ KNOWN_JSONRPC_UNREAD: Dict[str, Set[str]] = {
     "place_component_array": {"footprint", "startNumber", "startX", "startY"},
     "route_trace": {"netName", "points"},
     "run_drc": {"includeWarnings"},
-    "search_footprints": {"query"},
 }
 
 # TypeScript tools that call a Python command with no entry in command_routes:
