@@ -110,6 +110,27 @@ Run the full autorouting workflow (export DSN, route, import SES).
 | `timeout` | number | No | 300 | Seconds to wait for Freerouting. It is killed after that, and nothing it routed is kept |
 | `jobTimeout` | number | No | `timeout` minus 10 % (60–120 s); none when `timeout` < 120 s | Seconds Freerouting may route before it stops by itself and writes what it has (`--router.job_timeout`). Needs Freerouting 2.4 or later (older versions stop but write no session file). `0` passes no budget |
 | `routerSettings` | object | No | none | Freerouting settings for this run, e.g. `{"autorouter.priority_net_classes": ["DIFF"], "autorouter.plane_as_priority": true}`. Each is passed as `--router.<name>=<value>`. Freerouting skips a setting it does not know (a typo, or one the installed jar lacks) and keeps routing; those come back in `router_settings_rejected`. `autorouter.priority_net_classes` and `autorouter.plane_as_priority` are on Freerouting master only (merged 2026-11-07), not in a v2 release. With `attempts` above 1 the thread count (`max_threads`, `autorouter.max_threads`, `optimizer.max_threads`) is refused: best-of-N runs single-threaded so the attempts stay comparable |
+| `kicadRules` | boolean | No | true | Pass the board's `.kicad_dru` and `.kicad_pro` to Freerouting in `-de` (see below). `false` leaves them out |
+
+**KiCad custom rules.** A DSN carries only the net-class clearances. The board's custom rules
+(`.kicad_dru`: isolation between voltage domains, larger or smaller clearances in an area) and
+its minimum track width (`.kicad_pro`) are lost on the way, and the KiCad DRC then rejects
+copper that Freerouting thought was legal. Freerouting master after 2.5.0 reads both files
+itself (freerouting #1121, #1130), so `autoroute` stages copies beside the DSN and names them in
+`-de`. The reply's `kicad_rules` reports `applied` and `ignored` files and the rules Freerouting
+could only approximate (`warnings`: creepage applied as the same rule's clearance, a condition
+it cannot evaluate applied wherever it may match, constraint types it does not translate).
+Freerouting 2.2.0 to 2.5.0 log the files as unknown and route on; `kicad_rules.ignored` then
+lists them. 2.0.x and 2.1.0 (the 2.0.1 jar linked above among them) read only the argument after
+`-de` and skip the rest without a word; `kicad_rules.unconfirmed` lists files the log does not
+mention, since without a "Using the KiCad ..." line the router did not use them. Either way the
+reply carries a note to check the result with KiCad's DRC.
+
+An explicit `routerSettings: {"neck_width_um": ...}` overrides the `.kicad_pro` minimum track
+width: Freerouting ranks every user-given setting above the project file (freerouting #1130). It is
+also the way around `connection_width` DRC errors from neck-downs narrower than that minimum on
+Freerouting 2.5.0 and earlier. freerouting #1135 (merged 2026-11-16, not yet in a release) makes the
+default neck width the larger of the minimum track width and the minimum connection width.
 
 When Freerouting stops at its time budget, the result has `time_budget_reached: true` and the board holds
 the partial routing; `run_drc` lists what is still unconnected.
