@@ -42,6 +42,22 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **`autoroute` passes the board's KiCad rules to Freerouting: `kicadRules`.**
+  A DSN carries only net-class clearances; the board's `.kicad_dru` (custom
+  rules such as isolation between voltage domains) and the `.kicad_pro`'s
+  minimum track width were lost, so the KiCad DRC rejected copper Freerouting
+  thought was legal. Freerouting master after 2.5.0 reads both files given in
+  `-de` (freerouting #1121, #1130). `autoroute` now stages copies beside the
+  DSN and passes them (default on; `kicadRules: false` leaves them out). The
+  reply's `kicad_rules` lists the files `applied`, `ignored` (2.2.0 to 2.5.0
+  log them as unknown and route on) and `unconfirmed` (2.0.x and 2.1.0 skip
+  them without a word, so the log does not mention them), and the rules
+  Freerouting could only approximate. A failed run, single or best-of-N,
+  names the files and how to leave them out, and each failed attempt carries
+  `rules_log`: the first log line naming a rule file. An explicit
+  `routerSettings: {"neck_width_um": ...}` overrides the `.kicad_pro`
+  minimum track width.
+
 - **`autoroute` passes Freerouting settings: `routerSettings`.** An object of
   setting name to value, by the names in Freerouting's `docs/settings.md` under
   `router`. Each is passed as `--router.<name>=<value>`; a list is joined with
@@ -150,6 +166,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
   KiCad 9 cannot load it. The list tool stays available in read-only mode.
 
 ### Bug Fixes
+
+- **An SES import keeps each via's drill.** KiCad's `ImportSpecctraSES`
+  keeps a via padstack's drill, except when it equals the Default netclass's
+  via drill: `makeVIA` stores that one as undefined, and it then resolves
+  through the via's net's own class. So on a board whose Default via drill is
+  0.3 mm, a 0.5/0.3 mm via (`Via[0-5]_500:300_um`) on a net whose class asks
+  for 0.8/0.4 mm vias came back as 0.5 mm with a 0.4 mm drill: a 0.05 mm
+  annular ring, below any fab's minimum. On a 6-layer board this left 22 such
+  vias after every Freerouting pass. `autoroute` and `import_ses` now give
+  every via the import created the drill its padstack's name gives (KiCad
+  names them `Via[a-b]_<diameter>:<drill>_um`), and report what they changed
+  in `viaDrillsRestored`. Vias KiCad kept right, vias that were on the board
+  before the import, and diameters that two padstacks give different drills
+  are left alone.
 
 - **`delete_trace` deletes from the live KiCad board in realtime mode (#553).**
   Its IPC handler called the SWIG `delete_trace`, which removed the track from
