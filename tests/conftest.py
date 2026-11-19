@@ -53,6 +53,28 @@ class _ModuleStub(MagicMock):
 
 _REAL_KICAD = os.environ.get("KICAD_USE_REAL_PCBNEW") == "1"
 
+if _REAL_KICAD:
+    # A mock that reaches a real SWIG call must fail, not hang. SWIG unwraps an argument by
+    # following its ``this`` attribute until it finds a SWIG pointer; on a Mock every ``.this``
+    # makes a new child mock, so ``pcbnew.PCB_VIA(MagicMock())`` never returns and memory grows
+    # without bound (5 GB in about a minute; a whole real-pcbnew run sat at 19 GB after 50 min).
+    # With ``this`` defined as None on the Mock classes, SWIG gives up at once and raises
+    # "Wrong number or type of arguments". A test that needs ``.this`` sets it on its own mock.
+    from unittest import mock as _mock
+
+    _mock.NonCallableMock.this = None
+
+
+def pytest_collection_modifyitems(config, items):
+    """In real-KiCad mode, skip tests marked ``stub_pcbnew``: they reset_mock() the session
+    pcbnew stub or patch attributes only the stub has, so against real pcbnew they error."""
+    if not _REAL_KICAD:
+        return
+    skip = pytest.mark.skip(reason="written for the pcbnew stub; KICAD_USE_REAL_PCBNEW=1 is set")
+    for item in items:
+        if item.get_closest_marker("stub_pcbnew"):
+            item.add_marker(skip)
+
 
 @pytest.fixture(autouse=True)
 def _no_real_kicad_config(monkeypatch):
