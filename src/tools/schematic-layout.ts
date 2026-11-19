@@ -11,14 +11,24 @@ export function registerSchematicLayoutTools(server: McpServer, callKicadScript:
   // Move a single Reference/Value field
   server.tool(
     "set_schematic_property_position",
-    "Move a component's Reference or Value field label to an absolute (x, y) coordinate (mm), optionally rotating or hiding it. Only 'Reference' and 'Value' are supported. Use autoplace_schematic_fields to place all of them automatically.",
+    "Move a component's Reference or Value field label to an absolute (x, y) coordinate (mm), optionally rotating or hiding it. " +
+      "When 'angle' is provided, it is the desired sheet-absolute angle as drawn (0 = horizontal, 90 = vertical) and is converted automatically to KiCad's symbol-local frame. " +
+      "When 'angle' is omitted, the field's existing stored angle is preserved. " +
+      "Returns stored_angle, drawn_angle, and effective_justify (accounting for symbol rotation and mirror) so callers know where the text renders relative to the anchor. " +
+      "Only 'Reference' and 'Value' are supported. Use autoplace_schematic_fields to place all of them automatically.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       reference: z.string().describe("Component reference designator (e.g., R1, U2)"),
       property: z.enum(["Reference", "Value"]).describe("Which field to move"),
       x: z.number().describe("New X position in mm (absolute schematic coordinate)"),
       y: z.number().describe("New Y position in mm (absolute schematic coordinate)"),
-      angle: z.number().optional().default(0).describe("Text angle in degrees (default 0)"),
+      angle: z
+        .number()
+        .optional()
+        .describe(
+          "Desired text angle as drawn on the sheet in degrees (0 = horizontal, 90 = vertical). " +
+            "Converted to the symbol's local frame automatically. Omit to keep the existing field angle.",
+        ),
       visible: z
         .boolean()
         .optional()
@@ -31,7 +41,7 @@ export function registerSchematicLayoutTools(server: McpServer, callKicadScript:
         content: [
           {
             type: "text",
-            text: result.success ? result.message : `Failed: ${result.message || "Unknown error"}`,
+            text: JSON.stringify(result),
           },
         ],
       };
@@ -41,7 +51,10 @@ export function registerSchematicLayoutTools(server: McpServer, callKicadScript:
   // Move many fields in one file read/write
   server.tool(
     "batch_set_schematic_property_positions",
-    "Move many Reference/Value field labels in a single file read/write — far faster than repeated set_schematic_property_position calls. Pass an 'updates' array; each item is {reference, property:'Reference'|'Value', x, y, angle?, visible?}. Returns per-item applied/failed lists.",
+    "Move many Reference/Value field labels in a single file read/write — far faster than repeated set_schematic_property_position calls. " +
+      "Pass an 'updates' array; each item is {reference, property:'Reference'|'Value', x, y, angle?, visible?}. " +
+      "Each optional 'angle' is sheet-absolute as drawn (0 = horizontal, 90 = vertical) and converted to the symbol's local frame; omitting 'angle' preserves the existing field angle. " +
+      "Returns per-item applied (with stored_angle, drawn_angle, effective_justify) and failed lists.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       updates: z
@@ -51,7 +64,12 @@ export function registerSchematicLayoutTools(server: McpServer, callKicadScript:
             property: z.enum(["Reference", "Value"]),
             x: z.number(),
             y: z.number(),
-            angle: z.number().optional().default(0),
+            angle: z
+              .number()
+              .optional()
+              .describe(
+                "Desired sheet-absolute text angle in degrees (0 = horizontal, 90 = vertical); omit to preserve existing angle",
+              ),
             visible: z.boolean().optional().default(true),
           }),
         )
@@ -59,23 +77,21 @@ export function registerSchematicLayoutTools(server: McpServer, callKicadScript:
     },
     async (args: any) => {
       const result = await callKicadScript("batch_set_schematic_property_positions", args);
-      if (result.success === false && result.message) {
-        return { content: [{ type: "text", text: `Failed: ${result.message}` }] };
-      }
-      const lines = [
-        `Applied ${result.applied_count} field move(s), ${result.failed_count} failed.`,
-      ];
-      for (const f of result.failed || []) {
-        lines.push(`  ✗ ${f.reference}.${f.property}: ${f.reason}`);
-      }
-      return { content: [{ type: "text", text: lines.join("\n") }] };
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
     },
   );
 
   // Auto-position all Ref/Value fields
   server.tool(
     "autoplace_schematic_fields",
-    "Automatically reposition every component's Reference and Value field so they sit outside the component body AND outside any net labels attached to its pins, avoiding collisions with other components and already-placed fields. Like KiCAD's built-in field auto-placement but net-label aware. Optionally limit to specific references.",
+    "Automatically reposition every component's Reference and Value field so they sit horizontally outside the component body AND outside any net labels attached to its pins, avoiding collisions with other components and already-placed fields (rotation-aware for 90°/270° symbols). Like KiCAD's built-in field auto-placement but net-label aware. Optionally limit to specific references.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       references: z
