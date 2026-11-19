@@ -9,8 +9,9 @@ them here avoids those modules importing helpers from one another.
 import math
 import re
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Union
 
+import sexpdata
 from utils.sexpr_format import QUOTED_VALUE, match_paren, unescape_sexpr_string
 
 _KICAD_INTERNAL_PROPS = frozenset(
@@ -93,12 +94,178 @@ def _extract_property_position(block_text: str, property_name: str) -> Optional[
     pat = re.compile(
         r'\(property\s+"'
         + re.escape(property_name)
-        + r'"\s+"[^"]*"\s+\(at\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)'
+        + r'"\s+"(?:[^"\\]|\\.)*"\s+\(at\s+([-\d.]+)\s+([-\d.]+)(?:\s+([-\d.]+))?\)'
     )
     m = pat.search(block_text)
     if m:
-        return {"x": float(m.group(1)), "y": float(m.group(2)), "angle": float(m.group(3))}
+        return {
+            "x": float(m.group(1)),
+            "y": float(m.group(2)),
+            "angle": float(m.group(3)) if m.group(3) is not None else 0.0,
+        }
     return None
+
+
+def _normalize_angle(angle: float) -> Union[int, float]:
+    """Return int when *angle* is a whole number so S-expressions write '0'/'90'."""
+    rounded = round(float(angle), 6)
+    if rounded == int(rounded):
+        return int(rounded)
+    return rounded
+
+
+def _extract_symbol_transform(block_text: str) -> Tuple[float, Optional[str]]:
+    """Return ``(rotation_deg, mirror)`` for a placed ``(symbol ...)`` block.
+
+    ``rotation_deg`` is read from the symbol's top-level ``(at x y [rot])``
+    (default 0.0). ``mirror`` is ``"x"``, ``"y"``, or ``None`` from a top-level
+    ``(mirror x|y)`` child.
+    """
+    try:
+        parsed = sexpdata.loads(block_text)
+    except Exception:
+        return 0.0, None
+
+    if not isinstance(parsed, list):
+        return 0.0, None
+
+    sym_at = sexpdata.Symbol("at")
+    sym_mirror = sexpdata.Symbol("mirror")
+    rotation = 0.0
+    mirror: Optional[str] = None
+    for child in parsed[1:]:
+        if not isinstance(child, list) or not child:
+            continue
+        if child[0] == sym_at:
+            if len(child) >= 4:
+                rotation = float(child[3])
+        elif child[0] == sym_mirror and len(child) >= 2:
+            mval = str(child[1]).lower()
+            if mval in ("x", "y"):
+                mirror = mval
+    return rotation, mirror
+
+
+def _extract_property_justify(block_text: str, property_name: str) -> Tuple[str, str]:
+    """Return stored ``(horizontal, vertical)`` justification of a named property.
+
+    Horizontal is ``"left"``/``"center"``/``"right"``; vertical is
+    ``"top"``/``"center"``/``"bottom"``. Missing ``(justify ...)`` or omitted
+    axes default to ``"center"`` (KiCad's schematic field default).
+    """
+    try:
+        parsed = sexpdata.loads(block_text)
+    except Exception:
+        return "center", "center"
+
+    if not isinstance(parsed, list):
+        return "center", "center"
+
+    sym_prop = sexpdata.Symbol("property")
+    sym_effects = sexpdata.Symbol("effects")
+    sym_justify = sexpdata.Symbol("justify")
+    for child in parsed[1:]:
+        if (
+            isinstance(child, list)
+            and len(child) >= 3
+            and child[0] == sym_prop
+            and str(child[1]) == property_name
+        ):
+            for sub in child[3:]:
+                if isinstance(sub, list) and sub and sub[0] == sym_effects:
+                    for eff in sub[1:]:
+                        if isinstance(eff, list) and eff and eff[0] == sym_justify:
+                            tokens = {str(t).lower() for t in eff[1:]}
+                            horiz = (
+                                "left"
+                                if "left" in tokens
+                                else ("right" if "right" in tokens else "center")
+                            )
+                            vert = (
+                                "top"
+                                if "top" in tokens
+                                else ("bottom" if "bottom" in tokens else "center")
+                            )
+                            return horiz, vert
+            return "center", "center"
+
+    return "center", "center"
+
+
+def sheet_angle_to_stored_angle(
+    sheet_angle: float, symbol_rotation: float, mirror: Optional[str] = None
+) -> Union[int, float]:
+    """Convert a desired sheet-absolute field angle to KiCad's stored symbol-frame angle.
+
+    KiCad stores a field's angle in the symbol's own coordinate frame and draws
+    schematic fields upright (0° = horizontal, 90° = vertical). On a symbol
+    rotated 90° or 270°, stored 90° draws horizontally (0°) and stored 0° draws
+    vertically (90°). The result is normalised to ``[0, 180)`` so stored 180°
+    (which KiCad renders upside down on fields) is never produced.
+    """
+    target = -float(sheet_angle) if mirror in ("x", "y") else float(sheet_angle)
+    stored = _normalize_angle((target - float(symbol_rotation)) % 180.0)
+    return 0 if stored == 180 else stored
+
+
+def stored_angle_to_drawn_angle(
+    stored_angle: float, symbol_rotation: float, mirror: Optional[str] = None
+) -> Union[int, float]:
+    """Convert a stored symbol-frame field angle to its drawn sheet-absolute angle.
+
+    Returns an angle in ``[0, 180)`` (``0`` = horizontal, ``90`` = vertical).
+    """
+    combined = (float(stored_angle) + float(symbol_rotation)) % 180.0
+    if mirror in ("x", "y"):
+        combined = (-combined) % 180.0
+    drawn = _normalize_angle(combined)
+    return 0 if drawn == 180 else drawn
+
+
+def effective_field_justification(
+    stored_horizontal: str,
+    stored_vertical: str,
+    stored_angle: float,
+    symbol_rotation: float,
+    mirror: Optional[str] = None,
+) -> Dict[str, str]:
+    """Compute a field's effective sheet-space justification as KiCad renders it.
+
+    KiCad lays out a field's text box using its stored angle and justification in
+    the symbol's frame, rotates CCW by ``symbol_rotation``, then applies
+    ``mirror`` (``"y"`` flips X, ``"x"`` flips Y), and draws the text upright
+    inside that box. Comparing the transformed text axes against the upright
+    drawn axes at ``stored_angle_to_drawn_angle(...)`` determines whether
+    horizontal (``left`` <-> ``right``) and/or vertical (``top`` <-> ``bottom``)
+    justification flip on the sheet.
+    """
+    theta = math.radians(float(stored_angle) + float(symbol_rotation))
+    ux, uy = math.cos(theta), math.sin(theta)
+    vx, vy = math.sin(theta), -math.cos(theta)
+    if mirror == "y":
+        ux, vx = -ux, -vx
+    elif mirror == "x":
+        uy, vy = -uy, -vy
+
+    drawn = stored_angle_to_drawn_angle(stored_angle, symbol_rotation, mirror)
+    d_rad = math.radians(float(drawn))
+    dux, duy = math.cos(d_rad), math.sin(d_rad)
+    dvx, dvy = math.sin(d_rad), -math.cos(d_rad)
+
+    h_flip = {"left": "right", "right": "left", "center": "center"}
+    v_flip = {"top": "bottom", "bottom": "top", "center": "center"}
+    h_norm = stored_horizontal if stored_horizontal in h_flip else "center"
+    v_norm = stored_vertical if stored_vertical in v_flip else "center"
+
+    eff_h = h_flip[h_norm] if (ux * dux + uy * duy) < 0 else h_norm
+    eff_v = v_flip[v_norm] if (vx * dvx + vy * dvy) < 0 else v_norm
+    return {"horizontal": eff_h, "vertical": eff_v}
+
+
+def _format_justify_label(horizontal: str, vertical: str) -> str:
+    """Format a ``(horizontal, vertical)`` justification pair as a concise KiCad string."""
+    parts = [p for p in (horizontal, vertical) if p != "center"]
+    return " ".join(parts) if parts else "center"
 
 
 def _extract_property_visible(block_text: str, property_name: str) -> bool:
@@ -157,7 +324,7 @@ def _move_property_in_block(block_text, property_name, x, y, angle, visible) -> 
     prop_pat = re.compile(
         r'(\(property\s+"'
         + re.escape(property_name)
-        + r'"\s+"[^"]*"\s+)\(at\s+[-\d.]+\s+[-\d.]+\s+[-\d.]+\)'
+        + r'"\s+"(?:[^"\\]|\\.)*"\s+)\(at\s+[-\d.]+\s+[-\d.]+(?:\s+[-\d.]+)?\)'
     )
     new_block, n_subs = prop_pat.subn(r"\g<1>" + f"(at {x} {y} {angle})", block_text)
     if n_subs == 0:

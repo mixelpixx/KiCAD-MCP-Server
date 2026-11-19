@@ -181,6 +181,23 @@ All notable changes to the KiCAD MCP Server project are documented here.
   before the import, and diameters that two padstacks give different drills
   are left alone.
 
+- **`set_schematic_property_position`, `batch_set_schematic_property_positions`,
+  and `autoplace_schematic_fields` handle symbol rotation and mirror correctly
+  (#520).** KiCad stores a field's angle and justification in the symbol's own
+  frame, swapping horizontal and vertical on 90°/270° symbols and flipping
+  justification on 180° or mirrored symbols. Previously `angle` was written
+  verbatim (and defaulted to `0` when omitted, turning horizontal labels on
+  rotated symbols vertical), and `autoplace_schematic_fields` always wrote
+  stored angle `0` (and crashed on a missing `text_height` reference).
+  `set_schematic_property_position` and `batch_set_schematic_property_positions`
+  now interpret `angle` as a sheet-absolute drawn angle (`0` = horizontal,
+  `90` = vertical) and convert it into the symbol's local frame, preserve the
+  existing stored angle when `angle` is omitted (removing the Zod `.default(0)`
+  override too), and return `stored_angle`, `drawn_angle`, `effective_justify`,
+  `stored_justify`, `symbol_rotation`, and `symbol_mirror`.
+  `autoplace_schematic_fields` now converts its horizontal target (`0°`) per
+  symbol rotation so 90°/270° parts store `90` and render horizontally.
+
 - **`delete_trace` deletes from the live KiCad board in realtime mode (#553).**
   Its IPC handler called the SWIG `delete_trace`, which removed the track from
   the server's own copy of the board while KiCad kept it, and the reply still
@@ -355,6 +372,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
   default of 100 when they pass no `limit`; when the list was cut, the reply
   says "showing N of M" and how to get the rest.
 
+- **`get_footprint_info` reads the library and footprint both schemas
+  declare** (#407). The Node tool sends `library_name` and `footprint_name`,
+  the JSON-RPC schema declares `library` and `footprint`, and the handler
+  read only `footprint_name`. So the library was ignored (a name in two
+  libraries came back from whichever was listed first), and a JSON-RPC call
+  always failed with "Missing footprint parameter". A footprint that wasn't
+  found now says "Footprint not found: ..." instead of failing with a Python
+  error, and a `Library:Footprint` name in another library than `library` is
+  refused.
+
 - **`search_footprints` reads `+`, `.`, `(` and other characters literally,
   like `list_library_footprints`.** It only turned `*` into a wildcard and
   read the rest of the pattern as a regex, so `3x14+6` found nothing (`+`
@@ -362,6 +389,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   failed with "missing ), unterminated subpattern". Both tools now share one
   helper: substring, case-insensitive, `*` as a wildcard, everything else
   literal. The "did you mean" suggestions in `place_component` use it too.
+
+- **`search_footprints` reads the `query` its JSON-RPC schema declares**
+  (#407). The handler only read `pattern` (sent by the Node tool) and
+  `search_term`, so a JSON-RPC client that sent the required `query` searched
+  for `*` and got the first 20 footprints, whatever it asked for. `pattern`
+  still takes precedence, then `query`, then `search_term`.
 
 - **`add_library_symbol_property` no longer breaks the schematic when it
   updates a property** (#379). The update matched the old property with a

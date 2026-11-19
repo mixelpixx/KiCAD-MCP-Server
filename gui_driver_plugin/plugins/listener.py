@@ -19,7 +19,9 @@ socket/dispatch layer is unit-testable in a plain venv with a stub executor.
 
 from __future__ import annotations
 
+import atexit
 import json
+import logging
 import os
 import secrets
 import socket
@@ -38,6 +40,17 @@ UI_CALL_TIMEOUT = 15.0  # seconds a queued UI call may take before we report bac
 # token is only checked once a whole line has been read, so without it any local
 # process could make the listener buffer an arbitrarily long line pre-auth.
 MAX_REQUEST_BYTES = 64 * 1024
+# A connection that sends nothing is dropped after this long, so a client that
+# connects and then goes silent cannot pin a handler thread for the life of the
+# process (#412). Five minutes leaves room for a slow agent turn to compose its
+# request without holding a thread indefinitely.
+IDLE_TIMEOUT = 300.0  # seconds
+# Cap on simultaneous connections. One thread per connection is fine for the
+# MCP client, but an unbounded server is a local nuisance even on loopback
+# (#412). Refused connections are closed immediately.
+MAX_CONNECTIONS = 16
+
+logger = logging.getLogger(__name__)
 
 _server: Optional["_Server"] = None
 _server_lock = threading.Lock()
@@ -271,13 +284,30 @@ def _token_ok(got: Optional[str], expected: Optional[str]) -> bool:
 
 
 class _Handler(socketserver.StreamRequestHandler):
+    def setup(self) -> None:
+        # Apply the idle timeout before the buffered reader is built, so a
+        # silent client is dropped instead of holding this thread (#412).
+        idle = getattr(self.server, "idle_timeout", None)
+        if idle:
+            self.request.settimeout(idle)
+        super().setup()
+
     def handle(self) -> None:  # one connection, many JSON lines
         executor = self.server.executor  # type: ignore[attr-defined]
         expected = getattr(self.server, "token", None)
         while True:
             # Bounded read: never buffer more than one maximum-size line, even
             # for a client that has not authenticated yet.
-            raw = self.rfile.readline(MAX_REQUEST_BYTES + 1)
+            try:
+                raw = self.rfile.readline(MAX_REQUEST_BYTES + 1)
+            except (socket.timeout, TimeoutError):
+                logger.warning(
+                    "gui driver: closing connection from %s after %.0fs "
+                    "without a complete request",
+                    self.client_address[0],
+                    getattr(self.server, "idle_timeout", IDLE_TIMEOUT),
+                )
+                return
             if not raw:
                 return  # client closed the connection
             if len(raw) > MAX_REQUEST_BYTES:
@@ -297,6 +327,13 @@ class _Handler(socketserver.StreamRequestHandler):
                 if not isinstance(request, dict):
                     raise ValueError("request must be a JSON object")
                 if not _token_ok(request.get("token"), expected):
+                    # One line per attempt, without the presented value: a user
+                    # probing the port (or a misconfigured client) gets a signal
+                    # without the secret ever reaching a log (#412).
+                    logger.warning(
+                        "gui driver: refused a request with a missing or invalid " "token from %s",
+                        self.client_address[0],
+                    )
                     response = {
                         "ok": False,
                         "error": "unauthorized: missing or invalid session token",
@@ -315,7 +352,7 @@ class _Handler(socketserver.StreamRequestHandler):
             self.wfile.write((json.dumps(response) + "\n").encode("utf-8"))
             self.wfile.flush()
             return True
-        except (BrokenPipeError, ConnectionResetError):
+        except (BrokenPipeError, ConnectionResetError, socket.timeout):
             return False
 
 
@@ -329,11 +366,49 @@ class _Server(socketserver.ThreadingTCPServer):
         executor: Callable[..., Any],
         token: Optional[str] = None,
         token_file: Optional[Path] = None,
+        idle_timeout: float = IDLE_TIMEOUT,
+        max_connections: int = MAX_CONNECTIONS,
     ):
         super().__init__(addr, _Handler)
         self.executor = executor
         self.token = token
         self.token_file = token_file
+        self.idle_timeout = idle_timeout
+        self.max_connections = max_connections
+        self._active_requests: set = set()
+        self._active_lock = threading.Lock()
+
+    def verify_request(self, request, client_address) -> bool:
+        # Bound the thread-per-connection model (#412). The slot is taken here
+        # and released by shutdown_request, which socketserver calls for both
+        # served and refused requests.
+        with self._active_lock:
+            if len(self._active_requests) >= self.max_connections:
+                logger.warning(
+                    "gui driver: refused connection from %s: %d connections "
+                    "already open (limit %d)",
+                    client_address[0],
+                    len(self._active_requests),
+                    self.max_connections,
+                )
+                # Say why before the socket is closed; a silently dropped
+                # connection looks like a crashed helper to the caller.
+                try:
+                    request.sendall(
+                        b'{"ok": false, "error": "too many simultaneous connections"}\n'
+                    )
+                except OSError:
+                    pass
+                return False
+            self._active_requests.add(request)
+            return True
+
+    def shutdown_request(self, request) -> None:
+        try:
+            super().shutdown_request(request)
+        finally:
+            with self._active_lock:
+                self._active_requests.discard(request)
 
 
 def start(
@@ -341,6 +416,8 @@ def start(
     executor: Callable[..., Any] = wx_executor,
     token: Optional[str] = None,
     token_file: Optional[Path] = None,
+    idle_timeout: float = IDLE_TIMEOUT,
+    max_connections: int = MAX_CONNECTIONS,
 ) -> Optional[int]:
     """Start the listener thread (idempotent). Mints a session token, writes it to a
     mode-0600 file the MCP client reads, and requires it on every request. Returns the
@@ -357,7 +434,14 @@ def start(
         tok = token if token is not None else secrets.token_hex(32)
         tf = token_file if token_file is not None else _token_path()
         try:
-            server = _Server(("127.0.0.1", port), executor, tok, tf)
+            server = _Server(
+                ("127.0.0.1", port),
+                executor,
+                tok,
+                tf,
+                idle_timeout=idle_timeout,
+                max_connections=max_connections,
+            )
         except OSError:
             return None
         thread = threading.Thread(
@@ -365,6 +449,9 @@ def start(
         )
         thread.start()
         _server = server
+        # The daemon thread dies with the process, but the token file would
+        # survive a crash; stop() unlinks it and closes the socket (#412).
+        atexit.register(stop)
         if tok:
             _write_token_file(tok, tf)
         return server.server_address[1]
