@@ -42,6 +42,22 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### New Features
 
+- **`autoroute` passes the board's KiCad rules to Freerouting: `kicadRules`.**
+  A DSN carries only net-class clearances; the board's `.kicad_dru` (custom
+  rules such as isolation between voltage domains) and the `.kicad_pro`'s
+  minimum track width were lost, so the KiCad DRC rejected copper Freerouting
+  thought was legal. Freerouting master after 2.5.0 reads both files given in
+  `-de` (freerouting #1121, #1130). `autoroute` now stages copies beside the
+  DSN and passes them (default on; `kicadRules: false` leaves them out). The
+  reply's `kicad_rules` lists the files `applied`, `ignored` (2.2.0 to 2.5.0
+  log them as unknown and route on) and `unconfirmed` (2.0.x and 2.1.0 skip
+  them without a word, so the log does not mention them), and the rules
+  Freerouting could only approximate. A failed run, single or best-of-N,
+  names the files and how to leave them out, and each failed attempt carries
+  `rules_log`: the first log line naming a rule file. An explicit
+  `routerSettings: {"neck_width_um": ...}` overrides the `.kicad_pro`
+  minimum track width.
+
 - **`autoroute` passes Freerouting settings: `routerSettings`.** An object of
   setting name to value, by the names in Freerouting's `docs/settings.md` under
   `router`. Each is passed as `--router.<name>=<value>`; a list is joined with
@@ -150,6 +166,20 @@ All notable changes to the KiCAD MCP Server project are documented here.
   KiCad 9 cannot load it. The list tool stays available in read-only mode.
 
 ### Bug Fixes
+
+- **An SES import keeps each via's drill.** KiCad's `ImportSpecctraSES`
+  keeps a via padstack's drill, except when it equals the Default netclass's
+  via drill: `makeVIA` stores that one as undefined, and it then resolves
+  through the via's net's own class. So on a board whose Default via drill is
+  0.3 mm, a 0.5/0.3 mm via (`Via[0-5]_500:300_um`) on a net whose class asks
+  for 0.8/0.4 mm vias came back as 0.5 mm with a 0.4 mm drill: a 0.05 mm
+  annular ring, below any fab's minimum. On a 6-layer board this left 22 such
+  vias after every Freerouting pass. `autoroute` and `import_ses` now give
+  every via the import created the drill its padstack's name gives (KiCad
+  names them `Via[a-b]_<diameter>:<drill>_um`), and report what they changed
+  in `viaDrillsRestored`. Vias KiCad kept right, vias that were on the board
+  before the import, and diameters that two padstacks give different drills
+  are left alone.
 
 - **`set_schematic_property_position`, `batch_set_schematic_property_positions`,
   and `autoplace_schematic_fields` handle symbol rotation and mirror correctly
@@ -342,6 +372,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
   default of 100 when they pass no `limit`; when the list was cut, the reply
   says "showing N of M" and how to get the rest.
 
+- **`get_footprint_info` reads the library and footprint both schemas
+  declare** (#407). The Node tool sends `library_name` and `footprint_name`,
+  the JSON-RPC schema declares `library` and `footprint`, and the handler
+  read only `footprint_name`. So the library was ignored (a name in two
+  libraries came back from whichever was listed first), and a JSON-RPC call
+  always failed with "Missing footprint parameter". A footprint that wasn't
+  found now says "Footprint not found: ..." instead of failing with a Python
+  error, and a `Library:Footprint` name in another library than `library` is
+  refused.
+
 - **`search_footprints` reads `+`, `.`, `(` and other characters literally,
   like `list_library_footprints`.** It only turned `*` into a wildcard and
   read the rest of the pattern as a regex, so `3x14+6` found nothing (`+`
@@ -349,6 +389,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   failed with "missing ), unterminated subpattern". Both tools now share one
   helper: substring, case-insensitive, `*` as a wildcard, everything else
   literal. The "did you mean" suggestions in `place_component` use it too.
+
+- **`search_footprints` reads the `query` its JSON-RPC schema declares**
+  (#407). The handler only read `pattern` (sent by the Node tool) and
+  `search_term`, so a JSON-RPC client that sent the required `query` searched
+  for `*` and got the first 20 footprints, whatever it asked for. `pattern`
+  still takes precedence, then `query`, then `search_term`.
 
 - **`add_library_symbol_property` no longer breaks the schematic when it
   updates a property** (#379). The update matched the old property with a
