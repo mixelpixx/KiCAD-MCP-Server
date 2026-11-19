@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "python"))
 import kicad_api.ipc_backend as ipc_backend  # noqa: E402
 from kicad_api.ipc_backend import IPCBoardAPI  # noqa: E402
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.stub_pcbnew]
 
 
 def _board(name="demo.kicad_pcb", project_path="/projects/demo"):
