@@ -441,8 +441,11 @@ class LibraryCommands:
     def search_footprints(self, params: Dict) -> Dict:
         """Search for footprints by pattern"""
         try:
-            # Support both 'pattern' and 'search_term' parameter names
-            pattern = params.get("pattern") or params.get("search_term", "*")
+            # "pattern" is what the Node tool sends, "query" what the JSON-RPC
+            # schema declares, and "search_term" an older name.
+            pattern = (
+                params.get("pattern") or params.get("query") or params.get("search_term") or "*"
+            )
             limit = params.get("limit", 20)
             library_filter = params.get("library")
 

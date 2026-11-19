@@ -363,6 +363,12 @@ All notable changes to the KiCAD MCP Server project are documented here.
   helper: substring, case-insensitive, `*` as a wildcard, everything else
   literal. The "did you mean" suggestions in `place_component` use it too.
 
+- **`search_footprints` reads the `query` its JSON-RPC schema declares**
+  (#407). The handler only read `pattern` (sent by the Node tool) and
+  `search_term`, so a JSON-RPC client that sent the required `query` searched
+  for `*` and got the first 20 footprints, whatever it asked for. `pattern`
+  still takes precedence, then `query`, then `search_term`.
+
 - **`add_library_symbol_property` no longer breaks the schematic when it
   updates a property** (#379). The update matched the old property with a
   pattern that stopped at the first `)`, the one closing `(at x y angle)`, so
