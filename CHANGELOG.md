@@ -355,6 +355,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
   default of 100 when they pass no `limit`; when the list was cut, the reply
   says "showing N of M" and how to get the rest.
 
+- **`get_footprint_info` reads the library and footprint both schemas
+  declare** (#407). The Node tool sends `library_name` and `footprint_name`,
+  the JSON-RPC schema declares `library` and `footprint`, and the handler
+  read only `footprint_name`. So the library was ignored (a name in two
+  libraries came back from whichever was listed first), and a JSON-RPC call
+  always failed with "Missing footprint parameter". A footprint that wasn't
+  found now says "Footprint not found: ..." instead of failing with a Python
+  error, and a `Library:Footprint` name in another library than `library` is
+  refused.
+
 - **`search_footprints` reads `+`, `.`, `(` and other characters literally,
   like `list_library_footprints`.** It only turned `*` into a wildcard and
   read the rest of the pattern as a regex, so `3x14+6` found nothing (`+`
