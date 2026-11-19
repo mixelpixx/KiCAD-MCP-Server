@@ -165,7 +165,7 @@ One rule is written per pair of classes, plus one per class against all other ne
           z.object({
             name: z.string().describe("Net class name (must exist in the project)"),
             voltage: z
-              .union([z.number(), z.tuple([z.number(), z.number()])])
+              .union([z.number(), z.array(z.number()).length(2)])
               .describe(
                 "Potential (V) against the shared reference: a number for a fixed node, [min, max] for one that swings",
               ),
@@ -190,7 +190,7 @@ One rule is written per pair of classes, plus one per class against all other ne
         .optional()
         .describe("Explicit working voltage (V) between two classes, overriding the computed one"),
       otherNetsVoltage: z
-        .union([z.number(), z.tuple([z.number(), z.number()])])
+        .union([z.number(), z.array(z.number()).length(2)])
         .nullable()
         .optional()
         .describe(

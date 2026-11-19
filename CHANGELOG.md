@@ -167,6 +167,14 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`set_voltage_clearance_rules` loads in Codex CLI.** Its `[min, max]`
+  voltages (`classes[].voltage`, `otherNetsVoltage`) were zod tuples, which
+  reach `tools/list` as a JSON Schema `items` array with one schema per
+  position. Codex CLI reads `items` as a single schema, so it left the tool out
+  of every turn and logged "failed to build tool spec: invalid type: map,
+  expected a string". They are now arrays of two numbers (`minItems` and
+  `maxItems` 2), which accept the same input.
+
 - **An SES import keeps each via's drill.** KiCad's `ImportSpecctraSES`
   keeps a via padstack's drill, except when it equals the Default netclass's
   via drill: `makeVIA` stores that one as undefined, and it then resolves
