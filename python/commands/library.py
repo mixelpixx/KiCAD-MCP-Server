@@ -511,23 +511,42 @@ class LibraryCommands:
             }
 
     def get_footprint_info(self, params: Dict) -> Dict:
-        """Get information about a specific footprint"""
+        """Get information about a specific footprint.
+
+        The Node tool sends ``library_name`` and ``footprint_name``, the
+        JSON-RPC schema declares ``library`` and ``footprint``; both are read.
+        A footprint given as ``Library:Footprint`` names its own library. With
+        no library at all, every library is searched.
+        """
         try:
-            footprint_spec = params.get("footprint_name")
+            footprint_spec = params.get("footprint_name") or params.get("footprint")
             if not footprint_spec:
                 return {"success": False, "message": "Missing footprint parameter"}
 
-            # Try to find the footprint
-            result = self.library_manager.find_footprint(footprint_spec)
+            library = params.get("library_name") or params.get("library")
+            if library:
+                if ":" not in footprint_spec:
+                    footprint_spec = f"{library}:{footprint_spec}"
+                elif footprint_spec.split(":", 1)[0] != library:
+                    return {
+                        "success": False,
+                        "message": (
+                            f"Footprint {footprint_spec} is not in library {library}; "
+                            "pass the footprint name alone, or a matching library"
+                        ),
+                    }
 
-            if result:
-                library_path, footprint_name = result
-                # Extract library nickname from path
-                library_nickname = None
-                for nick, path in self.library_manager.libraries.items():
-                    if path == library_path:
-                        library_nickname = nick
-                        break
+            result = self.library_manager.find_footprint(footprint_spec)
+            if not result:
+                return {"success": False, "message": f"Footprint not found: {footprint_spec}"}
+
+            library_path, footprint_name = result
+            # Extract library nickname from path
+            library_nickname = None
+            for nick, path in self.library_manager.libraries.items():
+                if path == library_path:
+                    library_nickname = nick
+                    break
 
             # Minimal info — always returned even if the parser fails
             info: Dict = {
