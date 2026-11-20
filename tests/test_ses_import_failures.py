@@ -54,6 +54,9 @@ SES = """(session board
 """
 
 
+pytestmark = pytest.mark.stub_pcbnew
+
+
 @pytest.fixture(autouse=True)
 def _reset_pcbnew() -> Any:
     pcbnew_mock.reset_mock()

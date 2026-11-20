@@ -10,12 +10,11 @@ import math
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "python"))
 
-import pcbnew  # noqa: E402  (MagicMock module from conftest)
-
-pcbnew.ToMM = lambda nm: nm / 1_000_000.0
-pcbnew.FromMM = lambda mm: int(round(mm * 1_000_000.0))
+import pcbnew  # noqa: E402  (MagicMock module from conftest, or real pcbnew)
 
 
 class _V2I:
@@ -23,7 +22,21 @@ class _V2I:
         self.x, self.y = x, y
 
 
-pcbnew.VECTOR2I = _V2I
+@pytest.fixture(autouse=True, scope="module")
+def _numeric_pcbnew_helpers():
+    """Numeric ToMM / FromMM / VECTOR2I for this module's tests only.
+
+    These were assigned at import time, which under real pcbnew replaced the real
+    VECTOR2I for every test collected after this file: real SWIG calls then failed
+    with "argument 2 of type 'VECTOR2I const &'" in unrelated tests.
+    The optimizer looks them up on pcbnew at call time, so patching here is enough.
+    """
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(pcbnew, "ToMM", lambda nm: nm / 1_000_000.0)
+        mp.setattr(pcbnew, "FromMM", lambda mm: int(round(mm * 1_000_000.0)))
+        mp.setattr(pcbnew, "VECTOR2I", _V2I)
+        yield
+
 
 from commands.placement_optimizer import PlacementOptimizerCommands as PO  # noqa: E402
 

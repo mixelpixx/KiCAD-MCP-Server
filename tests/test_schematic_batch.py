@@ -454,3 +454,54 @@ class TestReplaceFieldRestore:
         assert len(edit_calls) == 1
         assert edit_calls[0]["reference"] == "D1"
         assert edit_calls[0]["properties"]["Description"] == {"value": "OLD DESC"}
+
+
+class TestPwrFlagWarning:
+    """#523: the batch_connect warning explains what a PWR_FLAG does instead of
+    reading as an instruction to add one."""
+
+    @staticmethod
+    def _fake_schematic(monkeypatch, symbols):
+        fake = types.ModuleType("skip")
+        fake.Schematic = lambda path: types.SimpleNamespace(symbol=symbols)
+        monkeypatch.setitem(sys.modules, "skip", fake)
+
+    @staticmethod
+    def _placed():
+        return [
+            {"ref": "R1", "pin": "1", "net": "VCC", "position": {"x": 0.0, "y": 0.0}},
+            {"ref": "C1", "pin": "1", "net": "GND", "position": {"x": 10.0, "y": 0.0}},
+        ]
+
+    def test_warning_explains_the_flag_and_does_not_recommend_one(self, monkeypatch, tmp_path):
+        self._fake_schematic(monkeypatch, [])
+        locator = types.SimpleNamespace(get_pin_location=lambda *args, **kwargs: None)
+
+        warnings = SchematicBatchCommands._pwr_flag_warnings(
+            tmp_path / "s.kicad_sch", locator, self._placed()
+        )
+
+        assert len(warnings) == 1
+        message = warnings[0]
+        assert "VCC" in message and "GND" in message
+        assert "marks a net as driven" in message
+        assert "power pin not driven" in message
+        assert "off the sheet" in message
+        assert "connector" in message and "battery" in message
+        assert "regulator" not in message
+        assert "power symbol" in message
+        assert "Add a PWR_FLAG" not in message
+
+    def test_a_flag_on_the_power_net_silences_the_warning(self, monkeypatch, tmp_path):
+        flag = types.SimpleNamespace(
+            lib_id=types.SimpleNamespace(value="power:PWR_FLAG"),
+            property=types.SimpleNamespace(Reference=types.SimpleNamespace(value="#FLG01")),
+        )
+        self._fake_schematic(monkeypatch, [flag])
+        locator = types.SimpleNamespace(get_pin_location=lambda path, ref, pin: (0.0, 0.0))
+        placed = [{"ref": "R1", "pin": "1", "net": "VCC", "position": {"x": 0.0, "y": 0.0}}]
+
+        assert (
+            SchematicBatchCommands._pwr_flag_warnings(tmp_path / "s.kicad_sch", locator, placed)
+            == []
+        )

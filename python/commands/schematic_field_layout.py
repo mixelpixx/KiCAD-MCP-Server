@@ -14,17 +14,25 @@ rather than depending on the output shape of other handlers.
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from commands.pin_locator import PinLocator
 from commands.schematic import SchematicLoadError, SchematicManager
 from commands.schematic_text_metrics import field_bbox as shared_field_bbox
 from commands.schematic_text_metrics import label_bbox as shared_label_bbox
+from commands.schematic_text_metrics import text_height as shared_text_height
 from commands.schematic_text_utils import (
+    _extract_property_justify,
     _extract_property_position,
     _extract_property_visible,
+    _extract_symbol_transform,
     _find_placed_symbol_block,
+    _format_justify_label,
     _move_property_in_block,
+    _normalize_angle,
+    effective_field_justification,
+    sheet_angle_to_stored_angle,
+    stored_angle_to_drawn_angle,
 )
 
 logger = logging.getLogger("kicad_interface")
@@ -123,11 +131,61 @@ def _bbox_overlaps(a, b, margin=0.0):
     )
 
 
+def _resolve_and_move_property(
+    block_text: str,
+    property_name: str,
+    x: float,
+    y: float,
+    angle: Optional[float],
+    visible: bool,
+) -> Optional[Tuple[str, Optional[Dict[str, float]], Dict[str, Any]]]:
+    """Convert sheet-absolute *angle* (or preserve existing), rewrite the property,
+    and compute its stored angle, drawn angle, and effective justification.
+
+    Returns ``(new_block, old_pos, orientation_info)`` or ``None`` if *property_name*
+    was not found in *block_text*.
+    """
+    old_pos = _extract_property_position(block_text, property_name)
+    sym_rot, sym_mirror = _extract_symbol_transform(block_text)
+
+    if angle is None:
+        stored_angle = _normalize_angle(old_pos["angle"]) if old_pos is not None else 0
+    else:
+        stored_angle = sheet_angle_to_stored_angle(float(angle), sym_rot, sym_mirror)
+
+    new_block, n_subs = _move_property_in_block(
+        block_text, property_name, x, y, stored_angle, visible
+    )
+    if n_subs == 0:
+        return None
+
+    drawn_angle = stored_angle_to_drawn_angle(stored_angle, sym_rot, sym_mirror)
+    stored_h, stored_v = _extract_property_justify(new_block, property_name)
+    eff_justify = effective_field_justification(
+        stored_h, stored_v, stored_angle, sym_rot, sym_mirror
+    )
+    orientation_info: Dict[str, Any] = {
+        "stored_angle": stored_angle,
+        "drawn_angle": drawn_angle,
+        "effective_justify": eff_justify,
+        "stored_justify": {"horizontal": stored_h, "vertical": stored_v},
+        "symbol_rotation": _normalize_angle(sym_rot),
+        "symbol_mirror": sym_mirror,
+    }
+    return new_block, old_pos, orientation_info
+
+
 class SchematicFieldLayoutCommands:
     """Handlers for schematic field placement."""
 
     def set_schematic_property_position(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Move a symbol's Reference or Value property field to a new coordinate."""
+        """Move a symbol's Reference or Value property field to a new coordinate.
+
+        ``angle``, when provided, is the desired sheet-absolute text angle
+        (0 = horizontal, 90 = vertical) and is converted to KiCad's symbol-local
+        stored angle. When ``angle`` is omitted, the field's existing stored angle
+        is preserved.
+        """
         logger.info("Setting schematic property position")
         try:
             schematic_path = params.get("schematicPath")
@@ -135,7 +193,7 @@ class SchematicFieldLayoutCommands:
             property_name = params.get("property")
             x = params.get("x")
             y = params.get("y")
-            angle = params.get("angle", 0)
+            angle = params.get("angle")
             visible = params.get("visible", True)
 
             if not all([schematic_path, reference, property_name, x is not None, y is not None]):
@@ -158,15 +216,15 @@ class SchematicFieldLayoutCommands:
                     "message": f"Component '{reference}' not found in schematic",
                 }
 
-            old_pos = _extract_property_position(block_text, property_name)
-            new_block, n_subs = _move_property_in_block(
-                block_text, property_name, x, y, angle, visible
+            moved = _resolve_and_move_property(
+                block_text, property_name, x, y, angle, bool(visible)
             )
-            if n_subs == 0:
+            if moved is None:
                 return {
                     "success": False,
                     "message": f"Property '{property_name}' not found in {reference}",
                 }
+            new_block, old_pos, info = moved
 
             new_content = content[:block_start] + new_block + content[block_end + 1 :]
             sch_path.write_bytes(new_content.encode("utf-8"))
@@ -174,9 +232,22 @@ class SchematicFieldLayoutCommands:
             old_str = (
                 f"({old_pos['x']}, {old_pos['y']}, {old_pos['angle']}°)" if old_pos else "unknown"
             )
+            eff_label = _format_justify_label(
+                info["effective_justify"]["horizontal"], info["effective_justify"]["vertical"]
+            )
             return {
                 "success": True,
-                "message": f"Moved {reference}.{property_name} from {old_str} to ({x}, {y}, {angle}°)",
+                "message": (
+                    f"Moved {reference}.{property_name} from {old_str} to ({x}, {y}) "
+                    f"(stored_angle={info['stored_angle']}°, drawn_angle={info['drawn_angle']}°, "
+                    f"effective_justify={eff_label})"
+                ),
+                "reference": reference,
+                "property": property_name,
+                "x": x,
+                "y": y,
+                "visible": bool(visible),
+                **info,
             }
         except Exception as e:
             logger.error(f"Error setting property position: {e}")
@@ -210,7 +281,7 @@ class SchematicFieldLayoutCommands:
                 property_name = upd.get("property")
                 x = upd.get("x")
                 y = upd.get("y")
-                angle = upd.get("angle", 0)
+                angle = upd.get("angle")
                 visible = upd.get("visible", True)
 
                 if not reference or not property_name or x is None or y is None:
@@ -243,10 +314,10 @@ class SchematicFieldLayoutCommands:
                     )
                     continue
 
-                new_block, n_subs = _move_property_in_block(
-                    block_text, property_name, x, y, angle, visible
+                moved = _resolve_and_move_property(
+                    block_text, property_name, x, y, angle, bool(visible)
                 )
-                if n_subs == 0:
+                if moved is None:
                     failed.append(
                         {
                             "reference": reference,
@@ -255,6 +326,7 @@ class SchematicFieldLayoutCommands:
                         }
                     )
                     continue
+                new_block, _, info = moved
 
                 content = content[:block_start] + new_block + content[block_end + 1 :]
                 applied.append(
@@ -263,8 +335,9 @@ class SchematicFieldLayoutCommands:
                         "property": property_name,
                         "x": x,
                         "y": y,
-                        "angle": angle,
-                        "visible": visible,
+                        "angle": info["drawn_angle"],
+                        "visible": bool(visible),
+                        **info,
                     }
                 )
 
@@ -446,24 +519,36 @@ class SchematicFieldLayoutCommands:
                 else:
                     sides = ["above", "below", "right", "left"]
 
+                line_h = shared_text_height()
+
                 def try_side(side):
-                    half_ref_h = text_height / 2.0
+                    half_ref_h = line_h / 2.0
                     half_ref_w = max(len(ref), 1) * 0.75 / 2.0
                     half_val_w = max(len(str(val_text)), 1) * 0.75 / 2.0
-                    stack = text_height
+                    stack = line_h
                     if side == "above":
                         ref_y = snap(ext_bb["y_min"] - half_ref_h - clearance)
-                        return cx, ref_y, cx, ref_y - stack
+                        return cx, ref_y, cx, round(ref_y - stack, 4)
                     if side == "below":
                         ref_y = snap(ext_bb["y_max"] + half_ref_h + clearance)
-                        return cx, ref_y, cx, ref_y + stack
+                        return cx, ref_y, cx, round(ref_y + stack, 4)
                     if side == "right":
                         x0 = ext_bb["x_max"] + clearance
                         ref_y = snap(cy)
-                        return snap(x0 + half_ref_w), ref_y, snap(x0 + half_val_w), ref_y + stack
+                        return (
+                            snap(x0 + half_ref_w),
+                            ref_y,
+                            snap(x0 + half_val_w),
+                            round(ref_y + stack, 4),
+                        )
                     x0 = ext_bb["x_min"] - clearance
                     ref_y = snap(cy)
-                    return snap(x0 - half_ref_w), ref_y, snap(x0 - half_val_w), ref_y + stack
+                    return (
+                        snap(x0 - half_ref_w),
+                        ref_y,
+                        snap(x0 - half_val_w),
+                        round(ref_y + stack, 4),
+                    )
 
                 ref_x = ref_y = val_x = val_y = ref_bb = val_bb = None
                 for side in sides:
@@ -480,6 +565,8 @@ class SchematicFieldLayoutCommands:
 
                 placed_field_bboxes.append(ref_bb)
                 placed_field_bboxes.append(val_bb)
+                # angle=0 is sheet-absolute horizontal; batch_set_schematic_property_positions
+                # converts it to each symbol's local frame (90° stored on 90°/270° parts).
                 updates.append(
                     {"reference": ref, "property": "Reference", "x": ref_x, "y": ref_y, "angle": 0}
                 )
