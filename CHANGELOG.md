@@ -440,6 +440,13 @@ All notable changes to the KiCAD MCP Server project are documented here.
   error, and a `Library:Footprint` name in another library than `library` is
   refused.
 
+- **`group_components` works: it creates a PCB group** (#407). The tool was
+  registered but no Python command answered it, so every call failed with
+  "unknown command". It now creates a `PCB_GROUP` named `groupName` holding
+  the given footprints, and the board is auto-saved like other board edits.
+  Nothing is created when a reference isn't found (the reply names it) or a
+  footprint is already in a group, since KiCad allows only one.
+
 - **`search_footprints` reads `+`, `.`, `(` and other characters literally,
   like `list_library_footprints`.** It only turned `*` into a wildcard and
   read the rest of the pattern as a regex, so `3x14+6` found nothing (`+`
