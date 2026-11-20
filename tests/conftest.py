@@ -53,16 +53,45 @@ class _ModuleStub(MagicMock):
 
 _REAL_KICAD = os.environ.get("KICAD_USE_REAL_PCBNEW") == "1"
 
+if _REAL_KICAD:
+    # A mock that reaches a real SWIG call must fail, not hang. SWIG unwraps an argument by
+    # following its ``this`` attribute until it finds a SWIG pointer; on a Mock every ``.this``
+    # makes a new child mock, so ``pcbnew.PCB_VIA(MagicMock())`` never returns and memory grows
+    # without bound (5 GB in about a minute; a whole real-pcbnew run sat at 19 GB after 50 min).
+    # With ``this`` defined as None on the Mock classes, SWIG gives up at once and raises
+    # "Wrong number or type of arguments". A test that needs ``.this`` sets it on its own mock.
+    from unittest import mock as _mock
+
+    _mock.NonCallableMock.this = None
+
+
+def pytest_collection_modifyitems(config, items):
+    """In real-KiCad mode, skip tests marked ``stub_pcbnew``: they reset_mock() the session
+    pcbnew stub or patch attributes only the stub has, so against real pcbnew they error."""
+    if not _REAL_KICAD:
+        return
+    skip = pytest.mark.skip(reason="written for the pcbnew stub; KICAD_USE_REAL_PCBNEW=1 is set")
+    for item in items:
+        if item.get_closest_marker("stub_pcbnew"):
+            item.add_marker(skip)
+
 
 @pytest.fixture(autouse=True)
-def _no_real_kicad_config(monkeypatch):
+def _no_real_kicad_config(monkeypatch, tmp_path_factory):
     """Tests never read or write the real KiCad configuration.
 
     The library readers and the table editor look for KiCad's global tables
     under ``KICAD_CONFIG_HOME``, ``APPDATA`` and ``XDG_CONFIG_HOME`` before the
     home directory, so a test that only patches ``Path.home`` would still find
-    the developer's real tables through those variables. Clear them for every
-    test; a test that needs one sets it itself with ``monkeypatch.setenv``.
+    the developer's real tables through those variables. Each test gets them
+    pointed at its own empty directory; a test that needs another value sets
+    it itself with ``monkeypatch.setenv`` (or ``delenv`` to test the fallback).
+
+    Pointed at a temp directory rather than deleted: a test that runs
+    ``kicad-cli`` with the variables deleted sends it to the user's real
+    config (``%APPDATA%\\kicad`` on Windows, ``~/.config/kicad`` on Linux), and
+    kicad-cli writes ``kicad_common.json`` there (Tristan Lewis saw its
+    ``working_dir`` change three times in one Windows run, 2026-11-18).
 
     Left alone in real-KiCad mode: there pcbnew and the ``kicad-cli``
     subprocesses need the configuration those variables point at (a user-space
@@ -72,8 +101,11 @@ def _no_real_kicad_config(monkeypatch):
     """
     if _REAL_KICAD:
         return
+    root = tmp_path_factory.mktemp("kicad-user-config")
     for var in ("KICAD_CONFIG_HOME", "APPDATA", "XDG_CONFIG_HOME"):
-        monkeypatch.delenv(var, raising=False)
+        d = root / var.lower()
+        d.mkdir()
+        monkeypatch.setenv(var, str(d))
 
 
 if not _REAL_KICAD:

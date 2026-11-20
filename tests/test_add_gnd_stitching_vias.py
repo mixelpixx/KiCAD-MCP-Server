@@ -312,7 +312,10 @@ def test_dry_run_does_not_modify_board():
 
 
 @pytest.mark.unit
-def test_actual_run_writes_vias_to_board():
+def test_actual_run_writes_vias_to_board(monkeypatch):
+    # The board is a mock, so the via must be one too: under real pcbnew,
+    # pcbnew.PCB_VIA(<mock board>) is a real SWIG constructor fed a mock.
+    monkeypatch.setattr(pcbnew, "PCB_VIA", MagicMock(name="PCB_VIA"))
     board = _board(width_mm=20, height_mm=20)
     out = _cmd(board).add_gnd_stitching_vias(
         {
