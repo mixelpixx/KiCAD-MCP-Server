@@ -64,6 +64,77 @@ GOOD_SCH = """(kicad_sch
 """
 
 
+# GOOD_SCH with the (sheet_instances ...) block a real schematic carries:
+# one (path ...) per use of the sheet, each with a (page ...).
+GOOD_SCH_INSTANCES = GOOD_SCH.replace(
+    "\n)\n",
+    '\n\t(sheet_instances\n\t\t(path "/"\n\t\t\t(page "1")\n\t\t)\n\t)\n)\n',
+    1,
+)
+
+# A placed power symbol, as KiCad writes it: the block the maintainer copied
+# into (sheet_instances ...) by hand to reproduce #524. Written at depth-1
+# placement (one tab); the broken fixture indents it one more level.
+POWER_SYMBOL = """\t(symbol
+\t\t(lib_id "power:+5V")
+\t\t(at 50.8 100.33 0)
+\t\t(unit 1)
+\t\t(exclude_from_sim no)
+\t\t(in_bom yes)
+\t\t(on_board yes)
+\t\t(uuid "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+\t\t(property "Reference" "#PWR01"
+\t\t\t(at 50.8 100.33 0)
+\t\t\t(effects
+\t\t\t\t(font
+\t\t\t\t\t(size 1.27 1.27)
+\t\t\t\t)
+\t\t\t)
+\t\t)
+\t\t(property "Value" "+5V"
+\t\t\t(at 50.8 96.52 0)
+\t\t\t(effects
+\t\t\t\t(font
+\t\t\t\t\t(size 1.27 1.27)
+\t\t\t\t)
+\t\t\t)
+\t\t)
+\t\t(pin "1"
+\t\t\t(uuid "bbbbbbbb-cccc-dddd-eeee-ffffffffffff")
+\t\t)
+\t\t(instances
+\t\t\t(project "test_project"
+\t\t\t\t(path "/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+\t\t\t\t\t(reference "#PWR01")
+\t\t\t\t\t(unit 1)
+\t\t\t\t)
+\t\t\t)
+\t\t)
+\t)"""
+
+# GOOD_SCH's placed symbol, given a Reference property and an (instances ...)
+# block whose reference disagrees with it: the property says C9, the use of
+# the sheet says C10.
+SCH_STALE_REFERENCE = GOOD_SCH.replace(
+    '\t\t(uuid "11111111-2222-3333-4444-555555555555")\n\t)',
+    '\t\t(uuid "11111111-2222-3333-4444-555555555555")\n'
+    '\t\t(property "Reference" "C9"\n'
+    "\t\t\t(at 100 100 0)\n"
+    "\t\t\t(effects (font (size 1.27 1.27)))\n"
+    "\t\t)\n"
+    "\t\t(instances\n"
+    '\t\t\t(project "test_project"\n'
+    '\t\t\t\t(path "/11111111-2222-3333-4444-555555555555"\n'
+    '\t\t\t\t\t(reference "C10")\n'
+    "\t\t\t\t\t(unit 1)\n"
+    "\t\t\t\t)\n"
+    "\t\t\t)\n"
+    "\t\t)\n"
+    "\t)",
+    1,
+)
+
+
 # Byte-for-byte what main's add_symbol_property produced when asked to update an
 # existing "Description" property on GOOD_LIB above (hide=True). Its removal
 # regex, `\(property "X"\s+"[^"]*".*?\)` non-greedy, stops at the ')' closing
@@ -322,6 +393,52 @@ def test_missing_lib_symbols_is_a_warning(tmp_path):
 def test_schematic_not_found():
     r = validate_schematic({"schematicPath": "/no/such/sheet.kicad_sch"})
     assert not r["success"]
+
+
+# --- sheet_instances (#524) ------------------------------------------------- #
+
+
+def test_sheet_instances_block_is_clean(tmp_path):
+    """A proper (sheet_instances (path ... (page ...))) block stays clean."""
+    r = check_sch(write(tmp_path, "ok.kicad_sch", GOOD_SCH_INSTANCES))
+    assert r["valid"], r["issues"]
+    assert r["issues"] == []
+
+
+def test_symbol_nested_in_sheet_instances_is_an_error(tmp_path):
+    """#524: the maintainer's reproduction -- a copy of a power:+5V symbol
+    hand-edited into the (sheet_instances ...) block of a valid schematic.
+    kicad-cli refuses the file with a bare 'Failed to load schematic'; the
+    check names the item and its line instead."""
+    nested = "\n".join("\t" + line for line in POWER_SYMBOL.split("\n"))
+    broken = GOOD_SCH_INSTANCES.replace("\t)\n)\n", nested + "\n\t)\n)\n", 1)
+    assert broken.split("\n")[21] == "\t\t(symbol", "premise: nested symbol is on line 22"
+    r = check_sch(write(tmp_path, "bad.kicad_sch", broken))
+    assert not r["valid"]
+    assert codes(r) == ["item_in_sheet_instances"], r["issues"]
+    assert r["errorCount"] == 1, "the symbol's own children are not faults of their own"
+    assert r["issues"][0]["line"] == 22
+    assert "line 22" in r["message"]
+
+
+def test_stale_reference_is_a_warning(tmp_path):
+    """#524: the Reference property says C9 while the instance path says C10."""
+    r = check_sch(write(tmp_path, "s.kicad_sch", SCH_STALE_REFERENCE))
+    assert r["valid"], r["issues"]
+    assert codes(r) == ["reference_mismatch"], r["issues"]
+    assert r["warningCount"] == 1
+    warning = r["issues"][0]
+    assert warning["severity"] == "warning"
+    assert warning["line"] == 17, "the stale Reference property's line"
+    assert "'C9'" in warning["message"] and "'C10'" in warning["message"]
+
+
+def test_matching_instance_reference_stays_clean(tmp_path):
+    """The same symbol with its instance reference agreeing with the property."""
+    matching = SCH_STALE_REFERENCE.replace('(reference "C10")', '(reference "C9")', 1)
+    r = check_sch(write(tmp_path, "m.kicad_sch", matching))
+    assert r["valid"], r["issues"]
+    assert r["issues"] == []
 
 
 def test_issues_are_ordered_by_position(tmp_path):
