@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from utils.project_settings_guard import write_project_json_atomic
+from utils.project_settings_guard import require_unlocked_files, write_project_json_atomic
 
 
 def _registry(project_path):
@@ -47,6 +47,10 @@ def create_variant(params):
             raise ValueError("name must be non-empty printable text without surrounding whitespace")
         if name.casefold() == "< default >":
             raise ValueError("The default design is implicit; use another variant name")
+        if name.startswith("-"):
+            raise ValueError(
+                "Variant names cannot start with '-' because kicad-cli treats them as options"
+            )
         if any(v["name"].casefold() == name.casefold() for v in variants):
             raise ValueError(f"Variant already exists: {name}")
         entry = {"name": name}
@@ -55,6 +59,7 @@ def create_variant(params):
                 raise ValueError("description must be a string")
             entry["description"] = params["description"]
         variants.append(entry)
+        require_unlocked_files(path, path.with_suffix(".kicad_sch"), path.with_suffix(".kicad_pcb"))
         write_project_json_atomic(str(path), project)
         return {"success": True, "projectPath": str(path), "variant": entry}
     except (OSError, ValueError) as exc:

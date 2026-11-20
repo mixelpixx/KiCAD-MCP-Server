@@ -176,8 +176,7 @@ jobs:
 
           retry sudo add-apt-repository --yes --no-update ppa:kicad/kicad-${{ matrix.kicad }}-releases
           retry sudo apt-get "${APT_OPTS[@]}" update
-          # Headless pcbnew tests use no 3D models, demos or offline manuals.
-          retry sudo apt-get "${APT_OPTS[@]}" install -y --no-install-recommends kicad kicad-symbols kicad-footprints kicad-templates
+          retry sudo apt-get "${APT_OPTS[@]}" install -y kicad kicad-libraries
 
           mapfile -t KICAD_PYTHON_PACKAGES < <(
             {
@@ -195,7 +194,7 @@ jobs:
 
           if [ "${#KICAD_PYTHON_PACKAGES[@]}" -gt 0 ]; then
             echo "Installing KiCad Python packages: ${KICAD_PYTHON_PACKAGES[*]}"
-            retry sudo apt-get "${APT_OPTS[@]}" install -y --no-install-recommends "${KICAD_PYTHON_PACKAGES[@]}"
+            retry sudo apt-get "${APT_OPTS[@]}" install -y "${KICAD_PYTHON_PACKAGES[@]}"
           fi
 
           KICAD_PYTHONPATH="$(python3 - <<'PY'

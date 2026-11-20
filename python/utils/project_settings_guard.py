@@ -84,6 +84,12 @@ def _read_json(path: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def require_unlocked_files(*targets: Path) -> None:
+    for target in targets:
+        if target.with_name("~" + target.name + ".lck").exists():
+            raise ValueError(f"Close KiCad before editing: {target.name} has an editor lock")
+
+
 def write_project_json_atomic(path: str, data: Dict[str, Any]) -> None:
     directory = os.path.dirname(path) or "."
     fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".prosettings-", suffix=".kicad_pro")
@@ -94,7 +100,7 @@ def write_project_json_atomic(path: str, data: Dict[str, Any]) -> None:
             # first restore. json.load preserves insertion order, and
             # merge_preserved_keys builds from `after`, so the file keeps
             # KiCad's ordering with any restored keys appended.
-            json.dump(data, handle, indent=2)
+            json.dump(data, handle, indent=2, ensure_ascii=False)
             handle.write("\n")
         os.replace(tmp_path, path)
     except Exception:

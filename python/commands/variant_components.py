@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from commands.variant_registry import registered_names
+from utils.project_settings_guard import require_unlocked_files
 from utils.sexpr_format import QUOTED_VALUE_SKIP, escape_sexpr_string, unescape_sexpr_string
 from utils.sheet_tree import sheet_chains
 
@@ -265,9 +266,7 @@ def _write(sheet, before, after, project):
     try:
         temp_path.write_bytes(after.encode("utf-8"))
         shutil.copymode(sheet, temp_path)
-        for target in (project, project.with_suffix(".kicad_sch"), sheet):
-            if target.with_name("~" + target.name + ".lck").exists():
-                raise ValueError(f"Close KiCad before editing: {target.name} has an editor lock")
+        require_unlocked_files(project, project.with_suffix(".kicad_sch"), sheet)
         if sheet.read_bytes() != before.encode("utf-8"):
             raise ValueError("Schematic changed during edit; retry")
         os.replace(temp_path, sheet)

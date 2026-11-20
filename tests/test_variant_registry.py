@@ -31,6 +31,7 @@ def test_create_lists_native_entry_preserving_project(tmp_path):
         {"name": "  "},
         {"name": "< Default >"},
         {"name": " Lite"},
+        {"name": "-Lite"},
         {"name": "A\nB"},
         {"name": None},
         {"name": "X", "description": []},
@@ -44,6 +45,29 @@ def test_refuse_invalid_entry_without_writing(tmp_path, entry):
     path.write_bytes(before)
     result = create_variant({"projectPath": str(path), **entry})
     assert not result["success"] and result["error"]
+    assert path.read_bytes() == before
+
+
+def test_create_preserves_literal_unicode(tmp_path):
+    from commands.variant_registry import create_variant
+
+    path = tmp_path / "board.kicad_pro"
+    path.write_text('{"text_variables": {"BOM_LABEL": "Qté"}}', encoding="utf-8")
+    assert create_variant({"projectPath": str(path), "name": "Серия"})["success"]
+    text = path.read_text(encoding="utf-8")
+    assert '"Qté"' in text and '"Серия"' in text
+
+
+@pytest.mark.parametrize("locked", ["board.kicad_pro", "board.kicad_sch", "board.kicad_pcb"])
+def test_create_refuses_open_project_without_rewriting(tmp_path, locked):
+    from commands.variant_registry import create_variant
+
+    path = tmp_path / "board.kicad_pro"
+    before = b'{"schematic": {}}\n'
+    path.write_bytes(before)
+    (tmp_path / f"~{locked}.lck").touch()
+    result = create_variant({"projectPath": str(path), "name": "Lite"})
+    assert not result["success"] and "lock" in result["error"]
     assert path.read_bytes() == before
 
 
