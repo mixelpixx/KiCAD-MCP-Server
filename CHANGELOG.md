@@ -167,6 +167,16 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`add_schematic_component` auto-picks the next free `#PWR` reference for power symbols (#524).**
+  Placing a power symbol (`power:GND`, …) without a reference, or with the
+  `#PWR?` placeholder, wrote the literal placeholder into the schematic,
+  which KiCad refuses to load — cloning a power symbol by hand was the only
+  workaround. The tool now allocates the next unused `#PWRnn` in the project,
+  counting every sheet and every instance path, writes it on the Reference
+  property and every instance entry, and reports it as `component_reference`.
+  An explicit reference other than the placeholder, and every non-power
+  symbol, behave exactly as before.
+
 - **An SES import keeps each via's drill.** KiCad's `ImportSpecctraSES`
   keeps a via padstack's drill, except when it equals the Default netclass's
   via drill: `makeVIA` stores that one as undefined, and it then resolves

@@ -36,7 +36,13 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
       symbol: z
         .string()
         .describe("Symbol library:name reference (e.g., Device:R, EDA-MCP:ESP32-C3)"),
-      reference: z.string().describe("Component reference (e.g., R1, U1)"),
+      reference: z
+        .string()
+        .optional()
+        .describe(
+          "Component reference (e.g., R1, U1). For power symbols (power:GND, …) " +
+            'omit it or pass "#PWR?" to use the next free #PWRnn in the project.',
+        ),
       value: z.string().optional().describe("Component value"),
       footprint: z
         .string()
@@ -71,7 +77,7 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
     async (args: {
       schematicPath: string;
       symbol: string;
-      reference: string;
+      reference?: string;
       value?: string;
       footprint?: string;
       position?: { x: number; y: number };
@@ -103,11 +109,15 @@ export function registerSchematicTools(server: McpServer, callKicadScript: Funct
 
       const result = await callKicadScript("add_schematic_component", transformed);
       if (result.success) {
+        // For a power symbol the backend may have picked the reference
+        // (next free #PWRnn); report the one actually placed, not the
+        // "#PWR?" the caller passed.
+        const placed = result.component_reference ?? args.reference;
         return {
           content: [
             {
               type: "text",
-              text: `Successfully added ${args.reference} (${args.symbol}) to schematic`,
+              text: `Successfully added ${placed} (${args.symbol}) to schematic`,
             },
           ],
         };
