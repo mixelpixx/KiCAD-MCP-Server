@@ -1061,6 +1061,72 @@ class WireManager:
             return False
 
     @staticmethod
+    def _wire_endpoints(
+        item: Any,
+    ) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
+        """Stored endpoints of a `(wire ...)` s-expression, or None.
+
+        A wire may carry intermediate points (an L-shaped run is one item
+        with three `xy` entries); only the first and last points are the
+        wire's endpoints, matching what `delete_wire` compares.
+        """
+        if not (isinstance(item, list) and len(item) > 0 and item[0] == _SYM_WIRE):
+            return None
+
+        pts_list = None
+        for part in item[1:]:
+            if isinstance(part, list) and len(part) > 0 and part[0] == _SYM_PTS:
+                pts_list = part
+                break
+
+        if pts_list is None:
+            return None
+
+        xy_points = [
+            p for p in pts_list[1:] if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_XY
+        ]
+        if len(xy_points) < 2:
+            return None
+
+        return (
+            (float(xy_points[0][1]), float(xy_points[0][2])),
+            (float(xy_points[-1][1]), float(xy_points[-1][2])),
+        )
+
+    @staticmethod
+    def find_touching_wires(
+        schematic_path: Path,
+        point: List[float],
+        tolerance: float = 0.5,
+    ) -> List[Tuple[Tuple[float, float], Tuple[float, float]]]:
+        """Wires with an endpoint within *tolerance* (mm) of *point*.
+
+        Returns the wires' stored endpoint pairs, in file order. Used to
+        explain a `delete_wire` miss (#521): when the run between two points
+        is split into segments at a junction or T, no single segment matches
+        both points, but the segments touching each point show why.
+        """
+        try:
+            with open(schematic_path, "r", encoding="utf-8") as f:
+                sch_data = sexpdata.loads(f.read())
+        except Exception as e:
+            logger.error(f"Error listing wires touching {point}: {e}")
+            return []
+
+        px, py = point
+        touching = []
+        for item in sch_data:
+            endpoints = WireManager._wire_endpoints(item)
+            if endpoints is None:
+                continue
+            (x1, y1), (x2, y2) = endpoints
+            if (abs(x1 - px) < tolerance and abs(y1 - py) < tolerance) or (
+                abs(x2 - px) < tolerance and abs(y2 - py) < tolerance
+            ):
+                touching.append(endpoints)
+        return touching
+
+    @staticmethod
     def delete_wire(
         schematic_path: Path,
         start_point: List[float],
@@ -1069,6 +1135,13 @@ class WireManager:
     ) -> bool:
         """
         Delete a wire from the schematic matching given start/end coordinates.
+
+        A wire matches only when a single segment's endpoints equal the given
+        start and end, within *tolerance* (0.5 mm by default, either
+        direction). A run split into more than one segment — for example at a
+        junction or a T — does not match as one wire (#521); delete each
+        segment separately. On a miss, `find_touching_wires` lists the wires
+        that touch the start and end points.
 
         Args:
             schematic_path: Path to .kicad_sch file
@@ -1089,29 +1162,11 @@ class WireManager:
             ex, ey = end_point
 
             for i, item in enumerate(sch_data):
-                if not (isinstance(item, list) and len(item) > 0 and item[0] == _SYM_WIRE):
+                endpoints = WireManager._wire_endpoints(item)
+                if endpoints is None:
                     continue
 
-                # Extract pts from the wire s-expression
-                pts_list = None
-                for part in item[1:]:
-                    if isinstance(part, list) and len(part) > 0 and part[0] == _SYM_PTS:
-                        pts_list = part
-                        break
-
-                if pts_list is None:
-                    continue
-
-                xy_points = [
-                    p
-                    for p in pts_list[1:]
-                    if isinstance(p, list) and len(p) >= 3 and p[0] == _SYM_XY
-                ]
-                if len(xy_points) < 2:
-                    continue
-
-                x1, y1 = float(xy_points[0][1]), float(xy_points[0][2])
-                x2, y2 = float(xy_points[-1][1]), float(xy_points[-1][2])
+                (x1, y1), (x2, y2) = endpoints
 
                 match_fwd = (
                     abs(x1 - sx) < tolerance

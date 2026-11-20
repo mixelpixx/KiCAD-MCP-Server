@@ -864,7 +864,7 @@ edit_schematic_component and set its value to an empty string.`,
   // Get pin locations for a schematic component
   server.tool(
     "get_schematic_pin_locations",
-    "Returns the exact x/y coordinates of every pin on a schematic component. Use this before add_schematic_net_label to place labels correctly on pin endpoints.",
+    "Returns the exact x/y coordinates of every pin on a schematic component. Use this before add_schematic_net_label to place labels correctly on pin endpoints. Coordinates are rounded to 2 decimal places, as stored in the file.",
     {
       schematicPath: z.string().describe("Path to the schematic file"),
       reference: z.string().describe("Component reference designator (e.g. U1, R1, J2)"),
@@ -1325,7 +1325,7 @@ edit_schematic_component and set its value to an empty string.`,
   // Delete wire from schematic
   server.tool(
     "delete_schematic_wire",
-    "Remove a wire from the schematic by start and end coordinates.",
+    "Remove a wire from the schematic by start and end coordinates. A wire matches only when a single segment's endpoints equal the given start and end within 0.5 mm (either direction); a run split into segments at a junction or T does not match as one wire — delete each segment separately. When no wire matches, the reply lists the wires touching the start point and the end point, with their stored coordinates.",
     {
       schematicPath: z.string().describe("Path to the .kicad_sch file"),
       start: z.object({ x: z.number(), y: z.number() }).describe("Wire start position"),

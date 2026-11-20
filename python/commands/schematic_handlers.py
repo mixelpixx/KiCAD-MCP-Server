@@ -1585,7 +1585,11 @@ class SchematicHandlersMixin:
 
             result = {}
             for pin_num, coords in all_pins.items():
-                entry = {"x": coords[0], "y": coords[1]}
+                # Round to 2 dp, as stored in the file (#521): the raw value
+                # comes out of rotation float math (e.g. 439.41999999999996
+                # for a wire stored as 439.42) and reads as a different
+                # coordinate than the file holds.
+                entry = {"x": round(coords[0], 2), "y": round(coords[1], 2)}
                 if pin_num in pins_def:
                     entry["name"] = pins_def[pin_num].get("name", pin_num)
                     entry["angle"] = (
@@ -2310,7 +2314,41 @@ class SchematicHandlersMixin:
             if deleted:
                 return {"success": True}
             else:
-                return {"success": False, "message": "No matching wire found"}
+                # A miss is usually a run split into segments (#521): no
+                # single segment spans both points, but the segments
+                # touching each point show that. List them with their stored
+                # coordinates so the caller can delete one segment at a time.
+                touching_start = WireManager.find_touching_wires(Path(schematic_path), start_point)
+                touching_end = WireManager.find_touching_wires(Path(schematic_path), end_point)
+
+                def _fmt(point: Any) -> str:
+                    return f"({float(point[0]):g}, {float(point[1]):g})"
+
+                def _fmt_wire(wire: Any) -> str:
+                    return f"{_fmt(wire[0])} -> {_fmt(wire[1])}"
+
+                def _fmt_touching(wires: Any) -> str:
+                    return "; ".join(_fmt_wire(w) for w in wires) if wires else "none"
+
+                message = (
+                    f"No matching wire found from {_fmt(start_point)} to {_fmt(end_point)}. "
+                    "A wire matches only when a single segment's endpoints equal the given "
+                    "start and end (within 0.5 mm); a run split into segments at a junction "
+                    "or T does not match as one wire — delete each segment separately. "
+                    f"Wires touching the start point: {_fmt_touching(touching_start)}. "
+                    f"Wires touching the end point: {_fmt_touching(touching_end)}. "
+                    "Use list_schematic_wires for the exact stored endpoints."
+                )
+                return {
+                    "success": False,
+                    "message": message,
+                    "touching_start": [
+                        [[w[0][0], w[0][1]], [w[1][0], w[1][1]]] for w in touching_start
+                    ],
+                    "touching_end": [
+                        [[w[0][0], w[0][1]], [w[1][0], w[1][1]]] for w in touching_end
+                    ],
+                }
 
         except Exception as e:
             logger.error(f"Error deleting schematic wire: {e}")

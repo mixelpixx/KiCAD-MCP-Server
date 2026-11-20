@@ -42,6 +42,34 @@ _WIRE_SCH = """\
 )
 """
 
+# Split run used by the #521 tests: (10,20)->(20,20)->(30,20) is one run
+# made of two segments, so no single segment spans (10,20)->(30,20).
+_SPLIT_WIRE_SCH = """\
+(kicad_sch (version 20250114) (generator "test")
+  (uuid aaaaaaaa-0000-0000-0000-000000000000)
+  (paper "A4")
+  (wire (pts (xy 10 20) (xy 20 20))
+    (stroke (width 0) (type default))
+    (uuid bbbbbbbb-0000-0000-0000-000000000001)
+  )
+  (wire (pts (xy 20 20) (xy 30 20))
+    (stroke (width 0) (type default))
+    (uuid bbbbbbbb-0000-0000-0000-000000000002)
+  )
+  (sheet_instances (path "/" (page "1")))
+)
+"""
+
+
+def _wire_items(sch: Path) -> list:
+    """All `(wire ...)` items in *sch*, in file order."""
+    data = sexpdata.loads(sch.read_text(encoding="utf-8"))
+    return [
+        item
+        for item in data
+        if isinstance(item, list) and item and item[0] == sexpdata.Symbol("wire")
+    ]
+
 
 _DUP_LABEL_SCH = """\
 (kicad_sch (version 20250114) (generator "test")
@@ -229,6 +257,48 @@ class TestDeleteWireIntegration:
         self.WireManager.delete_wire(sch, [10.0, 20.0], [30.0, 20.0])
         # Must parse without exception
         sexpdata.loads(sch.read_text(encoding="utf-8"))
+
+    # --- #521: a run split into segments does not match as one wire ---
+
+    def test_split_run_does_not_match_as_one_wire(self, tmp_path: Any) -> None:
+        """Two segments (10,20)->(20,20)->(30,20): deleting the whole run misses."""
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_SPLIT_WIRE_SCH, encoding="utf-8")
+
+        result = self.WireManager.delete_wire(sch, [10.0, 20.0], [30.0, 20.0])
+
+        assert result is False
+        # Nothing was removed: both segments are still in the file.
+        assert len(_wire_items(sch)) == 2
+
+    def test_each_split_segment_still_deletes(self, tmp_path: Any) -> None:
+        """The same split run deletes fine one segment at a time."""
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_SPLIT_WIRE_SCH, encoding="utf-8")
+
+        assert self.WireManager.delete_wire(sch, [10.0, 20.0], [20.0, 20.0]) is True
+        assert self.WireManager.delete_wire(sch, [20.0, 20.0], [30.0, 20.0]) is True
+        assert _wire_items(sch) == []
+
+    def test_find_touching_wires_lists_split_segments(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_SPLIT_WIRE_SCH, encoding="utf-8")
+
+        assert self.WireManager.find_touching_wires(sch, [10.0, 20.0]) == [
+            ((10.0, 20.0), (20.0, 20.0)),
+        ]
+        assert self.WireManager.find_touching_wires(sch, [30.0, 20.0]) == [
+            ((20.0, 20.0), (30.0, 20.0)),
+        ]
+        # The junction point touches both segments.
+        assert self.WireManager.find_touching_wires(sch, [20.0, 20.0]) == [
+            ((10.0, 20.0), (20.0, 20.0)),
+            ((20.0, 20.0), (30.0, 20.0)),
+        ]
+        assert self.WireManager.find_touching_wires(sch, [99.0, 99.0]) == []
+
+    def test_find_touching_wires_missing_file_returns_empty(self, tmp_path: Any) -> None:
+        assert self.WireManager.find_touching_wires(tmp_path / "nope.kicad_sch", [0, 0]) == []
 
     def test_label_preserved_after_wire_deletion(self, tmp_path: Any) -> None:
         """Deleting a wire must not remove unrelated elements."""
@@ -526,3 +596,80 @@ class TestHandlerParamValidation:
             else {}
         )
         assert result["success"] is False
+
+
+# ---------------------------------------------------------------------------
+# Handler-level tests – #521 miss message and pin-location rounding
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestDeleteWireMissMessage:
+    """The delete handler explains a miss instead of just saying 'not found'."""
+
+    def _call_delete(self, sch: Path, start: Any, end: Any) -> dict:
+        from types import SimpleNamespace
+
+        from commands.schematic_handlers import SchematicHandlersMixin
+
+        return SchematicHandlersMixin._handle_delete_schematic_wire(
+            SimpleNamespace(),
+            {"schematicPath": str(sch), "start": start, "end": end},
+        )
+
+    def test_split_run_miss_lists_touching_wires(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        sch.write_text(_SPLIT_WIRE_SCH, encoding="utf-8")
+
+        result = self._call_delete(sch, {"x": 10, "y": 20}, {"x": 30, "y": 20})
+
+        assert result["success"] is False
+        assert "0.5 mm" in result["message"]
+        assert "single segment" in result["message"]
+        assert "(10, 20) -> (20, 20)" in result["message"]
+        assert "(20, 20) -> (30, 20)" in result["message"]
+        assert result["touching_start"] == [[[10.0, 20.0], [20.0, 20.0]]]
+        assert result["touching_end"] == [[[20.0, 20.0], [30.0, 20.0]]]
+
+    def test_miss_with_nothing_touching_says_none(self, tmp_path: Any) -> None:
+        sch = tmp_path / "test.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+
+        result = self._call_delete(sch, {"x": 99, "y": 99}, {"x": 100, "y": 100})
+
+        assert result["success"] is False
+        assert "Wires touching the start point: none" in result["message"]
+        assert "Wires touching the end point: none" in result["message"]
+        assert result["touching_start"] == []
+        assert result["touching_end"] == []
+
+    def test_pin_locations_round_to_file_precision(self, tmp_path: Any) -> None:
+        """Float noise from the rotation math reads the same as the file (#521)."""
+        from types import SimpleNamespace
+
+        from commands.schematic_handlers import SchematicHandlersMixin
+
+        class _NoisyPinLocator:
+            """Pins as computed: 439.41999999999996 where the file says 439.42."""
+
+            def get_all_symbol_pins(self, path: Any, ref: Any) -> dict:
+                return {"1": [439.41999999999996, 100.0], "2": [12.3456, 67.891]}
+
+            def _get_lib_id(self, path: Any, ref: Any) -> str:
+                return "Device:R"
+
+            def get_symbol_pins(self, path: Any, lib_id: Any) -> dict:
+                return {}
+
+        sch = tmp_path / "test.kicad_sch"
+        shutil.copy(EMPTY_SCH, sch)
+
+        with patch("commands.pin_locator.PinLocator", _NoisyPinLocator):
+            result = SchematicHandlersMixin._handle_get_schematic_pin_locations(
+                SimpleNamespace(),
+                {"schematicPath": str(sch), "reference": "R1"},
+            )
+
+        assert result["success"] is True
+        assert result["pins"]["1"] == {"x": 439.42, "y": 100.0}
+        assert result["pins"]["2"] == {"x": 12.35, "y": 67.89}

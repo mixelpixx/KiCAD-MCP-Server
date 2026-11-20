@@ -167,6 +167,21 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`delete_schematic_wire` explains a miss instead of just saying no (#521).**
+  The float-noise case in the report does not reproduce: endpoints already
+  match within 0.5 mm in either direction, so a wire stored at 439.42 deletes
+  fine when called with 439.41999999999996. What does reproduce is a run
+  split into more than one segment, for example at a junction or a T: the
+  tool only matches a single segment's endpoints, so deleting the whole run
+  answered "No matching wire found" without saying why. On a miss it now
+  lists the wires touching the start point and the end point, with their
+  stored coordinates, and says that a wire matches only when a single
+  segment's endpoints equal the given start and end within 0.5 mm. The tool
+  descriptions document the 0.5 mm tolerance and the per-segment match, and
+  get_schematic_pin_locations rounds coordinates to 2 decimal places, as
+  stored in the file, so a pin location reads the same as the wire it came
+  from.
+
 - **An SES import keeps each via's drill.** KiCad's `ImportSpecctraSES`
   keeps a via padstack's drill, except when it equals the Default netclass's
   via drill: `makeVIA` stores that one as undefined, and it then resolves
