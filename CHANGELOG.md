@@ -256,6 +256,10 @@ All notable changes to the KiCAD MCP Server project are documented here.
   were not included in connection points. Both `bus_entry` and `no_connect`
   endpoints are now counted as connection anchors.
 
+- **Schematic text edits preserve line endings and are atomic.** Component,
+  label, and wire edits now avoid truncated files after an interrupted write
+  and avoid rewriting LF schematics as CRLF on Windows.
+
 - **The Windows setup scripts no longer stop at "Detecting KiCAD Installation"**
   (#534). `setup-windows-opencode.ps1` runs under `Set-StrictMode`, and it read
   `DisplayName` from every program's uninstall entry in the registry. Many
