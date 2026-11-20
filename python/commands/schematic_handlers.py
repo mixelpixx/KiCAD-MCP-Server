@@ -1585,7 +1585,9 @@ class SchematicHandlersMixin:
 
             result = {}
             for pin_num, coords in all_pins.items():
-                entry = {"x": coords[0], "y": coords[1]}
+                # Rounded to KiCad's schematic resolution (0.0001 mm), so the values read
+                # the same as the file: 439.42, not 439.41999999999996 (#521).
+                entry = {"x": round(coords[0], 4), "y": round(coords[1], 4)}
                 if pin_num in pins_def:
                     entry["name"] = pins_def[pin_num].get("name", pin_num)
                     entry["angle"] = (
@@ -2309,8 +2311,7 @@ class SchematicHandlersMixin:
             deleted = WireManager.delete_wire(Path(schematic_path), start_point, end_point)
             if deleted:
                 return {"success": True}
-            else:
-                return {"success": False, "message": "No matching wire found"}
+            return self._delete_wire_miss(Path(schematic_path), start_point, end_point)
 
         except Exception as e:
             logger.error(f"Error deleting schematic wire: {e}")
@@ -2318,6 +2319,52 @@ class SchematicHandlersMixin:
 
             logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
+
+    @staticmethod
+    def _delete_wire_miss(
+        schematic_path: Any, start_point: List[float], end_point: List[float]
+    ) -> Dict[str, Any]:
+        """Explain a delete_schematic_wire miss (#521).
+
+        A delete removes one stored segment whose two end points are both within 0.5 mm of
+        start and end. The usual misses are a run KiCad split into several segments (at a
+        junction or a T) and a point that is not where the wire is stored, so list the
+        segments at each point with their stored coordinates.
+        """
+        from commands.wire_manager import WireManager
+
+        at_start = WireManager.wires_touching(schematic_path, start_point)
+        at_end = WireManager.wires_touching(schematic_path, end_point)
+
+        def fmt(point: Any) -> str:
+            return f"({point['x']:g}, {point['y']:g})"
+
+        def describe(label: str, point: List[float], wires: List[Dict[str, Any]]) -> str:
+            where = f"({float(point[0]):g}, {float(point[1]):g})"
+            if not wires:
+                return f"No wire touches {label} {where}."
+            parts = [
+                f"{fmt(w['start'])} -> {fmt(w['end'])}"
+                + (" (passes through)" if w["at"] == "middle" else "")
+                for w in wires
+            ]
+            return f"Wires at {label} {where}: " + "; ".join(parts) + "."
+
+        message = (
+            "No matching wire found. A delete removes one wire segment whose two stored end "
+            "points are both within 0.5 mm of start and end (in either order); a run split "
+            "into several segments at a junction or a T has to be deleted one segment at a "
+            "time. "
+            + describe("start", start_point, at_start)
+            + " "
+            + describe("end", end_point, at_end)
+        )
+        return {
+            "success": False,
+            "message": message,
+            "wiresAtStart": at_start,
+            "wiresAtEnd": at_end,
+        }
 
     def _handle_delete_schematic_net_label(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Delete a net label from the schematic"""
