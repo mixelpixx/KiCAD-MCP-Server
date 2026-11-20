@@ -167,6 +167,17 @@ All notable changes to the KiCAD MCP Server project are documented here.
 
 ### Bug Fixes
 
+- **`validate_schematic` names items nested inside `(sheet_instances ...)` (#524).**
+  A symbol pasted into the block -- the reproduction is a copy of a power
+  symbol hand-edited in -- is syntactically balanced, so the structure scan
+  passed it, and kicad-cli refused the file with a bare
+  `Failed to load schematic` and no position. `validate_schematic` now reports
+  each such item as an error with its line number, and warns when a placed
+  symbol's Reference property disagrees with the reference on one of its
+  instance paths. Both checks have regression tests: the nested-symbol fixture
+  is built exactly as the maintainer reproduced it, and a stale-Reference
+  fixture covers the warning.
+
 - **An SES import keeps each via's drill.** KiCad's `ImportSpecctraSES`
   keeps a via padstack's drill, except when it equals the Default netclass's
   via drill: `makeVIA` stores that one as undefined, and it then resolves
