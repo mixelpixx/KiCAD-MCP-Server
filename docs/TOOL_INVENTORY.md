@@ -100,7 +100,7 @@ _Source: `src/tools/component.ts`_
 | `get_component_properties`  | Get all properties of a component                                                                                                           | `component` |
 | `add_component_annotation`  | Add annotation/comment to component                                                                                                         | `component` |
 | `group_components`          | Group multiple components together                                                                                                          | `component` |
-| `replace_component`         | Replace component with different footprint                                                                                                  | `component` |
+| `replace_component`         | Alias of `edit_component`: swap a footprint and value                                                                                       | `component` |
 | `get_component_pads`        | Get all pad information for a component                                                                                                     | `component` |
 | `get_pads`                  | Return pads for one PCB component, selected refs, or all components, including XY, layer, size and net.                                     | `component` |
 | `get_net_pads`              | Return every PCB pad attached to a net name or net code.                                                                                    | `component` |

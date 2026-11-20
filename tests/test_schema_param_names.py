@@ -84,7 +84,6 @@ KNOWN_JSONRPC_UNREAD: Dict[str, Set[str]] = {
 KNOWN_UNROUTED: Set[str] = {
     "add_component_annotation",
     "group_components",
-    "replace_component",
 }
 
 # --- TypeScript side ---------------------------------------------------------

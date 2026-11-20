@@ -118,7 +118,7 @@ Beyond basic placement.
 - `get_component_properties` - Get component properties
 - `add_component_annotation` - Add component annotation
 - `group_components` - Group components together
-- `replace_component` - Replace component with another
+- `replace_component` - Alias of `edit_component`: swap footprint and value
 
 #### 3. `export` - File Export & Manufacturing (8 tools)
 
