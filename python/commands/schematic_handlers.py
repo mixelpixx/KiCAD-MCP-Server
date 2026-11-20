@@ -33,7 +33,13 @@ from utils.sexpr_format import QUOTED_VALUE
 from utils.sexpr_format import dumps as kicad_dumps
 from utils.sexpr_format import escape_sexpr_string, unescape_sexpr_string
 from utils.skip_items import skip_items
-from utils.symbol_instances import annotate_sheet, instance_report
+from utils.sheet_tree import instance_paths
+from utils.symbol_instances import (
+    ReferenceAllocator,
+    annotate_sheet,
+    instance_report,
+    project_references,
+)
 
 logger = logging.getLogger("kicad_interface")
 
@@ -61,6 +67,24 @@ def _xy(value: Any) -> Optional[List[float]]:
 
 
 _POSITION_SHAPES = '[x, y] or {"x": .., "y": ..}'
+
+
+def _allocate_power_reference(schematic_file: Path) -> Optional[str]:
+    """The next unused ``#PWRnn`` in the schematic's project (#524).
+
+    Counts every reference on every sheet the root reaches, so a number
+    taken on another sheet is never re-picked. Returns None when the
+    project cannot be read, so the caller can fall back to the given
+    reference instead of failing the placement.
+    """
+    try:
+        root, _paths = instance_paths(schematic_file)
+        return ReferenceAllocator(project_references(root, schematic_file)).next_free(
+            "#PWR", zero=True
+        )
+    except Exception as e:
+        logger.warning("Could not allocate a #PWR reference for %s: %s", schematic_file, e)
+        return None
 
 
 def _find_placed_symbol_position(content: str, reference: str) -> Optional[Tuple[float, float]]:
@@ -295,6 +319,23 @@ class SchematicHandlersMixin:
             comp_type = component.get("type", "R")
             library = component.get("library", "Device")
             reference = component.get("reference", "X?")
+            # Power symbols (#524): placed without a reference, or with the
+            # "#PWR?"/"#PWR" placeholder, a power symbol gets the next unused
+            # #PWRnn in the project — every sheet and every instance path
+            # counted — instead of the literal placeholder, which KiCad
+            # refuses to load. The chosen number is the reference the
+            # placement writes and the reply reports. An explicit reference
+            # other than the placeholder is left alone, as is every
+            # non-power symbol. power:PWR_FLAG is not a net: its reference
+            # is "#FLG…", never #PWRnn.
+            if (
+                f"{library}:{comp_type}".lower().startswith("power:")
+                and comp_type.lower() != "pwr_flag"
+                and reference in (None, "", "X?", "#PWR?", "#PWR")
+            ):
+                allocated = _allocate_power_reference(Path(schematic_path))
+                if allocated is not None:
+                    reference = allocated
             value = component.get("value", comp_type)
             footprint = component.get("footprint", "")
             x = component.get("x", 0)

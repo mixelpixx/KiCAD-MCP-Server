@@ -2664,7 +2664,12 @@ SCHEMATIC_TOOLS = [
             "properties": {
                 "reference": {
                     "type": "string",
-                    "description": "Reference designator (e.g., R1, C2, U3)",
+                    "description": (
+                        "Reference designator (e.g., R1, C2, U3). For power symbols "
+                        '(power:GND, …) omit it or pass "#PWR?" to use the next free '
+                        "#PWRnn in the project; the reply's component_reference names "
+                        "the number chosen."
+                    ),
                 },
                 "symbol": {
                     "type": "string",
@@ -2677,7 +2682,7 @@ SCHEMATIC_TOOLS = [
                 "x": {"type": "number", "description": "X coordinate on schematic"},
                 "y": {"type": "number", "description": "Y coordinate on schematic"},
             },
-            "required": ["reference", "symbol", "x", "y"],
+            "required": ["symbol", "x", "y"],
         },
     },
     {
