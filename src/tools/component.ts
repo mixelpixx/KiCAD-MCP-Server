@@ -349,39 +349,6 @@ export function registerComponentTools(server: McpServer, callKicadScript: Comma
   );
 
   // ------------------------------------------------------
-  // Add Component Annotation Tool
-  // ------------------------------------------------------
-  server.tool(
-    "add_component_annotation",
-    "Add a text annotation or comment to a PCB component.",
-    {
-      reference: z.string().describe("Reference designator of the component (e.g., 'R5')"),
-      annotation: z.string().describe("Annotation or comment text to add"),
-      visible: z
-        .boolean()
-        .optional()
-        .describe("Whether the annotation should be visible on the PCB"),
-    },
-    async ({ reference, annotation, visible }) => {
-      logger.debug(`Adding annotation to component: ${reference}`);
-      const result = await callKicadScript("add_component_annotation", {
-        reference,
-        annotation,
-        visible,
-      });
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-        ],
-      };
-    },
-  );
-
-  // ------------------------------------------------------
   // Group Components Tool
   // ------------------------------------------------------
   server.tool(
